@@ -1,0 +1,88 @@
+{
+  "at": "2026-09-07T15:36:45.495521+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/e389496f-beaa-4121-9225-890293f3a90b/comments",
+  "request": {
+    "content": "非常好"
+  },
+  "status": 201,
+  "response": {
+    "Comment": {
+      "id": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+      "threadRootId": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+      "author": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "content": "非常好",
+      "type": "comment",
+      "version": 1,
+      "createdAt": "2026-09-07T23:36:45.499544+08:00",
+      "updatedAt": "2026-09-07T23:36:45.499544+08:00",
+      "routes": [
+        {
+          "id": "6bb645ed-933d-476e-9afb-02372390e886",
+          "tenant": "default",
+          "namespace": "default",
+          "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+          "commentId": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+          "commentVersion": 1,
+          "targetType": "team",
+          "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+          "routeType": "team_leader",
+          "outcome": "queued",
+          "taskId": "d6c1333d-79dc-4d61-b6a7-385bdc0d34bb",
+          "createdAt": "2026-09-07T23:36:45.499544+08:00"
+        }
+      ]
+    },
+    "Routes": [
+      {
+        "id": "6bb645ed-933d-476e-9afb-02372390e886",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+        "commentId": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+        "commentVersion": 1,
+        "targetType": "team",
+        "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "routeType": "team_leader",
+        "outcome": "queued",
+        "taskId": "d6c1333d-79dc-4d61-b6a7-385bdc0d34bb",
+        "createdAt": "2026-09-07T23:36:45.499544+08:00"
+      }
+    ],
+    "Tasks": [
+      {
+        "id": "d6c1333d-79dc-4d61-b6a7-385bdc0d34bb",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+        "orchestrationRunId": "93d8cf35-e329-4dbb-9513-36dc3767fedf",
+        "runNodeId": "6acd4bfb-de72-444b-853f-2aa4b7c355ae",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "queued",
+        "priority": 0,
+        "triggerType": "review_comment",
+        "triggerCommentId": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "c3cff4db-e9da-4d97-8b29-c1adee11a763",
+        "correlationId": "e389496f-beaa-4121-9225-890293f3a90b",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "version": 1,
+        "createdAt": "2026-09-07T23:36:45.499544+08:00"
+      }
+    ]
+  }
+}

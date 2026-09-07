@@ -1,0 +1,598 @@
+{
+  "at": "2026-09-07T15:39:15.638251+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/52bafd3b-7201-4f3c-adb1-35d1a478ffd2/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "a51df0a1-c390-48d1-b7ba-d9316ad5ad34",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "createdAt": "2026-09-07T23:35:41.996794+08:00"
+      },
+      {
+        "id": "6767a373-32bd-4dfd-93d8-ff7dacab44b0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "actor": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "action": "issue.updated",
+        "objectType": "issue",
+        "objectRef": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "createdAt": "2026-09-07T23:35:41.998179+08:00"
+      },
+      {
+        "id": "5552ed05-b056-4c9e-a319-f180842889be",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "actor": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "4941c133-1b7a-4c46-9caf-655fe39b3f5c",
+        "createdAt": "2026-09-07T23:35:42.000725+08:00"
+      },
+      {
+        "id": "0e36830c-a36f-422a-bdb1-ceb842122bf8",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "createdAt": "2026-09-07T23:36:45.441987+08:00"
+      },
+      {
+        "id": "8112a328-4aae-4968-a15e-0cd322900162",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "createdAt": "2026-09-07T23:36:55.401506+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "e3e23768-3a0d-4554-86be-0ec4b7e869e7",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 B=42",
+        "description": "B=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 1,
+        "createdAt": "2026-09-07T23:35:42.002269+08:00",
+        "updatedAt": "2026-09-07T23:35:42.002269+08:00"
+      },
+      {
+        "id": "01568b91-b05e-435d-88a5-28141e4c0899",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 A=42",
+        "description": "A=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 1,
+        "createdAt": "2026-09-07T23:35:42.000125+08:00",
+        "updatedAt": "2026-09-07T23:35:42.000125+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "4941c133-1b7a-4c46-9caf-655fe39b3f5c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "threadRootId": "4941c133-1b7a-4c46-9caf-655fe39b3f5c",
+        "author": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "content": "测试预置交付结果：A=42，B=42，合计=84。",
+        "type": "result",
+        "version": 1,
+        "createdAt": "2026-09-07T23:35:41.997747+08:00",
+        "updatedAt": "2026-09-07T23:35:41.997747+08:00"
+      },
+      {
+        "id": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "threadRootId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "做得很好，感谢！",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-07T23:36:45.425524+08:00",
+        "updatedAt": "2026-09-07T23:36:45.425524+08:00",
+        "routes": [
+          {
+            "id": "4638574b-e4f9-4e17-8083-ccc8113d9343",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "commentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+            "routeType": "team_leader",
+            "outcome": "queued",
+            "taskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "createdAt": "2026-09-07T23:36:45.425524+08:00"
+          }
+        ]
+      },
+      {
+        "id": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "parentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "threadRootId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "author": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "content": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "type": "comment",
+        "sourceTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "sourceAttemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+        "version": 1,
+        "createdAt": "2026-09-07T23:36:55.385863+08:00",
+        "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+        "routes": [
+          {
+            "id": "faee6078-197e-4b00-975f-e7f24af4810c",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "commentId": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+            "commentVersion": 1,
+            "targetType": "human",
+            "targetRef": "admin",
+            "routeType": "thread_parent",
+            "outcome": "queued",
+            "createdAt": "2026-09-07T23:36:55.385863+08:00"
+          }
+        ]
+      }
+    ],
+    "exportedAt": "2026-09-07T15:39:15.65303Z",
+    "issue": {
+      "id": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "IT review-feedback 20260907 accepted",
+      "description": "测试预置的已交付工作：A=42，B=42，A+B=84。两项计算均已完成，不需要再次执行。",
+      "status": "done",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 5,
+      "createdAt": "2026-09-07T23:35:41.994795+08:00",
+      "updatedAt": "2026-09-07T23:36:55.385863+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "43992258-ac95-4e8b-94b0-4250e807eb3c",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "idempotencyKey": "agent-task-queued:107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "occurredAt": "2026-09-07T23:36:45.425524+08:00"
+          },
+          {
+            "id": "9e80b7f4-75c9-4c27-8d9f-e8c99ce0c11a",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "attemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "idempotencyKey": "attempt-queued:d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "occurredAt": "2026-09-07T23:36:45.645476+08:00"
+          },
+          {
+            "id": "d03e7e8f-ce9b-4e33-acdd-5fd24290435b",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "attemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "occurredAt": "2026-09-07T23:36:45.98371+08:00"
+          },
+          {
+            "id": "fb4320ad-6197-443e-b92c-eeb21e4850f4",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "attemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "idempotencyKey": "attempt-succeeded:d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+            "occurredAt": "2026-09-07T23:36:55.385863+08:00"
+          },
+          {
+            "id": "22ac2a9b-20e6-4410-9897-f3af7188ff22",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。"
+            },
+            "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "idempotencyKey": "node-succeeded:9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+            "occurredAt": "2026-09-07T23:36:55.385863+08:00"
+          },
+          {
+            "id": "abe6389e-7033-43b0-a37d-c2d9b4cc45e0",
+            "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "idempotencyKey": "run-succeeded:0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "occurredAt": "2026-09-07T23:36:55.385863+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+            "mode": "adaptive",
+            "triggerType": "review_comment",
+            "triggerRef": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T23:36:45.425524+08:00",
+            "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+            "startedAt": "2026-09-07T23:36:45.425524+08:00",
+            "completedAt": "2026-09-07T23:36:55.385863+08:00"
+          },
+          "nodes": [
+            {
+              "id": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+              "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:107d4096-9798-42da-ab07-fc2aaaa67e60",
+              "type": "team",
+              "role": "leader",
+              "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+              "state": "succeeded",
+              "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T23:36:45.425524+08:00",
+              "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+              "startedAt": "2026-09-07T23:36:45.653669+08:00",
+              "completedAt": "2026-09-07T23:36:55.385863+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+              "orchestrationRunId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+              "runNodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+              "currentAttemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "review_comment",
+              "triggerCommentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+              "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_10cc7409b877",
+                "resolvedAt": "2026-09-07T15:36:45.646063Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_10cc7409b877",
+              "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+              "version": 4,
+              "createdAt": "2026-09-07T23:36:45.425524+08:00",
+              "dispatchedAt": "2026-09-07T23:36:45.645476+08:00",
+              "startedAt": "2026-09-07T23:36:45.98371+08:00",
+              "completedAt": "2026-09-07T23:36:55.385863+08:00",
+              "inputs": [
+                {
+                  "id": "ff75c274-bd3d-4d39-bc06-34db7ec02ff9",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+                  "commentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T23:36:45.645476+08:00",
+                  "processedAt": "2026-09-07T23:36:55.385863+08:00",
+                  "responseCommentId": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T23:36:45.425524+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+              "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+              "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_10cc7409b877",
+                "resolvedAt": "2026-09-07T15:36:45.646063Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_10cc7409b877",
+              "sessionRef": "ef9fb48d-6856-4689-bda7-c6b1cc9a1806",
+              "turnId": "44aa40c3-0ff4-48af-8ab9-1d8870cb1e65",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T23:36:55.355739+08:00",
+              "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+              "version": 13,
+              "createdAt": "2026-09-07T23:36:45.645476+08:00",
+              "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+              "startedAt": "2026-09-07T23:36:45.98371+08:00",
+              "completedAt": "2026-09-07T23:36:55.385863+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "mode": "adaptive",
+        "triggerType": "review_comment",
+        "triggerRef": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T23:36:45.425524+08:00",
+        "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+        "startedAt": "2026-09-07T23:36:45.425524+08:00",
+        "completedAt": "2026-09-07T23:36:55.385863+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "orchestrationRunId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+        "runNodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+        "currentAttemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "review_comment",
+        "triggerCommentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_10cc7409b877",
+          "resolvedAt": "2026-09-07T15:36:45.646063Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_10cc7409b877",
+        "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "version": 4,
+        "createdAt": "2026-09-07T23:36:45.425524+08:00",
+        "dispatchedAt": "2026-09-07T23:36:45.645476+08:00",
+        "startedAt": "2026-09-07T23:36:45.98371+08:00",
+        "completedAt": "2026-09-07T23:36:55.385863+08:00",
+        "inputs": [
+          {
+            "id": "ff75c274-bd3d-4d39-bc06-34db7ec02ff9",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "commentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T23:36:45.645476+08:00",
+            "processedAt": "2026-09-07T23:36:55.385863+08:00",
+            "responseCommentId": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+            "attempts": 0,
+            "createdAt": "2026-09-07T23:36:45.425524+08:00"
+          }
+        ]
+      }
+    ]
+  }
+}

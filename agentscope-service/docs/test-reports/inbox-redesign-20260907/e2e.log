@@ -1,0 +1,26 @@
+
+> agentscope-service-frontend@0.1.0 test:e2e
+> playwright test
+
+[WebServer] (node:13628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 5 workers
+
+(node:13639) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13637) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13638) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13635) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  5 e2e/inbox.e2e.ts:98:1 › unread filter retains the selected row and filters approvals by type (1.8s)
+  ✓  2 e2e/inbox.e2e.ts:62:1 › unifies approvals and embeds an issue; viewing marks only the selected message read (1.8s)
+  ✓  1 e2e/inbox.e2e.ts:124:1 › mobile back preserves the inbox and the legacy approval URL redirects (1.8s)
+  ✓  4 e2e/inbox.e2e.ts:80:1 › read pending approval stays actionable and decision is made in the detail pane (1.9s)
+  ✓  3 e2e/inbox.e2e.ts:110:1 › failed approval details do not mark read and read failures can be retried (2.5s)
+
+  5 passed (4.5s)

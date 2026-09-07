@@ -1,292 +1,326 @@
-// Copyright 2024-2026 the original author or authors.
-// Licensed under the Apache License, Version 2.0.
-
-// Package automation turns durable Cron/Webhook/Channel ingress into the same
-// Issue/Comment/AgentTask collaboration path used by humans and agents.
+// Package automation owns durable acceptance, execution and reconciliation of recurring work.
 package automation
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"github.com/google/uuid"
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
-
-	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
-	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
-	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
-	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
-type Service struct{ Store store.Store }
+type ValidationError struct{ error }
 
-type IssueAction struct {
-	Title              string                        `json:"title"`
-	Description        string                        `json:"description,omitempty"`
-	Priority           string                        `json:"priority,omitempty"`
-	AssigneeType       controlmodel.AssigneeType     `json:"assigneeType,omitempty"`
-	AssigneeRef        string                        `json:"assigneeRef,omitempty"`
-	AcceptanceCriteria json.RawMessage               `json:"acceptanceCriteria,omitempty"`
-	ContextRefs        json.RawMessage               `json:"contextRefs,omitempty"`
-	InitialComment     string                        `json:"initialComment,omitempty"`
-	Mentions           []collaboration.MentionTarget `json:"mentions,omitempty"`
-}
-type CommentAction struct {
-	IssueID  uuid.UUID                     `json:"issueId"`
-	ParentID *uuid.UUID                    `json:"parentId,omitempty"`
-	Content  string                        `json:"content"`
-	Mentions []collaboration.MentionTarget `json:"mentions,omitempty"`
+type Service struct {
+	Store store.Store
+	Now   func() time.Time
 }
 
-type StartOrchestrationAction struct {
-	DefinitionID uuid.UUID           `json:"definitionId"`
-	RevisionID   *uuid.UUID          `json:"revisionId,omitempty"`
-	IssueID      *uuid.UUID          `json:"issueId,omitempty"`
-	Issue        *controlmodel.Issue `json:"issue,omitempty"`
-	Input        json.RawMessage     `json:"input,omitempty"`
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
-type SignalOrchestrationAction struct {
-	RunID   uuid.UUID       `json:"runId"`
-	Name    string          `json:"name"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+// NormalizeLegacy exposes existing rules without changing the meaning of old runs.
+func NormalizeLegacy(rule *controlmodel.Automation) {
+	rule.WebhookConfigured = rule.WebhookSecretHash != ""
+	if rule.Triggers != nil {
+		return
+	}
+	rule.Triggers = []controlmodel.AutomationTrigger{}
+	if rule.TriggerType == "" || rule.TriggerType == "manual" {
+		return
+	}
+	t := controlmodel.AutomationTrigger{ID: uuid.NewSHA1(rule.ID, []byte("primary-trigger")), Type: rule.TriggerType, Enabled: true, NextRunAt: rule.NextRunAt, Timezone: "UTC"}
+	var config struct {
+		Schedule string   `json:"schedule"`
+		Timezone string   `json:"timezone"`
+		Events   []string `json:"events"`
+	}
+	_ = json.Unmarshal(rule.TriggerConfig, &config)
+	t.Schedule = config.Schedule
+	t.Events = config.Events
+	if config.Timezone != "" {
+		t.Timezone = config.Timezone
+	}
+	rule.Triggers = append(rule.Triggers, t)
 }
 
-func (s *Service) Create(ctx context.Context, item *controlmodel.Automation) (*controlmodel.Automation, error) {
-	if s == nil || s.Store == nil {
-		return nil, fmt.Errorf("automation store is unavailable")
+func (s *Service) ValidateTarget(ctx context.Context, rule *controlmodel.Automation) error {
+	e := rule.Execution
+	if e == nil {
+		return s.validateLegacyTarget(ctx, rule)
 	}
-	if item == nil || strings.TrimSpace(item.Name) == "" {
-		return nil, fmt.Errorf("name is required")
+	id, err := uuid.Parse(e.AssigneeRef)
+	if err != nil {
+		return fmt.Errorf("select a registered Agent or Team")
 	}
-	if item.TriggerType != controlmodel.AutomationTriggerCron && item.TriggerType != controlmodel.AutomationTriggerWebhook && item.TriggerType != controlmodel.AutomationTriggerChannel {
-		return nil, fmt.Errorf("unsupported triggerType %q", item.TriggerType)
-	}
-	if err := validateAction(item.ActionType, item.ActionConfig); err != nil {
-		return nil, err
-	}
-	if item.TriggerType == controlmodel.AutomationTriggerCron {
-		next, err := nextCron(item.TriggerConfig, time.Now().UTC())
-		if err != nil {
-			return nil, err
+	if e.AssigneeType == controlmodel.AssigneeTeam {
+		team, err := s.Store.Collaboration().GetTeam(ctx, id)
+		if err != nil || team.Tenant != rule.Tenant || team.Namespace != rule.Namespace || team.Status != "active" {
+			return fmt.Errorf("selected Team is unavailable in this namespace")
 		}
-		item.NextRunAt = &next
+		id, err = uuid.Parse(team.LeaderAgentRef)
+		if err != nil {
+			return fmt.Errorf("Team leader is invalid")
+		}
+	} else if e.AssigneeType != controlmodel.AssigneeAgent {
+		return fmt.Errorf("assigneeType must be agent or team")
 	}
-	return s.Store.Collaboration().CreateAutomation(ctx, item)
+	agent, err := s.Store.AgentCatalog().GetAgent(ctx, id)
+	if err != nil || agent.Tenant != rule.Tenant || agent.Namespace != rule.Namespace || agent.Status != controlmodel.AgentActive || agent.ArchivedAt != nil {
+		return fmt.Errorf("selected Agent is unavailable in this namespace")
+	}
+	return nil
 }
-
-func (s *Service) Trigger(ctx context.Context, id uuid.UUID, triggerRef, idempotencyKey string, input json.RawMessage) (*controlmodel.AutomationRun, error) {
-	automation, err := s.Store.Collaboration().GetAutomation(ctx, id)
+func (s *Service) validate(ctx context.Context, rule *controlmodel.Automation) error {
+	if strings.TrimSpace(rule.Name) == "" || len(rule.Name) > 200 {
+		return fmt.Errorf("name must contain 1 to 200 characters")
+	}
+	if rule.Execution != nil {
+		e := rule.Execution
+		e.Runbook = strings.TrimSpace(e.Runbook)
+		if e.Runbook == "" || len(e.Runbook) > 100000 {
+			return fmt.Errorf("runbook must contain 1 to 100000 characters")
+		}
+		if e.OutputMode == "" {
+			e.OutputMode = "create_issue"
+		}
+		if e.OutputMode != "create_issue" && e.OutputMode != "run_only" {
+			return fmt.Errorf("invalid outputMode")
+		}
+		if e.CompletionPolicy == "" {
+			e.CompletionPolicy = controlmodel.IssueCompletionReview
+		}
+		if e.OutputMode == "run_only" {
+			e.CompletionPolicy = controlmodel.IssueCompletionAutomatic
+		}
+		if e.CompletionPolicy != controlmodel.IssueCompletionAutomatic && e.CompletionPolicy != controlmodel.IssueCompletionReview {
+			return fmt.Errorf("invalid completionPolicy")
+		}
+		if e.ConcurrencyPolicy == "" {
+			e.ConcurrencyPolicy = "skip"
+		}
+		if e.ConcurrencyPolicy != "skip" && e.ConcurrencyPolicy != "queue" {
+			return fmt.Errorf("invalid concurrencyPolicy")
+		}
+		if e.QueueTimeoutSeconds == 0 {
+			e.QueueTimeoutSeconds = 3600
+		}
+		if e.RunTimeoutSeconds == 0 {
+			e.RunTimeoutSeconds = 3600
+		}
+		if e.QueueTimeoutSeconds < 60 || e.QueueTimeoutSeconds > 604800 || e.RunTimeoutSeconds < 60 || e.RunTimeoutSeconds > 604800 {
+			return fmt.Errorf("timeouts must be between 60 and 604800 seconds")
+		}
+		if len(e.ContextRefs) > 0 {
+			var refs []json.RawMessage
+			if json.Unmarshal(e.ContextRefs, &refs) != nil {
+				return fmt.Errorf("contextRefs must be an array")
+			}
+		}
+		if len(e.Subscribers) > 50 {
+			return fmt.Errorf("at most 50 subscribers are allowed")
+		}
+		if err := s.ValidateTarget(ctx, rule); rule.Enabled && err != nil {
+			return err
+		}
+		rule.ActionType = controlmodel.AutomationCreateIssue
+		rule.ActionConfig, _ = json.Marshal(IssueAction{Title: rule.Name, Description: e.Runbook, AssigneeType: e.AssigneeType, AssigneeRef: e.AssigneeRef, ContextRefs: e.ContextRefs})
+	} else if err := validateAction(rule.ActionType, rule.ActionConfig); err != nil {
+		return err
+	}
+	if rule.Execution == nil && rule.Enabled {
+		if err := s.ValidateTarget(ctx, rule); err != nil {
+			return err
+		}
+	}
+	NormalizeLegacy(rule)
+	if len(rule.Triggers) > 10 {
+		return fmt.Errorf("at most 10 triggers are allowed")
+	}
+	ids := map[uuid.UUID]bool{}
+	for i := range rule.Triggers {
+		t := &rule.Triggers[i]
+		if t.ID == uuid.Nil {
+			t.ID = uuid.New()
+		}
+		if ids[t.ID] {
+			return fmt.Errorf("duplicate trigger id")
+		}
+		ids[t.ID] = true
+		switch t.Type {
+		case controlmodel.AutomationTriggerCron:
+			if t.Timezone == "" {
+				t.Timezone = "UTC"
+			}
+			if _, err := Preview(t.Schedule, t.Timezone, s.now(), 1); err != nil {
+				return err
+			}
+		case controlmodel.AutomationTriggerWebhook:
+			if len(t.Events) > 50 {
+				return fmt.Errorf("at most 50 event filters are allowed")
+			}
+		case controlmodel.AutomationTriggerChannel:
+			if rule.Execution != nil {
+				return fmt.Errorf("channel triggers are not implemented")
+			}
+		default:
+			return fmt.Errorf("unsupported trigger type")
+		}
+	}
+	if len(rule.Triggers) > 0 {
+		rule.TriggerType = rule.Triggers[0].Type
+		rule.TriggerConfig, _ = json.Marshal(rule.Triggers[0])
+	} else {
+		rule.TriggerType = "manual"
+		rule.TriggerConfig = []byte(`{}`)
+	}
+	return nil
+}
+func (s *Service) Create(ctx context.Context, rule *controlmodel.Automation) (*controlmodel.Automation, error) {
+	if s == nil || s.Store == nil || rule == nil {
+		return nil, fmt.Errorf("automation store and rule are required")
+	}
+	if rule.ID == uuid.Nil {
+		rule.ID = uuid.New()
+	}
+	if err := s.validate(ctx, rule); err != nil {
+		return nil, ValidationError{err}
+	}
+	for i := range rule.Triggers {
+		t := &rule.Triggers[i]
+		t.LastFiredAt = nil
+		t.NextRunAt = nil
+		if rule.Enabled && t.Enabled && t.Type == controlmodel.AutomationTriggerCron {
+			times, _ := Preview(t.Schedule, t.Timezone, s.now(), 1)
+			t.NextRunAt = &times[0]
+		}
+	}
+	refreshNext(rule)
+	return s.Store.Collaboration().CreateAutomation(ctx, rule)
+}
+func (s *Service) Update(ctx context.Context, rule *controlmodel.Automation, version int64) (*controlmodel.Automation, error) {
+	if version <= 0 {
+		return nil, fmt.Errorf("positive expectedVersion is required")
+	}
+	old, err := s.Store.Collaboration().GetAutomation(ctx, rule.ID)
 	if err != nil {
 		return nil, err
 	}
-	if !automation.Enabled || automation.ArchivedAt != nil {
-		return nil, fmt.Errorf("automation is disabled")
+	if old.ArchivedAt != nil {
+		return nil, fmt.Errorf("archived automation cannot be edited")
 	}
-	if idempotencyKey == "" {
-		return nil, fmt.Errorf("idempotency key is required")
+	NormalizeLegacy(old)
+	if err = s.validate(ctx, rule); err != nil {
+		return nil, ValidationError{err}
 	}
-	run, created, err := s.Store.Collaboration().BeginAutomationRun(ctx, &controlmodel.AutomationRun{AutomationID: id, Tenant: automation.Tenant, Namespace: automation.Namespace, TriggerType: automation.TriggerType, TriggerRef: triggerRef, IdempotencyKey: idempotencyKey, Input: input})
-	if err != nil || !created {
-		return run, err
-	}
-	finishFailure := func(code string, cause error) (*controlmodel.AutomationRun, error) {
-		run.Status = controlmodel.AutomationRunFailed
-		run.ErrorCode, run.ErrorMessage = code, cause.Error()
-		finished, finishErr := s.Store.Collaboration().FinishAutomationRun(ctx, run)
-		if finishErr != nil {
-			return nil, finishErr
-		}
-		return finished, cause
-	}
-	collab := &collaboration.Service{Store: s.Store}
-	switch automation.ActionType {
-	case controlmodel.AutomationCreateIssue:
-		var action IssueAction
-		if err = json.Unmarshal(automation.ActionConfig, &action); err != nil {
-			return finishFailure("invalid_action", err)
-		}
-		issue, task, createErr := collab.CreateIssue(ctx, collaboration.CreateIssueRequest{Tenant: automation.Tenant, Namespace: automation.Namespace, Title: action.Title, Description: action.Description, Priority: action.Priority, Creator: controlmodel.Actor{Type: controlmodel.ActorAutomation, Ref: automation.ID.String()}, AssigneeType: action.AssigneeType, AssigneeRef: action.AssigneeRef, AcceptanceCriteria: action.AcceptanceCriteria, ContextRefs: action.ContextRefs, SourceType: "automation", SourceRef: run.ID.String()})
-		if createErr != nil {
-			return finishFailure("create_issue_failed", createErr)
-		}
-		run.IssueID = &issue.ID
-		if task != nil {
-			run.AgentTaskID = &task.ID
-		}
-		if strings.TrimSpace(action.InitialComment) != "" {
-			if _, commentErr := collab.AddComment(ctx, collaboration.AddCommentRequest{IssueID: issue.ID, Author: controlmodel.Actor{Type: controlmodel.ActorAutomation, Ref: automation.ID.String()}, Content: action.InitialComment, Mentions: action.Mentions}); commentErr != nil {
-				return finishFailure("create_comment_failed", commentErr)
+	for i := range rule.Triggers {
+		t := &rule.Triggers[i]
+		t.NextRunAt = nil
+		t.LastFiredAt = nil
+		for _, prior := range old.Triggers {
+			if prior.ID == t.ID {
+				t.LastFiredAt = prior.LastFiredAt
+				if old.Enabled && rule.Enabled && prior.Enabled && t.Enabled && prior.Type == t.Type && prior.Schedule == t.Schedule && prior.Timezone == t.Timezone {
+					t.NextRunAt = prior.NextRunAt
+				}
 			}
 		}
-	case controlmodel.AutomationAddComment:
-		var action CommentAction
-		if err = json.Unmarshal(automation.ActionConfig, &action); err != nil {
-			return finishFailure("invalid_action", err)
+		if rule.Enabled && t.Enabled && t.Type == controlmodel.AutomationTriggerCron && t.NextRunAt == nil {
+			times, _ := Preview(t.Schedule, t.Timezone, s.now(), 1)
+			t.NextRunAt = &times[0]
 		}
-		result, commentErr := collab.AddComment(ctx, collaboration.AddCommentRequest{IssueID: action.IssueID, ParentID: action.ParentID, Author: controlmodel.Actor{Type: controlmodel.ActorAutomation, Ref: automation.ID.String()}, Content: action.Content, Mentions: action.Mentions})
-		if commentErr != nil {
-			return finishFailure("create_comment_failed", commentErr)
-		}
-		run.IssueID = &action.IssueID
-		if len(result.Tasks) > 0 {
-			run.AgentTaskID = &result.Tasks[0].ID
-		}
-	case controlmodel.AutomationStartRun:
-		var action StartOrchestrationAction
-		if err = json.Unmarshal(automation.ActionConfig, &action); err != nil {
-			return finishFailure("invalid_action", err)
-		}
-		runInput := action.Input
-		if len(input) > 0 {
-			runInput = input
-		}
-		started, startErr := (&orchestration.Service{Store: s.Store}).Start(ctx, action.DefinitionID,
-			orchestration.StartRequest{RevisionID: action.RevisionID, IdempotencyKey: "automation:" + automation.ID.String() + ":" + idempotencyKey,
-				Input: runInput, IssueID: action.IssueID, Issue: action.Issue, TriggerType: "automation", TriggerRef: run.ID.String(),
-				Actor: controlmodel.Actor{Type: controlmodel.ActorAutomation, Ref: automation.ID.String()}})
-		if startErr != nil {
-			return finishFailure("start_orchestration_failed", startErr)
-		}
-		run.OrchestrationRunID, run.IssueID = &started.ID, &started.RootIssueID
-	case controlmodel.AutomationSignalRun:
-		var action SignalOrchestrationAction
-		if err = json.Unmarshal(automation.ActionConfig, &action); err != nil {
-			return finishFailure("invalid_action", err)
-		}
-		payload := action.Payload
-		if len(input) > 0 {
-			payload = input
-		}
-		if signalErr := (&orchestration.Service{Store: s.Store}).Signal(ctx, action.RunID, action.Name,
-			"automation:"+automation.ID.String()+":"+idempotencyKey, payload,
-			controlmodel.Actor{Type: controlmodel.ActorAutomation, Ref: automation.ID.String()}); signalErr != nil {
-			return finishFailure("signal_orchestration_failed", signalErr)
-		}
-		run.OrchestrationRunID = &action.RunID
-	default:
-		return finishFailure("invalid_action", fmt.Errorf("unsupported actionType %q", automation.ActionType))
 	}
-	run.Status = controlmodel.AutomationRunCompleted
-	run.Output = []byte(`{"accepted":true}`)
-	return s.Store.Collaboration().FinishAutomationRun(ctx, run)
+	refreshNext(rule)
+	return s.Store.Collaboration().UpdateAutomation(ctx, rule, version)
 }
-
+func (s *Service) Trigger(ctx context.Context, id uuid.UUID, ref, key string, input json.RawMessage) (*controlmodel.AutomationRun, error) {
+	return s.TriggerSource(ctx, id, uuid.Nil, "manual", ref, key, input, nil)
+}
+func (s *Service) TriggerSource(ctx context.Context, id, triggerID uuid.UUID, source, ref, key string, input json.RawMessage, rerunOf *uuid.UUID) (*controlmodel.AutomationRun, error) {
+	if strings.TrimSpace(key) == "" || len(key) > 200 {
+		return nil, fmt.Errorf("idempotency key is required and must not exceed 200 characters")
+	}
+	rule, err := s.Store.Collaboration().GetAutomation(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	NormalizeLegacy(rule)
+	run := &controlmodel.AutomationRun{AutomationID: id, Tenant: rule.Tenant, Namespace: rule.Namespace, TriggerType: rule.TriggerType, TriggerRef: ref, IdempotencyKey: source + ":" + key, Input: input}
+	run.Snapshot = rule
+	run.Source = source
+	run.TriggerID = triggerID
+	run.RerunOf = rerunOf
+	run, _, err = s.Store.Collaboration().AdmitAutomationRun(ctx, store.AutomationAdmission{Run: run, ExpectedVersion: rule.Version})
+	return run, err
+}
 func (s *Service) RunDue(ctx context.Context, now time.Time, limit int) (int, error) {
 	enabled := true
-	items, err := s.Store.Collaboration().ListAutomations(ctx, store.AutomationFilter{Enabled: &enabled, DueBefore: &now, Limit: limit})
+	rules, err := s.Store.Collaboration().ListAutomations(ctx, store.AutomationFilter{Enabled: &enabled, DueBefore: &now, Limit: limit})
 	if err != nil {
 		return 0, err
 	}
 	count := 0
-	for _, item := range items {
-		if item.TriggerType != controlmodel.AutomationTriggerCron || item.NextRunAt == nil {
-			continue
+	for _, rule := range rules {
+		if rule.Triggers == nil {
+			NormalizeLegacy(rule)
+			rule, err = s.Store.Collaboration().UpdateAutomation(ctx, rule, rule.Version)
+			if err == store.ErrConflict {
+				continue
+			}
+			if err != nil {
+				return count, err
+			}
 		}
-		scheduled := *item.NextRunAt
-		next, nextErr := nextCron(item.TriggerConfig, scheduled)
-		if nextErr != nil {
-			continue
-		}
-		copy := *item
-		copy.NextRunAt = &next
-		if _, updateErr := s.Store.Collaboration().UpdateAutomation(ctx, &copy, item.Version); updateErr != nil {
-			continue
-		}
-		key := "cron:" + scheduled.UTC().Format(time.RFC3339Nano)
-		if _, triggerErr := s.Trigger(ctx, item.ID, key, key, nil); triggerErr == nil {
-			count++
+		for _, t := range rule.Triggers {
+			if !t.Enabled || t.Type != controlmodel.AutomationTriggerCron || t.NextRunAt == nil || t.NextRunAt.After(now) {
+				continue
+			}
+			schedule, err := ParseSchedule(t.Schedule, t.Timezone)
+			if err != nil {
+				return count, err
+			}
+			observed := *t.NextRunAt
+			planned := observed
+			floor := now.Add(-24 * time.Hour)
+			if planned.Before(floor) {
+				planned = schedule.Next(floor)
+			}
+			expired := planned.IsZero() || planned.After(now)
+			if expired {
+				planned = observed
+			} else {
+				for n := schedule.Next(planned); !n.IsZero() && !n.After(now); n = schedule.Next(planned) {
+					planned = n
+				}
+			}
+			next := schedule.Next(now)
+			if next.IsZero() {
+				return count, fmt.Errorf("schedule has no future occurrence")
+			}
+			run := &controlmodel.AutomationRun{AutomationID: rule.ID, Tenant: rule.Tenant, Namespace: rule.Namespace, TriggerType: t.Type, IdempotencyKey: "cron:" + t.ID.String() + ":" + planned.UTC().Format(time.RFC3339Nano)}
+			run.Snapshot = rule
+			run.Source = "schedule"
+			run.TriggerID = t.ID
+			run.ScheduledAt = &planned
+			if expired {
+				run.ErrorCode = "misfire_expired"
+				run.ErrorMessage = "The missed occurrence is outside the 24 hour catch-up window."
+			}
+			_, fresh, e := s.Store.Collaboration().AdmitAutomationRun(ctx, store.AutomationAdmission{Run: run, ExpectedVersion: rule.Version, NextRunAt: &next, ObservedScheduledAt: &observed})
+			if e != nil && e != store.ErrConflict {
+				return count, e
+			}
+			if e == nil && fresh {
+				count++
+			}
 		}
 	}
 	return count, nil
-}
-
-func validateAction(kind controlmodel.AutomationActionType, raw json.RawMessage) error {
-	switch kind {
-	case controlmodel.AutomationCreateIssue:
-		var v IssueAction
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return err
-		}
-		if strings.TrimSpace(v.Title) == "" {
-			return fmt.Errorf("actionConfig.title is required")
-		}
-	case controlmodel.AutomationAddComment:
-		var v CommentAction
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return err
-		}
-		if v.IssueID == uuid.Nil || strings.TrimSpace(v.Content) == "" {
-			return fmt.Errorf("actionConfig.issueId and content are required")
-		}
-	case controlmodel.AutomationStartRun:
-		var v StartOrchestrationAction
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return err
-		}
-		if v.DefinitionID == uuid.Nil || (v.IssueID == nil) == (v.Issue == nil) {
-			return fmt.Errorf("actionConfig.definitionId and exactly one of issueId or issue are required")
-		}
-	case controlmodel.AutomationSignalRun:
-		var v SignalOrchestrationAction
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return err
-		}
-		if v.RunID == uuid.Nil || strings.TrimSpace(v.Name) == "" {
-			return fmt.Errorf("actionConfig.runId and name are required")
-		}
-	default:
-		return fmt.Errorf("unsupported actionType %q", kind)
-	}
-	return nil
-}
-
-// nextCron intentionally supports deterministic, reviewable schedules without
-// embedding a second workflow engine: @every duration, */N minutes, or exact
-// "minute hour * * *" UTC schedules.
-func nextCron(raw json.RawMessage, after time.Time) (time.Time, error) {
-	var config struct {
-		Schedule string `json:"schedule"`
-	}
-	if err := json.Unmarshal(raw, &config); err != nil {
-		return time.Time{}, err
-	}
-	schedule := strings.TrimSpace(config.Schedule)
-	if strings.HasPrefix(schedule, "@every ") {
-		d, err := time.ParseDuration(strings.TrimSpace(strings.TrimPrefix(schedule, "@every ")))
-		if err != nil || d < time.Minute {
-			return time.Time{}, fmt.Errorf("cron @every duration must be at least one minute")
-		}
-		return after.Add(d), nil
-	}
-	parts := strings.Fields(schedule)
-	if len(parts) != 5 || parts[2] != "*" || parts[3] != "*" || parts[4] != "*" {
-		return time.Time{}, fmt.Errorf("cron schedule must be @every, */N * * * *, or minute hour * * *")
-	}
-	base := after.UTC().Truncate(time.Minute).Add(time.Minute)
-	if strings.HasPrefix(parts[0], "*/") && parts[1] == "*" {
-		n, err := strconv.Atoi(strings.TrimPrefix(parts[0], "*/"))
-		if err != nil || n < 1 || n > 59 {
-			return time.Time{}, fmt.Errorf("invalid cron minute interval")
-		}
-		for i := 0; i <= 60; i++ {
-			if base.Minute()%n == 0 {
-				return base, nil
-			}
-			base = base.Add(time.Minute)
-		}
-	}
-	minute, mErr := strconv.Atoi(parts[0])
-	hour, hErr := strconv.Atoi(parts[1])
-	if mErr != nil || hErr != nil || minute < 0 || minute > 59 || hour < 0 || hour > 23 {
-		return time.Time{}, fmt.Errorf("invalid cron minute/hour")
-	}
-	candidate := time.Date(base.Year(), base.Month(), base.Day(), hour, minute, 0, 0, time.UTC)
-	if candidate.Before(base) {
-		candidate = candidate.Add(24 * time.Hour)
-	}
-	return candidate, nil
 }

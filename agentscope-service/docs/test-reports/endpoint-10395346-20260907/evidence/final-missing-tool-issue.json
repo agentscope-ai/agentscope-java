@@ -1,0 +1,460 @@
+{
+  "at": "2026-09-07T12:31:34.263667+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/e53898ac-4554-5aa0-bd5a-ea2a099b72a5/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "9b1c0549-3571-46c7-92df-f881f0c3d42a",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "createdAt": "2026-09-07T20:27:54.924452+08:00"
+      },
+      {
+        "id": "7e2184cc-4ba8-4daa-ad94-4e5c7be541ce",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+        },
+        "action": "issue.updated",
+        "objectType": "issue",
+        "objectRef": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "createdAt": "2026-09-07T20:27:54.929358+08:00"
+      },
+      {
+        "id": "54c5e8fd-c579-42d2-9023-d074649a353c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "a7d6d87e-c220-53f3-9080-8ee3aae16726",
+        "createdAt": "2026-09-07T20:28:08.919446+08:00"
+      },
+      {
+        "id": "b68d1856-9452-4db9-9fc2-a3ed2ba3468c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:8035ee1d-f20c-50d6-a482-ffc41efc8d53"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: TOOL_MISSING"
+        },
+        "createdAt": "2026-09-07T20:28:08.934174+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "a7d6d87e-c220-53f3-9080-8ee3aae16726",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "threadRootId": "a7d6d87e-c220-53f3-9080-8ee3aae16726",
+        "author": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "content": "本次团队处理总结\n\n处理结果：blocked（未能完成）\n\n原因：Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.\n错误代码：TOOL_MISSING\n\n下一步：请先解决上述未完成原因（补充所需输入或修复执行问题），再重试未完成的任务；已完成内容保留。",
+        "type": "status",
+        "sourceTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "sourceAttemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "version": 1,
+        "createdAt": "2026-09-07T20:28:08.914554+08:00",
+        "updatedAt": "2026-09-07T20:28:08.914554+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-07T12:31:34.270281Z",
+    "issue": {
+      "id": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "Endpoint job",
+      "description": "请求输入：\n\n```json\n{\n  \"prompt\": \"必须调用工具 missing_web_search_20260907 查询今天的手机行业新闻，并提供实际查询结果。此工具未配置且本次禁止替代工具。如果缺少此工具，明确以 blocked/failed 结束并说明缺失工具，不要伪造结果，也不要索要 API 参数。\"\n}\n```",
+      "status": "blocked",
+      "priority": "normal",
+      "kind": "endpoint_job",
+      "visibility": "operational",
+      "completionPolicy": "automatic",
+      "assigneeType": "team",
+      "assigneeRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "executionTargetType": "team",
+      "executionTargetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "creator": {
+        "type": "system",
+        "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "sourceType": "endpoint",
+      "sourceRef": "c38dbcb2-8c1b-4f09-ba05-34cd519cdb93",
+      "version": 4,
+      "createdAt": "2026-09-07T20:27:54.923233+08:00",
+      "updatedAt": "2026-09-07T20:28:08.932368+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "6c4d03f2-13ca-4536-8d04-8faa81510f0c",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "system",
+              "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+            },
+            "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "idempotencyKey": "agent-task-queued:22d78dda-d868-4002-8995-67789923effc",
+            "occurredAt": "2026-09-07T20:27:54.937971+08:00"
+          },
+          {
+            "id": "645d9c92-a76a-4655-abdf-27106d967c93",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+            "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "idempotencyKey": "attempt-queued:b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "occurredAt": "2026-09-07T20:27:54.959898+08:00"
+          },
+          {
+            "id": "4a3f8ec9-c6d2-42b6-b546-77ec31d2b263",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+            "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "attempt-running:b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "occurredAt": "2026-09-07T20:27:55.025255+08:00"
+          },
+          {
+            "id": "804a5218-ee05-40f7-bbce-c3c21696e7b2",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+            "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "payload": {
+              "code": "TOOL_MISSING",
+              "message": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool."
+            },
+            "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "idempotencyKey": "attempt-failed:b924a0b2-1a09-4528-adda-3f1dd833901c",
+            "occurredAt": "2026-09-07T20:28:08.901936+08:00"
+          },
+          {
+            "id": "0d0d5674-a185-4bec-95ff-0708d2895611",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+            "type": "node.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+            },
+            "idempotencyKey": "coordinator-fail:4dab4317-a270-51f1-ad50-29c0727e3eda",
+            "occurredAt": "2026-09-07T20:28:08.922745+08:00"
+          },
+          {
+            "id": "d7688ed7-4dd9-4cdf-8d3d-02e041835bf0",
+            "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "TOOL_MISSING",
+              "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool."
+            },
+            "idempotencyKey": "run-failed:8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "occurredAt": "2026-09-07T20:28:08.927304+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+            "mode": "adaptive",
+            "triggerType": "endpoint",
+            "triggerRef": "7b6a315f-4f1c-446d-83a7-fad175d73413",
+            "idempotencyKey": "7b6a315f-4f1c-446d-83a7-fad175d73413:endpoint-input-20260907-v2-negative",
+            "input": {
+              "prompt": "必须调用工具 missing_web_search_20260907 查询今天的手机行业新闻，并提供实际查询结果。此工具未配置且本次禁止替代工具。如果缺少此工具，明确以 blocked/failed 结束并说明缺失工具，不要伪造结果，也不要索要 API 参数。"
+            },
+            "state": "failed",
+            "failureCode": "TOOL_MISSING",
+            "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+            "version": 5,
+            "createdBy": {
+              "type": "system",
+              "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+            },
+            "createdAt": "2026-09-07T20:27:54.93539+08:00",
+            "updatedAt": "2026-09-07T20:28:08.927304+08:00",
+            "startedAt": "2026-09-07T20:27:54.93539+08:00",
+            "completedAt": "2026-09-07T20:28:08.927304+08:00"
+          },
+          "nodes": [
+            {
+              "id": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+              "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "target",
+              "type": "team",
+              "role": "leader",
+              "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "TOOL_MISSING",
+              "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+              "version": 3,
+              "createdAt": "2026-09-07T20:27:54.937098+08:00",
+              "updatedAt": "2026-09-07T20:28:08.92214+08:00",
+              "startedAt": "2026-09-07T20:27:54.943688+08:00",
+              "completedAt": "2026-09-07T20:28:08.92214+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "22d78dda-d868-4002-8995-67789923effc",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+              "orchestrationRunId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+              "runNodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+              "currentAttemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "system",
+                "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+              },
+              "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+              "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_8d684e77f1df",
+                "resolvedAt": "2026-09-07T12:27:54.960316Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_8d684e77f1df",
+              "errorCode": "TOOL_MISSING",
+              "errorMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+              "version": 4,
+              "createdAt": "2026-09-07T20:27:54.937971+08:00",
+              "dispatchedAt": "2026-09-07T20:27:54.959898+08:00",
+              "startedAt": "2026-09-07T20:27:55.025255+08:00",
+              "completedAt": "2026-09-07T20:28:08.901936+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+              "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+              "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+              "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+              "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+                  "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+                },
+                "sessionId": "sess_8d684e77f1df",
+                "resolvedAt": "2026-09-07T12:27:54.960316Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+              "sessionId": "sess_8d684e77f1df",
+              "sessionRef": "90285ecd-af85-4acc-a555-571e2fd55e9e",
+              "turnId": "b1a99363-a977-4054-ba77-6498ade94835",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T20:28:08.868463+08:00",
+              "failureCode": "TOOL_MISSING",
+              "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+              "version": 16,
+              "createdAt": "2026-09-07T20:27:54.959898+08:00",
+              "updatedAt": "2026-09-07T20:28:08.901936+08:00",
+              "startedAt": "2026-09-07T20:27:55.025255+08:00",
+              "completedAt": "2026-09-07T20:28:08.901936+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "mode": "adaptive",
+        "triggerType": "endpoint",
+        "triggerRef": "7b6a315f-4f1c-446d-83a7-fad175d73413",
+        "idempotencyKey": "7b6a315f-4f1c-446d-83a7-fad175d73413:endpoint-input-20260907-v2-negative",
+        "input": {
+          "prompt": "必须调用工具 missing_web_search_20260907 查询今天的手机行业新闻，并提供实际查询结果。此工具未配置且本次禁止替代工具。如果缺少此工具，明确以 blocked/failed 结束并说明缺失工具，不要伪造结果，也不要索要 API 参数。"
+        },
+        "state": "failed",
+        "failureCode": "TOOL_MISSING",
+        "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+        "version": 5,
+        "createdBy": {
+          "type": "system",
+          "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+        },
+        "createdAt": "2026-09-07T20:27:54.93539+08:00",
+        "updatedAt": "2026-09-07T20:28:08.927304+08:00",
+        "startedAt": "2026-09-07T20:27:54.93539+08:00",
+        "completedAt": "2026-09-07T20:28:08.927304+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "22d78dda-d868-4002-8995-67789923effc",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+        "orchestrationRunId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "runNodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "currentAttemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "system",
+          "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+        },
+        "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_8d684e77f1df",
+          "resolvedAt": "2026-09-07T12:27:54.960316Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_8d684e77f1df",
+        "errorCode": "TOOL_MISSING",
+        "errorMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+        "version": 4,
+        "createdAt": "2026-09-07T20:27:54.937971+08:00",
+        "dispatchedAt": "2026-09-07T20:27:54.959898+08:00",
+        "startedAt": "2026-09-07T20:27:55.025255+08:00",
+        "completedAt": "2026-09-07T20:28:08.901936+08:00"
+      }
+    ]
+  }
+}

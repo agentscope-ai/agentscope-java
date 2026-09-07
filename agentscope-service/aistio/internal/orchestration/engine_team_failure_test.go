@@ -72,6 +72,13 @@ func TestAdaptiveWorkerCapabilityFailureBlocksChildAndWakesLeader(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	root, err = st.Collaboration().GetIssue(ctx, root.ID)
+	if err == nil {
+		root, err = st.Collaboration().TransitionIssue(ctx, root.ID, root.Version, controlmodel.IssueBlocked, root.Creator, "waiting for a human decision")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = (&Service{Store: st}).CompleteCoordinatorNode(ctx, decisionTask.ID,
 		[]byte(`{"summary":"partial result"}`), controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"}); err != nil {
 		t.Fatal(err)
@@ -79,6 +86,10 @@ func TestAdaptiveWorkerCapabilityFailureBlocksChildAndWakesLeader(t *testing.T) 
 	run, err = st.Orchestration().GetRun(ctx, run.ID)
 	if err != nil || run.State != controlmodel.RunPartialSucceeded {
 		t.Fatalf("leader partial-success decision did not converge Run: run=%+v err=%v", run, err)
+	}
+	root, err = st.Collaboration().GetIssue(ctx, root.ID)
+	if err != nil || root.Status != controlmodel.IssueInReview {
+		t.Fatalf("resolved child left root blocked: root=%+v err=%v", root, err)
 	}
 }
 

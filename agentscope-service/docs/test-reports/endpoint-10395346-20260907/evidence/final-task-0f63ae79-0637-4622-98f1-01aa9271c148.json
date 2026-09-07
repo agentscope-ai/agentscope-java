@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-07T12:31:34.171821+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/0f63ae79-0637-4622-98f1-01aa9271c148",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "657f90fe-1d4c-5433-b226-a59e9e21c0d3",
+      "orchestrationRunId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "runNodeId": "b70c5a4b-4961-58cc-b0f0-b7d497af1be7",
+      "currentAttemptId": "f8ad05ec-449b-41a2-86a5-699b72492f60",
+      "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "system",
+        "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+      },
+      "causationId": "b70c5a4b-4961-58cc-b0f0-b7d497af1be7",
+      "correlationId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+          "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "sessionId": "sess_651f8b86b39f",
+        "resolvedAt": "2026-09-07T12:27:54.503445Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_651f8b86b39f",
+      "result": {
+        "outcome": "waiting",
+        "summary": "Delegated the task of listing current directory and composing a poem to agent b86719e8-f495-402f-bffa-b6d76eee8965. Awaiting results.",
+        "waitingForTaskIds": [
+          "a68779a6-fd32-4485-8a61-6c393101d851"
+        ]
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T20:27:54.463423+08:00",
+      "dispatchedAt": "2026-09-07T20:27:54.503099+08:00",
+      "startedAt": "2026-09-07T20:27:54.884189+08:00",
+      "completedAt": "2026-09-07T20:28:18.879611+08:00"
+    }
+  }
+}

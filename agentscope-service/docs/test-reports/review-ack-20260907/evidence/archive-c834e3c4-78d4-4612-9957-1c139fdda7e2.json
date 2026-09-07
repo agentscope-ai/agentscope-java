@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-07T15:35:22.420507+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/c834e3c4-78d4-4612-9957-1c139fdda7e2/archive",
+  "request": {
+    "expectedVersion": 5
+  },
+  "status": 409,
+  "response": {
+    "error": "store: conflict"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+  "initialRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+  "initialRunState": "waiting",
+  "children": {
+    "B": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+    "A": "1a6465d5-f287-451a-93d1-b7ae42dbcb82"
+  }
+}

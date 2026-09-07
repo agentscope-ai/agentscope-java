@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-07T12:27:54.414402+00:00",
+  "method": "POST",
+  "path": "/api/v1/endpoints",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "name": "endpoint-input-20260907-v2",
+    "slug": "endpoint-input-20260907-v2",
+    "targetType": "team",
+    "targetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+    "invocationMode": "job"
+  },
+  "status": 201,
+  "response": {
+    "credential": "[REDACTED]",
+    "credentialResource": "[REDACTED]",
+    "endpoint": {
+      "id": "7b6a315f-4f1c-446d-83a7-fad175d73413",
+      "tenant": "default",
+      "namespace": "default",
+      "name": "endpoint-input-20260907-v2",
+      "slug": "endpoint-input-20260907-v2",
+      "targetType": "team",
+      "targetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "invocationMode": "job",
+      "eventSchemaVersion": "v1",
+      "timeoutSeconds": 300,
+      "maxPayloadBytes": 1048576,
+      "authPolicy": {
+        "type": "api_key"
+      },
+      "status": "draft",
+      "version": 1,
+      "createdAt": "2026-09-07T20:27:54.426842+08:00",
+      "updatedAt": "2026-09-07T20:27:54.426842+08:00"
+    }
+  }
+}

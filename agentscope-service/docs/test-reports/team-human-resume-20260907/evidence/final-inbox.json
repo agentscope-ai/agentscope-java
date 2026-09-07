@@ -1,0 +1,187 @@
+{
+  "at": "2026-09-07T13:38:49.575533+00:00",
+  "method": "GET",
+  "path": "/api/v1/inbox?tenant=default&namespace=default&limit=100",
+  "request": null,
+  "status": 200,
+  "response": {
+    "hasMore": false,
+    "items": [
+      {
+        "id": "e7e6c93e-f518-4ebc-8ce5-f0d3732269fb",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "review_request",
+        "severity": "attention",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:fef4eb51-40a1-4e74-8cf2-8546ce105e82"
+        },
+        "title": "Review requested: IT human-resume 20260907：双子任务补充输入后自动汇总",
+        "body": "execution completed; awaiting acceptance",
+        "details": {
+          "reason": "execution completed; awaiting acceptance",
+          "status": "in_review",
+          "statusVersion": 7,
+          "previousStatus": "in_progress"
+        },
+        "read": false,
+        "archived": false,
+        "needsAction": true,
+        "dedupeKey": "issue-status:e9039b21-d163-4d61-be6a-199c3ed3ea6f:7:default:admin",
+        "createdAt": "2026-09-07T21:37:06.211465+08:00"
+      },
+      {
+        "id": "bea6d3b4-f1ac-4c80-9d29-dcfa0217e013",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_reopened",
+        "severity": "info",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:fef4eb51-40a1-4e74-8cf2-8546ce105e82"
+        },
+        "title": "Work resumed: IT human-resume 20260907：双子任务补充输入后自动汇总",
+        "body": "Team completed after human input; all child decisions resolved",
+        "details": {
+          "reason": "Team completed after human input; all child decisions resolved",
+          "status": "in_progress",
+          "statusVersion": 6,
+          "previousStatus": "blocked"
+        },
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "issue-status:e9039b21-d163-4d61-be6a-199c3ed3ea6f:6:default:admin",
+        "createdAt": "2026-09-07T21:37:06.198934+08:00"
+      },
+      {
+        "id": "dd10e864-e35e-44ae-bc81-84707a3395a6",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+        "commentId": "2b350234-1ac4-44d7-b969-2b018dc9be4b",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10",
+        "body": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:33:17.192006+08:00",
+        "dedupeKey": "comment:2b350234-1ac4-44d7-b969-2b018dc9be4b:admin",
+        "createdAt": "2026-09-07T21:30:19.533691+08:00"
+      },
+      {
+        "id": "3f32a5cb-6b5a-4ae1-9ce3-11951ab47eef",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+        "commentId": "95e0759a-0a90-4e03-83d6-ad18ca865f33",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2",
+        "body": "Delegated worker could not complete this Issue due to a missing input: ALPHA 未提供. Please provide the missing input ALPHA so that we can proceed with the task.",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:33:18.93776+08:00",
+        "dedupeKey": "comment:95e0759a-0a90-4e03-83d6-ad18ca865f33:admin",
+        "createdAt": "2026-09-07T21:29:34.683138+08:00"
+      },
+      {
+        "id": "65882b88-927c-4dac-bb61-68fba81d65b6",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_reopened",
+        "severity": "info",
+        "issueId": "5e660a82-72da-4a31-8fed-bb7c037fc006",
+        "actor": {
+          "type": "system",
+          "ref": "repair:team-continuation"
+        },
+        "title": "Work resumed: 帮我调研微服务和新能源汽车发展趋势",
+        "body": "Human input resumed delegated Team work",
+        "details": {
+          "reason": "Human input resumed delegated Team work",
+          "status": "in_progress",
+          "statusVersion": 6,
+          "previousStatus": "blocked"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:13:49.624072+08:00",
+        "dedupeKey": "issue-status:5e660a82-72da-4a31-8fed-bb7c037fc006:6:default:admin",
+        "createdAt": "2026-09-07T21:12:28.583329+08:00"
+      },
+      {
+        "id": "11b94175-f39c-4edf-a7af-2056c7f436fd",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "aad6727d-ba57-4709-b83c-a375762c3cf4",
+        "commentId": "8ae7fb3b-8ed8-409e-9282-75a3d0fadd33",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "调研微服务的发展趋势",
+        "body": "缺少 TAVILY_API_KEY 导致无法执行网络搜索以收集关于微服务架构的相关信息。请提供 TAVILY_API_KEY 凭证以继续此任务。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T20:52:21.870695+08:00",
+        "dedupeKey": "comment:8ae7fb3b-8ed8-409e-9282-75a3d0fadd33:admin",
+        "createdAt": "2026-09-07T20:51:57.64185+08:00"
+      },
+      {
+        "id": "73938904-0344-4647-a4fb-2e7db0c859a7",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "87938322-9bfd-4785-b140-ba60fc74a179",
+        "commentId": "5c8fd4c4-72d0-4f9b-8b30-d647ac03a68e",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "调研新能源汽车的发展趋势",
+        "body": "由于缺少 `TAVILY_API_KEY` 凭证，导致无法执行 `web_search` 操作，信息收集任务因此被阻塞。请提供 `TAVILY_API_KEY` 凭证以便我们能够继续完成信息收集任务。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T20:51:58.801019+08:00",
+        "dedupeKey": "comment:5c8fd4c4-72d0-4f9b-8b30-d647ac03a68e:admin",
+        "createdAt": "2026-09-07T20:50:57.479139+08:00"
+      }
+    ],
+    "nextCursor": ""
+  }
+}

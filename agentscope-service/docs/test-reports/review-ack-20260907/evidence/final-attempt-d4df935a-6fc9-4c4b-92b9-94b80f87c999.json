@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T15:39:15.668241+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+      "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+      "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+      "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+      "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+          "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "sessionId": "sess_10cc7409b877",
+        "resolvedAt": "2026-09-07T15:36:45.646063Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "sessionId": "sess_10cc7409b877",
+      "sessionRef": "ef9fb48d-6856-4689-bda7-c6b1cc9a1806",
+      "turnId": "44aa40c3-0ff4-48af-8ab9-1d8870cb1e65",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T23:36:55.355739+08:00",
+      "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+      "version": 13,
+      "createdAt": "2026-09-07T23:36:45.645476+08:00",
+      "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+      "startedAt": "2026-09-07T23:36:45.98371+08:00",
+      "completedAt": "2026-09-07T23:36:55.385863+08:00"
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "at": "2026-09-07T13:38:49.733088+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/068e2154-5021-436a-bcd6-49f4296f0bf1",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "068e2154-5021-436a-bcd6-49f4296f0bf1",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "87938322-9bfd-4785-b140-ba60fc74a179",
+      "orchestrationRunId": "7ab49058-e5ae-46b2-9aab-5739f3bfb7ee",
+      "runNodeId": "6a381ab6-94a8-4e8b-86cb-ab224e66f63e",
+      "currentAttemptId": "0061a574-b876-4b5a-99fe-e80f8f8db15f",
+      "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "18c83f27-06b6-409d-86ea-f91761a1873d",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "18c83f27-06b6-409d-86ea-f91761a1873d",
+      "correlationId": "87938322-9bfd-4785-b140-ba60fc74a179",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+          "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "sessionId": "sess_442db51a0565",
+        "resolvedAt": "2026-09-07T12:52:58.559656Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_442db51a0565",
+      "result": {
+        "summary": "基于已有知识提供了一份关于新能源汽车行业（如电动汽车）的最新发展情况、技术进步以及市场预测的信息总结。"
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T20:52:58.417521+08:00",
+      "dispatchedAt": "2026-09-07T20:52:58.55942+08:00",
+      "startedAt": "2026-09-07T20:52:58.685134+08:00",
+      "completedAt": "2026-09-07T20:53:23.330228+08:00",
+      "inputs": [
+        {
+          "id": "c6406a99-dc85-4c9b-a505-3ee1d4e33f7e",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "068e2154-5021-436a-bcd6-49f4296f0bf1",
+          "commentId": "18c83f27-06b6-409d-86ea-f91761a1873d",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T20:52:58.55942+08:00",
+          "processedAt": "2026-09-07T20:53:23.330228+08:00",
+          "responseCommentId": "c85caedd-5529-46de-a3fd-b534a562c8c9",
+          "attempts": 0,
+          "createdAt": "2026-09-07T20:52:58.417521+08:00"
+        }
+      ]
+    }
+  }
+}

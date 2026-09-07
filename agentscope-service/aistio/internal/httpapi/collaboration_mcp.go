@@ -99,6 +99,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "artifact.upload", Description: "Upload base64 bytes into shared artifact storage and link them to this task or Issue.", InputSchema: object(map[string]any{"filename": stringProp, "contentBase64": stringProp, "contentType": stringProp, "targetType": stringProp, "targetRef": stringProp}, "filename", "contentBase64")},
 		{Name: "artifact.download", Description: "Download a task-visible Artifact as base64 bytes.", InputSchema: object(map[string]any{"artifactId": stringProp}, "artifactId")},
 		{Name: "task.get", Description: "Read this AgentTask, its input comments, and for Team leaders the coordinator Issue plus every child result. Omit taskId or use \"current\" for the token-scoped task.", InputSchema: object(map[string]any{"taskId": stringProp})},
+		{Name: "task.begin_work", Description: "For review feedback ONLY: reopen work when the CURRENT human comment explicitly requests a concrete change or new deliverable. requestQuote must be an exact quote from that current comment. Never use for praise, thanks, approval or discussion, nor to repeat old Issue requirements. After success perform only the requested new work.", InputSchema: object(map[string]any{"requestQuote": stringProp}, "requestQuote")},
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a meaningful intermediate progress Comment for a long-running AgentTask. Do not repeat the final conclusion that task.complete will publish.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
@@ -123,6 +124,9 @@ func collaborationMCPToolsForTask(task *controlmodel.AgentTask) []mcpTool {
 	}
 	filtered := make([]mcpTool, 0, len(tools))
 	for _, tool := range tools {
+		if task.TriggerType == controlmodel.AgentTaskReviewComment && (tool.Name == "task.respond" || tool.Name == "task.progress" || tool.Name == "issue.comment.add") {
+			continue
+		}
 		switch tool.Name {
 		case "task.respond":
 			// A Team worker result is a synchronization signal to its leader. It
@@ -258,9 +262,20 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 	if requested := stringArg(args, "issueId"); requested != "" && requested != task.IssueID.String() {
 		return nil, fmt.Errorf("%w: this tool is scoped to current issueId %s; omit issueId. Decide this child with issue.accept/cancel, then read task.get coordinatorChildren for synthesis", store.ErrNotFound, task.IssueID)
 	}
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		switch name {
+		case "issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan", "run.signal", "approval.request":
+			return nil, fmt.Errorf("this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions")
+		case "issue.comment.add", "task.progress", "task.respond":
+			return nil, fmt.Errorf("publish this review reply once with task.complete(summary=...,outcome=succeeded); do not route another comment or publish a new deliverable")
+		}
+	}
 	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
 	svc := s.collaborationService()
 	switch name {
+	case "task.begin_work":
+		updated, err := s.store.Collaboration().BeginReviewWork(ctx, task.ID, task.Version, stringArg(args, "requestQuote"))
+		return map[string]any{"task": updated}, err
 	case "issue.get":
 		issue, err := s.store.Collaboration().GetIssue(ctx, task.IssueID)
 		if err != nil {
@@ -331,7 +346,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		}
 		return map[string]any{"task": envelope.Task, "issue": envelope.Issue, "inputs": envelope.Inputs,
 			"currentRequest": envelope.CurrentRequest, "replyToOwnDelegation": envelope.ReplyToOwnDelegation, "initiatingRequest": envelope.InitiatingRequest, "requestContext": envelope.RequestContext,
-			"coordinatorIssue": envelope.CoordinatorIssue, "coordinatorChildren": envelope.CoordinatorChildren}, nil
+			"coordinatorIssue": envelope.CoordinatorIssue, "coordinatorChildren": envelope.CoordinatorChildren, "reviewResults": envelope.ReviewResults}, nil
 	case "task.start":
 		current, err := s.store.Collaboration().GetAgentTask(ctx, task.ID)
 		if err != nil {
@@ -390,6 +405,9 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err = s.validateMCPTeamLeaderCompletion(ctx, current); err != nil {
 			return nil, err
 		}
+		if stringArg(args, "summary") == "" {
+			args["summary"] = stringArg(args, "message")
+		}
 		result, _ := json.Marshal(args["result"])
 		usage, _ := json.Marshal(args["usage"])
 		completion := store.TaskCompletion{ExpectedVersion: current.Version, Summary: stringArg(args, "summary"), Result: result,
@@ -409,7 +427,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
-		if current.LeaderTask && current.TeamID != nil {
+		if current.LeaderTask && current.TeamID != nil && current.TriggerType != controlmodel.AgentTaskReviewComment {
 			pending, pendingErr := svc.PendingDelegationTasks(ctx, current)
 			if pendingErr != nil {
 				return nil, pendingErr
@@ -486,7 +504,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 }
 
 func (s *Server) validateMCPTeamLeaderCompletion(ctx context.Context, task *controlmodel.AgentTask) error {
-	if task == nil || !task.LeaderTask || task.TeamID == nil {
+	if task == nil || task.TriggerType == controlmodel.AgentTaskReviewComment || !task.LeaderTask || task.TeamID == nil {
 		return nil
 	}
 	node, err := s.store.Orchestration().GetNode(ctx, task.RunNodeID)

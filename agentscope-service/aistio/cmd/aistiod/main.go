@@ -675,12 +675,12 @@ func main() {
 	collaborationEvents := realtime.NewHub()
 
 	go func() {
-		worker := &automation.Worker{Service: &automation.Service{Store: runtimeStore}, Interval: 15 * time.Second, Batch: 100}
+		worker := &automation.Worker{Service: &automation.Service{Store: runtimeStore}, Interval: 2 * time.Second, Batch: 100}
 		if err := worker.Start(ctx); err != nil {
 			logger.Error(err, "automation worker stopped")
 		}
 	}()
-	logger.Info("automation worker started", "interval", 15*time.Second)
+	logger.Info("automation worker started", "interval", 2*time.Second)
 
 	go func() {
 		worker := &orchestration.Worker{Store: runtimeStore, Interval: time.Second, Batch: 200}

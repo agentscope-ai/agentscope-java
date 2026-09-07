@@ -1,0 +1,27 @@
+{
+  "issue": {
+    "id": "01c41567-ef1c-4786-8325-a2d70eae1823",
+    "tenant": "default",
+    "namespace": "default",
+    "title": "[UI verification] Sidebar team assignment 20260907",
+    "description": "这是 Issue 详情页分配能力的最小验证。请直接返回 SIDEBAR_TEAM_OK 作为最终结果并完成本次执行。不需要联网、访问工作区、修改文件或委派子任务。",
+    "status": "done",
+    "priority": "normal",
+    "kind": "user_work",
+    "visibility": "work_hub",
+    "completionPolicy": "review",
+    "assigneeType": "team",
+    "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+    "creator": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "acceptanceCriteria": {},
+    "contextRefs": [],
+    "version": 10,
+    "createdAt": "2026-09-07T23:27:55.018696+08:00",
+    "updatedAt": "2026-09-07T23:40:10.592814+08:00",
+    "resolvedAt": "2026-09-07T23:40:10.578866+08:00",
+    "archivedAt": "2026-09-07T23:40:10.592814+08:00"
+  }
+}

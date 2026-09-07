@@ -1,0 +1,30 @@
+{
+  "endpoint": {
+    "id": "7b6a315f-4f1c-446d-83a7-fad175d73413",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "endpoint-input-20260907-v2",
+    "slug": "endpoint-input-20260907-v2",
+    "targetType": "team",
+    "targetRef": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+    "invocationMode": "job",
+    "eventSchemaVersion": "v1",
+    "timeoutSeconds": 300,
+    "maxPayloadBytes": 1048576,
+    "authPolicy": {
+      "type": "api_key"
+    },
+    "status": "draft",
+    "version": 1,
+    "createdAt": "2026-09-07T20:27:54.426842+08:00",
+    "updatedAt": "2026-09-07T20:27:54.426842+08:00"
+  },
+  "invocation": {
+    "eventsUrl": "/invoke/v1/jobs/363cc71c-7a0a-47a7-b6ca-8d48641db96c/events",
+    "invocationId": "363cc71c-7a0a-47a7-b6ca-8d48641db96c",
+    "issueId": "657f90fe-1d4c-5433-b226-a59e9e21c0d3",
+    "runId": "cc07ed70-6646-5436-be4d-e686a262890b",
+    "status": "running",
+    "statusUrl": "/invoke/v1/jobs/363cc71c-7a0a-47a7-b6ca-8d48641db96c"
+  }
+}

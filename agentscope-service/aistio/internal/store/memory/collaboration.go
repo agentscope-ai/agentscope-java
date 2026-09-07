@@ -281,6 +281,12 @@ func (r *collaborationRepo) AssignIssue(_ context.Context, id uuid.UUID, expecte
 	if expectedVersion > 0 && issue.Version != expectedVersion {
 		return nil, nil, store.ErrConflict
 	}
+	if issue.ArchivedAt != nil ||
+		((assigneeType == controlmodel.AssigneeAgent || assigneeType == controlmodel.AssigneeTeam) &&
+			(issue.Status == controlmodel.IssueDone || issue.Status == controlmodel.IssueCancelled)) {
+		return nil, nil, store.ErrConflict
+	}
+
 	agentRef, teamID, leader := assigneeRef, (*uuid.UUID)(nil), false
 	if assigneeType == controlmodel.AssigneeTeam {
 		tid, err := uuid.Parse(assigneeRef)
@@ -1084,7 +1090,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(_ context.Context, id u
 	created.SourceTaskID = &task.ID
 	// A leader may finish a decision turn by yielding to delegated work.
 	// Keep that informational comment distinct from the worker's deliverable.
-	if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		created.Type = controlmodel.CommentGeneral
+	} else if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
 		created.Type = controlmodel.CommentResult
 	}
 	if attempt != nil {
@@ -1181,7 +1189,7 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 		return store.ErrNotFound
 	}
 	next := controlmodel.RunNodeSucceeded
-	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask {
+	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask && task.TriggerType != controlmodel.AgentTaskReviewComment {
 		next = controlmodel.RunNodeWaiting
 	}
 	coordinatorAlreadyTerminal := node.Type == controlmodel.RunNodeTeam && task.LeaderTask &&
@@ -2068,6 +2076,12 @@ func (r *collaborationRepo) routeTaskLocked(issue *controlmodel.Issue, comment *
 
 func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, triggerType string, triggerCommentID *uuid.UUID, teamID *uuid.UUID, teamRole string, leader bool, originator controlmodel.Actor, parentTaskID, retryOf *uuid.UUID) *controlmodel.AgentTask {
 	now := time.Now().UTC()
+	if retryOf != nil {
+		if previous := r.s.agentTasks[*retryOf]; previous != nil && previous.TriggerType == controlmodel.AgentTaskReviewComment {
+			triggerType = previous.TriggerType
+		}
+	}
+	triggerType = store.ReviewCommentTrigger(issue, triggerType, originator)
 	task := &controlmodel.AgentTask{ID: uuid.New(), Tenant: issue.Tenant, Namespace: issue.Namespace, IssueID: issue.ID, AgentRef: agentRef, Status: controlmodel.AgentTaskQueued, TriggerType: triggerType, TriggerCommentID: triggerCommentID, TeamID: teamID, TeamRole: teamRole, LeaderTask: leader, ParentTaskID: parentTaskID, DelegatedFromTaskID: parentTaskID, Originator: originator, RetryOfTaskID: retryOf, Version: 1, CreatedAt: now, CausationID: issue.ID.String(), CorrelationID: issue.ID.String()}
 	var source *controlmodel.AgentTask
 	if parentTaskID != nil {
@@ -2075,6 +2089,13 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	}
 	if originator.Type == controlmodel.ActorHuman {
 		task.AccountableHumanRef = originator.Ref
+	}
+	if issue.SourceType == "automation" && task.AccountableHumanRef == "" {
+		if runID, err := uuid.Parse(issue.SourceRef); err == nil {
+			if run := r.s.automationRuns[runID]; run != nil && run.Snapshot != nil && run.Snapshot.CreatedBy.Type == controlmodel.ActorHuman {
+				task.AccountableHumanRef = run.Snapshot.CreatedBy.Ref
+			}
+		}
 	}
 	if source == nil && issue.SourceType == "agent-task" {
 		if sourceID, err := uuid.Parse(issue.SourceRef); err == nil {
@@ -2105,6 +2126,9 @@ func (r *collaborationRepo) newTaskLocked(issue *controlmodel.Issue, agentRef, t
 	}
 	if retryOf != nil && r.s.agentTasks[*retryOf] != nil {
 		source = r.s.agentTasks[*retryOf]
+	}
+	if triggerType == controlmodel.AgentTaskReviewComment {
+		source = nil
 	}
 	var rerunOf *uuid.UUID
 	if source != nil {

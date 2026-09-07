@@ -25,13 +25,31 @@ func (s *Service) PendingDelegationTasks(ctx context.Context, task *controlmodel
 	if err != nil {
 		return nil, err
 	}
+	node, err := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
+	if err != nil {
+		return nil, err
+	}
+	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	decided := node.IssueID != nil && (*node.IssueID == task.IssueID || issue.Status == controlmodel.IssueDone || issue.Status == controlmodel.IssueCancelled)
 	delegated := map[uuid.UUID]bool{}
 	pending := []uuid.UUID{}
 	for _, candidate := range tasks {
 		if candidate.LeaderTask || candidate.TeamID == nil || *candidate.TeamID != *task.TeamID {
 			continue
 		}
-		if candidate.ParentTaskID != nil && *candidate.ParentTaskID == task.ID || candidate.DelegatedFromTaskID != nil && *candidate.DelegatedFromTaskID == task.ID {
+		ownDelegation := candidate.ParentTaskID != nil && *candidate.ParentTaskID == task.ID || candidate.DelegatedFromTaskID != nil && *candidate.DelegatedFromTaskID == task.ID
+		siblingWork := false
+		if decided && !controlmodel.IsAgentTaskTerminal(candidate.Status) {
+			child, loadErr := s.Store.Collaboration().GetIssue(ctx, candidate.IssueID)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			siblingWork = child.ParentIssueID != nil && node.IssueID != nil && *child.ParentIssueID == *node.IssueID
+		}
+		if ownDelegation || siblingWork {
 			delegated[candidate.ID] = true
 			if !controlmodel.IsAgentTaskTerminal(candidate.Status) {
 				pending = append(pending, candidate.ID)
@@ -40,6 +58,10 @@ func (s *Service) PendingDelegationTasks(ctx context.Context, task *controlmodel
 	}
 	for _, candidate := range tasks {
 		if candidate.ID == task.ID || !candidate.LeaderTask || candidate.RunNodeID != task.RunNodeID || controlmodel.IsAgentTaskTerminal(candidate.Status) || candidate.TriggerCommentID == nil {
+			continue
+		}
+		if decided && candidate.TeamID != nil && *candidate.TeamID == *task.TeamID && len(candidate.Inputs) > 0 {
+			pending = append(pending, candidate.ID)
 			continue
 		}
 		comment, err := s.Store.Collaboration().GetComment(ctx, *candidate.TriggerCommentID)
@@ -66,7 +88,7 @@ func (s *Service) WaitForDelegatedWork(ctx context.Context, taskID uuid.UUID, su
 		return nil, nil, err
 	}
 	if len(pending) == 0 {
-		return nil, nil, fmt.Errorf("waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result")
+		return nil, nil, fmt.Errorf("waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status")
 	}
 	summary = strings.TrimSpace(summary)
 	if summary == "" {

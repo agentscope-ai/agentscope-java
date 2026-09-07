@@ -24,6 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import reactor.test.StepVerifier;
@@ -68,6 +70,23 @@ class GatewayRouteTableTest {
                             assertThat(find(routes, "endpoint-invocation").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
                         })
+                .verifyComplete();
+    }
+
+    @Test
+    void automationWebhookUsesControlApiRoute() {
+        StepVerifier.create(
+                        routeLocator
+                                .getRoutes()
+                                .filter(route -> "control-api".equals(route.getId()))
+                                .flatMap(
+                                        route ->
+                                                route.getPredicate()
+                                                        .apply(
+                                                                MockServerWebExchange.from(
+                                                                        MockServerHttpRequest.post(
+                                                                                "/hooks/v1/automations/rule/trigger")))))
+                .expectNext(true)
                 .verifyComplete();
     }
 

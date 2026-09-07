@@ -373,6 +373,12 @@ func (r *collaborationRepo) AssignIssue(ctx context.Context, id uuid.UUID, expec
 	if expectedVersion > 0 && current.Version != expectedVersion {
 		return nil, nil, store.ErrConflict
 	}
+	if current.ArchivedAt != nil ||
+		((assigneeType == controlmodel.AssigneeAgent || assigneeType == controlmodel.AssigneeTeam) &&
+			(current.Status == controlmodel.IssueDone || current.Status == controlmodel.IssueCancelled)) {
+		return nil, nil, store.ErrConflict
+	}
+
 	agentRef, teamRole, leader := assigneeRef, "", false
 	var teamID *uuid.UUID
 	if assigneeType == controlmodel.AssigneeTeam {

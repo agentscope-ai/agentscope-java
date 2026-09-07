@@ -235,23 +235,8 @@ export interface Approval {
   createdAt: string;
   updatedAt: string;
 }
-export interface Automation {
-  id: string;
-  tenant: string;
-  namespace: string;
-  name: string;
-  description?: string;
-  enabled: boolean;
-  triggerType: string;
-  triggerConfig?: unknown;
-  actionType: string;
-  actionConfig: unknown;
-  nextRunAt?: string;
-  lastRunAt?: string;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { Automation } from './automations';
+export { listAutomations, createAutomation, updateAutomation, triggerAutomation } from './automations';
 
 function query(values: Record<string, string | number | undefined>) {
   const p = new URLSearchParams();
@@ -383,11 +368,13 @@ export const addComment = (
   content: string,
   parentId?: string,
   mentions: Array<{ type: string; ref: string }> = [],
+  type = "comment",
 ) =>
   api.post<Comment>(`/api/v1/issues/${encodeURIComponent(issueId)}/comments`, {
     content,
     parentId,
     mentions,
+    type,
   });
 export const resolveComment = (
   issueId: string,
@@ -568,19 +555,4 @@ export const decideApproval = (
   api.post<{ approval: Approval }>(
     `/api/v1/approvals/${encodeURIComponent(id)}/decide`,
     { status, expectedVersion, decision },
-  );
-export const listAutomations = (tenant: string, namespace: string) =>
-  api.get<{ items: Automation[] }>(
-    `/api/v1/automations${query({ tenant, namespace })}`,
-  );
-export const createAutomation = (body: unknown) =>
-  api.post<{ automation: Automation }>("/api/v1/automations", body);
-export const updateAutomation = (id: string, body: unknown) =>
-  api.patch<{ automation: Automation }>(
-    `/api/v1/automations/${encodeURIComponent(id)}`,
-    body,
-  );
-export const triggerAutomation = (id: string) =>
-  api.post<{ run: unknown }>(
-    `/api/v1/automations/${encodeURIComponent(id)}/trigger`,
   );

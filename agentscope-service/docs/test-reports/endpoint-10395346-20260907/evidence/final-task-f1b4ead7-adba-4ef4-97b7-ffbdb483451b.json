@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-07T12:31:34.179222+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/f1b4ead7-adba-4ef4-97b7-ffbdb483451b",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "f1b4ead7-adba-4ef4-97b7-ffbdb483451b",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "29d09bf7-ec06-48a2-9e86-b96117d074dd",
+      "orchestrationRunId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "runNodeId": "b70c5a4b-4961-58cc-b0f0-b7d497af1be7",
+      "currentAttemptId": "f95542af-8da8-47f6-a628-08cb8fc82b0e",
+      "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "b361a8fd-305b-43bf-8e62-750c84c41339",
+      "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "delegatedFromTaskId": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "originator": {
+        "type": "agent",
+        "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+      },
+      "causationId": "b361a8fd-305b-43bf-8e62-750c84c41339",
+      "correlationId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+          "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "sessionId": "sess_cd53b2d6766d",
+        "resolvedAt": "2026-09-07T12:28:33.074195Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_cd53b2d6766d",
+      "result": "The files in the current directory have been listed, and a poem has been composed based on those file names. The poem is as follows:\n\nIn a world of code and bytes, where paths do intertwine,\nLies a realm so vast and deep, with secrets to divine.\nFrom the .DS_Store so small, to the mighty pom.xml,\nEach file tells a tale, in this digital chrysalis.\n\nAGENTS.md, like a beacon, guides the way we work,\nCONTRIBUTING.md invites all, to join and not to shirk.\nREADME.md, a friendly face, welcomes one and all,\nTo explore the mysteries, within this virtual hall.\n\nagentscope-core and more, modules stand so proud,\nagentscope-service, too, serving data from a crowd.\nIn the heart of this domain, where creativity flows,\nWe find our purpose, and together, a symphony grows.\n\nSo let us cherish every line, and every byte we see,\nFor in this project's essence, we are part of history.",
+      "version": 4,
+      "createdAt": "2026-09-07T20:28:32.537793+08:00",
+      "dispatchedAt": "2026-09-07T20:28:33.073927+08:00",
+      "startedAt": "2026-09-07T20:28:33.173646+08:00",
+      "completedAt": "2026-09-07T20:29:10.247454+08:00",
+      "inputs": [
+        {
+          "id": "e622e662-02ad-4a0b-89fc-c4e185306693",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "f1b4ead7-adba-4ef4-97b7-ffbdb483451b",
+          "commentId": "b361a8fd-305b-43bf-8e62-750c84c41339",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T20:28:33.073927+08:00",
+          "processedAt": "2026-09-07T20:29:10.247454+08:00",
+          "responseCommentId": "4deef9d3-90b9-4a52-b597-61c41c8bd4e6",
+          "attempts": 0,
+          "createdAt": "2026-09-07T20:28:32.537793+08:00"
+        }
+      ]
+    }
+  }
+}

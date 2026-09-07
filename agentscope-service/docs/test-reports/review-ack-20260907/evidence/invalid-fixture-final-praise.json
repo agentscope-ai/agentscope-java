@@ -1,0 +1,784 @@
+{
+  "at": "2026-09-07T15:28:30.990364+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/0261f15b-490b-4d6f-865a-48a1a70ba8ff/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "68b7ea3f-4a1a-4e88-a441-053967277e37",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "createdAt": "2026-09-07T23:24:35.576398+08:00"
+      },
+      {
+        "id": "4251bf01-5099-48cc-aac5-3a593ff6dc92",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "0860ffb3-ff8b-411f-bacc-f72870c597be",
+        "createdAt": "2026-09-07T23:24:35.582918+08:00"
+      },
+      {
+        "id": "76fee827-c341-469b-ad0f-b3c9c4a7cf1e",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+        "createdAt": "2026-09-07T23:25:38.094464+08:00"
+      },
+      {
+        "id": "6350c04d-5c02-4837-99be-9cbe05330df9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "f9c10489-4e43-5402-8049-5b6367b4c447",
+        "createdAt": "2026-09-07T23:26:07.772556+08:00"
+      },
+      {
+        "id": "7163ab3b-a8fe-4fab-8481-49e316b1b9bb",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "details": {
+          "to": "blocked",
+          "from": "in_review",
+          "reason": "AgentTask failed: runtime_candidates_exhausted"
+        },
+        "createdAt": "2026-09-07T23:26:07.774737+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "d6e610bc-bc5b-477a-8bb8-7264be7afc25",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 B=42",
+        "description": "B=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 2,
+        "createdAt": "2026-09-07T23:24:35.588766+08:00",
+        "updatedAt": "2026-09-07T23:24:46.557116+08:00"
+      },
+      {
+        "id": "8194bdd8-d44b-49e5-84d6-c6fea366d678",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 A=42",
+        "description": "A=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 1,
+        "createdAt": "2026-09-07T23:24:35.583275+08:00",
+        "updatedAt": "2026-09-07T23:24:35.583275+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "0860ffb3-ff8b-411f-bacc-f72870c597be",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "threadRootId": "0860ffb3-ff8b-411f-bacc-f72870c597be",
+        "author": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "content": "测试预置交付结果：A=42，B=42，合计=84。",
+        "type": "result",
+        "version": 1,
+        "createdAt": "2026-09-07T23:24:35.578401+08:00",
+        "updatedAt": "2026-09-07T23:24:35.578401+08:00"
+      },
+      {
+        "id": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "threadRootId": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "非常好",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-07T23:25:38.092105+08:00",
+        "updatedAt": "2026-09-07T23:25:38.092105+08:00",
+        "routes": [
+          {
+            "id": "defbb9f9-b5ba-4658-b47b-0bb0828a0b8b",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "commentId": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+            "routeType": "team_leader",
+            "outcome": "coalesced",
+            "taskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "createdAt": "2026-09-07T23:25:38.092105+08:00"
+          }
+        ]
+      },
+      {
+        "id": "f9c10489-4e43-5402-8049-5b6367b4c447",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "threadRootId": "f9c10489-4e43-5402-8049-5b6367b4c447",
+        "author": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "content": "本次团队处理总结\n\n处理结果：blocked（未能完成）\n\n原因：preferred runtime candidate exhausted and fresh fallback is disabled\n错误代码：runtime_candidates_exhausted\n\n子任务结果：\n\n- [已完成 B=42](/work/issues/d6e610bc-bc5b-477a-8bb8-7264be7afc25)：done\n\n- [已完成 A=42](/work/issues/8194bdd8-d44b-49e5-84d6-c6fea366d678)：done\n\n下一步：请先解决上述未完成原因（补充所需输入或修复执行问题），再重试未完成的任务；已完成内容保留。",
+        "type": "status",
+        "sourceTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+        "sourceAttemptId": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+        "version": 1,
+        "createdAt": "2026-09-07T23:26:07.770771+08:00",
+        "updatedAt": "2026-09-07T23:26:07.770771+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-07T15:28:30.999029Z",
+    "issue": {
+      "id": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "IT review-feedback 20260907 praise",
+      "description": "测试预置的已交付工作：A=42，B=42，A+B=84。两项计算均已完成，不需要再次执行。",
+      "status": "blocked",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 5,
+      "createdAt": "2026-09-07T23:24:35.555807+08:00",
+      "updatedAt": "2026-09-07T23:26:07.773378+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [
+          {
+            "id": "d1f2078f-c3f4-4c2d-b13e-9bebe1b9ea67",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "managed session is busy",
+              "retryable": true
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "agent-task-dispatch-deferred:80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "occurredAt": "2026-09-07T23:25:41.513929+08:00"
+          }
+        ],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "b8b74573-0134-42e1-aed1-6c6d09dae1b4",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "agent-task-queued:80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "occurredAt": "2026-09-07T23:24:35.555807+08:00"
+          },
+          {
+            "id": "99e9e1a6-74c9-4e65-8140-05841fe4387f",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-queued:5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "occurredAt": "2026-09-07T23:24:36.526108+08:00"
+          },
+          {
+            "id": "39cf6a47-81d5-401e-941b-1cfbc9e452bc",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "occurredAt": "2026-09-07T23:24:36.937622+08:00"
+          },
+          {
+            "id": "35fe6308-e6ce-4025-ad4f-649edfcd3b49",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "type": "attempt.retry_queued",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "code": "heartbeat_timeout",
+              "message": "runtime heartbeat or host lease expired while execution was running"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-retry-queued:5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+            "occurredAt": "2026-09-07T23:25:38.02424+08:00"
+          },
+          {
+            "id": "9162d415-6e40-40ce-91b3-408a7e9ed643",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "53f53827-4a4f-466d-ae53-b5dc1a6468bf",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-queued:53f53827-4a4f-466d-ae53-b5dc1a6468bf",
+            "occurredAt": "2026-09-07T23:25:39.615805+08:00"
+          },
+          {
+            "id": "628946cf-c716-46ec-8dc5-3805ba3b2213",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "53f53827-4a4f-466d-ae53-b5dc1a6468bf",
+            "type": "attempt.retry_queued",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "code": "managed_wake_failed",
+              "message": "managed session is busy"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-retry-queued:53f53827-4a4f-466d-ae53-b5dc1a6468bf",
+            "occurredAt": "2026-09-07T23:25:41.503584+08:00"
+          },
+          {
+            "id": "d1f2078f-c3f4-4c2d-b13e-9bebe1b9ea67",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "managed session is busy",
+              "retryable": true
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "agent-task-dispatch-deferred:80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "occurredAt": "2026-09-07T23:25:41.513929+08:00"
+          },
+          {
+            "id": "7f80609d-bb30-4d80-a11c-333964ab238b",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-queued:916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+            "occurredAt": "2026-09-07T23:25:54.105112+08:00"
+          },
+          {
+            "id": "c4936381-36fd-4296-8d8c-5213c887f34b",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+            "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "attemptId": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+            "type": "attempt.retry_queued",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "code": "managed_wake_failed",
+              "message": "managed session is busy"
+            },
+            "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "idempotencyKey": "attempt-retry-queued:916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+            "occurredAt": "2026-09-07T23:25:55.708309+08:00"
+          },
+          {
+            "id": "962539f8-c49d-44f0-bee8-e14eb119c6e8",
+            "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "runtime_candidates_exhausted",
+              "failureMessage": "preferred runtime candidate exhausted and fresh fallback is disabled"
+            },
+            "idempotencyKey": "run-failed:21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "occurredAt": "2026-09-07T23:26:07.780658+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "mode": "adaptive",
+            "triggerType": "assignment",
+            "triggerRef": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+            "state": "failed",
+            "failureCode": "runtime_candidates_exhausted",
+            "failureMessage": "preferred runtime candidate exhausted and fresh fallback is disabled",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T23:24:35.555807+08:00",
+            "updatedAt": "2026-09-07T23:26:07.780658+08:00",
+            "startedAt": "2026-09-07T23:24:35.555807+08:00",
+            "completedAt": "2026-09-07T23:26:07.780658+08:00"
+          },
+          "nodes": [
+            {
+              "id": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+              "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+              "type": "team",
+              "role": "leader",
+              "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "runtime_candidates_exhausted",
+              "failureMessage": "preferred runtime candidate exhausted and fresh fallback is disabled",
+              "version": 3,
+              "createdAt": "2026-09-07T23:24:35.555807+08:00",
+              "updatedAt": "2026-09-07T23:26:07.778892+08:00",
+              "startedAt": "2026-09-07T23:24:36.514606+08:00",
+              "completedAt": "2026-09-07T23:26:07.778892+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+              "orchestrationRunId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+              "runNodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+              "currentAttemptId": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+              "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_dc573c841831",
+                "resolvedAt": "2026-09-07T15:25:54.105121Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_dc573c841831",
+              "errorCode": "runtime_candidates_exhausted",
+              "errorMessage": "preferred runtime candidate exhausted and fresh fallback is disabled",
+              "version": 9,
+              "createdAt": "2026-09-07T23:24:35.555807+08:00",
+              "dispatchedAt": "2026-09-07T23:25:54.105112+08:00",
+              "startedAt": "2026-09-07T23:24:36.937622+08:00",
+              "completedAt": "2026-09-07T23:26:07.49047+08:00",
+              "inputs": [
+                {
+                  "id": "49ac50cd-7bd7-41f8-8281-169ade52a261",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+                  "commentId": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "delivered",
+                  "deliveredAt": "2026-09-07T23:25:39.615805+08:00",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T23:25:38.092105+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "5ae4bdea-9a9a-4a92-babd-2f40e4452143",
+              "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+              "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_dc573c841831",
+                "resolvedAt": "2026-09-07T15:24:36.526758Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_dc573c841831",
+              "sessionRef": "dd630b4c-f599-44aa-a803-fb96a8f3a1ed",
+              "turnId": "697cbb9e-9e72-45a8-baf9-84a389f49780",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T23:24:46.96531+08:00",
+              "failureCode": "heartbeat_timeout",
+              "failureMessage": "runtime heartbeat or host lease expired while execution was running",
+              "version": 14,
+              "createdAt": "2026-09-07T23:24:36.526108+08:00",
+              "updatedAt": "2026-09-07T23:25:38.02424+08:00",
+              "startedAt": "2026-09-07T23:24:36.937622+08:00",
+              "completedAt": "2026-09-07T23:25:38.02424+08:00"
+            },
+            {
+              "id": "53f53827-4a4f-466d-ae53-b5dc1a6468bf",
+              "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+              "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 2,
+              "dispatchGeneration": 2,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_dc573c841831",
+                "resolvedAt": "2026-09-07T15:25:39.616009Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_dc573c841831",
+              "sessionRef": "dd630b4c-f599-44aa-a803-fb96a8f3a1ed",
+              "turnId": "366621c8-1a15-4eac-86d5-00e500d1abb0",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "failureCode": "managed_wake_failed",
+              "failureMessage": "managed session is busy",
+              "version": 2,
+              "createdAt": "2026-09-07T23:25:39.615805+08:00",
+              "updatedAt": "2026-09-07T23:25:41.503584+08:00",
+              "completedAt": "2026-09-07T23:25:41.503584+08:00"
+            },
+            {
+              "id": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+              "agentTaskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+              "nodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 3,
+              "dispatchGeneration": 3,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_dc573c841831",
+                "resolvedAt": "2026-09-07T15:25:54.105121Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_dc573c841831",
+              "sessionRef": "dd630b4c-f599-44aa-a803-fb96a8f3a1ed",
+              "turnId": "b93befe4-c4ca-4620-aa80-95b887066a62",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "failureCode": "managed_wake_failed",
+              "failureMessage": "managed session is busy",
+              "version": 2,
+              "createdAt": "2026-09-07T23:25:54.105112+08:00",
+              "updatedAt": "2026-09-07T23:25:55.708309+08:00",
+              "completedAt": "2026-09-07T23:25:55.708309+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "mode": "adaptive",
+        "triggerType": "assignment",
+        "triggerRef": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "state": "failed",
+        "failureCode": "runtime_candidates_exhausted",
+        "failureMessage": "preferred runtime candidate exhausted and fresh fallback is disabled",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T23:24:35.555807+08:00",
+        "updatedAt": "2026-09-07T23:26:07.780658+08:00",
+        "startedAt": "2026-09-07T23:24:35.555807+08:00",
+        "completedAt": "2026-09-07T23:26:07.780658+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "orchestrationRunId": "21290088-c011-466b-ad3a-5b6f2a1a3ada",
+        "runNodeId": "7ed7c582-bf9a-4c8f-a56b-6c304e2d5bf4",
+        "currentAttemptId": "916f2317-dd8b-4f2f-9c5c-96359e2bc33a",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "correlationId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_dc573c841831",
+          "resolvedAt": "2026-09-07T15:25:54.105121Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_dc573c841831",
+        "errorCode": "runtime_candidates_exhausted",
+        "errorMessage": "preferred runtime candidate exhausted and fresh fallback is disabled",
+        "version": 9,
+        "createdAt": "2026-09-07T23:24:35.555807+08:00",
+        "dispatchedAt": "2026-09-07T23:25:54.105112+08:00",
+        "startedAt": "2026-09-07T23:24:36.937622+08:00",
+        "completedAt": "2026-09-07T23:26:07.49047+08:00",
+        "inputs": [
+          {
+            "id": "49ac50cd-7bd7-41f8-8281-169ade52a261",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "80a9bf0c-4b9f-418a-80af-d3846e5944b3",
+            "commentId": "6e6b6291-f17a-4450-911a-6c6095a55bf1",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "delivered",
+            "deliveredAt": "2026-09-07T23:25:39.615805+08:00",
+            "attempts": 0,
+            "createdAt": "2026-09-07T23:25:38.092105+08:00"
+          }
+        ]
+      }
+    ]
+  }
+}

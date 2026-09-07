@@ -1,0 +1,88 @@
+{
+  "at": "2026-09-07T15:36:45.454648+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/c7fde31d-e553-49d7-9b9d-be06fcdc2fe5/comments",
+  "request": {
+    "content": "请新增一项：把 7×8 委派给 MA2 计算，原有 A、B 已完成，无需重做。最后在主 Issue 给出新增计算的实际结果，并保留原结果 84。"
+  },
+  "status": 201,
+  "response": {
+    "Comment": {
+      "id": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+      "threadRootId": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+      "author": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "content": "请新增一项：把 7×8 委派给 MA2 计算，原有 A、B 已完成，无需重做。最后在主 Issue 给出新增计算的实际结果，并保留原结果 84。",
+      "type": "comment",
+      "version": 1,
+      "createdAt": "2026-09-07T23:36:45.45802+08:00",
+      "updatedAt": "2026-09-07T23:36:45.45802+08:00",
+      "routes": [
+        {
+          "id": "60d5593d-5a91-4289-8459-0bef299605f6",
+          "tenant": "default",
+          "namespace": "default",
+          "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+          "commentId": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+          "commentVersion": 1,
+          "targetType": "team",
+          "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+          "routeType": "team_leader",
+          "outcome": "queued",
+          "taskId": "8843793e-db5f-4a96-b342-aa6b3e6a02a7",
+          "createdAt": "2026-09-07T23:36:45.45802+08:00"
+        }
+      ]
+    },
+    "Routes": [
+      {
+        "id": "60d5593d-5a91-4289-8459-0bef299605f6",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+        "commentId": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+        "commentVersion": 1,
+        "targetType": "team",
+        "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "routeType": "team_leader",
+        "outcome": "queued",
+        "taskId": "8843793e-db5f-4a96-b342-aa6b3e6a02a7",
+        "createdAt": "2026-09-07T23:36:45.45802+08:00"
+      }
+    ],
+    "Tasks": [
+      {
+        "id": "8843793e-db5f-4a96-b342-aa6b3e6a02a7",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+        "orchestrationRunId": "e4a1068d-1990-40a6-b0d4-22a0824da862",
+        "runNodeId": "7b640f59-a207-460c-8a14-b349dd79f68c",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "queued",
+        "priority": 0,
+        "triggerType": "review_comment",
+        "triggerCommentId": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "95bbf6e9-7d3a-4dc5-b779-69f92b969db8",
+        "correlationId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "version": 1,
+        "createdAt": "2026-09-07T23:36:45.45802+08:00"
+      }
+    ]
+  }
+}

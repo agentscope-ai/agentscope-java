@@ -145,7 +145,7 @@ func (s *Service) listRunSummaryTasks(ctx context.Context, run *controlmodel.Orc
 // EnsureTerminalTeamSummary is also used when the runtime fails before the
 // leader can invoke a semantic conclusion tool.
 func (s *Service) EnsureTerminalTeamSummary(ctx context.Context, run *controlmodel.OrchestrationRun) error {
-	if run == nil || !controlmodel.IsOrchestrationRunTerminal(run.State) {
+	if run == nil || run.TriggerType == controlmodel.AgentTaskReviewComment || !controlmodel.IsOrchestrationRunTerminal(run.State) {
 		return nil
 	}
 	return s.PublishCoordinatorSummary(ctx, run, nil, run.Output, run.FailureCode, run.FailureMessage)

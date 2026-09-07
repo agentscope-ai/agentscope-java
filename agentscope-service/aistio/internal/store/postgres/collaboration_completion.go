@@ -68,7 +68,9 @@ func (r *collaborationRepo) CompleteAgentTaskWithComment(ctx context.Context, id
 	created.SourceTaskID = &task.ID
 	// A leader may finish a decision turn by yielding to delegated work.
 	// Keep that informational comment distinct from the worker's deliverable.
-	if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		created.Type = controlmodel.CommentGeneral
+	} else if !task.LeaderTask || created.Type != controlmodel.CommentStatus {
 		created.Type = controlmodel.CommentResult
 	}
 	if attempt != nil {
@@ -233,7 +235,7 @@ func reconcileCompletedTaskTx(ctx context.Context, tx pgx.Tx, task *controlmodel
 		return err
 	}
 	next := controlmodel.RunNodeSucceeded
-	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask {
+	if node.Type == controlmodel.RunNodeTeam && task.LeaderTask && task.TriggerType != controlmodel.AgentTaskReviewComment {
 		next = controlmodel.RunNodeWaiting
 	}
 	coordinatorAlreadyTerminal := node.Type == controlmodel.RunNodeTeam && task.LeaderTask &&

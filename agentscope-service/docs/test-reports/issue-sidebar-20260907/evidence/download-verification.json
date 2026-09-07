@@ -1,0 +1,20 @@
+{
+  "artifactFile": "/Users/ken/Downloads/sidebar-verification.txt",
+  "sizeBytes": 73,
+  "sha256": "5d26bf7e95b7f4d02cf368696cdfe7d290658e067817d06410d295824afa92ee",
+  "exportFile": "/Users/ken/Downloads/issue-638f9ec3-1d75-45b3-a4f0-016c2d0be42e.json",
+  "exportKeys": [
+    "activity",
+    "artifacts",
+    "children",
+    "comments",
+    "exportedAt",
+    "issue",
+    "runDiagnostics",
+    "runs",
+    "schemaVersion",
+    "subscribers",
+    "tasks"
+  ],
+  "originalIssueUnchanged": true
+}

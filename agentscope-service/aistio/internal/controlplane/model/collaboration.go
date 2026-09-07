@@ -250,6 +250,9 @@ func CanTransitionAgentTask(from, to AgentTaskStatus) bool {
 	}
 }
 
+// AgentTaskReviewComment handles feedback without reopening the original work.
+const AgentTaskReviewComment = "review_comment"
+
 type AgentTask struct {
 	ID                  uuid.UUID        `json:"id"`
 	Tenant              string           `json:"tenant"`
@@ -517,6 +520,9 @@ const (
 // Automation is a durable ingress rule. TriggerConfig and ActionConfig are
 // versioned snapshots owned by the control plane, never by a runtime.
 type Automation struct {
+	Execution         *AutomationExecution  `json:"execution,omitempty"`
+	Triggers          []AutomationTrigger   `json:"triggers,omitempty"`
+	WebhookConfigured bool                  `json:"webhookConfigured"`
 	ID                uuid.UUID             `json:"id"`
 	Tenant            string                `json:"tenant"`
 	Namespace         string                `json:"namespace"`
@@ -547,6 +553,7 @@ const (
 )
 
 type AutomationRun struct {
+	AutomationRunDetails
 	ID                 uuid.UUID             `json:"id"`
 	AutomationID       uuid.UUID             `json:"automationId"`
 	Tenant             string                `json:"tenant"`

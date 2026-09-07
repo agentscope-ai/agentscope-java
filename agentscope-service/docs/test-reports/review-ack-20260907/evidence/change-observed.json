@@ -1,0 +1,1525 @@
+{
+  "at": "2026-09-07T15:31:52.663873+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/0c67c121-bdf6-44d6-bec2-b0847015e603/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "4d139689-ebf0-482d-9946-e17f432492a0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "createdAt": "2026-09-07T23:29:02.453613+08:00"
+      },
+      {
+        "id": "a5742d33-c6e4-4af8-8649-a9bb47522b2c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "action": "issue.updated",
+        "objectType": "issue",
+        "objectRef": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "createdAt": "2026-09-07T23:29:02.455169+08:00"
+      },
+      {
+        "id": "5cc758d4-24d3-47fc-ba98-55d18273aeb9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "23c94840-82dc-4a00-811a-e86cc5042bf9",
+        "createdAt": "2026-09-07T23:29:02.457292+08:00"
+      },
+      {
+        "id": "dbff6983-8f16-4b63-9893-d10e0a2a1193",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "createdAt": "2026-09-07T23:30:24.37144+08:00"
+      },
+      {
+        "id": "6c944fc6-0034-4796-bba6-154f1ce175d3",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "211dd124-c76d-4142-8970-422570a931c8",
+        "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "createdAt": "2026-09-07T23:30:55.579683+08:00"
+      },
+      {
+        "id": "6d47a065-72b1-4798-834c-a0d180f00ef9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:5c4dcefe-c3a4-4515-9bac-460f2a01366b"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "4e2a43c5-4d2a-5ee9-b848-3f89d5c8fe79",
+        "createdAt": "2026-09-07T23:30:55.634971+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "f17c9ad7-4aee-492f-a54c-a7ff9f909a14",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 B=42",
+        "description": "B=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 1,
+        "createdAt": "2026-09-07T23:29:02.459548+08:00",
+        "updatedAt": "2026-09-07T23:29:02.459548+08:00"
+      },
+      {
+        "id": "81c92a3c-3c09-40de-bd45-23b142fb43e5",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "已完成 A=42",
+        "description": "A=42",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "creator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "parentIssueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "version": 1,
+        "createdAt": "2026-09-07T23:29:02.458005+08:00",
+        "updatedAt": "2026-09-07T23:29:02.458005+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "23c94840-82dc-4a00-811a-e86cc5042bf9",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "threadRootId": "23c94840-82dc-4a00-811a-e86cc5042bf9",
+        "author": {
+          "type": "system",
+          "ref": "test-fixture"
+        },
+        "content": "测试预置交付结果：A=42，B=42，合计=84。",
+        "type": "result",
+        "version": 1,
+        "createdAt": "2026-09-07T23:29:02.455182+08:00",
+        "updatedAt": "2026-09-07T23:29:02.455182+08:00"
+      },
+      {
+        "id": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "threadRootId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "请新增一项：把 7×8 委派给 MA2 计算，原有 A、B 已完成，无需重做。最后在主 Issue 给出新增计算的实际结果，并保留原结果 84。",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-07T23:30:24.362239+08:00",
+        "updatedAt": "2026-09-07T23:30:24.362239+08:00",
+        "routes": [
+          {
+            "id": "4e9f931d-37b1-4b20-a0db-22f211db9778",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "commentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "commentVersion": 1,
+            "targetType": "team",
+            "targetRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+            "routeType": "team_leader",
+            "outcome": "queued",
+            "taskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "createdAt": "2026-09-07T23:30:24.362239+08:00"
+          }
+        ]
+      },
+      {
+        "id": "aed75dbd-d9d0-4866-b074-dc644a923be2",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "parentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "threadRootId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "author": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "content": "Task completed.",
+        "type": "comment",
+        "sourceTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+        "sourceAttemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+        "version": 1,
+        "createdAt": "2026-09-07T23:30:55.56991+08:00",
+        "updatedAt": "2026-09-07T23:30:55.56991+08:00",
+        "routes": [
+          {
+            "id": "ba1c2e1e-a5f2-4e75-8533-105da21b1d6c",
+            "tenant": "default",
+            "namespace": "default",
+            "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "commentId": "aed75dbd-d9d0-4866-b074-dc644a923be2",
+            "commentVersion": 1,
+            "targetType": "human",
+            "targetRef": "admin",
+            "routeType": "thread_parent",
+            "outcome": "queued",
+            "createdAt": "2026-09-07T23:30:55.56991+08:00"
+          }
+        ]
+      },
+      {
+        "id": "4e2a43c5-4d2a-5ee9-b848-3f89d5c8fe79",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "threadRootId": "4e2a43c5-4d2a-5ee9-b848-3f89d5c8fe79",
+        "author": {
+          "type": "system",
+          "ref": "orchestration-run:5c4dcefe-c3a4-4515-9bac-460f2a01366b"
+        },
+        "content": "本次团队处理总结\n\n处理结果：in_review（等待验收）\n\n本总结由系统根据执行记录生成。\n\n子任务结果：\n\n- [已完成 B=42](/work/issues/f17c9ad7-4aee-492f-a54c-a7ff9f909a14)：done\n\n- [已完成 A=42](/work/issues/81c92a3c-3c09-40de-bd45-23b142fb43e5)：done\n\n下一步：请查看汇总结果并验收；如有遗漏，可在主 Issue 中补充要求。",
+        "type": "result",
+        "version": 1,
+        "createdAt": "2026-09-07T23:30:55.632635+08:00",
+        "updatedAt": "2026-09-07T23:30:55.632635+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-07T15:31:52.683194Z",
+    "issue": {
+      "id": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "IT review-feedback 20260907 change",
+      "description": "测试预置的已交付工作：A=42，B=42，A+B=84。两项计算均已完成，不需要再次执行。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 6,
+      "createdAt": "2026-09-07T23:29:02.452357+08:00",
+      "updatedAt": "2026-09-07T23:30:55.632635+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "7af82748-6464-44a1-9820-ace1ebb3d90e",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-task-queued:211dd124-c76d-4142-8970-422570a931c8",
+            "occurredAt": "2026-09-07T23:30:24.362239+08:00"
+          },
+          {
+            "id": "aa3b75a1-15fb-4bc9-8ed9-d0b0219f3a12",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "attempt-queued:18543657-ee67-42e4-830a-1293765cbcb9",
+            "occurredAt": "2026-09-07T23:30:24.964006+08:00"
+          },
+          {
+            "id": "2b66daf3-fadb-48e7-86a5-4cbca510d8a0",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:18543657-ee67-42e4-830a-1293765cbcb9",
+            "occurredAt": "2026-09-07T23:30:25.047021+08:00"
+          },
+          {
+            "id": "c435ea3f-1c59-43fb-b229-98de749b7c58",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "issue.child.create",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_ac56fd5d7dc3458d92c960"
+            },
+            "causationId": "call_ac56fd5d7dc3458d92c960",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_ac56fd5d7dc3458d92c960",
+            "occurredAt": "2026-09-07T23:30:37.181789+08:00"
+          },
+          {
+            "id": "01f28382-54da-4ce5-a49a-e8e94c37f9fd",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_a065cc9c026640a1b24a37"
+            },
+            "causationId": "call_a065cc9c026640a1b24a37",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_a065cc9c026640a1b24a37",
+            "occurredAt": "2026-09-07T23:30:39.490956+08:00"
+          },
+          {
+            "id": "8309608d-eea3-4855-9412-186288293339",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "attempt-succeeded:18543657-ee67-42e4-830a-1293765cbcb9",
+            "occurredAt": "2026-09-07T23:30:55.56991+08:00"
+          },
+          {
+            "id": "a1c11b66-fecb-473e-8908-a2af98212fb8",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "output": null
+            },
+            "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "node-succeeded:129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "occurredAt": "2026-09-07T23:30:55.56991+08:00"
+          },
+          {
+            "id": "c7397d9d-624d-41c9-ac03-444df936f1a9",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "run-succeeded:5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "occurredAt": "2026-09-07T23:30:55.56991+08:00"
+          },
+          {
+            "id": "b07d6da1-3d09-4065-8dd5-0eae0b8ca725",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "math.evaluate",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_1ed346fd32374ed9a99dff"
+            },
+            "causationId": "call_1ed346fd32374ed9a99dff",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_1ed346fd32374ed9a99dff",
+            "occurredAt": "2026-09-07T23:30:58.366193+08:00"
+          },
+          {
+            "id": "395cf52c-3682-41e2-9aa6-8a95939a83da",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_abdf5bbee9164df8a930c8"
+            },
+            "causationId": "call_abdf5bbee9164df8a930c8",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_abdf5bbee9164df8a930c8",
+            "occurredAt": "2026-09-07T23:31:06.021255+08:00"
+          },
+          {
+            "id": "dc08e49b-8471-4787-9ebb-09c44e138636",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_5d2b4fb051ea4d4fb682ae"
+            },
+            "causationId": "call_5d2b4fb051ea4d4fb682ae",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_5d2b4fb051ea4d4fb682ae",
+            "occurredAt": "2026-09-07T23:31:08.137331+08:00"
+          },
+          {
+            "id": "b77a2fef-cb49-4108-b7f2-a003d496a765",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_5940cb30259d47fbb49654"
+            },
+            "causationId": "call_5940cb30259d47fbb49654",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_5940cb30259d47fbb49654",
+            "occurredAt": "2026-09-07T23:31:13.222384+08:00"
+          },
+          {
+            "id": "79ed9307-40d0-4e7c-9d7d-5560076d11d4",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_2fc02b8c15424874a7183c"
+            },
+            "causationId": "call_2fc02b8c15424874a7183c",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_2fc02b8c15424874a7183c",
+            "occurredAt": "2026-09-07T23:31:15.307761+08:00"
+          },
+          {
+            "id": "874235c1-d14c-4739-aeb1-6830e5c11da5",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_6070c79b7607427e81808f"
+            },
+            "causationId": "call_6070c79b7607427e81808f",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_6070c79b7607427e81808f",
+            "occurredAt": "2026-09-07T23:31:17.212353+08:00"
+          },
+          {
+            "id": "056187b4-3af4-4484-ae21-a1ec04d5484c",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_b308ae129bd34114a51fec"
+            },
+            "causationId": "call_b308ae129bd34114a51fec",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_b308ae129bd34114a51fec",
+            "occurredAt": "2026-09-07T23:31:21.43487+08:00"
+          },
+          {
+            "id": "2a8e3f5a-347d-413a-8eb0-cb3d3c59cbeb",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "issue.comment.add",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_03302efb5e44460aac5428"
+            },
+            "causationId": "call_03302efb5e44460aac5428",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_03302efb5e44460aac5428",
+            "occurredAt": "2026-09-07T23:31:23.885386+08:00"
+          },
+          {
+            "id": "37545808-3b6b-4e60-9b00-0adf23a8b9ca",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_7c7434ef8c4a41c4929d20"
+            },
+            "causationId": "call_7c7434ef8c4a41c4929d20",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_7c7434ef8c4a41c4929d20",
+            "occurredAt": "2026-09-07T23:31:26.074054+08:00"
+          },
+          {
+            "id": "adcfdd0a-f32f-4db1-9b42-cd32c78828db",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_3c0d5ed80d8243fd80fa40"
+            },
+            "causationId": "call_3c0d5ed80d8243fd80fa40",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_3c0d5ed80d8243fd80fa40",
+            "occurredAt": "2026-09-07T23:31:29.171846+08:00"
+          },
+          {
+            "id": "948c3976-1248-4ef4-8061-cc56c96aed86",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_8d0e7d30b294439eaa8345"
+            },
+            "causationId": "call_8d0e7d30b294439eaa8345",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_8d0e7d30b294439eaa8345",
+            "occurredAt": "2026-09-07T23:31:33.719395+08:00"
+          },
+          {
+            "id": "d2ed0ccd-d750-48b5-9073-0c0d75149755",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "issue.comment.add",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_b2efeaaf2fbf4322b14309"
+            },
+            "causationId": "call_b2efeaaf2fbf4322b14309",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_b2efeaaf2fbf4322b14309",
+            "occurredAt": "2026-09-07T23:31:36.211361+08:00"
+          },
+          {
+            "id": "c57eba2e-9808-4828-acc1-ceb53f6a58f4",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_9acd3bfe3d254e7eb45860"
+            },
+            "causationId": "call_9acd3bfe3d254e7eb45860",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_9acd3bfe3d254e7eb45860",
+            "occurredAt": "2026-09-07T23:31:38.777163+08:00"
+          },
+          {
+            "id": "415c5d34-bc8b-4a3a-b1d7-c22605d5257b",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_1061e259afda4c65b110c6"
+            },
+            "causationId": "call_1061e259afda4c65b110c6",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_1061e259afda4c65b110c6",
+            "occurredAt": "2026-09-07T23:31:41.733695+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "mode": "adaptive",
+            "triggerType": "review_comment",
+            "triggerRef": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "output": null,
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T23:30:24.362239+08:00",
+            "updatedAt": "2026-09-07T23:30:55.56991+08:00",
+            "startedAt": "2026-09-07T23:30:24.362239+08:00",
+            "completedAt": "2026-09-07T23:30:55.56991+08:00"
+          },
+          "nodes": [
+            {
+              "id": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+              "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:211dd124-c76d-4142-8970-422570a931c8",
+              "type": "team",
+              "role": "leader",
+              "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+              "state": "succeeded",
+              "output": null,
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T23:30:24.362239+08:00",
+              "updatedAt": "2026-09-07T23:30:55.56991+08:00",
+              "startedAt": "2026-09-07T23:30:24.664488+08:00",
+              "completedAt": "2026-09-07T23:30:55.56991+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "211dd124-c76d-4142-8970-422570a931c8",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+              "orchestrationRunId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+              "runNodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+              "currentAttemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "review_comment",
+              "triggerCommentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+              "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_b1579ab2f048",
+                "resolvedAt": "2026-09-07T15:30:24.963925Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_b1579ab2f048",
+              "result": null,
+              "version": 4,
+              "createdAt": "2026-09-07T23:30:24.362239+08:00",
+              "dispatchedAt": "2026-09-07T23:30:24.964006+08:00",
+              "startedAt": "2026-09-07T23:30:25.047021+08:00",
+              "completedAt": "2026-09-07T23:30:55.56991+08:00",
+              "inputs": [
+                {
+                  "id": "6468fea1-6314-4e79-850e-dbfb5d26de85",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "211dd124-c76d-4142-8970-422570a931c8",
+                  "commentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T23:30:24.964006+08:00",
+                  "processedAt": "2026-09-07T23:30:55.56991+08:00",
+                  "responseCommentId": "aed75dbd-d9d0-4866-b074-dc644a923be2",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T23:30:24.362239+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "18543657-ee67-42e4-830a-1293765cbcb9",
+              "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+              "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_b1579ab2f048",
+                "resolvedAt": "2026-09-07T15:30:24.963925Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "turnId": "5e19d752-4a78-4215-ab7d-2857d36f6853",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T23:30:55.545646+08:00",
+              "result": null,
+              "version": 28,
+              "createdAt": "2026-09-07T23:30:24.964006+08:00",
+              "updatedAt": "2026-09-07T23:30:55.56991+08:00",
+              "startedAt": "2026-09-07T23:30:25.047021+08:00",
+              "completedAt": "2026-09-07T23:30:55.56991+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "c435ea3f-1c59-43fb-b229-98de749b7c58",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "issue.child.create",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_ac56fd5d7dc3458d92c960"
+            },
+            "causationId": "call_ac56fd5d7dc3458d92c960",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_ac56fd5d7dc3458d92c960",
+            "occurredAt": "2026-09-07T23:30:37.181789+08:00"
+          },
+          {
+            "id": "01f28382-54da-4ce5-a49a-e8e94c37f9fd",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_a065cc9c026640a1b24a37"
+            },
+            "causationId": "call_a065cc9c026640a1b24a37",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_a065cc9c026640a1b24a37",
+            "occurredAt": "2026-09-07T23:30:39.490956+08:00"
+          },
+          {
+            "id": "b07d6da1-3d09-4065-8dd5-0eae0b8ca725",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "math.evaluate",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_1ed346fd32374ed9a99dff"
+            },
+            "causationId": "call_1ed346fd32374ed9a99dff",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_1ed346fd32374ed9a99dff",
+            "occurredAt": "2026-09-07T23:30:58.366193+08:00"
+          },
+          {
+            "id": "395cf52c-3682-41e2-9aa6-8a95939a83da",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_abdf5bbee9164df8a930c8"
+            },
+            "causationId": "call_abdf5bbee9164df8a930c8",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_abdf5bbee9164df8a930c8",
+            "occurredAt": "2026-09-07T23:31:06.021255+08:00"
+          },
+          {
+            "id": "dc08e49b-8471-4787-9ebb-09c44e138636",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_5d2b4fb051ea4d4fb682ae"
+            },
+            "causationId": "call_5d2b4fb051ea4d4fb682ae",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_5d2b4fb051ea4d4fb682ae",
+            "occurredAt": "2026-09-07T23:31:08.137331+08:00"
+          },
+          {
+            "id": "b77a2fef-cb49-4108-b7f2-a003d496a765",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_5940cb30259d47fbb49654"
+            },
+            "causationId": "call_5940cb30259d47fbb49654",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_5940cb30259d47fbb49654",
+            "occurredAt": "2026-09-07T23:31:13.222384+08:00"
+          },
+          {
+            "id": "79ed9307-40d0-4e7c-9d7d-5560076d11d4",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_2fc02b8c15424874a7183c"
+            },
+            "causationId": "call_2fc02b8c15424874a7183c",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_2fc02b8c15424874a7183c",
+            "occurredAt": "2026-09-07T23:31:15.307761+08:00"
+          },
+          {
+            "id": "874235c1-d14c-4739-aeb1-6830e5c11da5",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_6070c79b7607427e81808f"
+            },
+            "causationId": "call_6070c79b7607427e81808f",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_6070c79b7607427e81808f",
+            "occurredAt": "2026-09-07T23:31:17.212353+08:00"
+          },
+          {
+            "id": "056187b4-3af4-4484-ae21-a1ec04d5484c",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_b308ae129bd34114a51fec"
+            },
+            "causationId": "call_b308ae129bd34114a51fec",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_b308ae129bd34114a51fec",
+            "occurredAt": "2026-09-07T23:31:21.43487+08:00"
+          },
+          {
+            "id": "2a8e3f5a-347d-413a-8eb0-cb3d3c59cbeb",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "issue.comment.add",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_03302efb5e44460aac5428"
+            },
+            "causationId": "call_03302efb5e44460aac5428",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_03302efb5e44460aac5428",
+            "occurredAt": "2026-09-07T23:31:23.885386+08:00"
+          },
+          {
+            "id": "37545808-3b6b-4e60-9b00-0adf23a8b9ca",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_7c7434ef8c4a41c4929d20"
+            },
+            "causationId": "call_7c7434ef8c4a41c4929d20",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_7c7434ef8c4a41c4929d20",
+            "occurredAt": "2026-09-07T23:31:26.074054+08:00"
+          },
+          {
+            "id": "adcfdd0a-f32f-4db1-9b42-cd32c78828db",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_3c0d5ed80d8243fd80fa40"
+            },
+            "causationId": "call_3c0d5ed80d8243fd80fa40",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_3c0d5ed80d8243fd80fa40",
+            "occurredAt": "2026-09-07T23:31:29.171846+08:00"
+          },
+          {
+            "id": "948c3976-1248-4ef4-8061-cc56c96aed86",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_8d0e7d30b294439eaa8345"
+            },
+            "causationId": "call_8d0e7d30b294439eaa8345",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_8d0e7d30b294439eaa8345",
+            "occurredAt": "2026-09-07T23:31:33.719395+08:00"
+          },
+          {
+            "id": "d2ed0ccd-d750-48b5-9073-0c0d75149755",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "issue.comment.add",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_b2efeaaf2fbf4322b14309"
+            },
+            "causationId": "call_b2efeaaf2fbf4322b14309",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_b2efeaaf2fbf4322b14309",
+            "occurredAt": "2026-09-07T23:31:36.211361+08:00"
+          },
+          {
+            "id": "c57eba2e-9808-4828-acc1-ceb53f6a58f4",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "completed coordinator token is restricted to the final node transition",
+              "toolName": "task.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_9acd3bfe3d254e7eb45860"
+            },
+            "causationId": "call_9acd3bfe3d254e7eb45860",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_9acd3bfe3d254e7eb45860",
+            "occurredAt": "2026-09-07T23:31:38.777163+08:00"
+          },
+          {
+            "id": "415c5d34-bc8b-4a3a-b1d7-c22605d5257b",
+            "runId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+            "agentTaskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "attemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "this is a review feedback turn: reply with task.complete; only a concrete NEW human work request permits task.begin_work before work actions",
+              "toolName": "run.node.complete",
+              "sessionId": "sess_b1579ab2f048",
+              "sessionRef": "588dd320-1027-4450-bbdd-9789812d67cb",
+              "toolCallId": "call_1061e259afda4c65b110c6"
+            },
+            "causationId": "call_1061e259afda4c65b110c6",
+            "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+            "idempotencyKey": "agent-tool-failed:211dd124-c76d-4142-8970-422570a931c8:call_1061e259afda4c65b110c6",
+            "occurredAt": "2026-09-07T23:31:41.733695+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "mode": "adaptive",
+        "triggerType": "review_comment",
+        "triggerRef": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "output": null,
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T23:30:24.362239+08:00",
+        "updatedAt": "2026-09-07T23:30:55.56991+08:00",
+        "startedAt": "2026-09-07T23:30:24.362239+08:00",
+        "completedAt": "2026-09-07T23:30:55.56991+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "211dd124-c76d-4142-8970-422570a931c8",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "orchestrationRunId": "5c4dcefe-c3a4-4515-9bac-460f2a01366b",
+        "runNodeId": "129a7f76-42c0-4aee-908b-9064f4b0d3b3",
+        "currentAttemptId": "18543657-ee67-42e4-830a-1293765cbcb9",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "review_comment",
+        "triggerCommentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+        "correlationId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_b1579ab2f048",
+          "resolvedAt": "2026-09-07T15:30:24.963925Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_b1579ab2f048",
+        "result": null,
+        "version": 4,
+        "createdAt": "2026-09-07T23:30:24.362239+08:00",
+        "dispatchedAt": "2026-09-07T23:30:24.964006+08:00",
+        "startedAt": "2026-09-07T23:30:25.047021+08:00",
+        "completedAt": "2026-09-07T23:30:55.56991+08:00",
+        "inputs": [
+          {
+            "id": "6468fea1-6314-4e79-850e-dbfb5d26de85",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "211dd124-c76d-4142-8970-422570a931c8",
+            "commentId": "a77f1ed3-524e-4eca-ae6a-80a0ff92779e",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T23:30:24.964006+08:00",
+            "processedAt": "2026-09-07T23:30:55.56991+08:00",
+            "responseCommentId": "aed75dbd-d9d0-4866-b074-dc644a923be2",
+            "attempts": 0,
+            "createdAt": "2026-09-07T23:30:24.362239+08:00"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -31,6 +31,10 @@ func (e *Engine) evaluator() (*CEL, error) {
 }
 
 func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
+ if e == nil || e.Store == nil { return fmt.Errorf("orchestration engine store is required") }
+ return e.Store.WithSessionLock(ctx, "workflow-run:"+runID.String(), func(ctx context.Context) error { return e.reconcileRun(ctx, runID) })
+}
+func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 	if e == nil || e.Store == nil {
 		return fmt.Errorf("orchestration engine store is required")
 	}
@@ -43,6 +47,10 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
+        if run.State == controlmodel.RunPlanned && run.DefinitionRevisionID != nil {
+            if err := e.materialize(ctx, run); err != nil { return err }
+            continue
+        }
 		if controlmodel.IsOrchestrationRunTerminal(run.State) {
 			if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
 				return err
@@ -436,7 +444,7 @@ func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
 // Endpoint Job with an automatic completion policy closes with its Run.
 // Subruns never advance their shared root Issue ahead of the parent Run.
 func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.OrchestrationRun) error {
-	if run == nil || run.ParentRunID != nil ||
+	if run == nil || run.TriggerType == controlmodel.AgentTaskReviewComment || run.ParentRunID != nil ||
 		(run.State != controlmodel.RunSucceeded && run.State != controlmodel.RunPartialSucceeded) {
 		return nil
 	}
@@ -476,6 +484,20 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 		if err != nil {
 			return err
 		}
+		if issue.Status == controlmodel.IssueBlocked {
+			resume, resumeErr := e.completedTeamCanResumeRoot(ctx, run, issue)
+			if resumeErr != nil {
+				return resumeErr
+			}
+			if !resume {
+				return nil
+			}
+			if _, err = e.Store.Collaboration().TransitionIssue(ctx, issue.ID, issue.Version,
+				controlmodel.IssueInProgress, actor, "Team completed after human input; all child decisions resolved"); err != nil && err != store.ErrConflict {
+				return err
+			}
+			continue
+		}
 		if issue.Status != controlmodel.IssueInProgress {
 			return nil
 		}
@@ -493,12 +515,52 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 	return store.ErrConflict
 }
 
+// A Team may keep its Run waiting while its root is blocked on human input.
+// Once its coordinator and child decisions finish, resume the root lifecycle.
+// Historical completion must never advance a newer Run's blocked root.
+func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmodel.OrchestrationRun, issue *controlmodel.Issue) (bool, error) {
+	if run.Mode != controlmodel.RunModeAdaptive || issue.AssigneeType != controlmodel.AssigneeTeam || issue.ArchivedAt != nil {
+		return false, nil
+	}
+	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 1})
+	if err != nil || len(latest) == 0 || latest[0].ID != run.ID {
+		return false, err
+	}
+	nodes, err := e.Store.Orchestration().ListNodes(ctx, run.ID)
+	if err != nil {
+		return false, err
+	}
+	completedCoordinator := false
+	for _, node := range nodes {
+		if node.Type == controlmodel.RunNodeTeam && node.IssueID != nil && *node.IssueID == issue.ID && node.State == controlmodel.RunNodeSucceeded {
+			completedCoordinator = true
+		}
+	}
+	if !completedCoordinator {
+		return false, nil
+	}
+	for offset := 0; ; offset += 500 {
+		children, listErr := e.Store.Collaboration().ListIssues(ctx, store.IssueFilter{Tenant: issue.Tenant, Namespace: issue.Namespace, ParentID: &issue.ID, Limit: 500, Offset: offset})
+		if listErr != nil {
+			return false, listErr
+		}
+		for _, child := range children {
+			if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
+				return false, nil
+			}
+		}
+		if len(children) < 500 {
+			return true, nil
+		}
+	}
+}
+
 // convergeFailedIssueTree prevents a terminal Run from leaving human-facing
 // work permanently in_progress. A failed execution is blocked (recoverable),
 // not silently cancelled or accepted; a human or a later leader can still
 // reopen the Issue after fixing the missing capability or configuration.
 func (e *Engine) convergeFailedIssueTree(ctx context.Context, run *controlmodel.OrchestrationRun) error {
-	if run == nil || run.ParentRunID != nil || run.State != controlmodel.RunFailed {
+	if run == nil || run.TriggerType == controlmodel.AgentTaskReviewComment || run.ParentRunID != nil || run.State != controlmodel.RunFailed {
 		return nil
 	}
 	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 1})
@@ -702,6 +764,20 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				changed = true
 				break
 			}
+        case controlmodel.RunNodeSignal:
+            for after := int64(0); ; {
+                events, err := e.Store.Orchestration().ListRunEvents(ctx, run.ID, after, 100)
+                if err != nil { return changed, err }
+                found := false
+                for _, event := range events {
+                    after = event.Sequence
+                    if event.Type == "run.signal."+cfg.SignalName {
+                        if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, event.Payload, "", ""); err != nil { return changed, err }
+                        changed, found = true, true; break
+                    }
+                }
+                if found || len(events)<100 { break }
+            }
 		case controlmodel.RunNodeTimer:
 			var output struct {
 				WakeAt time.Time `json:"wakeAt"`
@@ -773,56 +849,8 @@ func (e *Engine) isAdaptiveTeamWorkerNode(ctx context.Context, run *controlmodel
 }
 
 func (e *Engine) createSubrun(ctx context.Context, parent *controlmodel.OrchestrationRun, node *controlmodel.RunNode, revision *controlmodel.OrchestrationRevision, input json.RawMessage) (*controlmodel.OrchestrationRun, error) {
-	run, err := e.Store.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: parent.Tenant, Namespace: parent.Namespace, RootIssueID: parent.RootIssueID, Mode: controlmodel.RunModeSubrun, DefinitionRevisionID: &revision.ID, ParentRunID: &parent.ID, ParentNodeID: &node.ID, TriggerType: "subrun", TriggerRef: node.ID.String(), IdempotencyKey: "subrun:" + parent.ID.String() + ":" + node.ID.String(), Input: input, Variables: json.RawMessage(`{}`), PolicySnapshot: parent.PolicySnapshot, State: controlmodel.RunRunning, CreatedBy: parent.CreatedBy})
+	run, err := e.Store.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: parent.Tenant, Namespace: parent.Namespace, RootIssueID: parent.RootIssueID, Mode: controlmodel.RunModeSubrun, DefinitionRevisionID: &revision.ID, ParentRunID: &parent.ID, ParentNodeID: &node.ID, TriggerType: "subrun", TriggerRef: node.ID.String(), IdempotencyKey: "subrun:" + parent.ID.String() + ":" + node.ID.String(), Input: input, Variables: json.RawMessage(`{}`), PolicySnapshot: parent.PolicySnapshot, State: controlmodel.RunPlanned, CreatedBy: parent.CreatedBy})
 	if err != nil {
-		return nil, err
-	}
-	spec, err := ParseAndValidateSpec(revision.Spec, e.CEL)
-	if err != nil {
-		return nil, err
-	}
-	incoming := map[string]int{}
-	for _, edge := range spec.Edges {
-		incoming[edge.To]++
-	}
-	byKey := map[string]*controlmodel.RunNode{}
-	rootIssue, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
-	if err != nil {
-		return nil, err
-	}
-	for _, n := range spec.Nodes {
-		state := controlmodel.RunNodePending
-		if incoming[n.Key] == 0 {
-			state = controlmodel.RunNodeReady
-		}
-		cfg, _ := json.Marshal(n)
-		nodeIssueID := run.RootIssueID
-		if n.IssueMode == "child" {
-			child, childErr := e.Store.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
-				Tenant: run.Tenant, Namespace: run.Namespace, Title: rootIssue.Title + " / " + n.Key,
-				Description: "Work item for orchestration node " + n.Key, Status: controlmodel.IssueTodo,
-				Priority: rootIssue.Priority, Creator: run.CreatedBy, ParentIssueID: &run.RootIssueID,
-				SourceType: "orchestration-run-node", SourceRef: run.ID.String() + ":" + n.Key})
-			if childErr != nil {
-				return nil, childErr
-			}
-			nodeIssueID = child.ID
-		}
-		created, createErr := e.Store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, NodeKey: n.Key, DefinitionNodeKey: n.Key, Type: n.Type, Role: n.Role, IssueID: &nodeIssueID, State: state, Config: cfg, Iteration: 1})
-		if createErr != nil {
-			return nil, createErr
-		}
-		byKey[n.Key] = created
-	}
-	edges := []*controlmodel.RunEdge{}
-	for _, definitionEdge := range spec.Edges {
-		on := definitionEdge.On
-		if len(on) == 0 {
-			on = []controlmodel.RunNodeState{controlmodel.RunNodeSucceeded}
-		}
-		edges = append(edges, &controlmodel.RunEdge{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, FromNodeID: byKey[definitionEdge.From].ID, ToNodeID: byKey[definitionEdge.To].ID, OnStates: on, Condition: definitionEdge.Condition, Ordinal: definitionEdge.Ordinal})
-	}
-	if err = e.Store.Orchestration().CreateEdges(ctx, edges); err != nil {
 		return nil, err
 	}
 	if err = e.ReconcileRun(ctx, run.ID); err != nil {

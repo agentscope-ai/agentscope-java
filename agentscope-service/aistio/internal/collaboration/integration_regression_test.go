@@ -110,7 +110,10 @@ func TestCommentContextMakesNewRequestAuthoritative(t *testing.T) {
 	if err != nil || envelope.CurrentRequest != updated.Comment.Content || envelope.Issue.Description != "original work" {
 		t.Fatalf("context lost request precedence/history: %+v %v", envelope, err)
 	}
-	startRegressionTask(t, st, &updated.Tasks[0])
+	feedback := startRegressionTask(t, st, &updated.Tasks[0])
+	if _, err = st.Collaboration().BeginReviewWork(ctx, feedback.ID, feedback.Version, updated.Comment.Content); err != nil {
+		t.Fatal(err)
+	}
 	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
 	if err != nil || current.Status != controlmodel.IssueInProgress {
 		t.Fatalf("new assignee request did not resume review: %+v %v", current, err)

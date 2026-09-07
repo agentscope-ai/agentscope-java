@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-07T12:27:54.446228+00:00",
+  "method": "POST",
+  "path": "/invoke/v1/endpoints/endpoint-input-20260907-v2/jobs",
+  "request": {
+    "input": {
+      "prompt": "帮我查看当前目录下的文件，写一首诗"
+    }
+  },
+  "status": 202,
+  "response": {
+    "eventsUrl": "/invoke/v1/jobs/363cc71c-7a0a-47a7-b6ca-8d48641db96c/events",
+    "invocationId": "363cc71c-7a0a-47a7-b6ca-8d48641db96c",
+    "issueId": "657f90fe-1d4c-5433-b226-a59e9e21c0d3",
+    "runId": "cc07ed70-6646-5436-be4d-e686a262890b",
+    "status": "running",
+    "statusUrl": "/invoke/v1/jobs/363cc71c-7a0a-47a7-b6ca-8d48641db96c"
+  }
+}

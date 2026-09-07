@@ -1021,3 +1021,24 @@ func TestHostedConsecutiveTurnsKeepHistoryAndIgnoreOldTerminalProjection(t *test
 		t.Fatal("consecutive attempt history lost the shared session reference")
 	}
 }
+
+func TestReviewFeedbackCanFinishButCannotDelegateOrChangeWork(t *testing.T) {
+	teamID := uuid.New()
+	task := &controlmodel.AgentTask{ID: uuid.New(), TeamID: &teamID, LeaderTask: true, TriggerType: controlmodel.AgentTaskReviewComment}
+	server := &Server{}
+	if err := server.validateMCPTeamLeaderCompletion(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/mcp/collaboration", nil)
+	for _, name := range []string{"issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan", "run.signal", "approval.request"} {
+		if _, err := server.callCollaborationMCPTool(c, task, name, map[string]any{}); err == nil || !strings.Contains(err.Error(), "task.begin_work") {
+			t.Fatalf("%s bypassed feedback boundary: %v", name, err)
+		}
+	}
+	for _, name := range []string{"issue.comment.add", "task.respond", "task.progress"} {
+		if _, err := server.callCollaborationMCPTool(c, task, name, map[string]any{"mentions": []any{map[string]any{"type": "agent", "ref": "worker"}}}); err == nil {
+			t.Fatalf("%s delegated through mentions", name)
+		}
+	}
+}

@@ -1,0 +1,3911 @@
+{
+  "at": "2026-09-07T13:38:10.544560+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/e9039b21-d163-4d61-be6a-199c3ed3ea6f/export",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "11e9f9f9-659d-42e5-9953-86fd2c203b7e",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "createdAt": "2026-09-07T21:24:59.36172+08:00"
+      },
+      {
+        "id": "3e28c1b4-15f0-4446-8a7e-5d8aaf00a72f",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-07T21:25:00.595393+08:00"
+      },
+      {
+        "id": "9cb0fcba-007d-405e-826d-ed822616b50c",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "createdAt": "2026-09-07T21:25:24.98776+08:00"
+      },
+      {
+        "id": "ba7afeab-1371-4471-b3d5-989b93c366e4",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "Team is waiting on blocked or unreviewed delegated work"
+        },
+        "createdAt": "2026-09-07T21:30:29.264849+08:00"
+      },
+      {
+        "id": "ed8bdd7d-c417-40b0-9e64-1798844a81e7",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "ee5f6183-e643-5ae9-b733-c683672028ec",
+        "createdAt": "2026-09-07T21:32:31.97545+08:00"
+      },
+      {
+        "id": "665a5fb3-234b-452d-9c91-87bc0f1395f0",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:fef4eb51-40a1-4e74-8cf2-8546ce105e82"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "Team completed after human input; all child decisions resolved"
+        },
+        "createdAt": "2026-09-07T21:37:06.205192+08:00"
+      },
+      {
+        "id": "47830014-7be3-4352-a394-ef995f973ed1",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:fef4eb51-40a1-4e74-8cf2-8546ce105e82"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-07T21:37:06.214527+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [
+      {
+        "id": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10",
+        "description": "请读取尚未提供的业务输入 BETA，并返回 BETA+10 的结果。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+        "creator": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "parentIssueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "version": 12,
+        "createdAt": "2026-09-07T21:25:11.989789+08:00",
+        "updatedAt": "2026-09-07T21:32:31.943365+08:00",
+        "resolvedAt": "2026-09-07T21:32:11.253019+08:00"
+      },
+      {
+        "id": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+        "tenant": "default",
+        "namespace": "default",
+        "title": "A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2",
+        "description": "请读取尚未提供的业务输入 ALPHA，并返回 ALPHA×2 的结果。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。",
+        "status": "done",
+        "priority": "none",
+        "kind": "user_work",
+        "visibility": "work_hub",
+        "completionPolicy": "review",
+        "assigneeType": "agent",
+        "assigneeRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+        "creator": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "parentIssueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "acceptanceCriteria": [],
+        "contextRefs": [],
+        "sourceType": "agent-task",
+        "sourceRef": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "version": 11,
+        "createdAt": "2026-09-07T21:25:11.972679+08:00",
+        "updatedAt": "2026-09-07T21:31:59.295261+08:00",
+        "resolvedAt": "2026-09-07T21:31:49.074354+08:00"
+      }
+    ],
+    "comments": [
+      {
+        "id": "e3b41977-bad9-4a08-a11c-e82f53f7421b",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "threadRootId": "e3b41977-bad9-4a08-a11c-e82f53f7421b",
+        "author": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "content": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+        "type": "status",
+        "sourceTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "sourceAttemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+        "version": 1,
+        "createdAt": "2026-09-07T21:25:24.973759+08:00",
+        "updatedAt": "2026-09-07T21:25:24.973759+08:00"
+      },
+      {
+        "id": "ee5f6183-e643-5ae9-b733-c683672028ec",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "threadRootId": "ee5f6183-e643-5ae9-b733-c683672028ec",
+        "author": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "content": "本次团队处理总结\n\n处理结果：in_review（等待验收）\n\nA 子任务和 B 子任务已完成。A=42, B=42, A+B=84。\n\n子任务结果：\n\n- [B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10](/work/issues/af9b893a-a9f4-4b9c-9c00-e0a772798c5d)：done\n  最近执行：completed\n  交付内容：{\"B\": 42}\n\n- [A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2](/work/issues/1a6465d5-f287-451a-93d1-b7ae42dbcb82)：done\n  最近执行：completed\n  交付内容：{\"A\": 42}\n\n下一步：请查看汇总结果并验收；如有遗漏，可在主 Issue 中补充要求。",
+        "type": "result",
+        "sourceTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+        "sourceAttemptId": "d3dab9d5-1149-427b-a664-33353f113a76",
+        "version": 1,
+        "createdAt": "2026-09-07T21:32:31.972966+08:00",
+        "updatedAt": "2026-09-07T21:32:31.972966+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-07T13:38:10.573795Z",
+    "issue": {
+      "id": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "IT human-resume 20260907：双子任务补充输入后自动汇总",
+      "description": "这是人类补充输入后恢复 Team 的集成验证。请先创建恰好两个子 Issue，都委派给 MA2，然后按平台等待流程结束本回合。A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2。B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。Lead 收到不能执行的结果后应总结缺少哪些输入，并将主任务置为 blocked。管理员稍后会分别在两个子 Issue 回复输入。收到人类补充后，Worker 必须计算并把实际结果写到 task.complete 的结果中；Lead 必须逐一验收子任务，等待尚未处理的另一项结果，最终在主 Issue 汇总 A、B 和两者之和，进入人工验收。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 7,
+      "createdAt": "2026-09-07T21:24:59.345294+08:00",
+      "updatedAt": "2026-09-07T21:37:06.211465+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [
+          {
+            "id": "fb5fc673-ce03-4be0-84fa-2a7bd1014dfd",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "occurredAt": "2026-09-07T21:25:23.949401+08:00"
+          },
+          {
+            "id": "11cf27d0-435c-45bc-8c71-5277664e82dc",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "occurredAt": "2026-09-07T21:25:24.948744+08:00"
+          },
+          {
+            "id": "211b5876-8f21-46cf-b996-c3b5778b156d",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 68,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:1038a642-842b-4e5e-a590-907585e29c42",
+            "occurredAt": "2026-09-07T21:31:34.861195+08:00"
+          }
+        ],
+        "dispatchRecoveries": [
+          {
+            "id": "63bd2746-3035-426c-b3e9-17f89b974976",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 2,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "occurredAt": "2026-09-07T21:25:26.038261+08:00"
+          },
+          {
+            "id": "7b9438d0-eb8b-48aa-8efc-aaae6fa2261f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 47,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 42,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "occurredAt": "2026-09-07T21:29:13.74435+08:00"
+          },
+          {
+            "id": "90e6508f-126f-477f-83e6-7cbd225b9343",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 73,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 8,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:1038a642-842b-4e5e-a590-907585e29c42",
+            "occurredAt": "2026-09-07T21:32:03.991149+08:00"
+          }
+        ],
+        "events": [
+          {
+            "id": "21832e52-3ae0-48d7-88e1-9f173109834f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 1,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "occurredAt": "2026-09-07T21:24:59.345294+08:00"
+          },
+          {
+            "id": "f1187f75-9e37-4a43-bacd-9b4599803964",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 2,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "attemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:200829ea-e46e-45a7-bb62-246c06a91550",
+            "occurredAt": "2026-09-07T21:24:59.959219+08:00"
+          },
+          {
+            "id": "505515f6-0b78-435f-b411-82c85a686429",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 3,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "attemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:200829ea-e46e-45a7-bb62-246c06a91550",
+            "occurredAt": "2026-09-07T21:25:00.586977+08:00"
+          },
+          {
+            "id": "57932971-364a-4d9a-ad4b-9c81eaa78057",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 4,
+            "nodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+            "agentTaskId": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+            "occurredAt": "2026-09-07T21:25:11.972679+08:00"
+          },
+          {
+            "id": "e4b0bbd5-d297-4ef4-860c-6fed2fc5b6df",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 5,
+            "nodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+            "agentTaskId": "2d14036c-d11c-439e-847c-125da024c55d",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:2d14036c-d11c-439e-847c-125da024c55d",
+            "occurredAt": "2026-09-07T21:25:11.989789+08:00"
+          },
+          {
+            "id": "bc415930-13fc-4aa1-9685-435752160d56",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 6,
+            "nodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+            "agentTaskId": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+            "attemptId": "ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "occurredAt": "2026-09-07T21:25:12.954251+08:00"
+          },
+          {
+            "id": "2ad132e2-1828-4420-95d5-1f43c5beff60",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 7,
+            "nodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+            "agentTaskId": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+            "attemptId": "ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "idempotencyKey": "attempt-running:ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "occurredAt": "2026-09-07T21:25:13.042782+08:00"
+          },
+          {
+            "id": "1f8df84f-1cd0-48de-afb4-0ad9b0c5830a",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 8,
+            "nodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+            "agentTaskId": "2d14036c-d11c-439e-847c-125da024c55d",
+            "attemptId": "a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "occurredAt": "2026-09-07T21:25:13.068013+08:00"
+          },
+          {
+            "id": "da34a41c-9083-419d-bc0f-90de8481c8cf",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 9,
+            "nodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+            "agentTaskId": "2d14036c-d11c-439e-847c-125da024c55d",
+            "attemptId": "a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "idempotencyKey": "attempt-running:a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "occurredAt": "2026-09-07T21:25:13.181379+08:00"
+          },
+          {
+            "id": "a9f9bbe1-7774-4b89-83b3-2cb255d48d63",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 10,
+            "nodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+            "agentTaskId": "2d14036c-d11c-439e-847c-125da024c55d",
+            "attemptId": "a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "payload": {
+              "code": "missing_input",
+              "message": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-failed:a1625b68-de2d-4d9c-97d9-94c610ce9042",
+            "occurredAt": "2026-09-07T21:25:23.703291+08:00"
+          },
+          {
+            "id": "b6ead346-3693-48c5-b40a-291a1401fce5",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 11,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "occurredAt": "2026-09-07T21:25:23.720557+08:00"
+          },
+          {
+            "id": "fb5fc673-ce03-4be0-84fa-2a7bd1014dfd",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 12,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "occurredAt": "2026-09-07T21:25:23.949401+08:00"
+          },
+          {
+            "id": "d9444e88-f03b-4b23-9069-d7aac473b5e2",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 13,
+            "nodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+            "agentTaskId": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+            "attemptId": "ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "payload": {
+              "code": "objective_blocked",
+              "message": "缺少输入：ALPHA 未提供"
+            },
+            "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-failed:ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+            "occurredAt": "2026-09-07T21:25:23.970218+08:00"
+          },
+          {
+            "id": "ca843c34-aaad-483d-8f9d-3e78a166b84d",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 14,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "occurredAt": "2026-09-07T21:25:23.983171+08:00"
+          },
+          {
+            "id": "11cf27d0-435c-45bc-8c71-5277664e82dc",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 15,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "occurredAt": "2026-09-07T21:25:24.948744+08:00"
+          },
+          {
+            "id": "ba71980d-f499-4b42-81c2-5efe063ee8ec",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 16,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "attemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:200829ea-e46e-45a7-bb62-246c06a91550",
+            "occurredAt": "2026-09-07T21:25:24.973759+08:00"
+          },
+          {
+            "id": "98a2a2a9-f3d7-4d34-85ec-5942739a70fa",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 17,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "type": "node.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "output": {
+                "outcome": "waiting",
+                "summary": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+                "waitingForTaskIds": [
+                  "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+                  "0916da88-cf58-47a3-92c3-0b049ebb098e"
+                ]
+              }
+            },
+            "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "node-waiting:161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "occurredAt": "2026-09-07T21:25:24.973759+08:00"
+          },
+          {
+            "id": "7075f996-65ed-4f93-a342-aa05ac964bec",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 18,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "attemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+            "type": "coordinator.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "outcome": "waiting",
+              "summary": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+              "waitingForTaskIds": [
+                "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+                "0916da88-cf58-47a3-92c3-0b049ebb098e"
+              ]
+            },
+            "idempotencyKey": "coordinator-waiting:cc466cac-a236-447c-a35b-c807d8fa94ea",
+            "occurredAt": "2026-09-07T21:25:24.991766+08:00"
+          },
+          {
+            "id": "d2845331-0434-4d89-a0e7-10ed5a84cd8c",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 19,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "occurredAt": "2026-09-07T21:25:25.950755+08:00"
+          },
+          {
+            "id": "a1bb7d3a-46fa-4ac6-9f12-a6b5ccf3a1a0",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 20,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "occurredAt": "2026-09-07T21:25:26.03199+08:00"
+          },
+          {
+            "id": "63bd2746-3035-426c-b3e9-17f89b974976",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 21,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 2,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "occurredAt": "2026-09-07T21:25:26.038261+08:00"
+          },
+          {
+            "id": "ca4c68ea-dae7-40f1-ad8e-369f08f5cf61",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_66e9c99221354804ab7b35"
+            },
+            "causationId": "call_66e9c99221354804ab7b35",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_66e9c99221354804ab7b35",
+            "occurredAt": "2026-09-07T21:25:43.26775+08:00"
+          },
+          {
+            "id": "2dcea48e-3b35-4b8e-9d07-756bb474f6ba",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 23,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_3a63e1117e814ddd83d3d3"
+            },
+            "causationId": "call_3a63e1117e814ddd83d3d3",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_3a63e1117e814ddd83d3d3",
+            "occurredAt": "2026-09-07T21:26:08.903707+08:00"
+          },
+          {
+            "id": "4be2db43-66a6-4eef-94a5-1c4673575c60",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_e9e38c9114b54831883ccd"
+            },
+            "causationId": "call_e9e38c9114b54831883ccd",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_e9e38c9114b54831883ccd",
+            "occurredAt": "2026-09-07T21:26:16.838217+08:00"
+          },
+          {
+            "id": "5c13860d-5949-44cb-8eee-7d5b0805d741",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_ef25ba6bdb914138b13e4c"
+            },
+            "causationId": "call_ef25ba6bdb914138b13e4c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_ef25ba6bdb914138b13e4c",
+            "occurredAt": "2026-09-07T21:26:30.43097+08:00"
+          },
+          {
+            "id": "5e1a7fbf-c1e8-405b-a95a-4c1edb4d1f38",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 26,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_ffb5e2e9e43847aab68dec"
+            },
+            "causationId": "call_ffb5e2e9e43847aab68dec",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_ffb5e2e9e43847aab68dec",
+            "occurredAt": "2026-09-07T21:26:43.5218+08:00"
+          },
+          {
+            "id": "0aed81b0-459c-4ce0-8ef9-9615882154ad",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 27,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_a7be897444534bf7b8e66d"
+            },
+            "causationId": "call_a7be897444534bf7b8e66d",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_a7be897444534bf7b8e66d",
+            "occurredAt": "2026-09-07T21:26:50.582389+08:00"
+          },
+          {
+            "id": "20baa9ce-cced-4b9b-b76c-6712135b2aca",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 28,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_7c1db6907ab84f03a64c7e"
+            },
+            "causationId": "call_7c1db6907ab84f03a64c7e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_7c1db6907ab84f03a64c7e",
+            "occurredAt": "2026-09-07T21:26:56.194576+08:00"
+          },
+          {
+            "id": "84322742-6026-4696-81e0-4d172d72b797",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 29,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_72eddbc8a7014143a45735"
+            },
+            "causationId": "call_72eddbc8a7014143a45735",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_72eddbc8a7014143a45735",
+            "occurredAt": "2026-09-07T21:27:00.747688+08:00"
+          },
+          {
+            "id": "4ea4b2a8-6d22-4358-810a-1d760b11be5b",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 30,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_7aeb3392e0964e289effd9"
+            },
+            "causationId": "call_7aeb3392e0964e289effd9",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_7aeb3392e0964e289effd9",
+            "occurredAt": "2026-09-07T21:27:05.67639+08:00"
+          },
+          {
+            "id": "82c02aa1-2864-4c14-a625-9f3aff205986",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 31,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9b119d7f31044dac98882f"
+            },
+            "causationId": "call_9b119d7f31044dac98882f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9b119d7f31044dac98882f",
+            "occurredAt": "2026-09-07T21:27:11.007016+08:00"
+          },
+          {
+            "id": "42756ce6-c244-447a-938b-7d76eabb722a",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 32,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_daad4f668c4842e3be31ba"
+            },
+            "causationId": "call_daad4f668c4842e3be31ba",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_daad4f668c4842e3be31ba",
+            "occurredAt": "2026-09-07T21:27:17.343692+08:00"
+          },
+          {
+            "id": "079f11bd-0e14-4852-9637-ddd256e958d0",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 33,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_beb5a7bd3e904a63bc8100"
+            },
+            "causationId": "call_beb5a7bd3e904a63bc8100",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_beb5a7bd3e904a63bc8100",
+            "occurredAt": "2026-09-07T21:27:22.289787+08:00"
+          },
+          {
+            "id": "de6c2f38-50a2-4802-9395-4b17072ec630",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 34,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_52d1f22258e446fcafdd06"
+            },
+            "causationId": "call_52d1f22258e446fcafdd06",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_52d1f22258e446fcafdd06",
+            "occurredAt": "2026-09-07T21:27:27.629891+08:00"
+          },
+          {
+            "id": "19957f2c-1099-4db8-b182-cb558af37590",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 35,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_567275f88bb64352aa5e2e"
+            },
+            "causationId": "call_567275f88bb64352aa5e2e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_567275f88bb64352aa5e2e",
+            "occurredAt": "2026-09-07T21:27:39.623937+08:00"
+          },
+          {
+            "id": "8fa593c8-50ec-496c-be11-2f11b6bebf5f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 36,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9bc96e1c634c4a808dcec1"
+            },
+            "causationId": "call_9bc96e1c634c4a808dcec1",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9bc96e1c634c4a808dcec1",
+            "occurredAt": "2026-09-07T21:27:44.414942+08:00"
+          },
+          {
+            "id": "2cfb24b6-0e73-403e-9854-7bb2b1b340dc",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 37,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_19362473070a4e9ba00c3b"
+            },
+            "causationId": "call_19362473070a4e9ba00c3b",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_19362473070a4e9ba00c3b",
+            "occurredAt": "2026-09-07T21:27:50.988054+08:00"
+          },
+          {
+            "id": "e06a51f6-f888-4903-af03-5234683bdf08",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 38,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9b5001096a684e408f7d46"
+            },
+            "causationId": "call_9b5001096a684e408f7d46",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9b5001096a684e408f7d46",
+            "occurredAt": "2026-09-07T21:27:56.746044+08:00"
+          },
+          {
+            "id": "71e17ca2-e9b4-44be-98bc-d3700dc529fe",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 39,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_6150ff0647b84f31b3d19c"
+            },
+            "causationId": "call_6150ff0647b84f31b3d19c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_6150ff0647b84f31b3d19c",
+            "occurredAt": "2026-09-07T21:28:09.162293+08:00"
+          },
+          {
+            "id": "7d85a5cc-f25c-47b9-90a5-81c43b4bd245",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 40,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_fcaa24467572472daa451c"
+            },
+            "causationId": "call_fcaa24467572472daa451c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_fcaa24467572472daa451c",
+            "occurredAt": "2026-09-07T21:28:15.38164+08:00"
+          },
+          {
+            "id": "56f8c605-9f75-42af-8998-ea2823eb34c7",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 41,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_0f37e9a1386c4036af1bcc"
+            },
+            "causationId": "call_0f37e9a1386c4036af1bcc",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_0f37e9a1386c4036af1bcc",
+            "occurredAt": "2026-09-07T21:28:21.034837+08:00"
+          },
+          {
+            "id": "77fcbb77-6d78-47f5-b6b9-800517f16123",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 42,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "attempt.retry_queued",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "code": "heartbeat_timeout",
+              "message": "runtime heartbeat or host lease expired while execution was running"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-retry-queued:c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "occurredAt": "2026-09-07T21:29:09.862948+08:00"
+          },
+          {
+            "id": "a60ba6f1-b6c6-449b-8b2d-da3ebde3f7b8",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 43,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c4389c05-d6dd-4e6e-b68a-fcfa56cf66bf",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:c4389c05-d6dd-4e6e-b68a-fcfa56cf66bf",
+            "occurredAt": "2026-09-07T21:29:10.986447+08:00"
+          },
+          {
+            "id": "4a867087-fae6-4209-b0bf-4ce699e4dabd",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 44,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c4389c05-d6dd-4e6e-b68a-fcfa56cf66bf",
+            "type": "attempt.retry_queued",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "code": "managed_wake_failed",
+              "message": "managed session is busy"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-retry-queued:c4389c05-d6dd-4e6e-b68a-fcfa56cf66bf",
+            "occurredAt": "2026-09-07T21:29:13.586175+08:00"
+          },
+          {
+            "id": "d557726b-864e-411d-9508-7421e6855e9e",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 45,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "attemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "occurredAt": "2026-09-07T21:29:13.604826+08:00"
+          },
+          {
+            "id": "c8bca79d-a6b3-4602-ba52-09de40e202d2",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 46,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "attemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "occurredAt": "2026-09-07T21:29:13.734061+08:00"
+          },
+          {
+            "id": "7b9438d0-eb8b-48aa-8efc-aaae6fa2261f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 47,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 42,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "occurredAt": "2026-09-07T21:29:13.74435+08:00"
+          },
+          {
+            "id": "8479508f-6ab9-49c2-81ca-f1bd541ef7f8",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 48,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "attemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_09eebbe19e9a",
+              "sessionRef": "2ee5097d-e44b-448c-be03-81e972ffab20",
+              "toolCallId": "call_0d0e9b08a32a4e3ab51d7c"
+            },
+            "causationId": "call_0d0e9b08a32a4e3ab51d7c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:0916da88-cf58-47a3-92c3-0b049ebb098e:call_0d0e9b08a32a4e3ab51d7c",
+            "occurredAt": "2026-09-07T21:29:34.703037+08:00"
+          },
+          {
+            "id": "9a06d862-6d98-46a5-b138-5353164c8ef5",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 49,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "attemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "occurredAt": "2026-09-07T21:29:45.717637+08:00"
+          },
+          {
+            "id": "6f3eaee2-dc7a-41d0-bca8-267a4e105b4b",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 50,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "occurredAt": "2026-09-07T21:29:47.868133+08:00"
+          },
+          {
+            "id": "25b4cd79-87e0-4953-9c19-0e4285924c12",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 51,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "occurredAt": "2026-09-07T21:29:48.032202+08:00"
+          },
+          {
+            "id": "4c3f1966-c97d-46e8-af71-4df6044fc0e2",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 52,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_102a80b24c964c20b5773c"
+            },
+            "causationId": "call_102a80b24c964c20b5773c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_102a80b24c964c20b5773c",
+            "occurredAt": "2026-09-07T21:30:10.24294+08:00"
+          },
+          {
+            "id": "702a9f09-9a2c-4bf6-b5c8-41f83a3038ab",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 53,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "occurredAt": "2026-09-07T21:30:29.242763+08:00"
+          },
+          {
+            "id": "a9f46e19-176a-4eef-8b9b-12ddd5812601",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 54,
+            "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "439f8704-36a3-463e-a22a-a84a048252e0",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "occurredAt": "2026-09-07T21:31:20.033308+08:00"
+          },
+          {
+            "id": "1f62c8ec-2db4-4d0c-b6ec-2aeb63c33fd2",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 55,
+            "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "occurredAt": "2026-09-07T21:31:20.0689+08:00"
+          },
+          {
+            "id": "a3e48914-edc2-487d-8772-ec0304395b20",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 56,
+            "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "439f8704-36a3-463e-a22a-a84a048252e0",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "occurredAt": "2026-09-07T21:31:20.871129+08:00"
+          },
+          {
+            "id": "c5aab3cf-f016-4cd8-a927-b33698f78508",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 57,
+            "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "idempotencyKey": "attempt-running:66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "occurredAt": "2026-09-07T21:31:20.991934+08:00"
+          },
+          {
+            "id": "f56b8428-d0ad-44f9-8a59-f6d2969fd388",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 58,
+            "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "attemptId": "648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "occurredAt": "2026-09-07T21:31:21.023138+08:00"
+          },
+          {
+            "id": "3ad3b47f-c27e-47e0-a8bc-cb3a882c8d27",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 59,
+            "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "attemptId": "648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "idempotencyKey": "attempt-running:648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "occurredAt": "2026-09-07T21:31:21.089934+08:00"
+          },
+          {
+            "id": "b513fe0b-800e-43cc-b54d-4ae3f6473e49",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 60,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "occurredAt": "2026-09-07T21:31:33.34967+08:00"
+          },
+          {
+            "id": "fc2dccfd-8400-4ec1-855e-9580b0ed7e8f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 61,
+            "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "attemptId": "648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+            "occurredAt": "2026-09-07T21:31:33.34967+08:00"
+          },
+          {
+            "id": "315514c6-ce7a-404f-803c-d6abf076847c",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 62,
+            "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "payload": {
+              "output": {
+                "A": 42
+              }
+            },
+            "causationId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "node-succeeded:1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+            "occurredAt": "2026-09-07T21:31:33.34967+08:00"
+          },
+          {
+            "id": "4d1f7f3c-3c39-4978-bf2f-7230b43a0c4b",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 63,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "attemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "occurredAt": "2026-09-07T21:31:33.866121+08:00"
+          },
+          {
+            "id": "c1a0f280-f765-410f-b91e-f325541a7347",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 64,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "attemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "occurredAt": "2026-09-07T21:31:33.979237+08:00"
+          },
+          {
+            "id": "9ae2da9a-6efc-4b27-9bb3-d1d8c8721bc9",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 65,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-queued:1038a642-842b-4e5e-a590-907585e29c42",
+            "occurredAt": "2026-09-07T21:31:34.80933+08:00"
+          },
+          {
+            "id": "c58c95af-6078-43bf-bfa4-d62708756add",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 66,
+            "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "causationId": "439f8704-36a3-463e-a22a-a84a048252e0",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:66dab964-ebe0-4ee5-a949-730562cdc8dd",
+            "occurredAt": "2026-09-07T21:31:34.80933+08:00"
+          },
+          {
+            "id": "49f3f864-5c0b-4c70-915d-1678ee858a9f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 67,
+            "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+            },
+            "payload": {
+              "output": {
+                "B": 42
+              }
+            },
+            "causationId": "439f8704-36a3-463e-a22a-a84a048252e0",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "node-succeeded:5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+            "occurredAt": "2026-09-07T21:31:34.80933+08:00"
+          },
+          {
+            "id": "211b5876-8f21-46cf-b996-c3b5778b156d",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 68,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "agent-task.dispatch_deferred",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "message": "Team leader follow-up already active",
+              "retryable": true
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-deferred:1038a642-842b-4e5e-a590-907585e29c42",
+            "occurredAt": "2026-09-07T21:31:34.861195+08:00"
+          },
+          {
+            "id": "bcc25a73-863a-486c-b225-7ccaacd07107",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 69,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "attemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "occurredAt": "2026-09-07T21:31:59.295261+08:00"
+          },
+          {
+            "id": "1f6d9db8-1a0d-4172-8339-340dbd7e22f3",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 70,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "attemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+            "type": "coordinator.waiting",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "outcome": "waiting",
+              "summary": "A 子任务已验收完成，正在等待 B 子任务的结果。",
+              "waitingForTaskIds": [
+                "1038a642-842b-4e5e-a590-907585e29c42"
+              ]
+            },
+            "idempotencyKey": "coordinator-waiting:97336aaf-76a6-47f8-8764-60e5968ee05f",
+            "occurredAt": "2026-09-07T21:31:59.309292+08:00"
+          },
+          {
+            "id": "d0030da2-ce88-4a8c-b2fe-44f43f4df1e9",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 71,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "attemptId": "d3dab9d5-1149-427b-a664-33353f113a76",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-queued:d3dab9d5-1149-427b-a664-33353f113a76",
+            "occurredAt": "2026-09-07T21:32:03.864687+08:00"
+          },
+          {
+            "id": "8faf0e97-5776-4cc9-9d76-6b8d786ed0cb",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 72,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "attemptId": "d3dab9d5-1149-427b-a664-33353f113a76",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "idempotencyKey": "attempt-running:d3dab9d5-1149-427b-a664-33353f113a76",
+            "occurredAt": "2026-09-07T21:32:03.983427+08:00"
+          },
+          {
+            "id": "90e6508f-126f-477f-83e6-7cbd225b9343",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 73,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "agent-task.dispatch_recovered",
+            "actor": {
+              "type": "system",
+              "ref": "runtime-scheduler"
+            },
+            "payload": {
+              "source": "control_outbox",
+              "attempts": 8,
+              "previousError": "control event delivery deferred: Team leader follow-up already active"
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-task-dispatch-recovered:1038a642-842b-4e5e-a590-907585e29c42",
+            "occurredAt": "2026-09-07T21:32:03.991149+08:00"
+          },
+          {
+            "id": "a73a89e6-1aff-45f2-9243-48d1d3c6101e",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 74,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "attemptId": "d3dab9d5-1149-427b-a664-33353f113a76",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "attempt-succeeded:d3dab9d5-1149-427b-a664-33353f113a76",
+            "occurredAt": "2026-09-07T21:32:31.943365+08:00"
+          },
+          {
+            "id": "b88f7fd6-1093-4b7e-9f39-c4c2a826183b",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 75,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+            "idempotencyKey": "coordinator-complete:161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "occurredAt": "2026-09-07T21:32:31.977206+08:00"
+          },
+          {
+            "id": "03009754-ea66-411e-bf49-16cb006a8f8d",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 76,
+            "type": "run.partial_succeeded",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+              "failureCode": "",
+              "failureMessage": ""
+            },
+            "idempotencyKey": "run-partial_succeeded:fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "occurredAt": "2026-09-07T21:32:31.981955+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "rootIssueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "mode": "adaptive",
+            "triggerType": "assignment",
+            "triggerRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "output": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+            "state": "partial_succeeded",
+            "version": 23,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-07T21:24:59.345294+08:00",
+            "updatedAt": "2026-09-07T21:32:31.981955+08:00",
+            "startedAt": "2026-09-07T21:24:59.345294+08:00",
+            "completedAt": "2026-09-07T21:32:31.981955+08:00"
+          },
+          "nodes": [
+            {
+              "id": "02d93943-b60f-4be8-8262-74cbf352bd25",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:2d14036c-d11c-439e-847c-125da024c55d",
+              "type": "agent",
+              "role": "worker",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "missing_input",
+              "failureMessage": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。",
+              "version": 3,
+              "createdAt": "2026-09-07T21:25:11.989789+08:00",
+              "updatedAt": "2026-09-07T21:25:23.732002+08:00",
+              "startedAt": "2026-09-07T21:25:12.945061+08:00",
+              "completedAt": "2026-09-07T21:25:23.732002+08:00"
+            },
+            {
+              "id": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+              "type": "agent",
+              "role": "worker",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "objective_blocked",
+              "failureMessage": "缺少输入：ALPHA 未提供",
+              "version": 3,
+              "createdAt": "2026-09-07T21:25:11.972679+08:00",
+              "updatedAt": "2026-09-07T21:25:23.99523+08:00",
+              "startedAt": "2026-09-07T21:25:12.947982+08:00",
+              "completedAt": "2026-09-07T21:25:23.99523+08:00"
+            },
+            {
+              "id": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "type": "team",
+              "role": "leader",
+              "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "state": "succeeded",
+              "output": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+              "iteration": 1,
+              "version": 8,
+              "createdAt": "2026-09-07T21:24:59.345294+08:00",
+              "updatedAt": "2026-09-07T21:32:31.976757+08:00",
+              "startedAt": "2026-09-07T21:24:59.947619+08:00",
+              "completedAt": "2026-09-07T21:32:31.976757+08:00"
+            },
+            {
+              "id": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+              "type": "agent",
+              "role": "worker",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "state": "succeeded",
+              "output": {
+                "A": 42
+              },
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T21:31:20.0689+08:00",
+              "updatedAt": "2026-09-07T21:31:33.34967+08:00",
+              "startedAt": "2026-09-07T21:31:20.85474+08:00",
+              "completedAt": "2026-09-07T21:31:33.34967+08:00"
+            },
+            {
+              "id": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "tenant": "default",
+              "namespace": "default",
+              "nodeKey": "task:fe695613-ccea-4baa-aba7-5478e6bae6f4",
+              "type": "agent",
+              "role": "worker",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "state": "succeeded",
+              "output": {
+                "B": 42
+              },
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-07T21:31:20.033308+08:00",
+              "updatedAt": "2026-09-07T21:31:34.80933+08:00",
+              "startedAt": "2026-09-07T21:31:20.861+08:00",
+              "completedAt": "2026-09-07T21:31:34.80933+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "currentAttemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_291ff6c42505",
+                "resolvedAt": "2026-09-07T13:24:59.959787Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_291ff6c42505",
+              "result": {
+                "outcome": "waiting",
+                "summary": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+                "waitingForTaskIds": [
+                  "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+                  "0916da88-cf58-47a3-92c3-0b049ebb098e"
+                ]
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T21:24:59.345294+08:00",
+              "dispatchedAt": "2026-09-07T21:24:59.959219+08:00",
+              "startedAt": "2026-09-07T21:25:00.586977+08:00",
+              "completedAt": "2026-09-07T21:25:24.973759+08:00"
+            },
+            {
+              "id": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+              "currentAttemptId": "ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "worker",
+              "parentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "delegatedFromTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "originator": {
+                "type": "agent",
+                "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_a4e8c1c34e7b",
+                "resolvedAt": "2026-09-07T13:25:12.954545Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_a4e8c1c34e7b",
+              "errorCode": "objective_blocked",
+              "errorMessage": "缺少输入：ALPHA 未提供",
+              "version": 4,
+              "createdAt": "2026-09-07T21:25:11.972679+08:00",
+              "dispatchedAt": "2026-09-07T21:25:12.954251+08:00",
+              "startedAt": "2026-09-07T21:25:13.042782+08:00",
+              "completedAt": "2026-09-07T21:25:23.970218+08:00"
+            },
+            {
+              "id": "2d14036c-d11c-439e-847c-125da024c55d",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+              "currentAttemptId": "a1625b68-de2d-4d9c-97d9-94c610ce9042",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "worker",
+              "parentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "delegatedFromTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "originator": {
+                "type": "agent",
+                "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_e918da1aed06",
+                "resolvedAt": "2026-09-07T13:25:13.068357Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_e918da1aed06",
+              "errorCode": "missing_input",
+              "errorMessage": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。",
+              "version": 4,
+              "createdAt": "2026-09-07T21:25:11.989789+08:00",
+              "dispatchedAt": "2026-09-07T21:25:13.068013+08:00",
+              "startedAt": "2026-09-07T21:25:13.181379+08:00",
+              "completedAt": "2026-09-07T21:25:23.703291+08:00"
+            },
+            {
+              "id": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "currentAttemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "delegatedFromTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "originator": {
+                "type": "agent",
+                "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_9da104732f66",
+                "resolvedAt": "2026-09-07T13:29:47.86906Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_9da104732f66",
+              "result": null,
+              "version": 9,
+              "createdAt": "2026-09-07T21:25:23.720557+08:00",
+              "dispatchedAt": "2026-09-07T21:29:47.868133+08:00",
+              "startedAt": "2026-09-07T21:25:26.03199+08:00",
+              "completedAt": "2026-09-07T21:30:29.242763+08:00",
+              "inputs": [
+                {
+                  "id": "1bd2b824-71a7-4dc6-9923-2a2335ffee39",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+                  "commentId": "f775c05e-b38f-4dfe-9c04-cf60d9227b52",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:25:25.950755+08:00",
+                  "processedAt": "2026-09-07T21:30:29.242763+08:00",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:25:23.720557+08:00"
+                }
+              ]
+            },
+            {
+              "id": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "currentAttemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "delegatedFromTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "originator": {
+                "type": "agent",
+                "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 1,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_09eebbe19e9a",
+                "resolvedAt": "2026-09-07T13:29:13.605157Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_09eebbe19e9a",
+              "result": null,
+              "version": 4,
+              "createdAt": "2026-09-07T21:25:23.983171+08:00",
+              "dispatchedAt": "2026-09-07T21:29:13.604826+08:00",
+              "startedAt": "2026-09-07T21:29:13.734061+08:00",
+              "completedAt": "2026-09-07T21:29:45.717637+08:00",
+              "inputs": [
+                {
+                  "id": "62755b87-59c3-40ef-ab40-221a38a04d61",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+                  "commentId": "1b4a75c0-8512-4be4-9c4d-03b47ef348eb",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:29:13.604826+08:00",
+                  "processedAt": "2026-09-07T21:29:45.717637+08:00",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:25:23.983171+08:00"
+                }
+              ]
+            },
+            {
+              "id": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+              "currentAttemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "439f8704-36a3-463e-a22a-a84a048252e0",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "worker",
+              "parentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "delegatedFromTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "439f8704-36a3-463e-a22a-a84a048252e0",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 2,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_1951d9d606f4",
+                "resolvedAt": "2026-09-07T13:31:20.871315Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_1951d9d606f4",
+              "result": {
+                "B": 42
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T21:31:20.033308+08:00",
+              "dispatchedAt": "2026-09-07T21:31:20.871129+08:00",
+              "startedAt": "2026-09-07T21:31:20.991934+08:00",
+              "completedAt": "2026-09-07T21:31:34.80933+08:00",
+              "inputs": [
+                {
+                  "id": "0fd40a8b-5e17-4b8d-a5db-4d33dfa98913",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+                  "commentId": "439f8704-36a3-463e-a22a-a84a048252e0",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:31:20.871129+08:00",
+                  "processedAt": "2026-09-07T21:31:34.80933+08:00",
+                  "responseCommentId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:31:20.033308+08:00"
+                }
+              ]
+            },
+            {
+              "id": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+              "currentAttemptId": "648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "worker",
+              "parentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "delegatedFromTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 2,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_a5e103a62f23",
+                "resolvedAt": "2026-09-07T13:31:21.023375Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_a5e103a62f23",
+              "result": {
+                "A": 42
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T21:31:20.0689+08:00",
+              "dispatchedAt": "2026-09-07T21:31:21.023138+08:00",
+              "startedAt": "2026-09-07T21:31:21.089934+08:00",
+              "completedAt": "2026-09-07T21:31:33.34967+08:00",
+              "inputs": [
+                {
+                  "id": "86b3fdbe-3a5f-4e1d-9f8f-737c844b5553",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+                  "commentId": "abd94177-e18f-406e-98eb-7b03a2d1014e",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:31:21.023138+08:00",
+                  "processedAt": "2026-09-07T21:31:33.34967+08:00",
+                  "responseCommentId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:31:20.0689+08:00"
+                }
+              ]
+            },
+            {
+              "id": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "currentAttemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "delegatedFromTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "originator": {
+                "type": "agent",
+                "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 2,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_3aef60a92aaa",
+                "resolvedAt": "2026-09-07T13:31:33.866316Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_3aef60a92aaa",
+              "result": {
+                "outcome": "waiting",
+                "summary": "A 子任务已验收完成，正在等待 B 子任务的结果。",
+                "waitingForTaskIds": [
+                  "1038a642-842b-4e5e-a590-907585e29c42"
+                ]
+              },
+              "version": 4,
+              "createdAt": "2026-09-07T21:31:33.34967+08:00",
+              "dispatchedAt": "2026-09-07T21:31:33.866121+08:00",
+              "startedAt": "2026-09-07T21:31:33.979237+08:00",
+              "completedAt": "2026-09-07T21:31:59.295261+08:00",
+              "inputs": [
+                {
+                  "id": "a907c43f-448c-4dca-99b4-f17c9e7123a0",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+                  "commentId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:31:33.866121+08:00",
+                  "processedAt": "2026-09-07T21:31:59.295261+08:00",
+                  "responseCommentId": "58e22444-69e2-44e6-90b3-d3fbeff82d8e",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:31:33.34967+08:00"
+                }
+              ]
+            },
+            {
+              "id": "1038a642-842b-4e5e-a590-907585e29c42",
+              "tenant": "default",
+              "namespace": "default",
+              "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+              "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "currentAttemptId": "d3dab9d5-1149-427b-a664-33353f113a76",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+              "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+              "teamRole": "leader",
+              "leaderTask": true,
+              "parentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "delegatedFromTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "originator": {
+                "type": "agent",
+                "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+              "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+              "hopCount": 2,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_f3cfabcb6c14",
+                "resolvedAt": "2026-09-07T13:32:03.865027Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_f3cfabcb6c14",
+              "result": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+              "version": 4,
+              "createdAt": "2026-09-07T21:31:34.80933+08:00",
+              "dispatchedAt": "2026-09-07T21:32:03.864687+08:00",
+              "startedAt": "2026-09-07T21:32:03.983427+08:00",
+              "completedAt": "2026-09-07T21:32:31.943365+08:00",
+              "inputs": [
+                {
+                  "id": "c507250f-b1da-4e0f-ab24-f143a6823a81",
+                  "tenant": "default",
+                  "namespace": "default",
+                  "taskId": "1038a642-842b-4e5e-a590-907585e29c42",
+                  "commentId": "dd0f6adb-27dc-41f2-986f-92480e0267d2",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-07T21:32:03.864687+08:00",
+                  "processedAt": "2026-09-07T21:32:31.943365+08:00",
+                  "responseCommentId": "07289827-c45b-4805-95a5-dea6e4ddebc7",
+                  "attempts": 0,
+                  "createdAt": "2026-09-07T21:31:34.80933+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "200829ea-e46e-45a7-bb62-246c06a91550",
+              "agentTaskId": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_291ff6c42505",
+                "resolvedAt": "2026-09-07T13:24:59.959787Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_291ff6c42505",
+              "sessionRef": "e31245a1-493b-418b-b0be-8cb3796503dc",
+              "turnId": "486951ef-21d4-4938-b64b-865445f2ec76",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:25:24.946034+08:00",
+              "result": {
+                "outcome": "waiting",
+                "summary": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+                "waitingForTaskIds": [
+                  "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+                  "0916da88-cf58-47a3-92c3-0b049ebb098e"
+                ]
+              },
+              "version": 19,
+              "createdAt": "2026-09-07T21:24:59.959219+08:00",
+              "updatedAt": "2026-09-07T21:25:24.973759+08:00",
+              "startedAt": "2026-09-07T21:25:00.586977+08:00",
+              "completedAt": "2026-09-07T21:25:24.973759+08:00"
+            },
+            {
+              "id": "ac4c483d-1c53-4a87-a3d9-0403e33e02dc",
+              "agentTaskId": "765ca347-e3d8-4b7b-b2ce-6bcce1754b80",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "4947a7c5-2662-4903-ae7a-7d6a3afdffb4",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_a4e8c1c34e7b",
+                "resolvedAt": "2026-09-07T13:25:12.954545Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "sessionId": "sess_a4e8c1c34e7b",
+              "sessionRef": "472bbcd7-0e92-4c34-9474-edf5ffa22985",
+              "turnId": "b4f3ef66-52f1-48fe-939f-5292567066a2",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:25:23.956445+08:00",
+              "failureCode": "objective_blocked",
+              "failureMessage": "缺少输入：ALPHA 未提供",
+              "version": 14,
+              "createdAt": "2026-09-07T21:25:12.954251+08:00",
+              "updatedAt": "2026-09-07T21:25:23.970218+08:00",
+              "startedAt": "2026-09-07T21:25:13.042782+08:00",
+              "completedAt": "2026-09-07T21:25:23.970218+08:00"
+            },
+            {
+              "id": "a1625b68-de2d-4d9c-97d9-94c610ce9042",
+              "agentTaskId": "2d14036c-d11c-439e-847c-125da024c55d",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "02d93943-b60f-4be8-8262-74cbf352bd25",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_e918da1aed06",
+                "resolvedAt": "2026-09-07T13:25:13.068357Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "sessionId": "sess_e918da1aed06",
+              "sessionRef": "50f4ba47-467f-4e87-bd7a-3be69a9b2d10",
+              "turnId": "10df4553-58f8-4eb1-99a3-a24a73120124",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:25:23.6756+08:00",
+              "failureCode": "missing_input",
+              "failureMessage": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。",
+              "version": 14,
+              "createdAt": "2026-09-07T21:25:13.068013+08:00",
+              "updatedAt": "2026-09-07T21:25:23.703291+08:00",
+              "startedAt": "2026-09-07T21:25:13.181379+08:00",
+              "completedAt": "2026-09-07T21:25:23.703291+08:00"
+            },
+            {
+              "id": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+              "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_9da104732f66",
+                "resolvedAt": "2026-09-07T13:25:25.951059Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "turnId": "4d9fc070-1e21-47e3-ad77-6b322f28cb6a",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:28:21.065548+08:00",
+              "failureCode": "heartbeat_timeout",
+              "failureMessage": "runtime heartbeat or host lease expired while execution was running",
+              "version": 112,
+              "createdAt": "2026-09-07T21:25:25.950755+08:00",
+              "updatedAt": "2026-09-07T21:29:09.862948+08:00",
+              "startedAt": "2026-09-07T21:25:26.03199+08:00",
+              "completedAt": "2026-09-07T21:29:09.862948+08:00"
+            },
+            {
+              "id": "c4389c05-d6dd-4e6e-b68a-fcfa56cf66bf",
+              "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 2,
+              "dispatchGeneration": 2,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_9da104732f66",
+                "resolvedAt": "2026-09-07T13:29:10.986439Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "turnId": "5a26352c-00a1-48a8-b6e6-c790bdcbd6ae",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "failureCode": "managed_wake_failed",
+              "failureMessage": "managed session is busy",
+              "version": 2,
+              "createdAt": "2026-09-07T21:29:10.986447+08:00",
+              "updatedAt": "2026-09-07T21:29:13.586175+08:00",
+              "completedAt": "2026-09-07T21:29:13.586175+08:00"
+            },
+            {
+              "id": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+              "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 3,
+              "dispatchGeneration": 3,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_9da104732f66",
+                "resolvedAt": "2026-09-07T13:29:47.86906Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "turnId": "ae31d17e-c60a-4230-b6ed-4d7a9a18d7fc",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:30:29.199418+08:00",
+              "result": null,
+              "version": 25,
+              "createdAt": "2026-09-07T21:29:47.868133+08:00",
+              "updatedAt": "2026-09-07T21:30:29.242763+08:00",
+              "startedAt": "2026-09-07T21:29:48.032202+08:00",
+              "completedAt": "2026-09-07T21:30:29.242763+08:00"
+            },
+            {
+              "id": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+              "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_09eebbe19e9a",
+                "resolvedAt": "2026-09-07T13:29:13.605157Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_09eebbe19e9a",
+              "sessionRef": "2ee5097d-e44b-448c-be03-81e972ffab20",
+              "turnId": "7d954ae7-0825-4a84-a80a-ca8253015d17",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:29:45.679294+08:00",
+              "result": null,
+              "version": 22,
+              "createdAt": "2026-09-07T21:29:13.604826+08:00",
+              "updatedAt": "2026-09-07T21:29:45.717637+08:00",
+              "startedAt": "2026-09-07T21:29:13.734061+08:00",
+              "completedAt": "2026-09-07T21:29:45.717637+08:00"
+            },
+            {
+              "id": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+              "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_1951d9d606f4",
+                "resolvedAt": "2026-09-07T13:31:20.871315Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "sessionId": "sess_1951d9d606f4",
+              "sessionRef": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+              "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:31:34.788115+08:00",
+              "result": {
+                "B": 42
+              },
+              "version": 18,
+              "createdAt": "2026-09-07T21:31:20.871129+08:00",
+              "updatedAt": "2026-09-07T21:31:34.80933+08:00",
+              "startedAt": "2026-09-07T21:31:20.991934+08:00",
+              "completedAt": "2026-09-07T21:31:34.80933+08:00"
+            },
+            {
+              "id": "648fc760-95c4-4c4f-afe1-0aedc45b4a3a",
+              "agentTaskId": "eebb24e9-3ac8-4b9b-a2e4-11f5d28330dc",
+              "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "1bf9e035-12ef-411a-ba1e-9694b0e6fa58",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+                  "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+                },
+                "sessionId": "sess_a5e103a62f23",
+                "resolvedAt": "2026-09-07T13:31:21.023375Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+              "sessionId": "sess_a5e103a62f23",
+              "sessionRef": "3285746c-871c-4d13-a76c-bcec3750210a",
+              "turnId": "fe9256a2-f0d1-4979-883d-f3c827b213ba",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:31:33.326163+08:00",
+              "result": {
+                "A": 42
+              },
+              "version": 14,
+              "createdAt": "2026-09-07T21:31:21.023138+08:00",
+              "updatedAt": "2026-09-07T21:31:33.34967+08:00",
+              "startedAt": "2026-09-07T21:31:21.089934+08:00",
+              "completedAt": "2026-09-07T21:31:33.34967+08:00"
+            },
+            {
+              "id": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+              "agentTaskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_3aef60a92aaa",
+                "resolvedAt": "2026-09-07T13:31:33.866316Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_3aef60a92aaa",
+              "sessionRef": "2fce50b8-ae68-4b10-a541-c1c4c7114ae0",
+              "turnId": "feb2159e-7de5-40c8-9cc3-01d5a46faea5",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:31:59.257163+08:00",
+              "result": {
+                "outcome": "waiting",
+                "summary": "A 子任务已验收完成，正在等待 B 子任务的结果。",
+                "waitingForTaskIds": [
+                  "1038a642-842b-4e5e-a590-907585e29c42"
+                ]
+              },
+              "version": 21,
+              "createdAt": "2026-09-07T21:31:33.866121+08:00",
+              "updatedAt": "2026-09-07T21:31:59.295261+08:00",
+              "startedAt": "2026-09-07T21:31:33.979237+08:00",
+              "completedAt": "2026-09-07T21:31:59.295261+08:00"
+            },
+            {
+              "id": "d3dab9d5-1149-427b-a664-33353f113a76",
+              "agentTaskId": "1038a642-842b-4e5e-a590-907585e29c42",
+              "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+              "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+              "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+              "tenant": "default",
+              "namespace": "default",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+                  "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+                },
+                "sessionId": "sess_f3cfabcb6c14",
+                "resolvedAt": "2026-09-07T13:32:03.865027Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+              "sessionId": "sess_f3cfabcb6c14",
+              "sessionRef": "e65f9bba-bcbb-4476-824b-305d5b56598e",
+              "turnId": "3ee01f7b-8d7f-4c0c-a409-3aa125d76527",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-07T21:32:31.899355+08:00",
+              "result": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+              "version": 21,
+              "createdAt": "2026-09-07T21:32:03.864687+08:00",
+              "updatedAt": "2026-09-07T21:32:31.943365+08:00",
+              "startedAt": "2026-09-07T21:32:03.983427+08:00",
+              "completedAt": "2026-09-07T21:32:31.943365+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "ca4c68ea-dae7-40f1-ad8e-369f08f5cf61",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 22,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_66e9c99221354804ab7b35"
+            },
+            "causationId": "call_66e9c99221354804ab7b35",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_66e9c99221354804ab7b35",
+            "occurredAt": "2026-09-07T21:25:43.26775+08:00"
+          },
+          {
+            "id": "2dcea48e-3b35-4b8e-9d07-756bb474f6ba",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 23,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_3a63e1117e814ddd83d3d3"
+            },
+            "causationId": "call_3a63e1117e814ddd83d3d3",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_3a63e1117e814ddd83d3d3",
+            "occurredAt": "2026-09-07T21:26:08.903707+08:00"
+          },
+          {
+            "id": "4be2db43-66a6-4eef-94a5-1c4673575c60",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 24,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_e9e38c9114b54831883ccd"
+            },
+            "causationId": "call_e9e38c9114b54831883ccd",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_e9e38c9114b54831883ccd",
+            "occurredAt": "2026-09-07T21:26:16.838217+08:00"
+          },
+          {
+            "id": "5c13860d-5949-44cb-8eee-7d5b0805d741",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 25,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_ef25ba6bdb914138b13e4c"
+            },
+            "causationId": "call_ef25ba6bdb914138b13e4c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_ef25ba6bdb914138b13e4c",
+            "occurredAt": "2026-09-07T21:26:30.43097+08:00"
+          },
+          {
+            "id": "5e1a7fbf-c1e8-405b-a95a-4c1edb4d1f38",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 26,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_ffb5e2e9e43847aab68dec"
+            },
+            "causationId": "call_ffb5e2e9e43847aab68dec",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_ffb5e2e9e43847aab68dec",
+            "occurredAt": "2026-09-07T21:26:43.5218+08:00"
+          },
+          {
+            "id": "0aed81b0-459c-4ce0-8ef9-9615882154ad",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 27,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_a7be897444534bf7b8e66d"
+            },
+            "causationId": "call_a7be897444534bf7b8e66d",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_a7be897444534bf7b8e66d",
+            "occurredAt": "2026-09-07T21:26:50.582389+08:00"
+          },
+          {
+            "id": "20baa9ce-cced-4b9b-b76c-6712135b2aca",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 28,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_7c1db6907ab84f03a64c7e"
+            },
+            "causationId": "call_7c1db6907ab84f03a64c7e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_7c1db6907ab84f03a64c7e",
+            "occurredAt": "2026-09-07T21:26:56.194576+08:00"
+          },
+          {
+            "id": "84322742-6026-4696-81e0-4d172d72b797",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 29,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_72eddbc8a7014143a45735"
+            },
+            "causationId": "call_72eddbc8a7014143a45735",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_72eddbc8a7014143a45735",
+            "occurredAt": "2026-09-07T21:27:00.747688+08:00"
+          },
+          {
+            "id": "4ea4b2a8-6d22-4358-810a-1d760b11be5b",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 30,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_7aeb3392e0964e289effd9"
+            },
+            "causationId": "call_7aeb3392e0964e289effd9",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_7aeb3392e0964e289effd9",
+            "occurredAt": "2026-09-07T21:27:05.67639+08:00"
+          },
+          {
+            "id": "82c02aa1-2864-4c14-a625-9f3aff205986",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 31,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9b119d7f31044dac98882f"
+            },
+            "causationId": "call_9b119d7f31044dac98882f",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9b119d7f31044dac98882f",
+            "occurredAt": "2026-09-07T21:27:11.007016+08:00"
+          },
+          {
+            "id": "42756ce6-c244-447a-938b-7d76eabb722a",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 32,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_daad4f668c4842e3be31ba"
+            },
+            "causationId": "call_daad4f668c4842e3be31ba",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_daad4f668c4842e3be31ba",
+            "occurredAt": "2026-09-07T21:27:17.343692+08:00"
+          },
+          {
+            "id": "079f11bd-0e14-4852-9637-ddd256e958d0",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 33,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_beb5a7bd3e904a63bc8100"
+            },
+            "causationId": "call_beb5a7bd3e904a63bc8100",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_beb5a7bd3e904a63bc8100",
+            "occurredAt": "2026-09-07T21:27:22.289787+08:00"
+          },
+          {
+            "id": "de6c2f38-50a2-4802-9395-4b17072ec630",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 34,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_52d1f22258e446fcafdd06"
+            },
+            "causationId": "call_52d1f22258e446fcafdd06",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_52d1f22258e446fcafdd06",
+            "occurredAt": "2026-09-07T21:27:27.629891+08:00"
+          },
+          {
+            "id": "19957f2c-1099-4db8-b182-cb558af37590",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 35,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_567275f88bb64352aa5e2e"
+            },
+            "causationId": "call_567275f88bb64352aa5e2e",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_567275f88bb64352aa5e2e",
+            "occurredAt": "2026-09-07T21:27:39.623937+08:00"
+          },
+          {
+            "id": "8fa593c8-50ec-496c-be11-2f11b6bebf5f",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 36,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9bc96e1c634c4a808dcec1"
+            },
+            "causationId": "call_9bc96e1c634c4a808dcec1",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9bc96e1c634c4a808dcec1",
+            "occurredAt": "2026-09-07T21:27:44.414942+08:00"
+          },
+          {
+            "id": "2cfb24b6-0e73-403e-9854-7bb2b1b340dc",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 37,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_19362473070a4e9ba00c3b"
+            },
+            "causationId": "call_19362473070a4e9ba00c3b",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_19362473070a4e9ba00c3b",
+            "occurredAt": "2026-09-07T21:27:50.988054+08:00"
+          },
+          {
+            "id": "e06a51f6-f888-4903-af03-5234683bdf08",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 38,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_9b5001096a684e408f7d46"
+            },
+            "causationId": "call_9b5001096a684e408f7d46",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_9b5001096a684e408f7d46",
+            "occurredAt": "2026-09-07T21:27:56.746044+08:00"
+          },
+          {
+            "id": "71e17ca2-e9b4-44be-98bc-d3700dc529fe",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 39,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_6150ff0647b84f31b3d19c"
+            },
+            "causationId": "call_6150ff0647b84f31b3d19c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_6150ff0647b84f31b3d19c",
+            "occurredAt": "2026-09-07T21:28:09.162293+08:00"
+          },
+          {
+            "id": "7d85a5cc-f25c-47b9-90a5-81c43b4bd245",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 40,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_fcaa24467572472daa451c"
+            },
+            "causationId": "call_fcaa24467572472daa451c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_fcaa24467572472daa451c",
+            "occurredAt": "2026-09-07T21:28:15.38164+08:00"
+          },
+          {
+            "id": "56f8c605-9f75-42af-8998-ea2823eb34c7",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 41,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "c12f4ddf-435c-40fb-a108-24edea19b7b5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding work delegated by this Team leader or its queued outcome; read task.get and decide the current result",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_0f37e9a1386c4036af1bcc"
+            },
+            "causationId": "call_0f37e9a1386c4036af1bcc",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_0f37e9a1386c4036af1bcc",
+            "occurredAt": "2026-09-07T21:28:21.034837+08:00"
+          },
+          {
+            "id": "8479508f-6ab9-49c2-81ca-f1bd541ef7f8",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 48,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+            "attemptId": "1fba1124-f5cf-4788-bca7-9715a2bc0b06",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_09eebbe19e9a",
+              "sessionRef": "2ee5097d-e44b-448c-be03-81e972ffab20",
+              "toolCallId": "call_0d0e9b08a32a4e3ab51d7c"
+            },
+            "causationId": "call_0d0e9b08a32a4e3ab51d7c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:0916da88-cf58-47a3-92c3-0b049ebb098e:call_0d0e9b08a32a4e3ab51d7c",
+            "occurredAt": "2026-09-07T21:29:34.703037+08:00"
+          },
+          {
+            "id": "4c3f1966-c97d-46e8-af71-4df6044fc0e2",
+            "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+            "tenant": "default",
+            "namespace": "default",
+            "sequence": 52,
+            "nodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+            "agentTaskId": "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "attemptId": "dc2a8726-f203-427d-8c4b-56b409136fb1",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+            },
+            "payload": {
+              "state": "error",
+              "source": "collaboration_mcp",
+              "message": "waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status",
+              "toolName": "task.complete",
+              "sessionId": "sess_9da104732f66",
+              "sessionRef": "cc5e7dfc-1422-4f98-8ff3-92cefb81562e",
+              "toolCallId": "call_102a80b24c964c20b5773c"
+            },
+            "causationId": "call_102a80b24c964c20b5773c",
+            "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+            "idempotencyKey": "agent-tool-failed:527849f1-09a8-4b1b-8b61-fc54d6789c1d:call_102a80b24c964c20b5773c",
+            "occurredAt": "2026-09-07T21:30:10.24294+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+        "tenant": "default",
+        "namespace": "default",
+        "rootIssueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "mode": "adaptive",
+        "triggerType": "assignment",
+        "triggerRef": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "output": "A 子任务和 B 子任务已完成。A=42, B=42, A+B=84。",
+        "state": "partial_succeeded",
+        "version": 23,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-07T21:24:59.345294+08:00",
+        "updatedAt": "2026-09-07T21:32:31.981955+08:00",
+        "startedAt": "2026-09-07T21:24:59.345294+08:00",
+        "completedAt": "2026-09-07T21:32:31.981955+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+        "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+        "currentAttemptId": "200829ea-e46e-45a7-bb62-246c06a91550",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_291ff6c42505",
+          "resolvedAt": "2026-09-07T13:24:59.959787Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_291ff6c42505",
+        "result": {
+          "outcome": "waiting",
+          "summary": "已成功创建两个子任务并委派给 MA2（Agent ID: c1335247-c9a4-4b58-b952-c7283cef57e1）。正在等待管理员提供必要的输入。",
+          "waitingForTaskIds": [
+            "527849f1-09a8-4b1b-8b61-fc54d6789c1d",
+            "0916da88-cf58-47a3-92c3-0b049ebb098e"
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T21:24:59.345294+08:00",
+        "dispatchedAt": "2026-09-07T21:24:59.959219+08:00",
+        "startedAt": "2026-09-07T21:25:00.586977+08:00",
+        "completedAt": "2026-09-07T21:25:24.973759+08:00"
+      }
+    ]
+  }
+}

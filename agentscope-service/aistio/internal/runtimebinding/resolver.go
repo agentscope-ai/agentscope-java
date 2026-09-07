@@ -291,6 +291,9 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"An explicit mention is only for new actionable work required by the current requester. " +
 		"Use math.evaluate to verify arithmetic before submitting or accepting numeric results. " +
 		"Verify other objective claims as well; a worker success flag alone is not acceptance evidence."
+	if task != nil && task.TriggerType == controlmodel.AgentTaskReviewComment {
+		return base + " You are handling feedback on delivered work, NOT an initial Team assignment. Read currentRequest, issue status, reviewResults and completed child outcomes. Acknowledgements, thanks, approval, or discussion do not authorize rerunning the original task. Reply briefly with task.complete(outcome=succeeded); this ends only this feedback turn and preserves the Issue status and previous deliverables. Do not delegate, reopen, replace results or claim human acceptance. Only if the CURRENT human comment explicitly requests a concrete change or new deliverable, call task.begin_work with an exact quote of that request first. After it succeeds, perform only the requested change, reuse prior completed results, and delegate only necessary new work. Never derive a new assignment from the old Issue description alone."
+	}
 	if task == nil || task.TeamID == nil {
 		return base + " You are handling standalone or explicitly mentioned work. Call task.complete only " +
 			"when you have a usable result. If a required capability, credential, input, or tool is unavailable, " +

@@ -220,7 +220,7 @@ func (s *Service) AcceptIssueFromTask(ctx context.Context, taskID uuid.UUID, rea
 	if err != nil {
 		return nil, err
 	}
-	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment || !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
 		return nil, fmt.Errorf("only an active Team leader task can accept a delegated Issue")
 	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
@@ -266,7 +266,7 @@ func (s *Service) CancelBlockedIssueFromTask(ctx context.Context, taskID uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment || !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
 		return nil, fmt.Errorf("only an active Team leader task can cancel a blocked delegated Issue")
 	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
@@ -302,7 +302,7 @@ func (s *Service) ReopenBlockedIssueFromTask(ctx context.Context, taskID uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment || !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
 		return nil, fmt.Errorf("only an active Team leader task can reopen a blocked delegated Issue")
 	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
@@ -348,9 +348,9 @@ func (s *Service) evaluateAcceptanceCriteria(ctx context.Context, issue *control
 	for i, item := range criteria.Checklist {
 		required := item.Required == nil || *item.Required
 		if required && !item.Satisfied {
-			label := strings.TrimSpace(item.ID)
+			label := strings.TrimSpace(item.Text)
 			if label == "" {
-				label = strings.TrimSpace(item.Text)
+				label = strings.TrimSpace(item.ID)
 			}
 			if label == "" {
 				label = fmt.Sprintf("item %d", i+1)
@@ -379,9 +379,9 @@ func (s *Service) evaluateAcceptanceCriteria(ctx context.Context, issue *control
 			return fmt.Errorf("acceptance blocked: requires at least %d approved approval(s)", criteria.MinimumApprovals)
 		}
 	}
-	// Agent/Team Issues already require a result. This flag lets a human-owned
-	// Issue opt into the same objective completion condition.
-	if criteria.RequiredResult && issue.AssigneeType == controlmodel.AssigneeHuman {
+	// Agent/Team Issues already require a result. Explicit criteria also apply
+	// to human-owned and unassigned Issues.
+	if criteria.RequiredResult {
 		comments, err := s.listAllComments(ctx, issue.ID)
 		if err != nil {
 			return err
@@ -545,7 +545,7 @@ func (s *Service) CreateChildFromTask(ctx context.Context, taskID uuid.UUID, req
 	if err != nil {
 		return nil, nil, err
 	}
-	if !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment || !task.LeaderTask || task.TeamID == nil || controlmodel.IsAgentTaskTerminal(task.Status) {
 		return nil, nil, fmt.Errorf("only an active Team leader AgentTask may create child Issues")
 	}
 	parent, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
@@ -625,6 +625,7 @@ type MentionTarget struct {
 }
 
 type AddCommentRequest struct {
+	ID              uuid.UUID
 	IssueID         uuid.UUID
 	ParentID        *uuid.UUID
 	Author          controlmodel.Actor
@@ -863,7 +864,7 @@ func (s *Service) AddComment(ctx context.Context, req AddCommentRequest) (*store
 		}
 	}
 	result, err := s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{
-		Comment: &controlmodel.Comment{IssueID: issue.ID, ParentID: req.ParentID,
+		Comment: &controlmodel.Comment{ID: req.ID, IssueID: issue.ID, ParentID: req.ParentID,
 			Author: req.Author, Content: strings.TrimSpace(req.Content), Type: commentType,
 			SourceTaskID: req.SourceTaskID, SourceAttemptID: req.SourceAttemptID},
 		Mentions: mentions, Targets: targets,
@@ -1213,6 +1214,7 @@ type CoordinatorWorkerOutcome struct {
 }
 
 type ContextEnvelope struct {
+	ReviewResults        []*controlmodel.Comment         `json:"reviewResults,omitempty"`
 	Task                 *controlmodel.AgentTask         `json:"task"`
 	Issue                *controlmodel.Issue             `json:"issue"`
 	Run                  *controlmodel.OrchestrationRun  `json:"run"`
@@ -1256,6 +1258,18 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 			envelope.CurrentRequest += "\n\n"
 		}
 		envelope.CurrentRequest += comment.Content
+	}
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		envelope.AvailableActions = append(envelope.AvailableActions, "task.begin_work")
+		comments, listErr := s.Store.Collaboration().ListComments(ctx, issue.ID, store.CommentListOptions{Limit: 50, Tail: 50})
+		if listErr != nil {
+			return nil, listErr
+		}
+		for _, comment := range comments {
+			if comment.Type == controlmodel.CommentResult && comment.DeletedAt == nil {
+				envelope.ReviewResults = append(envelope.ReviewResults, comment)
+			}
+		}
 	}
 	if run.TriggerType == "endpoint" && issue.ID == run.RootIssueID {
 		copy := *issue
@@ -1321,6 +1335,16 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 	if err != nil {
 		return nil, err
 	}
+	var reviewInput struct {
+		ReviewRequest string `json:"reviewRequest"`
+	}
+	_ = json.Unmarshal(run.Input, &reviewInput)
+	if reviewInput.ReviewRequest != "" && envelope.CoordinatorIssue != nil {
+		copy := *envelope.CoordinatorIssue
+		copy.Description = "Current follow-up request: " + reviewInput.ReviewRequest + "\n\nOriginal delivered request (context only; do not repeat completed work):\n" + copy.Description
+		envelope.CoordinatorIssue = &copy
+	}
+
 	return envelope, nil
 }
 
@@ -1502,9 +1526,13 @@ func (s *Service) CompleteTask(ctx context.Context, taskID uuid.UUID, completion
 		if targetErr != nil {
 			return nil, nil, targetErr
 		}
+		commentType := controlmodel.CommentResult
+		if task.TriggerType == controlmodel.AgentTaskReviewComment {
+			commentType = controlmodel.CommentGeneral
+		}
 		completed, resultComment, completeErr := s.Store.Collaboration().CompleteAgentTaskWithComment(ctx, taskID, completion,
 			&controlmodel.Comment{IssueID: task.IssueID, ParentID: parentID, Author: actor,
-				Content: content, Type: controlmodel.CommentResult, SourceTaskID: &task.ID}, targets)
+				Content: content, Type: commentType, SourceTaskID: &task.ID}, targets)
 		if completeErr != nil {
 			return nil, nil, completeErr
 		}
@@ -1621,7 +1649,7 @@ func (s *Service) ConvergeFailedTask(ctx context.Context, taskID uuid.UUID) (*co
 	if err != nil {
 		return nil, nil, err
 	}
-	if task.Status != controlmodel.AgentTaskFailed {
+	if task.Status != controlmodel.AgentTaskFailed || task.TriggerType == controlmodel.AgentTaskReviewComment {
 		return nil, nil, nil
 	}
 	if task.TeamID != nil && !task.LeaderTask {
@@ -1868,6 +1896,9 @@ func (s *Service) validateCompletionBudget(ctx context.Context, task *controlmod
 }
 
 func (s *Service) completionTargets(ctx context.Context, task *controlmodel.AgentTask, parentID *uuid.UUID) ([]store.CommentTarget, error) {
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		return []store.CommentTarget{{TargetType: controlmodel.AssigneeHuman, TargetRef: task.Originator.Ref, RouteType: controlmodel.RouteThreadParent}}, nil
+	}
 	issue, err := s.Store.Collaboration().GetIssue(ctx, task.IssueID)
 	if err != nil {
 		return nil, err

@@ -1,0 +1,106 @@
+
+> agentscope-service-frontend@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v6.4.2 building for production...
+transforming...
+✓ 2190 modules transformed.
+rendering chunks...
+computing gzip size...
+../aistio/ui/index.html                                     0.84 kB │ gzip:  0.44 kB
+../aistio/ui/assets/index-DcjLtyp7.css                     57.32 kB │ gzip: 10.95 kB
+../aistio/ui/assets/JsonViewer-CNnsEzPD.js                  0.28 kB │ gzip:  0.24 kB
+../aistio/ui/assets/format-2g6GZ2Od.js                      0.29 kB │ gzip:  0.21 kB
+../aistio/ui/assets/check-C-6VdmC2.js                       0.30 kB │ gzip:  0.24 kB
+../aistio/ui/assets/chevron-down-D5-jM5Lo.js                0.30 kB │ gzip:  0.24 kB
+../aistio/ui/assets/chevron-right-nj1flTW8.js               0.30 kB │ gzip:  0.24 kB
+../aistio/ui/assets/plus-BXyFmGIo.js                        0.33 kB │ gzip:  0.26 kB
+../aistio/ui/assets/x-CknU69kn.js                           0.33 kB │ gzip:  0.26 kB
+../aistio/ui/assets/arrow-left-B42Wu_9v.js                  0.34 kB │ gzip:  0.27 kB
+../aistio/ui/assets/clock-3-D-XkENhv.js                     0.34 kB │ gzip:  0.27 kB
+../aistio/ui/assets/user-round-B1xaltBV.js                  0.35 kB │ gzip:  0.28 kB
+../aistio/ui/assets/circle-dot-DdhbUH6z.js                  0.35 kB │ gzip:  0.26 kB
+../aistio/ui/assets/play-BIfXfimi.js                        0.36 kB │ gzip:  0.28 kB
+../aistio/ui/assets/activity-vq0daE5l.js                    0.41 kB │ gzip:  0.30 kB
+../aistio/ui/assets/circle-alert-55Fs0lfQ.js                0.42 kB │ gzip:  0.29 kB
+../aistio/ui/assets/external-link-DORadx2S.js               0.42 kB │ gzip:  0.30 kB
+../aistio/ui/assets/archive-DVsm8ObG.js                     0.43 kB │ gzip:  0.31 kB
+../aistio/ui/assets/badge-DwuMIe7W.js                       0.44 kB │ gzip:  0.30 kB
+../aistio/ui/assets/inbox-DddJ2Bfr.js                       0.46 kB │ gzip:  0.33 kB
+../aistio/ui/assets/http-DEeeo5kQ.js                        0.47 kB │ gzip:  0.30 kB
+../aistio/ui/assets/refresh-cw-CyQGXjN7.js                  0.49 kB │ gzip:  0.33 kB
+../aistio/ui/assets/key-round-z1Y0fs4v.js                   0.53 kB │ gzip:  0.36 kB
+../aistio/ui/assets/PressureGauge-BMPcfgWw.js               0.59 kB │ gzip:  0.39 kB
+../aistio/ui/assets/agentNavigation-VbmBEfWM.js             0.59 kB │ gzip:  0.31 kB
+../aistio/ui/assets/EmptyState-Bal2E0Da.js                  0.63 kB │ gzip:  0.37 kB
+../aistio/ui/assets/sparkles-G8cJSoHL.js                    0.67 kB │ gzip:  0.39 kB
+../aistio/ui/assets/workspace-CODAR-Qo.js                   0.68 kB │ gzip:  0.34 kB
+../aistio/ui/assets/card-BMuBQH3N.js                        0.72 kB │ gzip:  0.34 kB
+../aistio/ui/assets/pencil-LE0FsPZd.js                      0.75 kB │ gzip:  0.40 kB
+../aistio/ui/assets/Page-ByKntZFg.js                        0.81 kB │ gzip:  0.44 kB
+../aistio/ui/assets/circle-dot-dashed-CA_Fi72b.js           0.81 kB │ gzip:  0.43 kB
+../aistio/ui/assets/input-Ci_RGihW.js                       0.84 kB │ gzip:  0.38 kB
+../aistio/ui/assets/LinkedWorkspaceBanner-rNUi5wA1.js       0.94 kB │ gzip:  0.58 kB
+../aistio/ui/assets/admin-BJK-eWz2.js                       1.02 kB │ gzip:  0.44 kB
+../aistio/ui/assets/environments-DDj2D8oB.js                1.13 kB │ gzip:  0.43 kB
+../aistio/ui/assets/orchestration-DlnPTEOI.js               1.36 kB │ gzip:  0.53 kB
+../aistio/ui/assets/memoryStores-BWRLe608.js                1.77 kB │ gzip:  0.52 kB
+../aistio/ui/assets/vaults-BUvJm9uw.js                      2.08 kB │ gzip:  0.50 kB
+../aistio/ui/assets/LoginPage-8_QDh5as.js                   2.46 kB │ gzip:  1.11 kB
+../aistio/ui/assets/agentEndpoints-B2fyVzOt.js              2.84 kB │ gzip:  1.10 kB
+../aistio/ui/assets/useSessionEvents-DeNUSc6S.js            2.92 kB │ gzip:  1.18 kB
+../aistio/ui/assets/EntityIdentity-BTM7-n15.js              3.05 kB │ gzip:  1.27 kB
+../aistio/ui/assets/useMutation-B9qWc0h1.js                 3.10 kB │ gzip:  1.27 kB
+../aistio/ui/assets/WorkSurface-D3tj-AyR.js                 3.14 kB │ gzip:  1.12 kB
+../aistio/ui/assets/workspaces-NEw3GQcJ.js                  3.83 kB │ gzip:  0.90 kB
+../aistio/ui/assets/ProfilePage-DmcIbCEj.js                 3.92 kB │ gzip:  1.39 kB
+../aistio/ui/assets/managedSessions-DqRwRf5Q.js             4.06 kB │ gzip:  1.54 kB
+../aistio/ui/assets/AgentsHubPage-CytsD8mB.js               4.57 kB │ gzip:  1.99 kB
+../aistio/ui/assets/WorkspacesHubPage-BU5DhIpb.js           4.68 kB │ gzip:  2.00 kB
+../aistio/ui/assets/api-Cr3mkDYt.js                         5.22 kB │ gzip:  1.63 kB
+../aistio/ui/assets/OperateSessionsPage-B-MKN2h4.js         5.27 kB │ gzip:  1.94 kB
+../aistio/ui/assets/TeamsOverviewPage-CTL3sSin.js           5.53 kB │ gzip:  2.23 kB
+../aistio/ui/assets/TasksPage-DCPRpT1_.js                   5.58 kB │ gzip:  2.01 kB
+../aistio/ui/assets/TaskDetailPage-Brl8ToMu.js              5.73 kB │ gzip:  1.86 kB
+../aistio/ui/assets/PlatformCredentialsForm-bd_nBo3h.js     6.17 kB │ gzip:  2.00 kB
+../aistio/ui/assets/WorkOverviewPage-UIfKFHN3.js            6.32 kB │ gzip:  2.35 kB
+../aistio/ui/assets/agents-tuB8ZB-o.js                      6.37 kB │ gzip:  1.90 kB
+../aistio/ui/assets/ShareAgentDialog-D3VvK0_m.js            6.80 kB │ gzip:  2.54 kB
+../aistio/ui/assets/SessionsHubPage-q9NxJASp.js             7.09 kB │ gzip:  2.69 kB
+../aistio/ui/assets/AgentLayout-BpEigLy8.js                 7.23 kB │ gzip:  2.58 kB
+../aistio/ui/assets/AutomationsPage-D2Vschr2.js             7.62 kB │ gzip:  2.83 kB
+../aistio/ui/assets/WorkActivityPage-GKkysZsv.js            7.65 kB │ gzip:  3.19 kB
+../aistio/ui/assets/AgentWorkspacePage-CBVbGHRC.js          7.88 kB │ gzip:  2.92 kB
+../aistio/ui/assets/AgentPicker-BoJHOPIm.js                 8.12 kB │ gzip:  2.93 kB
+../aistio/ui/assets/AgentSkillsPage-C65Nz6YS.js             8.29 kB │ gzip:  2.99 kB
+../aistio/ui/assets/EnvironmentsHubPage-DIW2RAfZ.js         8.45 kB │ gzip:  2.93 kB
+../aistio/ui/assets/PublishEndpointCard-RFDP7b4o.js         8.61 kB │ gzip:  3.44 kB
+../aistio/ui/assets/ChannelsHubPage-DSFPUnSd.js             8.66 kB │ gzip:  3.24 kB
+../aistio/ui/assets/MemoryStoresPage-Dmzg2QH2.js            8.67 kB │ gzip:  2.65 kB
+../aistio/ui/assets/SessionCreatePage-4YL_06Da.js           8.83 kB │ gzip:  3.21 kB
+../aistio/ui/assets/AdminUsersPage-B-_WbR72.js              8.86 kB │ gzip:  2.98 kB
+../aistio/ui/assets/VaultsPage-BaEWBFBI.js                  9.69 kB │ gzip:  2.94 kB
+../aistio/ui/assets/DefinitionsPage-BznAMvFZ.js            10.25 kB │ gzip:  3.50 kB
+../aistio/ui/assets/ChatPage-NYq2lqxt.js                   11.17 kB │ gzip:  4.10 kB
+../aistio/ui/assets/ExecutionsPage-Ba7pbs-x.js             11.82 kB │ gzip:  3.83 kB
+../aistio/ui/assets/RunsPage-Z_TY2TJB.js                   11.88 kB │ gzip:  3.69 kB
+../aistio/ui/assets/ChannelDetailPage-BGj21YsZ.js          12.07 kB │ gzip:  4.04 kB
+../aistio/ui/assets/AgentSubagentsPage-7S17onw_.js         12.90 kB │ gzip:  4.11 kB
+../aistio/ui/assets/AgentSettingsPage-Bsds4zvf.js          13.03 kB │ gzip:  3.96 kB
+../aistio/ui/assets/AgentCreatePage-CE-JoCCN.js            13.67 kB │ gzip:  4.55 kB
+../aistio/ui/assets/eventCursor-DpB_mxFZ.js                13.79 kB │ gzip:  4.56 kB
+../aistio/ui/assets/WorkspaceDetailPage-BNzRHkfG.js        14.90 kB │ gzip:  4.13 kB
+../aistio/ui/assets/TeamDetailPage-Dc7wlCqs.js             14.99 kB │ gzip:  4.87 kB
+../aistio/ui/assets/IssuesPage-DWF3oyWP.js                 15.09 kB │ gzip:  5.11 kB
+../aistio/ui/assets/AgentChannelsPage-D5pl753d.js          17.13 kB │ gzip:  4.95 kB
+../aistio/ui/assets/ApprovalsPage-Cmhy3_6B.js              20.88 kB │ gzip:  6.82 kB
+../aistio/ui/assets/AgentToolsPage-X5ineuXu.js             21.19 kB │ gzip:  6.31 kB
+../aistio/ui/assets/OperateSessionDetailPage-CT46xZNt.js   22.09 kB │ gzip:  6.14 kB
+../aistio/ui/assets/SessionDetailPage-vQDvfYpr.js          25.54 kB │ gzip:  8.07 kB
+../aistio/ui/assets/EndpointDetailPage-p7RpXjxS.js         31.40 kB │ gzip:  8.92 kB
+../aistio/ui/assets/dialog-yQkb-FpV.js                     37.40 kB │ gzip: 12.79 kB
+../aistio/ui/assets/AgentCatalogDetailPage-Ba3_Qyz-.js     38.16 kB │ gzip:  9.91 kB
+../aistio/ui/assets/IssueDetailPage-DGLNMDxY.js            45.50 kB │ gzip: 12.91 kB
+../aistio/ui/assets/index-YPidrwy2.js                     118.03 kB │ gzip: 36.35 kB
+../aistio/ui/assets/index-CcrDcOiw.js                     288.69 kB │ gzip: 90.54 kB
+✓ built in 1.61s

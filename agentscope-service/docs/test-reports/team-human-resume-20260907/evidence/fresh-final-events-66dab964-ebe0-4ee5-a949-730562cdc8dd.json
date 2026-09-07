@@ -1,0 +1,374 @@
+{
+  "at": "2026-09-07T13:38:10.780257+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/2bb066bf-5906-48e7-b65a-f587ea0e42cc/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 368,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext only to interpret the reply and its original hand-off; do not execute that history again. When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. Do not mention the responding Agent just to acknowledge their answer; that creates another task. An explicit mention is only for new actionable work required by the current requester. Use math.evaluate to verify arithmetic before submitting or accepting numeric results. Verify other objective claims as well; a worker success flag alone is not acceptance evidence. You are a Team worker. Complete only the assigned child work and call task.complete with outcome=succeeded and the result only when the assigned objective is achieved. Put the actual requested deliverable in result or summary, including the full report, answer, or accessible artifact reference; a claim that a report was written is not a deliverable. Do not leave the useful content only in private reasoning or text after task.complete. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call task.fail with a durable code and explanation; do not merely return explanatory text. Do not call task.respond, coordinate, or create child Issues.",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_209cf40433ac4d308e831719239f131f",
+          "managedSeq": 1,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_209cf40433ac4d308e831719239f131f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:20.954+08:00"
+      },
+      {
+        "id": 369,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_55ad2c2b50ad4bf59d2abe882df2d251",
+          "managedSeq": 2,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_55ad2c2b50ad4bf59d2abe882df2d251",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:20.98+08:00"
+      },
+      {
+        "id": 370,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 3,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_0449e7279c284d0a8e7e3debbe5e2896",
+          "managedSeq": 3,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_0449e7279c284d0a8e7e3debbe5e2896",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:21.054+08:00"
+      },
+      {
+        "id": 374,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 4,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_9eb1a6179b0144b2ae10e5b94d468b9f",
+          "managedSeq": 4,
+          "toolCallId": "call_71be13db0e0344ef88ef61",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_9eb1a6179b0144b2ae10e5b94d468b9f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:25.656+08:00"
+      },
+      {
+        "id": 375,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 5,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_93ec6d0ee2a440b4b76a74305acf08a3",
+          "managedSeq": 5,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_93ec6d0ee2a440b4b76a74305acf08a3",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:25.67+08:00"
+      },
+      {
+        "id": 376,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 6,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"管理员补充本次输入：BETA=32。请立即计算 BETA+10，把实际值 B=42 写入任务结果，提交 Lead 验收。 两个子任务都已获得人类输入，主 Issue 仍要求 Lead 汇总 A、B 和两者之和。\", \"initiatingRequest\": \"\", \"inputs\": [{\"input\": {\"id\": \"0fd40a8b-5e17-4b8d-a5db-4d33dfa98913\", \"tenant\": \"default\", \"namespace\": \"default\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"sequence\": 1, \"state\": \"delivered\", \"deliveredAt\": \"2026-09-07T21:31:20.871129+08:00\", \"attempts\": 0, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}, \"comment\": {\"id\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"threadRootId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"author\": {\"type\": \"human\", \"ref\": \"admin\"}, \"content\": \"管理员补充本次输入：BETA=32。请立即计算 BETA+10，把实际值 B=42 写入任务结果，提交 Lead 验收。 两个子任务都已获得人类输入，主 Issue 仍要求 Lead 汇总 A、B 和两者之和。\", \"type\": \"comment\", \"version\": 1, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"updatedAt\": \"2026-09-07T21:31:20.033308+08:00\", \"mentions\": [{\"id\": \"79880e98-1dbe-4c5d-9412-5fc1f4d48854\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"targetType\": \"agent\", \"targetRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}], \"routes\": [{\"id\": \"524f6e56-14b5-4c53-beb6-f2e70fa44452\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}]}}], \"issue\": {\"id\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10\", \"description\": \"请读取尚未提供的业务输入 BETA，并返回 BETA+10 的结果。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"creator\": {\"type\": \"agent\", \"ref\": \"90fac7c8-c0f6-4f57-a278-f499dcd1fd44\"}, \"parentIssueId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"cc466cac-a236-447c-a35b-c807d8fa94ea\", \"version\": 9, \"createdAt\": \"2026-09-07T21:25:11.989789+08:00\", \"updatedAt\": \"2026-09-07T21:31:20.991934+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"orchestrationRunId\": \"fef4eb51-40a1-4e74-8cf2-8546ce105e82\", \"runNodeId\": \"5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc\", \"currentAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"teamId\": \"22ce6ec1-fdf5-4393-a9f0-43abff828377\", \"teamRole\": \"worker\", \"parentTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"delegatedFromTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"correlationId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"hopCount\": 2, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"bindingId\": \"1015b294-4dfa-5913-9267-eb2e18d5c544\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"sessionId\": \"sess_1951d9d606f4\", \"resolvedAt\": \"2026-09-07T13:31:20.871315Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_1951d9d606f4\", \"version\": 3, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"dispatchedAt\": \"2026-09-07T21:31:20.871129+08:00\", \"startedAt\": \"2026-09-07T21:31:20.991934+08:00\", \"inputs\": [{\"id\": \"0fd40a8b-5e17-4b8d-a5db-4d33dfa98913\", \"tenant\": \"default\", \"namespace\": \"default\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"sequence\": 1, \"state\": \"delivered\", \"deliveredAt\": \"2026-09-07T21:31:20.871129+08:00\", \"attempts\": 0, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}]}}",
+        "toolName": "task.get",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"管理员补充本次输入：BETA=32。请立即计算 BETA+10，把实际值 B=42 写入任务结果，提交 Lead 验收。 两个子任务都已获得人类输入，主 Issue 仍要求 Lead 汇总 A、B 和两者之和。\", \"initiatingRequest\": \"\", \"inputs\": [{\"input\": {\"id\": \"0fd40a8b-5e17-4b8d-a5db-4d33dfa98913\", \"tenant\": \"default\", \"namespace\": \"default\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"sequence\": 1, \"state\": \"delivered\", \"deliveredAt\": \"2026-09-07T21:31:20.871129+08:00\", \"attempts\": 0, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}, \"comment\": {\"id\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"threadRootId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"author\": {\"type\": \"human\", \"ref\": \"admin\"}, \"content\": \"管理员补充本次输入：BETA=32。请立即计算 BETA+10，把实际值 B=42 写入任务结果，提交 Lead 验收。 两个子任务都已获得人类输入，主 Issue 仍要求 Lead 汇总 A、B 和两者之和。\", \"type\": \"comment\", \"version\": 1, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"updatedAt\": \"2026-09-07T21:31:20.033308+08:00\", \"mentions\": [{\"id\": \"79880e98-1dbe-4c5d-9412-5fc1f4d48854\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"targetType\": \"agent\", \"targetRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}], \"routes\": [{\"id\": \"524f6e56-14b5-4c53-beb6-f2e70fa44452\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"routeType\": \"explicit\", \"outcome\": \"queued\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}]}}], \"issue\": {\"id\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"tenant\": \"default\", \"namespace\": \"default\", \"title\": \"B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10\", \"description\": \"请读取尚未提供的业务输入 BETA，并返回 BETA+10 的结果。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"assigneeType\": \"agent\", \"assigneeRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"creator\": {\"type\": \"agent\", \"ref\": \"90fac7c8-c0f6-4f57-a278-f499dcd1fd44\"}, \"parentIssueId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"acceptanceCriteria\": [], \"contextRefs\": [], \"sourceType\": \"agent-task\", \"sourceRef\": \"cc466cac-a236-447c-a35b-c807d8fa94ea\", \"version\": 9, \"createdAt\": \"2026-09-07T21:25:11.989789+08:00\", \"updatedAt\": \"2026-09-07T21:31:20.991934+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"task\": {\"id\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"orchestrationRunId\": \"fef4eb51-40a1-4e74-8cf2-8546ce105e82\", \"runNodeId\": \"5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc\", \"currentAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"teamId\": \"22ce6ec1-fdf5-4393-a9f0-43abff828377\", \"teamRole\": \"worker\", \"parentTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"delegatedFromTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"correlationId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"hopCount\": 2, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"bindingId\": \"1015b294-4dfa-5913-9267-eb2e18d5c544\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"sessionId\": \"sess_1951d9d606f4\", \"resolvedAt\": \"2026-09-07T13:31:20.871315Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_1951d9d606f4\", \"version\": 3, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"dispatchedAt\": \"2026-09-07T21:31:20.871129+08:00\", \"startedAt\": \"2026-09-07T21:31:20.991934+08:00\", \"inputs\": [{\"id\": \"0fd40a8b-5e17-4b8d-a5db-4d33dfa98913\", \"tenant\": \"default\", \"namespace\": \"default\", \"taskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"commentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"commentVersion\": 1, \"sequence\": 1, \"state\": \"delivered\", \"deliveredAt\": \"2026-09-07T21:31:20.871129+08:00\", \"attempts\": 0, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\"}]}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_87cd088acfc24b7a91b489d1a0874c0f",
+          "managedSeq": 6,
+          "toolCallId": "call_71be13db0e0344ef88ef61",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "tool_use_id": "call_71be13db0e0344ef88ef61",
+          "managedEventId": "evt_87cd088acfc24b7a91b489d1a0874c0f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:25.698+08:00"
+      },
+      {
+        "id": 377,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 7,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_e18f8604130949218c1fa1e150afaaae",
+          "managedSeq": 7,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_e18f8604130949218c1fa1e150afaaae",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:25.713+08:00"
+      },
+      {
+        "id": 382,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 8,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "math.evaluate",
+        "toolInput": {
+          "expression": "32 + 10"
+        },
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_54fd91997ac24ea58ffd7dc16bb55e8d",
+          "managedSeq": 8,
+          "toolCallId": "call_069a84925be943cda09ba4",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_54fd91997ac24ea58ffd7dc16bb55e8d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:31.429+08:00"
+      },
+      {
+        "id": 383,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 9,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_69014acb876d4994997a6ca7ec726a11",
+          "managedSeq": 9,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_69014acb876d4994997a6ca7ec726a11",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:31.448+08:00"
+      },
+      {
+        "id": 384,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 10,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"exact\": true, \"expression\": \"32 + 10\", \"result\": \"42\"}",
+        "toolName": "math.evaluate",
+        "toolOutput": "{\"exact\": true, \"expression\": \"32 + 10\", \"result\": \"42\"}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_1faedc6aeb24464484594c8e2314baab",
+          "managedSeq": 10,
+          "toolCallId": "call_069a84925be943cda09ba4",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "tool_use_id": "call_069a84925be943cda09ba4",
+          "managedEventId": "evt_1faedc6aeb24464484594c8e2314baab",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:31.472+08:00"
+      },
+      {
+        "id": 385,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 11,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_926982f8d89445feb5c77acc63667e76",
+          "managedSeq": 11,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_926982f8d89445feb5c77acc63667e76",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:31.483+08:00"
+      },
+      {
+        "id": 395,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 12,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.complete",
+        "toolInput": {
+          "result": {
+            "B": 42
+          },
+          "outcome": "succeeded",
+          "summary": "已计算 BETA+10 的结果，实际值 B=42。"
+        },
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_80212e38624041ba9513f54c01b1c3cf",
+          "managedSeq": 12,
+          "toolCallId": "call_acc72910ce384fad90219f",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_80212e38624041ba9513f54c01b1c3cf",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:34.76+08:00"
+      },
+      {
+        "id": 396,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 13,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_eaad0edc528e45788d9e215afd9151bb",
+          "managedSeq": 13,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_eaad0edc528e45788d9e215afd9151bb",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:34.779+08:00"
+      },
+      {
+        "id": 397,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 14,
+        "eventType": "assistant.message",
+        "role": "assistant",
+        "content": "已计算 BETA+10 的结果，实际值 B=42。\n\n{\"B\":42}",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "assistant:66dab964-ebe0-4ee5-a949-730562cdc8dd"
+        },
+        "occurredAt": "2026-09-07T21:31:34.826395+08:00"
+      },
+      {
+        "id": 398,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 15,
+        "eventType": "turn.completed",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "turn-completed:66dab964-ebe0-4ee5-a949-730562cdc8dd"
+        },
+        "occurredAt": "2026-09-07T21:31:34.829973+08:00"
+      },
+      {
+        "id": 399,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 16,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"dd0f6adb-27dc-41f2-986f-92480e0267d2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"parentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"threadRootId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"author\": {\"type\": \"agent\", \"ref\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"content\": \"已计算 BETA+10 的结果，实际值 B=42。\\n\\n{\\\"B\\\":42}\", \"type\": \"result\", \"sourceTaskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"sourceAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"version\": 1, \"createdAt\": \"2026-09-07T21:31:34.80933+08:00\", \"updatedAt\": \"2026-09-07T21:31:34.80933+08:00\", \"routes\": [{\"id\": \"34bc47e4-d065-43c7-8a24-05ee9931d887\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"dd0f6adb-27dc-41f2-986f-92480e0267d2\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"90fac7c8-c0f6-4f57-a278-f499dcd1fd44\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"1038a642-842b-4e5e-a590-907585e29c42\", \"createdAt\": \"2026-09-07T21:31:34.80933+08:00\"}]}, \"task\": {\"id\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"orchestrationRunId\": \"fef4eb51-40a1-4e74-8cf2-8546ce105e82\", \"runNodeId\": \"5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc\", \"currentAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"teamId\": \"22ce6ec1-fdf5-4393-a9f0-43abff828377\", \"teamRole\": \"worker\", \"parentTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"delegatedFromTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"correlationId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"hopCount\": 2, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"bindingId\": \"1015b294-4dfa-5913-9267-eb2e18d5c544\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"sessionId\": \"sess_1951d9d606f4\", \"resolvedAt\": \"2026-09-07T13:31:20.871315Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_1951d9d606f4\", \"result\": {\"B\": 42}, \"version\": 4, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"dispatchedAt\": \"2026-09-07T21:31:20.871129+08:00\", \"startedAt\": \"2026-09-07T21:31:20.991934+08:00\", \"completedAt\": \"2026-09-07T21:31:34.80933+08:00\"}}",
+        "toolName": "task.complete",
+        "toolOutput": "{\"comment\": {\"id\": \"dd0f6adb-27dc-41f2-986f-92480e0267d2\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"parentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"threadRootId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"author\": {\"type\": \"agent\", \"ref\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"content\": \"已计算 BETA+10 的结果，实际值 B=42。\\n\\n{\\\"B\\\":42}\", \"type\": \"result\", \"sourceTaskId\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"sourceAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"version\": 1, \"createdAt\": \"2026-09-07T21:31:34.80933+08:00\", \"updatedAt\": \"2026-09-07T21:31:34.80933+08:00\", \"routes\": [{\"id\": \"34bc47e4-d065-43c7-8a24-05ee9931d887\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"commentId\": \"dd0f6adb-27dc-41f2-986f-92480e0267d2\", \"commentVersion\": 1, \"targetType\": \"agent\", \"targetRef\": \"90fac7c8-c0f6-4f57-a278-f499dcd1fd44\", \"routeType\": \"team_leader\", \"outcome\": \"queued\", \"taskId\": \"1038a642-842b-4e5e-a590-907585e29c42\", \"createdAt\": \"2026-09-07T21:31:34.80933+08:00\"}]}, \"task\": {\"id\": \"fe695613-ccea-4baa-aba7-5478e6bae6f4\", \"tenant\": \"default\", \"namespace\": \"default\", \"issueId\": \"af9b893a-a9f4-4b9c-9c00-e0a772798c5d\", \"orchestrationRunId\": \"fef4eb51-40a1-4e74-8cf2-8546ce105e82\", \"runNodeId\": \"5a9b0daa-75fe-4a7f-b2c7-11aef29c6dcc\", \"currentAttemptId\": \"66dab964-ebe0-4ee5-a949-730562cdc8dd\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"comment\", \"triggerCommentId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"teamId\": \"22ce6ec1-fdf5-4393-a9f0-43abff828377\", \"teamRole\": \"worker\", \"parentTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"delegatedFromTaskId\": \"0916da88-cf58-47a3-92c3-0b049ebb098e\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"439f8704-36a3-463e-a22a-a84a048252e0\", \"correlationId\": \"e9039b21-d163-4d61-be6a-199c3ed3ea6f\", \"hopCount\": 2, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\", \"bindingId\": \"1015b294-4dfa-5913-9267-eb2e18d5c544\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"admin\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c1335247-c9a4-4b58-b952-c7283cef57e1\"}, \"sessionId\": \"sess_1951d9d606f4\", \"resolvedAt\": \"2026-09-07T13:31:20.871315Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_1951d9d606f4\", \"result\": {\"B\": 42}, \"version\": 4, \"createdAt\": \"2026-09-07T21:31:20.033308+08:00\", \"dispatchedAt\": \"2026-09-07T21:31:20.871129+08:00\", \"startedAt\": \"2026-09-07T21:31:20.991934+08:00\", \"completedAt\": \"2026-09-07T21:31:34.80933+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_8d05ec0943ca43178dd66fe7b6e5058c",
+          "managedSeq": 14,
+          "toolCallId": "call_acc72910ce384fad90219f",
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "tool_use_id": "call_acc72910ce384fad90219f",
+          "managedEventId": "evt_8d05ec0943ca43178dd66fe7b6e5058c",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:34.853+08:00"
+      },
+      {
+        "id": 400,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 17,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_7363c890989f42d19c119d175de7fce7",
+          "managedSeq": 15,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_7363c890989f42d19c119d175de7fce7",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:34.865+08:00"
+      },
+      {
+        "id": 401,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 18,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_7fef77ef64c64ab381b41fcb20079491",
+          "managedSeq": 16,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_7fef77ef64c64ab381b41fcb20079491",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:37.003+08:00"
+      },
+      {
+        "id": 402,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 19,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "已完成计算 BETA+10 的结果，实际值 B=42，并已提交 Lead 验收。任务已完成。",
+        "frameworkMeta": {
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_38a67def264a454e9f732700dd399249",
+          "managedSeq": 17,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_38a67def264a454e9f732700dd399249",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:37.029+08:00"
+      },
+      {
+        "id": 412,
+        "sessionFk": "2bb066bf-5906-48e7-b65a-f587ea0e42cc",
+        "seq": 20,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "c81c56fe-0429-478f-80a4-941bfff83100",
+          "attemptId": "66dab964-ebe0-4ee5-a949-730562cdc8dd",
+          "sourceKey": "managed:evt_141ced6ecc3b49e29651d5a6676d742d",
+          "managedSeq": 18,
+          "agentTaskId": "fe695613-ccea-4baa-aba7-5478e6bae6f4",
+          "managedEventId": "evt_141ced6ecc3b49e29651d5a6676d742d",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-07T21:31:41.735+08:00"
+      }
+    ]
+  }
+}

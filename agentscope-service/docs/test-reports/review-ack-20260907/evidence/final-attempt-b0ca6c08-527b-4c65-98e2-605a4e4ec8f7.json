@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T15:39:15.754256+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/b0ca6c08-527b-4c65-98e2-605a4e4ec8f7",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "b0ca6c08-527b-4c65-98e2-605a4e4ec8f7",
+      "agentTaskId": "7e5b173b-3442-43e7-8e7e-8058f885faee",
+      "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+      "runId": "e4a1068d-1990-40a6-b0d4-22a0824da862",
+      "nodeId": "7b640f59-a207-460c-8a14-b349dd79f68c",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+          "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "sessionId": "sess_2069b0d0fbeb",
+        "resolvedAt": "2026-09-07T15:37:18.645566Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "sessionId": "sess_2069b0d0fbeb",
+      "sessionRef": "5c93e30b-8d81-4b3e-b750-4708180678db",
+      "turnId": "917f3662-9aa9-4845-9e13-ba3d3b0337d4",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T23:37:44.972522+08:00",
+      "result": "以下是最终的计算结果汇总：\n- A = 42\n- B = 42\n- A + B = 84\n- 7×8 = 56",
+      "version": 23,
+      "createdAt": "2026-09-07T23:37:18.644675+08:00",
+      "updatedAt": "2026-09-07T23:37:44.998339+08:00",
+      "startedAt": "2026-09-07T23:37:18.729121+08:00",
+      "completedAt": "2026-09-07T23:37:44.998339+08:00"
+    }
+  }
+}

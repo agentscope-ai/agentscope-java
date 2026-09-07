@@ -1,0 +1,122 @@
+{
+  "at": "2026-09-07T12:31:34.278248+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/8035ee1d-f20c-50d6-a482-ffc41efc8d53/events?limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": "6c4d03f2-13ca-4536-8d04-8faa81510f0c",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 1,
+        "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "type": "agent-task.queued",
+        "actor": {
+          "type": "system",
+          "ref": "endpoint:7b6a315f-4f1c-446d-83a7-fad175d73413"
+        },
+        "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "idempotencyKey": "agent-task-queued:22d78dda-d868-4002-8995-67789923effc",
+        "occurredAt": "2026-09-07T20:27:54.937971+08:00"
+      },
+      {
+        "id": "645d9c92-a76a-4655-abdf-27106d967c93",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 2,
+        "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "type": "attempt.queued",
+        "actor": {
+          "type": "system"
+        },
+        "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "idempotencyKey": "attempt-queued:b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "occurredAt": "2026-09-07T20:27:54.959898+08:00"
+      },
+      {
+        "id": "4a3f8ec9-c6d2-42b6-b546-77ec31d2b263",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 3,
+        "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "type": "attempt.running",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "idempotencyKey": "attempt-running:b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "occurredAt": "2026-09-07T20:27:55.025255+08:00"
+      },
+      {
+        "id": "804a5218-ee05-40f7-bbce-c3c21696e7b2",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 4,
+        "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "attemptId": "b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "type": "attempt.failed",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "payload": {
+          "code": "TOOL_MISSING",
+          "message": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool."
+        },
+        "causationId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "correlationId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "idempotencyKey": "attempt-failed:b924a0b2-1a09-4528-adda-3f1dd833901c",
+        "occurredAt": "2026-09-07T20:28:08.901936+08:00"
+      },
+      {
+        "id": "0d0d5674-a185-4bec-95ff-0708d2895611",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 5,
+        "nodeId": "4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "agentTaskId": "22d78dda-d868-4002-8995-67789923effc",
+        "type": "node.failed",
+        "actor": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "idempotencyKey": "coordinator-fail:4dab4317-a270-51f1-ad50-29c0727e3eda",
+        "occurredAt": "2026-09-07T20:28:08.922745+08:00"
+      },
+      {
+        "id": "d7688ed7-4dd9-4cdf-8d3d-02e041835bf0",
+        "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "tenant": "default",
+        "namespace": "default",
+        "sequence": 6,
+        "type": "run.failed",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration"
+        },
+        "payload": {
+          "output": null,
+          "failureCode": "TOOL_MISSING",
+          "failureMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool."
+        },
+        "idempotencyKey": "run-failed:8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+        "occurredAt": "2026-09-07T20:28:08.927304+08:00"
+      }
+    ]
+  }
+}

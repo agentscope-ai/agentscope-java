@@ -1,0 +1,676 @@
+{
+  "at": "2026-09-07T15:39:15.855940+00:00",
+  "method": "GET",
+  "path": "/api/v1/inbox?tenant=default&namespace=default&limit=500",
+  "request": null,
+  "status": 200,
+  "response": {
+    "hasMore": false,
+    "items": [
+      {
+        "id": "9f6bb7a7-f1ba-40ec-80f1-440fa7349bd1",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "review_request",
+        "severity": "attention",
+        "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:e4a1068d-1990-40a6-b0d4-22a0824da862"
+        },
+        "title": "Review requested: IT review-feedback 20260907 change",
+        "body": "execution completed; awaiting acceptance",
+        "details": {
+          "reason": "execution completed; awaiting acceptance",
+          "status": "in_review",
+          "statusVersion": 8,
+          "previousStatus": "in_progress"
+        },
+        "read": false,
+        "archived": false,
+        "needsAction": true,
+        "dedupeKey": "issue-status:c7fde31d-e553-49d7-9b9d-be06fcdc2fe5:8:default:admin",
+        "createdAt": "2026-09-07T23:37:45.026099+08:00"
+      },
+      {
+        "id": "48b5d3de-7054-456c-b558-c7788ae0c685",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "f29cd8eb-3604-4f86-8aa8-bbdb8169ba06",
+        "commentId": "54d6564b-fcc8-439a-88c6-85915ba7c90c",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 mention",
+        "body": "感谢您的反馈。此回合已根据当前反馈关闭，无需进一步操作。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:54d6564b-fcc8-439a-88c6-85915ba7c90c:admin",
+        "createdAt": "2026-09-07T23:37:03.1958+08:00"
+      },
+      {
+        "id": "8f116914-8a49-4ce8-acab-f35cf5ef5878",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+        "commentId": "31b45275-939e-457f-adfd-45005bf8fb8b",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 praise",
+        "body": "非常感谢您的反馈。我们已经完成了A=42和B=42的计算，总和为84。如果您有其他具体的更改或新的需求，请告诉我。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:31b45275-939e-457f-adfd-45005bf8fb8b:admin",
+        "createdAt": "2026-09-07T23:37:01.655977+08:00"
+      },
+      {
+        "id": "25d0523d-6287-4305-adfa-77765f347ff9",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "commentId": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 accepted",
+        "body": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:cc9231dd-013c-498e-9363-f2e01fdb8ebc:admin",
+        "createdAt": "2026-09-07T23:36:55.385863+08:00"
+      },
+      {
+        "id": "3bef87ec-f286-4f94-a3b6-5d52d7a71d94",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "638f9ec3-1d75-45b3-a4f0-016c2d0be42e",
+        "commentId": "3512f71b-a53a-4424-92ea-5b716bdfadeb",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "title": "[UI verification] Issue sidebar 20260907",
+        "body": "Regression check: immediately submit a result and change status after the Issue version refresh.",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:3512f71b-a53a-4424-92ea-5b716bdfadeb:admin",
+        "createdAt": "2026-09-07T23:35:11.961087+08:00"
+      },
+      {
+        "id": "1c1d3315-2ccd-456f-ad78-216d96db38ee",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "review_request",
+        "severity": "attention",
+        "issueId": "01c41567-ef1c-4786-8325-a2d70eae1823",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:aec06dcf-8355-4932-b2c8-6a04cbcfb690"
+        },
+        "title": "Review requested: [UI verification] Sidebar team assignment 20260907",
+        "body": "execution completed; awaiting acceptance",
+        "details": {
+          "reason": "execution completed; awaiting acceptance",
+          "status": "in_review",
+          "statusVersion": 6,
+          "previousStatus": "in_progress"
+        },
+        "read": false,
+        "archived": false,
+        "needsAction": true,
+        "dedupeKey": "issue-status:01c41567-ef1c-4786-8325-a2d70eae1823:6:default:admin",
+        "createdAt": "2026-09-07T23:34:03.816584+08:00"
+      },
+      {
+        "id": "5945bc86-ab86-4bb1-a4e0-61dc29e8b59f",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "review_request",
+        "severity": "attention",
+        "issueId": "54d594eb-2f75-4508-be1e-35064fcb22ab",
+        "commentId": "d46b9f5b-e4ce-42d1-bbe6-1f093de77256",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "Review requested: [UI verification] Sidebar agent assignment 20260907",
+        "body": "execution completed; awaiting acceptance",
+        "details": {
+          "reason": "execution completed; awaiting acceptance",
+          "status": "in_review",
+          "statusVersion": 5,
+          "previousStatus": "in_progress"
+        },
+        "read": false,
+        "archived": false,
+        "needsAction": true,
+        "dedupeKey": "issue-status:54d594eb-2f75-4508-be1e-35064fcb22ab:5:default:admin",
+        "createdAt": "2026-09-07T23:32:49.437457+08:00"
+      },
+      {
+        "id": "b89e8ce9-1cbe-405e-ad8c-7d93a1b7dacb",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "0c67c121-bdf6-44d6-bec2-b0847015e603",
+        "commentId": "aed75dbd-d9d0-4866-b074-dc644a923be2",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 change",
+        "body": "Task completed.",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:aed75dbd-d9d0-4866-b074-dc644a923be2:admin",
+        "createdAt": "2026-09-07T23:30:55.56991+08:00"
+      },
+      {
+        "id": "eb3a50a7-4e23-4465-800e-3570eb9f7364",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "638f9ec3-1d75-45b3-a4f0-016c2d0be42e",
+        "commentId": "5706c229-1a9c-40ae-921c-665dc76e7cea",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "title": "[UI verification] Issue sidebar 20260907",
+        "body": "Sidebar verification completed: properties persisted and the uploaded attachment downloaded with matching SHA-256.",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:5706c229-1a9c-40ae-921c-665dc76e7cea:admin",
+        "createdAt": "2026-09-07T23:30:44.991743+08:00"
+      },
+      {
+        "id": "adf4b5d6-431f-42aa-905e-909abd086768",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "9dde1982-5e6a-4bea-9b44-c2923a9468a4",
+        "commentId": "51cf370f-0b8a-40f4-9c76-9d3723e315ce",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 accepted",
+        "body": "收到您的反馈，感谢您的认可！如果有其他具体需求或更改，请随时告知。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:51cf370f-0b8a-40f4-9c76-9d3723e315ce:admin",
+        "createdAt": "2026-09-07T23:30:32.656929+08:00"
+      },
+      {
+        "id": "51712261-973a-439a-a4b0-acfd050c1887",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "b43d4322-95d8-4de8-a212-a4bbecc61b0f",
+        "commentId": "e4db2e45-27b8-4c96-8669-355b3a419ae8",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 praise",
+        "body": "收到您的反馈，已完成的工作无需再次执行。如果有新的具体变更请求或需要新的交付内容，请明确告知。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:e4db2e45-27b8-4c96-8669-355b3a419ae8:admin",
+        "createdAt": "2026-09-07T23:30:31.795428+08:00"
+      },
+      {
+        "id": "5998799b-2278-4cb3-9eb4-a18bbf67a9fd",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "c6a8c452-d56d-49fe-a02f-f7b869df18d3",
+        "commentId": "8c6a5d4a-3377-42a7-ad27-e396866ef765",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 mention",
+        "body": "感谢您的反馈！如果您有其他具体的需求或更改，请随时告诉我。",
+        "read": false,
+        "archived": false,
+        "needsAction": false,
+        "dedupeKey": "comment:8c6a5d4a-3377-42a7-ad27-e396866ef765:admin",
+        "createdAt": "2026-09-07T23:30:29.787135+08:00"
+      },
+      {
+        "id": "9a2d9ddd-03d8-418b-9075-6b39e1b1a551",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_blocked",
+        "severity": "warning",
+        "issueId": "c834e3c4-78d4-4612-9957-1c139fdda7e2",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "Blocked: IT review-feedback 20260907 change",
+        "body": "AgentTask failed: runtime_candidates_exhausted",
+        "details": {
+          "reason": "AgentTask failed: runtime_candidates_exhausted",
+          "status": "blocked",
+          "statusVersion": 5,
+          "previousStatus": "in_review"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:26:45.094287+08:00",
+        "dedupeKey": "issue-status:c834e3c4-78d4-4612-9957-1c139fdda7e2:5:default:admin",
+        "createdAt": "2026-09-07T23:26:07.799486+08:00"
+      },
+      {
+        "id": "776feee6-d8a5-40e2-9562-3ef774741615",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_blocked",
+        "severity": "warning",
+        "issueId": "0261f15b-490b-4d6f-865a-48a1a70ba8ff",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "Blocked: IT review-feedback 20260907 praise",
+        "body": "AgentTask failed: runtime_candidates_exhausted",
+        "details": {
+          "reason": "AgentTask failed: runtime_candidates_exhausted",
+          "status": "blocked",
+          "statusVersion": 5,
+          "previousStatus": "in_review"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:26:49.295331+08:00",
+        "dedupeKey": "issue-status:0261f15b-490b-4d6f-865a-48a1a70ba8ff:5:default:admin",
+        "createdAt": "2026-09-07T23:26:07.773378+08:00"
+      },
+      {
+        "id": "163d3943-c248-473a-995d-11f762321a7f",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "agent_task_failed",
+        "severity": "error",
+        "issueId": "e925089a-b67f-46ab-816d-0e7a81bc499c",
+        "actor": {
+          "type": "agent",
+          "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "title": "Execution failed: 已完成 B=42",
+        "body": "runtime_candidates_exhausted: preferred runtime candidate exhausted and fresh fallback is disabled",
+        "details": {
+          "runId": "4e95d955-c021-4cf0-9c55-7fcb4f22779c",
+          "taskId": "81b34643-9d24-49b5-9c29-a63d8d89c877",
+          "errorCode": "runtime_candidates_exhausted"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:26:59.697268+08:00",
+        "dedupeKey": "agent-task-failed:81b34643-9d24-49b5-9c29-a63d8d89c877:admin",
+        "createdAt": "2026-09-07T23:26:07.514119+08:00"
+      },
+      {
+        "id": "28840da4-bf15-46a0-a084-80a091390266",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "e3a1b3d2-1e8e-4971-863f-69367d6e2a4e",
+        "commentId": "a82f2b7d-55cc-4707-97a5-dd65476e198e",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 mention",
+        "body": "感谢您的反馈！当前任务已完成，无需进一步操作。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T23:27:02.763625+08:00",
+        "dedupeKey": "comment:a82f2b7d-55cc-4707-97a5-dd65476e198e:admin",
+        "createdAt": "2026-09-07T23:25:58.927626+08:00"
+      },
+      {
+        "id": "7b9ad641-cb81-4c4f-bffd-28a8230c57b3",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "reply",
+        "severity": "attention",
+        "issueId": "ae21fe02-6088-4923-acaf-c0cd15cb7b43",
+        "commentId": "6e6a5dda-acfb-43b8-a983-89db14bdd442",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "IT review-feedback 20260907 accepted",
+        "body": "已收到您的反馈，您对已完成的工作表示满意。我们将保持现有工作状态和交付成果不变。感谢您的认可！",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T23:27:03.870176+08:00",
+        "dedupeKey": "comment:6e6a5dda-acfb-43b8-a983-89db14bdd442:admin",
+        "createdAt": "2026-09-07T23:25:54.664526+08:00"
+      },
+      {
+        "id": "ba79c7ee-7930-4718-8e73-919a42de6e23",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_blocked",
+        "severity": "warning",
+        "issueId": "e3a1b3d2-1e8e-4971-863f-69367d6e2a4e",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "Blocked: IT review-feedback 20260907 mention",
+        "body": "AgentTask failed: turn_failed",
+        "details": {
+          "reason": "AgentTask failed: turn_failed",
+          "status": "blocked",
+          "statusVersion": 5,
+          "previousStatus": "in_review"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:26:59.256525+08:00",
+        "dedupeKey": "issue-status:e3a1b3d2-1e8e-4971-863f-69367d6e2a4e:5:default:admin",
+        "createdAt": "2026-09-07T23:25:41.836045+08:00"
+      },
+      {
+        "id": "0f4368ed-dfe6-47d6-89be-8edde053aee7",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "agent_task_failed",
+        "severity": "error",
+        "issueId": "8194bdd8-d44b-49e5-84d6-c6fea366d678",
+        "actor": {
+          "type": "agent",
+          "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "title": "Execution failed: 已完成 A=42",
+        "body": "turn_failed: Pending tool calls exist without results. Enable enablePendingToolRecovery or provide tool results. Pending IDs: [call_d938436145744dfcb7b589]",
+        "details": {
+          "runId": "b736c0af-04b1-403a-86af-9e54da71688d",
+          "taskId": "9daa8150-22ec-4952-9b21-747dc87173c3",
+          "errorCode": "turn_failed"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:27:00.819838+08:00",
+        "dedupeKey": "agent-task-failed:9daa8150-22ec-4952-9b21-747dc87173c3:admin",
+        "createdAt": "2026-09-07T23:25:41.78758+08:00"
+      },
+      {
+        "id": "64f39521-e505-454b-92fe-a1c5ec90b8b3",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "review_request",
+        "severity": "attention",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:dcf877ba-e1c6-4d0f-a1a6-db6f8a0c514e"
+        },
+        "title": "Review requested: IT human-resume 20260907：双子任务补充输入后自动汇总",
+        "body": "execution completed; awaiting acceptance",
+        "details": {
+          "reason": "execution completed; awaiting acceptance",
+          "status": "in_review",
+          "statusVersion": 12,
+          "previousStatus": "in_progress"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": true,
+        "readAt": "2026-09-07T23:27:02.268566+08:00",
+        "dedupeKey": "issue-status:e9039b21-d163-4d61-be6a-199c3ed3ea6f:12:default:admin",
+        "createdAt": "2026-09-07T21:46:45.710344+08:00"
+      },
+      {
+        "id": "9afd354e-63e7-4a8d-a68a-245d70ec07e6",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "5aa85201-ccc2-4d27-ba4d-83d88e21408d",
+        "commentId": "c4a618be-f10f-4ea6-8ae3-3d5d58239855",
+        "actor": {
+          "type": "agent",
+          "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "title": "A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2",
+        "body": "缺少输入 ALPHA，无法计算 ALPHA×2。请提供必要的输入以继续执行任务。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:43:34.454411+08:00",
+        "dedupeKey": "comment:c4a618be-f10f-4ea6-8ae3-3d5d58239855:admin",
+        "createdAt": "2026-09-07T21:41:01.794794+08:00"
+      },
+      {
+        "id": "bea6d3b4-f1ac-4c80-9d29-dcfa0217e013",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_reopened",
+        "severity": "info",
+        "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:fef4eb51-40a1-4e74-8cf2-8546ce105e82"
+        },
+        "title": "Work resumed: IT human-resume 20260907：双子任务补充输入后自动汇总",
+        "body": "Team completed after human input; all child decisions resolved",
+        "details": {
+          "reason": "Team completed after human input; all child decisions resolved",
+          "status": "in_progress",
+          "statusVersion": 6,
+          "previousStatus": "blocked"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:39:51.211052+08:00",
+        "dedupeKey": "issue-status:e9039b21-d163-4d61-be6a-199c3ed3ea6f:6:default:admin",
+        "createdAt": "2026-09-07T21:37:06.198934+08:00"
+      },
+      {
+        "id": "dd10e864-e35e-44ae-bc81-84707a3395a6",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "af9b893a-a9f4-4b9c-9c00-e0a772798c5d",
+        "commentId": "2b350234-1ac4-44d7-b969-2b018dc9be4b",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10",
+        "body": "当前缺少必要的业务输入 BETA，无法完成计算 BETA+10。请提供输入 BETA 后重试。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:33:17.192006+08:00",
+        "dedupeKey": "comment:2b350234-1ac4-44d7-b969-2b018dc9be4b:admin",
+        "createdAt": "2026-09-07T21:30:19.533691+08:00"
+      },
+      {
+        "id": "3f32a5cb-6b5a-4ae1-9ce3-11951ab47eef",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+        "commentId": "95e0759a-0a90-4e03-83d6-ad18ca865f33",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2",
+        "body": "Delegated worker could not complete this Issue due to a missing input: ALPHA 未提供. Please provide the missing input ALPHA so that we can proceed with the task.",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:33:18.93776+08:00",
+        "dedupeKey": "comment:95e0759a-0a90-4e03-83d6-ad18ca865f33:admin",
+        "createdAt": "2026-09-07T21:29:34.683138+08:00"
+      },
+      {
+        "id": "65882b88-927c-4dac-bb61-68fba81d65b6",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "issue_reopened",
+        "severity": "info",
+        "issueId": "5e660a82-72da-4a31-8fed-bb7c037fc006",
+        "actor": {
+          "type": "system",
+          "ref": "repair:team-continuation"
+        },
+        "title": "Work resumed: 帮我调研微服务和新能源汽车发展趋势",
+        "body": "Human input resumed delegated Team work",
+        "details": {
+          "reason": "Human input resumed delegated Team work",
+          "status": "in_progress",
+          "statusVersion": 6,
+          "previousStatus": "blocked"
+        },
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T21:13:49.624072+08:00",
+        "dedupeKey": "issue-status:5e660a82-72da-4a31-8fed-bb7c037fc006:6:default:admin",
+        "createdAt": "2026-09-07T21:12:28.583329+08:00"
+      },
+      {
+        "id": "11b94175-f39c-4edf-a7af-2056c7f436fd",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "aad6727d-ba57-4709-b83c-a375762c3cf4",
+        "commentId": "8ae7fb3b-8ed8-409e-9282-75a3d0fadd33",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "调研微服务的发展趋势",
+        "body": "缺少 TAVILY_API_KEY 导致无法执行网络搜索以收集关于微服务架构的相关信息。请提供 TAVILY_API_KEY 凭证以继续此任务。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T20:52:21.870695+08:00",
+        "dedupeKey": "comment:8ae7fb3b-8ed8-409e-9282-75a3d0fadd33:admin",
+        "createdAt": "2026-09-07T20:51:57.64185+08:00"
+      },
+      {
+        "id": "73938904-0344-4647-a4fb-2e7db0c859a7",
+        "tenant": "default",
+        "namespace": "default",
+        "recipientType": "human",
+        "recipientRef": "admin",
+        "type": "mention",
+        "severity": "attention",
+        "issueId": "87938322-9bfd-4785-b140-ba60fc74a179",
+        "commentId": "5c8fd4c4-72d0-4f9b-8b30-d647ac03a68e",
+        "actor": {
+          "type": "agent",
+          "ref": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "title": "调研新能源汽车的发展趋势",
+        "body": "由于缺少 `TAVILY_API_KEY` 凭证，导致无法执行 `web_search` 操作，信息收集任务因此被阻塞。请提供 `TAVILY_API_KEY` 凭证以便我们能够继续完成信息收集任务。",
+        "read": true,
+        "archived": false,
+        "needsAction": false,
+        "readAt": "2026-09-07T20:51:58.801019+08:00",
+        "dedupeKey": "comment:5c8fd4c4-72d0-4f9b-8b30-d647ac03a68e:admin",
+        "createdAt": "2026-09-07T20:50:57.479139+08:00"
+      }
+    ],
+    "nextCursor": ""
+  }
+}

@@ -97,7 +97,7 @@ func AgentTaskOwnsIssueLifecycle(issue *controlmodel.Issue, task *controlmodel.A
 // lifecycle semantics, while an explicitly mentioned standalone consultant
 // cannot move an Issue assigned to somebody else.
 func AgentTaskMayAdvanceIssueLifecycle(issue *controlmodel.Issue, task *controlmodel.AgentTask) bool {
-	if task == nil {
+	if task == nil || task.TriggerType == controlmodel.AgentTaskReviewComment {
 		return false
 	}
 	return task.TriggerType != "comment" || task.TeamID != nil || AgentTaskOwnsIssueLifecycle(issue, task)
@@ -392,6 +392,7 @@ type CollaborationRepository interface {
 	ReplayDeadLetterInputs(ctx context.Context, taskID uuid.UUID, inputIDs []uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error)
 	RequeueRetryableInputs(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	StartAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64) (*controlmodel.AgentTask, error)
+	BeginReviewWork(ctx context.Context, id uuid.UUID, expectedVersion int64, requestQuote string) (*controlmodel.AgentTask, error)
 	CompleteAgentTask(ctx context.Context, id uuid.UUID, completion TaskCompletion) (*controlmodel.AgentTask, error)
 	CompleteAgentTaskWithComment(ctx context.Context, id uuid.UUID, completion TaskCompletion, comment *controlmodel.Comment, targets []CommentTarget) (*controlmodel.AgentTask, *controlmodel.Comment, error)
 	FailAgentTaskWithAttempt(ctx context.Context, id uuid.UUID, failure TaskFailure) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error)
@@ -435,6 +436,14 @@ type CollaborationRepository interface {
 	ListAutomations(ctx context.Context, filter AutomationFilter) ([]*controlmodel.Automation, error)
 	UpdateAutomation(ctx context.Context, automation *controlmodel.Automation, expectedVersion int64) (*controlmodel.Automation, error)
 	ArchiveAutomation(ctx context.Context, id uuid.UUID, expectedVersion int64) (*controlmodel.Automation, error)
+	AdmitAutomationRun(ctx context.Context, req AutomationAdmission) (*controlmodel.AutomationRun, bool, error)
+	GetAutomationRun(ctx context.Context, id uuid.UUID) (*controlmodel.AutomationRun, error)
+	ListPendingAutomationRuns(ctx context.Context, limit int) ([]*controlmodel.AutomationRun, error)
+	ClaimAutomationRun(ctx context.Context, id uuid.UUID, now time.Time, ttl time.Duration) (*controlmodel.AutomationRun, error)
+	SaveAutomationDelivery(ctx context.Context, delivery *controlmodel.AutomationDelivery) (*controlmodel.AutomationDelivery, bool, error)
+	GetAutomationDelivery(ctx context.Context, id uuid.UUID) (*controlmodel.AutomationDelivery, error)
+	ListAutomationDeliveries(ctx context.Context, automationID uuid.UUID, limit, offset int) ([]*controlmodel.AutomationDelivery, error)
+
 	BeginAutomationRun(ctx context.Context, run *controlmodel.AutomationRun) (*controlmodel.AutomationRun, bool, error)
 	FinishAutomationRun(ctx context.Context, run *controlmodel.AutomationRun) (*controlmodel.AutomationRun, error)
 	ListAutomationRuns(ctx context.Context, automationID uuid.UUID, limit, offset int) ([]*controlmodel.AutomationRun, error)

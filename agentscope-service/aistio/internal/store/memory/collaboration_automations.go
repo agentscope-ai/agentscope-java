@@ -5,6 +5,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"time"
 
@@ -20,6 +21,13 @@ func cloneAutomation(in *controlmodel.Automation) *controlmodel.Automation {
 	}
 	out := *in
 	out.TriggerConfig, out.ActionConfig = cloneJSON(in.TriggerConfig), cloneJSON(in.ActionConfig)
+	out.Execution = nil
+	out.Triggers = nil
+	raw, _ := json.Marshal(in.Execution)
+	_ = json.Unmarshal(raw, &out.Execution)
+	raw, _ = json.Marshal(in.Triggers)
+	_ = json.Unmarshal(raw, &out.Triggers)
+	out.WebhookConfigured = in.WebhookSecretHash != ""
 	return &out
 }
 
@@ -29,6 +37,7 @@ func cloneAutomationRun(in *controlmodel.AutomationRun) *controlmodel.Automation
 	}
 	out := *in
 	out.Input, out.Output = cloneJSON(in.Input), cloneJSON(in.Output)
+	out.Snapshot = cloneAutomation(in.Snapshot)
 	return &out
 }
 
@@ -87,6 +96,7 @@ func (r *collaborationRepo) UpdateAutomation(_ context.Context, in *controlmodel
 		return nil, store.ErrConflict
 	}
 	next := cloneAutomation(in)
+	store.MergeAutomationScheduleOnEdit(current, next)
 	next.Tenant, next.Namespace, next.CreatedAt, next.CreatedBy = current.Tenant, current.Namespace, current.CreatedAt, current.CreatedBy
 	next.Version, next.UpdatedAt = current.Version+1, time.Now().UTC()
 	r.s.automations[next.ID] = cloneAutomation(next)
@@ -139,19 +149,27 @@ func (r *collaborationRepo) FinishAutomationRun(_ context.Context, in *controlmo
 	if current == nil {
 		return nil, store.ErrNotFound
 	}
-	if current.Status != controlmodel.AutomationRunRunning {
+	if controlmodel.IsAutomationRunTerminal(current.Status) || (in.Version > 0 && current.Version != in.Version) {
 		return nil, store.ErrConflict
 	}
 	out := cloneAutomationRun(in)
-	out.AutomationID, out.Tenant, out.Namespace, out.TriggerType, out.TriggerRef, out.IdempotencyKey, out.Input, out.CreatedAt = current.AutomationID, current.Tenant, current.Namespace, current.TriggerType, current.TriggerRef, current.IdempotencyKey, current.Input, current.CreatedAt
 	now := time.Now().UTC()
-	out.CompletedAt = &now
-	r.s.automationRuns[out.ID] = cloneAutomationRun(out)
-	if automation := r.s.automations[out.AutomationID]; automation != nil {
-		automation.LastRunAt = &now
-		automation.UpdatedAt = now
+	out.UpdatedAt = now
+	out.Version = current.Version + 1
+	if controlmodel.IsAutomationRunTerminal(out.Status) {
+		out.CompletedAt = &now
+	} else {
+		out.CompletedAt = nil
 	}
-	r.enqueueEventLocked(out.Tenant, "automation-run", out.ID, "automation-run."+string(out.Status)+".v1", out, "automation-run-finished:"+out.ID.String())
+	out.LeaseUntil = nil
+	out.LeaseToken = uuid.Nil
+	r.s.automationRuns[out.ID] = cloneAutomationRun(out)
+	if item := store.AutomationFailureInbox(out); item != nil {
+		r.s.inboxItems[item.ID] = item
+	}
+	if controlmodel.IsAutomationRunTerminal(out.Status) {
+		r.enqueueEventLocked(out.Tenant, "automation-run", out.ID, "automation-run."+string(out.Status)+".v1", out, "automation-run-finished:"+out.ID.String())
+	}
 	return out, nil
 }
 

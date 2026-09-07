@@ -1,0 +1,18 @@
+{
+  "rootIssueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+  "runId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+  "initialRunStateBeforeHumanInput": "waiting",
+  "rootStatus": "in_review",
+  "runState": "partial_succeeded",
+  "rootStatusReconciledAfterFix": true,
+  "children": "2 done",
+  "resumedTasks": "2 workers + 2 leaders completed",
+  "resumedAttempts": "4 succeeded",
+  "resumedToolErrors": 0,
+  "coordinatorWaitingAfterChildAcceptance": 1,
+  "result": "A=42 B=42 sum=84",
+  "summaryPrecedesReview": true,
+  "inputsProcessed": true,
+  "reviewInboxId": "e7e6c93e-f518-4ebc-8ce5-f0d3732269fb",
+  "initialPhaseToolErrorsRetained": 22
+}

@@ -1,6 +1,6 @@
 # Automation 能力完善：分析与设计草案
 
-日期：2026-09-07。状态：设计建议，尚未进入功能开发与完整验收。
+日期：2026-09-07；实现更新：2026-09-08。状态：第一版已实现并完成本地验收，结果见 `test-reports/automation-20260908/REPORT.md`。下文“当前实现与实际差距”保留改造前的基线分析。
 
 分析基于主目录 `/Users/ken/agentscope-2/agentscope-java`、当前分支 `agentscope-service-v5` 的工作区源码；参考 `/Users/ken/agentscope-2/multica` 的 Autopilot 源码、产品文档及用户提供的创建界面截图。当前浏览器访问 Multica 本地地址后跳转登录页，未完成登录后的交互体验。截图里的 Runbook 是产品示例，不是本次需要执行的任务。
 
@@ -176,3 +176,16 @@ flowchart LR
 - AgentScope 主要证据：`frontend/src/features/operate/AutomationsPage.tsx`，`frontend/src/api/collaboration.ts`，`frontend/src/lib/apiClient.ts`，`aistio/internal/automation/service.go`，`worker.go`，`aistio/internal/httpapi/collaboration_handler.go`，`aistio/internal/store/{postgres,memory}/collaboration_automations.go`，`aistio/internal/controlplane/model/collaboration.go`。路径均相对于 `agentscope-service/`。
 - 复用依据：`aistio/internal/httpapi/agent_endpoint_handler.go` 的后台 Issue 创建方式，`aistio/internal/scheduler/scheduler.go` 的持久调度，`docs/inbox-redesign-plan.md` 的通知和验收规则。
 - Multica 主要证据：`packages/views/autopilots/components/autopilot-dialog.tsx`，`packages/core/types/autopilot.ts`，`server/internal/service/autopilot.go`，`server/internal/scheduler/jobs_autopilot.go`，`server/internal/handler/autopilot_webhook.go`，`server/cmd/server/autopilot_failure_monitor.go`，`apps/docs/content/docs/autopilots.zh.mdx`。
+
+
+## 10. 第一版实际实现（2026-09-08）
+
+- 创建页围绕 Runbook、Agent/Team、输出模式、完成策略、上下文链接与触发器展开；桌面左右独立滚动。运行环境继承执行方绑定。支持订阅自己，API 可设置最多 50 个订阅者。
+- 一份 Automation 内的 `execution`、`triggers` 采用 JSONB 聚合保存，触发器保留稳定 UUID；配置修改受版本锁保护。每个 Run 内保存不可变完整配置快照，承担配置 revision 的审计职责，首版没有额外独立 Revision 表。调度游标推进不增加配置版本；编辑事务保留并发推进的游标。
+- PostgreSQL 受理事务同时保存 Run、推进游标、写出站事件；worker 持续扫描持久化队列完成派发和结果同步。派发租约、稳定 Issue/Comment ID 和编排幂等键支持部分派发后的恢复。
+- Cron 使用标准五字段解析、IANA 时区及服务端预览；`@every` 最小一分钟。默认跳过执行重叠，也可串行排队；最长排队和运行时间可设置。错过的调度在 24 小时窗口内只补最近一次，窗口外记录 skipped。
+- Webhook 独立入口 `/hooks/v1/automations/{automationId}/{triggerId}`，通过 Gateway 转发。使用 `X-Automation-Secret` 与稳定 `Idempotency-Key`，密钥仅保存哈希，创建/轮换时显示一次。事件可精确过滤，认证通过的投递可审计和重放。同幂等键的不同 JSON 数据或事件拒绝。
+- `run_only` 使用 operational automation_job；普通 Issue 仍遵守 review/automatic。等待人工验收不占执行并发槽。派发前失败和自动化超时通过 Inbox 通知创建者；执行任务的失败/审批继续使用既有通知链路。
+- 运行详情展示实际结果、错误、输入快照、Issue、Task、编排图/Session 和产物入口；旧记录显示为历史派发语义，不追认成 Agent 实际完成。
+
+首版边界：尚未实现 Channel 事件接入、供应商 HMAC 签名协议、跨实例共享限流、连续失败自动暂停、规则级项目/Workspace 覆盖配置及历史清理策略。Webhook 当前是共享密钥认证；拒绝认证的请求不保存正文。首版不把以上能力标为已支持。

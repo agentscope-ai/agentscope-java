@@ -1,0 +1,76 @@
+{
+  "at": "2026-09-07T12:25:18.163838+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "29d09f31-2098-44be-b9a8-0d0e7617a516",
+      "orchestrationRunId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+      "runNodeId": "33711261-48ee-58ff-b1f6-140501c2f183",
+      "currentAttemptId": "57738aa3-7f3c-45c6-b006-e2d4da210ffe",
+      "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+      "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+      "delegatedFromTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+      "originator": {
+        "type": "agent",
+        "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+      },
+      "causationId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+      "correlationId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+          "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "sessionId": "sess_6500f3c9d987",
+        "resolvedAt": "2026-09-07T12:24:18.144644Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_6500f3c9d987",
+      "result": {
+        "content": "成功完成了列出当前工作目录下的所有文件的任务，并且基于这些文件的信息创作了一首诗。"
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T20:24:17.98769+08:00",
+      "dispatchedAt": "2026-09-07T20:24:18.144288+08:00",
+      "startedAt": "2026-09-07T20:24:18.231569+08:00",
+      "completedAt": "2026-09-07T20:24:50.117888+08:00",
+      "inputs": [
+        {
+          "id": "6d407ecd-79aa-49c0-b719-d4c91ec121ec",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+          "commentId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T20:24:18.144288+08:00",
+          "processedAt": "2026-09-07T20:24:50.117888+08:00",
+          "responseCommentId": "9d7f2987-c907-4179-96ae-d1118a6647e4",
+          "attempts": 0,
+          "createdAt": "2026-09-07T20:24:17.98769+08:00"
+        }
+      ]
+    }
+  }
+}

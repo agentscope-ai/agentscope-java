@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-07T12:30:14.837625+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/22d78dda-d868-4002-8995-67789923effc/context",
+  "request": null,
+  "status": 401,
+  "response": {
+    "error": "invalid task token"
+  }
+}

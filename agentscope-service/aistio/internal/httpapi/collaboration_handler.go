@@ -17,10 +17,7 @@ package httpapi
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -297,7 +294,7 @@ func (s *Server) updateIssue(c *gin.Context) {
 		Priority           *string          `json:"priority"`
 		AcceptanceCriteria *json.RawMessage `json:"acceptanceCriteria"`
 		ContextRefs        *json.RawMessage `json:"contextRefs"`
-		DueAt              *time.Time       `json:"dueAt"`
+		DueAt              json.RawMessage  `json:"dueAt"`
 		ExpectedVersion    int64            `json:"expectedVersion"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -314,13 +311,23 @@ func (s *Server) updateIssue(c *gin.Context) {
 		current.Priority = *req.Priority
 	}
 	if req.AcceptanceCriteria != nil {
+		if err := validateIssueCriteria(*req.AcceptanceCriteria); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
 		current.AcceptanceCriteria = *req.AcceptanceCriteria
 	}
 	if req.ContextRefs != nil {
 		current.ContextRefs = *req.ContextRefs
 	}
-	if req.DueAt != nil {
-		current.DueAt = req.DueAt
+	if len(req.DueAt) > 0 {
+		// An omitted PATCH field preserves the date; an explicit null clears it.
+		var dueAt *time.Time
+		if err := json.Unmarshal(req.DueAt, &dueAt); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "dueAt must be an RFC3339 timestamp or null"})
+			return
+		}
+		current.DueAt = dueAt
 	}
 	if req.ExpectedVersion <= 0 {
 		req.ExpectedVersion = current.Version
@@ -648,22 +655,28 @@ func (s *Server) assignIssue(c *gin.Context) {
 		return
 	}
 	var req struct {
-		AssigneeType    controlmodel.AssigneeType `json:"assigneeType"`
-		AssigneeRef     string                    `json:"assigneeRef"`
-		ExpectedVersion int64                     `json:"expectedVersion"`
+		AssigneeType    *controlmodel.AssigneeType `json:"assigneeType"`
+		AssigneeRef     *string                    `json:"assigneeRef"`
+		ExpectedVersion int64                      `json:"expectedVersion"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.AssigneeType == "" || req.AssigneeRef == "" {
+	if err := c.ShouldBindJSON(&req); err != nil || req.AssigneeType == nil || req.AssigneeRef == nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "assigneeType and assigneeRef are required"})
 		return
 	}
-	if req.AssigneeType == controlmodel.AssigneeAgent {
+	assigneeType, assigneeRef := *req.AssigneeType, strings.TrimSpace(*req.AssigneeRef)
+	if (assigneeType == "") != (assigneeRef == "") ||
+		(assigneeType != "" && assigneeType != controlmodel.AssigneeHuman && assigneeType != controlmodel.AssigneeAgent && assigneeType != controlmodel.AssigneeTeam) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "select a human, agent or team with a reference, or clear both assignee fields"})
+		return
+	}
+	if assigneeType == controlmodel.AssigneeAgent {
 		current, err := s.store.Collaboration().GetIssue(c.Request.Context(), id)
 		if err != nil {
 			s.writeCollaborationError(c, err)
 			return
 		}
-		if _, err := s.activeAgentInScope(c.Request.Context(), current.Tenant, current.Namespace, req.AssigneeRef); err != nil {
-			if _, parseErr := uuid.Parse(req.AssigneeRef); parseErr != nil {
+		if _, err := s.activeAgentInScope(c.Request.Context(), current.Tenant, current.Namespace, assigneeRef); err != nil {
+			if _, parseErr := uuid.Parse(assigneeRef); parseErr != nil {
 				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "assigneeRef must be a valid agentId"})
 			} else {
 				s.writeCollaborationError(c, err)
@@ -672,7 +685,7 @@ func (s *Server) assignIssue(c *gin.Context) {
 		}
 	}
 	issue, task, err := s.store.Collaboration().AssignIssue(c.Request.Context(), id,
-		req.ExpectedVersion, req.AssigneeType, req.AssigneeRef, humanActor(c, s))
+		req.ExpectedVersion, assigneeType, assigneeRef, humanActor(c, s))
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
@@ -2121,196 +2134,4 @@ func (s *Server) writeCollaborationError(c *gin.Context, err error) {
 		return
 	}
 	s.writeControlPlaneError(c, err)
-}
-
-type automationRequest struct {
-	Tenant          string                             `json:"tenant"`
-	Namespace       string                             `json:"namespace"`
-	Name            string                             `json:"name"`
-	Description     string                             `json:"description,omitempty"`
-	Enabled         *bool                              `json:"enabled,omitempty"`
-	TriggerType     controlmodel.AutomationTriggerType `json:"triggerType"`
-	TriggerConfig   json.RawMessage                    `json:"triggerConfig,omitempty"`
-	ActionType      controlmodel.AutomationActionType  `json:"actionType"`
-	ActionConfig    json.RawMessage                    `json:"actionConfig"`
-	WebhookSecret   string                             `json:"webhookSecret,omitempty"`
-	ExpectedVersion int64                              `json:"expectedVersion,omitempty"`
-}
-
-func automationFromRequest(req automationRequest, actor controlmodel.Actor) *controlmodel.Automation {
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	item := &controlmodel.Automation{Tenant: req.Tenant, Namespace: req.Namespace, Name: strings.TrimSpace(req.Name), Description: req.Description, Enabled: enabled, TriggerType: req.TriggerType, TriggerConfig: req.TriggerConfig, ActionType: req.ActionType, ActionConfig: req.ActionConfig, CreatedBy: actor}
-	if req.WebhookSecret != "" {
-		sum := sha256.Sum256([]byte(req.WebhookSecret))
-		item.WebhookSecretHash = hex.EncodeToString(sum[:])
-	}
-	return item
-}
-
-func (s *Server) createAutomation(c *gin.Context) {
-	var req automationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-		return
-	}
-	if strings.TrimSpace(req.Tenant) == "" || strings.TrimSpace(req.Namespace) == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required"})
-		return
-	}
-	created, err := s.automationService().Create(c.Request.Context(), automationFromRequest(req, humanActor(c, s)))
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{"automation": created})
-}
-
-func (s *Server) listAutomations(c *gin.Context) {
-	tenant, namespace, ok := requireCollaborationScope(c)
-	if !ok {
-		return
-	}
-	limit, offset := collaborationPagination(c)
-	var enabled *bool
-	if raw := c.Query("enabled"); raw != "" {
-		v, err := strconv.ParseBool(raw)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid enabled"})
-			return
-		}
-		enabled = &v
-	}
-	items, err := s.store.Collaboration().ListAutomations(c.Request.Context(), store.AutomationFilter{Tenant: tenant, Namespace: namespace, Enabled: enabled, Limit: limit, Offset: offset})
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-func (s *Server) getAutomation(c *gin.Context) {
-	id, ok := parseUUIDParam(c, "automationId")
-	if !ok {
-		return
-	}
-	item, err := s.store.Collaboration().GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"automation": item})
-}
-
-func (s *Server) updateAutomation(c *gin.Context) {
-	id, ok := parseUUIDParam(c, "automationId")
-	if !ok {
-		return
-	}
-	current, err := s.store.Collaboration().GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	var req automationRequest
-	if err = c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-		return
-	}
-	next := automationFromRequest(req, current.CreatedBy)
-	next.ID = id
-	if next.Name == "" {
-		next.Name = current.Name
-	}
-	if next.TriggerType == "" {
-		next.TriggerType = current.TriggerType
-	}
-	if len(next.TriggerConfig) == 0 {
-		next.TriggerConfig = current.TriggerConfig
-	}
-	if next.ActionType == "" {
-		next.ActionType = current.ActionType
-	}
-	if len(next.ActionConfig) == 0 {
-		next.ActionConfig = current.ActionConfig
-	}
-	if next.WebhookSecretHash == "" {
-		next.WebhookSecretHash = current.WebhookSecretHash
-	}
-	if req.Enabled == nil {
-		next.Enabled = current.Enabled
-	}
-	updated, err := s.store.Collaboration().UpdateAutomation(c.Request.Context(), next, req.ExpectedVersion)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"automation": updated})
-}
-
-func (s *Server) archiveAutomation(c *gin.Context) {
-	id, ok := parseUUIDParam(c, "automationId")
-	if !ok {
-		return
-	}
-	version, _ := strconv.ParseInt(c.Query("expectedVersion"), 10, 64)
-	item, err := s.store.Collaboration().ArchiveAutomation(c.Request.Context(), id, version)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"automation": item})
-}
-
-func (s *Server) triggerAutomation(c *gin.Context) {
-	id, ok := parseUUIDParam(c, "automationId")
-	if !ok {
-		return
-	}
-	item, err := s.store.Collaboration().GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	if item.WebhookSecretHash != "" {
-		sum := sha256.Sum256([]byte(c.GetHeader("X-Automation-Secret")))
-		expected, _ := hex.DecodeString(item.WebhookSecretHash)
-		if len(expected) != len(sum) || subtle.ConstantTimeCompare(expected, sum[:]) != 1 {
-			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid automation secret"})
-			return
-		}
-	}
-	var input json.RawMessage
-	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-			return
-		}
-	}
-	key := c.GetHeader("Idempotency-Key")
-	if key == "" {
-		key = c.GetHeader("X-Idempotency-Key")
-	}
-	run, err := s.automationService().Trigger(c.Request.Context(), id, c.GetHeader("X-Trigger-Ref"), key, input)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, gin.H{"run": run})
-}
-
-func (s *Server) listAutomationRuns(c *gin.Context) {
-	id, ok := parseUUIDParam(c, "automationId")
-	if !ok {
-		return
-	}
-	limit, offset := collaborationPagination(c)
-	items, err := s.store.Collaboration().ListAutomationRuns(c.Request.Context(), id, limit, offset)
-	if err != nil {
-		s.writeCollaborationError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
 }

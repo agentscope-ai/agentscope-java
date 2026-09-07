@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-07T12:31:34.204365+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/45526a9e-9bc5-4c1d-a6a3-a6f4a84c76e5",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "45526a9e-9bc5-4c1d-a6a3-a6f4a84c76e5",
+      "agentTaskId": "a68779a6-fd32-4485-8a61-6c393101d851",
+      "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+      "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+      "runId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "nodeId": "acf924e4-048d-4d7e-b73d-31a39113e038",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+          "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+        },
+        "sessionId": "sess_022de3dd08bf",
+        "resolvedAt": "2026-09-07T12:28:10.063156Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+      "sessionId": "sess_022de3dd08bf",
+      "sessionRef": "46d1652e-b959-43b0-9b18-08d4bd7a345b",
+      "turnId": "e8cd281f-34f6-4a45-8f69-d99ecab93779",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T20:28:32.511404+08:00",
+      "result": "The files in the current directory have been listed, and a poem has been composed based on those file names. The poem is as follows:\n\nIn a world of code and bytes, where paths do intertwine,\nLies a realm so vast and deep, with secrets to divine.\nFrom the .DS_Store so small, to the mighty pom.xml,\nEach file tells a tale, in this digital chrysalis.\n\nAGENTS.md, like a beacon, guides the way we work,\nCONTRIBUTING.md invites all, to join and not to shirk.\nREADME.md, a friendly face, welcomes one and all,\nTo explore the mysteries, within this virtual hall.\n\nagentscope-core and more, modules stand so proud,\nagentscope-service, too, serving data from a crowd.\nIn the heart of this domain, where creativity flows,\nWe find our purpose, and together, a symphony grows.\n\nSo let us cherish every line, and every byte we see,\nFor in this project's essence, we are part of history.",
+      "version": 19,
+      "createdAt": "2026-09-07T20:28:10.062774+08:00",
+      "updatedAt": "2026-09-07T20:28:32.537793+08:00",
+      "startedAt": "2026-09-07T20:28:10.151202+08:00",
+      "completedAt": "2026-09-07T20:28:32.537793+08:00"
+    }
+  }
+}

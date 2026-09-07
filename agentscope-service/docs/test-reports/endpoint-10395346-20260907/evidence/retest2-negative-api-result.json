@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-07T12:29:19.033517+00:00",
+  "method": "GET",
+  "path": "/invoke/v1/jobs/c38dbcb2-8c1b-4f09-ba05-34cd519cdb93",
+  "request": null,
+  "status": 200,
+  "response": {
+    "invocation": {
+      "completedAt": "2026-09-07T20:28:18.058451+08:00",
+      "correlationId": "27b4ea86-c9ff-4b68-bd0b-c904bf49ae46",
+      "createdAt": "2026-09-07T20:27:54.915982+08:00",
+      "endpointId": "7b6a315f-4f1c-446d-83a7-fad175d73413",
+      "errorCode": "TOOL_MISSING",
+      "errorMessage": "Required tool 'missing_web_search_20260907' is not available. Unable to complete the task as instructed without this tool.",
+      "id": "c38dbcb2-8c1b-4f09-ba05-34cd519cdb93",
+      "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+      "mode": "job",
+      "result": {
+        "runState": "failed"
+      },
+      "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+      "startedAt": "2026-09-07T20:27:54.917184+08:00",
+      "status": "failed",
+      "updatedAt": "2026-09-07T20:28:18.060421+08:00"
+    },
+    "issue": {
+      "id": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
+      "status": "blocked",
+      "updatedAt": "2026-09-07T20:28:08.932368+08:00"
+    },
+    "run": {
+      "id": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
+      "state": "failed",
+      "updatedAt": "2026-09-07T20:28:08.927304+08:00"
+    }
+  }
+}

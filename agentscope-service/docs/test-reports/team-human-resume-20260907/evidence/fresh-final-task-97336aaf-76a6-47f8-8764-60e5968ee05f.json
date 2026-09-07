@@ -1,0 +1,81 @@
+{
+  "at": "2026-09-07T13:38:10.735958+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/97336aaf-76a6-47f8-8764-60e5968ee05f",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "1a6465d5-f287-451a-93d1-b7ae42dbcb82",
+      "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+      "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+      "currentAttemptId": "0abd0be4-b41e-4d64-b176-54e572eb3122",
+      "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "comment",
+      "triggerCommentId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+      "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "parentTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+      "delegatedFromTaskId": "0916da88-cf58-47a3-92c3-0b049ebb098e",
+      "originator": {
+        "type": "agent",
+        "ref": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+      "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "hopCount": 2,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+          "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "sessionId": "sess_3aef60a92aaa",
+        "resolvedAt": "2026-09-07T13:31:33.866316Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_3aef60a92aaa",
+      "result": {
+        "outcome": "waiting",
+        "summary": "A 子任务已验收完成，正在等待 B 子任务的结果。",
+        "waitingForTaskIds": [
+          "1038a642-842b-4e5e-a590-907585e29c42"
+        ]
+      },
+      "version": 4,
+      "createdAt": "2026-09-07T21:31:33.34967+08:00",
+      "dispatchedAt": "2026-09-07T21:31:33.866121+08:00",
+      "startedAt": "2026-09-07T21:31:33.979237+08:00",
+      "completedAt": "2026-09-07T21:31:59.295261+08:00",
+      "inputs": [
+        {
+          "id": "a907c43f-448c-4dca-99b4-f17c9e7123a0",
+          "tenant": "default",
+          "namespace": "default",
+          "taskId": "97336aaf-76a6-47f8-8764-60e5968ee05f",
+          "commentId": "a6fe92e3-32b7-480e-87b0-25899463c927",
+          "commentVersion": 1,
+          "sequence": 1,
+          "state": "processed",
+          "deliveredAt": "2026-09-07T21:31:33.866121+08:00",
+          "processedAt": "2026-09-07T21:31:59.295261+08:00",
+          "responseCommentId": "58e22444-69e2-44e6-90b3-d3fbeff82d8e",
+          "attempts": 0,
+          "createdAt": "2026-09-07T21:31:33.34967+08:00"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+import{a2 as s}from"./index-B8bjrPZ6.js";function o({value:t,className:e}){const r=typeof t=="string"?t:JSON.stringify(t,null,2);return s.jsx("pre",{className:`overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-relaxed text-slate-100 ${e||""}`,children:r})}export{o as J};

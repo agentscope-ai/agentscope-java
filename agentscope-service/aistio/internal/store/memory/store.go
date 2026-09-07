@@ -87,6 +87,7 @@ type Store struct {
 	approvals             map[uuid.UUID]*controlmodel.Approval
 	inboxItems            map[uuid.UUID]*controlmodel.InboxItem
 	activities            []controlmodel.Activity
+	automationDeliveries  map[uuid.UUID]*controlmodel.AutomationDelivery
 	automations           map[uuid.UUID]*controlmodel.Automation
 	automationRuns        map[uuid.UUID]*controlmodel.AutomationRun
 	workSources           map[uuid.UUID]*controlmodel.WorkSource
@@ -171,6 +172,7 @@ func Open(_ context.Context, cfg store.Config) (store.Store, error) {
 		subscribers:           make(map[uuid.UUID][]controlmodel.IssueSubscriber),
 		approvals:             make(map[uuid.UUID]*controlmodel.Approval),
 		inboxItems:            make(map[uuid.UUID]*controlmodel.InboxItem),
+		automationDeliveries:  make(map[uuid.UUID]*controlmodel.AutomationDelivery),
 		automations:           make(map[uuid.UUID]*controlmodel.Automation),
 		automationRuns:        make(map[uuid.UUID]*controlmodel.AutomationRun),
 		workSources:           make(map[uuid.UUID]*controlmodel.WorkSource),

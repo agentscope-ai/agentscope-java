@@ -1,0 +1,159 @@
+{
+  "at": "2026-09-07T15:38:21.924917+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+      "mode": "adaptive",
+      "triggerType": "review_comment",
+      "triggerRef": "de085023-521a-4fe0-8dce-49283e8f84bd",
+      "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+      "state": "succeeded",
+      "version": 5,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-07T23:36:45.425524+08:00",
+      "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+      "startedAt": "2026-09-07T23:36:45.425524+08:00",
+      "completedAt": "2026-09-07T23:36:55.385863+08:00"
+    },
+    "nodes": [
+      {
+        "id": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+        "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "type": "team",
+        "role": "leader",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "state": "succeeded",
+        "output": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T23:36:45.425524+08:00",
+        "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+        "startedAt": "2026-09-07T23:36:45.653669+08:00",
+        "completedAt": "2026-09-07T23:36:55.385863+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "orchestrationRunId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+        "runNodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+        "currentAttemptId": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "review_comment",
+        "triggerCommentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+        "correlationId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_10cc7409b877",
+          "resolvedAt": "2026-09-07T15:36:45.646063Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_10cc7409b877",
+        "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "version": 4,
+        "createdAt": "2026-09-07T23:36:45.425524+08:00",
+        "dispatchedAt": "2026-09-07T23:36:45.645476+08:00",
+        "startedAt": "2026-09-07T23:36:45.98371+08:00",
+        "completedAt": "2026-09-07T23:36:55.385863+08:00",
+        "inputs": [
+          {
+            "id": "ff75c274-bd3d-4d39-bc06-34db7ec02ff9",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+            "commentId": "de085023-521a-4fe0-8dce-49283e8f84bd",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T23:36:45.645476+08:00",
+            "processedAt": "2026-09-07T23:36:55.385863+08:00",
+            "responseCommentId": "cc9231dd-013c-498e-9363-f2e01fdb8ebc",
+            "attempts": 0,
+            "createdAt": "2026-09-07T23:36:45.425524+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "d4df935a-6fc9-4c4b-92b9-94b80f87c999",
+        "agentTaskId": "107d4096-9798-42da-ab07-fc2aaaa67e60",
+        "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+        "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+        "nodeId": "9b87feab-d0e3-4d85-be35-5f89e0b149c6",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+            "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+          },
+          "sessionId": "sess_10cc7409b877",
+          "resolvedAt": "2026-09-07T15:36:45.646063Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+        "sessionId": "sess_10cc7409b877",
+        "sessionRef": "ef9fb48d-6856-4689-bda7-c6b1cc9a1806",
+        "turnId": "44aa40c3-0ff4-48af-8ab9-1d8870cb1e65",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T23:36:55.355739+08:00",
+        "result": "收到您的反馈，感谢您的认可。A=42 和 B=42 的计算已完成，结果 A+B=84 已经得到确认。如果没有其他需要更改或新增的具体要求，我们将保持当前的交付成果不变。",
+        "version": 13,
+        "createdAt": "2026-09-07T23:36:45.645476+08:00",
+        "updatedAt": "2026-09-07T23:36:55.385863+08:00",
+        "startedAt": "2026-09-07T23:36:45.98371+08:00",
+        "completedAt": "2026-09-07T23:36:55.385863+08:00"
+      }
+    ]
+  }
+}

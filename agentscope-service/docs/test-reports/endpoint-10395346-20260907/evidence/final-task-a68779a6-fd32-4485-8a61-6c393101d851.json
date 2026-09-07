@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-07T12:31:34.175518+00:00",
+  "method": "GET",
+  "path": "/api/v1/agent-tasks/a68779a6-fd32-4485-8a61-6c393101d851",
+  "request": null,
+  "status": 200,
+  "response": {
+    "task": {
+      "id": "a68779a6-fd32-4485-8a61-6c393101d851",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "29d09bf7-ec06-48a2-9e86-b96117d074dd",
+      "orchestrationRunId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "runNodeId": "acf924e4-048d-4d7e-b73d-31a39113e038",
+      "currentAttemptId": "45526a9e-9bc5-4c1d-a6a3-a6f4a84c76e5",
+      "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+      "teamRole": "ma2",
+      "parentTaskId": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "delegatedFromTaskId": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "originator": {
+        "type": "agent",
+        "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+      },
+      "causationId": "0f63ae79-0637-4622-98f1-01aa9271c148",
+      "correlationId": "cc07ed70-6646-5436-be4d-e686a262890b",
+      "hopCount": 1,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+          "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+        },
+        "sessionId": "sess_022de3dd08bf",
+        "resolvedAt": "2026-09-07T12:28:10.063156Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_022de3dd08bf",
+      "result": "The files in the current directory have been listed, and a poem has been composed based on those file names. The poem is as follows:\n\nIn a world of code and bytes, where paths do intertwine,\nLies a realm so vast and deep, with secrets to divine.\nFrom the .DS_Store so small, to the mighty pom.xml,\nEach file tells a tale, in this digital chrysalis.\n\nAGENTS.md, like a beacon, guides the way we work,\nCONTRIBUTING.md invites all, to join and not to shirk.\nREADME.md, a friendly face, welcomes one and all,\nTo explore the mysteries, within this virtual hall.\n\nagentscope-core and more, modules stand so proud,\nagentscope-service, too, serving data from a crowd.\nIn the heart of this domain, where creativity flows,\nWe find our purpose, and together, a symphony grows.\n\nSo let us cherish every line, and every byte we see,\nFor in this project's essence, we are part of history.",
+      "version": 4,
+      "createdAt": "2026-09-07T20:28:09.251449+08:00",
+      "dispatchedAt": "2026-09-07T20:28:10.062774+08:00",
+      "startedAt": "2026-09-07T20:28:10.151202+08:00",
+      "completedAt": "2026-09-07T20:28:32.537793+08:00"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "automationId": "88015877-b0a5-435a-93a4-9bb8c521a2db",
+    "kind": "webhook",
+    "triggerId": "19c510dd-ffda-4633-915f-6ab4ff4e8da4",
+    "first": {
+      "delivery": {
+        "id": "fd33a4e7-acff-453d-8ccf-5e0be2ad603b",
+        "automationId": "88015877-b0a5-435a-93a4-9bb8c521a2db",
+        "triggerId": "19c510dd-ffda-4633-915f-6ab4ff4e8da4",
+        "idempotencyKey": "994793fd-4421-4e46-8a1c-c99a9b7c258c",
+        "input": {
+          "event": "acceptance.test",
+          "value": 42
+        },
+        "event": "acceptance.test",
+        "status": "dispatched",
+        "runId": "612c140c-e207-4e06-8665-35b981f9fd18",
+        "createdAt": "2026-09-08T00:35:55.367483+08:00"
+      },
+      "status": "dispatched"
+    },
+    "duplicate": {
+      "delivery": {
+        "id": "fd33a4e7-acff-453d-8ccf-5e0be2ad603b",
+        "automationId": "88015877-b0a5-435a-93a4-9bb8c521a2db",
+        "triggerId": "19c510dd-ffda-4633-915f-6ab4ff4e8da4",
+        "idempotencyKey": "994793fd-4421-4e46-8a1c-c99a9b7c258c",
+        "input": {
+          "event": "acceptance.test",
+          "value": 42
+        },
+        "event": "acceptance.test",
+        "status": "dispatched",
+        "runId": "612c140c-e207-4e06-8665-35b981f9fd18",
+        "createdAt": "2026-09-08T00:35:55.367483+08:00"
+      },
+      "status": "duplicate"
+    }
+  },
+  {
+    "automationId": "7cd78daa-b875-4936-aea9-173d607d0710",
+    "kind": "cron",
+    "triggerId": "6d8e84bf-5f1b-4dda-ac88-f8ddd87a17a3"
+  }
+]

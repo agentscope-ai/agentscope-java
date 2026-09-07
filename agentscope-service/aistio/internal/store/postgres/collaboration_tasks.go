@@ -33,6 +33,16 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 	if issue == nil || agentRef == "" {
 		return nil, fmt.Errorf("issue and agentRef are required")
 	}
+	if retryOfTaskID != nil {
+		var previousTrigger string
+		if err := tx.QueryRow(ctx, `SELECT trigger_type FROM agent_tasks WHERE id=$1`, *retryOfTaskID).Scan(&previousTrigger); err != nil {
+			return nil, err
+		}
+		if previousTrigger == controlmodel.AgentTaskReviewComment {
+			triggerType = previousTrigger
+		}
+	}
+	triggerType = store.ReviewCommentTrigger(issue, triggerType, originator)
 	task := &controlmodel.AgentTask{ID: uuid.New(), Tenant: issue.Tenant,
 		Namespace: issue.Namespace, IssueID: issue.ID, AgentRef: agentRef,
 		Status: controlmodel.AgentTaskQueued, Priority: issuePriority(issue.Priority),
@@ -43,6 +53,17 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		CorrelationID: issue.ID.String()}
 	if originator.Type == controlmodel.ActorHuman {
 		task.AccountableHumanRef = originator.Ref
+	}
+	if issue.SourceType == "automation" && task.AccountableHumanRef == "" {
+		runID, parseErr := uuid.Parse(issue.SourceRef)
+		if parseErr == nil {
+			var owner *string
+			err := tx.QueryRow(ctx, `SELECT runtime->'details'->'snapshot'->'createdBy'->>'ref' FROM automation_runs WHERE id=$1 AND tenant=$2 AND namespace=$3 AND runtime->'details'->'snapshot'->'createdBy'->>'type'='human'`, runID, issue.Tenant, issue.Namespace).Scan(&owner)
+			if err != nil && err != pgx.ErrNoRows {
+				return nil, err
+			}
+			task.AccountableHumanRef = deref(owner)
+		}
 	}
 	var sourceTaskID = parentTaskID
 	if triggerCommentID != nil {
@@ -67,6 +88,9 @@ func createAgentTaskTx(ctx context.Context, tx pgx.Tx, issue *controlmodel.Issue
 		if originator.Type == controlmodel.ActorHuman {
 			task.AccountableHumanRef = originator.Ref
 		}
+	}
+	if task.TriggerType == controlmodel.AgentTaskReviewComment {
+		sourceTaskID = nil // Feedback owns its physical turn, not a prior coordinator.
 	}
 	if sourceTaskID != nil {
 		var source controlmodel.AgentTask

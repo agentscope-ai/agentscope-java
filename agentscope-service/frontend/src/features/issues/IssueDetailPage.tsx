@@ -20,6 +20,7 @@ import {
   ExternalLink,
   File,
   GitPullRequest,
+  ListChecks,
   LoaderCircle,
   MessageSquare,
   PanelRight,
@@ -133,6 +134,7 @@ function formatBytes(value: number) {
 
 function mutationMessage(error: unknown) {
   if (!(error instanceof Error)) return "Something went wrong. Please try again.";
+  if (error.message.includes("store: conflict")) return "This issue changed or this action is no longer available. Refresh the issue and try again.";
   try {
     const parsed = JSON.parse(error.message) as { error?: string };
     return parsed.error || error.message;
@@ -251,6 +253,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
   const qc = useQueryClient();
   const username = getUsername();
   const [content, setContent] = useState("");
+  const [commentType, setCommentType] = useState("comment");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionType, setMentionType] = useState("agent");
   const [mentionRef, setMentionRef] = useState("");
@@ -291,7 +294,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
     enabled: assigneeOpen && assigneeType === "team",
     staleTime: 10_000,
   });
-  const teamOptions = (teams.data?.items || []).filter(team => team.status === "active" && !team.archivedAt)
+  const teamOptions = (teams.data?.items || []).filter(team => team.status === "active")
     .map(team => ({ id: team.id, label: team.name, secondary: "Team" }));
 
   const item = issue.data?.issue;
@@ -317,14 +320,13 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
     ...["issue", "issue-summary", "issue-activity"].map(key => qc.invalidateQueries({ queryKey: [key, issueId] })),
     ...["issues", "inbox", "inbox-summary", "inbox-item"].map(key => qc.invalidateQueries({ queryKey: [key] })),
   ]);
-  const refreshDiscussion = () => {
-    void qc.invalidateQueries({ queryKey: ["comments", issueId] });
-    void qc.invalidateQueries({ queryKey: ["issue-activity", issueId] });
-    void qc.invalidateQueries({ queryKey: ["issue-summary", issueId] });
-  };
+  const refreshDiscussion = () => Promise.all(
+    ["issue", "comments", "issue-activity", "issue-summary"].map(key => qc.invalidateQueries({ queryKey: [key, issueId] })),
+  );
 
   const update = useMutation({
     mutationFn: (body: Record<string, unknown>) => updateIssue(issueId, { ...body, expectedVersion: issue.data?.issue.version }),
+    onError: () => { void qc.invalidateQueries({ queryKey: ["issue", issueId] }); },
     onSuccess: async (_data, body) => {
       await refresh();
       if ("title" in body) setEditingTitle(false);
@@ -334,17 +336,18 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
   });
   const comment = useMutation({
     mutationFn: ({ text, parentId }: { text: string; parentId?: string }) =>
-      addComment(issueId, text, parentId, !parentId && mentionRef ? [{ type: mentionType, ref: mentionRef }] : []),
-    onSuccess: (_data, variables) => {
+      addComment(issueId, text, parentId, !parentId && mentionRef ? [{ type: mentionType, ref: mentionRef }] : [], parentId ? "comment" : commentType),
+    onSuccess: async (_data, variables) => {
       if (variables.parentId) {
         setReplyContent("");
         setReplyingTo(undefined);
       } else {
         setContent("");
+        setCommentType("comment");
         setMentionRef("");
         setMentionOpen(false);
       }
-      refreshDiscussion();
+      await refreshDiscussion();
     },
   });
   const resolve = useMutation({ mutationFn: ({ id, version, resolved }: { id: string; version: number; resolved: boolean }) => resolveComment(issueId, id, version, resolved), onSuccess: refreshDiscussion });
@@ -370,13 +373,14 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
   });
   const artifact = useMutation({
     mutationFn: () => uploadIssueArtifact(scope.tenant, scope.namespace, issueId, artifactFile!),
-    onSuccess: () => {
+    onSuccess: async () => {
       setArtifactFile(null);
-      void qc.invalidateQueries({ queryKey: ["issue-artifacts", issueId] });
-      refresh();
+      await qc.invalidateQueries({ queryKey: ["issue-artifacts", issueId] });
+      await refresh();
     },
   });
   const action = useMutation({
+    onError: () => { void qc.invalidateQueries({ queryKey: ["issue", issueId] }); },
     mutationFn: async (next: string) => {
       const current = issue.data?.issue;
       if (!current || next === current.status) return;
@@ -438,7 +442,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
       { type: task.originator.type, ref: task.originator.ref },
     ]),
   ]);
-  const propertiesBusy = update.isPending || assign.isPending || action.isPending;
+  const propertiesBusy = update.isPending || assign.isPending || action.isPending || comment.isPending || resolve.isPending || artifact.isPending || issue.isError;
   const dueValue = dueDraft ?? dateTimeLocal(item?.dueAt);
   const sourceUrl = sourceWebUrl(item?.sourceRef);
   const childItems = children.data?.items || [];
@@ -472,7 +476,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
   if (issue.isLoading) {
     return <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading issue…</div>;
   }
-  if (issue.isError || !item) {
+  if (!item) {
     return <div className="mx-auto max-w-xl p-10"><div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">Unable to load this issue. {mutationMessage(issue.error)}</div></div>;
   }
 
@@ -561,8 +565,8 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
               <form onSubmit={submitComment} className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-50">
                 <Textarea value={content} onChange={(event) => setContent(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && content.trim()) { event.preventDefault(); comment.mutate({ text: content.trim() }); } }} className="min-h-28 resize-y border-0 px-4 py-4 text-[15px] shadow-none focus-visible:ring-0" placeholder="Leave a comment…" />
                 {mentionOpen && <div className="grid gap-2 border-t border-slate-100 bg-slate-50 px-3 py-3 sm:grid-cols-[8rem_1fr]"><select className="h-9 rounded-lg border border-border bg-white px-3 text-sm" value={mentionType} onChange={(event) => { setMentionType(event.target.value); setMentionRef(""); }}><option value="agent">Agent</option><option value="team">Team</option><option value="human">Human</option></select>{mentionType === "agent" ? <AgentPicker value={mentionRef} onChange={setMentionRef} emptyLabel="Mention an Agent…" aria-label="Mentioned Agent" /> : <Input className="h-9" value={mentionRef} onChange={(event) => setMentionRef(event.target.value)} placeholder={`Mention a ${mentionType}…`} />}</div>}
-                {artifactFile && <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-4 py-2 text-sm"><span className="min-w-0 truncate"><Paperclip className="mr-2 inline h-3.5 w-3.5" />{artifactFile.name}</span><div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={artifact.isPending} onClick={() => artifact.mutate()}>{artifact.isPending ? "Uploading…" : "Upload"}</Button><Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setArtifactFile(null)}><X className="h-3.5 w-3.5" /></Button></div></div>}
-                <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2"><div className="flex items-center gap-1"><Button type="button" variant={mentionOpen ? "secondary" : "ghost"} size="sm" className="h-8" onClick={() => setMentionOpen((value) => !value)} title="Mention someone"><span className="text-base leading-none">@</span><span className="hidden sm:inline">Mention</span></Button><label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted"><Paperclip className="h-4 w-4" /><span className="hidden sm:inline">Attach</span><input type="file" className="sr-only" onChange={(event) => setArtifactFile(event.target.files?.[0] || null)} /></label></div><Button type="submit" size="icon" className="h-9 w-9 rounded-full" disabled={!content.trim() || comment.isPending} title="Send comment (⌘ Enter)">{comment.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}</Button></div>
+                {artifactFile && <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-4 py-2 text-sm"><span className="min-w-0 truncate"><Paperclip className="mr-2 inline h-3.5 w-3.5" />{artifactFile.name}</span><div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={artifact.isPending} onClick={() => artifact.mutate()}>{artifact.isPending ? "Uploading…" : "Upload"}</Button><Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="Remove pending attachment" onClick={() => setArtifactFile(null)}><X className="h-3.5 w-3.5" /></Button></div></div>}
+                <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2"><div className="flex items-center gap-1"><select aria-label="Comment type" className="h-8 rounded-lg border-0 bg-transparent px-2 text-xs" value={commentType} onChange={event => setCommentType(event.target.value)}><option value="comment">Comment</option><option value="result">Result</option></select><Button type="button" variant={mentionOpen ? "secondary" : "ghost"} size="sm" className="h-8" onClick={() => setMentionOpen((value) => !value)} title="Mention someone"><span className="text-base leading-none">@</span><span className="hidden sm:inline">Mention</span></Button><label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted"><Paperclip className="h-4 w-4" /><span className="hidden sm:inline">Attach</span><input type="file" className="sr-only" onChange={event => { setArtifactFile(event.target.files?.[0] || null); event.target.value = ""; }} /></label></div><Button type="submit" size="icon" className="h-9 w-9 rounded-full" disabled={!content.trim() || comment.isPending} title="Send comment (⌘ Enter)">{comment.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}</Button></div>
               </form>
             </section>
           </div>
@@ -572,7 +576,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
         {detailsOpen && (
           <aside id="issue-properties" className={cn("fixed inset-y-14 right-0 z-30 w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto border-l border-slate-200 bg-slate-50 shadow-2xl", !embedded && "xl:static xl:z-auto xl:w-auto xl:max-w-none xl:overflow-visible xl:border-t-0 xl:shadow-none")}>
             <div className="space-y-7 px-5 py-7 xl:sticky xl:top-12 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto">
-              {[subscribers, artifacts, tasks, runs].some(query => query.isError) && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">Some issue details could not be loaded. <button className="underline" onClick={() => { void subscribers.refetch(); void artifacts.refetch(); void tasks.refetch(); void runs.refetch(); }}>Retry</button></div>}
+              {[issue, subscribers, artifacts, tasks, runs].some(query => query.isError) && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">Some issue details could not be loaded. <button className="underline" onClick={() => { void issue.refetch(); void subscribers.refetch(); void artifacts.refetch(); void tasks.refetch(); void runs.refetch(); }}>Retry</button></div>}
               <section>
                 <div className="mb-2 flex items-center justify-between"><h2><button type="button" className="flex items-center gap-2 text-sm font-semibold text-slate-900" aria-expanded={propertiesOpen} aria-controls="issue-property-fields" onClick={() => setPropertiesOpen(value => !value)}>Properties <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", !propertiesOpen && "-rotate-90")} /></button></h2><Button variant="ghost" size="icon" className={cn("h-8 w-8", !embedded && "xl:hidden")} aria-label="Close properties" onClick={() => setDetailsOpen(false)}><X className="h-4 w-4" /></Button></div>
                 {propertiesOpen && <div id="issue-property-fields">
@@ -580,7 +584,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
                 <PropertyRow icon={item.assigneeType === "team" ? UsersRound : item.assigneeType === "agent" ? Bot : UserRound} label="Assignee">
                   {!assigneeOpen ? <button type="button" aria-label="Edit assignee" disabled={propertiesBusy || !!item.archivedAt} className="min-h-8 w-full rounded-lg px-2 text-left text-sm hover:bg-white" onClick={() => { setAssigneeType(item.assigneeType || "agent"); setAssigneeRef(item.assigneeRef || ""); setAssigneeOpen(true); }}>{item.assigneeRef ? <EntityIdentityText identities={identities} type={item.assigneeType} entityRef={item.assigneeRef} secondary /> : <span className="text-muted-foreground">Unassigned</span>}</button> : <div className="space-y-2 rounded-lg border bg-white p-2">
                     <select aria-label="Assignee type" className="h-8 w-full rounded-md border px-2 text-xs" value={assigneeType} disabled={assign.isPending} onChange={event => { setAssigneeType(event.target.value); setAssigneeRef(""); }}><option value="">Unassigned</option><option value="agent">Agent</option><option value="team">Team</option><option value="human">Human</option></select>
-                    {assigneeType === "agent" ? <AgentPicker value={assigneeRef} onChange={setAssigneeRef} disabled={assign.isPending} emptyLabel="Select Agent…" aria-label="Issue assignee Agent" /> : assigneeType === "team" ? <NamedResourcePicker value={assigneeRef} onChange={setAssigneeRef} options={teamOptions} resourceLabel="Team" loading={teams.isLoading || assign.isPending} error={teams.isError} aria-label="Issue assignee Team" /> : assigneeType === "human" ? <><Input aria-label="Assignee username" className="h-8 text-xs" value={assigneeRef} onChange={event => setAssigneeRef(event.target.value)} placeholder="Username" /><Button size="sm" variant="ghost" className="h-7 px-1 text-xs" onClick={() => setAssigneeRef(username)}>Assign to me</Button></> : null}
+                    {assigneeType === "agent" ? <AgentPicker value={assigneeRef} onChange={setAssigneeRef} disabled={assign.isPending} emptyLabel="Select Agent…" aria-label="Issue assignee Agent" className="[&_[role=listbox]]:right-0" /> : assigneeType === "team" ? <NamedResourcePicker value={assigneeRef} onChange={setAssigneeRef} options={teamOptions} resourceLabel="Team" className="[&_[role=listbox]]:right-0" loading={teams.isLoading || assign.isPending} error={teams.isError} aria-label="Issue assignee Team" /> : assigneeType === "human" ? <><Input aria-label="Assignee username" className="h-8 text-xs" value={assigneeRef} onChange={event => setAssigneeRef(event.target.value)} placeholder="Username" /><Button size="sm" variant="ghost" className="h-7 px-1 text-xs" onClick={() => setAssigneeRef(username)}>Assign to me</Button></> : null}
                     <p className="text-xs leading-5 text-muted-foreground">{["agent", "team"].includes(assigneeType) ? (["done", "cancelled"].includes(item.status) ? "Reopen the issue before starting another execution." : "Assigning starts a new execution. Existing executions continue.") : "Changes responsibility. Existing executions continue."}</p>
                     <div className="flex gap-1"><Button size="sm" className="h-8" disabled={propertiesBusy || (!!assigneeType && !assigneeRef.trim()) || (assigneeType === (item.assigneeType || "") && assigneeRef.trim() === (item.assigneeRef || "")) || (["agent", "team"].includes(assigneeType) && ["done", "cancelled"].includes(item.status))} onClick={() => assign.mutate()}>Assign</Button><Button size="sm" variant="ghost" className="h-8" onClick={() => setAssigneeOpen(false)}>Cancel</Button></div>
                   </div>}

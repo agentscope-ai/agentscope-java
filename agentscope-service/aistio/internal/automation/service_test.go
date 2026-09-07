@@ -6,6 +6,7 @@ package automation
 import (
 	"context"
 	"encoding/json"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
@@ -46,7 +47,14 @@ func TestAllIngressKindsUseIssueAndAgentTaskPath(t *testing.T) {
 			if err != nil {
 				t.Fatalf("trigger automation: %v", err)
 			}
-			if run.Status != controlmodel.AutomationRunCompleted || run.IssueID == nil || run.AgentTaskID == nil {
+			if run.Status != controlmodel.AutomationRunQueued || run.IssueID != nil {
+				t.Fatalf("acceptance must precede dispatch: %+v", run)
+			}
+			run, err = service.ProcessRun(ctx, run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if run.Status == controlmodel.AutomationRunCompleted || run.IssueID == nil || run.AgentTaskID == nil {
 				t.Fatalf("automation did not produce Issue/AgentTask: %+v", run)
 			}
 			issue, err := dataStore.Collaboration().GetIssue(ctx, *run.IssueID)
@@ -57,7 +65,7 @@ func TestAllIngressKindsUseIssueAndAgentTaskPath(t *testing.T) {
 			if err != nil || len(comments) != 1 || comments[0].Author.Type != controlmodel.ActorAutomation {
 				t.Fatalf("initial comment did not use collaboration path: comments=%+v err=%v", comments, err)
 			}
-			duplicate, err := service.Trigger(ctx, item.ID, "redelivery", "event-1", nil)
+			duplicate, err := service.Trigger(ctx, item.ID, "redelivery", "event-1", json.RawMessage(`{"delivery":1}`))
 			if err != nil || duplicate.ID != run.ID {
 				t.Fatalf("idempotent redelivery created a different run: run=%+v err=%v", duplicate, err)
 			}
@@ -85,6 +93,8 @@ func TestRunDueAdvancesScheduleAndIsIdempotent(t *testing.T) {
 	}
 	due := time.Now().UTC().Add(-time.Second)
 	item.NextRunAt = &due
+	item.Triggers[0].NextRunAt = &due
+	item.Triggers[0].ID = uuid.New()
 	item, err = dataStore.Collaboration().UpdateAutomation(ctx, item, item.Version)
 	if err != nil {
 		t.Fatalf("make automation due: %v", err)

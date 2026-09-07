@@ -1,0 +1,82 @@
+{
+  "accepted": {
+    "issueId": "52bafd3b-7201-4f3c-adb1-35d1a478ffd2",
+    "status": "done",
+    "children": 2,
+    "runId": "0b798bf4-8aa1-4cf4-afbf-fc455f5c74f2",
+    "runState": "succeeded",
+    "tasksCompleted": 1,
+    "attemptsSucceeded": 1,
+    "toolErrors": 0,
+    "eventTypes": {
+      "agent-task.queued": 1,
+      "attempt.queued": 1,
+      "attempt.running": 1,
+      "attempt.succeeded": 1,
+      "node.succeeded": 1,
+      "run.succeeded": 1
+    },
+    "pendingReviews": 0
+  },
+  "change": {
+    "issueId": "c7fde31d-e553-49d7-9b9d-be06fcdc2fe5",
+    "status": "in_review",
+    "children": 3,
+    "runId": "e4a1068d-1990-40a6-b0d4-22a0824da862",
+    "runState": "succeeded",
+    "tasksCompleted": 3,
+    "attemptsSucceeded": 3,
+    "toolErrors": 1,
+    "eventTypes": {
+      "agent-task.queued": 3,
+      "attempt.queued": 3,
+      "attempt.running": 3,
+      "review.work_requested": 1,
+      "attempt.succeeded": 3,
+      "node.waiting": 1,
+      "coordinator.waiting": 1,
+      "node.succeeded": 2,
+      "agent_tool.failed": 1,
+      "run.succeeded": 1
+    },
+    "pendingReviews": 1
+  },
+  "mention": {
+    "issueId": "f29cd8eb-3604-4f86-8aa8-bbdb8169ba06",
+    "status": "in_review",
+    "children": 2,
+    "runId": "eb542919-0d30-4c29-818c-9a5e4b869c5e",
+    "runState": "succeeded",
+    "tasksCompleted": 1,
+    "attemptsSucceeded": 1,
+    "toolErrors": 0,
+    "eventTypes": {
+      "agent-task.queued": 1,
+      "attempt.queued": 1,
+      "attempt.running": 1,
+      "attempt.succeeded": 1,
+      "node.succeeded": 1,
+      "run.succeeded": 1
+    },
+    "pendingReviews": 0
+  },
+  "praise": {
+    "issueId": "e389496f-beaa-4121-9225-890293f3a90b",
+    "status": "in_review",
+    "children": 2,
+    "runId": "93d8cf35-e329-4dbb-9513-36dc3767fedf",
+    "runState": "succeeded",
+    "tasksCompleted": 1,
+    "attemptsSucceeded": 1,
+    "toolErrors": 0,
+    "eventTypes": {
+      "agent-task.queued": 1,
+      "attempt.queued": 1,
+      "attempt.running": 1,
+      "attempt.succeeded": 1,
+      "node.succeeded": 1,
+      "run.succeeded": 1
+    },
+    "pendingReviews": 0
+  }
+}

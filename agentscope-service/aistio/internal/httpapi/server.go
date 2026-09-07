@@ -337,6 +337,7 @@ func (s *Server) registerRoutes() {
 			s.router.POST("/api/v1/runtime-host-enrollments/exchange", s.exchangeRuntimeHostEnrollment)
 		}
 		s.router.POST("/api/v1/work-sources/:workSourceId/webhooks/github", s.githubWorkSourceWebhook)
+		s.router.POST("/hooks/v1/automations/:automationId/:triggerId", s.automationWebhook)
 		s.router.POST("/invoke/v1/endpoints/:slug/conversations", s.invokeEndpointConversation)
 		s.router.POST("/invoke/v1/conversations/:conversationId/turns", s.continueEndpointConversation)
 		s.router.GET("/invoke/v1/conversations/:conversationId", s.getEndpointConversation)
@@ -687,12 +688,19 @@ func (s *Server) registerRoutes() {
 
 			automations := collab.Group("/automations")
 			automations.POST("", s.createAutomation)
+			automations.POST("/schedule-preview", s.previewAutomationSchedule)
 			automations.GET("", s.listAutomations)
 			automations.GET("/:automationId", s.getAutomation)
 			automations.PATCH("/:automationId", s.updateAutomation)
 			automations.DELETE("/:automationId", s.archiveAutomation)
 			automations.POST("/:automationId/trigger", s.triggerAutomation)
 			automations.GET("/:automationId/runs", s.listAutomationRuns)
+			automations.GET("/:automationId/runs/:automationRunId", s.getAutomationRun)
+			automations.POST("/:automationId/runs/:automationRunId/cancel", s.cancelAutomationRun)
+			automations.POST("/:automationId/runs/:automationRunId/rerun", s.rerunAutomationRun)
+			automations.POST("/:automationId/rotate-secret", s.rotateAutomationSecret)
+			automations.GET("/:automationId/deliveries", s.listAutomationDeliveries)
+			automations.POST("/:automationId/deliveries/:deliveryId/replay", s.replayAutomationDelivery)
 		}
 	}
 

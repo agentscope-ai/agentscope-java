@@ -1,0 +1,375 @@
+{
+  "at": "2026-09-07T12:25:04.543663+00:00",
+  "method": "GET",
+  "path": "/api/v1/orchestration-runs/3bed86b9-b763-57ed-a7c8-73de2c142973/graph",
+  "request": null,
+  "status": 200,
+  "response": {
+    "run": {
+      "id": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+      "tenant": "default",
+      "namespace": "default",
+      "rootIssueId": "d03731d8-acad-5871-bc4f-68c865dfd9d7",
+      "mode": "adaptive",
+      "triggerType": "endpoint",
+      "triggerRef": "9400b7d6-a981-4532-95a6-27065c0e5476",
+      "idempotencyKey": "9400b7d6-a981-4532-95a6-27065c0e5476:endpoint-input-20260907",
+      "input": {
+        "prompt": "帮我查看当前目录下的文件，写一首诗"
+      },
+      "output": {
+        "content": "成功完成了列出当前工作目录下的所有文件的任务，并且基于这些文件的信息创作了一首诗。"
+      },
+      "state": "succeeded",
+      "version": 9,
+      "createdBy": {
+        "type": "system",
+        "ref": "endpoint:9400b7d6-a981-4532-95a6-27065c0e5476"
+      },
+      "createdAt": "2026-09-07T20:23:31.173123+08:00",
+      "updatedAt": "2026-09-07T20:24:50.152544+08:00",
+      "startedAt": "2026-09-07T20:23:31.173123+08:00",
+      "completedAt": "2026-09-07T20:24:50.152544+08:00"
+    },
+    "nodes": [
+      {
+        "id": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "runId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "target",
+        "type": "team",
+        "role": "leader",
+        "issueId": "d03731d8-acad-5871-bc4f-68c865dfd9d7",
+        "state": "succeeded",
+        "output": {
+          "content": "成功完成了列出当前工作目录下的所有文件的任务，并且基于这些文件的信息创作了一首诗。"
+        },
+        "iteration": 1,
+        "version": 5,
+        "createdAt": "2026-09-07T20:23:31.177022+08:00",
+        "updatedAt": "2026-09-07T20:24:50.146934+08:00",
+        "startedAt": "2026-09-07T20:23:31.18786+08:00",
+        "completedAt": "2026-09-07T20:24:50.146934+08:00"
+      },
+      {
+        "id": "c6c9f407-71af-4abe-b5fe-7e2cce492572",
+        "runId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "tenant": "default",
+        "namespace": "default",
+        "nodeKey": "task:5831d075-b43c-4016-950e-2af880ad090d",
+        "type": "agent",
+        "role": "ma2",
+        "issueId": "29d09f31-2098-44be-b9a8-0d0e7617a516",
+        "state": "succeeded",
+        "output": "[DIR]  ../../../../\n[FILE] ../../../../../.DS_Store (10244 bytes)\n[DIR]  ../../../../../.agentscope/\n[DIR]  ../../../../../.claude/\n[DIR]  ../../../../../.codex-tmp/\n[FILE] ../../../../../.editorconfig (712 bytes)\n[FILE] ../../../../../.flattened-pom.xml (2565 bytes)\n[DIR]  ../../../../../.git/\n[FILE] ../../../../../.gitattributes (124 bytes)\n[DIR]  ../../../../../.github/\n[FILE] ../../../../../.gitignore (1748 bytes)\n[DIR]  ../../../../../.idea/\n[FILE] ../../../../../.licenserc.yaml (3119 bytes)\n[DIR]  ../../../../../.omc/\n[DIR]  ../../../../../.qoder/\n[FILE] ../../../../../AGENTS.md (2717 bytes)\n[FILE] ../../../../../CNAME (18 bytes)\n[FILE] ../../../../../CONTRIBUTING.md (5544 bytes)\n[FILE] ../../../../../CONTRIBUTING_zh.md (5065 bytes)\n[FILE] ../../../../../README.md (13529 bytes)\n[FILE] ../../../../../README_zh.md (13031 bytes)\n[FILE] ../../../../../SKILL.md (31165 bytes)\n[DIR]  ../../../../../agentscope-core/\n[DIR]  ../../../../../agentscope-dependencies-bom/\n[DIR]  ../../../../../agentscope-distribution/\n[DIR]  ../../../../../agentscope-examples/\n[DIR]  ../../../../../agentscope-extensions/\n[DIR]  ../../../../../agentscope-harness/\n[FILE] ../../../../../codecov.yml (884 bytes)\n[FILE] ../../../../../context7.json (110 bytes)\n[DIR]  ../../../../../docs/\n[FILE] ../../../../../package-lock.json (94 bytes)\n[FILE] ../../../../../pom.xml (15936 bytes)\n[DIR]  ../../../../../target/",
+        "iteration": 1,
+        "version": 3,
+        "createdAt": "2026-09-07T20:23:44.136632+08:00",
+        "updatedAt": "2026-09-07T20:24:17.98769+08:00",
+        "startedAt": "2026-09-07T20:23:45.126832+08:00",
+        "completedAt": "2026-09-07T20:24:17.98769+08:00"
+      }
+    ],
+    "edges": [],
+    "tasks": [
+      {
+        "id": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "d03731d8-acad-5871-bc4f-68c865dfd9d7",
+        "orchestrationRunId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "runNodeId": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "currentAttemptId": "c7e4e9a6-4931-4939-96c5-c19194039f5a",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "originator": {
+          "type": "system",
+          "ref": "endpoint:9400b7d6-a981-4532-95a6-27065c0e5476"
+        },
+        "causationId": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "correlationId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6127a46f36fc",
+          "resolvedAt": "2026-09-07T12:23:31.206598Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_6127a46f36fc",
+        "result": {
+          "outcome": "waiting",
+          "summary": "已委派给团队成员列出当前目录下的文件。",
+          "waitingForTaskIds": [
+            "5831d075-b43c-4016-950e-2af880ad090d"
+          ]
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T20:23:31.178387+08:00",
+        "dispatchedAt": "2026-09-07T20:23:31.206337+08:00",
+        "startedAt": "2026-09-07T20:23:31.608594+08:00",
+        "completedAt": "2026-09-07T20:23:49.65312+08:00"
+      },
+      {
+        "id": "5831d075-b43c-4016-950e-2af880ad090d",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "29d09f31-2098-44be-b9a8-0d0e7617a516",
+        "orchestrationRunId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "runNodeId": "c6c9f407-71af-4abe-b5fe-7e2cce492572",
+        "currentAttemptId": "a49ccb8a-4e19-4760-9b16-a438dc3cac04",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "ma2",
+        "parentTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "delegatedFromTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "originator": {
+          "type": "agent",
+          "ref": "67a796b7-02e7-493f-8990-931f0759f95e"
+        },
+        "causationId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "correlationId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_4f876f0719cd",
+          "resolvedAt": "2026-09-07T12:23:45.139756Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_4f876f0719cd",
+        "result": "[DIR]  ../../../../\n[FILE] ../../../../../.DS_Store (10244 bytes)\n[DIR]  ../../../../../.agentscope/\n[DIR]  ../../../../../.claude/\n[DIR]  ../../../../../.codex-tmp/\n[FILE] ../../../../../.editorconfig (712 bytes)\n[FILE] ../../../../../.flattened-pom.xml (2565 bytes)\n[DIR]  ../../../../../.git/\n[FILE] ../../../../../.gitattributes (124 bytes)\n[DIR]  ../../../../../.github/\n[FILE] ../../../../../.gitignore (1748 bytes)\n[DIR]  ../../../../../.idea/\n[FILE] ../../../../../.licenserc.yaml (3119 bytes)\n[DIR]  ../../../../../.omc/\n[DIR]  ../../../../../.qoder/\n[FILE] ../../../../../AGENTS.md (2717 bytes)\n[FILE] ../../../../../CNAME (18 bytes)\n[FILE] ../../../../../CONTRIBUTING.md (5544 bytes)\n[FILE] ../../../../../CONTRIBUTING_zh.md (5065 bytes)\n[FILE] ../../../../../README.md (13529 bytes)\n[FILE] ../../../../../README_zh.md (13031 bytes)\n[FILE] ../../../../../SKILL.md (31165 bytes)\n[DIR]  ../../../../../agentscope-core/\n[DIR]  ../../../../../agentscope-dependencies-bom/\n[DIR]  ../../../../../agentscope-distribution/\n[DIR]  ../../../../../agentscope-examples/\n[DIR]  ../../../../../agentscope-extensions/\n[DIR]  ../../../../../agentscope-harness/\n[FILE] ../../../../../codecov.yml (884 bytes)\n[FILE] ../../../../../context7.json (110 bytes)\n[DIR]  ../../../../../docs/\n[FILE] ../../../../../package-lock.json (94 bytes)\n[FILE] ../../../../../pom.xml (15936 bytes)\n[DIR]  ../../../../../target/",
+        "version": 4,
+        "createdAt": "2026-09-07T20:23:44.136632+08:00",
+        "dispatchedAt": "2026-09-07T20:23:45.139419+08:00",
+        "startedAt": "2026-09-07T20:23:45.212401+08:00",
+        "completedAt": "2026-09-07T20:24:17.98769+08:00"
+      },
+      {
+        "id": "f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+        "tenant": "default",
+        "namespace": "default",
+        "issueId": "29d09f31-2098-44be-b9a8-0d0e7617a516",
+        "orchestrationRunId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "runNodeId": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "currentAttemptId": "57738aa3-7f3c-45c6-b006-e2d4da210ffe",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+        "teamId": "cf7b2403-a314-44f9-a959-e81708e7ae60",
+        "teamRole": "leader",
+        "leaderTask": true,
+        "parentTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "delegatedFromTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "originator": {
+          "type": "agent",
+          "ref": "b86719e8-f495-402f-bffa-b6d76eee8965"
+        },
+        "causationId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+        "correlationId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "hopCount": 1,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6500f3c9d987",
+          "resolvedAt": "2026-09-07T12:24:18.144644Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_6500f3c9d987",
+        "result": {
+          "content": "成功完成了列出当前工作目录下的所有文件的任务，并且基于这些文件的信息创作了一首诗。"
+        },
+        "version": 4,
+        "createdAt": "2026-09-07T20:24:17.98769+08:00",
+        "dispatchedAt": "2026-09-07T20:24:18.144288+08:00",
+        "startedAt": "2026-09-07T20:24:18.231569+08:00",
+        "completedAt": "2026-09-07T20:24:50.117888+08:00",
+        "inputs": [
+          {
+            "id": "6d407ecd-79aa-49c0-b719-d4c91ec121ec",
+            "tenant": "default",
+            "namespace": "default",
+            "taskId": "f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+            "commentId": "219622a0-b183-41a4-bd88-272a3c2ec3c1",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-07T20:24:18.144288+08:00",
+            "processedAt": "2026-09-07T20:24:50.117888+08:00",
+            "responseCommentId": "9d7f2987-c907-4179-96ae-d1118a6647e4",
+            "attempts": 0,
+            "createdAt": "2026-09-07T20:24:17.98769+08:00"
+          }
+        ]
+      }
+    ],
+    "attempts": [
+      {
+        "id": "c7e4e9a6-4931-4939-96c5-c19194039f5a",
+        "agentTaskId": "9be4ae51-e2ea-4b62-8a9a-a18570ff1f72",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+        "runId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "nodeId": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6127a46f36fc",
+          "resolvedAt": "2026-09-07T12:23:31.206598Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "sessionId": "sess_6127a46f36fc",
+        "sessionRef": "5a7796a0-5e26-4deb-a819-1148cb36f930",
+        "turnId": "ba294f48-1bd1-4492-86a0-8d249c62c6fc",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T20:23:49.628061+08:00",
+        "result": {
+          "outcome": "waiting",
+          "summary": "已委派给团队成员列出当前目录下的文件。",
+          "waitingForTaskIds": [
+            "5831d075-b43c-4016-950e-2af880ad090d"
+          ]
+        },
+        "version": 20,
+        "createdAt": "2026-09-07T20:23:31.206337+08:00",
+        "updatedAt": "2026-09-07T20:23:49.65312+08:00",
+        "startedAt": "2026-09-07T20:23:31.608594+08:00",
+        "completedAt": "2026-09-07T20:23:49.65312+08:00"
+      },
+      {
+        "id": "a49ccb8a-4e19-4760-9b16-a438dc3cac04",
+        "agentTaskId": "5831d075-b43c-4016-950e-2af880ad090d",
+        "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+        "runId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "nodeId": "c6c9f407-71af-4abe-b5fe-7e2cce492572",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "b86719e8-f495-402f-bffa-b6d76eee8965",
+            "bindingId": "4a5c898b-e81d-578e-8d31-b2b6f58bd71f",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "b86719e8-f495-402f-bffa-b6d76eee8965"
+          },
+          "sessionId": "sess_4f876f0719cd",
+          "resolvedAt": "2026-09-07T12:23:45.139756Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "b86719e8-f495-402f-bffa-b6d76eee8965",
+        "sessionId": "sess_4f876f0719cd",
+        "sessionRef": "e4a9e478-b43b-4e92-af08-af502ab14f94",
+        "turnId": "e0ad3a13-dc5a-44b8-bb7e-94e0bf114027",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T20:24:17.963741+08:00",
+        "result": "[DIR]  ../../../../\n[FILE] ../../../../../.DS_Store (10244 bytes)\n[DIR]  ../../../../../.agentscope/\n[DIR]  ../../../../../.claude/\n[DIR]  ../../../../../.codex-tmp/\n[FILE] ../../../../../.editorconfig (712 bytes)\n[FILE] ../../../../../.flattened-pom.xml (2565 bytes)\n[DIR]  ../../../../../.git/\n[FILE] ../../../../../.gitattributes (124 bytes)\n[DIR]  ../../../../../.github/\n[FILE] ../../../../../.gitignore (1748 bytes)\n[DIR]  ../../../../../.idea/\n[FILE] ../../../../../.licenserc.yaml (3119 bytes)\n[DIR]  ../../../../../.omc/\n[DIR]  ../../../../../.qoder/\n[FILE] ../../../../../AGENTS.md (2717 bytes)\n[FILE] ../../../../../CNAME (18 bytes)\n[FILE] ../../../../../CONTRIBUTING.md (5544 bytes)\n[FILE] ../../../../../CONTRIBUTING_zh.md (5065 bytes)\n[FILE] ../../../../../README.md (13529 bytes)\n[FILE] ../../../../../README_zh.md (13031 bytes)\n[FILE] ../../../../../SKILL.md (31165 bytes)\n[DIR]  ../../../../../agentscope-core/\n[DIR]  ../../../../../agentscope-dependencies-bom/\n[DIR]  ../../../../../agentscope-distribution/\n[DIR]  ../../../../../agentscope-examples/\n[DIR]  ../../../../../agentscope-extensions/\n[DIR]  ../../../../../agentscope-harness/\n[FILE] ../../../../../codecov.yml (884 bytes)\n[FILE] ../../../../../context7.json (110 bytes)\n[DIR]  ../../../../../docs/\n[FILE] ../../../../../package-lock.json (94 bytes)\n[FILE] ../../../../../pom.xml (15936 bytes)\n[DIR]  ../../../../../target/",
+        "version": 20,
+        "createdAt": "2026-09-07T20:23:45.139419+08:00",
+        "updatedAt": "2026-09-07T20:24:17.98769+08:00",
+        "startedAt": "2026-09-07T20:23:45.212401+08:00",
+        "completedAt": "2026-09-07T20:24:17.98769+08:00"
+      },
+      {
+        "id": "57738aa3-7f3c-45c6-b006-e2d4da210ffe",
+        "agentTaskId": "f6a495ab-29cb-4941-84bd-eb7f2b9c76fd",
+        "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+        "runId": "3bed86b9-b763-57ed-a7c8-73de2c142973",
+        "nodeId": "33711261-48ee-58ff-b1f6-140501c2f183",
+        "tenant": "default",
+        "namespace": "default",
+        "attempt": 1,
+        "dispatchGeneration": 1,
+        "backendKind": "managed",
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "67a796b7-02e7-493f-8990-931f0759f95e",
+            "bindingId": "8fb6460b-5ecd-5e8e-b8e5-a7623bd68b3c",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "67a796b7-02e7-493f-8990-931f0759f95e"
+          },
+          "sessionId": "sess_6500f3c9d987",
+          "resolvedAt": "2026-09-07T12:24:18.144644Z",
+          "selectionSource": "policy"
+        },
+        "managedOwnerRef": "admin",
+        "managedAgentRef": "67a796b7-02e7-493f-8990-931f0759f95e",
+        "sessionId": "sess_6500f3c9d987",
+        "sessionRef": "1b2ab27f-2b1c-493c-8118-224927d8b783",
+        "turnId": "b76553ab-7b54-4460-b60b-120ea3fb4f63",
+        "state": "succeeded",
+        "fencingToken": "[REDACTED]",
+        "heartbeatAt": "2026-09-07T20:24:50.069314+08:00",
+        "result": {
+          "content": "成功完成了列出当前工作目录下的所有文件的任务，并且基于这些文件的信息创作了一首诗。"
+        },
+        "version": 17,
+        "createdAt": "2026-09-07T20:24:18.144288+08:00",
+        "updatedAt": "2026-09-07T20:24:50.117888+08:00",
+        "startedAt": "2026-09-07T20:24:18.231569+08:00",
+        "completedAt": "2026-09-07T20:24:50.117888+08:00"
+      }
+    ]
+  }
+}

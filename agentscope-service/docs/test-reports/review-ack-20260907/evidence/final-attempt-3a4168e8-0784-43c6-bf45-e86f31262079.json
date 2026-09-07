@@ -1,0 +1,56 @@
+{
+  "at": "2026-09-07T15:39:15.717921+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/3a4168e8-0784-43c6-bf45-e86f31262079",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "3a4168e8-0784-43c6-bf45-e86f31262079",
+      "agentTaskId": "8843793e-db5f-4a96-b342-aa6b3e6a02a7",
+      "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+      "runId": "e4a1068d-1990-40a6-b0d4-22a0824da862",
+      "nodeId": "7b640f59-a207-460c-8a14-b349dd79f68c",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+          "bindingId": "8c242af2-2d09-5d10-bf0e-0ef5f49dbd35",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44"
+        },
+        "sessionId": "sess_56b8e5809cf2",
+        "resolvedAt": "2026-09-07T15:36:46.011463Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "sessionId": "sess_56b8e5809cf2",
+      "sessionRef": "0f3c90a6-63b2-4356-a74d-65bd4ff4463a",
+      "turnId": "c8039a8e-e34e-47d5-832b-f0d55e91cc3f",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-07T23:37:17.574099+08:00",
+      "result": {
+        "outcome": "waiting",
+        "summary": "已将 7×8 的计算任务委派给 MA2。等待 MA2 完成计算后，将在主 Issue 中给出新增计算的实际结果，并保留原结果 84。",
+        "waitingForTaskIds": [
+          "b9901ff3-a847-4e14-802e-230aadd5d62b"
+        ]
+      },
+      "version": 28,
+      "createdAt": "2026-09-07T23:36:46.010809+08:00",
+      "updatedAt": "2026-09-07T23:37:17.593595+08:00",
+      "startedAt": "2026-09-07T23:36:46.086629+08:00",
+      "completedAt": "2026-09-07T23:37:17.593595+08:00"
+    }
+  }
+}

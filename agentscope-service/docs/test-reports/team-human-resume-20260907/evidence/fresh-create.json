@@ -1,0 +1,65 @@
+{
+  "at": "2026-09-07T13:24:59.341505+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues",
+  "request": {
+    "tenant": "default",
+    "namespace": "default",
+    "title": "IT human-resume 20260907：双子任务补充输入后自动汇总",
+    "description": "这是人类补充输入后恢复 Team 的集成验证。请先创建恰好两个子 Issue，都委派给 MA2，然后按平台等待流程结束本回合。A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2。B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。Lead 收到不能执行的结果后应总结缺少哪些输入，并将主任务置为 blocked。管理员稍后会分别在两个子 Issue 回复输入。收到人类补充后，Worker 必须计算并把实际结果写到 task.complete 的结果中；Lead 必须逐一验收子任务，等待尚未处理的另一项结果，最终在主 Issue 汇总 A、B 和两者之和，进入人工验收。",
+    "assigneeType": "team",
+    "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377"
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "cc466cac-a236-447c-a35b-c807d8fa94ea",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "orchestrationRunId": "fef4eb51-40a1-4e74-8cf2-8546ce105e82",
+      "runNodeId": "161566f4-6ffa-4c5a-8b5c-97d8b5500e67",
+      "agentId": "90fac7c8-c0f6-4f57-a278-f499dcd1fd44",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "teamId": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "teamRole": "leader",
+      "leaderTask": true,
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "correlationId": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-07T21:24:59.345294+08:00"
+    },
+    "issue": {
+      "id": "e9039b21-d163-4d61-be6a-199c3ed3ea6f",
+      "tenant": "default",
+      "namespace": "default",
+      "title": "IT human-resume 20260907：双子任务补充输入后自动汇总",
+      "description": "这是人类补充输入后恢复 Team 的集成验证。请先创建恰好两个子 Issue，都委派给 MA2，然后按平台等待流程结束本回合。A 子任务：读取尚未提供的业务输入 ALPHA，返回 ALPHA×2。B 子任务：读取尚未提供的业务输入 BETA，返回 BETA+10。两项输入目前均未知，禁止猜测；Worker 应明确报告 missing_input 并等待管理员提供。Lead 收到不能执行的结果后应总结缺少哪些输入，并将主任务置为 blocked。管理员稍后会分别在两个子 Issue 回复输入。收到人类补充后，Worker 必须计算并把实际结果写到 task.complete 的结果中；Lead 必须逐一验收子任务，等待尚未处理的另一项结果，最终在主 Issue 汇总 A、B 和两者之和，进入人工验收。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "22ce6ec1-fdf5-4393-a9f0-43abff828377",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-07T21:24:59.345294+08:00",
+      "updatedAt": "2026-09-07T21:24:59.345294+08:00"
+    }
+  }
+}
