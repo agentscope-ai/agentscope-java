@@ -747,6 +747,58 @@ class ReActAgentStructuredOutputTest {
 
     @Test
     @DisplayName(
+            "prose-wrapped conforming output: validation passes and structured metadata is"
+                    + " populated")
+    void testProseWrappedOutputYieldsStructuredData() {
+        // The validation loop tolerates leading prose when extracting the payload;
+        // the result wrapping must reuse that payload instead of re-parsing the raw
+        // text (which would fail on prose and silently drop the structured metadata).
+        MockModel nativeModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_prose")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "好的，答案是：{\"answer\":"
+                                                                                    + " 7}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result, "structured metadata must survive prose-wrapped output");
+        assertEquals(7, result.answer);
+    }
+
+    @Test
+    @DisplayName(
             "error-feedback retry: invalid first attempt corrected, failed-turn thinking does not"
                     + " leak")
     void testStructuredOutputErrorFeedbackRetry() {

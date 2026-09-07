@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -28,11 +29,11 @@ import java.util.List;
  * remediation pattern, cf. Instructor, Guardrails re-ask and Spring AI 2.0
  * self-correcting structured output).
  */
-public final class StructuredOutputGenerator {
+public final class StructuredOutputUtils {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private StructuredOutputGenerator() {}
+    private StructuredOutputUtils() {}
 
     /**
      * Builds a prompt fragment that feeds validation errors back to the model
@@ -61,69 +62,53 @@ public final class StructuredOutputGenerator {
     }
 
     /**
-     * Extracts a JSON object from raw model output: strips markdown code
-     * fences and leading prose, then performs brace matching from the first
-     * '{'. If a balanced candidate is not valid JSON, scanning continues with
-     * the next candidate instead of giving up.
+     * Parses a JSON object from raw model output: strips a markdown code fence
+     * (if any), then reads the text directly. Leading prose is tolerated by
+     * retrying from the first '{'.
      *
-     * @throws StructuredOutputParseException when no valid JSON object can be
-     *     found (fail-closed: never synthesizes a payload from the raw text —
+     * @throws StructuredOutputParseException when the output is not valid JSON
+     *     (fail-closed: never synthesizes a payload from the raw text —
      *     synthesizing one would let a lenient schema pass unstructured text
      *     through and bypass the guarantee entirely)
      */
     public static JsonNode extractJsonObject(String raw) {
-        String text = raw == null ? "" : raw.trim();
-        if (text.startsWith("```")) {
-            int firstBreak = text.indexOf('\n');
-            if (firstBreak > 0) {
-                text = text.substring(firstBreak + 1);
-            }
-            int closingFence = text.lastIndexOf("```");
-            if (closingFence >= 0) {
-                text = text.substring(0, closingFence).trim();
-            }
-        }
-        int start = text.indexOf('{');
-        if (start < 0) {
-            throw new StructuredOutputParseException("no JSON object found in model output");
-        }
-        int depth = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = start; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (inString) {
-                if (escaped) {
-                    escaped = false;
-                } else if (c == '\\') {
-                    escaped = true;
-                } else if (c == '"') {
-                    inString = false;
-                }
-                continue;
-            }
-            if (c == '"') {
-                inString = true;
-            } else if (c == '{') {
-                depth++;
-            } else if (c == '}' && --depth == 0) {
+        String text = stripCodeFence(raw == null ? "" : raw.trim());
+        try {
+            return MAPPER.readTree(text);
+        } catch (JsonProcessingException e) {
+            // Tolerate leading prose such as "答案是：{...}": retry from the first '{'.
+            // Jackson already ignores trailing content after the first value.
+            int start = text.indexOf('{');
+            if (start > 0) {
                 try {
-                    return MAPPER.readTree(text.substring(start, i + 1));
-                } catch (Exception e) {
-                    // This balanced candidate is not valid JSON — keep scanning for
-                    // a later candidate instead of giving up.
-                    start = text.indexOf('{', i + 1);
-                    if (start < 0) {
-                        throw new StructuredOutputParseException(
-                                "no valid JSON object found in model output");
-                    }
-                    i = start - 1;
-                    depth = 0;
-                    inString = false;
-                    escaped = false;
+                    return MAPPER.readTree(text.substring(start));
+                } catch (JsonProcessingException ignored) {
+                    // fall through and report the original error
                 }
             }
+            throw new StructuredOutputParseException(
+                    "output is not valid JSON: " + e.getOriginalMessage());
         }
-        throw new StructuredOutputParseException("unbalanced braces in model output");
+    }
+
+    /**
+     * Converts a parsed JSON payload to a plain Java object tree (maps / lists / values),
+     * as stored in message metadata for downstream consumers.
+     */
+    public static Object toPlainObject(JsonNode node) {
+        return MAPPER.convertValue(node, Object.class);
+    }
+
+    private static String stripCodeFence(String text) {
+        if (!text.startsWith("```")) {
+            return text;
+        }
+        int firstBreak = text.indexOf('\n');
+        if (firstBreak < 0) {
+            return text; // malformed fence — let readTree report it
+        }
+        String body = text.substring(firstBreak + 1);
+        int closing = body.lastIndexOf("```");
+        return (closing >= 0 ? body.substring(0, closing) : body).trim();
     }
 }
