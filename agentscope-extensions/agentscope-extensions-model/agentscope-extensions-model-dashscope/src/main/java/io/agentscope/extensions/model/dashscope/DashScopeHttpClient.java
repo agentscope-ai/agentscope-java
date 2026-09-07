@@ -398,7 +398,7 @@ public class DashScopeHttpClient {
         if (lowerModelName.equals("qwen3.6-max-preview")
                 || lowerModelName.startsWith("qwen3.7-max")
                 || lowerModelName.contains("kimi-k2-thinking")
-                || lowerModelName.contains("moonshot-kimi-k2-instruct")) {
+                || lowerModelName.contains("moonshot-kimi-k2-instruct")
                 || lowerModelName.startsWith("qwen3.8-2.4t-a95b")) {
             return false;
         }
