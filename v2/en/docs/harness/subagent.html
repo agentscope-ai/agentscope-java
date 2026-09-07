@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-08-09T00:51:33+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
+    <meta property="article:modified_time" content="2026-09-07T12:35:42+00:00" /><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html"><link rel="next" title="Skill" href="skill.html"><link rel="prev" title="Sandbox" href="sandbox.html">
         <link rel="canonical" href="https://java.agentscope.io/v2/en/docs/harness/subagent.html">
         <link rel="prefetch" href="../../../../_static/logo.svg" as="image">
 
@@ -1032,6 +1032,7 @@ top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can't be spawned
 expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
+enable_pending_tool_recovery: true # optional; omit to inherit the parent's recovery setting
 <span class="gu">tools: [read_file, grep_files]   # optional; allowlist over inherited tools</span>
 <span class="gu">---</span>
 
@@ -1064,6 +1065,14 @@ You are a subagent focused on code review.
 </pre></div>
 </div>
 <p>Three sources are mutually exclusive: <code class="docutils literal notranslate"><span class="pre">workspace(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">inlineAgentsBody(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">url(...)</span></code> — pick one.</p>
+<p>Automatically built local subagents, including <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code>, inherit the parent’s
+<code class="docutils literal notranslate"><span class="pre">HarnessAgent.Builder.enablePendingToolRecovery(...)</span></code> setting (default <code class="docutils literal notranslate"><span class="pre">false</span></code>). A declaration can
+override it with <code class="docutils literal notranslate"><span class="pre">.enablePendingToolRecovery(true)</span></code> or <code class="docutils literal notranslate"><span class="pre">.enablePendingToolRecovery(false)</span></code>; <code class="docutils literal notranslate"><span class="pre">null</span></code>
+inherits. Workspace specs accept <code class="docutils literal notranslate"><span class="pre">enable_pending_tool_recovery</span></code> (or <code class="docutils literal notranslate"><span class="pre">enablePendingToolRecovery</span></code>).
+When enabled, a new ordinary message repairs orphaned pending tool calls with synthetic error
+results, including calls loaded from a failed session. Pending permission confirmations still
+require confirmation; empty-input resume and caller-supplied tool results retain their existing
+behavior. Remote agents and custom factories configure recovery themselves.</p>
 </section>
 <section id="built-in-general-purpose">
 <h3>Built-in <code class="docutils literal notranslate"><span class="pre">general-purpose</span></code><a class="headerlink" href="#built-in-general-purpose" title="Link to this heading">¶</a></h3>
@@ -1580,7 +1589,7 @@ description: Investigates topics and returns a synthesized report.
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-08-09</div>
+              Last updated on 2026-09-07</div>
           </div>
           <div class="right-details">
             <div class="icons">
