@@ -372,7 +372,8 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
      *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
      *   <li>Models starting with "qwen3.7" where not "qwen3.7-max" (e.g., qwen3.7-plus)</li>
-     *   <li>Models starting with "qwen3.8-max" (e.g., qwen3.8-max)</li>
+     *   <li>Models starting with "qwen3.8" where not "qwen3.8-2.4t-a95b"
+     *       (e.g., qwen3.8-max, qwen3.8-flash, qwen3.8-27b)</li>
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
@@ -381,6 +382,8 @@ public class DashScopeHttpClient {
      *   <li>"qwen3.6-max-preview" — text-only preview model.</li>
      *   <li>Models starting with "qwen3.7-max" (e.g., qwen3.7-max, qwen3.7-max-2026-05-20)
      *       — text-only models that use the text-generation endpoint.</li>
+     *   <li>Models starting with "qwen3.8-2.4t-a95b" — text-only models that use the
+     *       text-generation endpoint.</li>
      * </ul>
      *
      * @param modelName the model name
@@ -393,7 +396,8 @@ public class DashScopeHttpClient {
         String lowerModelName = modelName.toLowerCase();
         // Reverse exclusions: text-only models whose prefix would otherwise match.
         if (lowerModelName.equals("qwen3.6-max-preview")
-                || lowerModelName.startsWith("qwen3.7-max")) {
+                || lowerModelName.startsWith("qwen3.7-max")
+                || lowerModelName.startsWith("qwen3.8-2.4t-a95b")) {
             return false;
         }
         return lowerModelName.startsWith("qvq")
@@ -402,7 +406,7 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.5")
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
-                || lowerModelName.startsWith("qwen3.8-max")
+                || lowerModelName.startsWith("qwen3.8")
                 || lowerModelName.contains("kimi-k2.5")
                 || lowerModelName.contains("kimi-k2.6");
     }
