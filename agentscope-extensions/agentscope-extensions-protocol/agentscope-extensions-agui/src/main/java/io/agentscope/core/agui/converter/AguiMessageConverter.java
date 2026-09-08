@@ -56,10 +56,12 @@ import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -185,6 +187,13 @@ public class AguiMessageConverter {
      * Convert an AG-UI run input to AgentScope messages, resolving resume entries through known
      * originating interrupts when available.
      *
+     * <p>Some clients (notably CopilotKit {@code useInterrupt.resolve()}) send both a {@code
+     * role:"tool"} message and a matching {@code resume[]} entry for the same {@code toolCallId}.
+     * Ordinary tool resumes that would duplicate an already-present {@link ToolResultBlock} id are
+     * skipped so {@code ReActAgent} does not throw {@code Duplicate tool result ID}. Permission
+     * confirm resumes still produce a USER {@link ConfirmResult} message and are never skipped on
+     * that basis.
+     *
      * @param input The AG-UI run input
      * @param resumeInterrupts Mapping from interrupt ID to the originating interrupt
      * @return The converted AgentScope messages
@@ -193,6 +202,7 @@ public class AguiMessageConverter {
             RunAgentInput input, Map<String, AguiEvent.Interrupt> resumeInterrupts) {
         Objects.requireNonNull(input, "input cannot be null");
         List<Msg> msgs = new ArrayList<>(toMsgList(input.getMessages()));
+        Set<String> existingToolResultIds = collectToolResultIds(msgs);
         Map<String, AguiEvent.Interrupt> interrupts =
                 resumeInterrupts != null ? resumeInterrupts : Map.of();
         for (AguiResume resume : input.getResume()) {
@@ -203,11 +213,29 @@ public class AguiMessageConverter {
             }
             if (isPermissionConfirmInterrupt(interrupt)) {
                 msgs.add(toConfirmResultMsg(resume, toolCallId, interrupt));
-            } else {
+            } else if (!existingToolResultIds.contains(toolCallId)) {
                 msgs.add(toToolResultMsg(resume, toolCallId));
+                existingToolResultIds.add(toolCallId);
             }
         }
         return List.copyOf(msgs);
+    }
+
+    private static Set<String> collectToolResultIds(List<Msg> msgs) {
+        Set<String> ids = new HashSet<>();
+        for (Msg msg : msgs) {
+            if (msg.getContent() == null) {
+                continue;
+            }
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock toolResult
+                        && toolResult.getId() != null
+                        && !toolResult.getId().isBlank()) {
+                    ids.add(toolResult.getId());
+                }
+            }
+        }
+        return ids;
     }
 
     /**

@@ -264,7 +264,7 @@ public class FilesystemTool {
         }
         List<FileInfo> infos = r.entries();
         if (infos == null || infos.isEmpty()) {
-            return "Empty or not a directory: " + path;
+            return "Empty directory: " + path;
         }
         return infos.stream()
                 .map(

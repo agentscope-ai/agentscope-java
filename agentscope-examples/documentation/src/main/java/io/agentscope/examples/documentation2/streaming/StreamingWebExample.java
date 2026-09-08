@@ -47,8 +47,8 @@ import reactor.core.scheduler.Schedulers;
  * <p>Usage:
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn spring-boot:run -pl agentscope-examples/documentation2 \
- *       -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.StreamingWebExample
+ *   mvn spring-boot:run -pl agentscope-examples/documentation \
+ *       -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.streaming.StreamingWebExample
  *
  *   curl -N "http://localhost:8080/chat?message=Hello"
  *   curl -N "http://localhost:8080/chat?message=What+is+AI?&amp;sessionId=my-session"

@@ -65,6 +65,7 @@ import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -90,6 +91,7 @@ import reactor.core.scheduler.Schedulers;
  * Tests for {@link HarnessAgent} workspace wiring: {@code AGENTS.md} context and subagent
  * discovery ({@code subagents/*.md}).
  */
+@HarnessQuiescence
 class HarnessAgentTest {
 
     @TempDir Path workspace;
@@ -1555,6 +1557,67 @@ class HarnessAgentTest {
                         .build();
 
         assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
+    // interrupt — per-session delegation
+    // =========================================================================
+
+    @Test
+    void interruptWithUserIdAndSessionIdTargetsOnlyThatSession() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        String userId = "alice";
+        String sessionId = "session-abc";
+        agent.getDelegate().getAgentState(userId, sessionId);
+        agent.getDelegate().getAgentState(userId, "other-session");
+
+        agent.interrupt(userId, sessionId);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(userId, sessionId)
+                        .interruptControl()
+                        .isInterrupted(),
+                "target session should be interrupted");
+        assertFalse(
+                agent.getDelegate()
+                        .getAgentState(userId, "other-session")
+                        .interruptControl()
+                        .isInterrupted(),
+                "other session should remain unaffected");
+    }
+
+    @Test
+    void interruptWithRuntimeContextDelegatesToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("bob").sessionId("session-ctx").build();
+        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
+
+        agent.interrupt(ctx);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
+                        .interruptControl()
+                        .isInterrupted(),
+                "session identified by RuntimeContext should be interrupted");
     }
 
     // =========================================================================
