@@ -225,6 +225,24 @@ class SessionTreeMirrorTest {
     }
 
     @Test
+    void flush_skipsTranscriptSegmentWhenPinnedSandboxWasReleased() throws Exception {
+        StoppedTransferSandbox sandbox = new StoppedTransferSandbox();
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        filesystem.setSandbox(sandbox);
+        Path context = workspace.resolve("agents/agent-a/sessions/released-segment.jsonl");
+
+        SessionTree tree = new SessionTree(context, workspace, filesystem);
+        tree.setTranscriptStore(
+                new ObjectStoreTranscriptStore(filesystem),
+                new TranscriptRef("tenant", "agent-a", "released-segment"));
+        tree.append(new SessionEntry.MessageEntry(null, null, null, "USER", "hello", null));
+        tree.flush();
+
+        assertTrue(SessionTree.awaitMirrorQuiescence(5, TimeUnit.SECONDS));
+        assertEquals(0, sandbox.uploadAttempts);
+    }
+
+    @Test
     void flush_withTranscriptStore_stillMirrorsCanonicalFiles() throws Exception {
         InMemoryStore store = new InMemoryStore();
         AbstractFilesystem fs = buildFs(store);
