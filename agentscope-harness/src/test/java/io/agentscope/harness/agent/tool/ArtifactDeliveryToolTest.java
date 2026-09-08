@@ -19,17 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryRequest;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.artifact.DirectArtifactDeliveryTarget;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
@@ -59,6 +62,79 @@ class ArtifactDeliveryToolTest {
                 ArgumentCaptor.forClass(ArtifactDeliveryRequest.class);
         verify(target).deliver(eq(RT), captor.capture());
         return captor.getValue();
+    }
+
+    @Test
+    void directDelivery_receivesNormalizedSourceWithoutDownloading() {
+        DirectArtifactDeliveryTarget direct =
+                (context, sourceFilesystem, source) -> {
+                    assertSame(RT, context);
+                    assertSame(filesystem, sourceFilesystem);
+                    assertEquals("outputs/report.pdf", source.filePath());
+                    assertEquals("weekly.pdf", source.fileName());
+                    assertEquals("Weekly report", source.description());
+                    assertTrue(source.force());
+                    return ArtifactDeliveryResult.success("uploaded from sandbox");
+                };
+        tool =
+                new ArtifactDeliveryTool(
+                        filesystem, WorkspacePathNormalizer.of("/workspace"), direct);
+
+        String result =
+                tool.deliverArtifact(
+                        RT, "/workspace/outputs/report.pdf", "weekly.pdf", "Weekly report", true);
+
+        assertTrue(result.contains("uploaded from sandbox"));
+        verifyNoInteractions(filesystem);
+    }
+
+    @Test
+    void directDelivery_preservesDefaultsAndNullableContext() {
+        DirectArtifactDeliveryTarget direct =
+                (context, sourceFilesystem, source) -> {
+                    assertNull(context);
+                    assertEquals("report.pdf", source.fileName());
+                    assertNull(source.description());
+                    assertFalse(source.force());
+                    return ArtifactDeliveryResult.success();
+                };
+        tool = new ArtifactDeliveryTool(filesystem, direct);
+        assertTrue(
+                tool.deliverArtifact(null, "outputs/report.pdf", null, null, null)
+                        .startsWith("Delivered "));
+        verifyNoInteractions(filesystem);
+    }
+
+    @Test
+    void directDelivery_failureConflictAndNullNeverFallBackToDownloading() {
+        for (ArtifactDeliveryResult outcome :
+                new ArtifactDeliveryResult[] {
+                    ArtifactDeliveryResult.fail("source missing"),
+                    ArtifactDeliveryResult.conflict("name exists"),
+                    null
+                }) {
+            DirectArtifactDeliveryTarget direct = (context, sourceFilesystem, source) -> outcome;
+            tool = new ArtifactDeliveryTool(filesystem, direct);
+            String result = tool.deliverArtifact(RT, "report.pdf", null, null, null);
+            if (outcome != null && outcome.conflict()) {
+                assertTrue(result.contains("already exists"));
+                assertTrue(result.contains("force=true"));
+            } else {
+                assertTrue(result.startsWith("Error:"));
+            }
+        }
+        verifyNoInteractions(filesystem);
+    }
+
+    @Test
+    void directDelivery_invalidInputDoesNotInvokeTarget() {
+        DirectArtifactDeliveryTarget direct = mock(DirectArtifactDeliveryTarget.class);
+        tool = new ArtifactDeliveryTool(filesystem, direct);
+        assertTrue(tool.deliverArtifact(RT, " ", null, null, null).startsWith("Error:"));
+        assertTrue(
+                tool.deliverArtifact(RT, "report.pdf", "../report.pdf", null, null)
+                        .startsWith("Error:"));
+        verifyNoInteractions(filesystem, direct);
     }
 
     @Test
