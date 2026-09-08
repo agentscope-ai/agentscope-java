@@ -583,7 +583,7 @@ class AguiRequestProcessorTest {
     @Test
     void processExtractsFollowUpMessagesWhenServerHasMemory() {
         AgentResolver resolver = mock(AgentResolver.class);
-        ReActAgent agent = mock(ReActAgent.class);
+        Agent agent = mock(Agent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
         when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(true);
