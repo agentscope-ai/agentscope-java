@@ -1103,6 +1103,99 @@ class HarnessAgentTest {
     }
 
     @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "unallowlisted",
+                "unallowlisted-deletion-disabled",
+                "allowlisted",
+                "unrestricted"
+            })
+    void subagentHooks_sameNameContributionRespectsDeclaredAllowlist(String policy)
+            throws Exception {
+        AgentTool parentReadFile = mockAgentTool("read_file");
+        when(parentReadFile.callAsync(any()))
+                .thenReturn(Mono.just(ToolResultBlock.text("parent hook read_file")));
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public List<Object> tools() {
+                        return List.of(parentReadFile);
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+                };
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .toolkit(
+                                new Toolkit(
+                                        ToolkitConfig.builder()
+                                                .allowToolDeletion(
+                                                        !policy.endsWith("deletion-disabled"))
+                                                .build()))
+                        .hook(hook)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("helper")
+                                        .description("Same-name Hook tool policy")
+                                        .tools(
+                                                switch (policy) {
+                                                    case "allowlisted" -> List.of("read_file");
+                                                    case "unrestricted" -> List.of();
+                                                    default -> List.of("query_logs");
+                                                })
+                                        .build());
+        SubagentEntry entry =
+                builder.buildSubagentEntries(workspace).stream()
+                        .filter(candidate -> "helper".equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow();
+        try (HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+            Files.writeString(
+                    child.getWorkspaceManager().getWorkspace().resolve("child.txt"),
+                    "child workspace content");
+            Toolkit toolkit = child.getDelegate().getToolkit();
+            List<ToolResultBlock> results =
+                    toolkit.callTools(
+                                    List.of(
+                                            hookToolCall(
+                                                    "read",
+                                                    "read_file",
+                                                    Map.of("path", "child.txt"))),
+                                    null,
+                                    child.getDelegate(),
+                                    null)
+                            .block(Duration.ofSeconds(5));
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            boolean hookToolAllowed = "allowlisted".equals(policy) || "unrestricted".equals(policy);
+            if (hookToolAllowed) {
+                assertSame(parentReadFile, toolkit.getTool("read_file"));
+            } else {
+                assertNotNull(toolkit.getTool("read_file"));
+                assertNotSame(parentReadFile, toolkit.getTool("read_file"));
+            }
+            assertTrue(
+                    results.get(0).getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .anyMatch(
+                                    text ->
+                                            text.getText()
+                                                    .contains(
+                                                            hookToolAllowed
+                                                                    ? "parent hook read_file"
+                                                                    : "child workspace content")));
+            verify(parentReadFile, times(hookToolAllowed ? 1 : 0)).callAsync(any());
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"programmatic", "static-markdown", "dynamic-markdown"})
     void subagentHooks_toolContributionsRespectDeclaredAllowlist(String source) throws Exception {
         AgentTool forbidden = mockAgentTool("delete_logs");

@@ -2895,15 +2895,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (inheritedHookToolAllowlist == null) {
                 delegate = inner.build();
             } else {
-                Set<String> toolNamesBeforeHooks = agentToolkit.getToolNames();
                 ToolsConfig childToolsConfig = resolvedToolsConfig;
                 delegate =
                         inner.build(
                                 toolName -> {
                                     // Filter before installation, even when the real toolkit
-                                    // forbids runtime deletion. Keep the child's own Harness tools.
+                                    // forbids runtime deletion. Rejected contributions leave the
+                                    // child's own same-name Harness tools intact.
                                     return (inheritedHookToolAllowlist.isEmpty()
-                                                    || toolNamesBeforeHooks.contains(toolName)
                                                     || inheritedHookToolAllowlist.contains(
                                                             toolName))
                                             && ToolFilter.isAllowed(toolName, childToolsConfig);
