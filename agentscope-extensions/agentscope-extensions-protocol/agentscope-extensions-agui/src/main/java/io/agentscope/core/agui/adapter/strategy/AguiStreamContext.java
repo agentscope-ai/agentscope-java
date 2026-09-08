@@ -38,10 +38,6 @@ import org.slf4j.LoggerFactory;
 
 public class AguiStreamContext {
 
-    // CopilotKit will merge reasoning and text with the same messageId, adding suffixes to the
-    // reasoning to distinguish them
-    public static final String REASONING_MESSAGE_ID_SUFFIX = "-reasoning";
-
     private static final Logger logger = LoggerFactory.getLogger(AguiStreamContext.class);
 
     private final String threadId;
@@ -53,12 +49,8 @@ public class AguiStreamContext {
 
     private final Set<String> startedTextMessages = new LinkedHashSet<>();
     private final Set<String> endedTextMessages = new LinkedHashSet<>();
-    private final Map<TextBlockKey, String> textMessageIds = new LinkedHashMap<>();
-    private final Map<String, String> firstTextBlockByReply = new LinkedHashMap<>();
     private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
     private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
-    private final Map<ThinkingBlockKey, String> reasoningMessageIds = new LinkedHashMap<>();
-    private final Map<String, String> firstThinkingBlockByReply = new LinkedHashMap<>();
     private final Set<String> startedToolCalls = new LinkedHashSet<>();
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
@@ -152,26 +144,6 @@ public class AguiStreamContext {
         }
     }
 
-    public String textMessageId(String replyId, String blockId) {
-        String normalizedBlockId = isBlank(blockId) ? "text" : blockId;
-        TextBlockKey key = new TextBlockKey(replyId, normalizedBlockId);
-        return textMessageIds.computeIfAbsent(
-                key,
-                ignored -> {
-                    String firstBlockId =
-                            firstTextBlockByReply.putIfAbsent(replyId, normalizedBlockId);
-                    if (firstBlockId == null || Objects.equals(firstBlockId, normalizedBlockId)) {
-                        return replyId;
-                    }
-                    return replyId + "-" + normalizedBlockId;
-                });
-    }
-
-    public String existingTextMessageId(String replyId, String blockId) {
-        String normalizedBlockId = isBlank(blockId) ? "text" : blockId;
-        return textMessageIds.get(new TextBlockKey(replyId, normalizedBlockId));
-    }
-
     public void closeActiveTextMessage() {
         if (currentTextMessageId == null) {
             return;
@@ -193,48 +165,17 @@ public class AguiStreamContext {
     }
 
     public void startReasoningMessage(String messageId) {
-        String reasoningMessageId = withReasoningSuffix(messageId);
-        if (startedReasoningMessages.add(reasoningMessageId)) {
-            emit(
-                    new AguiEvent.ReasoningMessageStart(
-                            threadId, runId, reasoningMessageId, "reasoning"));
+        if (startedReasoningMessages.add(messageId)) {
+            emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
         }
-        currentReasoningMessageId = reasoningMessageId;
+        currentReasoningMessageId = messageId;
     }
 
     public void appendReasoningDelta(String messageId, String delta) {
         if (delta != null && !delta.isEmpty()) {
             startReasoningMessage(messageId);
-            emit(
-                    new AguiEvent.ReasoningMessageContent(
-                            threadId, runId, withReasoningSuffix(messageId), delta));
+            emit(new AguiEvent.ReasoningMessageContent(threadId, runId, messageId, delta));
         }
-    }
-
-    public String reasoningMessageId(String replyId, String blockId) {
-        String normalizedBlockId = isBlank(blockId) ? "thinking" : blockId;
-        ThinkingBlockKey key = new ThinkingBlockKey(replyId, normalizedBlockId);
-        String messageId =
-                reasoningMessageIds.computeIfAbsent(
-                        key,
-                        ignored -> {
-                            String firstBlockId =
-                                    firstThinkingBlockByReply.putIfAbsent(
-                                            replyId, normalizedBlockId);
-                            if (firstBlockId == null
-                                    || Objects.equals(firstBlockId, normalizedBlockId)) {
-                                return replyId;
-                            }
-                            return replyId + "-" + normalizedBlockId;
-                        });
-        return withReasoningSuffix(messageId);
-    }
-
-    public String existingReasoningMessageId(String replyId, String blockId) {
-        String normalizedBlockId = isBlank(blockId) ? "thinking" : blockId;
-        String messageId =
-                reasoningMessageIds.get(new ThinkingBlockKey(replyId, normalizedBlockId));
-        return messageId == null ? null : withReasoningSuffix(messageId);
     }
 
     public void closeActiveReasoningMessage() {
@@ -245,17 +186,16 @@ public class AguiStreamContext {
     }
 
     public void closeReasoningMessage(String messageId) {
-        String reasoningMessageId = withReasoningSuffix(messageId);
-        if (reasoningMessageId == null
-                || !startedReasoningMessages.contains(reasoningMessageId)
-                || endedReasoningMessages.contains(reasoningMessageId)) {
+        if (messageId == null
+                || !startedReasoningMessages.contains(messageId)
+                || endedReasoningMessages.contains(messageId)) {
             return;
         }
-        endedReasoningMessages.add(reasoningMessageId);
-        if (Objects.equals(reasoningMessageId, currentReasoningMessageId)) {
+        endedReasoningMessages.add(messageId);
+        if (Objects.equals(messageId, currentReasoningMessageId)) {
             currentReasoningMessageId = null;
         }
-        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, reasoningMessageId));
+        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, messageId));
     }
 
     public void startToolCall(String toolCallId, String toolCallName) {
@@ -329,7 +269,6 @@ public class AguiStreamContext {
         if (endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
-
         StringBuilder content = toolResultContent.remove(toolCallId);
         emit(
                 new AguiEvent.ToolCallResult(
@@ -385,16 +324,6 @@ public class AguiStreamContext {
         return toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
     }
 
-    private static String withReasoningSuffix(String messageId) {
-        if (messageId == null) {
-            return null;
-        }
-        if (messageId.endsWith(REASONING_MESSAGE_ID_SUFFIX)) {
-            return messageId;
-        }
-        return messageId + REASONING_MESSAGE_ID_SUFFIX;
-    }
-
     private static String serialize(ContentBlock data) {
         if (data instanceof TextBlock textBlock) {
             return textBlock.getText();
@@ -409,10 +338,6 @@ public class AguiStreamContext {
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
-
-    private record TextBlockKey(String replyId, String blockId) {}
-
-    private record ThinkingBlockKey(String replyId, String blockId) {}
 
     private void warnMissingToolCallId(String eventName) {
         if (!warnedMissingToolCallIdOperations.add(eventName)) {
@@ -455,7 +380,6 @@ public class AguiStreamContext {
     }
 
     static final class TokenUsageAccumulator {
-
         private long cumulativeInputTokens;
         private long cumulativeOutputTokens;
         private long cumulativeCachedTokens;
@@ -483,7 +407,6 @@ public class AguiStreamContext {
     record TokenUsageSnapshot(TokenUsage delta, TokenUsage cumulative) {}
 
     record TokenUsage(long inputTokens, long outputTokens, long cachedTokens, double time) {
-
         long totalTokens() {
             return inputTokens + outputTokens;
         }

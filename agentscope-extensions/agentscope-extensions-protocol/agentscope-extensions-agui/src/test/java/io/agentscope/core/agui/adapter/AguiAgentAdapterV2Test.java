@@ -374,9 +374,9 @@ class AguiAgentAdapterV2Test {
                             .toList();
             assertEquals(
                     List.of(
-                            "reply-mixed",
-                            "reply-mixed",
-                            "reply-mixed",
+                            "reply-mixed-text",
+                            "reply-mixed-text",
+                            "reply-mixed-text",
                             "reply-mixed-text-2",
                             "reply-mixed-text-2",
                             "reply-mixed-text-2"),
@@ -436,12 +436,12 @@ class AguiAgentAdapterV2Test {
                             .toList();
             assertEquals(
                     List.of(
-                            "reply-mixed-reasoning",
-                            "reply-mixed-reasoning",
-                            "reply-mixed-reasoning",
-                            "reply-mixed-thinking-2-reasoning",
-                            "reply-mixed-thinking-2-reasoning",
-                            "reply-mixed-thinking-2-reasoning"),
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking-2",
+                            "reply-mixed-thinking-2",
+                            "reply-mixed-thinking-2"),
                     messageIds);
         }
 
@@ -463,9 +463,9 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             AguiAdapterConfig.builder().enableReasoning(true).build(),
-                            new ThinkingBlockStartEvent("reply-thinking", "block-1"),
-                            new ThinkingBlockDeltaEvent("reply-thinking", "block-1", "visible"),
-                            new ThinkingBlockEndEvent("reply-thinking", "block-1"));
+                            new ThinkingBlockStartEvent("reply-thinking", "thinking"),
+                            new ThinkingBlockDeltaEvent("reply-thinking", "thinking", "visible"),
+                            new ThinkingBlockEndEvent("reply-thinking", "thinking"));
 
             assertEquals(
                     List.of(
@@ -479,8 +479,7 @@ class AguiAgentAdapterV2Test {
                     assertInstanceOf(AguiEvent.ReasoningMessageContent.class, events.get(1));
             AguiEvent.ReasoningMessageEnd end =
                     assertInstanceOf(AguiEvent.ReasoningMessageEnd.class, events.get(2));
-            String expectedMessageId =
-                    "reply-thinking" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX;
+            String expectedMessageId = "reply-thinking-thinking";
             assertEquals(expectedMessageId, start.messageId());
             assertEquals(expectedMessageId, content.messageId());
             assertEquals(expectedMessageId, end.messageId());
@@ -491,10 +490,10 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             AguiAdapterConfig.builder().enableReasoning(true).build(),
-                            new ThinkingBlockDeltaEvent("reply-shared", "thinking-1", "think"),
-                            new ThinkingBlockEndEvent("reply-shared", "thinking-1"),
-                            new TextBlockDeltaEvent("reply-shared", "text-1", "answer"),
-                            new TextBlockEndEvent("reply-shared", "text-1"));
+                            new ThinkingBlockDeltaEvent("reply-shared", "thinking", "think"),
+                            new ThinkingBlockEndEvent("reply-shared", "thinking"),
+                            new TextBlockDeltaEvent("reply-shared", "text", "answer"),
+                            new TextBlockEndEvent("reply-shared", "text"));
 
             AguiEvent.ReasoningMessageContent reasoningContent =
                     events.stream()
@@ -509,10 +508,8 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
 
-            assertEquals("reply-shared", textContent.messageId());
-            assertEquals(
-                    "reply-shared" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX,
-                    reasoningContent.messageId());
+            assertEquals("reply-shared-text", textContent.messageId());
+            assertEquals("reply-shared-thinking", reasoningContent.messageId());
         }
 
         @Test
