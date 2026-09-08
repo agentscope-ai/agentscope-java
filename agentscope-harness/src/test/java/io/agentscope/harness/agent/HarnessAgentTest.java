@@ -996,6 +996,112 @@ class HarnessAgentTest {
         assertEquals("original", runHookSubagent(source, List.of()).getInput().get("query"));
     }
 
+    @Test
+    void subagentHooks_parentOnlyHookSkipsChildEventsByAgentId() {
+        AtomicReference<String> parentId = new AtomicReference<>();
+        List<HookEvent> parentEvents = new CopyOnWriteArrayList<>();
+        List<HookEvent> skippedEvents = new CopyOnWriteArrayList<>();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (!parentId.get().equals(event.getAgent().getAgentId())) {
+                            skippedEvents.add(event);
+                            return Mono.just(event);
+                        }
+                        parentEvents.add(event);
+                        return Mono.just(event);
+                    }
+                };
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("helper")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .hook(hook)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("helper")
+                                        .description("Child with the same name as its parent")
+                                        .build());
+        SubagentEntry entry =
+                builder.buildSubagentEntries(workspace).stream()
+                        .filter(candidate -> "helper".equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow();
+        try (HarnessAgent parent = builder.build();
+                HarnessAgent child =
+                        (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+            parentId.set(parent.getAgentId());
+            assertNotNull(parent.call("parent call").block(Duration.ofSeconds(20)));
+            assertNotNull(child.call("child call").block(Duration.ofSeconds(20)));
+            assertEquals(1, parentEvents.stream().filter(PreCallEvent.class::isInstance).count());
+            assertEquals(1, skippedEvents.stream().filter(PreCallEvent.class::isInstance).count());
+            assertTrue(
+                    parentEvents.stream()
+                            .allMatch(event -> event.getAgent() == parent.getDelegate()));
+            assertTrue(
+                    skippedEvents.stream()
+                            .allMatch(event -> event.getAgent() == child.getDelegate()));
+            assertEquals(parent.getName(), child.getName());
+            assertTrue(
+                    child.getDelegate().getHooks().stream()
+                            .anyMatch(candidate -> candidate == hook));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void subagentHooks_workspaceDenyOverridesPlatformAllowlistExemption(boolean deny)
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(
+                workspace.resolve("tools.json"),
+                deny
+                        ? "{\"allow\":[\"read_file\"],\"deny\":[\"team\"]}"
+                        : "{\"allow\":[\"read_file\"]}");
+        AgentTool platformTool = mockAgentTool("team");
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public List<Object> tools() {
+                        return List.of(platformTool);
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+                };
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .hook(hook)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("helper")
+                                        .description("Platform tool policy")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .tools(List.of("team"))
+                                        .build());
+        SubagentEntry entry =
+                builder.buildSubagentEntries(workspace).stream()
+                        .filter(candidate -> "helper".equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow();
+        try (HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+            assertSame(
+                    deny ? null : platformTool, child.getDelegate().getToolkit().getTool("team"));
+            assertNotNull(child.getDelegate().getToolkit().getTool("read_file"));
+            assertEquals(
+                    !deny,
+                    child.getDelegate().getToolkit().getToolSchemas().stream()
+                            .anyMatch(schema -> "team".equals(schema.getName())));
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"programmatic", "static-markdown", "dynamic-markdown"})
     void subagentHooks_toolContributionsRespectDeclaredAllowlist(String source) throws Exception {

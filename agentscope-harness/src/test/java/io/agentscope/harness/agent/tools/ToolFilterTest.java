@@ -24,7 +24,10 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ToolFilterTest {
 
@@ -134,6 +137,36 @@ class ToolFilterTest {
         assertFalse(names.contains("team"));
         assertTrue(names.contains("agent_spawn"));
         assertTrue(names.contains("task_output"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "empty", "allow", "deny", "both"})
+    void namePredicateMatchesToolkitFiltering(String policy) {
+        Toolkit toolkit = makeToolkit();
+        toolkit.registerTool(new PlatformStubTools());
+        ToolsConfig cfg = new ToolsConfig();
+        if ("null".equals(policy)) {
+            cfg = null;
+        } else if ("empty".equals(policy)) {
+            cfg.setAllow(List.of());
+            cfg.setDeny(List.of());
+        } else {
+            if ("allow".equals(policy) || "both".equals(policy)) {
+                cfg.setAllow(List.of("read_file", "execute"));
+            }
+            if ("deny".equals(policy) || "both".equals(policy)) {
+                cfg.setDeny(List.of("execute", "team"));
+            }
+        }
+        Set<String> originalNames = toolkit.getToolNames();
+        ToolsConfig config = cfg;
+        Set<String> retained =
+                originalNames.stream()
+                        .filter(name -> ToolFilter.isAllowed(name, config))
+                        .collect(Collectors.toSet());
+        assertEquals(originalNames, toolkit.getToolNames());
+        ToolFilter.apply(toolkit, cfg);
+        assertEquals(toolkit.getToolNames(), retained);
     }
 
     private static Toolkit makeToolkit() {

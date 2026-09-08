@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tools;
 
 import io.agentscope.core.tool.Toolkit;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,6 +49,27 @@ public final class ToolFilter {
     private ToolFilter() {}
 
     /**
+     * Tests a registered tool name against the workspace allow/deny policy without modifying a
+     * toolkit. Platform tools survive an allowlist, but explicit deny entries always win.
+     *
+     * @param toolName the registered tool name
+     * @param cfg workspace configuration; {@code null} retains all tools
+     * @return {@code true} to retain the tool, {@code false} to exclude it
+     */
+    public static boolean isAllowed(String toolName, ToolsConfig cfg) {
+        return cfg == null || isAllowed(toolName, cfg.getAllow(), cfg.getDeny());
+    }
+
+    private static boolean isAllowed(
+            String toolName, Collection<String> allow, Collection<String> deny) {
+        return (deny == null || !deny.contains(toolName))
+                && (allow == null
+                        || allow.isEmpty()
+                        || allow.contains(toolName)
+                        || HarnessPlatformTools.isPlatformTool(toolName));
+    }
+
+    /**
      * Removes tools from {@code toolkit} that are excluded by {@code cfg}'s allow/deny lists. A
      * {@code null} {@code cfg} or one with no allow/deny entries is a no-op.
      */
@@ -77,16 +99,7 @@ public final class ToolFilter {
         Set<String> toRemove = new LinkedHashSet<>();
         Set<String> protectedKept = new LinkedHashSet<>();
         for (String name : registered) {
-            boolean denied = denySetView != null && denySetView.contains(name);
-            if (denied) {
-                toRemove.add(name);
-                continue;
-            }
-            boolean allowed =
-                    allowSetView == null
-                            || allowSetView.contains(name)
-                            || HarnessPlatformTools.isPlatformTool(name);
-            if (!allowed) {
+            if (!isAllowed(name, allowSetView, denySetView)) {
                 toRemove.add(name);
             } else if (allowSetView != null
                     && !allowSetView.contains(name)

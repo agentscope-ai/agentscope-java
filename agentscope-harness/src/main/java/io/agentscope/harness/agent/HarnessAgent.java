@@ -1527,6 +1527,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Adds an explicitly configured hook; {@code null} is ignored.
+         *
+         * <p>Automatically constructed local declared subagents, including declarations loaded
+         * from workspace Markdown, inherit all explicitly configured parent hooks. The same Hook
+         * instances are reused, with the existing priority ordering and deduplication, so these
+         * hooks also receive child agent events.
+         *
+         * <p>A hook that should handle only parent events should compare
+         * {@code event.getAgent().getAgentId()} with the parent's {@link HarnessAgent#getAgentId()}
+         * and return the event unchanged for other agents. This avoids duplicate reporting,
+         * duplicate metrics and other duplicated side effects or unexpected child event handling.
+         * Hook events carry the inner ReActAgent; use the agent ID rather than comparing the event
+         * agent directly with the HarnessAgent wrapper.
+         *
+         * @param hook the hook to add
+         * @return this builder
+         */
         public Builder hook(Hook hook) {
             if (hook != null) {
                 hooks.add(hook);
@@ -1535,6 +1553,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Adds explicitly configured hooks with the same inheritance semantics as {@link #hook}.
+         *
+         * @param hooks hooks to add; {@code null} lists and entries are ignored
+         * @return this builder
+         */
         public Builder hooks(List<Hook> hooks) {
             if (hooks != null) {
                 for (Hook h : hooks) {
@@ -2875,20 +2899,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 ToolsConfig childToolsConfig = resolvedToolsConfig;
                 delegate =
                         inner.build(
-                                hookTools -> {
+                                toolName -> {
                                     // Filter before installation, even when the real toolkit
                                     // forbids runtime deletion. Keep the child's own Harness tools.
-                                    if (!inheritedHookToolAllowlist.isEmpty()) {
-                                        hookTools.getToolNames().stream()
-                                                .filter(
-                                                        toolName ->
-                                                                !toolNamesBeforeHooks.contains(
-                                                                                toolName)
-                                                                        && !inheritedHookToolAllowlist
-                                                                                .contains(toolName))
-                                                .forEach(hookTools::removeTool);
-                                    }
-                                    ToolFilter.apply(hookTools, childToolsConfig);
+                                    return (inheritedHookToolAllowlist.isEmpty()
+                                                    || toolNamesBeforeHooks.contains(toolName)
+                                                    || inheritedHookToolAllowlist.contains(
+                                                            toolName))
+                                            && ToolFilter.isAllowed(toolName, childToolsConfig);
                                 });
             }
             selfRef.set(delegate);
