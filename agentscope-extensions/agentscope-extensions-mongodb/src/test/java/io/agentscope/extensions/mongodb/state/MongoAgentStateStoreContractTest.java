@@ -24,6 +24,7 @@ import com.mongodb.client.MongoClients;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
+import io.agentscope.extensions.mongodb.testutil.RequireDocker;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +51,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * runnable in CI.
  */
 @Testcontainers
+@RequireDocker
 @DisplayName("AgentStateStore versioning contract — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoAgentStateStoreContractTest {

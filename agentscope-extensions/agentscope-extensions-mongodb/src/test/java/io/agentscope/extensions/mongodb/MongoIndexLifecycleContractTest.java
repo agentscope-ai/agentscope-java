@@ -26,6 +26,7 @@ import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
 import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
 import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
 import io.agentscope.extensions.mongodb.store.MongoBaseStore;
+import io.agentscope.extensions.mongodb.testutil.RequireDocker;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>Uses Testcontainers to spin up a real MongoDB instance, making the tests runnable in CI.
  */
 @Testcontainers
+@RequireDocker
 @DisplayName("Index lifecycle — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoIndexLifecycleContractTest {

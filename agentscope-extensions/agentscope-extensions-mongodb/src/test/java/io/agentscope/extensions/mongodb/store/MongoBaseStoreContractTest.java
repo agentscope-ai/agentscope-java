@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
+import io.agentscope.extensions.mongodb.testutil.RequireDocker;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.List;
@@ -48,6 +49,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * Uses Testcontainers to spin up a real MongoDB instance, making the tests runnable in CI.
  */
 @Testcontainers
+@RequireDocker
 @DisplayName("BaseStore contract — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoBaseStoreContractTest {
