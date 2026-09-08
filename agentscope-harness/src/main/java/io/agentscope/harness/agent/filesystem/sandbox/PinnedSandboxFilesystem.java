@@ -38,6 +38,17 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         super.setSandbox(sandbox);
     }
 
+    /**
+     * Whether the sandbox pinned for an asynchronous mirror is still running.
+     *
+     * <p>A self-managed sandbox is stopped as part of call release. In that case a session
+     * mirror is already best-effort and must not attempt a transfer against released resources.
+     */
+    public boolean isSandboxRunning() {
+        Sandbox sandbox = getSandbox();
+        return sandbox != null && sandbox.isRunning();
+    }
+
     @Override
     public synchronized void clearSandboxIfCurrent(Sandbox expected) {
         // Keep the pin for out-of-call mirror uploads.

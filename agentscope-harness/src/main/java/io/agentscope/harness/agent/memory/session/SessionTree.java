@@ -728,6 +728,13 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
+        if (fs instanceof PinnedSandboxFilesystem pinned && !pinned.isSandboxRunning()) {
+            log.debug(
+                    "Skipping best-effort session mirror for {} because its sandbox has been"
+                            + " released",
+                    relativePath);
+            return;
+        }
         try {
             byte[] bytes = Files.readAllBytes(file);
             fs.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));

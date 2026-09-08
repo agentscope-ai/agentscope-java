@@ -17,6 +17,7 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,6 +34,7 @@ import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
@@ -45,6 +47,7 @@ class KubernetesSandboxTest {
 
     private CommandExecutor commands;
     private Filesystem files;
+    private Sandbox sdkSandbox;
     private KubernetesSandboxState state;
     private KubernetesSandbox sandbox;
 
@@ -52,9 +55,10 @@ class KubernetesSandboxTest {
     void setUp() {
         commands = mock(CommandExecutor.class);
         files = mock(Filesystem.class);
-        Sandbox sdkSandbox = mock(Sandbox.class);
+        sdkSandbox = mock(Sandbox.class);
         when(sdkSandbox.commands()).thenReturn(commands);
         when(sdkSandbox.files()).thenReturn(files);
+        when(sdkSandbox.isActive()).thenReturn(true);
 
         state = new KubernetesSandboxState();
         state.setSessionId("session-1");
@@ -192,6 +196,26 @@ class KubernetesSandboxTest {
         when(files.read(eq("out/report.pdf"))).thenReturn(content);
 
         assertArrayEquals(content, sandbox.downloadFile("/workspace/out/report.pdf"));
+    }
+
+    @Test
+    void fileTransferFailsClearlyWhenConnectionIsClosed() {
+        when(sdkSandbox.isActive()).thenReturn(false);
+
+        SandboxException uploadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.uploadFile("/workspace/src/Foo.java", new byte[] {1}));
+        SandboxException downloadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.downloadFile("/workspace/src/Foo.java"));
+
+        assertEquals("Kubernetes sandbox connection has been closed", uploadFailure.getMessage());
+        assertEquals("Kubernetes sandbox connection has been closed", downloadFailure.getMessage());
+        verify(commands, never()).run(anyString());
+        verify(files, never()).read(anyString());
+        verify(files, never()).write(anyString(), org.mockito.ArgumentMatchers.<byte[]>any());
     }
 
     @Test
