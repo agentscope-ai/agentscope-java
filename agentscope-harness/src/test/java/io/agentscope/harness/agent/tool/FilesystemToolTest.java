@@ -98,6 +98,39 @@ class FilesystemToolTest {
         verify(filesystem).ls(RT, "memory");
     }
 
+    // ==================== Bug reproduction: listFiles ambiguous error message ====================
+
+    @Test
+    void listFiles_nonExistentPath_returnsError() {
+        when(filesystem.ls(RT, "/nonexistent"))
+                .thenReturn(LsResult.fail("Path does not exist: /nonexistent"));
+
+        String result = tool.listFiles(RT, "/nonexistent");
+
+        assertTrue(result.startsWith("Error:"), "should report error for non-existent path");
+        assertTrue(result.contains("does not exist"), "error should mention 'does not exist'");
+    }
+
+    @Test
+    void listFiles_filePath_returnsError() {
+        when(filesystem.ls(RT, "/path/to/file.txt"))
+                .thenReturn(LsResult.fail("Not a directory: /path/to/file.txt"));
+
+        String result = tool.listFiles(RT, "/path/to/file.txt");
+
+        assertTrue(result.startsWith("Error:"), "should report error for file path");
+        assertTrue(result.contains("Not a directory"), "error should mention 'Not a directory'");
+    }
+
+    @Test
+    void listFiles_emptyDirectory_returnsEmptyDirMessage() {
+        when(filesystem.ls(RT, "/empty/dir")).thenReturn(LsResult.success(List.of()));
+
+        String result = tool.listFiles(RT, "/empty/dir");
+
+        assertEquals("Empty directory: /empty/dir", result);
+    }
+
     @Test
     void readFile_omittedOffsetAndLimit_defaultToZero() {
         when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))

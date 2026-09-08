@@ -35,6 +35,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -56,6 +57,7 @@ import reactor.core.publisher.Flux;
  * ({@code Flux<AgentEvent>}) path instead of the deprecated {@code stream()} ({@code Flux<Event>})
  * path.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamEventsTest {
 
     @TempDir Path workspace;
