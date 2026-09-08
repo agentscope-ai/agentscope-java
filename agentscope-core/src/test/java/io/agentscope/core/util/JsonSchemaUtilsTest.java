@@ -17,6 +17,7 @@
 package io.agentscope.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -166,6 +167,55 @@ class JsonSchemaUtilsTest {
         Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
         assertNotNull(mapSchema);
         assertEquals("object", mapSchema.get("type"));
+    }
+
+    @Test
+    void testGenerateSchemaFromClassRepeatedCallsReturnEqualIndependentMaps() {
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+
+        // A repeated class must yield an equal schema, so caching cannot change the result.
+        assertEquals(first, second);
+
+        // Each call must return a fresh, independently mutable map: mutating one must not leak
+        // into another, matching in-place-mutating callers such as ToolSchemaGenerator.
+        first.put("description", "mutated");
+        assertFalse(second.containsKey("description"));
+
+        Map<String, Object> third = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
+        assertFalse(third.containsKey("description"));
+        assertEquals(second, third);
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeRepeatedCallsReturnEqualIndependentMaps() {
+        Type listType = new TypeReference<List<String>>() {}.getType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(listType);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        assertEquals(first, second);
+
+        first.put("description", "mutated");
+        assertFalse(second.containsKey("description"));
+
+        Map<String, Object> third = JsonSchemaUtils.generateSchemaFromType(listType);
+        assertFalse(third.containsKey("description"));
+        assertEquals(second, third);
+    }
+
+    @Test
+    void testGenerateSchemaFromClassNullThrows() {
+        // Caching routes a null class through ConcurrentHashMap#computeIfAbsent, which rejects
+        // null keys; the resulting NPE must match the pre-cache behavior for a null argument.
+        assertThrows(
+                NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromClass(null));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeNullThrows() {
+        assertThrows(
+                NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromType(null));
     }
 
     static class ConcurrentClassA {
