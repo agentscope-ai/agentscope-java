@@ -43,7 +43,7 @@ func CanTransitionOrchestrationRun(from, to OrchestrationRunState) bool {
 	}
 	switch from {
 	case RunPlanned:
-		return to == RunRunning || to == RunCancelled || to == RunFailed
+		return to == RunRunning || to == RunCancelling || to == RunCancelled || to == RunFailed
 	case RunRunning:
 		return to == RunWaiting || to == RunPaused || to == RunCancelling || to == RunSucceeded || to == RunPartialSucceeded || to == RunFailed
 	case RunWaiting:
@@ -121,15 +121,16 @@ type OrchestrationDefinition struct {
 }
 
 type OrchestrationRevision struct {
-	ID           uuid.UUID       `json:"id"`
-	DefinitionID uuid.UUID       `json:"definitionId"`
-	Tenant       string          `json:"tenant"`
-	Namespace    string          `json:"namespace"`
-	Revision     int64           `json:"revision"`
-	Spec         json.RawMessage `json:"spec"`
-	Checksum     string          `json:"checksum"`
-	PublishedBy  Actor           `json:"publishedBy"`
-	PublishedAt  time.Time       `json:"publishedAt"`
+	ExpectedDefinitionVersion int64           `json:"-"`
+	ID                        uuid.UUID       `json:"id"`
+	DefinitionID              uuid.UUID       `json:"definitionId"`
+	Tenant                    string          `json:"tenant"`
+	Namespace                 string          `json:"namespace"`
+	Revision                  int64           `json:"revision"`
+	Spec                      json.RawMessage `json:"spec"`
+	Checksum                  string          `json:"checksum"`
+	PublishedBy               Actor           `json:"publishedBy"`
+	PublishedAt               time.Time       `json:"publishedAt"`
 }
 
 type OrchestrationRun struct {

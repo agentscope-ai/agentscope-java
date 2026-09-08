@@ -1,3 +1,4 @@
+import { IssueSharing } from "./IssueSharing";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -598,6 +599,7 @@ export function IssueDetailContent({ issueId, embedded = false, focusCommentId, 
                 </div>}
               </section>
 
+              <IssueSharing issue={item} />
               <IssueAcceptanceEditor value={item.acceptanceCriteria} busy={propertiesBusy} onSave={acceptanceCriteria => update.mutateAsync({ acceptanceCriteria })} />
 
               <section className="border-t border-slate-200 pt-5"><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900"><GitPullRequest className="h-4 w-4" /> Source</h2>{item.sourceRef ? <div className="rounded-lg bg-white p-3 text-sm"><div className="text-xs font-medium capitalize text-muted-foreground">{item.sourceType?.replace(/_/g, " ") || "External work"}</div><EntityIdentityText identities={identities} type={item.sourceType} entityRef={item.sourceRef} secondary className="mt-1 flex" />{sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-primary">Open source<ExternalLink className="h-3 w-3" /></a>}</div> : <p className="text-xs leading-5 text-muted-foreground">Created in this workspace. No external source is linked.</p>}</section>

@@ -191,6 +191,19 @@ func (s *Server) queryTokenMetrics(c *gin.Context) {
 	if rows == nil {
 		rows = []*store.TokenUsageMetric{}
 	}
+	if a := accessFrom(c); a != nil {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.SessionFK == nil {
+				continue
+			}
+			session, e := s.store.Sessions().GetByID(c.Request.Context(), *row.SessionFK)
+			if e == nil && s.canAccessSession(c.Request.Context(), a, session, false) {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
 	c.JSON(http.StatusOK, gin.H{"metrics": rows})
 }
 
@@ -267,6 +280,10 @@ func invalidateOverviewCache() {
 
 // fleetOverview handles GET /api/v1/overview using store aggregations.
 func (s *Server) fleetOverview(c *gin.Context) {
+	if a := accessFrom(c); a != nil {
+		s.namespaceOverview(c, a)
+		return
+	}
 	tenant := c.DefaultQuery("tenant", "default")
 	overviewCacheMu.Lock()
 	if cached := overviewCache[tenant]; cached != nil && time.Since(cached.at) < overviewCacheTTL {
@@ -475,4 +492,46 @@ func (s *Server) overviewTimeseries(c *gin.Context) {
 	default:
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "metric must be tokens or active_sessions"})
 	}
+}
+
+// Console summaries never reuse tenant-wide caches or include another caller's
+// session identifiers. Infrastructure counters remain namespace scoped.
+func (s *Server) namespaceOverview(c *gin.Context, a *namespaceAccess) {
+	ctx := c.Request.Context()
+	phases := map[string]int{}
+	total := 0
+	for offset := 0; ; offset += 500 {
+		sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: a.Namespace.Tenant, Namespace: a.Namespace.Name, Limit: 500, Offset: offset})
+		if err != nil {
+			c.JSON(500, ErrorResponse{Error: "cannot load namespace overview"})
+			return
+		}
+		for _, session := range sessions {
+			phases[strings.ToLower(session.Phase)]++
+			total++
+		}
+		if len(sessions) < 500 {
+			break
+		}
+	}
+	live, offline := map[string]bool{}, map[string]bool{}
+	instances, healthy := 0, 0
+	if s.registry != nil {
+		for _, dp := range s.registry.List() {
+			if dp.Tenant != a.Namespace.Tenant || dp.Namespace != a.Namespace.Name {
+				continue
+			}
+			instances++
+			if dp.Healthy {
+				healthy++
+				live[dp.AgentName] = true
+			} else {
+				offline[dp.AgentName] = true
+			}
+		}
+	}
+	for name := range live {
+		delete(offline, name)
+	}
+	c.JSON(200, gin.H{"agentCount": len(live), "offlineAgentCount": len(offline), "historicalAgentCount": 0, "instanceCount": instances, "healthyInstanceCount": healthy, "staleInstanceCount": instances - healthy, "dataplaneCount": instances, "sessionCount": total, "activeSessionCount": phases["active"], "sessionsByPhase": phases, "tokenUsage24h": 0, "errorCount24h": 0, "topAgents": []any{}, "topSessionsByTokens": []any{}, "topSessionsByDuration": []any{}, "topAgentsByActive": []any{}, "staleDataplanes": []any{}, "orphanSessions": []any{}, "usageUnavailable": true})
 }

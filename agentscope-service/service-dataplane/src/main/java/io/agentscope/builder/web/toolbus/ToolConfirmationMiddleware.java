@@ -229,6 +229,9 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                         && toolset.defaultConfig().permissionPolicy().type() != null) {
                     defaultPolicy = toolset.defaultConfig().permissionPolicy().type();
                 }
+                if (toolset.defaultConfig() != null
+                        && Boolean.FALSE.equals(toolset.defaultConfig().enabled()))
+                    defaultPolicy = POLICY_DENY;
             }
         }
         return new PolicySet(defaultPolicy, AgentSpecCodec.toPermissionPolicyMap(tools), false);
@@ -242,7 +245,13 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
         }
 
         String policyFor(String toolName) {
-            return overrides.getOrDefault(toolName, defaultPolicy);
+            if (overrides.containsKey(toolName)) return overrides.get(toolName);
+            int separator = toolName.indexOf("__");
+            if (separator > 0) {
+                return overrides.getOrDefault(
+                        toolName.substring(0, separator) + "__*", POLICY_ALWAYS_ASK);
+            }
+            return defaultPolicy;
         }
     }
 
@@ -250,6 +259,8 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
         if (ctx == null) {
             return null;
         }
+        var identity = ctx.get(io.agentscope.builder.web.managed.ManagedSessionIdentity.class);
+        if (identity != null) return identity.sessionId();
         if (ctx.getSessionId() != null) {
             return ctx.getSessionId();
         }

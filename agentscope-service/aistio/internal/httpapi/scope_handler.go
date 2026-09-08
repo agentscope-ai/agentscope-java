@@ -24,6 +24,10 @@ const (
 // not weaken the storage isolation boundary.
 func (s *Server) scopeMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if console, _ := c.Get(ctxConsoleAuth); console == true {
+			c.Next()
+			return
+		}
 		if s.scopeMode != ScopeModeSingle {
 			c.Next()
 			return
@@ -52,6 +56,22 @@ func (s *Server) scopeMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) getCurrentScope(c *gin.Context) {
+	if c.GetString("userId") != "" && s.store != nil {
+		user := c.GetString("userId")
+		personal, err := s.ensurePersonalNamespace(c.Request.Context(), user)
+		if err != nil {
+			s.accessFailure(c, err)
+			return
+		}
+		items, err := s.store.Access().ListNamespaces(c.Request.Context(), s.defaultTenant, user, 500, 0)
+		if err != nil {
+			s.accessFailure(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"mode": "multi", "tenant": personal.Tenant, "namespace": personal.Name, "selectorVisible": true, "namespaces": namespaceSummaries(items, user)})
+		return
+	}
+
 	tenant := c.DefaultQuery("tenant", s.defaultTenant)
 	namespace := c.DefaultQuery("namespace", s.defaultNamespace)
 	if s.scopeMode == ScopeModeSingle {

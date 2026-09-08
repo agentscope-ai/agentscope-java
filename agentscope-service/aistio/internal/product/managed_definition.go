@@ -103,11 +103,19 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 			workspacePath = materialized.DiskPath
 		}
 	}
+	if err := validateManagedTools(tools, mcpServers); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
 		return nil, fmt.Errorf("create managed workspace: %w", err)
 	}
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
 	now := nowMillis()
-	tag, err := s.db.Pool.Exec(ctx, `INSERT INTO agents (owner_id,agent_id,workspace_path,workspace_id,name,
+	tag, err := tx.Exec(ctx, `INSERT INTO agents (owner_id,agent_id,workspace_path,workspace_id,name,
 		description,sys_prompt,model,max_iters,tools_json,mcp_servers_json,skills_json,multiagent_json,
 		default_environment_id,default_vault_ids_json,default_memory_store_ids_json,head_version,created_at,updated_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17,$17)
@@ -119,14 +127,20 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 		return nil, err
 	}
 	if tag.RowsAffected() > 0 {
-		snapshot := s.agentSnapshot(ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
+		snapshot, err := s.agentSnapshot(ctx, ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
 			tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
 			defaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, 1, now, now)
-		if _, err = s.db.Pool.Exec(ctx, `INSERT INTO agent_versions(owner_id,agent_id,version,snapshot_json,created_at)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO agent_versions(owner_id,agent_id,version,snapshot_json,created_at)
 			VALUES($1,$2,1,$3,$4) ON CONFLICT(owner_id,agent_id,version) DO NOTHING`, ownerID, agentID,
 			mustJSON(snapshot), now); err != nil {
 			return nil, err
 		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	definition, err := s.loadAgent(ctx, ownerID, agentID)
 	if err != nil {
@@ -265,6 +279,9 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 			workspacePath = materialized.DiskPath
 		}
 	}
+	if err := validateManagedTools(tools, mcpServers); err != nil {
+		return nil, err
+	}
 	nextVersion, now := a.HeadVersion+1, nowMillis()
 	tx, err := s.db.Pool.Begin(ctx)
 	if err != nil {
@@ -285,9 +302,12 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 	if tag.RowsAffected() == 0 {
 		return nil, ErrManagedDefinitionConflict
 	}
-	snapshot := s.agentSnapshot(ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
+	snapshot, err := s.agentSnapshot(ctx, ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
 		tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
 		in.DefaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, nextVersion, a.CreatedAt, now)
+	if err != nil {
+		return nil, err
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO agent_versions(owner_id,agent_id,version,snapshot_json,created_at)
 		VALUES($1,$2,$3,$4,$5)`, ownerID, agentID, nextVersion, mustJSON(snapshot), now); err != nil {
 		return nil, err

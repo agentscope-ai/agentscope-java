@@ -212,9 +212,7 @@ export default function AgentCatalogDetailPage() {
   const runtimeKinds = [
     ...new Set((bindings.data || []).map((binding) => binding.kind)),
   ];
-  const canEdit = getRoles().some((role) =>
-    ["admin", "agent_developer"].includes(role.toLowerCase()),
-  );
+  const canEdit = scope.roles.some(role => ["admin", "developer"].includes(role));
   const setTab = (
     next: AgentDetailTabId,
     options: Record<string, string> = {},
@@ -280,7 +278,7 @@ export default function AgentCatalogDetailPage() {
     );
   const value = agent.data;
   const currentOverview = overview.data;
-  const editableDefinition = canEditAgentDefinition(value, getUsername());
+  const editableDefinition = canEdit;
   if ((definition || channels) && runtimeKind !== "managed")
     return <Navigate replace to={scope.scopedPath(base)} />;
   const busy = activity.records.filter((item) =>

@@ -104,6 +104,9 @@ func (s *Server) listDataPlanes(c *gin.Context) {
 	tenant := c.DefaultQuery("tenant", "default")
 	var tenantItems []*dataplane.Entry
 	for _, e := range items {
+		if a := accessFrom(c); a != nil && e.Namespace != a.Namespace.Name {
+			continue
+		}
 		if e.Tenant == tenant {
 			tenantItems = append(tenantItems, e)
 		}

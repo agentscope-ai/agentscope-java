@@ -64,10 +64,19 @@ public final class ToolFilter {
             return false;
         }
         List<String> allow = cfg.getAllow();
-        return allow == null
-                || allow.isEmpty()
-                || allow.contains(name)
-                || HarnessPlatformTools.isPlatformTool(name);
+        // MCP tools have their own per-server selection, independent of built-in defaults.
+        if (!cfg.isStrictAllow()
+                && cfg.getMcpServers() != null
+                && cfg.getMcpServers().entrySet().stream()
+                        .anyMatch(
+                                e ->
+                                        e.getValue().isPrefixToolNames()
+                                                && name.startsWith(e.getKey() + "__"))) {
+            return true;
+        }
+        return (!cfg.isStrictAllow() && HarnessPlatformTools.isPlatformTool(name))
+                || (allow != null && allow.contains(name))
+                || (cfg.isDefaultToolsEnabled() && (allow == null || allow.isEmpty()));
     }
 
     /**
@@ -82,7 +91,7 @@ public final class ToolFilter {
         List<String> deny = cfg.getDeny();
         boolean allowSet = allow != null && !allow.isEmpty();
         boolean denySet = deny != null && !deny.isEmpty();
-        if (!allowSet && !denySet) {
+        if (!allowSet && !denySet && cfg.isDefaultToolsEnabled()) {
             return;
         }
 

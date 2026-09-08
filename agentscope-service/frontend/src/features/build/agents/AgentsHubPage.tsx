@@ -46,8 +46,8 @@ export default function AgentsHubPage() {
   const scope = useControlPlaneScope();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
-  const roles = getRoles().map(role => role.toLowerCase());
-  const canCreate = roles.includes('admin') || roles.includes('agent_developer');
+  const roles = scope.roles;
+  const canCreate = roles.includes('admin') || roles.includes('developer');
 
   const agentsQ = useQuery({
     queryKey: ['product-agents', scope.tenant, scope.namespace],

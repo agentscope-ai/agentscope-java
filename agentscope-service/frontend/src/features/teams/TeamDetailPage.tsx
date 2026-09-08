@@ -33,8 +33,8 @@ export default function TeamDetailPage() {
   )
     ? (requestedFilter as ActivityFilter)
     : "all";
-  const roles = getRoles().map((role) => role.toLowerCase());
-  const canEdit = roles.includes("admin") || roles.includes("agent_developer");
+  const roles = scope.roles;
+  const canEdit = roles.includes("admin") || roles.includes("developer");
   const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ["team-overview", teamId, scope.tenant, scope.namespace],

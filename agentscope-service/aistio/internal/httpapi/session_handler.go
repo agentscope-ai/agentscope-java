@@ -413,6 +413,18 @@ func (s *Server) streamSessionEvents(c *gin.Context) {
 	prepareEventStream(c)
 	flusher, _ := c.Writer.(http.Flusher)
 	for {
+		if a := accessFrom(c); a != nil {
+			n, err := s.store.Access().GetNamespace(c.Request.Context(), a.Namespace.Tenant, a.Namespace.Name)
+			if err != nil || len(n.Roles(a.User)) == 0 {
+				return
+			}
+			fresh := *a
+			fresh.Namespace = n
+			fresh.Roles = n.Roles(a.User)
+			if !s.canAccessSession(c.Request.Context(), &fresh, sess, false) {
+				return
+			}
+		}
 		events, err := s.store.Events().List(c.Request.Context(), sess.ID,
 			store.WithEventAfterSeq(after), store.WithEventLimit(1000))
 		if err != nil {
@@ -896,6 +908,19 @@ func (s *Server) listRecentCommands(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+	if a := accessFrom(c); a != nil {
+		filtered := list[:0]
+		for _, item := range list {
+			if item.SessionFK == nil {
+				continue
+			}
+			session, e := s.store.Sessions().GetByID(c.Request.Context(), *item.SessionFK)
+			if e == nil && s.canAccessSession(c.Request.Context(), a, session, false) {
+				filtered = append(filtered, item)
+			}
+		}
+		list = filtered
+	}
 	c.JSON(http.StatusOK, gin.H{"commands": list})
 }
 
@@ -915,6 +940,9 @@ func (s *Server) requireOperateWrite(c *gin.Context) bool {
 }
 
 func (s *Server) operatorFromContext(c *gin.Context) string {
+	if user := c.GetString("userId"); user != "" {
+		return user
+	}
 	if u, ok := c.Get("username"); ok {
 		if name, ok := u.(string); ok && name != "" {
 			return name

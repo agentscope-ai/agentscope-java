@@ -173,7 +173,7 @@ func maskChannelProperties(v any) any {
 }
 
 func (s *Server) listChannels(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		channelSelect+` WHERE owner_id=$1 ORDER BY channel_id`, owner)
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *Server) listChannelTypes(c *gin.Context) {
 
 func (s *Server) getChannel(c *gin.Context) {
 	ch, err := s.loadChannel(c.Request.Context(), c.Param("channelId"))
-	if err != nil || ch.OwnerID != currentUserID(c) {
+	if err != nil || ch.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "Channel not found: "+c.Param("channelId"))
 		return
 	}
@@ -267,7 +267,7 @@ func (s *Server) createChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	disabled := false
 	if req.Disabled != nil {
 		disabled = *req.Disabled
@@ -323,7 +323,7 @@ func nullStrPtrVal(p *string) any {
 func (s *Server) updateChannel(c *gin.Context) {
 	channelID := c.Param("channelId")
 	ch, err := s.loadChannel(c.Request.Context(), channelID)
-	if err != nil || ch.OwnerID != currentUserID(c) {
+	if err != nil || ch.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "Channel not found: "+channelID)
 		return
 	}
@@ -397,7 +397,7 @@ func (s *Server) updateChannel(c *gin.Context) {
 }
 
 func (s *Server) deleteChannel(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	channelID := c.Param("channelId")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM channels WHERE channel_id=$1 AND owner_id=$2`, channelID, owner)
@@ -423,7 +423,7 @@ func (s *Server) disableChannel(c *gin.Context) {
 }
 
 func (s *Server) setChannelDisabled(c *gin.Context, disabled bool) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE channels SET disabled=$1, updated_at=$2 WHERE channel_id=$3 AND owner_id=$4`,
@@ -440,7 +440,7 @@ func (s *Server) setChannelDisabled(c *gin.Context, disabled bool) {
 }
 
 func (s *Server) setChannelDefault(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Param("channelId")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
@@ -558,7 +558,7 @@ func deriveTier(p map[string]any) string {
 }
 
 func (s *Server) listAgentBindings(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -625,7 +625,7 @@ func (s *Server) collectAgentBindings(ctx context.Context, owner, agentID string
 }
 
 func (s *Server) replaceAgentBindings(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -703,7 +703,7 @@ func (s *Server) replaceAgentBindings(c *gin.Context) {
 }
 
 func (s *Server) addAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -760,7 +760,7 @@ func (s *Server) addAgentBinding(c *gin.Context) {
 }
 
 func (s *Server) updateAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Query("channelId")
 	index, err := strconv.Atoi(c.Param("index"))
@@ -818,7 +818,7 @@ func (s *Server) updateAgentBinding(c *gin.Context) {
 }
 
 func (s *Server) deleteAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Query("channelId")
 	index, err := strconv.Atoi(c.Param("index"))

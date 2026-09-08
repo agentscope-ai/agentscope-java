@@ -1,0 +1,775 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-core:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-jar-plugin is missing. @ io.agentscope:agentscope-core:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-core/pom.xml, line 212, column 21
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-extensions-aistio:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-resources-plugin is missing. @ io.agentscope:agentscope-extensions-aistio:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/pom.xml, line 133, column 21
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Detecting the operating system and CPU architecture
+[INFO] ------------------------------------------------------------------------
+[INFO] os.detected.name: osx
+[INFO] os.detected.arch: aarch_64
+[INFO] os.detected.bitness: 64
+[INFO] os.detected.version: 26.6
+[INFO] os.detected.version.major: 26
+[INFO] os.detected.version.minor: 6
+[INFO] os.detected.classifier: osx-aarch_64
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] AgentScope Java - Parent                                           [pom]
+[INFO] AgentScope Java - Core                                             [jar]
+[INFO] AgentScope Java - Harness                                          [jar]
+[INFO] AgentScope Java - Extensions                                       [pom]
+[INFO] AgentScope Java - Skills                                           [pom]
+[INFO] AgentScope Java - Extensions - Skill Git Repository                [jar]
+[INFO] AgentScope Java - Service                                          [pom]
+[INFO] AgentScope Java - Service Common                                   [jar]
+[INFO] AgentScope Java - Extensions - aistio Data Plane SDK               [jar]
+[INFO] AgentScope Java - Extensions - Sandbox                             [pom]
+[INFO] AgentScope Java - Extensions - Sandbox - Ue2b                      [jar]
+[INFO] AgentScope Java - Extensions - Model                               [pom]
+[INFO] AgentScope Java - Extensions - Model - DashScope                   [jar]
+[INFO] AgentScope Java - Extensions - MySQL                               [jar]
+[INFO] AgentScope Java - Service Data Plane                               [jar]
+[INFO] 
+[INFO] ------------------< io.agentscope:agentscope-parent >-------------------
+[INFO] Building AgentScope Java - Parent 2.0.3-SNAPSHOT                  [1/15]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-parent ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-parent ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-parent:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-parent ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-parent ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-parent ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-parent >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-parent ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-parent <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-parent ---
+[INFO] 
+[INFO] -------------------< io.agentscope:agentscope-core >--------------------
+[INFO] Building AgentScope Java - Core 2.0.3-SNAPSHOT                    [2/15]
+[INFO]   from agentscope-core/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-core ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-core/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-core ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-core/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.5.0:flatten (flatten) @ agentscope-core ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-core:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ agentscope-core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-core ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-core ---
+[INFO] Copying 20 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ agentscope-core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- surefire:3.1.2:test (default-test) @ agentscope-core ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-core ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-core/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Core' with 397 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-core ---
+[INFO] 
+[INFO] --- javadoc:3.5.0:jar (default) @ agentscope-core ---
+[INFO] Configuration changed, re-generating javadoc.
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-core/target/agentscope-core-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.3.1:jar (generate-sources) > generate-sources @ agentscope-core >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-core ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-core/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.3.1:jar (generate-sources) < generate-sources @ agentscope-core <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.3.1:jar (generate-sources) @ agentscope-core ---
+[INFO] 
+[INFO] --- jar:3.5.0:test-jar (default) @ agentscope-core ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-core/target/agentscope-core-2.0.3-SNAPSHOT-tests.jar
+[INFO] 
+[INFO] ------------------< io.agentscope:agentscope-harness >------------------
+[INFO] Building AgentScope Java - Harness 2.0.3-SNAPSHOT                 [3/15]
+[INFO]   from agentscope-harness/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-harness ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-harness ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-harness ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-harness:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-harness ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-harness ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-harness ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-harness ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 125 source files with javac [debug release 17] to target/test-classes
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java:[190,23] io.agentscope.harness.agent.HarnessAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java:[285,23] io.agentscope.harness.agent.HarnessAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[299,37] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.Tracer 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[299,9] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.TracerRegistry 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[324,13] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.TracerRegistry 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[198,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[192,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[186,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[239,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[233,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[227,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[333,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[328,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[323,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java: 某些输入文件使用或覆盖了已过时的 API。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-harness ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-harness ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Harness' with 342 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-harness ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/agentscope-harness-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-harness ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/agentscope-harness-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-harness >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-harness ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-harness <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-harness ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/agentscope-harness-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] ----------------< io.agentscope:agentscope-extensions >-----------------
+[INFO] Building AgentScope Java - Extensions 2.0.3-SNAPSHOT              [4/15]
+[INFO]   from agentscope-extensions/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions ---
+[INFO] 
+[INFO] -------------< io.agentscope:agentscope-extensions-skills >-------------
+[INFO] Building AgentScope Java - Skills 2.0.3-SNAPSHOT                  [5/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-skills/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-skills ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-skills ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-skills:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-skills ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-skills ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-skills ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-skills >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-skills ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-skills <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-skills ---
+[INFO] 
+[INFO] ------< io.agentscope:agentscope-extensions-skill-git-repository >------
+[INFO] Building AgentScope Java - Extensions - Skill Git Repository 2.0.3-SNAPSHOT [6/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-skill-git-repository ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-skill-git-repository ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-skill-git-repository ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-skill-git-repository:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-skill-git-repository ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-skill-git-repository ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-skill-git-repository ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-skill-git-repository ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-skill-git-repository ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-skill-git-repository ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - Skill Git Repository' with 2 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-extensions-skill-git-repository ---
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-skill-git-repository ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/target/agentscope-extensions-skill-git-repository-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-skill-git-repository >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-skill-git-repository ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-skills/agentscope-extensions-skill-git-repository/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-skill-git-repository <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-skill-git-repository ---
+[INFO] 
+[INFO] ------------------< io.agentscope:agentscope-service >------------------
+[INFO] Building AgentScope Java - Service 2.0.3-SNAPSHOT                 [7/15]
+[INFO]   from agentscope-service/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-service ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-service ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-service:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-service ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-service ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-service ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-service >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-service ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-service <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-service ---
+[INFO] 
+[INFO] --------------------< io.agentscope:service-common >--------------------
+[INFO] Building AgentScope Java - Service Common 2.0.3-SNAPSHOT          [8/15]
+[INFO]   from agentscope-service/service-common/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ service-common ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ service-common ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ service-common ---
+[INFO] Generating flattened POM of project io.agentscope:service-common:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ service-common ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 109 source files with javac [debug release 17] to target/classes
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ service-common ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ service-common ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ service-common ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 10 source files with javac [debug release 17] to target/test-classes
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ service-common ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ service-common ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Service Common' with 125 classes
+[WARNING] Classes in bundle 'AgentScope Java - Service Common' do not match with execution data. For report generation the same class files must be used as at runtime.
+[WARNING] Execution data for class io/agentscope/builder/web/catalog/spec/AgentSpecCodec does not match.
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ service-common ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/service-common-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ service-common ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/service-common-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ service-common >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ service-common ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ service-common <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ service-common ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-common/target/service-common-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] -------------< io.agentscope:agentscope-extensions-aistio >-------------
+[INFO] Building AgentScope Java - Extensions - aistio Data Plane SDK 2.0.3-SNAPSHOT [9/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-aistio/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-aistio ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:copy-resources (stage-asdp-proto) @ agentscope-extensions-aistio ---
+[INFO] Copying 1 resource from ../../agentscope-service/aistio/internal/asdp to target/proto
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile (default) @ agentscope-extensions-aistio ---
+[INFO] Compiling 1 proto file(s) to /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/generated-sources/protobuf/java
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile-custom (default) @ agentscope-extensions-aistio ---
+[INFO] Compiling 1 proto file(s) to /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/generated-sources/protobuf/grpc-java
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-aistio ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/main/resources
+[INFO] Copying 1 resource from target/proto to target/classes
+[INFO] Copying 1 resource from target/proto to target/classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-aistio ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-aistio:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-aistio ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 86 source files with javac [debug release 17] to target/classes
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-aistio ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-aistio ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-aistio ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 11 source files with javac [debug release 17] to target/test-classes
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java:[115,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java:[110,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java:[105,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java使用或覆盖了已过时的 API。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/StubAgent.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/store/ControlPlaneSessionTurnGateTest.java: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/store/ControlPlaneSessionTurnGateTest.java使用了未经检查或不安全的操作。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/test/java/io/agentscope/extensions/aistio/store/ControlPlaneSessionTurnGateTest.java: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-aistio ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-aistio ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - aistio Data Plane SDK' with 149 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-extensions-aistio ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/agentscope-extensions-aistio-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-aistio ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/agentscope-extensions-aistio-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-aistio >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-aistio ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:copy-resources (stage-asdp-proto) @ agentscope-extensions-aistio ---
+[INFO] Copying 1 resource from ../../agentscope-service/aistio/internal/asdp to target/proto
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile (default) @ agentscope-extensions-aistio ---
+[INFO] Compiling 1 proto file(s) to /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/generated-sources/protobuf/java
+[INFO] 
+[INFO] --- protobuf:0.6.1:compile-custom (default) @ agentscope-extensions-aistio ---
+[INFO] Compiling 1 proto file(s) to /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/generated-sources/protobuf/grpc-java
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-aistio <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-aistio ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/target/agentscope-extensions-aistio-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] ------------< io.agentscope:agentscope-extensions-sandbox >-------------
+[INFO] Building AgentScope Java - Extensions - Sandbox 2.0.3-SNAPSHOT   [10/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-sandbox/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-sandbox ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-sandbox ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-sandbox:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-sandbox ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-sandbox ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-sandbox ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-sandbox >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-sandbox ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-sandbox <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-sandbox ---
+[INFO] 
+[INFO] ----------< io.agentscope:agentscope-extensions-sandbox-e2b >-----------
+[INFO] Building AgentScope Java - Extensions - Sandbox - Ue2b 2.0.3-SNAPSHOT [11/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-sandbox-e2b ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-sandbox-e2b ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-sandbox-e2b:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 13 source files with javac [debug release 17] to target/classes
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-sandbox-e2b ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 3 source files with javac [debug release 17] to target/test-classes
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - Sandbox - Ue2b' with 13 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/agentscope-extensions-sandbox-e2b-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/agentscope-extensions-sandbox-e2b-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-sandbox-e2b >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-sandbox-e2b ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-sandbox-e2b <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-sandbox-e2b ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-sandbox/agentscope-extensions-sandbox-e2b/target/agentscope-extensions-sandbox-e2b-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] -------------< io.agentscope:agentscope-extensions-model >--------------
+[INFO] Building AgentScope Java - Extensions - Model 2.0.3-SNAPSHOT     [12/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-model/pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-model ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-model ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-model:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-model ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-model ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-model ---
+[INFO] Not executing Javadoc as the project is not a Java classpath-capable package
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-model >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-model ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-model <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-model ---
+[INFO] 
+[INFO] --------< io.agentscope:agentscope-extensions-model-dashscope >---------
+[INFO] Building AgentScope Java - Extensions - Model - DashScope 2.0.3-SNAPSHOT [13/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-model-dashscope ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-model-dashscope ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-model-dashscope ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-model-dashscope:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-model-dashscope ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-model-dashscope ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-model-dashscope ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-model-dashscope ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 22 source files with javac [debug release 17] to target/test-classes
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/src/test/java/io/agentscope/extensions/model/dashscope/tool/DashScopeMultiModalToolTest.java: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/src/test/java/io/agentscope/extensions/model/dashscope/tool/DashScopeMultiModalToolTest.java使用了未经检查或不安全的操作。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/src/test/java/io/agentscope/extensions/model/dashscope/tool/DashScopeMultiModalToolTest.java: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-model-dashscope ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-model-dashscope ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - Model - DashScope' with 57 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-extensions-model-dashscope ---
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-model-dashscope ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/target/agentscope-extensions-model-dashscope-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-model-dashscope >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-model-dashscope ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-dashscope/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-model-dashscope <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-model-dashscope ---
+[INFO] 
+[INFO] -------------< io.agentscope:agentscope-extensions-mysql >--------------
+[INFO] Building AgentScope Java - Extensions - MySQL 2.0.3-SNAPSHOT     [14/15]
+[INFO]   from agentscope-extensions/agentscope-extensions-mysql/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-mysql ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-extensions-mysql ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-extensions-mysql ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-extensions-mysql:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-extensions-mysql ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 11 source files with javac [debug release 17] to target/classes
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-extensions-mysql ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-extensions-mysql ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-extensions-mysql ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/test-classes
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-extensions-mysql ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-extensions-mysql ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Extensions - MySQL' with 15 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ agentscope-extensions-mysql ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/agentscope-extensions-mysql-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ agentscope-extensions-mysql ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/agentscope-extensions-mysql-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ agentscope-extensions-mysql >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-extensions-mysql ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ agentscope-extensions-mysql <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ agentscope-extensions-mysql ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-mysql/target/agentscope-extensions-mysql-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] ------------------< io.agentscope:service-dataplane >-------------------
+[INFO] Building AgentScope Java - Service Data Plane 2.0.3-SNAPSHOT     [15/15]
+[INFO]   from agentscope-service/service-dataplane/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ service-dataplane ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ service-dataplane ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ service-dataplane ---
+[INFO] Generating flattened POM of project io.agentscope:service-dataplane:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ service-dataplane ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 45 source files with javac [debug release 17] to target/classes
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[45,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[48,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[51,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[54,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[57,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[60,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/managed/DataSessionService.java:[63,32] 未使用 @Deprecated 对已过时的项目进行注释
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/coord/TurnLeaseService.java:[177,22] 未使用 @Deprecated 对已过时的项目进行注释
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/api/AgentScopeContractController.java: 某些输入文件使用或覆盖了已过时的 API。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/main/java/io/agentscope/builder/web/api/AgentScopeContractController.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ service-dataplane ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ service-dataplane ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ service-dataplane ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 18 source files with javac [debug release 17] to target/test-classes
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/test/java/io/agentscope/builder/web/toolbus/ToolConfirmationCoordinatorTest.java: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/test/java/io/agentscope/builder/web/toolbus/ToolConfirmationCoordinatorTest.java使用了未经检查或不安全的操作。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/src/test/java/io/agentscope/builder/web/toolbus/ToolConfirmationCoordinatorTest.java: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ service-dataplane ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ service-dataplane ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Service Data Plane' with 77 classes
+[WARNING] Classes in bundle 'AgentScope Java - Service Data Plane' do not match with execution data. For report generation the same class files must be used as at runtime.
+[WARNING] Execution data for class io/agentscope/builder/web/managed/selfhosted/SkillsBundleService does not match.
+[WARNING] Execution data for class io/agentscope/builder/web/managed/SessionTurnRunner$1 does not match.
+[WARNING] Execution data for class io/agentscope/builder/web/managed/SessionTurnRunner does not match.
+[WARNING] Execution data for class io/agentscope/builder/web/managed/MemoryMountService does not match.
+[WARNING] Execution data for class io/agentscope/builder/control/ControlPlaneClient does not match.
+[WARNING] Execution data for class io/agentscope/builder/web/toolbus/ToolConfirmationMiddleware does not match.
+[WARNING] Execution data for class io/agentscope/builder/web/toolbus/ToolConfirmationMiddleware$PolicySet does not match.
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ service-dataplane ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT.jar
+[INFO] 
+[INFO] --- javadoc:3.12.0:jar (default) @ service-dataplane ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] >>> source:3.4.0:jar (generate-sources) > generate-sources @ service-dataplane >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ service-dataplane ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] <<< source:3.4.0:jar (generate-sources) < generate-sources @ service-dataplane <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.4.0:jar (generate-sources) @ service-dataplane ---
+[INFO] Building jar: /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT-sources.jar
+[INFO] 
+[INFO] --- spring-boot:4.0.4:repackage (default) @ service-dataplane ---
+[INFO] Replacing main artifact /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to /Users/ken/agentscope-2/agentscope-java/agentscope-service/service-dataplane/target/service-dataplane-2.0.3-SNAPSHOT.jar.original
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for AgentScope Java - Parent 2.0.3-SNAPSHOT:
+[INFO] 
+[INFO] AgentScope Java - Parent ........................... SUCCESS [  2.689 s]
+[INFO] AgentScope Java - Core ............................. SUCCESS [ 14.349 s]
+[INFO] AgentScope Java - Harness .......................... SUCCESS [ 11.345 s]
+[INFO] AgentScope Java - Extensions ....................... SUCCESS [  0.025 s]
+[INFO] AgentScope Java - Skills ........................... SUCCESS [  0.052 s]
+[INFO] AgentScope Java - Extensions - Skill Git Repository  SUCCESS [  0.326 s]
+[INFO] AgentScope Java - Service .......................... SUCCESS [  0.176 s]
+[INFO] AgentScope Java - Service Common ................... SUCCESS [  5.236 s]
+[INFO] AgentScope Java - Extensions - aistio Data Plane SDK SUCCESS [ 11.940 s]
+[INFO] AgentScope Java - Extensions - Sandbox ............. SUCCESS [  0.027 s]
+[INFO] AgentScope Java - Extensions - Sandbox - Ue2b ...... SUCCESS [  2.108 s]
+[INFO] AgentScope Java - Extensions - Model ............... SUCCESS [  0.050 s]
+[INFO] AgentScope Java - Extensions - Model - DashScope ... SUCCESS [  1.494 s]
+[INFO] AgentScope Java - Extensions - MySQL ............... SUCCESS [  3.257 s]
+[INFO] AgentScope Java - Service Data Plane ............... SUCCESS [ 13.057 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:08 min
+[INFO] Finished at: 2026-09-08T08:41:11+08:00
+[INFO] ------------------------------------------------------------------------

@@ -19,6 +19,8 @@ import { useOutletContext } from 'react-router-dom';
 import ToolsActivePanel from '../components/ToolsActivePanel';
 import ToolsCatalogPanel from '../components/ToolsCatalogPanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
+import McpConnectionsEditor from '../components/McpConnectionsEditor';
+import { updateAgent } from '../api/agents';
 import type { AgentDefinition } from '../api/agents';
 
 const helpStyle: React.CSSProperties = {
@@ -87,7 +89,11 @@ export default function AgentToolsPage() {
           before that tool runs (HITL). Link a Workspace to author a shared toolset.
         </div>
       )}
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {agent && <McpConnectionsEditor servers={agent.mcpServers ?? []} tools={agent.tools ?? []} readOnly={!!linked || !canEdit} onSave={async (servers, tools) => {
+          await updateAgent(agentId, { name: agent.name, version: agent.version, mcpServers: servers, tools });
+          bumpRefresh();
+        }} />}
         <ToolsActivePanel
           agentId={agentId}
           refreshKey={refreshKey}

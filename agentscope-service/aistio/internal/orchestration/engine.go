@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
-	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
 )
 
 type Engine struct {
@@ -31,8 +31,10 @@ func (e *Engine) evaluator() (*CEL, error) {
 }
 
 func (e *Engine) ReconcileRun(ctx context.Context, runID uuid.UUID) error {
- if e == nil || e.Store == nil { return fmt.Errorf("orchestration engine store is required") }
- return e.Store.WithSessionLock(ctx, "workflow-run:"+runID.String(), func(ctx context.Context) error { return e.reconcileRun(ctx, runID) })
+	if e == nil || e.Store == nil {
+		return fmt.Errorf("orchestration engine store is required")
+	}
+	return e.Store.WithSessionLock(ctx, "workflow-run:"+runID.String(), func(ctx context.Context) error { return e.reconcileRun(ctx, runID) })
 }
 func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 	if e == nil || e.Store == nil {
@@ -47,10 +49,12 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 		if err != nil {
 			return err
 		}
-        if run.State == controlmodel.RunPlanned && run.DefinitionRevisionID != nil {
-            if err := e.materialize(ctx, run); err != nil { return err }
-            continue
-        }
+		if run.State == controlmodel.RunPlanned && run.DefinitionRevisionID != nil {
+			if err := e.materialize(ctx, run); err != nil {
+				return err
+			}
+			continue
+		}
 		if controlmodel.IsOrchestrationRunTerminal(run.State) {
 			if err = (&collaboration.Service{Store: e.Store}).EnsureTerminalTeamSummary(ctx, run); err != nil {
 				return err
@@ -60,7 +64,11 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			}
 			return e.convergeCompletedIssue(ctx, run)
 		}
-		if run.State == controlmodel.RunPaused || run.State == controlmodel.RunCancelling {
+		if run.State == controlmodel.RunCancelling {
+			_, err := (&Service{Store: e.Store}).cancelRun(ctx, run.ID)
+			return err
+		}
+		if run.State == controlmodel.RunPaused {
 			return nil
 		}
 		nodes, err := e.Store.Orchestration().ListNodes(ctx, runID)
@@ -74,6 +82,41 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 		issue, err := e.Store.Collaboration().GetIssue(ctx, run.RootIssueID)
 		if err != nil {
 			return err
+		}
+		for _, failedNode := range nodes {
+			if failedNode.State != controlmodel.RunNodeFailed {
+				continue
+			}
+			var cfg DefinitionNode
+			_ = json.Unmarshal(failedNode.Config, &cfg)
+			policy := cfg.FailurePolicy
+			if policy == "" {
+				policy = "fail_fast"
+				// A delegated worker failure is a valid adaptive-Team outcome.
+				// Keep the coordinator alive so its leader can reason about the
+				// durable blocked result instead of cancelling the whole Run.
+				if e.isAdaptiveTeamWorkerNode(ctx, run, failedNode) {
+					policy = "continue"
+				}
+			}
+			if policy != "fail_fast" {
+				continue
+			}
+			for _, candidate := range nodes {
+				if candidate.ID != failedNode.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
+					if err := (&Service{Store: e.Store}).stopNodeWork(ctx, run, candidate); err != nil {
+						return err
+					}
+					_, _ = e.Store.Orchestration().TransitionNode(ctx, candidate.ID, candidate.Version, controlmodel.RunNodeCancelled, nil, "fail_fast", "cancelled after node failure")
+				}
+			}
+			run, _ = e.Store.Orchestration().GetRun(ctx, runID)
+			failedRun, transitionErr := e.Store.Orchestration().TransitionRun(ctx, runID, run.Version,
+				controlmodel.RunFailed, nil, failedNode.FailureCode, failedNode.FailureMessage)
+			if transitionErr != nil {
+				return transitionErr
+			}
+			return e.convergeFailedIssueTree(ctx, failedRun)
 		}
 		vars := buildCELVars(run, issue, nodes)
 		changed := false
@@ -230,6 +273,12 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 				input[name] = value
 			}
 			inputJSON, _ := json.Marshal(input)
+			if !bytes.Equal(node.Input, inputJSON) {
+				node, err = e.Store.Orchestration().SetNodeInput(ctx, node.ID, node.Version, inputJSON)
+				if err != nil {
+					return err
+				}
+			}
 			switch node.Type {
 			case controlmodel.RunNodeCondition:
 				_, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeRunning, inputJSON, "", "")
@@ -315,6 +364,9 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 				if loadErr != nil {
 					return e.failNode(ctx, node, loadErr)
 				}
+				if revision.Tenant != run.Tenant || revision.Namespace != run.Namespace {
+					return e.failNode(ctx, node, fmt.Errorf("subrun revision is outside the Run namespace"))
+				}
 				sub, createErr := e.createSubrun(ctx, run, node, revision, inputJSON)
 				if createErr != nil {
 					return e.failNode(ctx, node, createErr)
@@ -340,46 +392,6 @@ func (e *Engine) reconcileRun(ctx context.Context, runID uuid.UUID) error {
 			continue
 		}
 		latest, _ := e.Store.Orchestration().ListNodes(ctx, runID)
-		for _, failedNode := range latest {
-			if failedNode.State != controlmodel.RunNodeFailed {
-				continue
-			}
-			var cfg DefinitionNode
-			_ = json.Unmarshal(failedNode.Config, &cfg)
-			policy := cfg.FailurePolicy
-			if policy == "" {
-				policy = "fail_fast"
-				// A delegated worker failure is a valid adaptive-Team outcome.
-				// Keep the coordinator alive so its leader can reason about the
-				// durable blocked result instead of cancelling the whole Run.
-				if e.isAdaptiveTeamWorkerNode(ctx, run, failedNode) {
-					policy = "continue"
-				}
-			}
-			if policy != "fail_fast" {
-				continue
-			}
-			for _, candidate := range latest {
-				if candidate.ID != failedNode.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
-					tasks, _ := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
-						Tenant: run.Tenant, Namespace: run.Namespace, NodeID: candidate.ID, Limit: 500,
-					})
-					for _, task := range tasks {
-						if !controlmodel.IsAgentTaskTerminal(task.Status) {
-							_, _ = (&taskplane.Service{Store: e.Store}).CancelTask(ctx, task.ID, task.Version)
-						}
-					}
-					_, _ = e.Store.Orchestration().TransitionNode(ctx, candidate.ID, candidate.Version, controlmodel.RunNodeCancelled, nil, "fail_fast", "cancelled after node failure")
-				}
-			}
-			run, _ = e.Store.Orchestration().GetRun(ctx, runID)
-			failedRun, transitionErr := e.Store.Orchestration().TransitionRun(ctx, runID, run.Version,
-				controlmodel.RunFailed, nil, failedNode.FailureCode, failedNode.FailureMessage)
-			if transitionErr != nil {
-				return transitionErr
-			}
-			return e.convergeFailedIssueTree(ctx, failedRun)
-		}
 		active, waiting, runnable, success, failed := 0, 0, 0, 0, 0
 		partialAllowed := false
 		coordinatorFailed := false
@@ -670,11 +682,8 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 		var cfg DefinitionNode
 		_ = json.Unmarshal(node.Config, &cfg)
 		if cfg.TimeoutSeconds > 0 && node.StartedAt != nil && now.After(node.StartedAt.Add(time.Duration(cfg.TimeoutSeconds)*time.Second)) {
-			tasks, _ := e.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, NodeID: node.ID, Limit: 500})
-			for _, task := range tasks {
-				if !controlmodel.IsAgentTaskTerminal(task.Status) {
-					_, _ = (&taskplane.Service{Store: e.Store}).CancelTask(ctx, task.ID, task.Version)
-				}
+			if err := (&Service{Store: e.Store}).stopNodeWork(ctx, run, node); err != nil {
+				return changed, err
 			}
 			if _, err := e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeFailed, nil, "timeout", "node execution timed out"); err != nil {
 				return changed, err
@@ -764,20 +773,27 @@ func (e *Engine) sweepWaiting(ctx context.Context, run *controlmodel.Orchestrati
 				changed = true
 				break
 			}
-        case controlmodel.RunNodeSignal:
-            for after := int64(0); ; {
-                events, err := e.Store.Orchestration().ListRunEvents(ctx, run.ID, after, 100)
-                if err != nil { return changed, err }
-                found := false
-                for _, event := range events {
-                    after = event.Sequence
-                    if event.Type == "run.signal."+cfg.SignalName {
-                        if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, event.Payload, "", ""); err != nil { return changed, err }
-                        changed, found = true, true; break
-                    }
-                }
-                if found || len(events)<100 { break }
-            }
+		case controlmodel.RunNodeSignal:
+			for after := int64(0); ; {
+				events, err := e.Store.Orchestration().ListRunEvents(ctx, run.ID, after, 100)
+				if err != nil {
+					return changed, err
+				}
+				found := false
+				for _, event := range events {
+					after = event.Sequence
+					if event.Type == "run.signal."+cfg.SignalName {
+						if _, err = e.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, event.Payload, "", ""); err != nil {
+							return changed, err
+						}
+						changed, found = true, true
+						break
+					}
+				}
+				if found || len(events) < 100 {
+					break
+				}
+			}
 		case controlmodel.RunNodeTimer:
 			var output struct {
 				WakeAt time.Time `json:"wakeAt"`

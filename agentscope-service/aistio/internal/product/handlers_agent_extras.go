@@ -112,7 +112,7 @@ func skillInfoFromDir(dir, dirName string) gin.H {
 }
 
 func (s *Server) listWorkspaceSkills(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *Server) listWorkspaceSkills(c *gin.Context) {
 }
 
 func (s *Server) getWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -232,7 +232,7 @@ func (s *Server) getWorkspaceSkill(c *gin.Context) {
 }
 
 func (s *Server) putWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -275,7 +275,7 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 }
 
 func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -299,7 +299,7 @@ func (s *Server) deleteWorkspaceSkill(c *gin.Context) {
 
 func (s *Server) marketplaceInstallSkill(c *gin.Context) {
 	// Compatibility shim: install into the agent's linked workspace or agent scope.
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Server) marketplaceInstallSkill(c *gin.Context) {
 }
 
 func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
-	if _, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id")); err != nil {
+	if _, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id")); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
@@ -329,7 +329,7 @@ func (s *Server) toolsBuiltinCatalog(c *gin.Context) {
 }
 
 func (s *Server) toolsMcpCatalog(c *gin.Context) {
-	if _, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id")); err != nil {
+	if _, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id")); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
 	}
@@ -337,7 +337,7 @@ func (s *Server) toolsMcpCatalog(c *gin.Context) {
 }
 
 func (s *Server) toolsActive(c *gin.Context) {
-	a, err := s.loadAgent(c.Request.Context(), currentUserID(c), c.Param("id"))
+	a, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
 		return
@@ -412,7 +412,7 @@ func (s *Server) toolsActive(c *gin.Context) {
 }
 
 func (s *Server) cloneAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	srcID := c.Param("id")
 	src, err := s.loadAgent(c.Request.Context(), owner, srcID)
 	if err != nil {
@@ -485,13 +485,18 @@ func (s *Server) cloneAgent(c *gin.Context) {
 		`SELECT snapshot_json FROM agent_versions WHERE owner_id=$1 AND agent_id=$2 AND version=$3`,
 		owner, srcID, src.HeadVersion).Scan(&snap)
 	if err != nil || snap == "" {
-		snap = mustJSON(s.agentSnapshot(owner, newID, name, deref(src.Description), deref(src.SysPrompt),
+		snapshot, snapshotErr := s.agentSnapshot(c.Request.Context(), owner, newID, name, deref(src.Description), deref(src.SysPrompt),
 			deref(src.Model), maxIters, parseJSONRaw(deref(src.ToolsJSON)), parseJSONRaw(deref(src.McpServersJSON)),
 			parseJSONRaw(deref(src.SkillsJSON)), parseJSONRaw(deref(src.MultiagentJSON)), dstWS, wsID,
 			defaultEnvironmentID,
 			parseStringSlice(deref(src.DefaultVaultIDsJSON)),
 			parseStringSlice(deref(src.DefaultMemoryStoreIDsJSON)),
-			1, now, now))
+			1, now, now)
+		if snapshotErr != nil {
+			writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+			return
+		}
+		snap = mustJSON(snapshot)
 	} else {
 		var m map[string]any
 		if jsonErr := jsonUnmarshal(snap, &m); jsonErr == nil {
@@ -529,7 +534,7 @@ func jsonUnmarshalBytes(b []byte, v any) error {
 }
 
 func (s *Server) listShares(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -563,7 +568,7 @@ func (s *Server) listShares(c *gin.Context) {
 }
 
 func (s *Server) addShare(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -597,7 +602,7 @@ func (s *Server) addShare(c *gin.Context) {
 }
 
 func (s *Server) revokeShare(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM agent_shares WHERE owner_id=$1 AND agent_id=$2 AND grantee_type=$3 AND grantee_id=$4`,

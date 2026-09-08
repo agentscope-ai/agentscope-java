@@ -545,11 +545,17 @@ func (r *executionRepo) Get(_ context.Context, id uuid.UUID) (*controlmodel.Exec
 	return cloneExecution(execution), nil
 }
 
-func (r *executionRepo) List(_ context.Context, filter store.ExecutionAttemptFilter) ([]*controlmodel.ExecutionAttempt, error) {
+func (r *executionRepo) List(ctx context.Context, filter store.ExecutionAttemptFilter) ([]*controlmodel.ExecutionAttempt, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.ExecutionAttempt, 0)
 	for _, execution := range r.s.executions {
+		if store.WorkAccessFrom(ctx).Restricted {
+			task := r.s.agentTasks[execution.AgentTaskID]
+			if task == nil || !r.s.canReadIssueLocked(ctx, task.IssueID) {
+				continue
+			}
+		}
 		if filter.AgentTaskID != uuid.Nil && execution.AgentTaskID != filter.AgentTaskID ||
 			filter.AgentID != uuid.Nil && execution.AgentID != filter.AgentID ||
 			filter.BindingID != uuid.Nil && execution.BindingID != filter.BindingID ||

@@ -15,6 +15,7 @@ import (
 type OrchestrationDefinitionFilter struct {
 	Tenant, Namespace, Name string
 	IncludeArchived         bool
+	Offset                  int
 	Limit                   int
 }
 
@@ -22,11 +23,14 @@ type OrchestrationRunFilter struct {
 	Tenant, Namespace string
 	RootIssueID       uuid.UUID
 	// IssueID matches either the root Issue or any AgentTask Issue in the Run.
-	IssueID     uuid.UUID
-	State       controlmodel.OrchestrationRunState
-	ActiveOnly  bool
-	OldestFirst bool
-	Limit       int
+	DefinitionID uuid.UUID
+	ParentNodeID uuid.UUID
+	Offset       int
+	IssueID      uuid.UUID
+	State        controlmodel.OrchestrationRunState
+	ActiveOnly   bool
+	OldestFirst  bool
+	Limit        int
 }
 
 // OrchestrationRepository is the durable authority for definitions, immutable
@@ -47,6 +51,7 @@ type OrchestrationRepository interface {
 	CreateNode(context.Context, *controlmodel.RunNode) (*controlmodel.RunNode, error)
 	GetNode(context.Context, uuid.UUID) (*controlmodel.RunNode, error)
 	ListNodes(context.Context, uuid.UUID) ([]*controlmodel.RunNode, error)
+	SetNodeInput(context.Context, uuid.UUID, int64, json.RawMessage) (*controlmodel.RunNode, error)
 	TransitionNode(context.Context, uuid.UUID, int64, controlmodel.RunNodeState, json.RawMessage, string, string) (*controlmodel.RunNode, error)
 	CreateEdges(context.Context, []*controlmodel.RunEdge) error
 	ListEdges(context.Context, uuid.UUID) ([]*controlmodel.RunEdge, error)

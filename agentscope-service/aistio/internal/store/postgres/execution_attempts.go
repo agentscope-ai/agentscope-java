@@ -187,9 +187,9 @@ func (r *executionAttemptRepo) List(ctx context.Context, filter store.ExecutionA
 		AND ($4='' OR tenant=$4) AND ($5='' OR namespace=$5)
 		AND ($6='' OR session_id=$6) AND ($7='' OR runtime_pool_name=$7)
 		AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR host_id=$8)
-		AND ($9='' OR state=$9) ORDER BY created_at `+order+` LIMIT $10`, filter.AgentTaskID,
+		AND ($9='' OR state=$9) AND (NOT $11 OR EXISTS(SELECT 1 FROM agent_tasks t WHERE t.id=execution_attempts.agent_task_id AND issue_access_allowed(t.issue_id,$12::text[]))) ORDER BY created_at `+order+` LIMIT $10`, filter.AgentTaskID,
 		filter.AgentID, filter.BindingID, filter.Tenant, filter.Namespace, filter.SessionID,
-		filter.RuntimePoolName, filter.HostID, filter.State, limit)
+		filter.RuntimePoolName, filter.HostID, filter.State, limit, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}

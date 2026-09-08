@@ -107,6 +107,7 @@ const (
 )
 
 type Issue struct {
+	Access              IssueAccess           `json:"access"`
 	ID                  uuid.UUID             `json:"id"`
 	Tenant              string                `json:"tenant"`
 	Namespace           string                `json:"namespace"`

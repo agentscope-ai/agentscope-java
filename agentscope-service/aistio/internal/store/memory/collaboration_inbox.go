@@ -19,7 +19,7 @@ func cloneInbox(item *controlmodel.InboxItem) *controlmodel.InboxItem {
 	return &copy
 }
 
-func (r *collaborationRepo) ListInbox(_ context.Context, filter store.InboxFilter) ([]*controlmodel.InboxItem, error) {
+func (r *collaborationRepo) ListInbox(ctx context.Context, filter store.InboxFilter) ([]*controlmodel.InboxItem, error) {
 	cursor, err := store.DecodeInboxCursor(filter.Cursor)
 	if err != nil {
 		return nil, err
@@ -28,6 +28,9 @@ func (r *collaborationRepo) ListInbox(_ context.Context, filter store.InboxFilte
 	defer r.s.mu.RUnlock()
 	items := make([]*controlmodel.InboxItem, 0)
 	for _, item := range r.s.inboxItems {
+		if item.IssueID != nil && !r.s.canReadIssueLocked(ctx, *item.IssueID) {
+			continue
+		}
 		if store.InboxMatches(item, filter) && store.InboxAfterCursor(item, cursor, filter.View == "attention") {
 			items = append(items, cloneInbox(item))
 		}
@@ -50,7 +53,7 @@ func (r *collaborationRepo) GetInbox(_ context.Context, id uuid.UUID, recipient 
 	return cloneInbox(item), nil
 }
 
-func (r *collaborationRepo) InboxSummary(_ context.Context, filter store.InboxFilter) (*controlmodel.InboxSummary, error) {
+func (r *collaborationRepo) InboxSummary(ctx context.Context, filter store.InboxFilter) (*controlmodel.InboxSummary, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	result := &controlmodel.InboxSummary{ByType: map[string]int{}}
@@ -58,6 +61,9 @@ func (r *collaborationRepo) InboxSummary(_ context.Context, filter store.InboxFi
 	filter.Type = ""
 	filter.View = ""
 	for _, item := range r.s.inboxItems {
+		if item.IssueID != nil && !r.s.canReadIssueLocked(ctx, *item.IssueID) {
+			continue
+		}
 		if store.InboxMatches(item, filter) {
 			store.AddInboxSummary(result, item)
 		}

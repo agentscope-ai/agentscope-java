@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,11 +39,14 @@ type StartRequest struct {
 }
 
 type Graph struct {
-	Run      *controlmodel.OrchestrationRun   `json:"run"`
-	Nodes    []*controlmodel.RunNode          `json:"nodes"`
-	Edges    []*controlmodel.RunEdge          `json:"edges"`
-	Tasks    []*controlmodel.AgentTask        `json:"tasks,omitempty"`
-	Attempts []*controlmodel.ExecutionAttempt `json:"attempts,omitempty"`
+	ChildRuns  []*controlmodel.OrchestrationRun      `json:"childRuns,omitempty"`
+	Definition *controlmodel.OrchestrationDefinition `json:"definition,omitempty"`
+	Revision   *controlmodel.OrchestrationRevision   `json:"revision,omitempty"`
+	Run        *controlmodel.OrchestrationRun        `json:"run"`
+	Nodes      []*controlmodel.RunNode               `json:"nodes"`
+	Edges      []*controlmodel.RunEdge               `json:"edges"`
+	Tasks      []*controlmodel.AgentTask             `json:"tasks,omitempty"`
+	Attempts   []*controlmodel.ExecutionAttempt      `json:"attempts,omitempty"`
 }
 
 func (s *Service) evaluator() (*CEL, error) {
@@ -52,18 +56,30 @@ func (s *Service) evaluator() (*CEL, error) {
 	return NewCEL()
 }
 
+var ErrInvalidDefinition = errors.New("invalid Workflow definition")
+
 func (s *Service) ValidateDefinition(raw json.RawMessage) (*DefinitionSpec, error) {
 	e, err := s.evaluator()
 	if err != nil {
 		return nil, err
 	}
-	return ParseAndValidateSpec(raw, e)
+	spec, err := ParseAndValidateSpec(raw, e)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
+	}
+	return spec, nil
 }
 
-func (s *Service) Publish(ctx context.Context, definitionID uuid.UUID, actor controlmodel.Actor) (*controlmodel.OrchestrationRevision, error) {
+func (s *Service) Publish(ctx context.Context, definitionID uuid.UUID, actor controlmodel.Actor, expected ...int64) (*controlmodel.OrchestrationRevision, error) {
 	d, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
 	if err != nil {
 		return nil, err
+	}
+	if d.ArchivedAt != nil {
+		return nil, fmt.Errorf("%w: archived Workflow cannot be published", store.ErrConflict)
+	}
+	if len(expected) > 0 && expected[0] != 0 && d.Version != expected[0] {
+		return nil, store.ErrConflict
 	}
 	spec, err := s.ValidateDefinition(d.DraftSpec)
 	if err != nil {
@@ -74,10 +90,24 @@ func (s *Service) Publish(ctx context.Context, definitionID uuid.UUID, actor con
 		return nil, err
 	}
 	sum := sha256.Sum256(normalized)
-	return s.Store.Orchestration().CreateRevision(ctx, &controlmodel.OrchestrationRevision{DefinitionID: d.ID, Tenant: d.Tenant, Namespace: d.Namespace, Spec: normalized, Checksum: hex.EncodeToString(sum[:]), PublishedBy: actor})
+	return s.Store.Orchestration().CreateRevision(ctx, &controlmodel.OrchestrationRevision{ExpectedDefinitionVersion: d.Version, DefinitionID: d.ID, Tenant: d.Tenant, Namespace: d.Namespace, Spec: normalized, Checksum: hex.EncodeToString(sum[:]), PublishedBy: actor})
 }
 
 func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRequest) (*controlmodel.OrchestrationRun, error) {
+	definition, err := s.Store.Orchestration().GetDefinition(ctx, definitionID)
+	if err != nil {
+		return nil, err
+	}
+	var result *controlmodel.OrchestrationRun
+	key := fmt.Sprintf("workflow-start:%s:%s:%s", definition.Tenant, definition.Namespace, req.IdempotencyKey)
+	err = s.Store.WithSessionLock(ctx, key, func(ctx context.Context) error {
+		var startErr error
+		result, startErr = s.start(ctx, definitionID, req)
+		return startErr
+	})
+	return result, err
+}
+func (s *Service) start(ctx context.Context, definitionID uuid.UUID, req StartRequest) (*controlmodel.OrchestrationRun, error) {
 	if req.IdempotencyKey == "" {
 		return nil, fmt.Errorf("idempotencyKey is required")
 	}
@@ -88,6 +118,9 @@ func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	if err != nil {
 		return nil, err
 	}
+	if definition.ArchivedAt != nil {
+		return nil, fmt.Errorf("%w: archived Workflow cannot start new runs", store.ErrConflict)
+	}
 	var revision *controlmodel.OrchestrationRevision
 	if req.RevisionID != nil {
 		revision, err = s.Store.Orchestration().GetRevision(ctx, *req.RevisionID)
@@ -97,7 +130,7 @@ func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRe
 		if err == nil && len(revisions) > 0 {
 			revision = revisions[0]
 		} else if err == nil {
-			err = fmt.Errorf("definition has no published revision")
+			err = fmt.Errorf("%w: definition has no published revision", store.ErrConflict)
 		}
 	}
 	if err != nil {
@@ -106,7 +139,7 @@ func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	if revision.DefinitionID != definitionID {
 		return nil, store.ErrConflict
 	}
-	spec, err := s.ValidateDefinition(revision.Spec)
+	_, err = s.ValidateDefinition(revision.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -115,14 +148,19 @@ func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRe
 		issue, err = s.Store.Collaboration().GetIssue(ctx, *req.IssueID)
 	} else {
 		copy := *req.Issue
+		copy.ID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("workflow-issue:%s:%s:%s", definition.Tenant, definition.Namespace, req.IdempotencyKey)))
 		copy.Tenant, copy.Namespace = definition.Tenant, definition.Namespace
 		copy.AssigneeType, copy.AssigneeRef = "", ""
-		if copy.Creator.Type == "" {
-			copy.Creator = req.Actor
+		copy.Creator = req.Actor
+		issue, err = s.Store.Collaboration().GetIssue(ctx, copy.ID)
+		if err == store.ErrNotFound {
+			issue, err = s.Store.Collaboration().CreateIssue(ctx, &copy)
 		}
-		issue, err = s.Store.Collaboration().CreateIssue(ctx, &copy)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := store.CheckIssueWorkAccess(ctx, s.Store.Collaboration(), issue.ID, true); err != nil {
 		return nil, err
 	}
 	if issue.Tenant != definition.Tenant || issue.Namespace != definition.Namespace {
@@ -132,58 +170,20 @@ func (s *Service) Start(ctx context.Context, definitionID uuid.UUID, req StartRe
 	if trigger == "" {
 		trigger = "definition"
 	}
-	run, err := s.Store.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: definition.Tenant, Namespace: definition.Namespace, RootIssueID: issue.ID, Mode: controlmodel.RunModeDeclared, DefinitionRevisionID: &revision.ID, RerunOfRunID: req.RerunOfRunID, TriggerType: trigger, TriggerRef: req.TriggerRef, IdempotencyKey: req.IdempotencyKey, Input: req.Input, Variables: json.RawMessage(`{}`), PolicySnapshot: json.RawMessage(`{}`), State: controlmodel.RunRunning, CreatedBy: req.Actor})
+	run, err := s.Store.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{Tenant: definition.Tenant, Namespace: definition.Namespace, RootIssueID: issue.ID, Mode: controlmodel.RunModeDeclared, DefinitionRevisionID: &revision.ID, RerunOfRunID: req.RerunOfRunID, TriggerType: trigger, TriggerRef: req.TriggerRef, IdempotencyKey: req.IdempotencyKey, Input: req.Input, Variables: json.RawMessage(`{}`), PolicySnapshot: json.RawMessage(`{}`), State: controlmodel.RunPlanned, CreatedBy: req.Actor})
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.Store.Orchestration().ListNodes(ctx, run.ID)
+	if run.DefinitionRevisionID == nil {
+		return nil, store.ErrConflict
+	}
+	originalRevision, err := s.Store.Orchestration().GetRevision(ctx, *run.DefinitionRevisionID)
 	if err != nil {
 		return nil, err
 	}
-	if len(existing) > 0 {
-		return run, nil
+	if originalRevision.DefinitionID != definitionID || run.RootIssueID != issue.ID {
+		return nil, store.ErrConflict
 	}
-	incoming := map[string]int{}
-	for _, edge := range spec.Edges {
-		incoming[edge.To]++
-	}
-	byKey := map[string]*controlmodel.RunNode{}
-	for _, n := range spec.Nodes {
-		state := controlmodel.RunNodePending
-		if incoming[n.Key] == 0 {
-			state = controlmodel.RunNodeReady
-		}
-		config, _ := json.Marshal(n)
-		nodeIssueID := issue.ID
-		if n.IssueMode == "child" {
-			child, childErr := s.Store.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
-				Tenant: run.Tenant, Namespace: run.Namespace, Title: issue.Title + " / " + n.Key,
-				Description: "Work item for orchestration node " + n.Key, Status: controlmodel.IssueTodo,
-				Priority: issue.Priority, Creator: run.CreatedBy, ParentIssueID: &issue.ID,
-				SourceType: "orchestration-run-node", SourceRef: run.ID.String() + ":" + n.Key})
-			if childErr != nil {
-				return nil, childErr
-			}
-			nodeIssueID = child.ID
-		}
-		node, createErr := s.Store.Orchestration().CreateNode(ctx, &controlmodel.RunNode{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, NodeKey: n.Key, DefinitionNodeKey: n.Key, Type: n.Type, Role: n.Role, IssueID: &nodeIssueID, State: state, Config: config, Input: json.RawMessage(`{}`), Iteration: 1})
-		if createErr != nil {
-			return nil, createErr
-		}
-		byKey[n.Key] = node
-	}
-	edges := make([]*controlmodel.RunEdge, 0, len(spec.Edges))
-	for _, e := range spec.Edges {
-		on := e.On
-		if len(on) == 0 {
-			on = []controlmodel.RunNodeState{controlmodel.RunNodeSucceeded}
-		}
-		edges = append(edges, &controlmodel.RunEdge{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, FromNodeID: byKey[e.From].ID, ToNodeID: byKey[e.To].ID, OnStates: on, Condition: e.Condition, Ordinal: e.Ordinal})
-	}
-	if err = s.Store.Orchestration().CreateEdges(ctx, edges); err != nil {
-		return nil, err
-	}
-	_, _ = s.Store.Orchestration().AppendRunEvent(ctx, &controlmodel.RunEvent{RunID: run.ID, Tenant: run.Tenant, Namespace: run.Namespace, Type: "run.started", Actor: req.Actor, IdempotencyKey: "run-started:" + run.ID.String()})
 	engine := &Engine{Store: s.Store, CEL: s.CEL}
 	if err = engine.ReconcileRun(ctx, run.ID); err != nil {
 		return nil, err
@@ -239,32 +239,65 @@ func (s *Service) Graph(ctx context.Context, runID uuid.UUID) (*Graph, error) {
 		list, _ := s.Store.ExecutionAttempts().List(ctx, store.ExecutionAttemptFilter{AgentTaskID: task.ID, Limit: 100})
 		attempts = append(attempts, list...)
 	}
-	return &Graph{Run: run, Nodes: nodes, Edges: edges, Tasks: tasks, Attempts: attempts}, nil
+	graph := &Graph{Run: run, Nodes: nodes, Edges: edges, Tasks: tasks, Attempts: attempts}
+	for _, node := range nodes {
+		if node.Type == controlmodel.RunNodeSubrun {
+			children, err := s.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, ParentNodeID: node.ID, Limit: 100})
+			if err != nil {
+				return nil, err
+			}
+			graph.ChildRuns = append(graph.ChildRuns, children...)
+		}
+	}
+
+	if run.DefinitionRevisionID != nil {
+		graph.Revision, _ = s.Store.Orchestration().GetRevision(ctx, *run.DefinitionRevisionID)
+		if graph.Revision != nil {
+			graph.Definition, _ = s.Store.Orchestration().GetDefinition(ctx, graph.Revision.DefinitionID)
+		}
+	}
+	return graph, nil
 }
 
 func (s *Service) Pause(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
-	run, err := s.Store.Orchestration().GetRun(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunPaused, nil, "", "")
+	var result *controlmodel.OrchestrationRun
+	err := s.Store.WithSessionLock(ctx, "workflow-run:"+id.String(), func(ctx context.Context) error {
+		run, err := s.Store.Orchestration().GetRun(ctx, id)
+		if err != nil {
+			return err
+		}
+		result, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunPaused, nil, "", "")
+		return err
+	})
+	return result, err
 }
 func (s *Service) Resume(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
-	run, err := s.Store.Orchestration().GetRun(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	target := controlmodel.RunRunning
-	if run.WaitReason != "" {
-		target = controlmodel.RunWaiting
-	}
-	run, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, target, nil, "", "")
+	var result *controlmodel.OrchestrationRun
+	err := s.Store.WithSessionLock(ctx, "workflow-run:"+id.String(), func(ctx context.Context) error {
+		run, err := s.Store.Orchestration().GetRun(ctx, id)
+		if err != nil {
+			return err
+		}
+		if run.State != controlmodel.RunPaused {
+			return store.ErrConflict
+		}
+		result, err = s.Store.Orchestration().TransitionRun(ctx, id, run.Version, controlmodel.RunRunning, nil, "", "")
+		return err
+	})
 	if err == nil {
 		err = (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, id)
+		if err == nil {
+			result, err = s.Store.Orchestration().GetRun(ctx, id)
+		}
 	}
-	return run, err
+	return result, err
 }
 func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
+	var result *controlmodel.OrchestrationRun
+	err := s.Store.WithSessionLock(ctx, "workflow-run:"+id.String(), func(ctx context.Context) error { var err error; result, err = s.cancelRun(ctx, id); return err })
+	return result, err
+}
+func (s *Service) cancelRun(ctx context.Context, id uuid.UUID) (*controlmodel.OrchestrationRun, error) {
 	run, err := s.Store.Orchestration().GetRun(ctx, id)
 	if err != nil {
 		return nil, err
@@ -276,44 +309,17 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*controlmodel.Orche
 	if err != nil {
 		return nil, err
 	}
-	nodes, _ := s.Store.Orchestration().ListNodes(ctx, id)
-	// Stop descendants and gates before closing their owning nodes.
-	for _, n := range nodes {
-		if n.Type == controlmodel.RunNodeSubrun && n.State == controlmodel.RunNodeWaiting {
-			var output struct {
-				SubrunID uuid.UUID `json:"subrunId"`
-			}
-			if json.Unmarshal(n.Output, &output) == nil && output.SubrunID != uuid.Nil {
-				if _, cancelErr := s.Cancel(ctx, output.SubrunID); cancelErr != nil && cancelErr != store.ErrConflict {
-					return nil, cancelErr
-				}
-			}
-		}
-		if n.Type == controlmodel.RunNodeApproval && n.State == controlmodel.RunNodeWaiting {
-			approvals, _ := s.Store.Collaboration().ListApprovals(ctx, store.ApprovalFilter{Tenant: run.Tenant,
-				Namespace: run.Namespace, TargetType: "run-node", TargetRef: n.ID.String(), Limit: 100})
-			for _, approval := range approvals {
-				if approval.Status == controlmodel.ApprovalPending {
-					_, _ = s.Store.Collaboration().DecideApproval(ctx, approval.ID, approval.Version,
-						controlmodel.ApprovalCancelled, controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "orchestration-cancel"}, nil)
-				}
-			}
-		}
+	nodes, err := s.Store.Orchestration().ListNodes(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 	for _, n := range nodes {
+		if err := s.stopNodeWork(ctx, run, n); err != nil {
+			return nil, err
+		}
 		if !controlmodel.IsRunNodeTerminal(n.State) {
-			_, _ = s.Store.Orchestration().TransitionNode(ctx, n.ID, n.Version, controlmodel.RunNodeCancelled, nil, "", "")
-		}
-	}
-	tasks, _ := s.Store.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{Tenant: run.Tenant, Namespace: run.Namespace, RunID: id, Limit: 500})
-	for _, t := range tasks {
-		if !controlmodel.IsAgentTaskTerminal(t.Status) {
-			tasks := s.TaskPlane
-			if tasks == nil {
-				tasks = &taskplane.Service{Store: s.Store}
-			}
-			if _, cancelErr := tasks.CancelTask(ctx, t.ID, t.Version); cancelErr != nil && cancelErr != store.ErrConflict {
-				return nil, cancelErr
+			if _, err := s.Store.Orchestration().TransitionNode(ctx, n.ID, n.Version, controlmodel.RunNodeCancelled, nil, "", ""); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -334,21 +340,6 @@ func (s *Service) Signal(ctx context.Context, id uuid.UUID, name, key string, pa
 		return err
 	}
 	_ = event
-	nodes, err := s.Store.Orchestration().ListNodes(ctx, id)
-	if err != nil {
-		return err
-	}
-	for _, node := range nodes {
-		if node.Type != controlmodel.RunNodeSignal || node.State != controlmodel.RunNodeWaiting {
-			continue
-		}
-		var cfg DefinitionNode
-		if json.Unmarshal(node.Config, &cfg) == nil && cfg.SignalName == name {
-			if _, err = s.Store.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeSucceeded, payload, "", ""); err != nil {
-				return err
-			}
-		}
-	}
 	return (&Engine{Store: s.Store, CEL: s.CEL}).ReconcileRun(ctx, id)
 }
 
@@ -375,7 +366,36 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 	if err != nil {
 		return nil, nil, err
 	}
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Declared Team nodes own their delegated task tree, not sibling Workflow
+	// steps. A downstream step cannot finish before this coordinator completes.
+	scopedTasks := map[uuid.UUID]bool{}
+	scopedNodes := map[uuid.UUID]bool{node.ID: true}
 	for _, candidate := range tasks {
+		if candidate.RunNodeID == node.ID {
+			scopedTasks[candidate.ID] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, candidate := range tasks {
+			if !scopedTasks[candidate.ID] && candidate.ParentTaskID != nil && scopedTasks[*candidate.ParentTaskID] {
+				scopedTasks[candidate.ID] = true
+				changed = true
+			}
+			if scopedTasks[candidate.ID] {
+				scopedNodes[candidate.RunNodeID] = true
+			}
+		}
+	}
+
+	for _, candidate := range tasks {
+		if run.Mode != controlmodel.RunModeAdaptive && !scopedTasks[candidate.ID] {
+			continue
+		}
 		if candidate.ID == task.ID || controlmodel.IsAgentTaskTerminal(candidate.Status) {
 			continue
 		}
@@ -394,6 +414,9 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 		return nil, nil, err
 	}
 	for _, candidate := range nodes {
+		if run.Mode != controlmodel.RunModeAdaptive && !scopedNodes[candidate.ID] {
+			continue
+		}
 		if candidate.ID != node.ID && !controlmodel.IsRunNodeTerminal(candidate.State) {
 			return nil, nil, fmt.Errorf("coordinator has active node %s", candidate.NodeKey)
 		}
@@ -407,6 +430,12 @@ func (s *Service) ValidateCoordinatorNodeCompletion(ctx context.Context, taskID 
 		return nil, nil, err
 	}
 	for _, child := range children {
+		if run.Mode != controlmodel.RunModeAdaptive {
+			sourceID, _ := uuid.Parse(child.SourceRef)
+			if child.SourceType != "agent-task" || !scopedTasks[sourceID] {
+				continue
+			}
+		}
 		if child.Status != controlmodel.IssueDone && child.Status != controlmodel.IssueCancelled {
 			return nil, nil, fmt.Errorf("coordinator has active child issue %s", child.ID)
 		}

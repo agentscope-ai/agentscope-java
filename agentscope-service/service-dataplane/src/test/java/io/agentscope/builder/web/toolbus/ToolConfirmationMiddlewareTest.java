@@ -47,6 +47,35 @@ import reactor.core.publisher.Flux;
 class ToolConfirmationMiddlewareTest {
 
     @Test
+    void mcpServerDefaultDeniesItsNamespacedTools() {
+        ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
+        DataSessionService sessions = mock(DataSessionService.class);
+        var middleware = middleware(coordinator, sessions);
+        when(sessions.resolve("session-a"))
+                .thenReturn(
+                        resolved(
+                                new AgentToolset(
+                                        "mcp_toolset",
+                                        new ToolDefaultConfig(true, PermissionPolicy.of("deny")),
+                                        List.of(),
+                                        "crm")));
+        AgentState state = AgentState.builder().build();
+        var events =
+                middleware
+                        .onActing(
+                                agent(state),
+                                context(state),
+                                new ActingInput(List.of(call("call-a", "crm__write", Map.of()))),
+                                ignored ->
+                                        Flux.error(
+                                                new AssertionError("MCP write must not execute")))
+                        .collectList()
+                        .block();
+        assertThat(events).hasSize(3);
+        verifyNoInteractions(coordinator);
+    }
+
+    @Test
     void defaultAlwaysAskAppliesWithoutPerToolConfigs() {
         ToolConfirmationCoordinator coordinator = mock(ToolConfirmationCoordinator.class);
         DataSessionService sessions = mock(DataSessionService.class);

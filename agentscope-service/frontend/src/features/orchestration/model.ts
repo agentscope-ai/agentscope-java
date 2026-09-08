@@ -10,6 +10,7 @@ export function validateDefinitionShape(spec:DefinitionSpec):string[]{
 
 export function allowedRunControls(state:RunState):Array<'pause'|'resume'|'cancel'>{
   if(['succeeded','partial_succeeded','failed','cancelled'].includes(state))return [];
+  if(state==='planned')return ['cancel'];
   if(state==='paused')return ['resume','cancel'];
   if(state==='cancelling')return [];
   return ['pause','cancel'];

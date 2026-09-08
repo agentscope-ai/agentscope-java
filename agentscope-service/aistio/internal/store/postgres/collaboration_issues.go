@@ -32,6 +32,13 @@ func (r *collaborationRepo) CreateIssue(ctx context.Context, issue *controlmodel
 	if issue == nil || issue.Title == "" {
 		return nil, fmt.Errorf("issue title is required")
 	}
+	if issue.Access.Mode == "" {
+		issue.Access.Mode = "private"
+	}
+	if err := issue.Access.Validate(); err != nil {
+		return nil, err
+	}
+	access, _ := json.Marshal(issue.Access)
 	if issue.ID == uuid.Nil {
 		issue.ID = uuid.New()
 	}
@@ -92,15 +99,15 @@ func (r *collaborationRepo) CreateIssue(ctx context.Context, issue *controlmodel
 	created, err := scanIssue(tx.QueryRow(ctx, `INSERT INTO issues
 		(id,tenant,namespace,identifier,title,description,status,priority,kind,visibility,completion_policy,
 		 assignee_type,assignee_ref,execution_target_type,execution_target_ref,creator_type,creator_ref,parent_issue_id,
-		 acceptance_criteria,context_refs,source_type,source_ref,due_at,version)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,1)
+		 acceptance_criteria,context_refs,source_type,source_ref,due_at,version,access_policy)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,1,$24)
 		RETURNING `+issueColumns, issue.ID, issue.Tenant, issue.Namespace,
 		nullStr(issue.Identifier), issue.Title, nullStr(issue.Description), issue.Status,
 		issue.Priority, issue.Kind, issue.Visibility, issue.CompletionPolicy,
 		nullStr(string(issue.AssigneeType)), nullStr(issue.AssigneeRef),
 		nullStr(issue.ExecutionTargetType), nullStr(issue.ExecutionTargetRef), issue.Creator.Type, nullStr(issue.Creator.Ref), issue.ParentIssueID,
 		issue.AcceptanceCriteria, issue.ContextRefs, nullStr(issue.SourceType),
-		nullStr(issue.SourceRef), issue.DueAt))
+		nullStr(issue.SourceRef), issue.DueAt, access))
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +227,7 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 		AND ($5='' OR assignee_ref=$5)
 		AND ($13='' OR kind=$13) AND ($14='' OR visibility=$14)
 		AND ($13='conversation_turn' OR kind <> 'conversation_turn')
+		AND (NOT $15 OR issue_access_allowed(id,$16::text[]))
 		AND ($6::uuid IS NULL OR parent_issue_id=$6)
 		AND ($9::timestamptz IS NULL OR (updated_at,id) < ($9,$10))
 		AND (($11 AND archived_at IS NOT NULL) OR (NOT $11 AND archived_at IS NULL))
@@ -228,7 +236,7 @@ func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFi
 		ORDER BY updated_at DESC,id DESC LIMIT $7 OFFSET $8`, filter.Tenant,
 		filter.Namespace, filter.Status, filter.AssigneeType, filter.AssigneeRef,
 		filter.ParentID, limit, maxInt(filter.Offset, 0), filter.CursorTime, filter.CursorID,
-		filter.Archived, strings.TrimSpace(filter.Search), filter.Kind, filter.Visibility)
+		filter.Archived, strings.TrimSpace(filter.Search), filter.Kind, filter.Visibility, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}
@@ -283,17 +291,18 @@ func (r *collaborationRepo) UpdateIssue(ctx context.Context, issue *controlmodel
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	access, _ := json.Marshal(issue.Access)
 	updated, err := scanIssue(tx.QueryRow(ctx, `UPDATE issues SET
 		title=$2,description=$3,priority=$4,acceptance_criteria=$5,context_refs=$6,
 		source_type=$7,source_ref=$8,due_at=$9,assignee_type=$10,assignee_ref=$11,
-		execution_target_type=$12,execution_target_ref=$13,kind=$14,visibility=$15,completion_policy=$16,
+		execution_target_type=$12,execution_target_ref=$13,kind=$14,visibility=$15,completion_policy=$16,access_policy=$18,
 		version=version+1,updated_at=now()
 		WHERE id=$1 AND ($17<=0 OR version=$17) RETURNING `+issueColumns,
 		issue.ID, issue.Title, nullStr(issue.Description), issue.Priority,
 		issue.AcceptanceCriteria, issue.ContextRefs, nullStr(issue.SourceType),
 		nullStr(issue.SourceRef), issue.DueAt, nullStr(string(issue.AssigneeType)), nullStr(issue.AssigneeRef),
 		nullStr(issue.ExecutionTargetType), nullStr(issue.ExecutionTargetRef), issue.Kind, issue.Visibility,
-		issue.CompletionPolicy, expectedVersion))
+		issue.CompletionPolicy, expectedVersion, access))
 	if err != nil {
 		if err == store.ErrNotFound {
 			return nil, store.ErrConflict
@@ -302,7 +311,7 @@ func (r *collaborationRepo) UpdateIssue(ctx context.Context, issue *controlmodel
 	}
 	if err := insertActivityTx(ctx, tx, &controlmodel.Activity{Tenant: updated.Tenant,
 		Namespace: updated.Namespace, IssueID: &updated.ID, Actor: actor,
-		Action: "issue.updated", ObjectType: "issue", ObjectRef: updated.ID.String()}); err != nil {
+		Action: "issue.updated", ObjectType: "issue", ObjectRef: updated.ID.String(), Details: access}); err != nil {
 		return nil, err
 	}
 	if err := enqueueCollaborationEventTx(ctx, tx, updated.Tenant, "issue", updated.ID,

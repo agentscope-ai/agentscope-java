@@ -1,0 +1,44 @@
+=== RUN   TestWorkflowAcceptance
+=== RUN   TestWorkflowAcceptance/memory
+=== RUN   TestWorkflowAcceptance/memory/concurrent_start_is_idempotent
+=== RUN   TestWorkflowAcceptance/memory/pause_early_signal_resume_and_payload
+=== RUN   TestWorkflowAcceptance/memory/resume_partial_materialization
+=== RUN   TestWorkflowAcceptance/memory/definition_filter_and_page
+=== RUN   TestWorkflowAcceptance/memory/team_reuses_declared_coordinator
+=== RUN   TestWorkflowAcceptance/memory/failure_cleans_approval_and_subrun
+=== RUN   TestWorkflowAcceptance/memory/declared_retry_limit
+=== RUN   TestWorkflowAcceptance/memory/fail_fast_does_not_start_failure_edges
+=== RUN   TestWorkflowAcceptance/memory/publish_conflict_and_archive
+=== RUN   TestWorkflowAcceptance/postgres
+=== RUN   TestWorkflowAcceptance/postgres/concurrent_start_is_idempotent
+=== RUN   TestWorkflowAcceptance/postgres/pause_early_signal_resume_and_payload
+=== RUN   TestWorkflowAcceptance/postgres/resume_partial_materialization
+=== RUN   TestWorkflowAcceptance/postgres/definition_filter_and_page
+=== RUN   TestWorkflowAcceptance/postgres/team_reuses_declared_coordinator
+=== RUN   TestWorkflowAcceptance/postgres/failure_cleans_approval_and_subrun
+=== RUN   TestWorkflowAcceptance/postgres/declared_retry_limit
+=== RUN   TestWorkflowAcceptance/postgres/fail_fast_does_not_start_failure_edges
+=== RUN   TestWorkflowAcceptance/postgres/publish_conflict_and_archive
+--- PASS: TestWorkflowAcceptance (1.53s)
+    --- PASS: TestWorkflowAcceptance/memory (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/concurrent_start_is_idempotent (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/pause_early_signal_resume_and_payload (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/resume_partial_materialization (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/definition_filter_and_page (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/team_reuses_declared_coordinator (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/failure_cleans_approval_and_subrun (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/declared_retry_limit (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/fail_fast_does_not_start_failure_edges (0.00s)
+        --- PASS: TestWorkflowAcceptance/memory/publish_conflict_and_archive (0.00s)
+    --- PASS: TestWorkflowAcceptance/postgres (1.53s)
+        --- PASS: TestWorkflowAcceptance/postgres/concurrent_start_is_idempotent (0.19s)
+        --- PASS: TestWorkflowAcceptance/postgres/pause_early_signal_resume_and_payload (0.15s)
+        --- PASS: TestWorkflowAcceptance/postgres/resume_partial_materialization (0.08s)
+        --- PASS: TestWorkflowAcceptance/postgres/definition_filter_and_page (0.14s)
+        --- PASS: TestWorkflowAcceptance/postgres/team_reuses_declared_coordinator (0.18s)
+        --- PASS: TestWorkflowAcceptance/postgres/failure_cleans_approval_and_subrun (0.13s)
+        --- PASS: TestWorkflowAcceptance/postgres/declared_retry_limit (0.09s)
+        --- PASS: TestWorkflowAcceptance/postgres/fail_fast_does_not_start_failure_edges (0.06s)
+        --- PASS: TestWorkflowAcceptance/postgres/publish_conflict_and_archive (0.01s)
+PASS
+ok  	github.com/spring-ai-alibaba/aistio/internal/orchestration	2.005s

@@ -32,19 +32,20 @@ func init() {
 
 // Store is an in-memory store.Store used for local/dev and unit tests.
 type Store struct {
-	mu              sync.RWMutex
-	sessionLocks    *keyedMutex
-	sessions        map[uuid.UUID]*store.Session
-	sessKey         map[string]uuid.UUID // agent/ns/sessionID -> uuid
-	snapshots       []store.SessionSnapshot
-	events          []store.SessionEvent
-	eventSignals    map[uuid.UUID]chan struct{}
-	contexts        []store.ContextSnapshot
-	tokens          []store.TokenUsageMetric
-	agents          []store.AgentMetric
-	commands        []store.SessionCommand
-	turns           []store.SessionTurn
-	transcriptIndex map[uuid.UUID]store.SessionTranscriptIndex
+	accessNamespaces map[string]*controlmodel.Namespace
+	mu               sync.RWMutex
+	sessionLocks     *keyedMutex
+	sessions         map[uuid.UUID]*store.Session
+	sessKey          map[string]uuid.UUID // agent/ns/sessionID -> uuid
+	snapshots        []store.SessionSnapshot
+	events           []store.SessionEvent
+	eventSignals     map[uuid.UUID]chan struct{}
+	contexts         []store.ContextSnapshot
+	tokens           []store.TokenUsageMetric
+	agents           []store.AgentMetric
+	commands         []store.SessionCommand
+	turns            []store.SessionTurn
+	transcriptIndex  map[uuid.UUID]store.SessionTranscriptIndex
 
 	// Hosted DistributedStore backends.
 	kv          map[string]*store.KVItem // tenant+\x00+nsPath+\x00+itemKey

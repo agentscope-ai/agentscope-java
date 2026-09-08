@@ -1,0 +1,202 @@
+{
+  "definition": {
+    "id": "6a0558ab-554a-4633-8a86-94f305a531da",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-failure-partial_success",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "edges": [
+        {
+          "on": [
+            "failed"
+          ],
+          "to": "recover",
+          "from": "bad"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "bad",
+          "type": "condition",
+          "input": {
+            "value": "run.input.missing"
+          },
+          "failurePolicy": "partial_success"
+        },
+        {
+          "key": "recover",
+          "type": "condition",
+          "input": {
+            "value": "42"
+          }
+        }
+      ]
+    },
+    "draftVersion": 1,
+    "version": 1,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:36:56.5396+08:00",
+    "updatedAt": "2026-09-08T08:36:56.5396+08:00"
+  },
+  "revision": {
+    "id": "2611e64d-aeca-48ce-864f-877f06367e08",
+    "definitionId": "6a0558ab-554a-4633-8a86-94f305a531da",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 1,
+    "spec": {
+      "edges": [
+        {
+          "on": [
+            "failed"
+          ],
+          "to": "recover",
+          "from": "bad"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "bad",
+          "join": {},
+          "type": "condition",
+          "input": {
+            "value": "run.input.missing"
+          },
+          "retry": {},
+          "timer": {},
+          "approval": {},
+          "failurePolicy": "partial_success"
+        },
+        {
+          "key": "recover",
+          "join": {},
+          "type": "condition",
+          "input": {
+            "value": "42"
+          },
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        }
+      ]
+    },
+    "checksum": "46e5366db4ece48d80168a398e758bb083f729a0e4619d60ad15ddbbe8dbbe54",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:36:56.542789+08:00"
+  },
+  "run": {
+    "id": "27cdda3f-6615-46d1-98c5-13dc746bb6fd",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "1aaba5e7-7350-5d76-a823-6bd19ed28467",
+    "mode": "declared",
+    "definitionRevisionId": "2611e64d-aeca-48ce-864f-877f06367e08",
+    "triggerType": "definition",
+    "idempotencyKey": "wf-acceptance-20260908-081653-failure-partial_success-verified",
+    "input": {},
+    "variables": {},
+    "output": {
+      "value": 42
+    },
+    "policySnapshot": {},
+    "state": "partial_succeeded",
+    "version": 3,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:43:51.477024+08:00",
+    "updatedAt": "2026-09-08T08:43:52.251143+08:00",
+    "startedAt": "2026-09-08T08:43:51.507984+08:00",
+    "completedAt": "2026-09-08T08:43:52.251143+08:00"
+  },
+  "nodes": [
+    {
+      "id": "5da00864-8ba9-5107-b8e1-38c554fcfc18",
+      "runId": "27cdda3f-6615-46d1-98c5-13dc746bb6fd",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "bad",
+      "definitionNodeKey": "bad",
+      "type": "condition",
+      "issueId": "1aaba5e7-7350-5d76-a823-6bd19ed28467",
+      "state": "failed",
+      "config": {
+        "key": "bad",
+        "join": {},
+        "type": "condition",
+        "input": {
+          "value": "run.input.missing"
+        },
+        "retry": {},
+        "timer": {},
+        "approval": {},
+        "failurePolicy": "partial_success"
+      },
+      "input": {},
+      "iteration": 1,
+      "failureCode": "node_error",
+      "failureMessage": "no such key: missing",
+      "version": 2,
+      "createdAt": "2026-09-08T08:43:51.494697+08:00",
+      "updatedAt": "2026-09-08T08:43:51.514598+08:00",
+      "completedAt": "2026-09-08T08:43:51.514598+08:00"
+    },
+    {
+      "id": "0e8dab3e-1c60-5d48-8803-04aa7973940e",
+      "runId": "27cdda3f-6615-46d1-98c5-13dc746bb6fd",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "recover",
+      "definitionNodeKey": "recover",
+      "type": "condition",
+      "issueId": "1aaba5e7-7350-5d76-a823-6bd19ed28467",
+      "state": "succeeded",
+      "config": {
+        "key": "recover",
+        "join": {},
+        "type": "condition",
+        "input": {
+          "value": "42"
+        },
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {
+        "value": 42
+      },
+      "output": {
+        "value": 42
+      },
+      "iteration": 1,
+      "version": 5,
+      "createdAt": "2026-09-08T08:43:51.496639+08:00",
+      "updatedAt": "2026-09-08T08:43:52.243344+08:00",
+      "startedAt": "2026-09-08T08:43:52.24039+08:00",
+      "completedAt": "2026-09-08T08:43:52.243344+08:00"
+    }
+  ],
+  "edges": [
+    {
+      "id": "3dc52cd7-2c0b-5ffa-9963-67d6158f5401",
+      "runId": "27cdda3f-6615-46d1-98c5-13dc746bb6fd",
+      "tenant": "default",
+      "namespace": "default",
+      "fromNodeId": "5da00864-8ba9-5107-b8e1-38c554fcfc18",
+      "toNodeId": "0e8dab3e-1c60-5d48-8803-04aa7973940e",
+      "onStates": [
+        "failed"
+      ],
+      "ordinal": 0,
+      "createdAt": "2026-09-08T08:43:51.499611+08:00"
+    }
+  ]
+}

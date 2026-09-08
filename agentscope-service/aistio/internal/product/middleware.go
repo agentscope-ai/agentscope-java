@@ -47,7 +47,7 @@ func (s *Server) jwtMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		claims, err := parseToken(s.cfg.JWTSecret, strings.TrimPrefix(auth, "Bearer "))
+		claims, err := s.VerifyAccountToken(c.Request.Context(), strings.TrimPrefix(auth, "Bearer "))
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
@@ -81,6 +81,16 @@ func currentUserID(c *gin.Context) string {
 	v, _ := c.Get(ctxUserID)
 	s, _ := v.(string)
 	return s
+}
+
+// SetResourceOwner is called only by the control plane after namespace
+// authorization. It does not replace the authenticated account identity.
+func SetResourceOwner(c *gin.Context, owner string) { c.Set("resourceOwner", owner) }
+func currentResourceOwner(c *gin.Context) string {
+	if owner := c.GetString("resourceOwner"); owner != "" {
+		return owner
+	}
+	return currentUserID(c)
 }
 
 func currentUsername(c *gin.Context) string {

@@ -135,6 +135,11 @@ func (r *sessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*store.Session
 
 func (r *sessionRepo) List(ctx context.Context, f store.SessionFilter) ([]*store.Session, error) {
 	conds, args := sessionFilterConds(f)
+	if access := store.WorkAccessFrom(ctx); access.Restricted {
+		args = append(args, access.Refs)
+		n := len(args)
+		conds = append(conds, fmt.Sprintf(`((agent_task_id IS NOT NULL AND EXISTS(SELECT 1 FROM agent_tasks t WHERE t.id=sessions.agent_task_id AND issue_access_allowed(t.issue_id,$%d::text[]))) OR (agent_task_id IS NULL AND EXISTS(SELECT 1 FROM chat_conversations ch WHERE ch.session_fk=sessions.id AND ch.creator_ref=ANY($%d::text[]))))`, n, n))
+	}
 	q := `SELECT ` + sessionColumns + ` FROM sessions`
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")

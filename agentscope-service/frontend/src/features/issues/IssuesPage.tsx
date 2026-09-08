@@ -82,6 +82,7 @@ export default function IssuesPage() {
   const [title, setTitle] = useState(() => urlParams.get("title") ?? "");
   const [description, setDescription] = useState(() => urlParams.get("description") ?? "");
   const [priority, setPriority] = useState("normal");
+  const [accessMode, setAccessMode] = useState<"private" | "namespace">("private");
   const [assigneeRef, setAssigneeRef] = useState("");
   const [assigneeType, setAssigneeType] = useState("agent");
   const [search, setSearch] = useState("");
@@ -118,6 +119,7 @@ export default function IssuesPage() {
     mutationFn: () => createIssue({
       tenant: scope.tenant,
       namespace: scope.namespace,
+      access: { mode: accessMode },
       title: title.trim(),
       description: description.trim(),
       priority,
@@ -311,6 +313,7 @@ export default function IssuesPage() {
             <DialogDescription>Capture the outcome, context, and the first owner or execution Workflow for this work.</DialogDescription>
           </DialogHeader>
           <DialogBody>
+          <label className="grid gap-2 text-sm font-medium">Sharing<select aria-label="New issue sharing" className="h-9 rounded-md border bg-white px-2" value={accessMode} onChange={e => setAccessMode(e.target.value as typeof accessMode)}><option value="private">Private — only you</option><option value="namespace">Namespace members</option></select><span className="text-xs font-normal text-muted-foreground">Includes execution records and attachments. Add individual collaborators after creating the Issue.</span></label>
             <form onSubmit={submit} className="space-y-5">
               <label className="block space-y-2 text-sm font-medium text-slate-700">
                 Title

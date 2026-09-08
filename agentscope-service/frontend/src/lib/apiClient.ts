@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "./namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -41,14 +42,15 @@ export function clearToken() {
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...namespaceHeaders() } : {};
 }
 
 function scopedApiPath(path: string): string {
   if (typeof window === 'undefined' || !path.startsWith('/api/v1/')) return path;
   const current = new URLSearchParams(window.location.search);
-  const tenant = current.get('tenant');
-  const namespace = current.get('namespace');
+  const scope = namespaceHeaders();
+  const tenant = scope['X-AgentScope-Tenant'] || current.get('tenant');
+  const namespace = scope['X-AgentScope-Namespace'] || current.get('namespace');
   if (!tenant && !namespace) return path;
   const url = new URL(path, window.location.origin);
   if (tenant && !url.searchParams.has('tenant')) url.searchParams.set('tenant', tenant);

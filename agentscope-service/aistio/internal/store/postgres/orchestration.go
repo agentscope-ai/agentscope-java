@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
@@ -23,6 +24,10 @@ type orchestrationRepo struct{ pool *pgxpool.Pool }
 const runEventNotifyChannel = "aistio_run_events"
 
 func orchNotFound(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return store.ErrConflict
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.ErrNotFound
 	}
@@ -60,7 +65,7 @@ func (r *orchestrationRepo) ListDefinitions(ctx context.Context, f store.Orchest
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+definitionCols+` FROM orchestration_definitions WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR name=$3) AND ($4 OR archived_at IS NULL) ORDER BY updated_at DESC LIMIT $5`, f.Tenant, f.Namespace, f.Name, f.IncludeArchived, limit)
+	rows, err := r.pool.Query(ctx, `SELECT `+definitionCols+` FROM orchestration_definitions WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR name=$3) AND ($4 OR archived_at IS NULL) ORDER BY updated_at DESC,id LIMIT $5 OFFSET $6`, f.Tenant, f.Namespace, f.Name, f.IncludeArchived, limit, max(0, f.Offset))
 	if err != nil {
 		return nil, err
 	}
@@ -101,9 +106,12 @@ func (r *orchestrationRepo) CreateRevision(ctx context.Context, in *controlmodel
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var exists uuid.UUID
-	if err = tx.QueryRow(ctx, `SELECT id FROM orchestration_definitions WHERE id=$1 FOR UPDATE`, in.DefinitionID).Scan(&exists); err != nil {
+	var version int64
+	if err = tx.QueryRow(ctx, `SELECT version FROM orchestration_definitions WHERE id=$1 FOR UPDATE`, in.DefinitionID).Scan(&version); err != nil {
 		return nil, orchNotFound(err)
+	}
+	if in.ExpectedDefinitionVersion != 0 && version != in.ExpectedDefinitionVersion {
+		return nil, store.ErrConflict
 	}
 	if in.ID == uuid.Nil {
 		in.ID = uuid.New()
@@ -181,7 +189,7 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 	if f.OldestFirst {
 		order = "ASC"
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs r WHERE ($1='' OR r.tenant=$1) AND ($2='' OR r.namespace=$2) AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$3) AND ($4='' OR r.state=$4) AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled')) AND ($6::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$6 OR EXISTS (SELECT 1 FROM agent_tasks t WHERE t.orchestration_run_id=r.id AND t.issue_id=$6)) ORDER BY r.created_at `+order+` LIMIT $7`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, f.IssueID, limit)
+	rows, err := r.pool.Query(ctx, `SELECT `+runCols+` FROM orchestration_runs r WHERE ($1='' OR r.tenant=$1) AND ($2='' OR r.namespace=$2) AND ($3::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$3) AND ($4='' OR r.state=$4) AND (NOT $5 OR r.state NOT IN('succeeded','partial_succeeded','failed','cancelled')) AND ($6::uuid='00000000-0000-0000-0000-000000000000' OR r.root_issue_id=$6 OR EXISTS (SELECT 1 FROM agent_tasks t WHERE t.orchestration_run_id=r.id AND t.issue_id=$6)) AND ($8::uuid='00000000-0000-0000-0000-000000000000' OR EXISTS (SELECT 1 FROM orchestration_revisions rev WHERE rev.id=r.definition_revision_id AND rev.definition_id=$8)) AND ($10::uuid='00000000-0000-0000-0000-000000000000' OR r.parent_node_id=$10) AND (NOT $11 OR issue_access_allowed(r.root_issue_id,$12::text[])) ORDER BY r.created_at `+order+`,r.id LIMIT $7 OFFSET $9`, f.Tenant, f.Namespace, f.RootIssueID, f.State, f.ActiveOnly, f.IssueID, limit, f.DefinitionID, max(0, f.Offset), f.ParentNodeID, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}
@@ -536,3 +544,11 @@ func (r *orchestrationRepo) ListRuntimePolicies(ctx context.Context, tenant, nam
 var _ store.OrchestrationRepository = (*orchestrationRepo)(nil)
 var _ = fmt.Sprintf
 var _ = time.Second
+
+func (r *orchestrationRepo) SetNodeInput(ctx context.Context, id uuid.UUID, expected int64, input json.RawMessage) (*controlmodel.RunNode, error) {
+	node, err := scanNode(r.pool.QueryRow(ctx, `UPDATE orchestration_run_nodes SET input=$3,version=version+1,updated_at=now() WHERE id=$1 AND version=$2 RETURNING `+nodeCols, id, expected, nullJSON(input)))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, store.ErrConflict
+	}
+	return node, err
+}

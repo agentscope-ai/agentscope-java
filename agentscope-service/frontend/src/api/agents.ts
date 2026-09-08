@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -64,6 +65,9 @@ export interface McpServerSpec {
   headers?: Record<string, string>;
   queryParams?: Record<string, string>;
   enableTools?: string[];
+  disableTools?: string[];
+  required?: boolean;
+  initializationTimeout?: string;
   timeout?: string;
 }
 
@@ -150,6 +154,7 @@ export interface AgentCreateRequest {
 function authHeaders() {
   return {
     'Content-Type': 'application/json',
+    ...namespaceHeaders(),
     Authorization: `Bearer ${getToken()}`,
   };
 }

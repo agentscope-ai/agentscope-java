@@ -122,7 +122,7 @@ func (s *Server) loadDeploy(ctx context.Context, id string) (deployRow, error) {
 }
 
 func (s *Server) listDeployments(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -162,7 +162,7 @@ func (s *Server) createDeployment(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name, agentId, triggerType required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	envID := strings.TrimSpace(req.EnvironmentID)
 	if envID == "" {
 		var err error
@@ -198,7 +198,7 @@ func (s *Server) createDeployment(c *gin.Context) {
 
 func (s *Server) getDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -207,7 +207,7 @@ func (s *Server) getDeployment(c *gin.Context) {
 
 func (s *Server) updateDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) updateDeployment(c *gin.Context) {
 }
 
 func (s *Server) archiveDeployment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE deployments SET archived_at=$1, updated_at=$1, enabled=FALSE
@@ -273,7 +273,7 @@ func (s *Server) archiveDeployment(c *gin.Context) {
 }
 
 func (s *Server) deleteDeployment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM deployments WHERE deployment_id=$1 AND owner_id=$2`, c.Param("id"), owner)
 	if err != nil {
@@ -289,7 +289,7 @@ func (s *Server) deleteDeployment(c *gin.Context) {
 
 func (s *Server) runDeployment(c *gin.Context) {
 	d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
-	if err != nil || d.OwnerID != currentUserID(c) {
+	if err != nil || d.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "deployment not found")
 		return
 	}
@@ -310,7 +310,7 @@ func (s *Server) unpauseDeployment(c *gin.Context) { s.setDeploymentEnabled(c, t
 
 // setDeploymentEnabled flips the enabled flag; archived deployments stay paused.
 func (s *Server) setDeploymentEnabled(c *gin.Context, enabled bool) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	if enabled {
 		d, err := s.loadDeploy(c.Request.Context(), c.Param("id"))
 		if err != nil || d.OwnerID != owner {

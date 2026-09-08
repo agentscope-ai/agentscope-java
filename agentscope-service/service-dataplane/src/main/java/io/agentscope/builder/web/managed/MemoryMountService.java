@@ -129,9 +129,38 @@ public class MemoryMountService {
                     .append(sanitize(mount.storeName()))
                     .append("/`) — store \"")
                     .append(mount.storeName())
-                    .append("\"\n");
+                    .append("\", storeId=")
+                    .append(mount.storeId())
+                    .append("\n");
         }
         return sb.toString();
+    }
+
+    public List<MemoryStoreFilesystem> createResolvedFilesystems(
+            io.agentscope.builder.control.ControlPlaneClient client,
+            String sessionId,
+            String ownerId,
+            List<Map<String, Object>> mounts,
+            Map<String, String> access) {
+        List<MemoryStoreFilesystem> result = new ArrayList<>();
+        java.util.Set<String> routes = new java.util.HashSet<>();
+        if (mounts == null) return result;
+        for (Map<String, Object> mount : mounts) {
+            String id = (String) mount.get("storeId");
+            String name = (String) mount.get("name");
+            if (id == null || name == null)
+                throw new IllegalArgumentException("Invalid memory mount");
+            if (!routes.add(MemoryStoreFilesystem.routePrefix(name)))
+                throw new IllegalArgumentException("Memory mount names collide: " + name);
+            result.add(
+                    new MemoryStoreFilesystem(
+                            client.memoryDocuments(sessionId, id),
+                            ownerId,
+                            id,
+                            name,
+                            access.get(id)));
+        }
+        return result;
     }
 
     /**

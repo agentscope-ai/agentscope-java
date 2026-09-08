@@ -72,6 +72,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function EnvironmentsHubPage() {
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [items, setItems] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -109,7 +110,8 @@ export default function EnvironmentsHubPage() {
     setBusyId('create');
     setErr(null);
     try {
-      await createEnvironment({ name: name.trim(), type: type.trim() || 'local' });
+      const created = await createEnvironment({ name: name.trim(), type: type.trim() || 'local' });
+      setCreatedKey(created.apiKey ?? null);
       setCreating(false);
       setName('');
       setType('local');
@@ -179,6 +181,14 @@ export default function EnvironmentsHubPage() {
 
   return (
     <div className="console-page-legacy" style={S.root}>
+      {createdKey && <div role="dialog" aria-label="Environment API key" style={S.modal}>
+        <div style={S.modalBody}>
+          <h3>Environment API key</h3>
+          <p>Copy this key into your Environment Worker configuration. It is shown only once.</p>
+          <input aria-label="API key" readOnly value={createdKey} style={S.input} onFocus={e => e.target.select()} />
+          <button style={S.rowBtn} onClick={() => setCreatedKey(null)}>Done</button>
+        </div>
+      </div>}
       <div style={S.header}>
         <h1 style={S.title}>Environments</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New environment</button>
@@ -256,9 +266,8 @@ export default function EnvironmentsHubPage() {
               {type === 'self_hosted' && (
                 <p style={{ margin: '-14px 0 20px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>
                   Sessions on this environment attach a hands sandbox from an Environment Worker
-                  at the start of each turn (the built-in in-process worker handles this
-                  automatically for single-server deployments). No Docker image or remote sandbox
-                  is required.
+                  at the start of each turn. Start an external Environment Worker with this
+                  environment ID and API key before running sessions.
                 </p>
               )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

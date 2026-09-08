@@ -187,23 +187,40 @@ func (s *Server) rematerializeLinkedAgents(ctx context.Context, owner, workspace
 		tools := mustJSON(mat.Tools)
 		mcp := mustJSON(mat.McpServers)
 		skills := mustJSON(mat.Skills)
-		_, err = s.db.Pool.Exec(ctx,
-			`UPDATE agents SET sys_prompt=$1, tools_json=$2, mcp_servers_json=$3, skills_json=$4,
-			 workspace_path=$5, head_version=$6, updated_at=$7
-			 WHERE owner_id=$8 AND agent_id=$9`,
-			nullStr(sys), tools, mcp, skills, nullStr(ws), newVer, now, owner, a.AgentID)
+		tx, err := s.db.Pool.Begin(ctx)
 		if err != nil {
 			continue
 		}
-		snap := s.agentSnapshot(owner, a.AgentID, a.Name, desc, sys, model, maxIters,
+		snap, err := s.agentSnapshot(ctx, owner, a.AgentID, a.Name, desc, sys, model, maxIters,
 			mat.Tools, mat.McpServers, mat.Skills, parseJSONRaw(multi), ws, workspaceID,
 			deref(a.DefaultEnvironmentID),
 			parseStringSlice(deref(a.DefaultVaultIDsJSON)),
 			parseStringSlice(deref(a.DefaultMemoryStoreIDsJSON)),
 			newVer, a.CreatedAt, now)
-		_, _ = s.db.Pool.Exec(ctx,
+		if err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		tag, err := tx.Exec(ctx,
+			`UPDATE agents SET sys_prompt=$1, tools_json=$2, mcp_servers_json=$3, skills_json=$4,
+			 workspace_path=$5, head_version=$6, updated_at=$7
+			 WHERE owner_id=$8 AND agent_id=$9 AND head_version=$10`,
+			nullStr(sys), tools, mcp, skills, nullStr(ws), newVer, now, owner, a.AgentID, a.HeadVersion)
+		if err != nil || tag.RowsAffected() == 0 {
+			tx.Rollback(ctx)
+			continue
+		}
+
+		_, err = tx.Exec(ctx,
 			`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,$3,$4,$5)`,
 			owner, a.AgentID, newVer, mustJSON(snap), now)
+		if err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		if err = tx.Commit(ctx); err != nil {
+			continue
+		}
 	}
 }
 
@@ -216,7 +233,7 @@ func (s *Server) bumpWorkspaceVersion(ctx context.Context, owner, id string) err
 }
 
 func (s *Server) listWorkspaces(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		workspaceSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`, owner)
 	if err != nil {
@@ -267,7 +284,7 @@ func (s *Server) createWorkspace(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := shortID("ws_")
 	now := nowMillis()
 	disk := s.workspaceDiskRoot(owner, id)
@@ -309,7 +326,7 @@ func (s *Server) createWorkspace(c *gin.Context) {
 }
 
 func (s *Server) getWorkspace(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	w, err := s.loadWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -338,7 +355,7 @@ func (s *Server) getWorkspace(c *gin.Context) {
 }
 
 func (s *Server) patchWorkspace(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	w, err := s.loadWorkspace(c.Request.Context(), owner, id)
 	if err != nil {
@@ -394,7 +411,7 @@ func (s *Server) patchWorkspace(c *gin.Context) {
 }
 
 func (s *Server) deleteWorkspace(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	var refs int
 	_ = s.db.Pool.QueryRow(c.Request.Context(),
@@ -426,7 +443,7 @@ func (s *Server) platformMcpCatalog(c *gin.Context) {
 }
 
 func (s *Server) wsFiles(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -441,7 +458,7 @@ func (s *Server) wsFiles(c *gin.Context) {
 }
 
 func (s *Server) wsReadFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	path := c.Query("path")
 	content, ok, err := s.getWorkspaceFile(c.Request.Context(), owner, scopeTypeWorkspace, id, path)
@@ -457,7 +474,7 @@ func (s *Server) wsReadFile(c *gin.Context) {
 }
 
 func (s *Server) wsWriteFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -482,7 +499,7 @@ func (s *Server) wsWriteFile(c *gin.Context) {
 }
 
 func (s *Server) wsDeleteFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	path := c.Query("path")
 	disk := s.workspaceDiskRoot(owner, id)
@@ -491,11 +508,12 @@ func (s *Server) wsDeleteFile(c *gin.Context) {
 		return
 	}
 	_ = s.bumpWorkspaceVersion(c.Request.Context(), owner, id)
+	s.rematerializeLinkedAgents(c.Request.Context(), owner, id)
 	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) wsGetTools(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	w, err := s.loadWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -508,7 +526,7 @@ func (s *Server) wsGetTools(c *gin.Context) {
 }
 
 func (s *Server) wsPutTools(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -520,6 +538,10 @@ func (s *Server) wsPutTools(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeErr(c, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := validateManagedTools(req.Tools, req.McpServers); err != nil {
+		writeErr(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	_, err := s.db.Pool.Exec(c.Request.Context(),
@@ -535,7 +557,7 @@ func (s *Server) wsPutTools(c *gin.Context) {
 }
 
 func (s *Server) wsGetSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
@@ -570,7 +592,7 @@ func (s *Server) wsGetSkill(c *gin.Context) {
 }
 
 func (s *Server) wsListSkills(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -606,7 +628,7 @@ func (s *Server) wsListSkills(c *gin.Context) {
 }
 
 func (s *Server) wsPutSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
@@ -666,7 +688,7 @@ func (s *Server) wsPutSkill(c *gin.Context) {
 }
 
 func (s *Server) wsDeleteSkill(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
 	disk := s.workspaceDiskRoot(owner, id)
@@ -804,7 +826,7 @@ func parseSubagentMarkdown(content string) gin.H {
 }
 
 func (s *Server) wsListSubagents(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	files, err := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeTypeWorkspace, id, "subagents")
 	if err != nil {
@@ -825,7 +847,7 @@ func (s *Server) wsListSubagents(c *gin.Context) {
 }
 
 func (s *Server) wsUpsertSubagent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
@@ -862,7 +884,7 @@ func (s *Server) wsUpsertSubagent(c *gin.Context) {
 }
 
 func (s *Server) wsDeleteSubagent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
 	disk := s.workspaceDiskRoot(owner, id)

@@ -78,7 +78,7 @@ func (s *Server) loadMarketplace(ctx context.Context, owner, id string) (marketp
 }
 
 func (s *Server) listMarketplaces(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		`SELECT owner_id, marketplace_id, name, type, config_json, enabled, created_at, updated_at
 		 FROM marketplaces WHERE owner_id=$1 ORDER BY updated_at DESC`, owner)
@@ -115,7 +115,7 @@ func (s *Server) createMarketplace(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "type must be git or nacos")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := shortID("mkt_")
 	now := nowMillis()
 	_, err := s.db.Pool.Exec(c.Request.Context(),
@@ -131,7 +131,7 @@ func (s *Server) createMarketplace(c *gin.Context) {
 }
 
 func (s *Server) getMarketplace(c *gin.Context) {
-	m, err := s.loadMarketplace(c.Request.Context(), currentUserID(c), c.Param("id"))
+	m, err := s.loadMarketplace(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "marketplace not found")
 		return
@@ -140,7 +140,7 @@ func (s *Server) getMarketplace(c *gin.Context) {
 }
 
 func (s *Server) deleteMarketplace(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	_, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM marketplaces WHERE owner_id=$1 AND marketplace_id=$2`,
 		owner, c.Param("id"))
@@ -152,7 +152,7 @@ func (s *Server) deleteMarketplace(c *gin.Context) {
 }
 
 func (s *Server) browseMarketplaceSkills(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	m, err := s.loadMarketplace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "marketplace not found")
@@ -167,7 +167,7 @@ func (s *Server) browseMarketplaceSkills(c *gin.Context) {
 }
 
 func (s *Server) wsMarketplaceInstall(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	wsID := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, wsID); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")

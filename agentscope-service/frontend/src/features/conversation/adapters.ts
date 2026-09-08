@@ -38,6 +38,7 @@ function roleOf(value?: string): ConversationRole {
 function eventCategory(type: string, role?: string): ConversationEventCategory {
   const value = type.toLowerCase();
   const normalizedRole = role?.toLowerCase();
+  if (value.includes('thinking') || value.includes('reasoning') || value.includes('model')) return 'model';
   if (value.includes('error') || value.includes('failed')) return 'error';
   if (value.includes('tool') || normalizedRole === 'tool') return 'tool';
   if (value.includes('turn') || value.includes('step')) return 'turn';
@@ -83,7 +84,7 @@ function eventToolState(event: SessionEventItem): string | undefined {
 }
 
 function isToolFailure(event: SessionEventItem): boolean {
-  return ['error', 'denied', 'interrupted'].includes(eventToolState(event) || '');
+  return ['error', 'failed', 'denied', 'interrupted'].includes(eventToolState(event) || '');
 }
 
 export function runtimeMessagesToConversation(
@@ -124,7 +125,9 @@ export function runtimeMessagesToConversation(
 }
 
 export function runtimeEventsToConversation(events: SessionEventItem[]): ConversationEvent[] {
-  return events.map((event, index) => ({
+  const projected = events.map((event, index) => {
+    const usage = ((event.frameworkMeta || {}) as Record<string, unknown>).usage as Record<string, unknown> | undefined;
+    return ({
     id: `runtime-event-${event.id ?? event.seq ?? index}`,
     seq: event.seq,
     type: event.eventType || 'event',
@@ -134,12 +137,23 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
     summary: event.content || event.toolOutput || event.toolName || undefined,
     callId: eventCallId(event),
     durationMs: event.durationMs,
-    tokensIn: event.tokensIn,
-    tokensOut: event.tokensOut,
+    tokensIn: event.tokensIn ?? (typeof usage?.inputTokens === 'number' ? usage.inputTokens : undefined),
+    tokensOut: event.tokensOut ?? (typeof usage?.outputTokens === 'number' ? usage.outputTokens : undefined),
     // Keep the complete durable event available to the diagnostics view. The
     // normalized fields above are presentation indexes, not a lossy replacement.
     payload: event,
-  }));
+  }); });
+  const starts = new Map<string, SessionEventItem>();
+  for (const [index, event] of events.entries()) {
+    const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
+    const key = [meta.turnId || '', meta.attemptId || '', meta.dispatchGeneration || '', meta.spanId || meta.requestId || ''].join(':');
+    if (event.eventType === 'span.model_request_start') starts.set(key, event);
+    if (event.eventType === 'span.model_request_end') {
+      projected[index].durationMs ??= elapsed(starts.get(key)?.occurredAt, event.occurredAt);
+      starts.delete(key);
+    }
+  }
+  return projected;
 }
 
 /**
@@ -149,19 +163,53 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
 export function runtimeEventsToMessages(events: SessionEventItem[]): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
   const toolBlocks = new Map<string, ConversationContentBlock>();
+  const starts = new Map<string, { block: ConversationContentBlock; at?: string }>();
+  const callTimes = new Map<string, string | undefined>();
   for (const [index, event] of events.entries()) {
     const type = event.eventType || 'event';
     const category = eventCategory(type, event.role);
-    if (category !== 'message' && category !== 'tool' && category !== 'error') continue;
+    if (/^session\.(status_idle|status_terminated|interrupted|error)$/.test(type)) {
+      for (const { block } of starts.values()) block.toolState = 'unavailable';
+      for (const block of toolBlocks.values()) if (block.result === undefined) block.toolState = 'unavailable';
+    }
+    if (!['message', 'tool', 'error', 'model'].includes(category)) continue;
     const id = `runtime-event-message-${event.id ?? event.seq ?? index}`;
     const role = roleOf(event.role || (category === 'tool' ? 'assistant' : category === 'error' ? 'error' : 'system'));
+    const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
+    const scope = [meta.turnId || '', meta.attemptId || '', meta.dispatchGeneration || ''].join(':');
+    if (category === 'model') {
+      const thinking = /thinking|reasoning/.test(type);
+      const key = `${scope}:${meta.spanId || meta.requestId || 'model'}`;
+      if (type.endsWith('_end')) {
+        const start = starts.get(key);
+        if (start) {
+          start.block.toolState = 'complete';
+          start.block.durationMs = event.durationMs ?? elapsed(start.at, event.occurredAt);
+          start.block.resultSeq = event.seq;
+          starts.delete(key);
+          continue;
+        }
+      }
+      if (!thinking && !type.includes('model_request')) continue;
+      const block: ConversationContentBlock = {
+        kind: thinking ? 'thinking' : 'model', id, text: event.content,
+        eventSeq: event.seq, toolState: type.endsWith('_start') ? 'running' : 'complete',
+        durationMs: event.durationMs,
+      };
+      if (type.endsWith('_start')) starts.set(key, { block, at: event.occurredAt });
+      messages.push({ id, seq: event.seq, role: 'assistant', blocks: [block], occurredAt: event.occurredAt, truncated: meta.truncated === true, originalSize: typeof meta.originalSize === 'number' ? meta.originalSize : undefined, raw: event });
+      continue;
+    }
     if (category === 'tool') {
       const callId = eventCallId(event) || `event-${event.seq ?? index}`;
-      const existing = toolBlocks.get(callId);
+      const key = `${scope}:${callId}`;
+      const existing = toolBlocks.get(key);
       const isResult = type.toLowerCase().includes('result');
       if (existing && isResult) {
-        existing.result = event.toolOutput || event.content || '';
-        existing.toolState = eventToolState(event);
+        existing.result = event.toolOutput ?? event.content ?? '';
+        existing.toolState = eventToolState(event) || 'complete';
+        existing.durationMs = event.durationMs ?? elapsed(callTimes.get(key), event.occurredAt);
+        existing.resultSeq = event.seq;
         continue;
       }
       const block: ConversationContentBlock = {
@@ -169,11 +217,14 @@ export function runtimeEventsToMessages(events: SessionEventItem[]): Conversatio
         id: `${id}-tool`,
         callId,
         toolName: event.toolName || 'tool',
-        toolState: eventToolState(event),
+        toolState: eventToolState(event) || (isResult ? 'complete' : 'pending'),
+        eventSeq: event.seq,
+        durationMs: event.durationMs,
         text: event.toolInput == null ? undefined : stringify(event.toolInput),
-        result: event.toolOutput || (isResult ? event.content : undefined),
+        result: event.toolOutput ?? (isResult ? event.content ?? '' : undefined),
       };
-      toolBlocks.set(callId, block);
+      toolBlocks.set(key, block);
+      callTimes.set(key, event.occurredAt);
       messages.push({
         id,
         seq: event.seq,
@@ -195,7 +246,20 @@ export function runtimeEventsToMessages(events: SessionEventItem[]): Conversatio
       raw: event,
     });
   }
+  // An unmatched historical call is not necessarily still running (pagination,
+  // cancellation or an older runtime may not have recorded its result).
+  const last = events[events.length - 1]?.eventType || '';
+  if (/idle|terminated|interrupted|error|completed|failed/.test(last)) {
+    for (const { block } of starts.values()) block.toolState = 'unavailable';
+    for (const block of toolBlocks.values()) if (block.result === undefined) block.toolState = 'unavailable';
+  }
   return messages;
+}
+
+function elapsed(start?: string, end?: string): number | undefined {
+  if (!start || !end) return undefined;
+  const duration = Date.parse(end) - Date.parse(start);
+  return Number.isFinite(duration) && duration >= 0 ? duration : undefined;
 }
 
 export function managedEventsToConversation(events: ManagedSessionEvent[]): ConversationEvent[] {

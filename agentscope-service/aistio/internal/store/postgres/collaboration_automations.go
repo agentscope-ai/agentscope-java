@@ -90,7 +90,7 @@ func (r *collaborationRepo) ListAutomations(ctx context.Context, filter store.Au
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+automationColumns+` FROM automations WHERE archived_at IS NULL AND ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3::boolean IS NULL OR enabled=$3) AND ($4::timestamptz IS NULL OR next_run_at<=$4) ORDER BY created_at,id LIMIT $5 OFFSET $6`, filter.Tenant, filter.Namespace, filter.Enabled, filter.DueBefore, limit, filter.Offset)
+	rows, err := r.pool.Query(ctx, `SELECT `+automationColumns+` FROM automations WHERE archived_at IS NULL AND ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3::boolean IS NULL OR enabled=$3) AND ($4::timestamptz IS NULL OR next_run_at<=$4) AND (NOT $7 OR (created_by_type='human' AND created_by_ref=ANY($8::text[]))) ORDER BY created_at,id LIMIT $5 OFFSET $6`, filter.Tenant, filter.Namespace, filter.Enabled, filter.DueBefore, limit, filter.Offset, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}

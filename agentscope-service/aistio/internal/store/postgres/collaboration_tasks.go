@@ -435,9 +435,10 @@ func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.Age
 		AND ($5::uuid=$11::uuid OR team_id=$5) AND ($6='' OR status=$6)
 		AND ($9::uuid=$11::uuid OR orchestration_run_id=$9)
 		AND ($10::uuid=$11::uuid OR run_node_id=$10)
+		AND (NOT $12 OR issue_access_allowed(issue_id,$13::text[]))
 		ORDER BY priority DESC,created_at LIMIT $7 OFFSET $8`, filter.Tenant,
 		filter.Namespace, filter.IssueID, filter.AgentRef, filter.TeamID, filter.Status,
-		limit, maxInt(filter.Offset, 0), filter.RunID, filter.NodeID, uuid.Nil)
+		limit, maxInt(filter.Offset, 0), filter.RunID, filter.NodeID, uuid.Nil, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}

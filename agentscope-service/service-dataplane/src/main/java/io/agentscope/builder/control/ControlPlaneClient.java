@@ -513,6 +513,75 @@ public class ControlPlaneClient {
         }
     }
 
+    /** Memory calls remain session-scoped; CP rechecks mount ownership and access on each request. */
+    public io.agentscope.builder.web.managed.MemoryDocumentStore memoryDocuments(
+            String sessionId, String storeId) {
+        String base = "/api/internal/sessions/{session}/memory-stores/{store}/memories";
+        return new io.agentscope.builder.web.managed.MemoryDocumentStore() {
+            public List<io.agentscope.builder.web.managed.MemoryDto> list() {
+                try {
+                    return webClient
+                            .get()
+                            .uri(base, sessionId, storeId)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .bodyToFlux(io.agentscope.builder.web.managed.MemoryDto.class)
+                            .collectList()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory mount unavailable");
+                }
+            }
+
+            public io.agentscope.builder.web.managed.MemoryDto get(String path) {
+                try {
+                    return webClient
+                            .get()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .bodyToMono(io.agentscope.builder.web.managed.MemoryDto.class)
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+
+            public void put(String path, String content, Integer expectedVersion) {
+                try {
+                    Map<String, Object> body = new LinkedHashMap<>();
+                    body.put("content", content);
+                    body.put("expectedVersion", expectedVersion);
+                    webClient
+                            .put()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(body)
+                            .retrieve()
+                            .toBodilessEntity()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+
+            public void delete(String path) {
+                try {
+                    webClient
+                            .delete()
+                            .uri(base + "/{path}", sessionId, storeId, path)
+                            .headers(internalHeaders(null))
+                            .retrieve()
+                            .toBodilessEntity()
+                            .block();
+                } catch (WebClientResponseException e) {
+                    throw mapWebClientError(e, "Memory not found");
+                }
+            }
+        };
+    }
+
     private Consumer<HttpHeaders> internalHeaders(String actingUserId) {
         return headers -> {
             headers.set(InternalTokenAuthFilter.INTERNAL_TOKEN_HEADER, internalToken);

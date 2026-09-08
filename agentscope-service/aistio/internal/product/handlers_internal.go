@@ -46,6 +46,10 @@ func (s *Server) registerInternal(r gin.IRouter) {
 	r.GET("/api/internal/agents/:ownerId/:agentId/versions/:version", s.internalGetAgentVersion)
 	r.POST("/api/internal/vaults/resolve", s.internalResolveVaults)
 	r.GET("/api/internal/memory-stores/:id/mount", s.internalMemoryMount)
+	r.GET("/api/internal/sessions/:id/memory-stores/:storeId/memories", s.sessionMemory(s.listMemories))
+	r.GET("/api/internal/sessions/:id/memory-stores/:storeId/memories/*path", s.sessionMemory(s.getMemory))
+	r.PUT("/api/internal/sessions/:id/memory-stores/:storeId/memories/*path", s.sessionMemory(s.putMemory))
+	r.DELETE("/api/internal/sessions/:id/memory-stores/:storeId/memories/*path", s.sessionMemory(s.deleteMemory))
 	r.POST("/api/internal/deployments/:id/fire", s.internalFireDeployment)
 	r.GET("/api/internal/channels/config", s.internalChannelsConfig)
 	r.POST("/api/internal/channels/runtime", s.internalChannelRuntimeReport)
@@ -132,17 +136,27 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 		}
 	}
 
-	env, _ := s.loadEnv(c.Request.Context(), sess.EnvironmentID)
+	env, err := s.loadEnv(c.Request.Context(), sess.EnvironmentID)
+	if err != nil || env.OwnerID != sess.OwnerID || env.ArchivedAt != nil {
+		writeErr(c, http.StatusConflict, "Session environment is unavailable")
+		return
+	}
 	vaultIDs := parseStringSlice(deref(sess.VaultIDsJSON))
-	creds, _ := s.resolveVaultCredentials(c.Request.Context(), vaultIDs, sess.OwnerID)
+	creds, err := s.resolveVaultCredentials(c.Request.Context(), vaultIDs, sess.OwnerID)
+	if err != nil {
+		writeErr(c, http.StatusConflict, "Session vault is unavailable")
+		return
+	}
 
 	memIDs := parseStringSlice(deref(sess.MemoryStoreIDsJSON))
 	mounts := []gin.H{}
 	for _, mid := range memIDs {
-		m, err := s.buildMemoryMount(c.Request.Context(), mid)
-		if err == nil {
-			mounts = append(mounts, m)
+		m, err := s.buildMemoryMount(c.Request.Context(), mid, sess.OwnerID)
+		if err != nil {
+			writeErr(c, http.StatusConflict, "Session memory store is unavailable")
+			return
 		}
+		mounts = append(mounts, m)
 	}
 
 	refType := deref(sess.AgentRefType)
@@ -153,7 +167,17 @@ func (s *Server) internalResolveSession(c *gin.Context) {
 	definitionFiles := map[string]string{}
 	workspaceID := ""
 	workspaceVersion := 0
-	if a, aerr := s.loadAgent(c.Request.Context(), agentOwner, sess.AgentID); aerr == nil {
+	if snapshot, ok := snap.(map[string]any); ok && snapshot["definitionFiles"] != nil {
+		raw, _ := json.Marshal(snapshot["definitionFiles"])
+		if err := json.Unmarshal(raw, &definitionFiles); err != nil {
+			writeErr(c, http.StatusInternalServerError, "Invalid definition snapshot")
+			return
+		}
+		workspaceID, _ = snapshot["workspaceId"].(string)
+		if version, ok := snapshot["workspaceVersion"].(float64); ok {
+			workspaceVersion = int(version)
+		}
+	} else if a, aerr := s.loadAgent(c.Request.Context(), agentOwner, sess.AgentID); aerr == nil {
 		scopeType, scopeID := a.resolveDefinitionScope()
 		if files, ferr := s.listWorkspaceFileContents(c.Request.Context(), agentOwner, scopeType, scopeID, ""); ferr == nil {
 			definitionFiles = files
@@ -836,36 +860,75 @@ func (s *Server) internalResolveVaults(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"credentials": creds})
 }
 
-func (s *Server) buildMemoryMount(ctx context.Context, storeID string) (gin.H, error) {
-	var n int
-	if err := s.db.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM memory_stores WHERE store_id=$1 AND archived_at IS NULL`, storeID).Scan(&n); err != nil || n == 0 {
-		return nil, err
-	}
-	rows, err := s.db.Pool.Query(ctx,
-		`SELECT path, content FROM memories WHERE store_id=$1 ORDER BY path`, storeID)
+func (s *Server) buildMemoryMount(ctx context.Context, storeID, ownerID string) (gin.H, error) {
+	var name string
+	err := s.db.Pool.QueryRow(ctx,
+		`SELECT name FROM memory_stores WHERE store_id=$1 AND owner_id=$2 AND archived_at IS NULL`,
+		storeID, ownerID).Scan(&name)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	files := []gin.H{}
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			return nil, err
-		}
-		files = append(files, gin.H{"path": path, "content": content})
-	}
-	return gin.H{"storeId": storeID, "files": files}, nil
+	return gin.H{"storeId": storeID, "name": name}, nil
 }
 
 func (s *Server) internalMemoryMount(c *gin.Context) {
-	m, err := s.buildMemoryMount(c.Request.Context(), c.Param("id"))
+	m, err := s.buildMemoryMount(c.Request.Context(), c.Param("id"), currentUserID(c))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "memory store not found")
 		return
 	}
 	c.JSON(http.StatusOK, m)
+}
+
+// Every operation revalidates the session binding; a revoked or archived mount cannot be used
+// by a cached Brain. Internal transport authentication is applied before this handler.
+func (s *Server) sessionMemory(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sess, err := s.loadSession(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			writeErr(c, http.StatusNotFound, "session not found")
+			return
+		}
+		storeID := c.Param("storeId")
+		bound := false
+		for _, id := range parseStringSlice(deref(sess.MemoryStoreIDsJSON)) {
+			if id == storeID {
+				bound = true
+			}
+		}
+		if !bound {
+			writeErr(c, http.StatusForbidden, "memory store is not bound to this session")
+			return
+		}
+		if _, err := s.buildMemoryMount(c.Request.Context(), storeID, sess.OwnerID); err != nil {
+			writeErr(c, http.StatusNotFound, "memory store not found")
+			return
+		}
+		if c.Request.Method != http.MethodGet && sess.EnvironmentID != "" {
+			env, err := s.loadEnv(c.Request.Context(), sess.EnvironmentID)
+			if err != nil {
+				writeErr(c, http.StatusConflict, "environment unavailable")
+				return
+			}
+			var cfg struct {
+				MemoryAccess map[string]string `json:"memoryAccess"`
+			}
+			if env.ConfigJSON != nil {
+				_ = json.Unmarshal([]byte(*env.ConfigJSON), &cfg)
+			}
+			if cfg.MemoryAccess[storeID] == "read_only" {
+				writeErr(c, http.StatusForbidden, "memory store is mounted read_only")
+				return
+			}
+		}
+		c.Set(ctxUserID, sess.OwnerID)
+		for i := range c.Params {
+			if c.Params[i].Key == "id" {
+				c.Params[i].Value = storeID
+			}
+		}
+		next(c)
+	}
 }
 
 func (s *Server) internalFireDeployment(c *gin.Context) {

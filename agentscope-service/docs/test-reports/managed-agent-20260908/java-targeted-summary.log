@@ -1,0 +1,36 @@
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.178 s -- in io.agentscope.core.tool.mcp.McpNamespacedToolTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 42, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.724 s -- in io.agentscope.harness.agent.HarnessAgentTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in io.agentscope.harness.agent.tools.McpConnectionLifecycleTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in io.agentscope.harness.agent.tools.ManagedToolSelectionTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in io.agentscope.harness.agent.ManagedSubagentBoundaryTest
+[INFO] Tests run: 48, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.222 s -- in io.agentscope.builder.web.catalog.spec.ManagedMcpContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.274 s -- in io.agentscope.builder.web.managed.ManagedVaultIsolationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.964 s -- in io.agentscope.builder.web.managed.selfhosted.ManagedSkillsBundleTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in io.agentscope.builder.web.managed.ManagedMemoryAccessTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.394 s -- in io.agentscope.builder.web.managed.EnvironmentSpecFactoryE2bTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.305 s -- in io.agentscope.builder.web.catalog.HarnessAgentBuildServiceCacheKeyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in io.agentscope.builder.web.catalog.ManagedDefinitionMaterializerTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.142 s -- in io.agentscope.builder.web.toolbus.ToolConfirmationMiddlewareTest
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Reactor Summary for AgentScope Java - Parent 2.0.3-SNAPSHOT:
+[INFO] AgentScope Java - Parent ........................... SUCCESS [  0.989 s]
+[INFO] AgentScope Java - Core ............................. SUCCESS [  9.054 s]
+[INFO] AgentScope Java - Harness .......................... SUCCESS [ 10.902 s]
+[INFO] AgentScope Java - Extensions ....................... SUCCESS [  0.030 s]
+[INFO] AgentScope Java - Skills ........................... SUCCESS [  0.019 s]
+[INFO] AgentScope Java - Extensions - Skill Git Repository  SUCCESS [  0.087 s]
+[INFO] AgentScope Java - Service .......................... SUCCESS [  0.134 s]
+[INFO] AgentScope Java - Service Common ................... SUCCESS [  7.786 s]
+[INFO] AgentScope Java - Extensions - aistio Data Plane SDK SUCCESS [  5.048 s]
+[INFO] AgentScope Java - Extensions - Sandbox ............. SUCCESS [  0.024 s]
+[INFO] AgentScope Java - Extensions - Sandbox - Ue2b ...... SUCCESS [  0.133 s]
+[INFO] AgentScope Java - Extensions - Model ............... SUCCESS [  0.018 s]
+[INFO] AgentScope Java - Extensions - Model - DashScope ... SUCCESS [  0.190 s]
+[INFO] AgentScope Java - Extensions - MySQL ............... SUCCESS [  0.092 s]
+[INFO] AgentScope Java - Service Data Plane ............... SUCCESS [ 11.572 s]
+[INFO] BUILD SUCCESS
+[INFO] Total time:  46.542 s
+[INFO] Finished at: 2026-09-08T09:44:08+08:00

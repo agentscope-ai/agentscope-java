@@ -160,11 +160,14 @@ func (r *sessionRepo) GetByID(_ context.Context, id uuid.UUID) (*store.Session, 
 	return cloneSession(s), nil
 }
 
-func (r *sessionRepo) List(_ context.Context, f store.SessionFilter) ([]*store.Session, error) {
+func (r *sessionRepo) List(ctx context.Context, f store.SessionFilter) ([]*store.Session, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	var out []*store.Session
 	for _, s := range r.s.sessions {
+		if !r.s.canReadSessionLocked(ctx, s) {
+			continue
+		}
 		if f.Tenant != "" && s.Tenant != f.Tenant {
 			continue
 		}

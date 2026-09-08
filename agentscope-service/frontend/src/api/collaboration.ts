@@ -5,6 +5,7 @@ export interface Actor {
   ref?: string;
 }
 export interface Issue {
+  access?: import("./permissions").IssueAccess;
   id: string;
   identifier?: string;
   tenant: string;

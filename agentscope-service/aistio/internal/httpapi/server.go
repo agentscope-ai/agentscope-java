@@ -183,6 +183,7 @@ type Server struct {
 func NewServer(opts ServerOptions) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	router.ContextWithFallback = true
 	router.Use(gin.Recovery())
 	router.Use(gin.Logger())
 
@@ -355,6 +356,7 @@ func (s *Server) registerRoutes() {
 	if s.product != nil {
 		pg := s.router.Group("")
 		pg.Use(s.product.Middlewares()...)
+		pg.Use(s.productNamespaceMiddleware())
 		pg.Use(s.scopeMiddleware())
 		s.product.Register(pg)
 	}
@@ -368,11 +370,18 @@ func (s *Server) registerRoutes() {
 	v1 := s.router.Group("/api/v1")
 	v1.Use(s.authMiddleware())
 	v1.Use(s.scopeMiddleware())
+	v1.Use(s.namespaceAccessMiddleware())
 	v1.Use(s.workspaceRBACMiddleware())
 	v1.Use(s.authzMiddleware())
 	{
 		v1.GET("/me/navigation", s.navigationAccess)
 		v1.GET("/me/scope", s.getCurrentScope)
+		if s.store != nil {
+			v1.GET("/me/namespaces", s.listMyNamespaces)
+			v1.POST("/namespaces", s.createNamespace)
+			v1.GET("/namespaces/:namespaceName", s.getNamespaceAccess)
+			v1.PUT("/namespaces/:namespaceName", s.updateNamespaceAccess)
+		}
 		// Fleet overview + token metrics (store-backed).
 		if s.store != nil {
 			v1.POST("/entity-identities:resolve", s.resolveEntityIdentities)
@@ -568,6 +577,7 @@ func (s *Server) registerRoutes() {
 		collab := s.router.Group("/api/v1")
 		collab.Use(s.teamsAuthMiddleware())
 		collab.Use(s.collaborationTaskScopeMiddleware())
+		collab.Use(s.namespaceAccessMiddleware())
 		collab.Use(s.workspaceRBACMiddleware())
 		collab.Use(s.authzMiddleware())
 		{
@@ -608,6 +618,7 @@ func (s *Server) registerRoutes() {
 			issues.GET("", s.listIssues)
 			issues.GET("/:issueId", s.getIssue)
 			issues.PATCH("/:issueId", s.updateIssue)
+			issues.PUT("/:issueId/access", s.updateIssueAccess)
 			issues.POST("/:issueId/transition", s.transitionIssue)
 			issues.POST("/:issueId/accept", s.acceptIssue)
 			issues.POST("/:issueId/reject", s.rejectIssue)
@@ -784,7 +795,7 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		token := requestBearerToken(c)
 
 		if s.product != nil {
-			if claims, err := s.product.VerifyToken(token); err == nil {
+			if claims, err := s.product.VerifyAccountToken(c.Request.Context(), token); err == nil {
 				c.Set("userId", claims.Subject)
 				c.Set("username", claims.Username)
 				c.Set("groups", claims.Roles)
@@ -829,7 +840,7 @@ func (s *Server) platformPrincipal(ctx context.Context, token string) (string, b
 		return "", false
 	}
 	if s.product != nil {
-		if claims, err := s.product.VerifyToken(token); err == nil {
+		if claims, err := s.product.VerifyAccountToken(ctx, token); err == nil {
 			return "platform-user:" + claims.Subject, true
 		}
 	}

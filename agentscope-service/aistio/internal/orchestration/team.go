@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -52,15 +53,21 @@ func MaterializeTeamCoordinator(ctx context.Context, st store.Store, req Materia
 	if req.NodeID == uuid.Nil {
 		req.NodeID = uuid.NewSHA1(req.Run.ID, []byte(req.NodeKey))
 	}
-	node, err := st.Orchestration().CreateNode(ctx, &controlmodel.RunNode{ID: req.NodeID, RunID: req.Run.ID,
-		Tenant: req.Run.Tenant, Namespace: req.Run.Namespace, NodeKey: req.NodeKey,
-		Type: controlmodel.RunNodeTeam, Role: "leader", IssueID: &req.IssueID,
-		State: controlmodel.RunNodeReady, Iteration: 1})
-	if err == store.ErrConflict {
-		node, err = st.Orchestration().GetNode(ctx, req.NodeID)
+	node, err := st.Orchestration().GetNode(ctx, req.NodeID)
+	if errors.Is(err, store.ErrNotFound) {
+		node, err = st.Orchestration().CreateNode(ctx, &controlmodel.RunNode{ID: req.NodeID, RunID: req.Run.ID,
+			Tenant: req.Run.Tenant, Namespace: req.Run.Namespace, NodeKey: req.NodeKey,
+			Type: controlmodel.RunNodeTeam, Role: "leader", IssueID: &req.IssueID,
+			State: controlmodel.RunNodeReady, Iteration: 1})
+		if errors.Is(err, store.ErrConflict) {
+			node, err = st.Orchestration().GetNode(ctx, req.NodeID)
+		}
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if node.RunID != req.Run.ID || node.NodeKey != req.NodeKey || node.Type != controlmodel.RunNodeTeam {
+		return nil, nil, fmt.Errorf("existing coordinator node does not match the Team request")
 	}
 	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{
 		RunID: req.Run.ID, NodeID: node.ID, AgentRef: req.Team.LeaderAgentRef, Limit: 1,

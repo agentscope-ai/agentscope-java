@@ -1,5 +1,7 @@
 **Managed Agent 整体设计与实现审查（2026-09-08）**
 
+后续改造与验证见 [实施记录](managed-agent-implementation-2026-09-08.md)。本报告保留审查时的状态，不能将其中已修复的问题视为当前实现结论。
+
 结论：平台已经形成托管 Harness、持久化 Session、工具审批、Hands Worker、AgentTask/Team 协作的主干；Workspace、Environment、Memory、Vault 也都有产品资源和控制台入口。但“资源创建与绑定”到“运行时实际生效”的完成度明显不均衡。当前最需要投入的是跨层整合、配置语义、执行边界和可复现发布，随后才是增加更多 Harness 配置项。
 
 审查位置为 `/Users/ken/agentscope-2/agentscope-java`，分支 `agentscope-service-v5`，开始审查时 HEAD 为 `5ae7920b6`。以包含已有暂存及未提交改动的工作区为准。本轮没有修改生产源码、提交代码、重启或部署服务，也没有调用真实模型或对现有 Agent 下发任务。新增本报告；现有改动保持原状。

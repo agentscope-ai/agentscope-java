@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -73,7 +74,7 @@ export interface McpCatalogEntry {
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...namespaceHeaders() } : {};
 }
 
 function base(agentId: string): string {
@@ -223,7 +224,7 @@ export async function installMcpServer(
     {
       type: 'mcp_toolset',
       mcpServerName: name,
-      defaultConfig: { enabled: true, permissionPolicy: { type: 'always_allow' } },
+      defaultConfig: { enabled: true, permissionPolicy: { type: 'always_ask' } },
     },
   ];
   return updateAgent(agentId, {

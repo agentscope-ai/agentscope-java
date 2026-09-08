@@ -43,12 +43,20 @@ func (w *Worker) ReconcileOnce(ctx context.Context) {
 	if batch <= 0 {
 		batch = 100
 	}
-	runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{ActiveOnly: true, Limit: batch})
-	if err != nil {
-		return
-	}
 	engine := &Engine{Store: w.Store}
-	for _, run := range runs {
-		_ = engine.ReconcileRun(ctx, run.ID)
+	for offset := 0; ; offset += batch {
+		if ctx.Err() != nil {
+			return
+		}
+		runs, err := w.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{ActiveOnly: true, OldestFirst: true, Limit: batch, Offset: offset})
+		if err != nil {
+			return
+		}
+		for _, run := range runs {
+			_ = engine.ReconcileRun(ctx, run.ID)
+		}
+		if len(runs) < batch {
+			return
+		}
 	}
 }

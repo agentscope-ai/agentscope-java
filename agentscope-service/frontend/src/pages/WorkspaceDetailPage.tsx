@@ -44,6 +44,7 @@ import {
   WorkspaceSummary,
   BuiltinToolCatalogEntry,
 } from '../api/workspaces';
+import McpConnectionsEditor from '../components/McpConnectionsEditor';
 import { AgentToolset, McpServerSpec } from '../api/agents';
 import type { WorkspaceSkillInfo } from '../api/skills';
 import type { SubagentInfo } from '../api/subagents';
@@ -438,6 +439,10 @@ export default function WorkspaceDetailPage() {
 
       {tab === 'tools' && (
         <div style={{ display: 'grid', gap: 16 }}>
+          <McpConnectionsEditor servers={mcpServers} tools={tools} onSave={async (servers, nextTools) => {
+            await putWorkspaceTools(id, nextTools, servers);
+            setMcpServers(servers); setTools(nextTools); await reloadMeta();
+          }} />
           <section style={card}>
             <h3 style={{ margin: '0 0 12px' }}>Builtin toolset</h3>
             <div style={{ display: 'grid', gap: 8 }}>

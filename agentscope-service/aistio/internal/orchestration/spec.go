@@ -206,6 +206,16 @@ func ParseAndValidateSpec(raw json.RawMessage, evaluator *CEL) (*DefinitionSpec,
 				return nil, fmt.Errorf("node %q input %q: %w", n.Key, name, err)
 			}
 		}
+		if n.Type == controlmodel.RunNodeTeam {
+			if id, err := uuid.Parse(n.TeamRef); err != nil || id == uuid.Nil {
+				return nil, fmt.Errorf("team node %q requires a valid teamRef", n.Key)
+			}
+		}
+		if n.Type == controlmodel.RunNodeSubrun {
+			if id, err := uuid.Parse(n.DefinitionRevID); err != nil || id == uuid.Nil {
+				return nil, fmt.Errorf("subrun node %q requires a valid revision ID", n.Key)
+			}
+		}
 		keys[n.Key] = n
 	}
 	indegree := map[string]int{}
@@ -220,8 +230,18 @@ func ParseAndValidateSpec(raw json.RawMessage, evaluator *CEL) (*DefinitionSpec,
 		if err := evaluator.Compile(e.Condition); err != nil {
 			return nil, fmt.Errorf("edge %q -> %q: %w", e.From, e.To, err)
 		}
+		for _, state := range e.On {
+			if !controlmodel.IsRunNodeTerminal(state) {
+				return nil, fmt.Errorf("edge %q -> %q requires terminal on states", e.From, e.To)
+			}
+		}
 		indegree[e.To]++
 		next[e.From] = append(next[e.From], e.To)
+	}
+	for _, n := range spec.Nodes {
+		if n.Type == controlmodel.RunNodeJoin && n.Join.Mode == "quorum" && int(n.Join.Quorum) > indegree[n.Key] {
+			return nil, fmt.Errorf("join %q quorum exceeds incoming paths", n.Key)
+		}
 	}
 	queue := []string{}
 	for key := range keys {

@@ -1,0 +1,303 @@
+{
+  "definition": {
+    "id": "b616bb2b-c78c-4ca2-91ae-0bae22d47d55",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-managed",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "edges": [
+        {
+          "to": "inspect",
+          "from": "calculate"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "calculate",
+          "type": "agent",
+          "input": {
+            "a": "run.input.a",
+            "b": "run.input.b",
+            "instruction": "\"Use the workflow node input: calculate a+b and return exactly the number. Complete the task normally.\""
+          },
+          "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+          "timeoutSeconds": 180
+        },
+        {
+          "key": "inspect",
+          "type": "condition",
+          "input": {
+            "upstream": "nodes.calculate.output"
+          }
+        }
+      ]
+    },
+    "draftVersion": 1,
+    "version": 1,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:17:34.874193+08:00",
+    "updatedAt": "2026-09-08T08:17:34.874193+08:00"
+  },
+  "revision": {
+    "id": "584a7396-ee0e-4499-a455-808612ae0565",
+    "definitionId": "b616bb2b-c78c-4ca2-91ae-0bae22d47d55",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 1,
+    "spec": {
+      "edges": [
+        {
+          "to": "inspect",
+          "from": "calculate"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "calculate",
+          "join": {},
+          "type": "agent",
+          "input": {
+            "a": "run.input.a",
+            "b": "run.input.b",
+            "instruction": "\"Use the workflow node input: calculate a+b and return exactly the number. Complete the task normally.\""
+          },
+          "retry": {},
+          "timer": {},
+          "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+          "approval": {},
+          "timeoutSeconds": 180
+        },
+        {
+          "key": "inspect",
+          "join": {},
+          "type": "condition",
+          "input": {
+            "upstream": "nodes.calculate.output"
+          },
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        }
+      ]
+    },
+    "checksum": "df02cb29cc260fd9145fc1d9bb8a2eb1928d3a8415838ecde42a5cb29cdba805",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:17:34.879522+08:00"
+  },
+  "run": {
+    "id": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "5b9fc58b-3075-51b5-b030-e52b0d5e74a2",
+    "mode": "declared",
+    "definitionRevisionId": "584a7396-ee0e-4499-a455-808612ae0565",
+    "triggerType": "definition",
+    "idempotencyKey": "wf-acceptance-20260908-081653-managed",
+    "input": {
+      "a": 19,
+      "b": 23
+    },
+    "variables": {},
+    "output": {
+      "inspect": {
+        "upstream": 42
+      },
+      "calculate": 42
+    },
+    "policySnapshot": {},
+    "state": "succeeded",
+    "version": 6,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:17:34.914816+08:00",
+    "updatedAt": "2026-09-08T08:17:51.21637+08:00",
+    "startedAt": "2026-09-08T08:17:34.940501+08:00",
+    "completedAt": "2026-09-08T08:17:51.21637+08:00"
+  },
+  "nodes": [
+    {
+      "id": "8a138f42-5c34-5c17-9a96-fa42e84939c3",
+      "runId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "calculate",
+      "definitionNodeKey": "calculate",
+      "type": "agent",
+      "issueId": "5b9fc58b-3075-51b5-b030-e52b0d5e74a2",
+      "state": "succeeded",
+      "config": {
+        "key": "calculate",
+        "join": {},
+        "type": "agent",
+        "input": {
+          "a": "run.input.a",
+          "b": "run.input.b",
+          "instruction": "\"Use the workflow node input: calculate a+b and return exactly the number. Complete the task normally.\""
+        },
+        "retry": {},
+        "timer": {},
+        "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+        "approval": {},
+        "timeoutSeconds": 180
+      },
+      "input": {
+        "a": 19,
+        "b": 23,
+        "instruction": "Use the workflow node input: calculate a+b and return exactly the number. Complete the task normally."
+      },
+      "output": 42,
+      "iteration": 1,
+      "version": 4,
+      "createdAt": "2026-09-08T08:17:34.92747+08:00",
+      "updatedAt": "2026-09-08T08:17:50.840175+08:00",
+      "startedAt": "2026-09-08T08:17:34.964383+08:00",
+      "completedAt": "2026-09-08T08:17:50.840175+08:00"
+    },
+    {
+      "id": "68e5bc51-afe3-5a0d-9ff0-b9d555bb41f9",
+      "runId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "inspect",
+      "definitionNodeKey": "inspect",
+      "type": "condition",
+      "issueId": "5b9fc58b-3075-51b5-b030-e52b0d5e74a2",
+      "state": "succeeded",
+      "config": {
+        "key": "inspect",
+        "join": {},
+        "type": "condition",
+        "input": {
+          "upstream": "nodes.calculate.output"
+        },
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {
+        "upstream": 42
+      },
+      "output": {
+        "upstream": 42
+      },
+      "iteration": 1,
+      "version": 5,
+      "createdAt": "2026-09-08T08:17:34.929891+08:00",
+      "updatedAt": "2026-09-08T08:17:51.212822+08:00",
+      "startedAt": "2026-09-08T08:17:51.210665+08:00",
+      "completedAt": "2026-09-08T08:17:51.212822+08:00"
+    }
+  ],
+  "edges": [
+    {
+      "id": "da17445f-d1f1-58d2-bf36-d2dd78cd45f7",
+      "runId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "tenant": "default",
+      "namespace": "default",
+      "fromNodeId": "8a138f42-5c34-5c17-9a96-fa42e84939c3",
+      "toNodeId": "68e5bc51-afe3-5a0d-9ff0-b9d555bb41f9",
+      "onStates": [
+        "succeeded"
+      ],
+      "ordinal": 0,
+      "createdAt": "2026-09-08T08:17:34.931367+08:00"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "9c8676fc-8718-45cf-9c80-c02724db75b6",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "5b9fc58b-3075-51b5-b030-e52b0d5e74a2",
+      "orchestrationRunId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "runNodeId": "8a138f42-5c34-5c17-9a96-fa42e84939c3",
+      "currentAttemptId": "d3e3b3a4-97e2-4cf1-987c-fd039517c03e",
+      "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "8a138f42-5c34-5c17-9a96-fa42e84939c3",
+      "correlationId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+          "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "sessionId": "sess_6400ee86f3e8",
+        "resolvedAt": "2026-09-08T00:17:35.218036Z",
+        "selectionSource": "policy"
+      },
+      "sessionId": "sess_6400ee86f3e8",
+      "result": 42,
+      "version": 4,
+      "createdAt": "2026-09-08T08:17:34.949129+08:00",
+      "dispatchedAt": "2026-09-08T08:17:35.216909+08:00",
+      "startedAt": "2026-09-08T08:17:35.523825+08:00",
+      "completedAt": "2026-09-08T08:17:50.840175+08:00"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "d3e3b3a4-97e2-4cf1-987c-fd039517c03e",
+      "agentTaskId": "9c8676fc-8718-45cf-9c80-c02724db75b6",
+      "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+      "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+      "runId": "af24cc32-bde4-4c60-a9f5-07cc8ac2ef33",
+      "nodeId": "8a138f42-5c34-5c17-9a96-fa42e84939c3",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+          "bindingId": "1015b294-4dfa-5913-9267-eb2e18d5c544",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c1335247-c9a4-4b58-b952-c7283cef57e1"
+        },
+        "sessionId": "sess_6400ee86f3e8",
+        "resolvedAt": "2026-09-08T00:17:35.218036Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "c1335247-c9a4-4b58-b952-c7283cef57e1",
+      "sessionId": "sess_6400ee86f3e8",
+      "sessionRef": "d6da1475-a6a4-4e7e-b04c-21ed4c58f00e",
+      "turnId": "20770fc0-d0bb-4e49-bf2b-f26806541905",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T08:17:50.772984+08:00",
+      "result": 42,
+      "version": 18,
+      "createdAt": "2026-09-08T08:17:35.216909+08:00",
+      "updatedAt": "2026-09-08T08:17:50.840175+08:00",
+      "startedAt": "2026-09-08T08:17:35.523825+08:00",
+      "completedAt": "2026-09-08T08:17:50.840175+08:00"
+    }
+  ]
+}

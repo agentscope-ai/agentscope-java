@@ -76,7 +76,7 @@ func (s *Server) loadEnv(ctx context.Context, id string) (envRow, error) {
 }
 
 func (s *Server) listEnvironments(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -116,14 +116,22 @@ func (s *Server) createEnvironment(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
+	if err := validateMemoryAccessConfig(req.Config); err != nil {
+		writeErr(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	typ := normalizeEnvironmentType(req.Type)
+	if typ != "local" && typ != "sandbox" && typ != "remote" && typ != "self_hosted" {
+		writeErr(c, http.StatusBadRequest, "Unsupported environment type")
+		return
+	}
 	if typ == localEnvironmentType && !s.cfg.AllowLocalEnvironment {
 		writeTextErr(c, http.StatusForbidden, ErrLocalEnvironmentDisabled.Error())
 		return
 	}
 	id := shortID("env_")
 	now := nowMillis()
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	plainKey := shortID("ek_")
 	keyHash := sha256Hex(plainKey)
 	_, err := s.db.Pool.Exec(c.Request.Context(),
@@ -146,7 +154,7 @@ func (s *Server) getEnvironment(c *gin.Context) {
 		writeErr(c, http.StatusNotFound, "environment not found")
 		return
 	}
-	if e.OwnerID != currentUserID(c) {
+	if e.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "environment not found")
 		return
 	}
@@ -156,7 +164,7 @@ func (s *Server) getEnvironment(c *gin.Context) {
 // updateEnvironment changes the mutable parts of an environment. The type is
 // immutable because running sessions resolve their sandbox from it.
 func (s *Server) updateEnvironment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	e, err := s.loadEnv(c.Request.Context(), id)
 	if err != nil || e.OwnerID != owner {
@@ -182,6 +190,10 @@ func (s *Server) updateEnvironment(c *gin.Context) {
 	}
 	configJSON := deref(e.ConfigJSON)
 	if req.Config != nil {
+		if err := validateMemoryAccessConfig(req.Config); err != nil {
+			writeErr(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		configJSON = mustJSON(req.Config)
 	}
 	now := nowMillis()
@@ -196,7 +208,7 @@ func (s *Server) updateEnvironment(c *gin.Context) {
 }
 
 func (s *Server) deleteEnvironment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM environments WHERE environment_id=$1 AND owner_id=$2`, c.Param("id"), owner)
 	if err != nil {
@@ -211,7 +223,7 @@ func (s *Server) deleteEnvironment(c *gin.Context) {
 }
 
 func (s *Server) archiveEnvironment(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE environments SET archived_at=$1, updated_at=$1
@@ -230,7 +242,7 @@ func (s *Server) archiveEnvironment(c *gin.Context) {
 }
 
 func (s *Server) rotateEnvironmentKey(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	plainKey := shortID("ek_")
 	keyHash := sha256Hex(plainKey)

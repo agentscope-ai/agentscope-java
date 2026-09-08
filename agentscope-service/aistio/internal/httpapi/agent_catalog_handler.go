@@ -120,6 +120,10 @@ func (s *Server) registerExternalAgent(c *gin.Context) {
 		value := time.Now().UTC().Add(time.Duration(req.CredentialTTL) * time.Second)
 		expires = &value
 	}
+	if a := accessFrom(c); a != nil {
+		req.OwnerRef = namespaceResourceOwner(a.Namespace)
+		req.OwnerType = "namespace"
+	}
 	result, err := s.store.AgentCatalog().RegisterExternal(c.Request.Context(), store.ExternalAgentRegistration{
 		Tenant: req.Tenant, Namespace: req.Namespace, AgentKey: req.AgentKey,
 		DisplayName: req.DisplayName, Description: req.Description, OwnerType: req.OwnerType, OwnerRef: req.OwnerRef,
@@ -163,6 +167,13 @@ func (s *Server) listCatalogAgents(c *gin.Context) {
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return
+	}
+	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+		for _, agent := range agents {
+			agent.Metadata = nil
+			agent.Capabilities = nil
+			agent.Labels = nil
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": agents})
 }
@@ -427,6 +438,12 @@ func (s *Server) createCatalogAgent(c *gin.Context) {
 		return
 	}
 	agent.OwnerRef = catalogOwnerRef(c, agent.OwnerRef)
+	if a := accessFrom(c); a != nil {
+		agent.OwnerRef = namespaceResourceOwner(a.Namespace)
+		agent.OwnerType = "namespace"
+		agent.Tenant = a.Namespace.Tenant
+		agent.Namespace = a.Namespace.Name
+	}
 	if agent.OwnerType == "" {
 		agent.OwnerType = "user"
 	}
@@ -670,6 +687,11 @@ func (s *Server) getCatalogAgent(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+		agent.Metadata = nil
+		agent.Capabilities = nil
+		agent.Labels = nil
+	}
 	c.JSON(http.StatusOK, gin.H{"agent": agent})
 }
 
@@ -708,6 +730,10 @@ func (s *Server) patchCatalogAgent(c *gin.Context) {
 	}
 	if req.OwnerType != nil {
 		agent.OwnerType = *req.OwnerType
+	}
+	if a := accessFrom(c); a != nil && (req.OwnerRef != nil && *req.OwnerRef != agent.OwnerRef || req.OwnerType != nil && *req.OwnerType != agent.OwnerType) {
+		c.JSON(400, ErrorResponse{Error: "resource ownership changes require a namespace migration"})
+		return
 	}
 	if req.OwnerRef != nil {
 		agent.OwnerRef = *req.OwnerRef

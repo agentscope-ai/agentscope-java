@@ -1,0 +1,180 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-core:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-jar-plugin is missing. @ io.agentscope:agentscope-core:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-core/pom.xml, line 212, column 21
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for io.agentscope:agentscope-extensions-aistio:jar:2.0.3-SNAPSHOT
+[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-resources-plugin is missing. @ io.agentscope:agentscope-extensions-aistio:${revision}, /Users/ken/agentscope-2/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/pom.xml, line 133, column 21
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] AgentScope Java - Parent                                           [pom]
+[INFO] AgentScope Java - Core                                             [jar]
+[INFO] AgentScope Java - Harness                                          [jar]
+[INFO] 
+[INFO] ------------------< io.agentscope:agentscope-parent >-------------------
+[INFO] Building AgentScope Java - Parent 2.0.3-SNAPSHOT                   [1/3]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-parent ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-parent ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-parent:pom:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-parent ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-parent ---
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+[INFO] 
+[INFO] -------------------< io.agentscope:agentscope-core >--------------------
+[INFO] Building AgentScope Java - Core 2.0.3-SNAPSHOT                     [2/3]
+[INFO]   from agentscope-core/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-core ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-core/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-core ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-core/src/main/resources
+[INFO] 
+[INFO] --- flatten:1.5.0:flatten (flatten) @ agentscope-core ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-core:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ agentscope-core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-core ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-core ---
+[INFO] Copying 20 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ agentscope-core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- surefire:3.1.2:test (default-test) @ agentscope-core ---
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-core ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-core/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Core' with 397 classes
+[INFO] 
+[INFO] ------------------< io.agentscope:agentscope-harness >------------------
+[INFO] Building AgentScope Java - Harness 2.0.3-SNAPSHOT                  [3/3]
+[INFO]   from agentscope-harness/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (prepare-agent) @ agentscope-harness ---
+[INFO] argLine set to -javaagent:/Users/ken/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/jacoco.exec -Xms512m -Xmx1024m
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agentscope-harness ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ agentscope-harness ---
+[INFO] Generating flattened POM of project io.agentscope:agentscope-harness:jar:2.0.3-SNAPSHOT...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agentscope-harness ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 262 source files with javac [debug release 17] to target/classes
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[753,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[742,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[777,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[732,24] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[733,68] io.agentscope.core.agent.AgentBase 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[744,55] io.agentscope.core.agent.AgentBase 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[754,68] io.agentscope.core.agent.AgentBase 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[780,55] io.agentscope.core.ReActAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[792,42] io.agentscope.core.ReActAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[803,55] io.agentscope.core.ReActAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[1163,19] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[1434,18] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[1521,29] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[1529,35] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java:[1531,22] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/subagent/DefaultAgentManager.java:[244,30] io.agentscope.core.ReActAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/subagent/DefaultAgentManager.java:[246,32] io.agentscope.harness.agent.HarnessAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/subagent/DefaultAgentManager.java:[248,30] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgentBuilderSupport.java:[332,20] io.agentscope.core.hook 中的 io.agentscope.core.hook.Hook 已过时, 且标记为待删除
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java: 某些输入文件使用或覆盖了已过时的 API。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/main/java/io/agentscope/harness/agent/HarnessAgent.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] 
+[INFO] --- spotless:3.4.0:check (default) @ agentscope-harness ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agentscope-harness ---
+[INFO] skip non existing resourceDirectory /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agentscope-harness ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 125 source files with javac [debug release 17] to target/test-classes
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java:[190,23] io.agentscope.harness.agent.HarnessAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java:[285,23] io.agentscope.harness.agent.HarnessAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,io.agentscope.core.agent.RuntimeContext) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[299,37] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.Tracer 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[299,9] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.TracerRegistry 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/bus/WorkspaceMessageBusTest.java:[324,13] io.agentscope.core.tracing 中的 io.agentscope.core.tracing.TracerRegistry 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[198,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[192,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/AsyncToolMiddlewareTest.java:[186,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[239,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[233,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/InboxMiddlewareTest.java:[227,57] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[333,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,com.fasterxml.jackson.databind.JsonNode) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[328,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions,java.lang.Class<?>) 已过时, 且标记为待删除
+[WARNING] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java:[323,28] io.agentscope.core.agent.StreamableAgent 中的 stream(java.util.List<io.agentscope.core.message.Msg>,io.agentscope.core.agent.StreamOptions) 已过时, 且标记为待删除
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java: 某些输入文件使用或覆盖了已过时的 API。
+[INFO] /Users/ken/agentscope-2/agentscope-java/agentscope-harness/src/test/java/io/agentscope/harness/agent/HarnessAgentSubagentStreamTest.java: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ agentscope-harness ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running io.agentscope.harness.agent.tools.McpInitializationOrderTest
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (/Users/ken/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.7/byte-buddy-agent-1.17.7.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.556 s -- in io.agentscope.harness.agent.tools.McpInitializationOrderTest
+[INFO] io.agentscope.harness.agent.tools.McpInitializationOrderTest.initializesBeforeDiscoveringTools -- Time elapsed: 1.542 s
+[INFO] Running io.agentscope.harness.agent.tools.McpConnectionLifecycleTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.041 s -- in io.agentscope.harness.agent.tools.McpConnectionLifecycleTest
+[INFO] io.agentscope.harness.agent.tools.McpConnectionLifecycleTest.optionalFailureIsReportedWithoutAbortingBootstrap -- Time elapsed: 0.033 s
+[INFO] io.agentscope.harness.agent.tools.McpConnectionLifecycleTest.requiredFailureHasSafeTypedIdentity -- Time elapsed: 0.003 s
+[INFO] Running io.agentscope.harness.agent.tools.ManagedToolSelectionTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.084 s -- in io.agentscope.harness.agent.tools.ManagedToolSelectionTest
+[INFO] io.agentscope.harness.agent.tools.ManagedToolSelectionTest.mcpSelectionIsIndependentAndDenyWins -- Time elapsed: 0.076 s
+[INFO] io.agentscope.harness.agent.tools.ManagedToolSelectionTest.defaultDisabledDoesNotBecomeAllowAll -- Time elapsed: 0.006 s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ agentscope-harness ---
+[INFO] Loading execution data file /Users/ken/agentscope-2/agentscope-java/agentscope-harness/target/jacoco.exec
+[INFO] Analyzed bundle 'AgentScope Java - Harness' with 342 classes
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for AgentScope Java - Parent 2.0.3-SNAPSHOT:
+[INFO] 
+[INFO] AgentScope Java - Parent ........................... SUCCESS [  1.565 s]
+[INFO] AgentScope Java - Core ............................. SUCCESS [ 10.454 s]
+[INFO] AgentScope Java - Harness .......................... SUCCESS [ 43.473 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  56.471 s
+[INFO] Finished at: 2026-09-08T08:40:10+08:00
+[INFO] ------------------------------------------------------------------------

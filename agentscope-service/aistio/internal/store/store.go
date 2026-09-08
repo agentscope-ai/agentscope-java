@@ -25,6 +25,7 @@ import (
 // Store is the runtime-data persistence facade.
 // Implementations: PostgreSQL (production), memory (dev/tests).
 type Store interface {
+	Access() AccessRepository
 	Sessions() SessionRepository
 	Turns() TurnRepository
 	Events() EventRepository

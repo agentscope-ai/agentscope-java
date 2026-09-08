@@ -32,8 +32,8 @@ import org.slf4j.LoggerFactory;
  * to its {@code transport} ({@code stdio} / {@code sse} / {@code http}) and then registered through
  * {@link Toolkit#registration()} so that per-server {@code enableTools} allowlists are honoured.
  *
- * <p>Failures during a single server's setup are caught and logged; remaining servers still
- * register so that one bad entry never aborts the agent's bootstrap.
+ * <p>Required connections abort bootstrap. Optional failures are reported through the configured
+ * callback and do not prevent other connections from registering.
  */
 public final class McpServerRegistrar {
 
@@ -60,28 +60,61 @@ public final class McpServerRegistrar {
             try {
                 registerOne(toolkit, name, cfg);
             } catch (Exception e) {
+                McpConnectionException failure = new McpConnectionException(name);
+                if (cfg.isRequired()) {
+                    toolkit.closeMcpClients();
+                    throw failure;
+                }
+                if (cfg.getConnectionFailureHandler() != null)
+                    cfg.getConnectionFailureHandler().accept(failure);
                 log.warn(
                         "Failed to register MCP server '{}' ({}): {}",
                         name,
                         cfg.getTransport(),
-                        e.getMessage());
+                        e.getClass().getSimpleName());
             }
         }
     }
 
     private static void registerOne(Toolkit toolkit, String name, McpServerConfig cfg) {
-        McpClientWrapper wrapper = buildClient(name, cfg);
-        Toolkit.ToolRegistration reg = toolkit.registration().mcpClient(wrapper);
-        List<String> enableTools = cfg.getEnableTools();
-        if (enableTools != null && !enableTools.isEmpty()) {
-            reg.enableTools(enableTools);
+        registerClient(toolkit, name, cfg, buildClient(name, cfg));
+    }
+
+    static void registerClient(
+            Toolkit toolkit, String name, McpServerConfig cfg, McpClientWrapper wrapper) {
+        try {
+            wrapper.initialize().block();
+            List<String> selected =
+                    wrapper.listTools().block().stream()
+                            .map(tool -> tool.name())
+                            .filter(tool -> isToolEnabled(tool, cfg))
+                            .toList();
+            if (selected.isEmpty()) {
+                wrapper.close();
+                return;
+            }
+            Toolkit.ToolRegistration reg =
+                    toolkit.registration().mcpClient(wrapper).enableTools(selected);
+            if (cfg.isPrefixToolNames()) reg.mcpToolNamePrefix(name + "__");
+            reg.apply();
+        } catch (RuntimeException e) {
+            wrapper.close();
+            throw e;
         }
-        reg.apply();
+        List<String> enableTools = cfg.getEnableTools();
         log.info(
                 "Registered MCP server '{}' (transport={}, enableTools={}).",
                 name,
                 cfg.getTransport(),
                 enableTools);
+    }
+
+    static boolean isToolEnabled(String tool, McpServerConfig cfg) {
+        if (cfg.getDisableTools() != null && cfg.getDisableTools().contains(tool)) return false;
+        List<String> allow = cfg.getEnableTools();
+        return allow != null && !allow.isEmpty()
+                ? allow.contains(tool)
+                : cfg.isDefaultToolsEnabled();
     }
 
     private static McpClientWrapper buildClient(String name, McpServerConfig cfg) {

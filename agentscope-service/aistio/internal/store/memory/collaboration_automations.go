@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"time"
 
@@ -71,11 +72,14 @@ func (r *collaborationRepo) GetAutomation(_ context.Context, id uuid.UUID) (*con
 	return cloneAutomation(item), nil
 }
 
-func (r *collaborationRepo) ListAutomations(_ context.Context, filter store.AutomationFilter) ([]*controlmodel.Automation, error) {
+func (r *collaborationRepo) ListAutomations(ctx context.Context, filter store.AutomationFilter) ([]*controlmodel.Automation, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.Automation, 0)
 	for _, item := range r.s.automations {
+		if access := store.WorkAccessFrom(ctx); access.Restricted && (item.CreatedBy.Type != controlmodel.ActorHuman || !slices.Contains(access.Refs, item.CreatedBy.Ref)) {
+			continue
+		}
 		if item.ArchivedAt != nil || filter.Tenant != "" && item.Tenant != filter.Tenant || filter.Namespace != "" && item.Namespace != filter.Namespace || filter.Enabled != nil && item.Enabled != *filter.Enabled || filter.DueBefore != nil && (item.NextRunAt == nil || item.NextRunAt.After(*filter.DueBefore)) {
 			continue
 		}

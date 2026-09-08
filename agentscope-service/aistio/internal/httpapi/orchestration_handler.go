@@ -6,9 +6,12 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -39,7 +42,7 @@ func (s *Server) createOrchestrationDefinition(c *gin.Context) {
 	in.CreatedBy = collaborationActor(c, s)
 	created, err := s.store.Orchestration().CreateDefinition(c.Request.Context(), &in)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"definition": created})
@@ -49,10 +52,15 @@ func (s *Server) listOrchestrationDefinitions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := s.store.Orchestration().ListDefinitions(c.Request.Context(), store.OrchestrationDefinitionFilter{Tenant: tenant, Namespace: namespace, Name: c.Query("name"), IncludeArchived: c.Query("archived") == "true", Limit: queryInt(c, "limit", 100)})
+	items, err := s.store.Orchestration().ListDefinitions(c.Request.Context(), store.OrchestrationDefinitionFilter{Tenant: tenant, Namespace: namespace, Name: c.Query("name"), IncludeArchived: c.Query("archived") == "true", Offset: max(0, queryInt(c, "offset", 0)), Limit: queryInt(c, "limit", 100)})
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
+	}
+	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+		for _, item := range items {
+			item.DraftSpec = nil
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"definitions": items})
 }
@@ -63,7 +71,7 @@ func (s *Server) getOrchestrationDefinition(c *gin.Context) {
 	}
 	item, err := s.store.Orchestration().GetDefinition(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"definition": item})
@@ -75,7 +83,7 @@ func (s *Server) patchOrchestrationDefinition(c *gin.Context) {
 	}
 	current, err := s.store.Orchestration().GetDefinition(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	var req struct {
@@ -83,7 +91,7 @@ func (s *Server) patchOrchestrationDefinition(c *gin.Context) {
 		Description     *string         `json:"description"`
 		DraftSpec       json.RawMessage `json:"draftSpec"`
 		ExpectedVersion int64           `json:"expectedVersion"`
-		Archived        bool            `json:"archived"`
+		Archived        *bool           `json:"archived"`
 	}
 	if err = c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -96,15 +104,24 @@ func (s *Server) patchOrchestrationDefinition(c *gin.Context) {
 		current.Description = *req.Description
 	}
 	if len(req.DraftSpec) > 0 {
-		if _, err = s.orchestrationService().ValidateDefinition(req.DraftSpec); err != nil {
+		var draft struct {
+			Nodes []json.RawMessage `json:"nodes"`
+		}
+		if err = json.Unmarshal(req.DraftSpec, &draft); err != nil || draft.Nodes == nil {
+			if err == nil {
+				err = fmt.Errorf("draftSpec.nodes must be an array")
+			}
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
 		current.DraftSpec = req.DraftSpec
 	}
-	if req.Archived {
-		now := current.UpdatedAt
-		current.ArchivedAt = &now
+	if req.Archived != nil {
+		current.ArchivedAt = nil
+		if *req.Archived {
+			now := time.Now().UTC()
+			current.ArchivedAt = &now
+		}
 	}
 	expected := req.ExpectedVersion
 	if expected == 0 {
@@ -112,7 +129,7 @@ func (s *Server) patchOrchestrationDefinition(c *gin.Context) {
 	}
 	updated, err := s.store.Orchestration().UpdateDefinition(c.Request.Context(), current, expected)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"definition": updated})
@@ -124,7 +141,7 @@ func (s *Server) validateOrchestrationDefinition(c *gin.Context) {
 	}
 	definition, err := s.store.Orchestration().GetDefinition(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	var req struct {
@@ -146,9 +163,18 @@ func (s *Server) publishOrchestrationDefinition(c *gin.Context) {
 	if !ok {
 		return
 	}
-	revision, err := s.orchestrationService().Publish(c.Request.Context(), id, collaborationActor(c, s))
+	var request struct {
+		ExpectedVersion int64 `json:"expectedVersion"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+	}
+	revision, err := s.orchestrationService().Publish(c.Request.Context(), id, collaborationActor(c, s), request.ExpectedVersion)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"revision": revision})
@@ -160,7 +186,7 @@ func (s *Server) listOrchestrationRevisions(c *gin.Context) {
 	}
 	items, err := s.store.Orchestration().ListRevisions(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"revisions": items})
@@ -178,7 +204,7 @@ func (s *Server) startOrchestrationRun(c *gin.Context) {
 	req.Actor = collaborationActor(c, s)
 	run, err := s.orchestrationService().Start(c.Request.Context(), id, req)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"run": run})
@@ -189,7 +215,15 @@ func (s *Server) listOrchestrationRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	f := store.OrchestrationRunFilter{Tenant: tenant, Namespace: namespace, State: controlmodel.OrchestrationRunState(c.Query("state")), ActiveOnly: c.Query("active") == "true", Limit: queryInt(c, "limit", 100)}
+	f := store.OrchestrationRunFilter{Tenant: tenant, Namespace: namespace, State: controlmodel.OrchestrationRunState(c.Query("state")), ActiveOnly: c.Query("active") == "true", Offset: max(0, queryInt(c, "offset", 0)), Limit: queryInt(c, "limit", 100)}
+	if raw := c.Query("definitionId"); raw != "" {
+		var err error
+		f.DefinitionID, err = uuid.Parse(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid definitionId"})
+			return
+		}
+	}
 	if raw := c.Query("issueId"); raw != "" {
 		var err error
 		f.IssueID, err = uuid.Parse(raw)
@@ -200,7 +234,7 @@ func (s *Server) listOrchestrationRuns(c *gin.Context) {
 	}
 	items, err := s.store.Orchestration().ListRuns(c.Request.Context(), f)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"runs": items})
@@ -212,7 +246,7 @@ func (s *Server) getOrchestrationRun(c *gin.Context) {
 	}
 	run, err := s.store.Orchestration().GetRun(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
@@ -224,7 +258,7 @@ func (s *Server) getOrchestrationGraph(c *gin.Context) {
 	}
 	graph, err := s.orchestrationService().Graph(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	s.attachAttemptSessionRefs(c.Request.Context(), graph.Attempts)
@@ -238,7 +272,7 @@ func (s *Server) listOrchestrationEvents(c *gin.Context) {
 	after, _ := strconv.ParseInt(c.Query("after"), 10, 64)
 	events, err := s.store.Orchestration().ListRunEvents(c.Request.Context(), id, after, queryInt(c, "limit", 200))
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"events": events})
@@ -268,7 +302,7 @@ func (s *Server) rerunOrchestrationRun(c *gin.Context) {
 	run, err := s.orchestrationService().Rerun(c.Request.Context(), id, req.IdempotencyKey,
 		req.Input, collaborationActor(c, s))
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"run": run})
@@ -280,7 +314,7 @@ func (s *Server) mutateRun(c *gin.Context, fn func(context.Context, uuid.UUID) (
 	}
 	run, err := fn(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
@@ -300,7 +334,7 @@ func (s *Server) signalOrchestrationRun(c *gin.Context) {
 		return
 	}
 	if err := s.orchestrationService().Signal(c.Request.Context(), id, name, req.IdempotencyKey, req.Payload, collaborationActor(c, s)); err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.Status(http.StatusAccepted)
@@ -318,7 +352,7 @@ func (s *Server) getAgentRuntimePolicy(c *gin.Context) {
 	}
 	policy, err := s.store.Orchestration().GetRuntimePolicy(c.Request.Context(), tenant, namespace, agentID.String())
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"policy": policy})
@@ -339,7 +373,7 @@ func (s *Server) putAgentRuntimePolicy(c *gin.Context) {
 		if err == nil {
 			err = store.ErrNotFound
 		}
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	in.AgentRef = agentID.String()
@@ -369,7 +403,7 @@ func (s *Server) putAgentRuntimePolicy(c *gin.Context) {
 			if err == nil {
 				err = store.ErrNotFound
 			}
-			s.writeCollaborationError(c, err)
+			s.writeOrchestrationError(c, err)
 			return
 		}
 		candidate.Binding, err = binding.RuntimeBinding()
@@ -390,7 +424,7 @@ func (s *Server) putAgentRuntimePolicy(c *gin.Context) {
 	}
 	policy, err := s.store.Orchestration().PutRuntimePolicy(c.Request.Context(), &in)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"policy": policy})
@@ -406,7 +440,7 @@ func (s *Server) listExecutionAttempts(c *gin.Context) {
 	}
 	items, err := s.store.ExecutionAttempts().List(c.Request.Context(), f)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	s.attachAttemptSessionRefs(c.Request.Context(), items)
@@ -419,7 +453,7 @@ func (s *Server) getExecutionAttempt(c *gin.Context) {
 	}
 	attempt, err := s.store.ExecutionAttempts().Get(c.Request.Context(), id)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	s.attachAttemptSessionRefs(c.Request.Context(), []*controlmodel.ExecutionAttempt{attempt})
@@ -468,7 +502,7 @@ func (s *Server) getTaskRun(c *gin.Context) {
 	}
 	run, err := s.store.Orchestration().GetRun(c.Request.Context(), task.OrchestrationRunID)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
@@ -481,7 +515,7 @@ func (s *Server) getTaskRunGraph(c *gin.Context) {
 	}
 	graph, err := s.orchestrationService().Graph(c.Request.Context(), task.OrchestrationRunID)
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, graph)
@@ -501,7 +535,7 @@ func (s *Server) completeTaskRunNode(c *gin.Context) {
 	}
 	completed, node, err := s.concludeCoordinator(c.Request.Context(), task, req.Output, collaborationActor(c, s))
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"task": completed, "node": node})
@@ -522,7 +556,7 @@ func (s *Server) failTaskRunNode(c *gin.Context) {
 	}
 	failed, node, err := s.failCoordinator(c.Request.Context(), task, req.Code, req.Message, collaborationActor(c, s))
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"task": failed, "node": node})
@@ -540,7 +574,7 @@ func (s *Server) replanTaskRun(c *gin.Context) {
 	}
 	node, err := s.orchestrationService().Replan(c.Request.Context(), task.ID, req, collaborationActor(c, s))
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"node": node})
@@ -561,7 +595,7 @@ func (s *Server) signalTaskRun(c *gin.Context) {
 		return
 	}
 	if err := s.orchestrationService().Signal(c.Request.Context(), task.OrchestrationRunID, name, req.IdempotencyKey, req.Payload, collaborationActor(c, s)); err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.Status(http.StatusAccepted)
@@ -574,7 +608,7 @@ func (s *Server) getTaskRunArtifacts(c *gin.Context) {
 	}
 	items, err := s.store.Collaboration().ListArtifacts(c.Request.Context(), task.Tenant, task.Namespace, "issue", task.IssueID.String())
 	if err != nil {
-		s.writeCollaborationError(c, err)
+		s.writeOrchestrationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"artifacts": items})
@@ -586,4 +620,12 @@ func queryInt(c *gin.Context, name string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func (s *Server) writeOrchestrationError(c *gin.Context, err error) {
+	if errors.Is(err, orchestration.ErrInvalidDefinition) {
+		c.JSON(http.StatusUnprocessableEntity, ErrorResponse{Error: err.Error()})
+		return
+	}
+	s.writeCollaborationError(c, err)
 }

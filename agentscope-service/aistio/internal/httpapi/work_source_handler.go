@@ -157,6 +157,10 @@ func redactWorkSource(in *controlmodel.WorkSource) *controlmodel.WorkSource {
 }
 
 func (s *Server) flushWorkSourceCommentOutbox(c *gin.Context) {
+	if accessFrom(c) != nil {
+		c.JSON(403, ErrorResponse{Error: "global outbox flush requires an infrastructure service identity"})
+		return
+	}
 	if s.workSources == nil {
 		c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Work Source service is unavailable"})
 		return

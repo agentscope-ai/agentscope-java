@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   UsersRound,
 } from 'lucide-react';
+import { namespaceCan } from '@/lib/namespaceScope';
 import { cn } from '@/lib/utils';
 import { clearToken, getRoles, getUsername, isAdmin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,7 @@ type NavItem = {
   admin?: boolean;
   operator?: boolean;
   agentCenter?: boolean;
+  configure?: boolean;
 };
 
 type NavGroup = { label?: string; items: NavItem[] };
@@ -60,16 +62,17 @@ const navigation: NavGroup[] = [
       { to: '/agent-center/agents', label: 'Agents', icon: Bot, agentCenter: true },
       { to: '/agent-center/teams', label: 'Teams', icon: UsersRound, agentCenter: true },
       { to: '/agent-center/workflows', label: 'Workflows', icon: Network, agentCenter: true },
-      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network, agentCenter: true, admin: true },
+      { to: '/agent-center/entrypoints', label: 'Channels', icon: Network, agentCenter: true, configure: true },
     ],
   },
   {
     label: 'Resources',
     items: [
-      { to: '/agent-center/workspaces', label: 'Workspaces', icon: FileStack, agentCenter: true },
-      { to: '/agent-center/environments', label: 'Environments', icon: Settings2, agentCenter: true },
-      { to: '/agent-center/memory', label: 'Memory', icon: Database, agentCenter: true },
-      { to: '/agent-center/vaults', label: 'Vault', icon: ShieldCheck, agentCenter: true },
+      { to: '/agent-center/workspaces', configure: true, label: 'Workspaces', icon: FileStack, agentCenter: true },
+      { to: '/agent-center/environments', configure: true, label: 'Environments', icon: Settings2, agentCenter: true },
+      { to: '/agent-center/memory', configure: true, label: 'Memory', icon: Database, agentCenter: true },
+      { to: '/agent-center/vaults', configure: true, label: 'Vault', icon: ShieldCheck, agentCenter: true },
+      { to: '/work/permissions', label: 'Permissions', icon: ShieldCheck },
     ],
   },
 ];
@@ -132,41 +135,17 @@ function SidebarLink({ item, attention }: { item: NavItem; attention?: ApprovalA
 }
 
 function ScopeSelector({ title }: { title?: string }) {
-  const { tenant, namespace, selectorVisible, setScope } = useControlPlaneScope();
-  const [draftTenant, setDraftTenant] = useState(tenant);
-  const [draftNamespace, setDraftNamespace] = useState(namespace);
-
-  useEffect(() => setDraftTenant(tenant), [tenant]);
-  useEffect(() => setDraftNamespace(namespace), [namespace]);
-
+  const { tenant, namespace, namespaces, selectorVisible, setScope } = useControlPlaneScope();
   if (!selectorVisible) return null;
-  return (
-    <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-3">
-      {title && <div className="col-span-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{title}</div>}
-      <label className="grid gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Tenant
-        <input
-          aria-label="Tenant"
-          className="h-8 min-w-0 rounded-md border border-border bg-muted px-2 text-xs normal-case tracking-normal text-foreground"
-          value={draftTenant}
-          onChange={(event) => setDraftTenant(event.target.value)}
-          onBlur={() => setScope(draftTenant, draftNamespace)}
-          onKeyDown={(event) => { if (event.key === 'Enter') setScope(draftTenant, draftNamespace); }}
-        />
-      </label>
-      <label className="grid gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Namespace
-        <input
-          aria-label="Namespace"
-          className="h-8 min-w-0 rounded-md border border-border bg-muted px-2 text-xs normal-case tracking-normal text-foreground"
-          value={draftNamespace}
-          onChange={(event) => setDraftNamespace(event.target.value)}
-          onBlur={() => setScope(draftTenant, draftNamespace)}
-          onKeyDown={(event) => { if (event.key === 'Enter') setScope(draftTenant, draftNamespace); }}
-        />
-      </label>
-    </div>
-  );
+  return <div className="border-b border-border px-3 py-3">
+    {title && <div className="mb-2 text-xs text-muted-foreground">{title}</div>}
+    <label className="grid gap-1 text-xs text-muted-foreground">Namespace
+      <select aria-label="Namespace" className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground" value={`${tenant}/${namespace}`} onChange={e => {
+        const next = namespaces.find(n => `${n.tenant}/${n.name}` === e.target.value);
+        if (next) setScope(next.tenant, next.name);
+      }}>{namespaces.map(n => <option key={`${n.tenant}/${n.name}`} value={`${n.tenant}/${n.name}`}>{n.displayName}{n.kind === 'personal' ? ' (personal)' : ''}</option>)}</select>
+    </label>
+  </div>;
 }
 
 export default function AppShell() {
@@ -184,11 +163,11 @@ export default function AppShell() {
   });
   const summary = inboxSummary.data?.summary;
   const approvalAttention = summary ? { total: summary.attentionTotal, unread: summary.unread, pending: summary.pendingApprovals } : undefined;
-  const canAgentCenter = admin || roles.includes('agent_developer') || roles.includes('operator');
+  const canAgentCenter = scope.roles.length > 0 || admin || roles.includes('agent_developer') || roles.includes('operator');
   const visibleNavigation = navigation.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.agentCenter || canAgentCenter)),
+      (!item.configure || namespaceCan(scope.roles, 'configure')) && (!item.admin || admin) && (!item.operator || admin || roles.includes('operator')) && (!item.agentCenter || canAgentCenter)),
   })).filter((group) => group.items.length > 0);
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

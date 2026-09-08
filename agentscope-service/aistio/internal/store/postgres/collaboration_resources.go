@@ -780,8 +780,8 @@ func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.Appr
 	rows, err := r.pool.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE
 		($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR approver_ref=$3)
 		AND ($4='' OR target_type=$4) AND ($5='' OR target_ref=$5) AND ($6='' OR status=$6)
-		ORDER BY created_at DESC,id LIMIT $7 OFFSET $8`, filter.Tenant, filter.Namespace,
-		filter.ApproverRef, filter.TargetType, filter.TargetRef, filter.Status, limit, maxInt(filter.Offset, 0))
+		AND (NOT $9 OR target_work_access_allowed(target_type,target_ref,$10::text[])) ORDER BY created_at DESC,id LIMIT $7 OFFSET $8`, filter.Tenant, filter.Namespace,
+		filter.ApproverRef, filter.TargetType, filter.TargetRef, filter.Status, limit, maxInt(filter.Offset, 0), store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}

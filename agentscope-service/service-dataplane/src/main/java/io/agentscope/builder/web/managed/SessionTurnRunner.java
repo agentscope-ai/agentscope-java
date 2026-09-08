@@ -500,7 +500,12 @@ public class SessionTurnRunner {
         }
 
         RuntimeContext.Builder rcBuilder =
-                RuntimeContext.builder().userId(session.ownerId()).sessionId(session.id());
+                RuntimeContext.builder()
+                        .userId(session.ownerId())
+                        .sessionId(session.id())
+                        .put(
+                                ManagedSessionIdentity.class,
+                                new ManagedSessionIdentity(session.id()));
         if (executionScope != null) {
             rcBuilder.put(
                     ManagedTurnContext.class,
@@ -578,6 +583,7 @@ public class SessionTurnRunner {
             activeTurns.remove(session.id(), subscription);
             activeAgents.remove(session.id(), agent);
             activeTurnDone.remove(session.id(), done);
+            persistRemainingThinking(session.id(), previewIds, executionScope);
             previewIdsBySession.remove(session.id(), previewIds);
             startedPreviewTypes.remove(session.id(), startedPreviews);
             subscription.dispose();
@@ -635,6 +641,7 @@ public class SessionTurnRunner {
             activeTurns.remove(session.id(), subscription);
             activeAgents.remove(session.id(), agent);
             activeTurnDone.remove(session.id(), done);
+            persistRemainingThinking(session.id(), previewIds, executionScope);
             previewIdsBySession.remove(session.id(), previewIds);
             startedPreviewTypes.remove(session.id(), startedPreviews);
             // Keep work-queue lease for suspended turns so workers can finish pending tools.
@@ -650,15 +657,22 @@ public class SessionTurnRunner {
             String code,
             ManagedExecutionScope executionScope,
             String handsOwnerId) {
+        var mcpFailure =
+                error instanceof io.agentscope.harness.agent.tools.McpConnectionException
+                        ? (io.agentscope.harness.agent.tools.McpConnectionException) error
+                        : null;
+        if (mcpFailure != null) code = "mcp_connection_failed_error";
         ApiErrorDetail detail =
                 ApiErrorDetail.of(
                                 ApiErrorType.API,
                                 code,
                                 error.getMessage() != null ? error.getMessage() : code)
                         .withSessionId(session.id())
-                        .withRetryStatus("not_retrying");
+                        .withRetryStatus(mcpFailure == null ? "not_retrying" : "next_turn");
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("error", detail.toMap());
+        Map<String, Object> errorDetails = detail.toMap();
+        if (mcpFailure != null) errorDetails.put("mcp_server_name", mcpFailure.getServerName());
+        payload.put("error", errorDetails);
         appendTurnEvent(
                 session.id(), SessionEventTypes.SESSION_ERROR, payload, null, executionScope);
         Map<String, Object> stopReason = new LinkedHashMap<>();
@@ -666,7 +680,9 @@ public class SessionTurnRunner {
         sessionService.updateStatus(
                 session.ownerId(),
                 session.id(),
-                DataSessionService.STATUS_TERMINATED,
+                mcpFailure == null
+                        ? DataSessionService.STATUS_TERMINATED
+                        : DataSessionService.STATUS_IDLE,
                 stopReason,
                 executionScope);
         handsLeaseService.release(session.id(), handsOwnerId);
@@ -677,6 +693,19 @@ public class SessionTurnRunner {
      */
     private boolean handleAgentEvent(
             String sessionId, AgentEvent event, ManagedExecutionScope executionScope) {
+        SessionEventMapper.PreviewIds ids =
+                previewIdsBySession.computeIfAbsent(
+                        sessionId, ignored -> new SessionEventMapper.PreviewIds());
+        SessionEventMapper.MappingResult mapped = eventMapper.map(event, ids);
+        mapped.preceding()
+                .forEach(
+                        persisted ->
+                                appendTurnEvent(
+                                        sessionId,
+                                        persisted.type(),
+                                        persisted.payload(),
+                                        persisted.eventId(),
+                                        executionScope));
         if (event instanceof AgentResultEvent result
                 && result.getResult() != null
                 && result.getResult().getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
@@ -684,10 +713,6 @@ public class SessionTurnRunner {
             return true;
         }
 
-        SessionEventMapper.PreviewIds ids =
-                previewIdsBySession.computeIfAbsent(
-                        sessionId, ignored -> new SessionEventMapper.PreviewIds());
-        SessionEventMapper.MappingResult mapped = eventMapper.map(event, ids);
         mapped.preview()
                 .ifPresent(
                         frame -> {
@@ -717,6 +742,23 @@ public class SessionTurnRunner {
                                         persisted.eventId(),
                                         executionScope));
         return false;
+    }
+
+    private void persistRemainingThinking(
+            String sessionId, SessionEventMapper.PreviewIds ids, ManagedExecutionScope scope) {
+        try {
+            ids.consumeThinking()
+                    .ifPresent(
+                            event ->
+                                    appendTurnEvent(
+                                            sessionId,
+                                            event.type(),
+                                            event.payload(),
+                                            event.eventId(),
+                                            scope));
+        } catch (RuntimeException error) {
+            log.warn("Could not persist remaining thinking for session {}", sessionId, error);
+        }
     }
 
     static boolean isCorePermissionAsking(AgentEvent event) {

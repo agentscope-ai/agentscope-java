@@ -36,6 +36,12 @@ func (r *collaborationRepo) CreateIssue(_ context.Context, issue *controlmodel.I
 	}
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if issue.Access.Mode == "" {
+		issue.Access.Mode = "private"
+	}
+	if err := issue.Access.Validate(); err != nil {
+		return nil, err
+	}
 	if issue.Tenant == "" {
 		issue.Tenant = "default"
 	}
@@ -153,11 +159,14 @@ func (r *collaborationRepo) GetIssue(_ context.Context, id uuid.UUID) (*controlm
 	return cloneIssue(issue), nil
 }
 
-func (r *collaborationRepo) ListIssues(_ context.Context, filter store.IssueFilter) ([]*controlmodel.Issue, error) {
+func (r *collaborationRepo) ListIssues(ctx context.Context, filter store.IssueFilter) ([]*controlmodel.Issue, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.Issue, 0)
 	for _, issue := range r.s.issues {
+		if !r.s.canReadIssueLocked(ctx, issue.ID) {
+			continue
+		}
 		if (issue.ArchivedAt != nil) != filter.Archived {
 			continue
 		}
@@ -213,11 +222,12 @@ func (r *collaborationRepo) UpdateIssue(_ context.Context, issue *controlmodel.I
 	}
 	next := cloneIssue(issue)
 	next.Tenant, next.Namespace, next.CreatedAt = current.Tenant, current.Namespace, current.CreatedAt
+	next.Creator, next.ParentIssueID = current.Creator, current.ParentIssueID
 	next.Version = current.Version + 1
 	next.UpdatedAt = time.Now().UTC()
 	r.s.issues[next.ID] = next
 	r.appendActivityLocked(&controlmodel.Activity{Tenant: next.Tenant, Namespace: next.Namespace,
-		IssueID: &next.ID, Actor: actor, Action: "issue.updated", ObjectType: "issue", ObjectRef: next.ID.String()})
+		IssueID: &next.ID, Actor: actor, Action: "issue.updated", ObjectType: "issue", ObjectRef: next.ID.String(), Details: mustMarshalIssueAccess(next.Access)})
 	r.enqueueEventLocked(next.Tenant, "issue", next.ID, "issue.updated.v1", next,
 		fmt.Sprintf("issue-updated:%s:%d", next.ID, next.Version))
 	return cloneIssue(next), nil
@@ -681,11 +691,14 @@ func memoryIssuePriority(priority string) int32 {
 	}
 }
 
-func (r *collaborationRepo) ListAgentTasks(_ context.Context, filter store.AgentTaskFilter) ([]*controlmodel.AgentTask, error) {
+func (r *collaborationRepo) ListAgentTasks(ctx context.Context, filter store.AgentTaskFilter) ([]*controlmodel.AgentTask, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.AgentTask, 0)
 	for _, task := range r.s.agentTasks {
+		if !r.s.canReadIssueLocked(ctx, task.IssueID) {
+			continue
+		}
 		if filter.Tenant != "" && task.Tenant != filter.Tenant || filter.Namespace != "" && task.Namespace != filter.Namespace || filter.IssueID != uuid.Nil && task.IssueID != filter.IssueID || filter.RunID != uuid.Nil && task.OrchestrationRunID != filter.RunID || filter.NodeID != uuid.Nil && task.RunNodeID != filter.NodeID || filter.AgentRef != "" && task.AgentRef != filter.AgentRef || filter.TeamID != uuid.Nil && (task.TeamID == nil || *task.TeamID != filter.TeamID) || filter.Status != "" && task.Status != filter.Status {
 			continue
 		}
@@ -1876,11 +1889,14 @@ func (r *collaborationRepo) GetApproval(_ context.Context, id uuid.UUID) (*contr
 	return cloneApproval(approval), nil
 }
 
-func (r *collaborationRepo) ListApprovals(_ context.Context, filter store.ApprovalFilter) ([]*controlmodel.Approval, error) {
+func (r *collaborationRepo) ListApprovals(ctx context.Context, filter store.ApprovalFilter) ([]*controlmodel.Approval, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.Approval, 0)
 	for _, approval := range r.s.approvals {
+		if !r.s.canReadTargetLocked(ctx, approval.TargetType, approval.TargetRef) {
+			continue
+		}
 		if filter.Tenant != "" && approval.Tenant != filter.Tenant || filter.Namespace != "" && approval.Namespace != filter.Namespace || filter.ApproverRef != "" && approval.ApproverRef != filter.ApproverRef || filter.TargetType != "" && approval.TargetType != filter.TargetType || filter.TargetRef != "" && approval.TargetRef != filter.TargetRef || filter.Status != "" && approval.Status != filter.Status {
 			continue
 		}
@@ -2274,6 +2290,10 @@ func cloneIssue(in *controlmodel.Issue) *controlmodel.Issue {
 		return nil
 	}
 	out := *in
+	out.Access.Members = make(map[string]string, len(in.Access.Members))
+	for k, v := range in.Access.Members {
+		out.Access.Members[k] = v
+	}
 	out.AcceptanceCriteria, out.ContextRefs = cloneJSON(in.AcceptanceCriteria), cloneJSON(in.ContextRefs)
 	return &out
 }
@@ -2400,4 +2420,9 @@ func page[T any](in []T, offset, limit int) []T {
 		in = in[:limit]
 	}
 	return in
+}
+
+func mustMarshalIssueAccess(access controlmodel.IssueAccess) json.RawMessage {
+	data, _ := json.Marshal(map[string]any{"access": access})
+	return data
 }

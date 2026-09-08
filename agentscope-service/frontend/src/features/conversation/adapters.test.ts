@@ -90,3 +90,31 @@ describe('conversation adapters', () => {
     expect(resultText({ status: 'running' })).toBe('');
   });
 });
+
+it('keeps thinking before tools and pairs model spans without inventing reasoning', () => {
+  const messages = runtimeEventsToMessages([
+    { seq: 1, eventType: 'span.model_request_start', occurredAt: '2026-09-08T00:00:00Z' },
+    { seq: 2, eventType: 'agent.thinking', role: 'assistant', content: 'Check the source first.' },
+    { seq: 3, eventType: 'span.model_request_end', occurredAt: '2026-09-08T00:00:03.500Z' },
+    { seq: 4, eventType: 'agent.tool_use', toolName: 'read_file', frameworkMeta: { toolCallId: 'one' } },
+    { seq: 5, eventType: 'agent.tool_result', toolOutput: '', frameworkMeta: { toolCallId: 'one', state: 'SUCCESS' } },
+    { seq: 6, eventType: 'agent.message', role: 'assistant', content: 'Done' },
+  ]);
+  expect(messages.map(m => m.blocks[0].kind)).toEqual(['model', 'thinking', 'tool', 'text']);
+  expect(messages[0].blocks[0]).toMatchObject({ toolState: 'complete', durationMs: 3500, resultSeq: 3 });
+  expect(messages[0].blocks[0].text).toBeUndefined();
+  expect(messages[1].blocks[0].text).toBe('Check the source first.');
+  expect(messages[2].blocks[0]).toMatchObject({ result: '', toolState: 'success' });
+});
+
+it('does not pair reused call IDs across attempts or claim missing results are running', () => {
+  const messages = runtimeEventsToMessages([
+    { seq: 1, eventType: 'agent.tool_use', toolName: 'shell', frameworkMeta: { toolCallId: 'same', attemptId: 'a' } },
+    { seq: 2, eventType: 'agent.tool_result', toolName: 'shell', toolOutput: 'new result', frameworkMeta: { toolCallId: 'same', attemptId: 'b' } },
+    { seq: 3, eventType: 'session.status_idle' },
+  ]);
+  expect(messages).toHaveLength(2);
+  expect(messages[0].blocks[0]).toMatchObject({ toolState: 'unavailable' });
+  expect(messages[0].blocks[0].result).toBeUndefined();
+  expect(messages[1].blocks[0].result).toBe('new result');
+});

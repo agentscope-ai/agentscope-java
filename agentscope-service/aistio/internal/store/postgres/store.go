@@ -17,7 +17,9 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"hash/fnv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -150,6 +152,19 @@ func (s *Store) Close() error {
 // sessionKey, then runs fn. The lock is held on a dedicated pool connection
 // for the duration of fn so it is visible to other aistiod replicas.
 func (s *Store) WithSessionLock(ctx context.Context, sessionKey string, fn func(context.Context) error) error {
+	// Workflow reconciliation makes repository calls and can await nested Runs.
+	// Keep its advisory lock off the query pool to avoid pool-exhaustion deadlocks.
+	if strings.HasPrefix(sessionKey, "workflow-") && fn != nil {
+		conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
+		if err != nil {
+			return err
+		}
+		defer conn.Close(context.Background())
+		if _, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", advisorySessionKey(sessionKey)); err != nil {
+			return err
+		}
+		return fn(ctx)
+	}
 	if fn == nil {
 		return nil
 	}

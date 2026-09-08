@@ -1,0 +1,301 @@
+{
+  "definition": {
+    "id": "9598aa59-178b-4527-bc33-5286570c76cb",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-join-any",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "edges": [
+        {
+          "to": "merge",
+          "from": "yes"
+        },
+        {
+          "to": "merge",
+          "from": "no"
+        },
+        {
+          "to": "merge",
+          "from": "also"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "yes",
+          "type": "condition"
+        },
+        {
+          "key": "no",
+          "type": "condition",
+          "condition": "false"
+        },
+        {
+          "key": "also",
+          "type": "condition"
+        },
+        {
+          "key": "merge",
+          "join": {
+            "mode": "any"
+          },
+          "type": "join"
+        }
+      ]
+    },
+    "draftVersion": 1,
+    "version": 1,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:36:56.315971+08:00",
+    "updatedAt": "2026-09-08T08:36:56.315971+08:00"
+  },
+  "revision": {
+    "id": "6549e3f6-2b4d-4d7a-b49f-f4bb4ccc8c95",
+    "definitionId": "9598aa59-178b-4527-bc33-5286570c76cb",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 1,
+    "spec": {
+      "edges": [
+        {
+          "to": "merge",
+          "from": "yes"
+        },
+        {
+          "to": "merge",
+          "from": "no"
+        },
+        {
+          "to": "merge",
+          "from": "also"
+        }
+      ],
+      "nodes": [
+        {
+          "key": "yes",
+          "join": {},
+          "type": "condition",
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        },
+        {
+          "key": "no",
+          "join": {},
+          "type": "condition",
+          "retry": {},
+          "timer": {},
+          "approval": {},
+          "condition": "false"
+        },
+        {
+          "key": "also",
+          "join": {},
+          "type": "condition",
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        },
+        {
+          "key": "merge",
+          "join": {
+            "mode": "any"
+          },
+          "type": "join",
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        }
+      ]
+    },
+    "checksum": "a7b413509237b4ab7535f7726fc80e47b1f6bace450e8252fc0367157624030b",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:36:56.319523+08:00"
+  },
+  "run": {
+    "id": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "1be7179d-cf92-5b64-b609-e6e66548bbd1",
+    "mode": "declared",
+    "definitionRevisionId": "6549e3f6-2b4d-4d7a-b49f-f4bb4ccc8c95",
+    "triggerType": "definition",
+    "idempotencyKey": "wf-acceptance-20260908-081653-join-any-verified",
+    "input": {},
+    "variables": {},
+    "output": {
+      "yes": {},
+      "also": {},
+      "merge": {}
+    },
+    "policySnapshot": {},
+    "state": "succeeded",
+    "version": 3,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:43:51.040395+08:00",
+    "updatedAt": "2026-09-08T08:43:51.113602+08:00",
+    "startedAt": "2026-09-08T08:43:51.069966+08:00",
+    "completedAt": "2026-09-08T08:43:51.113602+08:00"
+  },
+  "nodes": [
+    {
+      "id": "7579e7dd-006d-59a7-a637-3c6191142dc4",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "also",
+      "definitionNodeKey": "also",
+      "type": "condition",
+      "issueId": "1be7179d-cf92-5b64-b609-e6e66548bbd1",
+      "state": "succeeded",
+      "config": {
+        "key": "also",
+        "join": {},
+        "type": "condition",
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {},
+      "output": {},
+      "iteration": 1,
+      "version": 3,
+      "createdAt": "2026-09-08T08:43:51.05831+08:00",
+      "updatedAt": "2026-09-08T08:43:51.081683+08:00",
+      "startedAt": "2026-09-08T08:43:51.078983+08:00",
+      "completedAt": "2026-09-08T08:43:51.081683+08:00"
+    },
+    {
+      "id": "aef4042d-ccb8-5df7-9232-c45797fbe329",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "merge",
+      "definitionNodeKey": "merge",
+      "type": "join",
+      "issueId": "1be7179d-cf92-5b64-b609-e6e66548bbd1",
+      "state": "succeeded",
+      "config": {
+        "key": "merge",
+        "join": {
+          "mode": "any"
+        },
+        "type": "join",
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {},
+      "output": {},
+      "iteration": 1,
+      "version": 4,
+      "createdAt": "2026-09-08T08:43:51.059432+08:00",
+      "updatedAt": "2026-09-08T08:43:51.107219+08:00",
+      "startedAt": "2026-09-08T08:43:51.104236+08:00",
+      "completedAt": "2026-09-08T08:43:51.107219+08:00"
+    },
+    {
+      "id": "ce754018-4eff-5a2d-8896-69a2f5f79e09",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "no",
+      "definitionNodeKey": "no",
+      "type": "condition",
+      "issueId": "1be7179d-cf92-5b64-b609-e6e66548bbd1",
+      "state": "skipped",
+      "config": {
+        "key": "no",
+        "join": {},
+        "type": "condition",
+        "retry": {},
+        "timer": {},
+        "approval": {},
+        "condition": "false"
+      },
+      "input": {},
+      "iteration": 1,
+      "version": 2,
+      "createdAt": "2026-09-08T08:43:51.057134+08:00",
+      "updatedAt": "2026-09-08T08:43:51.083368+08:00",
+      "completedAt": "2026-09-08T08:43:51.083368+08:00"
+    },
+    {
+      "id": "84b4e300-be17-5e90-98cb-40f09f6d5130",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "yes",
+      "definitionNodeKey": "yes",
+      "type": "condition",
+      "issueId": "1be7179d-cf92-5b64-b609-e6e66548bbd1",
+      "state": "succeeded",
+      "config": {
+        "key": "yes",
+        "join": {},
+        "type": "condition",
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {},
+      "output": {},
+      "iteration": 1,
+      "version": 3,
+      "createdAt": "2026-09-08T08:43:51.05556+08:00",
+      "updatedAt": "2026-09-08T08:43:51.087152+08:00",
+      "startedAt": "2026-09-08T08:43:51.084853+08:00",
+      "completedAt": "2026-09-08T08:43:51.087152+08:00"
+    }
+  ],
+  "edges": [
+    {
+      "id": "4d717e0b-8069-5e26-90bf-8bddbc56a0e8",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "fromNodeId": "ce754018-4eff-5a2d-8896-69a2f5f79e09",
+      "toNodeId": "aef4042d-ccb8-5df7-9232-c45797fbe329",
+      "onStates": [
+        "succeeded"
+      ],
+      "ordinal": 0,
+      "createdAt": "2026-09-08T08:43:51.061262+08:00"
+    },
+    {
+      "id": "ab97052c-6ce3-5a81-bfe3-9198d1b085f8",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "fromNodeId": "7579e7dd-006d-59a7-a637-3c6191142dc4",
+      "toNodeId": "aef4042d-ccb8-5df7-9232-c45797fbe329",
+      "onStates": [
+        "succeeded"
+      ],
+      "ordinal": 0,
+      "createdAt": "2026-09-08T08:43:51.061262+08:00"
+    },
+    {
+      "id": "d4a97aae-fb0a-5123-a7ff-991fe2ea7e58",
+      "runId": "3887eaed-262c-42d7-9a2f-e2e27691ea95",
+      "tenant": "default",
+      "namespace": "default",
+      "fromNodeId": "84b4e300-be17-5e90-98cb-40f09f6d5130",
+      "toNodeId": "aef4042d-ccb8-5df7-9232-c45797fbe329",
+      "onStates": [
+        "succeeded"
+      ],
+      "ordinal": 0,
+      "createdAt": "2026-09-08T08:43:51.061262+08:00"
+    }
+  ]
+}

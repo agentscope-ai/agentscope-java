@@ -681,3 +681,24 @@ func TestStaleManagedTurnCannotFailRetryAttempt(t *testing.T) {
 		t.Fatalf("stale turn changed retry: task=%+v attempt=%+v", current, currentAttempt)
 	}
 }
+
+func TestManagedThinkingPreservesRecordedContentAndTruncation(t *testing.T) {
+	event := managedReportToSessionEvent(&managedSessionEventReport{
+		ID: "evt-thinking", Type: "agent.thinking", Seq: 2,
+		Payload: map[string]any{"text": "Recorded reasoning", "truncated": true, "originalSize": 70000},
+	})
+	if event.Content != "Recorded reasoning" || event.Role != "assistant" ||
+		!bytes.Contains(event.FrameworkMeta, []byte(`"truncated":true`)) ||
+		!bytes.Contains(event.FrameworkMeta, []byte(`"originalSize":70000`)) {
+		t.Fatalf("thinking projection lost content or truncation: %+v", event)
+	}
+}
+
+func TestManagedErrorProjectsReadableFailure(t *testing.T) {
+	event := managedReportToSessionEvent(&managedSessionEventReport{ID: "evt-error", Type: "session.error",
+		Payload: map[string]any{"error": map[string]any{"code": "tool_failed", "message": "Tool could not read the file"}},
+	})
+	if event.Content != "Tool could not read the file" || !bytes.Contains(event.FrameworkMeta, []byte(`"code":"tool_failed"`)) {
+		t.Fatalf("error detail lost: %+v", event)
+	}
+}

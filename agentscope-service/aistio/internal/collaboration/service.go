@@ -458,6 +458,7 @@ func (s *Service) listAllComments(ctx context.Context, issueID uuid.UUID) ([]*co
 }
 
 type CreateIssueRequest struct {
+	Access              controlmodel.IssueAccess
 	Tenant              string
 	Namespace           string
 	Title               string
@@ -516,7 +517,7 @@ func (s *Service) CreateIssue(ctx context.Context, req CreateIssueRequest) (*con
 		Tenant: req.Tenant, Namespace: req.Namespace, Title: strings.TrimSpace(req.Title),
 		Description: req.Description, Status: controlmodel.IssueBacklog,
 		Priority: req.Priority, Kind: req.Kind, Visibility: req.Visibility,
-		CompletionPolicy: req.CompletionPolicy, Creator: req.Creator, ParentIssueID: req.ParentIssueID,
+		Access: req.Access, CompletionPolicy: req.CompletionPolicy, Creator: req.Creator, ParentIssueID: req.ParentIssueID,
 		AssigneeType: req.AssigneeType, AssigneeRef: req.AssigneeRef,
 		ExecutionTargetType: req.ExecutionTargetType, ExecutionTargetRef: req.ExecutionTargetRef,
 		AcceptanceCriteria: req.AcceptanceCriteria, ContextRefs: req.ContextRefs,
@@ -1214,6 +1215,7 @@ type CoordinatorWorkerOutcome struct {
 }
 
 type ContextEnvelope struct {
+	Node                 *controlmodel.RunNode           `json:"node,omitempty"`
 	ReviewResults        []*controlmodel.Comment         `json:"reviewResults,omitempty"`
 	Task                 *controlmodel.AgentTask         `json:"task"`
 	Issue                *controlmodel.Issue             `json:"issue"`
@@ -1279,6 +1281,16 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 	}
 	if envelope.CurrentRequest == "" {
 		envelope.CurrentRequest = issue.Title + "\n\n" + issue.Description
+	}
+	if run.Mode == controlmodel.RunModeDeclared || run.Mode == controlmodel.RunModeSubrun {
+		node, nodeErr := s.Store.Orchestration().GetNode(ctx, task.RunNodeID)
+		if nodeErr != nil {
+			return nil, nodeErr
+		}
+		envelope.Node = node
+		if len(node.Input) > 0 && string(node.Input) != "{}" {
+			envelope.CurrentRequest += "\n\nWorkflow node input (use these values for this step):\n" + string(node.Input)
+		}
 	}
 	// Preserve the initiating instructions when a reply returns through A→B→A.
 	// These are background requests, not new inputs to execute or acknowledge.

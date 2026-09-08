@@ -390,10 +390,23 @@ func (s *Server) listOutboxDeadLetters(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
+	if a := accessFrom(c); a != nil {
+		filtered := items[:0]
+		for _, event := range items {
+			if s.canReceiveWorkEvent(c.Request.Context(), a, event) {
+				filtered = append(filtered, event)
+			}
+		}
+		items = filtered
+	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (s *Server) replayOutboxDeadLetter(c *gin.Context) {
+	if accessFrom(c) != nil {
+		c.JSON(403, ErrorResponse{Error: "dead-letter replay requires the infrastructure service identity"})
+		return
+	}
 	id, ok := parseUUIDParam(c, "eventId")
 	if !ok {
 		return

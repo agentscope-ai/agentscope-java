@@ -30,18 +30,18 @@ type collaborationRepo struct{ pool *pgxpool.Pool }
 const issueColumns = `id,tenant,namespace,identifier,title,description,status,priority,
 	kind,visibility,completion_policy,assignee_type,assignee_ref,execution_target_type,execution_target_ref,creator_type,creator_ref,parent_issue_id,
 	acceptance_criteria,context_refs,source_type,source_ref,due_at,version,
-	created_at,updated_at,resolved_at,archived_at`
+	created_at,updated_at,resolved_at,archived_at,access_policy`
 
 func scanIssue(row scannable) (*controlmodel.Issue, error) {
 	issue := &controlmodel.Issue{}
 	var identifier, description, assigneeType, assigneeRef, executionTargetType, executionTargetRef, creatorRef, sourceType, sourceRef *string
-	var acceptance, refs []byte
+	var acceptance, refs, access []byte
 	err := row.Scan(&issue.ID, &issue.Tenant, &issue.Namespace, &identifier, &issue.Title,
 		&description, &issue.Status, &issue.Priority, &issue.Kind, &issue.Visibility, &issue.CompletionPolicy,
 		&assigneeType, &assigneeRef,
 		&executionTargetType, &executionTargetRef, &issue.Creator.Type, &creatorRef, &issue.ParentIssueID, &acceptance, &refs,
 		&sourceType, &sourceRef, &issue.DueAt, &issue.Version, &issue.CreatedAt,
-		&issue.UpdatedAt, &issue.ResolvedAt, &issue.ArchivedAt)
+		&issue.UpdatedAt, &issue.ResolvedAt, &issue.ArchivedAt, &access)
 	if err != nil {
 		return nil, collaborationScanError(err)
 	}
@@ -50,6 +50,9 @@ func scanIssue(row scannable) (*controlmodel.Issue, error) {
 	issue.ExecutionTargetType, issue.ExecutionTargetRef = deref(executionTargetType), deref(executionTargetRef)
 	issue.Creator.Ref, issue.SourceType, issue.SourceRef = deref(creatorRef), deref(sourceType), deref(sourceRef)
 	issue.AcceptanceCriteria, issue.ContextRefs = acceptance, refs
+	if err := json.Unmarshal(access, &issue.Access); err != nil {
+		return nil, err
+	}
 	return issue, nil
 }
 

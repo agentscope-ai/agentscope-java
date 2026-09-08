@@ -1,0 +1,105 @@
+{
+  "definition": {
+    "id": "6fca7170-bab9-4ff1-b11a-57195b029ecc",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-cancel",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "nodes": [
+        {
+          "key": "wait",
+          "type": "signal",
+          "signalName": "never"
+        }
+      ]
+    },
+    "draftVersion": 6,
+    "version": 6,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:25:10.490048+08:00",
+    "updatedAt": "2026-09-08T08:52:18.545056+08:00"
+  },
+  "revision": {
+    "id": "631a4ff6-7fef-4d0e-80e7-13ad4388a838",
+    "definitionId": "6fca7170-bab9-4ff1-b11a-57195b029ecc",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 1,
+    "spec": {
+      "nodes": [
+        {
+          "key": "wait",
+          "join": {},
+          "type": "signal",
+          "retry": {},
+          "timer": {},
+          "approval": {},
+          "signalName": "never"
+        }
+      ]
+    },
+    "checksum": "cbe2d53f5544fbac1c8429f982b94a62df69200bbb04e09e759101d38b977f11",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:25:10.494718+08:00"
+  },
+  "run": {
+    "id": "49c80dbd-35f7-492a-84ee-7e5c48575350",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "1139df97-d073-512c-aafc-6e4ed72ea491",
+    "mode": "declared",
+    "definitionRevisionId": "631a4ff6-7fef-4d0e-80e7-13ad4388a838",
+    "triggerType": "definition",
+    "idempotencyKey": "wf-acceptance-20260908-081653-cancel",
+    "input": {},
+    "variables": {},
+    "policySnapshot": {},
+    "state": "cancelled",
+    "version": 5,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:25:10.53221+08:00",
+    "updatedAt": "2026-09-08T08:25:10.608181+08:00",
+    "startedAt": "2026-09-08T08:25:10.56694+08:00",
+    "completedAt": "2026-09-08T08:25:10.608181+08:00"
+  },
+  "nodes": [
+    {
+      "id": "3f02b4a6-71df-5828-9ee8-26d4ea873aa5",
+      "runId": "49c80dbd-35f7-492a-84ee-7e5c48575350",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "wait",
+      "definitionNodeKey": "wait",
+      "type": "signal",
+      "issueId": "1139df97-d073-512c-aafc-6e4ed72ea491",
+      "state": "cancelled",
+      "config": {
+        "key": "wait",
+        "join": {},
+        "type": "signal",
+        "retry": {},
+        "timer": {},
+        "approval": {},
+        "signalName": "never"
+      },
+      "input": {},
+      "iteration": 1,
+      "version": 3,
+      "createdAt": "2026-09-08T08:25:10.55305+08:00",
+      "updatedAt": "2026-09-08T08:25:10.605491+08:00",
+      "startedAt": "2026-09-08T08:25:10.574105+08:00",
+      "completedAt": "2026-09-08T08:25:10.605491+08:00"
+    }
+  ],
+  "edges": []
+}

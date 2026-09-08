@@ -55,10 +55,25 @@ func (s *Service) ProcessRun(ctx context.Context, run *controlmodel.AutomationRu
 		return nil, err
 	}
 	run = claimed
+	if rule := run.Snapshot; rule.CreatedBy.Type == controlmodel.ActorHuman {
+		ns, e := s.Store.Access().GetNamespace(ctx, rule.Tenant, rule.Namespace)
+		if e != nil && e != store.ErrNotFound {
+			return nil, e
+		}
+		if e == nil {
+			if !controlmodel.NamespaceAllows(ns.Roles(rule.CreatedBy.Ref), "work.write") {
+				return s.fail(ctx, run, "permission_revoked", fmt.Errorf("automation creator no longer has namespace execution permission"))
+			}
+			ctx = store.WithWorkAccess(ctx, store.WorkAccess{Restricted: true, Refs: []string{rule.CreatedBy.Ref}})
+		}
+	}
 	if err = s.ValidateTarget(ctx, run.Snapshot); err != nil {
 		return s.fail(ctx, run, "target_unavailable", err)
 	}
 	if err = s.dispatch(ctx, run); err != nil {
+		if err == store.ErrNotFound {
+			return s.fail(ctx, run, "permission_revoked", fmt.Errorf("automation target is no longer accessible"))
+		}
 		// A transient store error leaves the lease recoverable. Permanent input
 		// errors are rejected before acceptance; target disappearance is terminal.
 		return nil, err
@@ -104,6 +119,9 @@ func (s *Service) dispatch(ctx context.Context, run *controlmodel.AutomationRun)
 			return err
 		}
 		issue := &controlmodel.Issue{ID: uuid.NewSHA1(run.ID, []byte("issue")), Tenant: rule.Tenant, Namespace: rule.Namespace, Title: action.Title, Description: inputDescription(action.Description, run.Input), Priority: action.Priority, Creator: actor, AssigneeType: action.AssigneeType, AssigneeRef: action.AssigneeRef, AcceptanceCriteria: action.AcceptanceCriteria, ContextRefs: action.ContextRefs, SourceType: "automation", SourceRef: run.ID.String()}
+		if rule.CreatedBy.Type == controlmodel.ActorHuman {
+			issue.Access = controlmodel.IssueAccess{Mode: "shared", Members: map[string]string{rule.CreatedBy.Ref: "contributor"}}
+		}
 		if e := rule.Execution; e != nil {
 			issue.CompletionPolicy = e.CompletionPolicy
 			if e.OutputMode == "run_only" {
@@ -147,6 +165,9 @@ func (s *Service) dispatch(ctx context.Context, run *controlmodel.AutomationRun)
 		if issue.Tenant != rule.Tenant || issue.Namespace != rule.Namespace {
 			return fmt.Errorf("comment target is outside automation scope")
 		}
+		if err = store.CheckIssueWorkAccess(ctx, s.Store.Collaboration(), issue.ID, true); err != nil {
+			return err
+		}
 		if err = s.ensureComment(ctx, run, "comment", collaboration.AddCommentRequest{IssueID: issue.ID, ParentID: action.ParentID, Author: actor, Content: inputDescription(action.Content, run.Input), Mentions: action.Mentions}); err != nil {
 			return err
 		}
@@ -167,6 +188,9 @@ func (s *Service) dispatch(ctx context.Context, run *controlmodel.AutomationRun)
 		}
 		if definition.Tenant != rule.Tenant || definition.Namespace != rule.Namespace {
 			return fmt.Errorf("workflow is outside automation scope")
+		}
+		if action.Issue != nil && rule.CreatedBy.Type == controlmodel.ActorHuman {
+			action.Issue.Access = controlmodel.IssueAccess{Mode: "shared", Members: map[string]string{rule.CreatedBy.Ref: "contributor"}}
 		}
 		started, err := (&orchestration.Service{Store: s.Store}).Start(ctx, action.DefinitionID, orchestration.StartRequest{RevisionID: action.RevisionID, IdempotencyKey: "automation:" + run.ID.String(), Input: input, IssueID: action.IssueID, Issue: action.Issue, TriggerType: "automation", TriggerRef: run.ID.String(), Actor: actor})
 		if err != nil {

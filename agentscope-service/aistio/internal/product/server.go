@@ -201,6 +201,26 @@ func (s *Server) VerifyToken(token string) (*Claims, error) {
 	return parseToken(s.cfg.JWTSecret, token)
 }
 
+// VerifyAccountToken also checks the live account, so deletion and platform-role
+// revocation take effect without waiting for a seven-day JWT to expire.
+func (s *Server) VerifyAccountToken(ctx context.Context, token string) (*Claims, error) {
+	claims, err := s.VerifyToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, fmt.Errorf("account store unavailable")
+	}
+	var username, roles string
+	err = s.db.Pool.QueryRow(ctx, `SELECT username,roles_csv FROM users WHERE user_id=$1`, claims.Subject).Scan(&username, &roles)
+	if err != nil {
+		return nil, fmt.Errorf("account unavailable")
+	}
+	claims.Username = username
+	claims.Roles = splitRoles(roles)
+	return claims, nil
+}
+
 // Close releases the database pool.
 func (s *Server) Close() {
 	if s != nil {

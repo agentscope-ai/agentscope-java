@@ -31,7 +31,8 @@ import './index.css';
 
 import AppShell from './app/AppShell';
 import { PrivateRoute } from './app/PrivateRoute';
-import { ScopeProvider } from './app/ScopeContext';
+import { ScopeProvider, useControlPlaneScope } from './app/ScopeContext';
+import { namespaceCan } from './lib/namespaceScope';
 import { getRoles } from './api/auth';
 
 const LoginPage = React.lazy(() => import('./pages/LoginPage'));
@@ -50,6 +51,7 @@ const AgentSettingsPage = React.lazy(() => import('./pages/AgentSettingsPage'));
 const AgentSkillsPage = React.lazy(() => import('./pages/AgentSkillsPage'));
 const AgentToolsPage = React.lazy(() => import('./pages/AgentToolsPage'));
 const AgentSubagentsPage = React.lazy(() => import('./pages/AgentSubagentsPage'));
+const PermissionsPage = React.lazy(() => import('./features/work/PermissionsPage'));
 const AdminUsersPage = React.lazy(() => import('./pages/AdminUsersPage'));
 const ChannelsHubPage = React.lazy(() => import('./pages/ChannelsHubPage'));
 const ChannelDetailPage = React.lazy(() => import('./pages/ChannelDetailPage'));
@@ -158,18 +160,13 @@ function DefaultWorkspaceRedirect() {
 }
 
 function WorkspaceAccess({ area }: { area: WorkspaceArea }) {
-  const roles = getRoles().map((role) => role.toLowerCase());
-  const admin = roles.includes('admin');
-  const allowed = area === 'work' || admin ||
-    area === 'agent-center' && (roles.includes('agent_developer') || roles.includes('operator'));
-  return allowed ? <Outlet /> : <DefaultWorkspaceRedirect />;
+  const scope = useControlPlaneScope();
+  return area === 'work' || scope.roles.length > 0 ? <Outlet /> : <DefaultWorkspaceRedirect />;
 }
 
 function OperatorAccess() {
-  const roles = getRoles().map((role) => role.toLowerCase());
-  return roles.includes('admin') || roles.includes('operator')
-    ? <Outlet />
-    : <Navigate to="/work/overview" replace />;
+  const scope = useControlPlaneScope();
+  return scope.roles.length > 0 ? <Outlet /> : <Navigate to="/work/overview" replace />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -294,6 +291,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/managed/workspaces/:id" element={<WorkspaceDetailPage />} />
             <Route path="/managed/profile" element={<ProfilePage />} />
             <Route path="/managed/admin/users" element={<AdminUsersPage />} />
+            <Route path="/work/permissions" element={<PermissionsPage />} />
             <Route path="/managed/environments" element={<EnvironmentsHubPage />} />
             <Route path="/managed/memory" element={<MemoryStoresPage />} />
             <Route path="/managed/vaults" element={<VaultsPage />} />

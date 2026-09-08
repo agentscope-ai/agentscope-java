@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -39,6 +40,10 @@ func (r *collaborationRepo) ListInbox(ctx context.Context, filter store.InboxFil
 		}
 		where += ` AND ` + after
 	}
+	if access := store.WorkAccessFrom(ctx); access.Restricted {
+		args = append(args, access.Refs)
+		where += fmt.Sprintf(" AND (issue_id IS NULL OR issue_access_allowed(issue_id,$%d::text[]))", len(args))
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+inboxColumns+` FROM inbox_items`+where+` ORDER BY `+order+` LIMIT $7 OFFSET $8`, args...)
 	if err != nil {
 		return nil, err
@@ -63,7 +68,7 @@ func (r *collaborationRepo) InboxSummary(ctx context.Context, filter store.Inbox
 	rows, err := r.pool.Query(ctx, `SELECT type,count(*),count(*) FILTER (WHERE NOT read),
 	count(*) FILTER (WHERE needs_action),count(*) FILTER (WHERE needs_action AND approval_id IS NOT NULL),
 	count(*) FILTER (WHERE NOT read OR needs_action) FROM inbox_items
-	WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND recipient_ref=$3 AND NOT archived GROUP BY type`, filter.Tenant, filter.Namespace, filter.RecipientRef)
+	WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND recipient_ref=$3 AND NOT archived AND (NOT $4 OR issue_id IS NULL OR issue_access_allowed(issue_id,$5::text[])) GROUP BY type`, filter.Tenant, filter.Namespace, filter.RecipientRef, store.WorkAccessFrom(ctx).Restricted, store.WorkAccessFrom(ctx).Refs)
 	if err != nil {
 		return nil, err
 	}

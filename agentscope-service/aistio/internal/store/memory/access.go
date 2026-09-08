@@ -1,0 +1,135 @@
+// Copyright 2024-2026 the original author or authors.
+// Licensed under the Apache License, Version 2.0.
+
+package memory
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/google/uuid"
+	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
+	"slices"
+	"sort"
+)
+
+type accessRepo struct{ s *Store }
+
+func (s *Store) canReadTargetLocked(ctx context.Context, kind, ref string) bool {
+	if !store.WorkAccessFrom(ctx).Restricted {
+		return true
+	}
+	id, err := uuid.Parse(ref)
+	if err != nil {
+		return false
+	}
+	switch kind {
+	case "issue":
+		return s.canReadIssueLocked(ctx, id)
+	case "agent-task", "agent_task":
+		t := s.agentTasks[id]
+		return t != nil && s.canReadIssueLocked(ctx, t.IssueID)
+	case "execution-attempt", "execution_attempt":
+		e := s.executions[id]
+		if e == nil {
+			return false
+		}
+		t := s.agentTasks[e.AgentTaskID]
+		return t != nil && s.canReadIssueLocked(ctx, t.IssueID)
+	case "run-node", "run_node":
+		n := s.runNodes[id]
+		if n == nil {
+			return false
+		}
+		r := s.runs[n.RunID]
+		return r != nil && s.canReadIssueLocked(ctx, r.RootIssueID)
+	}
+	return false
+}
+
+func (s *Store) canReadSessionLocked(ctx context.Context, session *store.Session) bool {
+	access := store.WorkAccessFrom(ctx)
+	if !access.Restricted {
+		return true
+	}
+	if session.AgentTaskID != nil {
+		task := s.agentTasks[*session.AgentTaskID]
+		return task != nil && s.canReadIssueLocked(ctx, task.IssueID)
+	}
+	for _, chat := range s.chats {
+		if chat.SessionID == session.ID && slices.Contains(access.Refs, chat.CreatorRef) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) canReadIssueLocked(ctx context.Context, id uuid.UUID) bool {
+	access := store.WorkAccessFrom(ctx)
+	if !access.Restricted {
+		return true
+	}
+	seen := map[uuid.UUID]bool{}
+	for !seen[id] {
+		seen[id] = true
+		issue := s.issues[id]
+		if issue == nil {
+			return false
+		}
+		if issue.ParentIssueID == nil {
+			return issue.Access.Allows(issue.Creator, access.Refs, false)
+		}
+		id = *issue.ParentIssueID
+	}
+	return false
+}
+func cloneNamespace(n *controlmodel.Namespace) *controlmodel.Namespace {
+	data, _ := json.Marshal(n)
+	var copy controlmodel.Namespace
+	_ = json.Unmarshal(data, &copy)
+	return &copy
+}
+func (s *Store) Access() store.AccessRepository { return &accessRepo{s: s} }
+func (r *accessRepo) GetNamespace(_ context.Context, tenant, name string) (*controlmodel.Namespace, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	n := r.s.accessNamespaces[tenant+"/"+name]
+	if n == nil {
+		return nil, store.ErrNotFound
+	}
+	return cloneNamespace(n), nil
+}
+func (r *accessRepo) ListNamespaces(_ context.Context, tenant, user string, limit, offset int) ([]*controlmodel.Namespace, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	out := []*controlmodel.Namespace{}
+	for _, n := range r.s.accessNamespaces {
+		if n.Tenant == tenant && (user == "" || len(n.Roles(user)) > 0) {
+			out = append(out, cloneNamespace(n))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return page(out, offset, limit), nil
+}
+func (r *accessRepo) PutNamespace(_ context.Context, n *controlmodel.Namespace, version int64, actor string) (*controlmodel.Namespace, error) {
+	if err := n.Validate(); err != nil {
+		return nil, err
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	if r.s.accessNamespaces == nil {
+		r.s.accessNamespaces = map[string]*controlmodel.Namespace{}
+	}
+	key := n.Tenant + "/" + n.Name
+	old := r.s.accessNamespaces[key]
+	if old == nil && version != 0 || old != nil && old.Version != version {
+		return nil, store.ErrConflict
+	}
+	if old != nil && (old.Owner != n.Owner || old.Kind != n.Kind) {
+		return nil, store.ErrConflict
+	}
+	copy := cloneNamespace(n)
+	copy.Version = version + 1
+	r.s.accessNamespaces[key] = copy
+	return cloneNamespace(copy), nil
+}

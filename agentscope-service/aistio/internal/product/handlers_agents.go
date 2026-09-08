@@ -158,7 +158,7 @@ const agentSelect = `SELECT owner_id, agent_id, workspace_path, workspace_id, na
 	head_version, archived_at, created_at, updated_at FROM agents`
 
 func (s *Server) listAgents(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -198,7 +198,7 @@ func (s *Server) createAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := req.ID
 	if agentID == "" {
 		agentID = shortID("ag_")
@@ -285,11 +285,19 @@ func (s *Server) createAgent(c *gin.Context) {
 		return
 	}
 
-	snap := s.agentSnapshot(owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
+	snap, err := s.agentSnapshot(c.Request.Context(), owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
 		toolsAny, mcpAny, skillsAny, req.Multiagent, ws, wsID, defEnv, defVault, defMem, 1, now, now)
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+		return
+	}
+	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,1,$3,$4)`,
 		owner, agentID, mustJSON(snap), now)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot publish agent version")
+		return
+	}
 
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -306,25 +314,46 @@ func nullStr(s string) any {
 	return s
 }
 
-func (s *Server) agentSnapshot(owner, id, name, desc, system, model string, maxIters int,
+func (s *Server) agentSnapshot(ctx context.Context, owner, id, name, desc, system, model string, maxIters int,
 	tools, mcp, skills, multi any, ws, workspaceID, defaultEnv string, defaultVault, defaultMem []string,
-	version int, created, updated int64) gin.H {
+	version int, created, updated int64) (gin.H, error) {
+	if err := validateManagedTools(tools, mcp); err != nil {
+		return nil, err
+	}
 	if defaultVault == nil {
 		defaultVault = []string{}
 	}
 	if defaultMem == nil {
 		defaultMem = []string{}
 	}
+	scopeType, scopeID := scopeTypeAgent, id
+	if workspaceID != "" {
+		scopeType, scopeID = scopeTypeWorkspace, workspaceID
+	}
+	files, err := s.listWorkspaceFileContents(ctx, owner, scopeType, scopeID, "")
+	if err != nil {
+		return nil, err
+	}
+	workspaceVersion := 0
+	if workspaceID != "" {
+		workspace, err := s.loadWorkspace(ctx, owner, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		workspaceVersion = workspace.HeadVersion
+	}
 	return gin.H{
 		"id": id, "name": name, "description": desc, "system": system, "model": model,
 		"maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills,
 		"multiagent": multi, "scope": "user", "ownerId": owner, "workspacePath": ws,
+		"definitionFiles":       files,
+		"workspaceVersion":      workspaceVersion,
 		"workspaceId":           nullStr(workspaceID),
 		"defaultEnvironmentId":  nullStr(defaultEnv),
 		"defaultVaultIds":       defaultVault,
 		"defaultMemoryStoreIds": defaultMem,
 		"version":               version, "createdAt": created, "updatedAt": updated,
-	}
+	}, nil
 }
 
 func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow, error) {
@@ -333,7 +362,7 @@ func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow
 }
 
 func (s *Server) getAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	a, err := s.loadAgent(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -348,7 +377,7 @@ func (s *Server) updateAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "name required")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -470,11 +499,19 @@ func (s *Server) updateAgent(c *gin.Context) {
 		writeTextErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	snap := s.agentSnapshot(owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
+	snap, err := s.agentSnapshot(c.Request.Context(), owner, agentID, req.Name, req.Description, sysPrompt, req.Model, maxIters,
 		toolsAny, mcpAny, skillsAny, req.Multiagent, ws, wsID, defEnv, defVault, defMem, newVer, a.CreatedAt, now)
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot snapshot workspace files")
+		return
+	}
+	_, err = s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,$3,$4,$5)`,
 		owner, agentID, newVer, mustJSON(snap), now)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "Cannot publish agent version")
+		return
+	}
 
 	out, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -485,7 +522,7 @@ func (s *Server) updateAgent(c *gin.Context) {
 }
 
 func (s *Server) deleteAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM agents WHERE owner_id=$1 AND agent_id=$2`, owner, c.Param("id"))
 	if err != nil {
@@ -502,7 +539,7 @@ func (s *Server) deleteAgent(c *gin.Context) {
 }
 
 func (s *Server) archiveAgent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE agents SET archived_at=$1, updated_at=$1 WHERE owner_id=$2 AND agent_id=$3 AND archived_at IS NULL`,
@@ -520,7 +557,7 @@ func (s *Server) archiveAgent(c *gin.Context) {
 }
 
 func (s *Server) listAgentVersions(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		`SELECT version, snapshot_json, created_at FROM agent_versions
 		 WHERE owner_id=$1 AND agent_id=$2 ORDER BY version DESC`, owner, c.Param("id"))
@@ -546,7 +583,7 @@ func (s *Server) listAgentVersions(c *gin.Context) {
 }
 
 func (s *Server) getAgentVersion(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ver, err := strconv.Atoi(c.Param("version"))
 	if err != nil {
 		writeErr(c, http.StatusBadRequest, "invalid version")

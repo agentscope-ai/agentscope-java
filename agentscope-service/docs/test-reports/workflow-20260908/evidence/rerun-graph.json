@@ -1,0 +1,121 @@
+{
+  "definition": {
+    "id": "546a8ba5-ea4f-4a24-90a0-cd14c395486e",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-child",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "nodes": [
+        {
+          "key": "finish",
+          "type": "condition",
+          "input": {
+            "value": "43"
+          }
+        }
+      ]
+    },
+    "draftVersion": 2,
+    "version": 2,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:16:53.922815+08:00",
+    "updatedAt": "2026-09-08T08:40:16.635553+08:00"
+  },
+  "revision": {
+    "id": "5670dc71-98b2-4e5d-8d20-7bbf223b77c5",
+    "definitionId": "546a8ba5-ea4f-4a24-90a0-cd14c395486e",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 2,
+    "spec": {
+      "nodes": [
+        {
+          "key": "finish",
+          "join": {},
+          "type": "condition",
+          "input": {
+            "value": "43"
+          },
+          "retry": {},
+          "timer": {},
+          "approval": {}
+        }
+      ]
+    },
+    "checksum": "b6c339823e4b6bfa2b4a5817cf979d97438e1d9ba8253e5e0944233fc2187d53",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:40:31.865073+08:00"
+  },
+  "run": {
+    "id": "c0d6b981-e49f-4e9f-b962-4c90c074c905",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "9767e21e-729b-58c4-8d33-90f90c8582f6",
+    "mode": "declared",
+    "definitionRevisionId": "5670dc71-98b2-4e5d-8d20-7bbf223b77c5",
+    "rerunOfRunId": "368fed9e-d41d-41e1-9e14-6fc472f4728b",
+    "triggerType": "rerun",
+    "triggerRef": "368fed9e-d41d-41e1-9e14-6fc472f4728b",
+    "idempotencyKey": "wf-acceptance-20260908-081653-rerun-version2",
+    "input": {},
+    "variables": {},
+    "output": {
+      "value": 43
+    },
+    "policySnapshot": {},
+    "state": "succeeded",
+    "version": 3,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:54:58.399653+08:00",
+    "updatedAt": "2026-09-08T08:54:58.455799+08:00",
+    "startedAt": "2026-09-08T08:54:58.439868+08:00",
+    "completedAt": "2026-09-08T08:54:58.455799+08:00"
+  },
+  "nodes": [
+    {
+      "id": "e715ceba-7a63-5754-8335-4d1652cce35f",
+      "runId": "c0d6b981-e49f-4e9f-b962-4c90c074c905",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "finish",
+      "definitionNodeKey": "finish",
+      "type": "condition",
+      "issueId": "9767e21e-729b-58c4-8d33-90f90c8582f6",
+      "state": "succeeded",
+      "config": {
+        "key": "finish",
+        "join": {},
+        "type": "condition",
+        "input": {
+          "value": "43"
+        },
+        "retry": {},
+        "timer": {},
+        "approval": {}
+      },
+      "input": {
+        "value": 43
+      },
+      "output": {
+        "value": 43
+      },
+      "iteration": 1,
+      "version": 4,
+      "createdAt": "2026-09-08T08:54:58.42129+08:00",
+      "updatedAt": "2026-09-08T08:54:58.452298+08:00",
+      "startedAt": "2026-09-08T08:54:58.450238+08:00",
+      "completedAt": "2026-09-08T08:54:58.452298+08:00"
+    }
+  ],
+  "edges": []
+}

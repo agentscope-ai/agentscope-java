@@ -135,6 +135,11 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 		event.Role = "system"
 	}
 	event.Content = firstPayloadString(payload, "text", "message")
+	if event.Content == "" {
+		if detail, ok := payload["error"].(map[string]any); ok {
+			event.Content = firstPayloadString(detail, "message", "code")
+		}
+	}
 	event.ToolName = firstPayloadString(payload, "toolName", "name")
 	event.ToolOutput = firstPayloadString(payload, "output")
 	if input, ok := payload["input"]; ok && input != nil {
@@ -151,7 +156,7 @@ func managedReportToSessionEvent(report *managedSessionEventReport) *store.Sessi
 			metadata[key] = value
 		}
 	}
-	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state", "endpointInvocationId", "endpointTurnId"} {
+	for _, key := range []string{"approvalId", "decisionVersion", "source", "status", "state", "endpointInvocationId", "endpointTurnId", "truncated", "originalSize", "usage", "error"} {
 		if value, ok := payload[key]; ok && value != nil {
 			metadata[key] = value
 		}

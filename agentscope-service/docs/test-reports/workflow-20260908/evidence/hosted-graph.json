@@ -1,0 +1,277 @@
+{
+  "definition": {
+    "id": "335e439d-f0f8-48b1-986d-d1bdd5286386",
+    "tenant": "default",
+    "namespace": "default",
+    "name": "wf-acceptance-20260908-081653-hosted",
+    "description": "Workflow acceptance fixture. Safe to archive after review.",
+    "draftSpec": {
+      "nodes": [
+        {
+          "key": "calculate",
+          "type": "agent",
+          "input": {
+            "a": "run.input.a",
+            "b": "run.input.b",
+            "instruction": "\"Calculate a+b from this node input. Return exactly the integer and complete the task.\""
+          },
+          "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+          "timeoutSeconds": 240
+        }
+      ]
+    },
+    "draftVersion": 1,
+    "version": 1,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:17:35.114492+08:00",
+    "updatedAt": "2026-09-08T08:17:35.114492+08:00"
+  },
+  "revision": {
+    "id": "633f9557-4190-4995-8f79-46fe8a01e41b",
+    "definitionId": "335e439d-f0f8-48b1-986d-d1bdd5286386",
+    "tenant": "default",
+    "namespace": "default",
+    "revision": 1,
+    "spec": {
+      "nodes": [
+        {
+          "key": "calculate",
+          "join": {},
+          "type": "agent",
+          "input": {
+            "a": "run.input.a",
+            "b": "run.input.b",
+            "instruction": "\"Calculate a+b from this node input. Return exactly the integer and complete the task.\""
+          },
+          "retry": {},
+          "timer": {},
+          "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+          "approval": {},
+          "timeoutSeconds": 240
+        }
+      ]
+    },
+    "checksum": "17e3167893e190a7756447b86261734f78b22b679d9149fbd6f8d04524cbf5e6",
+    "publishedBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "publishedAt": "2026-09-08T08:17:35.132482+08:00"
+  },
+  "run": {
+    "id": "35ec8755-ac0a-476a-af59-ea07b5a83664",
+    "tenant": "default",
+    "namespace": "default",
+    "rootIssueId": "17cc1979-ad37-5cf8-9714-d6d578a4aee4",
+    "mode": "declared",
+    "definitionRevisionId": "633f9557-4190-4995-8f79-46fe8a01e41b",
+    "triggerType": "definition",
+    "idempotencyKey": "wf-acceptance-20260908-081653-hosted",
+    "input": {
+      "a": 17,
+      "b": 25
+    },
+    "variables": {},
+    "output": 42,
+    "policySnapshot": {},
+    "state": "succeeded",
+    "version": 6,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T08:17:35.154078+08:00",
+    "updatedAt": "2026-09-08T08:18:06.272748+08:00",
+    "startedAt": "2026-09-08T08:17:35.177618+08:00",
+    "completedAt": "2026-09-08T08:18:06.272748+08:00"
+  },
+  "nodes": [
+    {
+      "id": "2616d763-f95b-540c-8ea3-efbcc7d4e5a5",
+      "runId": "35ec8755-ac0a-476a-af59-ea07b5a83664",
+      "tenant": "default",
+      "namespace": "default",
+      "nodeKey": "calculate",
+      "definitionNodeKey": "calculate",
+      "type": "agent",
+      "issueId": "17cc1979-ad37-5cf8-9714-d6d578a4aee4",
+      "state": "succeeded",
+      "config": {
+        "key": "calculate",
+        "join": {},
+        "type": "agent",
+        "input": {
+          "a": "run.input.a",
+          "b": "run.input.b",
+          "instruction": "\"Calculate a+b from this node input. Return exactly the integer and complete the task.\""
+        },
+        "retry": {},
+        "timer": {},
+        "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+        "approval": {},
+        "timeoutSeconds": 240
+      },
+      "input": {
+        "a": 17,
+        "b": 25,
+        "instruction": "Calculate a+b from this node input. Return exactly the integer and complete the task."
+      },
+      "output": 42,
+      "iteration": 1,
+      "version": 4,
+      "createdAt": "2026-09-08T08:17:35.168999+08:00",
+      "updatedAt": "2026-09-08T08:18:06.272748+08:00",
+      "startedAt": "2026-09-08T08:17:35.189811+08:00",
+      "completedAt": "2026-09-08T08:18:06.272748+08:00"
+    }
+  ],
+  "edges": [],
+  "tasks": [
+    {
+      "id": "304a7252-4fd4-49ae-b597-4fec8948b4e8",
+      "tenant": "default",
+      "namespace": "default",
+      "issueId": "17cc1979-ad37-5cf8-9714-d6d578a4aee4",
+      "orchestrationRunId": "35ec8755-ac0a-476a-af59-ea07b5a83664",
+      "runNodeId": "2616d763-f95b-540c-8ea3-efbcc7d4e5a5",
+      "currentAttemptId": "33f712e5-7348-4461-b4fc-fbbed9e7e60d",
+      "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+      "status": "completed",
+      "priority": 0,
+      "triggerType": "orchestration_node",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "2616d763-f95b-540c-8ea3-efbcc7d4e5a5",
+      "correlationId": "35ec8755-ac0a-476a-af59-ea07b5a83664",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+          "bindingId": "6fc4d277-eed1-5b00-9323-84b83a8ef7f6",
+          "runtimePoolId": "dbd8d2e3-c808-4286-88fe-90abd5f2fcf7",
+          "runtimeProfileId": "4186d965-daf9-4135-8cf7-e5a83804bde1"
+        },
+        "sessionId": "7478575e-2166-46a1-971a-a9cfebe92977",
+        "resolvedAt": "2026-09-08T00:17:36.189757Z",
+        "runtimePool": {
+          "id": "dbd8d2e3-c808-4286-88fe-90abd5f2fcf7",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T20:44:32.763011+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T20:44:32.763011+08:00"
+        },
+        "runtimeProfile": {
+          "id": "4186d965-daf9-4135-8cf7-e5a83804bde1",
+          "name": "auto-codex",
+          "tenant": "default",
+          "runtime": "codex",
+          "version": 1,
+          "provider": "codex",
+          "createdAt": "2026-09-07T20:44:32.770175+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T20:44:32.770175+08:00",
+          "requirements": {},
+          "configuration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "sandbox": "workspace-write"
+        }
+      },
+      "sessionId": "7478575e-2166-46a1-971a-a9cfebe92977",
+      "result": 42,
+      "version": 4,
+      "createdAt": "2026-09-08T08:17:35.183456+08:00",
+      "dispatchedAt": "2026-09-08T08:17:36.188562+08:00",
+      "startedAt": "2026-09-08T08:17:36.856463+08:00",
+      "completedAt": "2026-09-08T08:18:06.272748+08:00"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "33f712e5-7348-4461-b4fc-fbbed9e7e60d",
+      "agentTaskId": "304a7252-4fd4-49ae-b597-4fec8948b4e8",
+      "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+      "bindingId": "6fc4d277-eed1-5b00-9323-84b83a8ef7f6",
+      "runId": "35ec8755-ac0a-476a-af59-ea07b5a83664",
+      "nodeId": "2616d763-f95b-540c-8ea3-efbcc7d4e5a5",
+      "tenant": "default",
+      "namespace": "default",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "hosted-runtime",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "hosted-runtime",
+          "agentId": "0ea84483-4d5b-4919-8387-ca0a6da77d7b",
+          "bindingId": "6fc4d277-eed1-5b00-9323-84b83a8ef7f6",
+          "runtimePoolId": "dbd8d2e3-c808-4286-88fe-90abd5f2fcf7",
+          "runtimeProfileId": "4186d965-daf9-4135-8cf7-e5a83804bde1"
+        },
+        "sessionId": "7478575e-2166-46a1-971a-a9cfebe92977",
+        "resolvedAt": "2026-09-08T00:17:36.189757Z",
+        "runtimePool": {
+          "id": "dbd8d2e3-c808-4286-88fe-90abd5f2fcf7",
+          "name": "coding-default",
+          "tenant": "default",
+          "version": 1,
+          "createdAt": "2026-09-07T20:44:32.763011+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T20:44:32.763011+08:00"
+        },
+        "runtimeProfile": {
+          "id": "4186d965-daf9-4135-8cf7-e5a83804bde1",
+          "name": "auto-codex",
+          "tenant": "default",
+          "runtime": "codex",
+          "version": 1,
+          "provider": "codex",
+          "createdAt": "2026-09-07T20:44:32.770175+08:00",
+          "namespace": "default",
+          "updatedAt": "2026-09-07T20:44:32.770175+08:00",
+          "requirements": {},
+          "configuration": {
+            "sandbox": "workspace-write"
+          }
+        },
+        "selectionSource": "policy",
+        "resolvedProviderConfiguration": {
+          "sandbox": "workspace-write"
+        }
+      },
+      "runtimeProfileName": "auto-codex",
+      "runtimePoolName": "coding-default",
+      "hostId": "e202a299-903f-48fb-9fbd-0b1758aaa78a",
+      "sessionId": "7478575e-2166-46a1-971a-a9cfebe92977",
+      "turnId": "6adb7cf7-e8b1-4844-8b52-4e5cbadce338",
+      "providerSessionId": "01a07e60-a609-77d0-bf79-cd758fe38130",
+      "workspaceKey": "default/default/conversations/0ea84483-4d5b-4919-8387-ca0a6da77d7b/7478575e-2166-46a1-971a-a9cfebe92977",
+      "state": "succeeded",
+      "leaseOwner": "6ab43cf7-403f-45dd-a3b8-55ef297a9b9a/62d7f92d-a071-4023-bc71-646a743d38ea",
+      "leaseToken": "[REDACTED]",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T08:17:56.896758+08:00",
+      "checkpoint": {
+        "providerSessionId": "01a07e60-a609-77d0-bf79-cd758fe38130"
+      },
+      "result": 42,
+      "version": 8,
+      "createdAt": "2026-09-08T08:17:36.188562+08:00",
+      "updatedAt": "2026-09-08T08:18:06.272748+08:00",
+      "startedAt": "2026-09-08T08:17:36.85308+08:00",
+      "completedAt": "2026-09-08T08:18:06.272748+08:00"
+    }
+  ]
+}

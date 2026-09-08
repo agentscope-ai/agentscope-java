@@ -7,11 +7,16 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/apiClient';
 import { getToken } from '@/lib/auth';
+import { resolveAuthorizedNamespace, setRequestNamespace, type NamespaceSummary } from '@/lib/namespaceScope';
+import { useQueryClient } from '@tanstack/react-query';
 
 const TENANT_KEY = 'aistio.console.tenant';
 const NAMESPACE_KEY = 'aistio.console.namespace';
 
 type ControlPlaneScope = {
+  namespaces: NamespaceSummary[];
+  roles: string[];
+  refreshNamespaces: () => void;
   tenant: string;
   namespace: string;
   mode: 'single' | 'multi';
@@ -20,7 +25,7 @@ type ControlPlaneScope = {
   scopedPath: (path: string) => string;
 };
 
-type ScopeDescriptor = Pick<ControlPlaneScope, 'tenant' | 'namespace' | 'mode' | 'selectorVisible'>;
+type ScopeDescriptor = Pick<ControlPlaneScope, 'tenant' | 'namespace' | 'mode' | 'selectorVisible'> & { namespaces?: NamespaceSummary[] };
 type ScopeResolution = { token: string | null; descriptor: ScopeDescriptor };
 
 const ScopeContext = createContext<ControlPlaneScope | null>(null);
@@ -35,6 +40,8 @@ function stored(key: string): string {
 
 export function ScopeProvider({ children }: { children: ReactNode }) {
   const [params, setParams] = useSearchParams();
+  const qc = useQueryClient();
+  const [refresh, setRefresh] = useState(0);
   const token = getToken();
   const [resolution, setResolution] = useState<ScopeResolution | null>(() => token ? null : ({
     token: null,
@@ -56,11 +63,13 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     api.get<ScopeDescriptor>('/api/v1/me/scope').then((scope) => {
       if (cancelled) return;
       const normalized: ScopeDescriptor = {
+        namespaces: scope.namespaces,
         tenant: scope.tenant || 'default',
         namespace: scope.namespace || 'default',
         mode: scope.mode === 'multi' ? 'multi' : 'single',
         selectorVisible: scope.mode === 'multi' && scope.selectorVisible !== false,
       };
+      if (resolution?.token !== token) qc.clear();
       setResolution({ token, descriptor: normalized });
       if (normalized.mode === 'single' && (params.has('tenant') || params.has('namespace'))) {
         const clean = new URLSearchParams(params);
@@ -77,19 +86,35 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     // Query scope changes are handled locally in multi mode. Authentication
     // changes force a fresh server-owned scope resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, refresh]);
 
   const descriptor = resolution?.token === token ? resolution.descriptor : null;
 
   const mode = descriptor?.mode ?? 'single';
-  const tenant = mode === 'single'
+  const requestedTenant = mode === 'single'
     ? descriptor?.tenant || 'default'
     : params.get('tenant') || stored(TENANT_KEY) || descriptor?.tenant || 'default';
-  const namespace = mode === 'single'
+  const requestedNamespace = mode === 'single'
     ? descriptor?.namespace || 'default'
     : params.get('namespace') || stored(NAMESPACE_KEY) || descriptor?.namespace || 'default';
 
+  const authorized = descriptor?.namespaces ? resolveAuthorizedNamespace(descriptor.namespaces, requestedTenant, requestedNamespace, descriptor.namespace) : undefined;
+  const tenant = authorized?.tenant ?? requestedTenant;
+  const namespace = authorized?.name ?? requestedNamespace;
+  setRequestNamespace(tenant, namespace, token);
+  useEffect(() => {
+    if (!descriptor?.namespaces || !authorized || mode !== 'multi') return;
+    if (params.get('tenant') === tenant && params.get('namespace') === namespace) return;
+    const next = new URLSearchParams(params);
+    next.set('tenant', tenant);
+    next.set('namespace', namespace);
+    setParams(next, { replace: true });
+  }, [descriptor, authorized, mode, params, tenant, namespace, setParams]);
+
   const value = useMemo<ControlPlaneScope>(() => ({
+    namespaces: descriptor?.namespaces ?? [],
+    roles: authorized?.roles ?? [],
+    refreshNamespaces: () => setRefresh(v => v + 1),
     tenant,
     namespace,
     mode,
@@ -98,6 +123,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       if (mode === 'single') return;
       const cleanTenant = nextTenant.trim() || 'default';
       const cleanNamespace = nextNamespace.trim() || 'default';
+      if (descriptor?.namespaces && !descriptor.namespaces.some(n => n.tenant === cleanTenant && n.name === cleanNamespace)) return;
+      void qc.cancelQueries(); qc.clear();
       try {
         window.localStorage.setItem(TENANT_KEY, cleanTenant);
         window.localStorage.setItem(NAMESPACE_KEY, cleanNamespace);
@@ -135,7 +162,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       const query = next.toString();
       return query ? `${productPath}?${query}` : productPath;
     },
-  }), [descriptor?.selectorVisible, mode, namespace, params, setParams, tenant]);
+  }), [descriptor, authorized, mode, namespace, params, setParams, tenant, qc]);
 
   if (scopeError) {
     return <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">{scopeError}</div>;
@@ -143,7 +170,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   if (!descriptor) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading console…</div>;
   }
-  return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
+  return <ScopeContext.Provider key={`${token}:${tenant}:${namespace}`} value={value}>{children}</ScopeContext.Provider>;
 }
 
 export function useControlPlaneScope(): ControlPlaneScope {

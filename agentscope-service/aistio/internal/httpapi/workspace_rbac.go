@@ -79,6 +79,10 @@ func workspaceAllowed(roles map[string]bool, workspace string, write bool) bool 
 // authorization boundary for cross-Agent activity and runtime infrastructure.
 func (s *Server) workspaceRBACMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if accessFrom(c) != nil {
+			c.Next()
+			return
+		}
 		if _, ok := c.Get(ctxInternalAuth); ok {
 			c.Next()
 			return

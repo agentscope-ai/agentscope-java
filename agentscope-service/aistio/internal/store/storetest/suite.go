@@ -24,6 +24,7 @@ import (
 func RunSuite(t *testing.T, s store.Store) {
 	t.Helper()
 	ctx := context.Background()
+	t.Run("NamespaceAccess", func(t *testing.T) { testNamespaceAccess(t, ctx, s) })
 	t.Run("AgentCatalog", func(t *testing.T) { testAgentCatalog(t, ctx, s) })
 	t.Run("IssueProperties", func(t *testing.T) { testIssueProperties(t, ctx, s) })
 	t.Run("Collaboration", func(t *testing.T) { testCollaboration(t, ctx, s) })

@@ -157,9 +157,9 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
         role: 'user',
         blocks: [{ kind: 'text', id: evt.id, text: payloadText(evt.payload) }],
       });
-    } else if (evt.type === 'agent.turn_stub' || evt.type === 'agent.message') {
+    } else if (evt.type === 'agent.turn_stub' || evt.type === 'agent.message' || evt.type === 'agent.thinking') {
       ensureOpen(evt.id).blocks.push({
-        kind: 'text',
+        kind: evt.type === 'agent.thinking' ? 'thinking' : 'text',
         id: evt.id,
         text: payloadText(evt.payload) || '[agent response]',
       });
@@ -181,7 +181,7 @@ function eventsToMessages(events: SessionEvent[]): Message[] {
       for (const m of out) {
         const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
         if (idx >= 0) {
-          m.blocks = m.blocks.map((b, i) => (i === idx ? { ...b, result: output } : b));
+          m.blocks = m.blocks.map((b, i) => (i === idx ? { ...b, result: output, toolState: String(evt.payload?.state || 'complete').toLowerCase() } : b));
           break;
         }
       }
@@ -328,9 +328,9 @@ export default function ChatPanel({
     if (evt.type === 'event_start') {
       const targetType = String(evt.payload?.type ?? '');
       const eventId = String(evt.payload?.event_id ?? '');
-      if (!eventId || targetType !== 'agent.message') return;
+      if (!eventId || !['agent.message', 'agent.thinking'].includes(targetType)) return;
       // Reserve the turn bubble so deltas stream into it.
-      setMessages(prev => append(prev, eventId, { kind: 'text', id: eventId, text: '' }));
+      setMessages(prev => append(prev, eventId, { kind: targetType === 'agent.thinking' ? 'thinking' : 'text', id: eventId, text: '' }));
       return;
     }
 
@@ -339,7 +339,8 @@ export default function ChatPanel({
       const eventId = String(evt.payload?.event_id ?? '');
       const delta = evt.payload?.delta != null ? String(evt.payload.delta) : '';
       if (!eventId || !delta) return;
-      if (targetType === 'agent.message') {
+      if (targetType === 'agent.message' || targetType === 'agent.thinking') {
+        const kind = targetType === 'agent.thinking' ? 'thinking' : 'text';
         setMessages(prev => {
           const cur = openMsgIdRef.current;
           if (cur) {
@@ -347,7 +348,7 @@ export default function ChatPanel({
             if (existing && !existing.closed) {
               return prev.map(m => {
                 if (m.id !== cur) return m;
-                const idx = m.blocks.findIndex(b => b.kind === 'text' && b.id === eventId);
+                const idx = m.blocks.findIndex(b => b.kind === kind && b.id === eventId);
                 if (idx >= 0) {
                   return {
                     ...m,
@@ -356,14 +357,20 @@ export default function ChatPanel({
                     pending: true,
                   };
                 }
-                return { ...m, blocks: [...m.blocks, { kind: 'text', id: eventId, text: delta }], pending: true };
+                return { ...m, blocks: [...m.blocks, { kind, id: eventId, text: delta }], pending: true };
               });
             }
           }
-          return append(prev, eventId, { kind: 'text', id: eventId, text: delta });
+          return append(prev, eventId, { kind, id: eventId, text: delta });
         });
       } else if (targetType === 'agent.tool_use') {
-        setMessages(prev => append(prev, eventId, { kind: 'tool', id: eventId, toolName: 'tool', text: delta }));
+        setMessages(prev => {
+          if (prev.some(message => message.blocks.some(block => block.kind === 'tool' && block.id === eventId))) {
+            return prev.map(message => ({ ...message, blocks: message.blocks.map(block =>
+              block.kind === 'tool' && block.id === eventId ? { ...block, text: (block.text || '') + delta } : block) }));
+          }
+          return append(prev, eventId, { kind: 'tool', id: eventId, toolName: 'tool', text: delta });
+        });
       }
       return;
     }
@@ -387,7 +394,8 @@ export default function ChatPanel({
       return;
     }
 
-    if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub') {
+    if (evt.type === 'agent.message' || evt.type === 'agent.turn_stub' || evt.type === 'agent.thinking') {
+      const kind = evt.type === 'agent.thinking' ? 'thinking' : 'text';
       const text = payloadText(evt.payload) || '[agent response]';
       setMessages(prev => {
         // The final persisted event carries the full text: replace the streamed
@@ -396,7 +404,7 @@ export default function ChatPanel({
         if (cur) {
           const existing = prev.find(m => m.id === cur);
           if (existing && !existing.closed) {
-            const idx = existing.blocks.findIndex(b => b.kind === 'text' && b.id === evt.id);
+            const idx = existing.blocks.findIndex(b => b.kind === kind && b.id === evt.id);
             if (idx >= 0) {
               return prev.map(m =>
                 m.id === cur
@@ -405,7 +413,7 @@ export default function ChatPanel({
             }
           }
         }
-        return append(prev, evt.id, { kind: 'text', id: evt.id, text });
+        return append(prev, evt.id, { kind, id: evt.id, text });
       });
       return;
     }
@@ -432,7 +440,7 @@ export default function ChatPanel({
                   ? {
                       ...m,
                       blocks: m.blocks.map((b, i) =>
-                        i === idx ? { ...b, id: toolId, toolName, text: b.text ?? input } : b),
+                        i === idx ? { ...b, id: toolId, toolName, text: input ?? b.text } : b),
                       pending: false,
                     }
                   : m);
@@ -458,7 +466,7 @@ export default function ChatPanel({
           const idx = m.blocks.findIndex(b => b.kind === 'tool' && b.id === toolUseId);
           if (idx < 0) return m;
           updated = true;
-          return { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, result: output } : b)) };
+          return { ...m, blocks: m.blocks.map((b, i) => (i === idx ? { ...b, result: output, toolState: String(evt.payload?.state || 'complete').toLowerCase() } : b)) };
         });
         return updated ? next : prev;
       });

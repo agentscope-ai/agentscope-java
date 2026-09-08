@@ -50,6 +50,10 @@ func (s *Server) collaborationEventStream(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required"})
 		return
 	}
+	if a := accessFrom(c); a != nil {
+		s.collaborationEvents.ServeAuthorized(c.Writer, c.Request, tenant, namespace, func(ctx context.Context, e *controlmodel.OutboxEvent) bool { return s.canReceiveWorkEvent(ctx, a, e) })
+		return
+	}
 	s.collaborationEvents.Serve(c.Writer, c.Request, tenant, namespace)
 }
 
@@ -57,7 +61,7 @@ func humanActor(c *gin.Context, s *Server) controlmodel.Actor {
 	if internal, _ := c.Get(ctxInternalAuth); internal == true {
 		return controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: "internal"}
 	}
-	return controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: s.operatorFromContext(c)}
+	return controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: catalogOwnerRef(c, s.operatorFromContext(c))}
 }
 
 func taskPrincipal(c *gin.Context) (*controlmodel.AgentTask, bool) {
@@ -110,6 +114,7 @@ func collaborationPagination(c *gin.Context) (int, int) {
 }
 
 type issueRequest struct {
+	Access              controlmodel.IssueAccess  `json:"access"`
 	Tenant              string                    `json:"tenant"`
 	Namespace           string                    `json:"namespace"`
 	Title               string                    `json:"title"`
@@ -136,6 +141,21 @@ func (s *Server) createIssue(c *gin.Context) {
 	if strings.TrimSpace(req.Tenant) == "" || strings.TrimSpace(req.Namespace) == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required"})
 		return
+	}
+	if req.Access.Mode == "" {
+		req.Access.Mode = "private"
+	}
+	if err := req.Access.Validate(); err != nil {
+		c.JSON(400, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if a := accessFrom(c); a != nil {
+		for member := range req.Access.Members {
+			if len(a.Namespace.Roles(member)) == 0 {
+				c.JSON(400, ErrorResponse{Error: "collaborators must be namespace members"})
+				return
+			}
+		}
 	}
 	if req.AssigneeType == controlmodel.AssigneeAgent {
 		if _, err := s.activeAgentInScope(c.Request.Context(), req.Tenant, req.Namespace, req.AssigneeRef); err != nil {
@@ -183,7 +203,7 @@ func (s *Server) createIssue(c *gin.Context) {
 		req.ExecutionTargetRef = workflowRevision.ID.String()
 	}
 	issue, task, err := s.collaborationService().CreateIssue(c.Request.Context(), collaboration.CreateIssueRequest{
-		Tenant: req.Tenant, Namespace: req.Namespace, Title: req.Title,
+		Access: req.Access, Tenant: req.Tenant, Namespace: req.Namespace, Title: req.Title,
 		Description: req.Description, Priority: req.Priority, Creator: humanActor(c, s),
 		AssigneeType: req.AssigneeType, AssigneeRef: req.AssigneeRef,
 		ExecutionTargetType: req.ExecutionTargetType, ExecutionTargetRef: req.ExecutionTargetRef,
@@ -1555,6 +1575,9 @@ func (s *Server) listCollaborationTeams(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	for _, team := range items {
+		redactTeamForDiscovery(c, team)
+	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
@@ -1568,6 +1591,7 @@ func (s *Server) getCollaborationTeam(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
+	redactTeamForDiscovery(c, team)
 	c.JSON(http.StatusOK, gin.H{"team": team})
 }
 
@@ -1757,6 +1781,28 @@ func (s *Server) uploadArtifact(c *gin.Context) {
 	tenant, namespace := c.PostForm("tenant"), c.PostForm("namespace")
 	if s.scopeMode == ScopeModeSingle {
 		tenant, namespace = s.defaultTenant, s.defaultNamespace
+	}
+	if a := accessFrom(c); a != nil {
+		if c.PostForm("tenant") != "" && c.PostForm("tenant") != a.Namespace.Tenant || c.PostForm("namespace") != "" && c.PostForm("namespace") != a.Namespace.Name {
+			s.accessFailure(c, store.ErrNotFound)
+			return
+		}
+		tenant, namespace = a.Namespace.Tenant, a.Namespace.Name
+		if c.PostForm("sourceTaskId") != "" {
+			c.JSON(403, ErrorResponse{Error: "human uploads cannot impersonate an Agent Task"})
+			return
+		}
+		if target := c.PostForm("targetRef"); target != "" {
+			id, err := uuid.Parse(target)
+			if err != nil || c.PostForm("targetType") != "issue" {
+				c.JSON(400, ErrorResponse{Error: "uploads may link to an authorized Issue"})
+				return
+			}
+			if _, err := s.canAccessIssue(c.Request.Context(), a, id, true); err != nil {
+				s.accessFailure(c, err)
+				return
+			}
+		}
 	}
 	uploader := humanActor(c, s)
 	var sourceTaskID *uuid.UUID
@@ -2007,6 +2053,15 @@ func (s *Server) createApproval(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "tenant and namespace are required"})
 		return
 	}
+	if a := accessFrom(c); a != nil {
+		if len(a.Namespace.Roles(approval.ApproverRef)) == 0 {
+			c.JSON(400, ErrorResponse{Error: "approver must be a namespace member"})
+			return
+		}
+		if !s.authorizeApprovalWork(c, &approval, true) {
+			return
+		}
+	}
 	created, err := s.store.Collaboration().CreateApproval(c.Request.Context(), &approval)
 	if err != nil {
 		s.writeCollaborationError(c, err)
@@ -2134,4 +2189,16 @@ func (s *Server) writeCollaborationError(c *gin.Context, err error) {
 		return
 	}
 	s.writeControlPlaneError(c, err)
+}
+
+func redactTeamForDiscovery(c *gin.Context, team *controlmodel.CollaborationTeam) {
+	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+		team.Instructions = ""
+		team.Policy = controlmodel.TeamPolicy{}
+		for i := range team.Members {
+			team.Members[i].Instructions = ""
+			team.Members[i].CapabilityRequirements = nil
+			team.Members[i].RuntimeBindingPolicy = nil
+		}
+	}
 }

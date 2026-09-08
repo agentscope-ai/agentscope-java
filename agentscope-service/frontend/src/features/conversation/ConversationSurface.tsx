@@ -3,8 +3,10 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-import { Activity, Bot, ChevronDown, ChevronRight, CircleAlert, Send, User } from 'lucide-react';
+import { Activity, Brain, Clock, Wrench, Bot, ChevronDown, ChevronRight, CircleAlert, Send, User } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { presentEvent, durationLabel, record } from './eventPresentation';
 import ReactMarkdown from 'react-markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,7 +15,6 @@ import type {
   ConversationContentBlock,
   ConversationEvent,
   ConversationMessage,
-  ConversationRole,
 } from './model';
 
 export interface ConversationComposer {
@@ -45,14 +46,6 @@ export interface ConversationSurfaceProps {
   defaultView?: 'conversation' | 'events';
 }
 
-function roleTone(role: ConversationRole): 'info' | 'success' | 'warning' | 'danger' | 'default' {
-  if (role === 'user') return 'info';
-  if (role === 'assistant') return 'success';
-  if (role === 'tool') return 'warning';
-  if (role === 'error') return 'danger';
-  return 'default';
-}
-
 function pretty(value: unknown): string {
   if (typeof value === 'string') {
     try {
@@ -70,23 +63,24 @@ function pretty(value: unknown): string {
 
 function ToolBlock({ block }: { block: ConversationContentBlock }) {
   const [open, setOpen] = useState(false);
-  const hasBody = !!block.text || !!block.result || block.data != null;
-  const failed = ['error', 'denied', 'interrupted'].includes(block.toolState || '');
+  const hasBody = true;
+  const failed = ['error', 'failed', 'denied', 'interrupted'].includes(block.toolState || '');
   return (
     <div className={cn('overflow-hidden rounded-xl border bg-muted/20', failed ? 'border-red-300' : 'border-border')}>
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm hover:bg-muted/50"
+        aria-expanded={open}
         onClick={() => hasBody && setOpen((value) => !value)}
       >
         {hasBody ? open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : null}
-        <span className={cn('h-2 w-2 rounded-full', failed ? 'bg-red-500' : 'bg-amber-500')} />
+        <Wrench className={cn('h-4 w-4 shrink-0', failed ? 'text-red-600' : 'text-slate-500')} />
         <span className="font-medium">{block.toolName || 'Tool call'}</span>
-        {block.toolState && <Badge tone={failed ? 'danger' : block.toolState === 'success' ? 'success' : 'warning'}>{block.toolState}</Badge>}
-        {block.callId && <code className="ml-auto max-w-48 truncate text-[11px] text-muted-foreground">{block.callId}</code>}
+        <Badge tone={failed ? 'danger' : block.result !== undefined ? 'success' : 'default'}>{failed ? block.toolState : block.result !== undefined ? 'Completed' : block.toolState === 'unavailable' ? 'Result not recorded' : 'Awaiting result'}</Badge>
+        {block.durationMs != null && <span className="ml-auto text-xs text-muted-foreground">{durationLabel(block.durationMs)}</span>}
       </button>
       {open && (
-        <div className="grid gap-3 border-t border-border p-3 md:grid-cols-2">
+        <div className="grid gap-3 border-t border-border p-3">
           {(block.text || block.data != null) && (
             <section className="min-w-0">
               <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Input</div>
@@ -95,15 +89,24 @@ function ToolBlock({ block }: { block: ConversationContentBlock }) {
           )}
           <section className="min-w-0">
             <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Output</div>
-            {block.result ? <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">{block.result}</pre> : <p className="text-sm text-muted-foreground">Waiting for result…</p>}
+            {block.result !== undefined ? <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">{pretty(block.result) || '(Empty result)'}</pre> : <p className="text-sm text-muted-foreground">{block.toolState === 'unavailable' ? 'No result is present in the loaded history.' : 'Waiting for result…'}</p>}
           </section>
+          <div className="break-all text-xs text-muted-foreground">{block.eventSeq != null && `Events #${block.eventSeq}${block.resultSeq != null ? ` → #${block.resultSeq}` : ''}`}{block.callId && <div>Call ID: <code>{block.callId}</code></div>}</div>
         </div>
       )}
     </div>
   );
 }
 
+function ProcessBlock({ block }: { block: ConversationContentBlock }) {
+  const thinking = block.kind === 'thinking';
+  if (!thinking) return <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><Clock className="h-3.5 w-3.5" /><span>{block.toolState === 'running' ? 'Requesting model…' : block.toolState === 'unavailable' ? 'Model request · end not recorded' : 'Model request finished'}</span>{block.durationMs != null && <span>· {durationLabel(block.durationMs)}</span>}</div>;
+  return <details className="rounded-lg border border-violet-200 bg-violet-50/40 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-violet-700"><Brain className="h-4 w-4" /><span className="font-medium">Thinking</span><ChevronDown className="ml-auto h-3.5 w-3.5" /></summary><div className="md-text max-h-80 overflow-auto border-t border-violet-100 px-4 py-3 leading-6 text-slate-600"><ReactMarkdown>{block.text || 'No thinking text was recorded.'}</ReactMarkdown></div></details>;
+}
+
 function MessageRow({ message }: { message: ConversationMessage }) {
+  const process = message.blocks.every(block => ['tool', 'thinking', 'model'].includes(block.kind));
+  if (process) return <article className="ml-10 min-w-0 space-y-2" data-message-id={message.id}>{message.blocks.map(block => block.kind === 'tool' ? <ToolBlock key={block.id} block={block} /> : <ProcessBlock key={block.id} block={block} />)}{message.truncated && <p className="text-xs text-amber-700">Recorded content was truncated{message.originalSize ? ` · original size ${message.originalSize}` : ''}.</p>}</article>;
   const isUser = message.role === 'user';
   const isError = message.role === 'error';
   const Icon = isUser ? User : isError ? CircleAlert : Bot;
@@ -112,7 +115,7 @@ function MessageRow({ message }: { message: ConversationMessage }) {
       <div className={cn('mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full', isUser ? 'bg-indigo-100 text-indigo-700' : isError ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700')}>
         <Icon className="h-3.5 w-3.5" />
       </div>
-      <div className={cn('min-w-0 max-w-[82%]', isUser && 'text-right')}>
+      <div className={cn('min-w-0 w-full max-w-[90%]', isUser && 'text-right')}>
         <div className={cn('mb-1.5 flex items-center gap-2 text-xs text-muted-foreground', isUser && 'justify-end')}>
           <span className="font-medium capitalize">{message.role}</span>
           {message.turnIndex != null && <span>turn {message.turnIndex}</span>}
@@ -122,6 +125,7 @@ function MessageRow({ message }: { message: ConversationMessage }) {
         </div>
         <div className={cn('space-y-3 text-left', isUser && 'rounded-2xl rounded-tr-md bg-indigo-600 px-4 py-3 text-white', isError && 'rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800')}>
           {message.blocks.map((block) => {
+            if (block.kind === 'thinking' || block.kind === 'model') return <ProcessBlock key={block.id} block={block} />;
             if (block.kind === 'tool') return <ToolBlock key={block.id} block={block} />;
             if (block.kind === 'data') return <pre key={block.id} className="overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">{pretty(block.data)}</pre>;
             if (message.role === 'assistant') return <div key={block.id} className="md-text leading-7"><ReactMarkdown>{block.text || ''}</ReactMarkdown></div>;
@@ -133,32 +137,40 @@ function MessageRow({ message }: { message: ConversationMessage }) {
   );
 }
 
-function eventTone(event: ConversationEvent): 'info' | 'success' | 'warning' | 'danger' | 'default' {
-  if (event.category === 'error') return 'danger';
-  if (event.category === 'tool') return 'warning';
-  if (event.category === 'message') return 'info';
-  if (event.category === 'turn') return 'success';
-  return 'default';
-}
-
 function EventRow({ event }: { event: ConversationEvent }) {
   const [open, setOpen] = useState(false);
-  const hasPayload = event.payload != null;
+  const info = presentEvent(event);
+  const raw = record(event.payload);
+  const content = event.summary !== raw.toolName ? event.summary : undefined;
   return (
-    <article className="relative pl-7">
-      <span className="absolute left-[7px] top-4 h-2.5 w-2.5 rounded-full border-2 border-background bg-slate-400 ring-1 ring-border" />
-      <div className="rounded-xl border border-border bg-background">
-        <button type="button" className="flex w-full flex-wrap items-center gap-2 px-3.5 py-3 text-left text-sm hover:bg-muted/40" onClick={() => hasPayload && setOpen((value) => !value)}>
-          {hasPayload ? open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : null}
-          {event.seq != null && <code className="text-xs text-muted-foreground">#{event.seq}</code>}
-          <Badge tone={eventTone(event)}>{event.type}</Badge>
-          {event.role && <Badge tone={roleTone(event.role)}>{event.role}</Badge>}
-          {event.durationMs != null && <span className="text-xs text-muted-foreground">{event.durationMs} ms</span>}
-          {(event.tokensIn || event.tokensOut) && <span className="text-xs text-muted-foreground">tokens {event.tokensIn || 0}/{event.tokensOut || 0}</span>}
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">{event.summary || '—'}</span>
-          {event.occurredAt && <time className="text-xs text-muted-foreground">{new Date(event.occurredAt).toLocaleString()}</time>}
+    <article className="relative pl-7" data-event-id={event.id}>
+      <span className={cn('absolute left-[7px] top-5 h-2.5 w-2.5 rounded-full border-2 border-background ring-1 ring-border', event.category === 'error' ? 'bg-red-500' : 'bg-slate-400')} />
+      <div className="overflow-hidden rounded-xl border border-border bg-background">
+        <button type="button" aria-expanded={open} className="flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-muted/40" onClick={() => setOpen(value => !value)}>
+          {open ? <ChevronDown className="mt-1 h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className={cn('font-medium', event.category === 'error' && 'text-red-600')}>{info.title}</span>
+              {event.durationMs != null && <span className="text-xs text-muted-foreground">{durationLabel(event.durationMs)}</span>}
+              <span className="text-xs text-muted-foreground">{info.source}</span>
+              {event.occurredAt && <time dateTime={event.occurredAt} title={new Date(event.occurredAt).toLocaleString()} className="ml-auto text-xs text-muted-foreground">{new Date(event.occurredAt).toLocaleTimeString()}</time>}
+            </div>
+            {!open && content && <p className="mt-1 truncate text-muted-foreground">{content}</p>}
+          </div>
         </button>
-        {open && <pre className="max-h-96 overflow-auto whitespace-pre-wrap border-t border-border bg-slate-950 p-4 font-mono text-xs text-slate-100">{pretty(event.payload)}</pre>}
+        {open && <div className="space-y-3 border-t border-border px-4 py-3 text-sm">
+          {(event.tokensIn != null || event.tokensOut != null) && <p className="text-xs text-muted-foreground">Tokens · input {event.tokensIn ?? '—'} · output {event.tokensOut ?? '—'}</p>}
+          {content && <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-sm">{pretty(content)}</pre>}
+          {raw.toolInput != null && <details><summary className="cursor-pointer font-medium">Tool input</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs">{pretty(raw.toolInput)}</pre></details>}
+          <details>
+            <summary className="cursor-pointer text-xs text-muted-foreground">Diagnostic details</summary>
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><code>{event.type}</code>{event.seq != null && <span>Event #{event.seq}</span>}</div>
+              <dl className="space-y-2">{[...info.relations, ...info.diagnostics].map(item => <div key={item.label} className="grid gap-1 sm:grid-cols-[9rem_1fr]"><dt className="text-xs text-muted-foreground" title={item.description}>{item.label}</dt><dd className="min-w-0 break-all font-mono text-xs">{item.href ? <Link className="text-indigo-600 hover:underline" to={item.href}>{item.value} ↗</Link> : item.value}</dd></div>)}</dl>
+              <details><summary className="cursor-pointer text-xs text-muted-foreground">Original JSON</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">{pretty(event.payload)}</pre></details>
+            </div>
+          </details>
+        </div>}
       </div>
     </article>
   );
@@ -184,13 +196,14 @@ export function ConversationSurface({
   defaultView = 'conversation',
 }: ConversationSurfaceProps) {
   const [view, setView] = useState(defaultView);
+  const [filter, setFilter] = useState('all');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followRef = useRef(true);
   const canSubmit = !!composer && !composer.disabled && !composer.busy && !!composer.value.trim();
   // Adapters supply chronological input. Preserve that order for stream-only
   // frames without a durable sequence; sorting them as seq=0 would move live
   // deltas above the restored history.
-  const eventList = events;
+  const eventList = events.filter(event => filter === 'all' || event.category === filter);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -209,6 +222,7 @@ export function ConversationSurface({
         {headerActions}
       </header>
 
+      {view === 'events' && <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground"><label className="flex items-center gap-2">Show <select aria-label="Filter events" className="rounded-md border border-border bg-background px-2 py-1.5 text-foreground" value={filter} onChange={e => setFilter(e.target.value)}>{['all', 'message', 'model', 'tool', 'turn', 'lifecycle', 'error', 'other'].map(value => <option key={value} value={value}>{value === 'all' ? 'All events' : value}</option>)}</select></label><span>{eventList.length} / {events.length}</span></div>}
       {error && <div className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</div>}
 
       <div
@@ -220,7 +234,7 @@ export function ConversationSurface({
         }}
       >
         {view === 'conversation' ? (
-          <div className="mx-auto max-w-4xl space-y-7">
+          <div className="mx-auto max-w-4xl space-y-4">
             {hasEarlierMessages && <div className="text-center"><Button type="button" size="sm" variant="outline" disabled={loadingEarlierMessages} onClick={onLoadEarlierMessages}>{loadingEarlierMessages ? 'Loading…' : 'Load earlier messages'}</Button></div>}
             {loading && messages.length === 0 ? <p className="py-16 text-center text-sm text-muted-foreground">Loading conversation…</p> : messages.length === 0 ? <p className="py-16 text-center text-sm text-muted-foreground">{emptyMessage}</p> : messages.map((message) => <MessageRow key={message.id} message={message} />)}
             {accessory}

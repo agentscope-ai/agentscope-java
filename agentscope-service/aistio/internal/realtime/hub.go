@@ -54,6 +54,11 @@ func (h *Hub) PublishCollaborationEvent(_ context.Context, event *controlmodel.O
 }
 
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, tenant, namespace string) {
+	h.ServeAuthorized(w, r, tenant, namespace, nil)
+}
+
+// ServeAuthorized rechecks permission at delivery, including after revocation.
+func (h *Hub) ServeAuthorized(w http.ResponseWriter, r *http.Request, tenant, namespace string, allowed func(context.Context, *controlmodel.OutboxEvent) bool) {
 	requestedProtocols := websocket.Subprotocols(r)
 	selectedProtocol := ""
 	for _, protocol := range requestedProtocols {
@@ -111,6 +116,9 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, tenant, namespace st
 		case <-closed:
 			return
 		case event := <-sub.events:
+			if allowed != nil && !allowed(r.Context(), event) {
+				continue
+			}
 			if err := conn.WriteJSON(event); err != nil {
 				return
 			}

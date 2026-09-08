@@ -24,7 +24,7 @@
 export type ConversationRole = 'user' | 'assistant' | 'system' | 'tool' | 'error';
 
 export interface ConversationContentBlock {
-  kind: 'text' | 'tool' | 'data';
+  kind: 'text' | 'tool' | 'data' | 'thinking' | 'model';
   id: string;
   text?: string;
   toolName?: string;
@@ -33,6 +33,9 @@ export interface ConversationContentBlock {
   /** Framework-reported terminal state such as success, error, denied, or interrupted. */
   toolState?: string;
   result?: string;
+  durationMs?: number;
+  eventSeq?: number;
+  resultSeq?: number;
   data?: unknown;
 }
 

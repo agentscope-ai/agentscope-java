@@ -104,6 +104,12 @@ func (r *orchestrationRepo) ListDefinitions(_ context.Context, f store.Orchestra
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	if f.Offset > 0 {
+		if f.Offset >= len(out) {
+			return []*controlmodel.OrchestrationDefinition{}, nil
+		}
+		out = out[f.Offset:]
+	}
 	if f.Limit > 0 && len(out) > f.Limit {
 		out = out[:f.Limit]
 	}
@@ -133,6 +139,9 @@ func (r *orchestrationRepo) CreateRevision(_ context.Context, in *controlmodel.O
 	defer r.s.mu.Unlock()
 	if r.s.definitions[in.DefinitionID] == nil {
 		return nil, store.ErrNotFound
+	}
+	if in.ExpectedDefinitionVersion != 0 && r.s.definitions[in.DefinitionID].Version != in.ExpectedDefinitionVersion {
+		return nil, store.ErrConflict
 	}
 	c := cloneRevision(in)
 	if c.ID == uuid.Nil {
@@ -208,11 +217,14 @@ func (r *orchestrationRepo) GetRun(_ context.Context, id uuid.UUID) (*controlmod
 	}
 	return cloneRun(v), nil
 }
-func (r *orchestrationRepo) ListRuns(_ context.Context, f store.OrchestrationRunFilter) ([]*controlmodel.OrchestrationRun, error) {
+func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationRunFilter) ([]*controlmodel.OrchestrationRun, error) {
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := []*controlmodel.OrchestrationRun{}
 	for _, v := range r.s.runs {
+		if !r.s.canReadIssueLocked(ctx, v.RootIssueID) {
+			continue
+		}
 		matchesIssue := f.IssueID == uuid.Nil || v.RootIssueID == f.IssueID
 		if !matchesIssue {
 			for _, task := range r.s.agentTasks {
@@ -222,13 +234,19 @@ func (r *orchestrationRepo) ListRuns(_ context.Context, f store.OrchestrationRun
 				}
 			}
 		}
-		if (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
+		if (f.ParentNodeID == uuid.Nil || (v.ParentNodeID != nil && *v.ParentNodeID == f.ParentNodeID)) && (f.DefinitionID == uuid.Nil || (v.DefinitionRevisionID != nil && r.s.revisions[*v.DefinitionRevisionID] != nil && r.s.revisions[*v.DefinitionRevisionID].DefinitionID == f.DefinitionID)) && (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
 			out = append(out, cloneRun(v))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	if f.OldestFirst {
 		sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	}
+	if f.Offset > 0 {
+		if f.Offset >= len(out) {
+			return []*controlmodel.OrchestrationRun{}, nil
+		}
+		out = out[f.Offset:]
 	}
 	if f.Limit > 0 && len(out) > f.Limit {
 		out = out[:f.Limit]
@@ -246,7 +264,9 @@ func (r *orchestrationRepo) TransitionRun(_ context.Context, id uuid.UUID, expec
 		return nil, store.ErrConflict
 	}
 	v.State = to
-	v.Output = cloneJSON(output)
+	if output != nil {
+		v.Output = cloneJSON(output)
+	}
 	v.WaitReason = ""
 	if to == controlmodel.RunWaiting {
 		v.WaitReason = code
@@ -341,7 +361,9 @@ func (r *orchestrationRepo) TransitionNode(_ context.Context, id uuid.UUID, expe
 		return nil, store.ErrConflict
 	}
 	v.State = to
-	v.Output = cloneJSON(output)
+	if output != nil {
+		v.Output = cloneJSON(output)
+	}
 	v.WaitReason = ""
 	if to == controlmodel.RunNodeWaiting {
 		v.WaitReason = code
@@ -532,4 +554,19 @@ func (r *orchestrationRepo) ListRuntimePolicies(_ context.Context, tenant, names
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (r *orchestrationRepo) SetNodeInput(_ context.Context, id uuid.UUID, expected int64, input json.RawMessage) (*controlmodel.RunNode, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	node := r.s.runNodes[id]
+	if node == nil {
+		return nil, store.ErrNotFound
+	}
+	if node.Version != expected {
+		return nil, store.ErrConflict
+	}
+	node.Input = cloneJSON(input)
+	node.Version++
+	return cloneRunNode(node), nil
 }

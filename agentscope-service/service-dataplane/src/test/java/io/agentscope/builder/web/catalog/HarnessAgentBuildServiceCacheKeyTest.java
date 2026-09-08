@@ -59,9 +59,75 @@ class HarnessAgentBuildServiceCacheKeyTest {
     }
 
     @Test
-    void plainSessionsOfSameAgentShareOneInstance() {
+    void credentialRevisionInvalidatesMaterializationWithoutHashingSecrets() {
+        var one =
+                new io.agentscope.builder.control.SessionResolveResult(
+                        null,
+                        Map.of(),
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        null,
+                        List.of(Map.of("id", "credential", "revision", 1, "secret", "first")),
+                        null,
+                        null,
+                        null);
+        var rotated =
+                new io.agentscope.builder.control.SessionResolveResult(
+                        null,
+                        Map.of(),
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        null,
+                        List.of(Map.of("id", "credential", "revision", 2, "secret", "second")),
+                        null,
+                        null,
+                        null);
+        assertThat(HarnessAgentBuildService.materializationFingerprint(one, SPEC))
+                .isNotEqualTo(HarnessAgentBuildService.materializationFingerprint(rotated, SPEC));
+        var noSecret =
+                new io.agentscope.builder.control.SessionResolveResult(
+                        null,
+                        Map.of(),
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        null,
+                        List.of(Map.of("id", "credential", "revision", 1)),
+                        null,
+                        null,
+                        null);
+        assertThat(HarnessAgentBuildService.materializationFingerprint(one, SPEC))
+                .isEqualTo(HarnessAgentBuildService.materializationFingerprint(noSecret, SPEC));
+    }
+
+    @Test
+    void plainSessionsOfSameAgentDoNotShareResourceInstances() {
         assertThat(HarnessAgentBuildService.cacheKey(session("s1", null), SPEC))
-                .isEqualTo(HarnessAgentBuildService.cacheKey(session("s2", null), SPEC));
+                .isNotEqualTo(HarnessAgentBuildService.cacheKey(session("s2", null), SPEC));
+    }
+
+    @Test
+    void sharedKnowledgeCannotBeUsedToPublishPrivateWork() {
+        assertThat(HarnessAgentBuildService.sharedKnowledgeAccess(List.of("knowledge")))
+                .containsEntry("knowledge", "read_only");
+        assertThat(HarnessAgentBuildService.sharedKnowledgeAccess(null)).isEmpty();
+    }
+
+    @Test
+    void sessionDirectoriesAreIsolatedEvenForPathLikeIdentifiers() {
+        var paths =
+                new io.agentscope.builder.web.workspace.SharedWorkspacePaths(
+                        java.nio.file.Path.of("/tmp/access-test"));
+        var first = paths.resolveSessionDataPath("owner", "../other");
+        assertThat(first.startsWith(java.nio.file.Path.of("/tmp/access-test/sessions"))).isTrue();
+        assertThat(first).isEqualTo(paths.resolveSessionDataPath("owner", "../other"));
+        assertThat(first).isNotEqualTo(paths.resolveSessionDataPath("owner", "session-b"));
+        assertThat(first).isNotEqualTo(paths.resolveSessionDataPath("another-owner", "../other"));
     }
 
     @Test

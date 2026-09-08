@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -239,6 +240,9 @@ func (s *Server) createSession(c *gin.Context) {
 func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner string, ver int, refType,
 	envID, externalKey string, memIDs, vaultIDs []string, overrides, resources any) (sessionRow, error) {
 	if _, err := s.validateEnvironmentBinding(ctx, owner, envID); err != nil {
+		return sessionRow{}, err
+	}
+	if err := s.validateSessionResources(ctx, owner, memIDs, vaultIDs); err != nil {
 		return sessionRow{}, err
 	}
 	id := shortID("sess_")
@@ -544,4 +548,23 @@ func (s *Server) bestEffortDeleteSessionEvents(ctx context.Context, sessionID, o
 	if resp.StatusCode >= 300 {
 		log.Printf("session event cleanup status=%d session=%s", resp.StatusCode, sessionID)
 	}
+}
+
+func (s *Server) validateSessionResources(ctx context.Context, owner string, memoryIDs, vaultIDs []string) error {
+	for _, id := range memoryIDs {
+		if _, err := s.buildMemoryMount(ctx, id, owner); err != nil {
+			return fmt.Errorf("memory store unavailable: %s", id)
+		}
+	}
+	for _, id := range vaultIDs {
+		var exists bool
+		err := s.db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM vaults WHERE vault_id=$1 AND owner_id=$2 AND archived_at IS NULL)`, id, owner).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("vault unavailable: %s", id)
+		}
+	}
+	return nil
 }
