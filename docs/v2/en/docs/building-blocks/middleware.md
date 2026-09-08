@@ -522,3 +522,63 @@ ReActAgent agent =
                 .middlewares(List.of(new StopOnAllDeniedMiddleware()))
                 .build();
 ```
+
+## Tool circuit breaking
+
+Per-call retries cannot stop a model from selecting a broken tool on the next reasoning turn.
+`CircuitBreakerTool` protects an explicitly wrapped `AgentTool`, while `CircuitBreakerMiddleware`
+withholds its schema during cooldown. Toolkit registrations and unrelated tools are unchanged.
+
+```java
+import io.agentscope.core.middleware.CircuitBreakerMiddleware;
+import io.agentscope.core.tool.CircuitBreakerTool;
+import java.time.Duration;
+import java.util.List;
+
+// weatherTool is an AgentTool; register the decorator, not the original tool.
+CircuitBreakerTool protectedWeather = CircuitBreakerTool.builder(weatherTool)
+        .failureThreshold(3)
+        .initialCooldown(Duration.ofSeconds(60))
+        .backoffMultiplier(2.0)
+        .maxCooldown(Duration.ofMinutes(10))
+        .build();
+toolkit.registerAgentTool(protectedWeather);
+
+ReActAgent agent = ReActAgent.builder()
+        .model(model)
+        .toolkit(toolkit)
+        .middleware(new CircuitBreakerMiddleware(List.of(protectedWeather)))
+        .build();
+```
+
+Three consecutive failures open the circuit. A success resets the failure streak. Cooldowns grow
+from 60 to 120, 240, 480 and finally 600 seconds with the example configuration. After cooldown,
+the tool is offered again; only one actual subscription may execute a recovery probe. A successful
+probe closes the circuit and resets backoff. A failed probe reopens it. Other concurrent calls
+receive an error result without reaching the delegate. Already-running calls are not cancelled,
+and their late outcomes cannot overwrite a newer circuit generation.
+
+State is local to each decorator instance, not automatically per user or session. Share an instance
+only for callers using the same dependency/credentials; construct separate instances for isolation.
+State does not survive process restart and is not shared across replicas. There is no scheduler:
+recovery is evaluated on the next model request or tool subscription.
+
+The execution guard also protects direct calls and calls generated before a circuit opened.
+Retries that resubscribe to the decorator count as separate attempts; once open, the decorator
+returns an error result rather than invoking the dependency again. Configure the threshold with
+this interaction in mind. Timeouts implemented outside the decorator appear as cancellation and
+do not count as failures. Apply a dependency timeout inside the wrapped tool if it should count.
+
+By default, exceptions and `ERROR` results count as failures. `failurePredicate(...)` can classify
+business failures returned as ordinary results. Permission denials, interruptions and suspended
+results (including `ToolSuspendException`) do not count. The decorator observes the completed
+`Mono`, so an ordinary `ToolResultBlock.text(...)` is a successful result even though its initial
+state is `RUNNING` before runtime normalization. Empty or cancelled publishers release any probe
+without declaring recovery. A suspended probe also releases its slot; its later external completion
+is not tracked. This wrapper is intended for synchronous-result tools, not long-running external
+jobs. Use the tool executor's timeout to bound a hung probe; no independent probe lease is created.
+
+The decorator forwards the delegate's name, description, input/output schemas, strict mode and
+read-only flag. Register the same decorator instance in the Toolkit and middleware. A recovery
+schema can be visible to multiple concurrent model requests; the single-probe guarantee applies
+to execution, not schema advertisement.
