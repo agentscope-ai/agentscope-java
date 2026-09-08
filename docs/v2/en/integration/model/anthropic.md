@@ -39,6 +39,24 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+### Bearer token authentication
+
+For an Anthropic-compatible gateway that requires `Authorization: Bearer <token>`, set
+`authToken` on the model builder:
+
+```java
+AnthropicChatModel model = AnthropicChatModel.builder()
+    .baseUrl("https://gateway.example.com/anthropic")
+    .authToken(System.getenv("ANTHROPIC_AUTH_TOKEN"))
+    .modelName("claude-sonnet-4.5")
+    .build();
+```
+
+Pass the token without the `Bearer ` prefix; the SDK adds it. `apiKey` sets `X-Api-Key`,
+while `authToken` sets `Authorization`. If both are configured, both headers are sent.
+Configure authentication through the builder rather than `GenerateOptions.additionalHeaders`,
+because the SDK owns these authentication headers.
+
 ## Spring Boot
 
 Spring Boot applications can use the Anthropic starter:
@@ -50,5 +68,20 @@ Spring Boot applications can use the Anthropic starter:
     <version>${agentscope.version}</version>
 </dependency>
 ```
+
+To use a gateway with bearer token authentication:
+
+```yaml
+agentscope:
+  model:
+    provider: anthropic
+  anthropic:
+    base-url: https://gateway.example.com/anthropic
+    auth-token: ${ANTHROPIC_AUTH_TOKEN}
+    model-name: claude-sonnet-4.5
+```
+
+`agentscope.anthropic.auth-token` is optional. An unset or blank value leaves bearer
+authentication disabled. Existing `agentscope.anthropic.api-key` configuration remains supported.
 
 Full builder options, formatters, credentials, and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).

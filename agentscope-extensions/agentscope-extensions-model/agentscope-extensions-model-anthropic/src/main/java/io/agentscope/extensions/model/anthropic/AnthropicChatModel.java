@@ -96,6 +96,44 @@ public class AnthropicChatModel extends ChatModelBase {
             AnthropicBaseFormatter formatter,
             ProxyConfig proxyConfig,
             String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                null,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                cacheTtl);
+    }
+
+    /**
+     * Creates an Anthropic chat model with optional bearer token authentication.
+     *
+     * <p>When both {@code apiKey} and {@code authToken} are configured, the SDK sends both
+     * {@code X-Api-Key} and {@code Authorization} headers.
+     *
+     * @param baseUrl the base URL for the Anthropic API (null for default)
+     * @param apiKey the API key for authentication (null to omit)
+     * @param authToken the bearer token without the {@code Bearer } prefix (null to omit)
+     * @param modelName the model name to use
+     * @param streamEnabled whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter the message formatter to use (null for the default formatter)
+     * @param proxyConfig the proxy configuration (null for no proxy)
+     * @param cacheTtl the TTL for prompt-caching markers (null for default 5m)
+     */
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String authToken,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            String cacheTtl) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -110,6 +148,10 @@ public class AnthropicChatModel extends ChatModelBase {
 
         if (apiKey != null) {
             clientBuilder.apiKey(apiKey);
+        }
+
+        if (authToken != null) {
+            clientBuilder.authToken(authToken);
         }
 
         if (baseUrl != null) {
@@ -282,6 +324,7 @@ public class AnthropicChatModel extends ChatModelBase {
     public static class Builder {
         private String baseUrl;
         private String apiKey;
+        private String authToken;
         private String modelName = "claude-sonnet-4-5-20250929";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
@@ -309,6 +352,20 @@ public class AnthropicChatModel extends ChatModelBase {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the bearer token for authentication with an Anthropic-compatible gateway.
+         *
+         * <p>The SDK adds the {@code Bearer } prefix to the {@code Authorization} header. If an
+         * API key is also configured, the SDK sends both authentication headers.
+         *
+         * @param authToken the token without the {@code Bearer } prefix (null to omit)
+         * @return this builder
+         */
+        public Builder authToken(String authToken) {
+            this.authToken = authToken;
             return this;
         }
 
@@ -397,6 +454,7 @@ public class AnthropicChatModel extends ChatModelBase {
                     new AnthropicChatModel(
                             baseUrl,
                             apiKey,
+                            authToken,
                             modelName,
                             streamEnabled,
                             defaultOptions,
