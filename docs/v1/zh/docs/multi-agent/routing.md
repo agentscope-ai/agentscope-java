@@ -1,5 +1,7 @@
 # Routing（路由）
 
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
+
 在 **Router** 模式中，路由步骤对输入进行分类并分发给专职智能体。可以调用零个或多个专家（例如并行），再将结果合成为一个回答。适用于存在多个**垂直领域**的场景——每个领域有独立的知识与对应智能体（如 GitHub、Notion、Slack）。
 
 在 Routing 模式中，路由器对查询进行分解，专家智能体被调用（单个或并行），最后得到组合答案。
@@ -107,31 +109,8 @@
 
 ## 示例项目
 
-**路径**：`agentscope-examples/multiagent-patterns/routing/`
-
 - **Simple**：入口为 `RouterService.run(query)`；流程为分类 → 并行专家 →（框架 merge）→ 可选 RouterService 合成。设置 `routing.runner.enabled=true` 可在启动时运行 Simple 演示（见 **RoutingRunner**）。
 - **Graph**：入口为 `RoutingGraphService.run(query)`；流程为预处理 → 路由子图 → 后处理。设置 `routing-graph.runner.enabled=true` 可在启动时运行 Graph 演示（见 **RoutingGraphRunner**）。
-
-**构建与运行**（在仓库根目录）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run
-```
-
-**仅运行 Simple 演示**：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
-  -Dspring-boot.run.arguments="--routing.runner.enabled=true"
-```
-
-**仅运行 Graph 演示**：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
-  -Dspring-boot.run.arguments="--routing-graph.runner.enabled=true"
-```
 
 **配置**：需设置 `AI_DASHSCOPE_API_KEY`（或 `spring.ai.dashscope.api-key`）供 DashScope 模型与专家调用。
 

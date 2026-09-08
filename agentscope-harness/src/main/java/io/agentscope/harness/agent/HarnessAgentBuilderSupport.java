@@ -128,8 +128,17 @@ final class HarnessAgentBuilderSupport {
         return base.isEmpty() ? SUBAGENT_CONTEXT_SECTION : base + "\n\n" + SUBAGENT_CONTEXT_SECTION;
     }
 
-    /** Custom-supplied subagent factory entry: name + factory function from name to Agent. */
-    record SubagentFactoryEntry(String name, Function<String, Agent> factory) {}
+    /**
+     * Custom-supplied subagent factory entry: name + optional description + factory function from
+     * name to Agent.
+     */
+    record SubagentFactoryEntry(String name, String description, Function<String, Agent> factory) {
+
+        /** Description shown to the orchestrator, falling back to the name when unset. */
+        String displayDescription() {
+            return description != null && !description.isBlank() ? description : name;
+        }
+    }
 
     // -----------------------------------------------------------------
     //  Filesystem
@@ -220,7 +229,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -263,7 +272,7 @@ final class HarnessAgentBuilderSupport {
             entries.add(
                     new SubagentEntry(
                             custom.name(),
-                            custom.name(),
+                            custom.displayDescription(),
                             // custom factory uses Function<String, Agent> — pre-B-0 signature
                             // doesn't accept RuntimeContext. Bridge by ignoring rc here; users
                             // that need parent-aware isolation should register a programmatic
@@ -281,6 +290,7 @@ final class HarnessAgentBuilderSupport {
     static SubagentFactory buildGeneralPurposeFactory(
             HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
+        final boolean capturedPendingToolRecovery = b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final AbstractFilesystem capturedBackend =
@@ -326,6 +336,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name("general-purpose-subagent")
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description("General-purpose subagent for isolated task execution")
                             .sysPrompt(buildSubagentSysPrompt(null))
                             .model(capturedModel)
@@ -386,6 +397,10 @@ final class HarnessAgentBuilderSupport {
             Path mainWorkspace,
             SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
+        final boolean capturedPendingToolRecovery =
+                decl.getEnablePendingToolRecovery() != null
+                        ? decl.getEnablePendingToolRecovery()
+                        : b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
@@ -445,6 +460,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name(decl.getName())
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description(decl.getDescription())
                             .model(effectiveModel)
                             .toolkit(

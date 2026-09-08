@@ -23,6 +23,8 @@ import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import io.agentscope.extensions.mongodb.MongoConstants;
+import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -42,14 +44,21 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Stores sandbox workspace tar archives as BSON Binary in a collection with documents of the
  * form {@code {_id: snapshotId, data: Binary, createdAt: Date}}.
+ *
+ * <p>The collection carries a TTL index on {@code createdAt} with a 30-day expiry, aligned with
+ * the 30-day session TTL of {@code MongoAgentStateStore}. The snapshot of a session must not be
+ * reclaimed while the session itself is still alive; otherwise resuming the sandbox would fail
+ * with {@link FileNotFoundException} and appear as lost workspace data.
  */
 public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static final Logger log = LoggerFactory.getLogger(MongoRemoteSnapshotClient.class);
 
-    private static final String DEFAULT_COLLECTION = "agentscope_snapshots";
     private static final String FIELD_DATA = "data";
     private static final String FIELD_CREATED_AT = "createdAt";
+    // Aligned with the session TTL in MongoAgentStateStore (30 days on _updated_at): a snapshot
+    // must live at least as long as the session that can resume it.
+    private static final long SNAPSHOT_TTL_SECONDS = 30L * 24 * 3600;
     // MongoDB BSON document size limit is 16 MB; cap at 15 MB to leave headroom for
     // metadata. For larger snapshots, use GridFS (not yet implemented).
     private static final int MAX_SNAPSHOT_BYTES = 15 * 1024 * 1024; // 15 MB
@@ -62,9 +71,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
             String collectionName,
             boolean initializeSchema) {
         Objects.requireNonNull(mongoClient, "mongoClient");
-        String coll = collectionName != null ? collectionName : DEFAULT_COLLECTION;
+        String coll = collectionName != null ? collectionName : MongoConstants.SNAPSHOTS_COLLECTION;
         MongoDatabase db =
-                mongoClient.getDatabase(databaseName != null ? databaseName : "agentscope");
+                mongoClient.getDatabase(
+                        databaseName != null ? databaseName : MongoConstants.DEFAULT_DATABASE);
         this.collection = db.getCollection(coll);
         if (initializeSchema) {
             initSchema();
@@ -72,16 +82,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     }
 
     private void initSchema() {
-        try {
-            collection.createIndex(
-                    Indexes.ascending(FIELD_CREATED_AT),
-                    new IndexOptions().expireAfter(7 * 24 * 3600L, TimeUnit.SECONDS));
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to initialize snapshot collection index '{}': {}",
-                    collection.getNamespace(),
-                    e.getMessage());
-        }
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
+                Indexes.ascending(FIELD_CREATED_AT),
+                new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
     }
 
     @Override
@@ -106,6 +110,12 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
             throw new FileNotFoundException("Snapshot not found in MongoDB: " + snapshotId);
         }
         Binary binary = doc.get(FIELD_DATA, Binary.class);
+        if (binary == null) {
+            // Document exists but carries no data (e.g. corrupted or manually edited). Treat
+            // it the same as a missing snapshot instead of failing with an NPE.
+            throw new FileNotFoundException(
+                    "Snapshot document has no data field in MongoDB: " + snapshotId);
+        }
         return new ByteArrayInputStream(binary.getData());
     }
 

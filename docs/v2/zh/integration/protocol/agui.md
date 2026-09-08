@@ -220,7 +220,12 @@ agentscope:
     enable-reasoning: false
     emit-run-finished-after-error: false
     server-side-memory: false
+    interrupt-on-disconnect: true
 ```
+
+`interrupt-on-disconnect` 用于控制 MVC/WebFlux 的 SSE 连接关闭、超时或发送事件失败时是否中断
+Agent run。默认值为 `true`，用于保持现有行为兼容。设置为 `false` 后，客户端断开时 Agent
+会继续执行；连接关闭期间产生的事件不会由 starter 重放。
 
 可以通过 bean 扩展默认链路：
 

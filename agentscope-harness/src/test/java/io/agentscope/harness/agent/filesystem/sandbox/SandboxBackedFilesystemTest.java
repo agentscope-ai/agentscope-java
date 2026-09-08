@@ -109,9 +109,65 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
-    void uploadFiles_usesTarHydrationForUnsupportedNativePaths() throws Exception {
+    void uploadFiles_resolvesRelativePathForNativeTransfer() {
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT,
+                        List.of(
+                                Map.entry(
+                                        "agents/通用智能助手/sessions/sessions.json",
+                                        new byte[] {3, 1, 4})));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertArrayEquals(
+                new byte[] {3, 1, 4},
+                sandbox.uploaded.get("/workspace/agents/通用智能助手/sessions/sessions.json"));
+        assertNull(sandbox.lastCommand);
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_rejectsNullContentOnNativeTransferPath() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        filesystem.setSandbox(sandbox);
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(
+                        RT, List.of(new AbstractMap.SimpleImmutableEntry<>("agents/a.txt", null)));
+
+        assertTrue(!responses.get(0).isSuccess());
+        assertEquals("File content must not be null", responses.get(0).error());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(0, sandbox.hydrateCalls);
+    }
+
+    @Test
+    void uploadFiles_fallsBackToHydrationWhenRootUnavailable() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/workspace");
+        sandbox.state.setWorkspaceSpec(null);
+        filesystem.setSandbox(sandbox);
+        byte[] content = new byte[] {5};
+
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(RT, List.of(Map.entry("agents/a.jsonl", content)));
+
+        assertTrue(responses.get(0).isSuccess());
+        assertTrue(sandbox.uploaded.isEmpty());
+        assertEquals(1, sandbox.hydrateCalls);
+        assertArchive(sandbox.hydratedArchive, "agents/a.jsonl", content);
+    }
+
+    @Test
+    void uploadFiles_usesTarHydrationForUnsupportedNativePaths() throws Exception {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        // File API rooted outside the workspace: resolved paths stay unsupported natively.
+        FakeTransferSandbox sandbox = new FakeTransferSandbox("/data");
         filesystem.setSandbox(sandbox);
         byte[] content = "session-data".getBytes(StandardCharsets.UTF_8);
 

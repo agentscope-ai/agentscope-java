@@ -17,11 +17,13 @@ package io.agentscope.extensions.mongodb.state;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.IndexOptions;
@@ -35,10 +37,14 @@ import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.mongodb.MongoConstants;
+import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +55,17 @@ import org.bson.conversions.Bson;
 /**
  * MongoDB-backed implementation of {@link AgentStateStore}.
  *
- * <p>Each session is stored as a single MongoDB document. State keys map to top-level BSON fields.
- * Supports optimistic concurrency via a per-key {@code _version_{key}} field.
+ * <p>Each session is stored as a single MongoDB document with a compound {@code _id} of
+ * {@code {user, session}} to prevent cross-tenant key collisions. State keys are stored inside
+ * a {@code states} sub-document (via dot notation, e.g. {@code states.foo}), keeping them
+ * isolated from reserved top-level fields such as {@code _id}, {@code user_id},
+ * {@code session_id}, and {@code _updated_at}. Per-key versions live in a {@code versions}
+ * sub-document and list-content hashes in a {@code hashes} sub-document.
  *
- * <p>List state uses {@link ListHashUtil} for change detection to avoid unnecessary full rewrites.
+ * <p>Supports optimistic concurrency via the {@code versions.<key>} field. List state uses
+ * {@link ListHashUtil} for change detection to avoid unnecessary full rewrites. The list
+ * element count is obtained server-side via {@code $size} aggregation to avoid transferring
+ * the full array just to call {@code .size()}.
  *
  * <p>Usage:
  *
@@ -66,15 +79,13 @@ import org.bson.conversions.Bson;
  */
 public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 
-    private static final String DEFAULT_DATABASE_NAME = "agentscope";
-    private static final String DEFAULT_COLLECTION_NAME = "agentscope_sessions";
     private static final String ANON_USER = "__anon__";
-    private static final String LIST_SUFFIX = ":list";
-    private static final String HASH_PREFIX = "_hash_";
-    private static final String VERSION_PREFIX = "_version_";
     private static final String FIELD_USER_ID = "user_id";
     private static final String FIELD_SESSION_ID = "session_id";
     private static final String FIELD_UPDATED_AT = "_updated_at";
+    private static final String FIELD_STATES = "states";
+    private static final String FIELD_VERSIONS = "versions";
+    private static final String FIELD_HASHES = "hashes";
     private static final Pattern SAFE_KEY_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
 
     private final MongoClient mongoClient;
@@ -97,9 +108,19 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                     "Either mongoClient or connectionString must be provided");
         }
 
-        String dbName = builder.databaseName != null ? builder.databaseName : DEFAULT_DATABASE_NAME;
+        String dbName;
+        if (builder.databaseName != null) {
+            dbName = builder.databaseName;
+        } else if (builder.connectionString != null) {
+            String uriDb = new ConnectionString(builder.connectionString).getDatabase();
+            dbName = uriDb != null ? uriDb : MongoConstants.DEFAULT_DATABASE;
+        } else {
+            dbName = MongoConstants.DEFAULT_DATABASE;
+        }
         String collName =
-                builder.collectionName != null ? builder.collectionName : DEFAULT_COLLECTION_NAME;
+                builder.collectionName != null
+                        ? builder.collectionName
+                        : MongoConstants.SESSIONS_COLLECTION;
 
         MongoDatabase db = this.mongoClient.getDatabase(dbName);
         this.collection = db.getCollection(collName);
@@ -119,24 +140,32 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     // ────────────────── Index Management ──────────────────
 
     private void ensureIndexes() {
-        collection.createIndex(
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
                 Indexes.compoundIndex(
-                        Indexes.ascending(FIELD_USER_ID), Indexes.ascending(FIELD_SESSION_ID)));
-        collection.createIndex(
+                        Indexes.ascending(FIELD_USER_ID), Indexes.ascending(FIELD_SESSION_ID)),
+                new IndexOptions());
+
+        long ttlSeconds = 30L * 24 * 3600;
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
                 Indexes.ascending(FIELD_UPDATED_AT),
-                new IndexOptions().expireAfter(0L, TimeUnit.SECONDS).sparse(true));
+                new IndexOptions().expireAfter(ttlSeconds, TimeUnit.SECONDS).sparse(true));
     }
 
     // ────────────────── Single Value CRUD ──────────────────
 
     @Override
     public void save(String userId, String sessionId, String key, State value) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
-        String json = JsonUtils.getJsonCodec().toJson(value);
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
+        String versionField = FIELD_VERSIONS + "." + key;
+        Document valueDoc = toDocument(value);
         Bson setFields =
                 Updates.combine(
-                        Updates.set(key, Document.parse(json)),
+                        Updates.set(stateField, valueDoc),
+                        Updates.inc(versionField, 1L),
                         Updates.set(FIELD_UPDATED_AT, new Date()));
         Bson setOnInsert =
                 Updates.combine(
@@ -148,14 +177,22 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
         Document doc =
-                collection.find(Filters.eq(slotId)).projection(Projections.include(key)).first();
-        if (doc == null || !doc.containsKey(key)) {
+                collection
+                        .find(Filters.eq(slotId))
+                        .projection(Projections.include(stateField))
+                        .first();
+        if (doc == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(deserializeValue(doc.get(key), type));
+        Document states = doc.get(FIELD_STATES, Document.class);
+        if (states == null || !states.containsKey(key)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(deserializeValue(states.get(key), type));
     }
 
     // ────────────────── List CRUD ──────────────────
@@ -163,33 +200,54 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     /**
      * Saves a list of state values with incremental-append optimization.
      *
+     * <p>The list element count is obtained server-side via {@code $size} aggregation so only
+     * a single integer is transferred, not the full array. This avoids negating the network
+     * savings of incremental append for large conversation histories.
+     *
      * <p><b>Concurrency note:</b> this method performs a read-then-write to decide between
-     * incremental append and full replacement. It is NOT atomic — concurrent calls for the same
-     * {@code (userId, sessionId, key)} may interleave reads and writes, causing lost appends or
-     * stale hash comparisons. Callers that require strict consistency should synchronize externally
-     * (e.g. via {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard}).
+     * incremental append and full replacement, so it is intentionally NOT atomic: concurrent
+     * writers for the same {@code (userId, sessionId, key)} may interleave reads and writes,
+     * causing duplicated or lost appends. This matches the harness execution model, where a
+     * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard} serialises calls per
+     * isolation slot, so each session normally has at most one writer at a time. Callers that
+     * write the same list concurrently from outside the harness must synchronise externally.
      */
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
-        String listKey = key + LIST_SUFFIX;
-        String hashField = HASH_PREFIX + key;
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
+        String hashField = FIELD_HASHES + "." + key;
 
-        Document doc =
+        // Obtain existing count and stored hash server-side via $size aggregation.
+        // Only a number and a hash string are transferred — not the full array.
+        // $cond($isArray(stateField), $size(stateField), 0) handles both array and
+        // non-array / missing fields gracefully.
+        Document countExpr =
+                new Document(
+                        "$cond",
+                        new Document("if", new Document("$isArray", "$" + stateField))
+                                .append("then", new Document("$size", "$" + stateField))
+                                .append("else", 0));
+        Document aggResult =
                 collection
-                        .find(Filters.eq(slotId))
-                        .projection(Projections.include(listKey, hashField))
+                        .aggregate(
+                                Arrays.asList(
+                                        Aggregates.match(Filters.eq(slotId)),
+                                        Aggregates.project(
+                                                Projections.fields(
+                                                        Projections.computed("count", countExpr),
+                                                        Projections.computed(
+                                                                "storedHash", "$" + hashField)))))
                         .first();
 
         String storedHash = null;
         int existingCount = 0;
-        if (doc != null) {
-            if (doc.containsKey(hashField)) {
-                storedHash = doc.getString(hashField);
-            }
-            if (doc.containsKey(listKey)) {
-                existingCount = doc.getList(listKey, Object.class).size();
+        if (aggResult != null) {
+            storedHash = aggResult.getString("storedHash");
+            Integer count = aggResult.getInteger("count");
+            if (count != null) {
+                existingCount = count;
             }
         }
 
@@ -199,7 +257,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
             List<Document> bsonList = toDocumentList(values);
             Bson setFields =
                     Updates.combine(
-                            Updates.set(listKey, bsonList),
+                            Updates.set(stateField, bsonList),
                             Updates.set(hashField, currentHash),
                             Updates.set(FIELD_UPDATED_AT, new Date()));
             Bson setOnInsert =
@@ -211,18 +269,25 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         } else if (values.size() > existingCount) {
             List<? extends State> newItems = values.subList(existingCount, values.size());
             List<Document> newDocs = toDocumentList(newItems);
+            // $setOnInsert is required here as well: a brand-new session whose first write is
+            // a non-empty list lands in this append branch (needsFullRewrite returns false for
+            // an absent document), so without it the upserted document would carry no
+            // user_id/session_id fields and listSessionIds could never see it — not even after
+            // later full-rewrite saves, since $setOnInsert only fires on the initial insert.
             Bson update =
                     Updates.combine(
-                            Updates.pushEach(listKey, newDocs),
+                            Updates.pushEach(stateField, newDocs),
                             Updates.set(hashField, currentHash),
-                            Updates.set(FIELD_UPDATED_AT, new Date()));
+                            Updates.set(FIELD_UPDATED_AT, new Date()),
+                            Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
+                            Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
             collection.updateOne(Filters.eq(slotId), update, upsert());
         } else {
             // Hash unchanged but size decreased (elements removed) — force full rewrite.
             List<Document> bsonList = toDocumentList(values);
             Bson setFields =
                     Updates.combine(
-                            Updates.set(listKey, bsonList),
+                            Updates.set(stateField, bsonList),
                             Updates.set(hashField, currentHash),
                             Updates.set(FIELD_UPDATED_AT, new Date()));
             Bson setOnInsert =
@@ -237,18 +302,25 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
-        String listKey = key + LIST_SUFFIX;
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
         Document doc =
                 collection
                         .find(Filters.eq(slotId))
-                        .projection(Projections.include(listKey))
+                        .projection(Projections.include(stateField))
                         .first();
-        if (doc == null || !doc.containsKey(listKey)) {
+        if (doc == null) {
             return List.of();
         }
-        List<?> rawList = doc.getList(listKey, Object.class);
+        Document states = doc.get(FIELD_STATES, Document.class);
+        if (states == null || !states.containsKey(key)) {
+            return List.of();
+        }
+        List<?> rawList = states.getList(key, Object.class);
+        if (rawList == null) {
+            return List.of();
+        }
         List<T> result = new ArrayList<>(rawList.size());
         for (Object item : rawList) {
             result.add(deserializeValue(item, itemType));
@@ -261,41 +333,73 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     @Override
     public <T extends State> VersionedState<T> getVersioned(
             String userId, String sessionId, String key, Class<T> type) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
-        String versionField = VERSION_PREFIX + key;
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
+        String versionField = FIELD_VERSIONS + "." + key;
         Document doc =
                 collection
                         .find(Filters.eq(slotId))
-                        .projection(Projections.include(key, versionField))
+                        .projection(Projections.include(stateField, versionField))
                         .first();
-        if (doc == null || !doc.containsKey(key)) {
+        if (doc == null) {
             return new VersionedState<>(null, 0L);
         }
-        long version = doc.containsKey(versionField) ? doc.getLong(versionField) : 0L;
-        T value = deserializeValue(doc.get(key), type);
+        Document states = doc.get(FIELD_STATES, Document.class);
+        if (states == null || !states.containsKey(key)) {
+            return new VersionedState<>(null, 0L);
+        }
+        Document versions = doc.get(FIELD_VERSIONS, Document.class);
+        long version = (versions != null && versions.containsKey(key)) ? versions.getLong(key) : 0L;
+        T value = deserializeValue(states.get(key), type);
         return new VersionedState<>(value, version);
     }
 
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        validateKey(key);
+        validateStateKey(key);
         if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            VersionedState<State> after = getVersioned(userId, sessionId, key, State.class);
-            return after.version();
+            // Atomic upsert: write and read back the new version in a single round-trip,
+            // avoiding a save-then-find race window.
+            Document slotId = slotId(userId, sessionId);
+            String stateField = FIELD_STATES + "." + key;
+            String versionField = FIELD_VERSIONS + "." + key;
+            Document valueDoc = toDocument(value);
+            Bson setFields =
+                    Updates.combine(
+                            Updates.set(stateField, valueDoc),
+                            Updates.inc(versionField, 1L),
+                            Updates.set(FIELD_UPDATED_AT, new Date()));
+            Bson setOnInsert =
+                    Updates.combine(
+                            Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
+                            Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
+            Document result =
+                    collection.findOneAndUpdate(
+                            Filters.eq(slotId),
+                            Updates.combine(setFields, setOnInsert),
+                            new FindOneAndUpdateOptions()
+                                    .upsert(true)
+                                    .returnDocument(ReturnDocument.AFTER));
+            if (result == null) {
+                return UNVERSIONED;
+            }
+            Document versions = result.get(FIELD_VERSIONS, Document.class);
+            Long v = versions != null ? versions.getLong(key) : null;
+            return v != null ? v : 0L;
         }
 
-        String slotId = slotId(userId, sessionId);
-        String versionField = VERSION_PREFIX + key;
-        String json = JsonUtils.getJsonCodec().toJson(value);
+        Document slotId = slotId(userId, sessionId);
+        String stateField = FIELD_STATES + "." + key;
+        String versionField = FIELD_VERSIONS + "." + key;
+        Document valueDoc = toDocument(value);
 
         if (expectedVersion == 0) {
             Bson filter = Filters.and(Filters.eq(slotId), Filters.exists(versionField, false));
             Bson update =
                     Updates.combine(
-                            Updates.set(key, Document.parse(json)),
+                            Updates.set(stateField, valueDoc),
                             Updates.set(versionField, 1L),
                             Updates.set(FIELD_UPDATED_AT, new Date()),
                             Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
@@ -311,10 +415,16 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                 if (result == null) {
                     return UNVERSIONED;
                 }
-                Long newVersion = result.getLong(versionField);
+                Document versions = result.get(FIELD_VERSIONS, Document.class);
+                Long newVersion = versions != null ? versions.getLong(key) : null;
                 return newVersion != null && newVersion == 1L ? 1L : UNVERSIONED;
             } catch (MongoWriteException e) {
                 if (e.getError().getCode() == 11000) {
+                    return UNVERSIONED;
+                }
+                throw e;
+            } catch (MongoCommandException e) {
+                if (e.getErrorCode() == 11000) {
                     return UNVERSIONED;
                 }
                 throw e;
@@ -324,7 +434,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         Bson filter = Filters.and(Filters.eq(slotId), Filters.eq(versionField, expectedVersion));
         Bson update =
                 Updates.combine(
-                        Updates.set(key, Document.parse(json)),
+                        Updates.set(stateField, valueDoc),
                         Updates.inc(versionField, 1L),
                         Updates.set(FIELD_UPDATED_AT, new Date()));
         Document result =
@@ -335,7 +445,8 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         if (result == null) {
             return UNVERSIONED;
         }
-        Long newVersion = result.getLong(versionField);
+        Document versions = result.get(FIELD_VERSIONS, Document.class);
+        Long newVersion = versions != null ? versions.getLong(key) : null;
         return newVersion != null ? newVersion : UNVERSIONED;
     }
 
@@ -343,27 +454,27 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        String slotId = slotId(userId, sessionId);
+        Document slotId = slotId(userId, sessionId);
         return collection.find(Filters.eq(slotId)).projection(Projections.include("_id")).first()
                 != null;
     }
 
     @Override
     public void delete(String userId, String sessionId) {
-        String slotId = slotId(userId, sessionId);
+        Document slotId = slotId(userId, sessionId);
         collection.deleteOne(Filters.eq(slotId));
     }
 
     @Override
     public void delete(String userId, String sessionId, String key) {
-        validateKey(key);
-        String slotId = slotId(userId, sessionId);
-        Document unsetFields =
-                new Document(key, "")
-                        .append(VERSION_PREFIX + key, "")
-                        .append(HASH_PREFIX + key, "")
-                        .append(key + LIST_SUFFIX, "");
-        collection.updateOne(Filters.eq(slotId), new Document("$unset", unsetFields));
+        validateStateKey(key);
+        Document slotId = slotId(userId, sessionId);
+        Bson unsetFields =
+                Updates.combine(
+                        Updates.unset(FIELD_STATES + "." + key),
+                        Updates.unset(FIELD_VERSIONS + "." + key),
+                        Updates.unset(FIELD_HASHES + "." + key));
+        collection.updateOne(Filters.eq(slotId), unsetFields);
     }
 
     @Override
@@ -394,14 +505,26 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         return (userId == null || userId.isBlank()) ? ANON_USER : userId;
     }
 
-    private static String slotId(String userId, String sessionId) {
+    /**
+     * Builds a compound {@code _id} document from {@code userId} and {@code sessionId}. Using a
+     * structured _id instead of a {@code ":"}-delimited string prevents cross-tenant collisions
+     * when either side legitimately contains the separator character.
+     */
+    private static Document slotId(String userId, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("sessionId must not be blank");
         }
-        return normalizeUser(userId) + ":" + sessionId;
+        return new Document("user", normalizeUser(userId)).append("session", sessionId);
     }
 
-    private static void validateKey(String key) {
+    /**
+     * Validates a state key for use as a field name inside the {@code states} sub-document (via
+     * dot notation). The key must not contain {@code .} or {@code $} to prevent dot-traversal
+     * injection and operator injection. Reserved top-level field names (e.g. {@code _id},
+     * {@code user_id}) are no longer a concern because state keys live inside {@code states.<key>}
+     * and cannot collide with the document schema.
+     */
+    private static void validateStateKey(String key) {
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("key must not be blank");
         }
@@ -415,27 +538,25 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         }
     }
 
-    private <T extends State> T deserializeValue(Object fieldValue, Class<T> type) {
-        if (fieldValue == null) {
-            return null;
-        }
-        String json;
-        if (fieldValue instanceof String s) {
-            json = s;
-        } else if (fieldValue instanceof Document doc) {
-            json = doc.toJson();
-        } else {
-            json = fieldValue.toString();
-        }
-        return JsonUtils.getJsonCodec().fromJson(json, type);
+    @SuppressWarnings("unchecked")
+    private Document toDocument(State value) {
+        Map<String, Object> map = JsonUtils.getJsonCodec().convertValue(value, Map.class);
+        return new Document(map);
     }
 
     private List<Document> toDocumentList(List<? extends State> values) {
         List<Document> result = new ArrayList<>(values.size());
         for (State item : values) {
-            result.add(Document.parse(JsonUtils.getJsonCodec().toJson(item)));
+            result.add(toDocument(item));
         }
         return result;
+    }
+
+    private <T extends State> T deserializeValue(Object fieldValue, Class<T> type) {
+        if (fieldValue == null) {
+            return null;
+        }
+        return JsonUtils.getJsonCodec().convertValue(fieldValue, type);
     }
 
     private static UpdateOptions upsert() {
@@ -480,7 +601,9 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         }
 
         /**
-         * Database name. Defaults to {@code "agentscope"}.
+         * Database name. Defaults to {@code "agentscope"}. When a connection string is
+         * provided, the database name in the URI (if any) is used as a fallback before the
+         * default.
          *
          * @param databaseName the database name
          * @return this builder

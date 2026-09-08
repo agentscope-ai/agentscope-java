@@ -26,9 +26,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteError;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.DistinctIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
@@ -50,6 +52,7 @@ import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -66,6 +69,10 @@ class MongoAgentStateStoreTest {
     @SuppressWarnings("rawtypes")
     @Mock
     private FindIterable findIterable;
+
+    @SuppressWarnings("rawtypes")
+    @Mock
+    private AggregateIterable aggregateIterable;
 
     @SuppressWarnings("rawtypes")
     @Mock
@@ -87,6 +94,10 @@ class MongoAgentStateStoreTest {
         when(findIterable.skip(ArgumentMatchers.anyInt())).thenReturn(findIterable);
         when(findIterable.limit(ArgumentMatchers.anyInt())).thenReturn(findIterable);
         when(findIterable.first()).thenReturn(null);
+
+        // save(List) now uses aggregate + $size instead of find + projection
+        when(collection.aggregate(any())).thenReturn(aggregateIterable);
+        when(aggregateIterable.first()).thenReturn(null);
 
         UpdateResult updateResult = mock(UpdateResult.class);
         when(updateResult.wasAcknowledged()).thenReturn(true);
@@ -156,7 +167,7 @@ class MongoAgentStateStoreTest {
     @Test
     void getSingleStateReturnsValueWhenPresent() {
         String json = "{\"value\":\"found\"}";
-        Document doc = new Document("key", Document.parse(json));
+        Document doc = new Document("states", new Document("key", Document.parse(json)));
         when(findIterable.first()).thenReturn(doc);
 
         Optional<TestState> result = store.get("user", "session", "key", TestState.class);
@@ -171,15 +182,62 @@ class MongoAgentStateStoreTest {
     }
 
     @Test
+    void saveListAppendOnNewSessionIncludesSetOnInsert() {
+        // Brand-new session (no existing document) whose first write is a non-empty list:
+        // needsFullRewrite(values, null, 0) returns false, so the append branch runs. Its
+        // upsert must carry $setOnInsert(user_id, session_id), otherwise the session document
+        // is created without them and listSessionIds can never see it — the blocker from the
+        // code review.
+        store.save("user", "session", "list", List.of(new TestState("a")));
+
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).updateOne(any(Bson.class), updateCaptor.capture(), any());
+
+        BsonDocument updateDoc =
+                updateCaptor
+                        .getValue()
+                        .toBsonDocument(
+                                BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry());
+        assertTrue(updateDoc.containsKey("$push"), "expected the append branch ($push)");
+
+        BsonDocument setOnInsert = updateDoc.getDocument("$setOnInsert");
+        assertEquals("user", setOnInsert.getString("user_id").getValue());
+        assertEquals("session", setOnInsert.getString("session_id").getValue());
+    }
+
+    @Test
+    void saveListFullRewriteIncludesSetOnInsert() {
+        // Existing document whose stored list shrinks — full-rewrite branch. Its upsert must
+        // also carry $setOnInsert so a rewrite that happens to be the first write on a slot
+        // still records the session identifiers.
+        // Aggregate returns count=3 and a stored hash — list shrinks from 3 to 1 so
+        // needsFullRewrite returns true (currentSize < existingCount).
+        Document aggResult = new Document("count", 3).append("storedHash", "old_hash_value");
+        when(aggregateIterable.first()).thenReturn(aggResult);
+
+        store.save("user", "session", "list", List.of(new TestState("x")));
+
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).updateOne(any(Bson.class), updateCaptor.capture(), any());
+
+        BsonDocument updateDoc =
+                updateCaptor
+                        .getValue()
+                        .toBsonDocument(
+                                BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry());
+        assertTrue(updateDoc.containsKey("$set"), "expected the rewrite branch ($set)");
+
+        BsonDocument setOnInsert = updateDoc.getDocument("$setOnInsert");
+        assertEquals("user", setOnInsert.getString("user_id").getValue());
+        assertEquals("session", setOnInsert.getString("session_id").getValue());
+    }
+
+    @Test
     void saveListShorteningPerformsFullRewrite() {
-        // Simulate existing document with 3 elements in the list
-        List<Document> existingList =
-                List.of(
-                        Document.parse("{\"value\":\"a\"}"),
-                        Document.parse("{\"value\":\"b\"}"),
-                        Document.parse("{\"value\":\"c\"}"));
-        Document existingDoc = new Document("list:list", existingList);
-        when(findIterable.first()).thenReturn(existingDoc);
+        // Simulate existing document with 3 elements stored — aggregate returns count=3
+        // so needsFullRewrite returns true when saving a shorter 2-element list.
+        Document aggResult = new Document("count", 3).append("storedHash", "old_hash_value");
+        when(aggregateIterable.first()).thenReturn(aggResult);
 
         // Save a shorter list (2 elements) — must still call updateOne (full rewrite)
         store.save("user", "session", "list", List.of(new TestState("x"), new TestState("y")));
@@ -196,7 +254,7 @@ class MongoAgentStateStoreTest {
     void getListReturnsValuesWhenPresent() {
         List<Document> list =
                 List.of(Document.parse("{\"value\":\"a\"}"), Document.parse("{\"value\":\"b\"}"));
-        Document doc = new Document("list:list", list);
+        Document doc = new Document("states", new Document("list", list));
         when(findIterable.first()).thenReturn(doc);
 
         List<TestState> result = store.getList("user", "session", "list", TestState.class);
@@ -216,7 +274,9 @@ class MongoAgentStateStoreTest {
     @Test
     void getVersionedReturnsValueAndVersion() {
         String json = "{\"value\":\"v1\"}";
-        Document doc = new Document("key", Document.parse(json)).append("_version_key", 5L);
+        Document doc =
+                new Document("states", new Document("key", Document.parse(json)))
+                        .append("versions", new Document("key", 5L));
         when(findIterable.first()).thenReturn(doc);
 
         VersionedState<TestState> result =
@@ -227,18 +287,26 @@ class MongoAgentStateStoreTest {
 
     @Test
     void saveIfVersionWithUnversionedDelegatesToSave() {
-        store.saveIfVersion(
-                "user", "session", "key", new TestState("v"), AgentStateStore.UNVERSIONED);
-        verify(collection).updateOne(any(Bson.class), any(Bson.class), any());
+        // UNVERSIONED path uses atomic findOneAndUpdate (not save + find)
+        Document result = new Document("versions", new Document("key", 42L));
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(result);
+
+        long version =
+                store.saveIfVersion(
+                        "user", "session", "key", new TestState("v"), AgentStateStore.UNVERSIONED);
+
+        verify(collection)
+                .findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class));
+        assertEquals(42L, version);
     }
 
     @Test
     void saveIfVersionZeroCreatesWhenAbsent() {
-        // findOneAndUpdate returns doc with _version_key=1 -> success (version 1 created)
-        Document result =
-                new Document("_id", "anon:session")
-                        .append("key", Document.parse("{\"value\":\"v\"}"))
-                        .append("_version_key", 1L);
+        // findOneAndUpdate returns doc with versions.key=1 -> success (version 1 created)
+        Document result = new Document("versions", new Document("key", 1L));
         when(collection.findOneAndUpdate(
                         any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
                 .thenReturn(result);
@@ -250,11 +318,8 @@ class MongoAgentStateStoreTest {
 
     @Test
     void saveIfVersionZeroReturnsUnversionedWhenAlreadyExists() {
-        // findOneAndUpdate returns doc with _version_key=5 -> expectedVersion=0 won't match
-        Document result =
-                new Document("_id", "anon:session")
-                        .append("key", Document.parse("{\"value\":\"v\"}"))
-                        .append("_version_key", 5L);
+        // findOneAndUpdate returns doc with versions.key=5 -> expectedVersion=0 won't match
+        Document result = new Document("versions", new Document("key", 5L));
         when(collection.findOneAndUpdate(
                         any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
                 .thenReturn(result);
@@ -281,10 +346,7 @@ class MongoAgentStateStoreTest {
     @Test
     void saveIfVersionReturnsNewVersionOnCasSuccess() {
         // findOneAndUpdate returns doc with incremented version
-        Document result =
-                new Document("_id", "anon:session")
-                        .append("key", Document.parse("{\"value\":\"updated\"}"))
-                        .append("_version_key", 3L);
+        Document result = new Document("versions", new Document("key", 3L));
         when(collection.findOneAndUpdate(
                         any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
                 .thenReturn(result);
@@ -315,7 +377,11 @@ class MongoAgentStateStoreTest {
 
     @Test
     void existsReturnsTrueWhenDocumentExists() {
-        when(findIterable.first()).thenReturn(new Document("_id", "__anon__:session"));
+        when(findIterable.first())
+                .thenReturn(
+                        new Document(
+                                "_id",
+                                new Document("user", "__anon__").append("session", "session")));
         assertTrue(store.exists("user", "session"));
     }
 
@@ -328,7 +394,7 @@ class MongoAgentStateStoreTest {
     @Test
     void deleteKey() {
         store.delete("user", "session", "key");
-        verify(collection).updateOne(any(Bson.class), any(Document.class));
+        verify(collection).updateOne(any(Bson.class), any(Bson.class));
     }
 
     @Test

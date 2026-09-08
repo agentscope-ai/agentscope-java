@@ -95,6 +95,7 @@ public class GeminiResponseParser {
                 GenerateContentResponseUsageMetadata metadata = response.usageMetadata().get();
 
                 int inputTokens = metadata.promptTokenCount().orElse(0);
+                int cachedTokens = metadata.cachedContentTokenCount().orElse(0);
                 int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
                 int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
 
@@ -106,6 +107,7 @@ public class GeminiResponseParser {
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .cachedTokens(cachedTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
