@@ -25,9 +25,15 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Abstract filesystem API for agents: list, read, write, edit, grep, glob, upload, download.
@@ -122,6 +128,56 @@ public interface AbstractFilesystem {
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files);
 
     /**
+     * Upload files using the requested destination write policy.
+     *
+     * <p>{@link UploadMode#OVERWRITE} delegates to the existing upload method. The default
+     * {@link UploadMode#CREATE_NEW} implementation accepts strictly valid UTF-8 bytes and uses
+     * {@link #write}, preserving that backend's creation and layer semantics. Backends must override
+     * this method to support other byte sequences in create-only mode. Atomic creation depends on
+     * the backend; this default does not add locking or a transaction.
+     *
+     * @param runtimeContext per-call agent runtime
+     * @param files path-to-content mappings; an empty byte array represents an empty file
+     * @param mode destination write policy
+     * @return one response per input file, in the same order
+     */
+    default List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files, UploadMode mode) {
+        Objects.requireNonNull(mode, "mode");
+        if (mode == UploadMode.OVERWRITE) {
+            return uploadFiles(runtimeContext, files);
+        }
+        List<FileUploadResponse> responses = new ArrayList<>(files.size());
+        for (Map.Entry<String, byte[]> file : files) {
+            if (file.getValue() == null) {
+                responses.add(
+                        FileUploadResponse.fail(file.getKey(), "File content must not be null"));
+                continue;
+            }
+            String content;
+            try {
+                content =
+                        StandardCharsets.UTF_8
+                                .newDecoder()
+                                .decode(ByteBuffer.wrap(file.getValue()))
+                                .toString();
+            } catch (CharacterCodingException e) {
+                responses.add(
+                        FileUploadResponse.fail(
+                                file.getKey(),
+                                "Backend does not support create-only binary uploads"));
+                continue;
+            }
+            WriteResult result = write(runtimeContext, file.getKey(), content);
+            responses.add(
+                    result.isSuccess()
+                            ? FileUploadResponse.success(file.getKey())
+                            : FileUploadResponse.fail(file.getKey(), result.error()));
+        }
+        return responses;
+    }
+
+    /**
      * Download multiple files.
      *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
@@ -145,8 +201,9 @@ public interface AbstractFilesystem {
      * Move (rename) a file or directory from {@code fromPath} to {@code toPath}.
      *
      * <p>Implementations that span multiple stores (e.g. {@code CompositeFilesystem}) may
-     * fall back to a read + write + delete sequence when source and destination live in
-     * different backend filesystems.
+     * copy the original bytes before deleting the source. Cross-backend file moves require raw
+     * download support and create-only upload support for the source content. They are not atomic;
+     * a source deletion failure can leave both copies and must be reported as a failure.
      *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param fromPath absolute source path

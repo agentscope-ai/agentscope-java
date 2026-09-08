@@ -486,6 +486,14 @@ workspace/
 | 共享存储 | `CompositeFilesystem`：命中路由的路径走 KV overlay（远端上层 + 本地模板下层），其余走本地 |
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
 
+#### 跨后端移动文件
+
+源和目标被路由到不同后端时，`CompositeFilesystem.move(...)` 先下载原始字节，再以 `UploadMode.CREATE_NEW` 上传，上传成功后才删除源文件。`LocalFilesystem` 和 `RemoteFilesystem` 支持按此方式移动二进制文件、空文件和纯空白文本。已有目标不会被覆盖；原有 `uploadFiles(...)` 重载仍保留覆盖写入行为。
+
+后端需要支持原始字节下载，以及对源内容的仅创建上传，才能参与跨后端移动。默认 `CREATE_NEW` 实现会将合法 UTF-8 字节交给后端原有的 `write(...)` 方法，其他字节序列需要后端重写该接口；创建和分层语义由具体后端决定。缺少所需能力时，移动失败并保留源文件。例如，服务侧的 `MemoryStoreFilesystem` 尚未实现下载，因此不能作为跨后端移动的源。`RemoteFilesystem` 还要求底层 `BaseStore` 支持条件创建（`putIfVersion` 的版本参数为 `0`）。
+
+跨后端移动不是原子操作。如果目标已经写入，但源文件删除失败，结果会说明复制成功、源删除失败，并保留目标文件。重试前请检查结果，此时可能同时存在两份文件。同一后端内的移动仍调用该后端自己的 `move(...)` 实现。
+
 ### Shell 执行（execute）
 
 | 模式 | Shell 可用？ | 执行位置 |
