@@ -272,6 +272,39 @@ class ToolValidatorTest {
     }
 
     @Nested
+    @DisplayName("validateInput - Error Message Includes Field Path")
+    class ValidateInputErrorIncludesFieldPath {
+
+        @Test
+        @DisplayName("Should include JSON Pointer paths in type validation errors")
+        void testErrorIncludesFieldPath() {
+            Map<String, Object> addressSchema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("city", Map.of("type", "string")));
+
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("name", Map.of("type", "string"), "address", addressSchema));
+
+            Map<String, Object> input = Map.of("name", 123, "address", Map.of("city", 456));
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+
+            assertNotNull(result);
+            assertTrue(result.contains("/name"), "Error should include path '/name': " + result);
+            assertTrue(
+                    result.contains("/address/city"),
+                    "Error should include nested path '/address/city': " + result);
+        }
+    }
+
+    @Nested
     @DisplayName("validateInput - Enum Validation")
     class ValidateInputEnumValidation {
 

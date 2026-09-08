@@ -50,7 +50,14 @@ import javax.sql.DataSource;
  *   <li>{@link JdbcSnapshotSpec} — sandbox snapshots as BLOBs in MySQL</li>
  *   <li>{@link JdbcSandboxExecutionGuard} — distributed lock via MySQL {@code GET_LOCK()}</li>
  * </ul>
+ *
+ * @deprecated Use {@code io.agentscope.extensions.jdbc.JdbcDistributedStore} from the
+ * {@code agentscope-extensions-jdbc} module instead. The new module provides a unified
+ * multi-database dialect abstraction that supports MySQL, PostgreSQL, H2, and SQLite
+ * with a single aggregated interface. This class is preserved unchanged for backward
+ * compatibility and will be removed in a future major release.
  */
+@Deprecated(since = "2.1", forRemoval = true)
 public class MysqlDistributedStore implements DistributedStore {
 
     private final DataSource dataSource;

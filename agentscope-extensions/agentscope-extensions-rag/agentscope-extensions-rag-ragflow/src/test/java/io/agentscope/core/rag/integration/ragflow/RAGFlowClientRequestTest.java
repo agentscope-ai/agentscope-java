@@ -137,7 +137,7 @@ class RAGFlowClientRequestTest {
                         // === Advanced Features ===
                         .useKg(true) // Knowledge graph, default: false
                         .tocEnhance(true) // TOC enhancement, default: false
-                        .rerankId(1) // Rerank model ID
+                        .rerankId("BAAI/bge-reranker-v2-m3@BAAI") // Rerank model ID
                         .keyword(true) // Keyword matching, default: false
                         .highlight(true) // Highlight results, default: false
 
@@ -201,7 +201,7 @@ class RAGFlowClientRequestTest {
         // === Verify Advanced Features ===
         assertEquals(true, body.get("use_kg"));
         assertEquals(true, body.get("toc_enhance"));
-        assertEquals(1, body.get("rerank_id"));
+        assertEquals("BAAI/bge-reranker-v2-m3@BAAI", body.get("rerank_id"));
         assertEquals(true, body.get("keyword"));
         assertEquals(true, body.get("highlight"));
 

@@ -42,13 +42,16 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentsMiddleware;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -72,20 +75,28 @@ import reactor.core.publisher.Flux;
  * <p>The contract under test is the middleware list registered on the underlying
  * {@code ReActAgent}.
  */
+@HarnessQuiescence
 class HarnessAgentDynamicHookBuilderTest {
 
     @TempDir Path workspace;
+    private final List<HarnessAgent> agents = new ArrayList<>();
+
+    @AfterEach
+    void closeAgents() {
+        agents.forEach(HarnessAgent::close);
+    }
 
     @Test
     void defaultBuild_registersDynamicSkillAndSubagentMiddlewares() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
@@ -108,13 +119,14 @@ class HarnessAgentDynamicHookBuilderTest {
         AgentSkillRepository emptyRepo = new EmptySkillRepository();
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .skillRepository(emptyRepo)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .skillRepository(emptyRepo)
+                                .build());
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertTrue(
@@ -126,13 +138,14 @@ class HarnessAgentDynamicHookBuilderTest {
     void disableDynamicSkills_skipsDynamicSkillMiddleware() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .disableDynamicSkills()
+                                .build());
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertFalse(
@@ -154,14 +167,15 @@ class HarnessAgentDynamicHookBuilderTest {
                                         null)));
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .skillRepository(repository)
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .skillRepository(repository)
+                                .disableDynamicSkills()
+                                .build());
 
         assertEquals(
                 1,
@@ -223,21 +237,27 @@ class HarnessAgentDynamicHookBuilderTest {
                                 skill("gamma", "gamma description")));
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .skillRepository(repository)
-                        .enableSkills("alpha", "beta")
-                        .enableSkillPromotionGate(
-                                null,
-                                (skills, ctx) ->
-                                        skills.stream()
-                                                .filter(skill -> !"alpha".equals(skill.getName()))
-                                                .toList())
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .skillRepository(repository)
+                                .enableSkills("alpha", "beta")
+                                .enableSkillPromotionGate(
+                                        null,
+                                        (skills, ctx) ->
+                                                skills.stream()
+                                                        .filter(
+                                                                skill ->
+                                                                        !"alpha"
+                                                                                .equals(
+                                                                                        skill
+                                                                                                .getName()))
+                                                        .toList())
+                                .disableDynamicSkills()
+                                .build());
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("filtered-static").build();
         agent.call("hello", ctx).block();
@@ -266,15 +286,16 @@ class HarnessAgentDynamicHookBuilderTest {
                 new CountingSkillRepository(List.of(skill("disabled", "must stay hidden")));
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(model)
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .skillRepository(repository)
-                        .skillsEnabled(false)
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(model)
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .skillRepository(repository)
+                                .skillsEnabled(false)
+                                .disableDynamicSkills()
+                                .build());
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("no-static-skills").build();
         agent.call("hello", ctx).block();
@@ -294,13 +315,14 @@ class HarnessAgentDynamicHookBuilderTest {
         Files.writeString(skillDir.resolve("references/guide.md"), "lazy reference body");
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .disableDynamicSkills()
+                                .build());
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("lazy-static").build();
         agent.call("hello", ctx).block();
@@ -332,13 +354,14 @@ class HarnessAgentDynamicHookBuilderTest {
         AgentSkillRepository custom = new EmptySkillRepository();
 
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .skillRepository(custom)
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .skillRepository(custom)
+                                .build());
 
         List<AgentSkillRepository> repos = agent.getSkillRepositories();
         assertNotNull(repos, "getSkillRepositories() must never return null");
@@ -357,13 +380,14 @@ class HarnessAgentDynamicHookBuilderTest {
     void getSkillRepositories_isEmptyWhenNothingComposed() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .disableDynamicSkills()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .disableDynamicSkills()
+                                .build());
 
         assertNotNull(agent.getSkillRepositories());
     }
@@ -372,12 +396,13 @@ class HarnessAgentDynamicHookBuilderTest {
     void getSkillRepositories_returnsImmutableList() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .build());
 
         List<AgentSkillRepository> first = agent.getSkillRepositories();
         List<AgentSkillRepository> second = agent.getSkillRepositories();
@@ -395,13 +420,14 @@ class HarnessAgentDynamicHookBuilderTest {
     void disableDynamicSubagents_fallsBackToStaticSubagentsMiddleware() throws Exception {
         Files.createDirectories(workspace);
         HarnessAgent agent =
-                HarnessAgent.builder()
-                        .name("t")
-                        .model(stubModel("ok"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .disableDynamicSubagents()
-                        .build();
+                track(
+                        HarnessAgent.builder()
+                                .name("t")
+                                .model(stubModel("ok"))
+                                .workspace(workspace)
+                                .abstractFilesystem(new LocalFilesystem(workspace))
+                                .disableDynamicSubagents()
+                                .build());
 
         List<MiddlewareBase> mws = agent.getDelegate().getMiddlewares();
         assertFalse(
@@ -422,6 +448,11 @@ class HarnessAgentDynamicHookBuilderTest {
                 .filter(io.agentscope.harness.agent.middleware.HarnessSkillMiddleware::isFrozen)
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private HarnessAgent track(HarnessAgent agent) {
+        agents.add(agent);
+        return agent;
     }
 
     private static AgentSkill skill(String name, String description) {

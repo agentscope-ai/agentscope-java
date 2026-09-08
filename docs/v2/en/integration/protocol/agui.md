@@ -220,7 +220,13 @@ agentscope:
     enable-reasoning: false
     emit-run-finished-after-error: false
     server-side-memory: false
+    interrupt-on-disconnect: true
 ```
+
+`interrupt-on-disconnect` controls whether an Agent run is interrupted when the MVC/WebFlux SSE
+connection is closed, times out, or fails while sending an event. It defaults to `true` for
+backward compatibility. Set it to `false` to let the Agent continue running after the client
+disconnects; events produced while the connection is closed are not replayed by the starter.
 
 You can extend the default chain with beans:
 

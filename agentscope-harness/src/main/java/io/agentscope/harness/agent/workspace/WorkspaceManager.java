@@ -34,11 +34,13 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -437,6 +439,24 @@ public class WorkspaceManager implements AutoCloseable {
     // ==================== Task record methods ====================
 
     /**
+     * {@code true} when the filesystem layer serving task-record paths is the per-call sandbox
+     * proxy. Task records are cross-call orchestration metadata: the heartbeat and orphan
+     * sweeper of {@code WorkspaceTaskRepository} maintain them from scheduler threads that run
+     * outside any agent call, where {@code SandboxBackedFilesystem} holds no live sandbox and
+     * every operation throws. In that case task-record IO is routed to the host workspace
+     * directly — the same location used when no filesystem layer is configured — so task
+     * liveness bookkeeping keeps working between calls. Explicit prefix routes (e.g. a
+     * persistent store mounted for {@code agents/}) are respected and still take over.
+     */
+    private boolean taskRecordsRouteToLiveSandbox(String relPath) {
+        AbstractFilesystem fs = this.filesystem;
+        if (fs instanceof RoutedSandboxFilesystem routed) {
+            fs = routed.backendFor(relPath);
+        }
+        return fs instanceof SandboxBackedFilesystem;
+    }
+
+    /**
      * Upserts a {@link TaskRecord} in {@code agents/<agentId>/tasks/<sessionId>.json}.
      *
      * <p>Reads the existing map, merges or inserts the record keyed by {@code taskId}, then
@@ -534,7 +554,7 @@ public class WorkspaceManager implements AutoCloseable {
         // workspace-relative path → Optional<Instant> last-modified (empty = mtime unknown)
         Map<String, Optional<Instant>> relPaths = new LinkedHashMap<>();
 
-        if (filesystem != null) {
+        if (filesystem != null && !taskRecordsRouteToLiveSandbox(tasksRelDir)) {
             GlobResult glob = filesystem.glob(rc, "*.json", tasksRelDir);
             if (glob.isSuccess() && glob.matches() != null) {
                 for (FileInfo fi : glob.matches()) {
@@ -601,7 +621,8 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
-     * Acquires the per-file lock before delegating to {@link #readTaskMap(String)}, so that reads
+     * Acquires the per-file lock before delegating to {@link #readTaskMap(RuntimeContext, String)},
+     * so that reads
      * are mutually exclusive with the read-modify-write cycle in {@link #writeTaskRecord}. This
      * prevents a concurrent writer's non-atomic file update (truncate → write) from being observed
      * as a partial JSON read.
@@ -626,7 +647,12 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private Map<String, TaskRecord> readTaskMap(RuntimeContext rc, String rel) throws IOException {
-        String json = readWritableWorkspaceRelativeUtf8(rc, rel);
+        String json =
+                taskRecordsRouteToLiveSandbox(rel)
+                        // Same normalization/validation as the non-routed branch, so a poisoned
+                        // sessionId cannot read outside the workspace via the host-disk path.
+                        ? readFileQuietly(workspace.resolve(requireSafeRelativePath(rel)))
+                        : readWritableWorkspaceRelativeUtf8(rc, rel);
         if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
@@ -638,6 +664,10 @@ public class WorkspaceManager implements AutoCloseable {
         try {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+            if (taskRecordsRouteToLiveSandbox(rel)) {
+                writeLocalFile(rel, serialized);
+                return;
+            }
             writeUtf8WorkspaceRelative(rc, rel, serialized);
         } catch (IOException e) {
             log.warn("Failed to write task record store {}: {}", rel, e.getMessage());

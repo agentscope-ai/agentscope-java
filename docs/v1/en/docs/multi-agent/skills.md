@@ -1,5 +1,7 @@
 # Skills (Progressive Disclosure)
 
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
+
 In the **skills** pattern, specialized capabilities are packaged as invokable "skills" that augment an agent’s behavior. Skills are primarily **prompt-driven**: the agent sees skill metadata (e.g. name and description) first and loads full skill content **on demand** via a tool (e.g. `read_skill`). This keeps the initial context small and avoids loading all skill text upfront.
 
 AgentScope implements this with **SkillBox**, **SkillRepository** (e.g. `ClasspathSkillRepository`), and skill tools. The core feature is documented in [Agent Skill](../task/agent-skill.md); this page focuses on the **multi-agent example** that uses the same mechanism for a SQL assistant.
@@ -39,16 +41,8 @@ In the example:
 
 The **SQL assistant** example uses two skills: **sales_analytics** (customers, orders, revenue) and **inventory_management** (products, warehouses, stock). The user asks in natural language; the agent calls **read_skill("sales_analytics")** or **read_skill("inventory_management")** when needed, then generates SQL.
 
-- **Location**: `agentscope-examples/multiagent-patterns/skills/`
 - **Key classes**: `SkillsConfig` (ClasspathSkillRepository, SkillBox, ReActAgent), `SkillsRunner` (optional demo).
 - **Run**: Set `skills.runner.enabled=true` to run a single-query demo on startup (e.g. “Write a SQL query to find all customers who made orders over $1000 in the last month”).
-
-**Build and run** (from repo root):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/skills -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/skills spring-boot:run
-```
 
 **Use in your code**: Inject the ReActAgent (e.g. `sqlAssistantAgent`) and call it with a user `Msg`; get text from the response with `getTextContent()`. The agent will use skill descriptions to decide when to call **read_skill** and then generate the SQL.
 

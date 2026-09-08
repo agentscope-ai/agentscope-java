@@ -36,6 +36,9 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.State;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashMap;
 import java.util.List;
@@ -212,5 +215,75 @@ class ReActAgentInterruptToolCallTest {
         Msg second = agent.call(List.of(userMsg("continue"))).block();
         assertNotNull(second);
         assertEquals("resumed-ok", second.getTextContent());
+    }
+
+    /**
+     * A user interrupt after the model emits a tool_use must be reconciled (error tool result
+     * synthesized) and persisted exactly once via {@link ReActAgent#handleInterrupt}. The
+     * call-failure persistence hook must NOT race ahead of that reconciliation and persist an
+     * unreconciled dangling tool_use. Regression test for the saveStateAfterCallFailure /
+     * InterruptedException interaction.
+     */
+    @Test
+    void interruptPersistsOnceWithReconciledToolResult() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "search")),
+                                () -> Flux.just(textResponse("resumed"))));
+        CountingStateStore store = new CountingStateStore();
+        ReActAgent agent =
+                buildAgentWithStore(model, store, new InterruptAfterModelCallMiddleware());
+
+        Msg result = agent.call(List.of(userMsg("do something"))).block();
+        assertNotNull(result);
+        assertEquals(GenerateReason.INTERRUPTED, result.getGenerateReason());
+
+        assertEquals(
+                1,
+                store.saveIfVersionCalls.get(),
+                "interrupt must persist exactly once via handleInterrupt, not preemptively"
+                        + " before reconciliation");
+
+        AgentState persisted =
+                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                        .orElseThrow();
+        List<ToolUseBlock> toolUses =
+                persisted.getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolUseBlock.class).stream())
+                        .toList();
+        List<ToolResultBlock> toolResults =
+                persisted.getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .toList();
+        assertEquals(1, toolUses.size(), "the emitted tool_use must be persisted");
+        assertEquals(
+                1,
+                toolResults.size(),
+                "a matching error tool result must be reconciled for the pending tool_use");
+        assertEquals(toolUses.get(0).getId(), toolResults.get(0).getId());
+        assertEquals(ToolResultState.ERROR, toolResults.get(0).getState());
+    }
+
+    private static ReActAgent buildAgentWithStore(
+            ChatModelBase model, InMemoryAgentStateStore store, MiddlewareBase... middlewares) {
+        return ReActAgent.builder()
+                .name("asst")
+                .model(model)
+                .toolkit(new Toolkit())
+                .middlewares(List.of(middlewares))
+                .stateStore(store)
+                .build();
+    }
+
+    private static final class CountingStateStore extends InMemoryAgentStateStore {
+        final AtomicInteger saveIfVersionCalls = new AtomicInteger();
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            saveIfVersionCalls.incrementAndGet();
+            return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        }
     }
 }
