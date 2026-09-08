@@ -77,7 +77,6 @@ public final class ToolResultMessage extends Msg {
     private ToolResultMessage(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("timestamp") String timestamp,
@@ -215,7 +214,7 @@ public final class ToolResultMessage extends Msg {
         @Override
         public ToolResultMessage build() {
             return new ToolResultMessage(
-                    id, name, MsgRole.TOOL, List.copyOf(content), metadata, timestamp, usage);
+                    id, name, List.copyOf(content), metadata, timestamp, usage);
         }
     }
 }

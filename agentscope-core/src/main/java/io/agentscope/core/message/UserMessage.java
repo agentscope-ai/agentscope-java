@@ -74,7 +74,6 @@ public final class UserMessage extends Msg {
     private UserMessage(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("timestamp") String timestamp,
@@ -169,7 +168,7 @@ public final class UserMessage extends Msg {
 
         @Override
         public UserMessage build() {
-            return new UserMessage(id, name, MsgRole.USER, content, metadata, timestamp, usage);
+            return new UserMessage(id, name, content, metadata, timestamp, usage);
         }
     }
 }

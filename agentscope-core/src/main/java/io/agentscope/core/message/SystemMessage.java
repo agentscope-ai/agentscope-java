@@ -72,7 +72,6 @@ public final class SystemMessage extends Msg {
     private SystemMessage(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("timestamp") String timestamp,
@@ -167,7 +166,7 @@ public final class SystemMessage extends Msg {
 
         @Override
         public SystemMessage build() {
-            return new SystemMessage(id, name, MsgRole.SYSTEM, content, metadata, timestamp, usage);
+            return new SystemMessage(id, name, content, metadata, timestamp, usage);
         }
     }
 }
