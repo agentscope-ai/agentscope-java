@@ -1761,7 +1761,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         int soValidationAttempts = 0;
 
-        /** Id of the final message already validated during this call (dedupe guard). */
+        /**
+         * Id of the final message already validated during this call (dedupe guard). Recorded
+         * only after validation succeeds, so a message reusing the id of a failed attempt is
+         * re-validated rather than skipped.
+         */
         String soValidatedFinalMsgId;
 
         /**
@@ -2407,7 +2411,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         if (msg.getId() != null && msg.getId().equals(soValidatedFinalMsgId)) {
                             return Mono.just(msg);
                         }
-                        soValidatedFinalMsgId = msg.getId();
                         String text = msg.getTextContent() == null ? "" : msg.getTextContent();
                         JsonNode payload;
                         List<StructuredOutputValidator.ValidationError> errors;
@@ -2435,6 +2438,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             payload = null;
                         }
                         if (errors.isEmpty()) {
+                            // Record the guard id only after validation succeeds: a message
+                            // reusing the id of a failed attempt must be re-validated instead
+                            // of being skipped (fail-closed).
+                            soValidatedFinalMsgId = msg.getId();
                             soValidatedPayload = payload;
                             if (soCarriedUsage == null) {
                                 return Mono.just(msg);

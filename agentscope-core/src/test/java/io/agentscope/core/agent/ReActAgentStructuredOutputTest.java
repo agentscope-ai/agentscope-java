@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -40,6 +41,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -795,6 +797,91 @@ class ReActAgentStructuredOutputTest {
         MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
         assertNotNull(result, "structured metadata must survive prose-wrapped output");
         assertEquals(7, result.answer);
+    }
+
+    @Test
+    @DisplayName("dedupe guard: message reusing a failed attempt's id is re-validated, not skipped")
+    void testSameIdMessageRevalidatedAfterFailedAttempt() {
+        // Attempt 1: id "msg_x", schema-violating payload (answer is a string).
+        // Attempt 2: SAME id "msg_x", still violating. The dedupe guard records validated
+        // ids only, so this attempt must be re-validated (and fail) instead of skipped.
+        // Attempt 3: fresh id, conforming JSON. Total model calls must be 3; a guard that
+        // skips the same-id second attempt would finish the call after 2 calls with an
+        // unvalidated result.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            int call = calls.incrementAndGet();
+                            if (call == 1) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            if (call == 2) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"still-bad\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_ok")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder().maxAttempts(3).build())
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        assertEquals(3, calls.get(), "same-id failed attempt must be re-validated, not skipped");
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
     }
 
     @Test
