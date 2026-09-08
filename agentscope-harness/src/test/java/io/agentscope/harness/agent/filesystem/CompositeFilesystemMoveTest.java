@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -165,9 +166,8 @@ class CompositeFilesystemMoveTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void moveReportsSourceDeletionFailureAndPreservesBothCopies(boolean throwsException)
-            throws Exception {
+    @ValueSource(strings = {"failure", "exception", "missing-response"})
+    void moveReportsSourceDeletionFailureAndPreservesBothCopies(String failure) throws Exception {
         byte[] content = "preserve both copies\r\n".getBytes(StandardCharsets.UTF_8);
         Path sourceRoot = Files.createDirectory(workspace.resolve("source"));
         Path targetRoot = Files.createDirectory(workspace.resolve("target"));
@@ -176,8 +176,11 @@ class CompositeFilesystemMoveTest {
                 new LocalFilesystem(sourceRoot, true, 10) {
                     @Override
                     public WriteResult delete(RuntimeContext runtimeContext, String path) {
-                        if (throwsException) {
+                        if (failure.equals("exception")) {
                             throw new IllegalStateException("source deletion denied");
+                        }
+                        if (failure.equals("missing-response")) {
+                            return null;
                         }
                         return WriteResult.fail("source deletion denied");
                     }
@@ -188,13 +191,27 @@ class CompositeFilesystemMoveTest {
         WriteResult result = fs.move(RT, "/file.txt", "/target/file.txt");
 
         assertFalse(result.isSuccess(), "a copy without source deletion is not a successful move");
-        assertTrue(result.error().contains("source deletion denied"));
+        assertTrue(result.error().contains("could not delete source"));
+        assertTrue(
+                result.error()
+                        .contains(
+                                failure.equals("missing-response")
+                                        ? "missing delete response"
+                                        : "source deletion denied"));
         assertArrayEquals(content, Files.readAllBytes(sourceRoot.resolve("file.txt")));
         assertArrayEquals(content, Files.readAllBytes(targetRoot.resolve("file.txt")));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"unsupported", "null-content", "missing-response"})
+    @ValueSource(
+            strings = {
+                "unsupported",
+                "null-content",
+                "missing-response",
+                "null-list",
+                "null-entry",
+                "failure"
+            })
     void movePreservesSourceWhenDownloadCannotProvideBytes(String failure) throws Exception {
         byte[] content = new byte[] {(byte) 0xff, 1, 2};
         Path sourceRoot = Files.createDirectory(workspace.resolve("source"));
@@ -211,6 +228,12 @@ class CompositeFilesystemMoveTest {
                                             "binary download is unavailable");
                             case "null-content" ->
                                     List.of(FileDownloadResponse.success(paths.get(0), null));
+                            case "null-list" -> null;
+                            case "null-entry" -> Collections.singletonList(null);
+                            case "failure" ->
+                                    List.of(
+                                            FileDownloadResponse.fail(
+                                                    paths.get(0), "download denied"));
                             default -> List.of();
                         };
                     }
@@ -221,13 +244,17 @@ class CompositeFilesystemMoveTest {
         WriteResult result = fs.move(RT, "/file.bin", "/target/file.bin");
 
         assertFalse(result.isSuccess());
+        assertTrue(result.error().contains("/file.bin"));
+        if (failure.equals("failure")) {
+            assertTrue(result.error().contains("download denied"));
+        }
         assertArrayEquals(content, Files.readAllBytes(sourceRoot.resolve("file.bin")));
         assertFalse(Files.exists(targetRoot.resolve("file.bin")));
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void movePreservesSourceWhenTargetUploadFails(boolean throwsException) throws Exception {
+    @ValueSource(strings = {"failure", "exception", "null-list", "null-entry", "missing-response"})
+    void movePreservesSourceWhenTargetUploadFails(String failure) throws Exception {
         byte[] content = new byte[] {(byte) 0xff, 1, 2};
         Path sourceRoot = Files.createDirectory(workspace.resolve("source"));
         Path targetRoot = Files.createDirectory(workspace.resolve("target"));
@@ -239,11 +266,16 @@ class CompositeFilesystemMoveTest {
                             RuntimeContext runtimeContext,
                             List<Map.Entry<String, byte[]>> files,
                             UploadMode mode) {
-                        if (throwsException) {
-                            throw new IllegalStateException("upload denied");
-                        }
-                        return List.of(
-                                FileUploadResponse.fail(files.get(0).getKey(), "upload denied"));
+                        return switch (failure) {
+                            case "exception" -> throw new IllegalStateException("upload denied");
+                            case "null-list" -> null;
+                            case "null-entry" -> Collections.singletonList(null);
+                            case "missing-response" -> List.of();
+                            default ->
+                                    List.of(
+                                            FileUploadResponse.fail(
+                                                    files.get(0).getKey(), "upload denied"));
+                        };
                     }
                 };
         CompositeFilesystem fs =
@@ -252,7 +284,8 @@ class CompositeFilesystemMoveTest {
         WriteResult result = fs.move(RT, "/file.bin", "/target/file.bin");
 
         assertFalse(result.isSuccess());
-        assertTrue(result.error().contains("upload denied"));
+        assertTrue(result.error().contains("upload"));
+        assertTrue(result.error().contains("/target/file.bin"));
         assertArrayEquals(content, Files.readAllBytes(sourceRoot.resolve("file.bin")));
         assertFalse(Files.exists(targetRoot.resolve("file.bin")));
     }

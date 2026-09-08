@@ -34,6 +34,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -49,10 +50,16 @@ class FilesystemUploadModeTest {
     @TempDir Path workspace;
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void overwriteModeReplacesFilesCreatedByLegacyUpload(boolean remote) {
+    @ValueSource(strings = {"local", "remote", "overlay"})
+    void overwriteModeReplacesFilesCreatedByLegacyUpload(String backend) {
         AbstractFilesystem fs =
-                remote ? new RemoteFilesystem(new InMemoryStore()) : local(workspace);
+                switch (backend) {
+                    case "remote" -> new RemoteFilesystem(new InMemoryStore());
+                    case "overlay" ->
+                            new OverlayFilesystem(
+                                    local(workspace), new RemoteFilesystem(new InMemoryStore()));
+                    default -> local(workspace);
+                };
         byte[] original = "original".getBytes(StandardCharsets.UTF_8);
         byte[] replacement = "replacement\r\n".getBytes(StandardCharsets.UTF_8);
         FileUploadResponse initial =
@@ -68,6 +75,30 @@ class FilesystemUploadModeTest {
 
         assertTrue(result.isSuccess(), result.error());
         assertArrayEquals(replacement, download(fs, RT, "/file.txt"));
+    }
+
+    @Test
+    void defaultCreateNewRejectsNullContentAndContinuesBatch() throws Exception {
+        OverlayFilesystem fs =
+                new OverlayFilesystem(local(workspace), new RemoteFilesystem(new InMemoryStore()));
+        byte[] content = "valid content\r\n".getBytes(StandardCharsets.UTF_8);
+
+        List<FileUploadResponse> responses =
+                fs.uploadFiles(
+                        RT,
+                        List.of(
+                                new SimpleImmutableEntry<String, byte[]>("/missing.txt", null),
+                                Map.entry("/valid.txt", content)),
+                        UploadMode.CREATE_NEW);
+
+        assertEquals(2, responses.size());
+        assertEquals("/missing.txt", responses.get(0).path());
+        assertFalse(responses.get(0).isSuccess());
+        assertNotNull(responses.get(0).error());
+        assertEquals("/valid.txt", responses.get(1).path());
+        assertTrue(responses.get(1).isSuccess(), responses.get(1).error());
+        assertFalse(Files.exists(workspace.resolve("missing.txt")));
+        assertArrayEquals(content, Files.readAllBytes(workspace.resolve("valid.txt")));
     }
 
     @Test
