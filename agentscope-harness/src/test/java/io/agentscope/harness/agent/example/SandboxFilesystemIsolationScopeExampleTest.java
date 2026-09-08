@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -65,6 +66,7 @@ import reactor.core.publisher.Flux;
  * step. The assertions count {@link InMemorySandboxClient#getCreateCount()} and
  * {@link InMemorySandboxClient#getResumeCount()} to verify isolation behaviour.
  */
+@HarnessQuiescence
 class SandboxFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
