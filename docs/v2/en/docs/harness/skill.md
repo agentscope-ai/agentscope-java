@@ -307,7 +307,7 @@ The agent doesn't see this difference — `load_skill_through_path` always works
 
 ### `<files-root>` and shell execution
 
-When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute_shell_command`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them with the `execute` tool. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
@@ -315,7 +315,7 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
-So the agent's shell call is always `execute_shell_command("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
+So the agent always puts that path in the command, for example `execute(command="python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember. The optional `working_directory` parameter accepts only a path relative to the workspace root. Do not pass `<files-root>` to it; omit it when running skill scripts unless the command needs a workspace-relative working directory.
 
 ### Where marketplace files actually live
 
@@ -380,11 +380,11 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 
 So the agent simply issues:
 
-```
-execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
+```text
+execute(command="python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
 ```
 
-That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.
+That command runs in the container and reads exactly the file that was projected in. The absolute path stays in `command`; `working_directory` is omitted. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.
 
 > If a sandbox backend mounts the workspace at a non-default location (e.g. AgentRun uses `/home/agentscope/workspace`), the `<files-root>` prefix changes accordingly, and the agent still gets a correct absolute path.
 

@@ -53,7 +53,9 @@ public class ShellExecuteTool {
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Working directory (relative to workspace root, optional)",
+                                    "Optional working directory relative to the workspace root."
+                                        + " Omit it when invoking an absolute path, such as a skill"
+                                        + " script.",
                             required = false)
                     String workingDirectory,
             @ToolParam(
@@ -66,7 +68,8 @@ public class ShellExecuteTool {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
                 return "Error: working_directory must be a relative path within the workspace"
-                        + " (absolute paths, '~', and '..' are not allowed).";
+                        + " (absolute paths, '~', and '..' are not allowed). Put absolute paths in"
+                        + " the command instead, or omit working_directory.";
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
