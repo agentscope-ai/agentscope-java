@@ -286,6 +286,24 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseUsageMetadataUsesThinkingWhenCandidateAndTotalCountsAreMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .thoughtsTokenCount(10)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(500, usage.getInputTokens());
+        assertEquals(10, usage.getOutputTokens());
+    }
+
+    @Test
     void testParseUsageMetadataReadsCachedContentTokenCount() {
         // Gemini 报告的 cachedContentTokenCount 必须透传到 ChatUsage.cachedTokens,
         // 否则下游记账无法识别缓存命中、定价会按全量 prompt 估算。

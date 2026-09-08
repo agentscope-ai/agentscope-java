@@ -104,10 +104,16 @@ public class GeminiResponseParser {
                                 .map(candidateTokens -> candidateTokens + thinkingTokens)
                                 .orElseGet(
                                         () ->
-                                                Math.max(
-                                                        0,
-                                                        metadata.totalTokenCount().orElse(0)
-                                                                - inputTokens));
+                                                metadata.totalTokenCount()
+                                                        .map(
+                                                                total ->
+                                                                        Math.max(
+                                                                                0,
+                                                                                total
+                                                                                        - inputTokens))
+                                                        // Without candidate or total counts,
+                                                        // thoughts are the only reported output.
+                                                        .orElse(thinkingTokens));
 
                 usage =
                         ChatUsage.builder()
