@@ -42,6 +42,7 @@
 - [AgentRun（阿里云）](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-agentrun`
 - [Daytona](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-daytona`
 - [E2B](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-e2b`
+- [OpenSandbox](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-opensandbox`
 
 ## 记忆（Memory）
 

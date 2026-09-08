@@ -42,6 +42,7 @@ Isolated code execution stores. Docker is built-in; the rest are standalone exte
 - [AgentRun (Alibaba Cloud)](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-agentrun`
 - [Daytona](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-daytona`
 - [E2B](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-e2b`
+- [OpenSandbox](../docs/harness/sandbox.md) — `agentscope-extensions-sandbox-opensandbox`
 
 ## Memory
 
