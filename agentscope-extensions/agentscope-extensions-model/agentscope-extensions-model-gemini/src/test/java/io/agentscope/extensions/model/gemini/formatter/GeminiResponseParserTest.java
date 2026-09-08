@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Candidate;
@@ -38,6 +39,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Unit tests for GeminiResponseParser.
@@ -216,9 +219,9 @@ class GeminiResponseParserTest {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(100)
-                        .candidatesTokenCount(60) // Includes thinking
+                        .candidatesTokenCount(60) // Excludes thinking
                         .thoughtsTokenCount(10) // Thinking tokens
-                        .totalTokenCount(160)
+                        .totalTokenCount(170)
                         .build();
 
         GenerateContentResponse response =
@@ -238,8 +241,9 @@ class GeminiResponseParserTest {
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
 
-        // Output tokens = candidatesTokenCount - thoughtsTokenCount
-        assertEquals(50, usage.getOutputTokens());
+        // Output tokens include both candidate and thinking tokens.
+        assertEquals(70, usage.getOutputTokens());
+        assertEquals(170, usage.getTotalTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);
@@ -262,7 +266,7 @@ class GeminiResponseParserTest {
                         .promptTokenCount(500)
                         .candidatesTokenCount(60)
                         .thoughtsTokenCount(10)
-                        .totalTokenCount(560)
+                        .totalTokenCount(570)
                         .cachedContentTokenCount(300)
                         .build();
 
@@ -277,6 +281,63 @@ class GeminiResponseParserTest {
 
         assertNotNull(chatResponse.getUsage());
         assertEquals(300, chatResponse.getUsage().getCachedTokens());
+        assertEquals(500, chatResponse.getUsage().getInputTokens());
+        assertEquals(70, chatResponse.getUsage().getOutputTokens());
+        assertEquals(570, chatResponse.getUsage().getTotalTokens());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+        "server-side tools and thinking, 500, 300, 120, 10, 930, 800, 130",
+        "server-side tools without thinking, 500, 300, 120, , 920, 800, 120",
+        "thinking exceeds candidates, 100, , 10, 60, 170, 100, 70",
+        "missing candidates with tools, 500, 300, , 10, 930, 800, 130",
+        "missing candidates without tools, 100, , , 10, 170, 100, 70",
+        "explicit zero candidates, 100, , 0, 10, 170, 100, 10",
+        "missing total with candidates, 100, , 60, 10, , 100, 70",
+        "missing total and candidates, 100, , , 10, , 100, 10",
+        "total smaller than input, 100, 50, , , 120, 150, 0",
+        "prompt only, 100, , , , , 100, 0",
+        "no prompt with tool input, , 300, 120, 10, 430, 300, 130",
+        "empty metadata, , , , , , 0, 0"
+    })
+    void testUsageTokenAccounting(
+            String scenario,
+            Integer prompt,
+            Integer toolPrompt,
+            Integer candidates,
+            Integer thoughts,
+            Integer total,
+            int expectedInput,
+            int expectedOutput) {
+        GenerateContentResponseUsageMetadata.Builder metadata =
+                GenerateContentResponseUsageMetadata.builder();
+        if (prompt != null) {
+            metadata.promptTokenCount(prompt);
+        }
+        if (toolPrompt != null) {
+            metadata.toolUsePromptTokenCount(toolPrompt);
+        }
+        if (candidates != null) {
+            metadata.candidatesTokenCount(candidates);
+        }
+        if (thoughts != null) {
+            metadata.thoughtsTokenCount(thoughts);
+        }
+        if (total != null) {
+            metadata.totalTokenCount(total);
+        }
+        // Streaming responses may carry usage without candidate content.
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(metadata.build()).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(expectedInput, usage.getInputTokens(), scenario);
+        assertEquals(expectedOutput, usage.getOutputTokens(), scenario);
+        assertEquals(expectedInput + expectedOutput, usage.getTotalTokens(), scenario);
+        assertEquals(0, usage.getCachedTokens());
     }
 
     @Test
@@ -291,6 +352,7 @@ class GeminiResponseParserTest {
         // Verify
         assertNotNull(chatResponse);
         assertEquals("response-empty", chatResponse.getId());
+        assertNull(chatResponse.getUsage());
         assertEquals(0, chatResponse.getContent().size());
     }
 
