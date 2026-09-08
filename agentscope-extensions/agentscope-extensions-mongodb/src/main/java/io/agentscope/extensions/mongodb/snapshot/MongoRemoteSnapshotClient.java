@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.mongodb.snapshot;
 
-import com.mongodb.MongoCommandException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -24,6 +23,8 @@ import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import io.agentscope.extensions.mongodb.MongoConstants;
+import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -53,7 +54,6 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static final Logger log = LoggerFactory.getLogger(MongoRemoteSnapshotClient.class);
 
-    private static final String DEFAULT_COLLECTION = "agentscope_snapshots";
     private static final String FIELD_DATA = "data";
     private static final String FIELD_CREATED_AT = "createdAt";
     // Aligned with the session TTL in MongoAgentStateStore (30 days on _updated_at): a snapshot
@@ -71,9 +71,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
             String collectionName,
             boolean initializeSchema) {
         Objects.requireNonNull(mongoClient, "mongoClient");
-        String coll = collectionName != null ? collectionName : DEFAULT_COLLECTION;
+        String coll = collectionName != null ? collectionName : MongoConstants.SNAPSHOTS_COLLECTION;
         MongoDatabase db =
-                mongoClient.getDatabase(databaseName != null ? databaseName : "agentscope");
+                mongoClient.getDatabase(
+                        databaseName != null ? databaseName : MongoConstants.DEFAULT_DATABASE);
         this.collection = db.getCollection(coll);
         if (initializeSchema) {
             initSchema();
@@ -81,44 +82,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     }
 
     private void initSchema() {
-        try {
-            collection.createIndex(
-                    Indexes.ascending(FIELD_CREATED_AT),
-                    new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
-        } catch (MongoCommandException e) {
-            // IndexOptionsConflict
-            if (e.getErrorCode() == 85) {
-                // A TTL index on createdAt exists with different options, and createIndex
-                // cannot change options in place. Drop and recreate so the TTL actually
-                // takes effect — otherwise this best-effort initialization would only warn
-                // and silently keep the stale TTL. This keeps future TTL adjustments safe.
-                migrateTtlIndex();
-            } else {
-                log.warn(
-                        "Failed to initialize snapshot collection index '{}': {}",
-                        collection.getNamespace(),
-                        e.getMessage());
-            }
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to initialize snapshot collection index '{}': {}",
-                    collection.getNamespace(),
-                    e.getMessage());
-        }
-    }
-
-    private void migrateTtlIndex() {
-        try {
-            collection.dropIndex(FIELD_CREATED_AT + "_1");
-            collection.createIndex(
-                    Indexes.ascending(FIELD_CREATED_AT),
-                    new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
-        } catch (Exception e) {
-            log.warn(
-                    "Failed to migrate snapshot TTL index '{}': {}",
-                    collection.getNamespace(),
-                    e.getMessage());
-        }
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
+                Indexes.ascending(FIELD_CREATED_AT),
+                new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
     }
 
     @Override

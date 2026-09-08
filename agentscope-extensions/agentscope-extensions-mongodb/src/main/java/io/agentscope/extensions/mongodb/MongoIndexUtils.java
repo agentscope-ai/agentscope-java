@@ -1,0 +1,101 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.mongodb;
+
+import com.mongodb.MongoCommandException;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.IndexOptions;
+import org.bson.BsonDocument;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Utility for creating MongoDB indexes with automatic migration on
+ * {@code IndexOptionsConflict} (error code 85).
+ *
+ * <p>When an existing index has conflicting options (e.g. TTL value changed), this utility
+ * uses {@code listIndexes()} to find the <em>actual</em> index name by key pattern — not a
+ * guessed default name — so it works even when DBAs renamed the index.
+ */
+public final class MongoIndexUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(MongoIndexUtils.class);
+
+    private MongoIndexUtils() {}
+
+    /**
+     * Creates an index, migrating if an existing index has conflicting options (error 85).
+     *
+     * <p>If {@code createIndex} fails with error 85, this method:
+     * <ol>
+     *   <li>Calls {@code listIndexes()} to find the existing index whose key pattern matches
+     *       {@code indexKeys}.</li>
+     *   <li>Drops that index by its actual name (not a guessed default).</li>
+     *   <li>Re-creates the index with the new definition.</li>
+     * </ol>
+     *
+     * @param collection  the MongoDB collection
+     * @param indexKeys   the index key specification (e.g. {@code Indexes.ascending("field")})
+     * @param options     the index options (e.g. TTL, sparse, unique)
+     */
+    public static void createIndexWithMigration(
+            MongoCollection<Document> collection, Bson indexKeys, IndexOptions options) {
+        try {
+            collection.createIndex(indexKeys, options);
+        } catch (MongoCommandException e) {
+            if (e.getErrorCode() != 85) {
+                throw e;
+            }
+            String conflictingName = findIndexNameByKeyPattern(collection, indexKeys);
+            if (conflictingName == null) {
+                throw e;
+            }
+            log.info(
+                    "[mongo-index] Index conflict (error 85), dropping '{}' and recreating"
+                            + " with new options",
+                    conflictingName);
+            collection.dropIndex(conflictingName);
+            collection.createIndex(indexKeys, options);
+        }
+    }
+
+    /**
+     * Finds the name of an existing index whose key pattern matches the given keys.
+     *
+     * @param collection the MongoDB collection
+     * @param indexKeys  the index key specification to match
+     * @return the index name, or {@code null} if no matching index exists
+     */
+    private static String findIndexNameByKeyPattern(
+            MongoCollection<Document> collection, Bson indexKeys) {
+        BsonDocument keyPattern =
+                indexKeys.toBsonDocument(BsonDocument.class, collection.getCodecRegistry());
+        for (Document index : collection.listIndexes()) {
+            Document existingKeys = index.get("key", Document.class);
+            if (existingKeys != null) {
+                BsonDocument existingBson =
+                        existingKeys.toBsonDocument(
+                                BsonDocument.class, collection.getCodecRegistry());
+                if (existingBson.equals(keyPattern)) {
+                    return index.getString("name");
+                }
+            }
+        }
+        return null;
+    }
+}

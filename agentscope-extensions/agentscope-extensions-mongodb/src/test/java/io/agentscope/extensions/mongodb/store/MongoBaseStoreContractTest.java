@@ -30,58 +30,48 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Contract tests for {@link BaseStore} semantics against a real MongoDB instance.
  *
  * <p>Mirrors the canonical contract defined in {@code BaseStoreContractTest} (agentscope-harness).
- * Skipped automatically when MongoDB is not reachable at {@code localhost:27017}.
- *
- * <p><b>Search semantics note:</b> {@code MongoBaseStore.search()} matches by exact namespace
- * (not prefix), so {@code search(["a"])} does NOT return items stored under child namespaces such
- * as {@code ["a","b"]}. This differs from {@code InMemoryStore} which uses prefix matching. The
- * search test below validates MongoDB's exact-match behavior.
+ * Uses Testcontainers to spin up a real MongoDB instance, making the tests runnable in CI.
  */
+@Testcontainers
 @DisplayName("BaseStore contract — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoBaseStoreContractTest {
 
+    @Container static final MongoDBContainer mongoContainer = new MongoDBContainer("mongo:7");
+
     private static MongoClient client;
     private static MongoDatabase db;
     private static BaseStore store;
-    private static boolean connected;
 
     @BeforeAll
     static void setUp() {
-        try {
-            client = MongoClients.create("mongodb://localhost:27017");
-            client.getDatabase("ping").runCommand(new Document("ping", 1));
-            connected = true;
-        } catch (Exception e) {
-            Assumptions.abort("MongoDB not available: " + e.getMessage());
-        }
+        client = MongoClients.create(mongoContainer.getConnectionString());
         db = client.getDatabase("test_base_contract_" + System.currentTimeMillis());
         store = new MongoBaseStore(db, "test_base");
     }
 
     @AfterAll
     static void tearDown() {
-        if (connected) {
-            if (db != null) {
-                db.drop();
-            }
-            if (client != null) {
-                client.close();
-            }
+        if (db != null) {
+            db.drop();
+        }
+        if (client != null) {
+            client.close();
         }
     }
 
@@ -160,17 +150,35 @@ class MongoBaseStoreContractTest {
 
     @Test
     @Order(6)
-    @DisplayName("search: exact namespace match (MongoDB behavior)")
-    void search_exactNamespaceMatch() {
+    @DisplayName("search: includes child namespace items (prefix matching)")
+    void search_includesChildNamespaceItems() {
         store.put(List.of("s"), "inNs", Map.of("where", "s"));
         store.put(List.of("s", "t"), "inChild", Map.of("where", "s/t"));
 
         List<StoreItem> found = store.search(List.of("s"), 100, 0);
         Set<String> keys = found.stream().map(StoreItem::key).collect(Collectors.toSet());
 
-        // MongoBaseStore uses exact namespace match (not prefix).
-        // Only items directly under ["s"] are returned, not ["s","t"].
-        assertEquals(Set.of("inNs"), keys);
-        assertEquals(1, found.size());
+        // MongoBaseStore uses prefix matching via range queries on the namespace field.
+        // search(["s"]) returns items under both ["s"] and ["s","t"].
+        assertEquals(Set.of("inNs", "inChild"), keys);
+        assertEquals(2, found.size());
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("putIfVersion with stale version returns false")
+    void putIfVersion_staleVersion_returnsFalse() {
+        List<String> ns = List.of("stale");
+        store.put(ns, "k", Map.of("v", 1));
+        long currentVersion = store.get(ns, "k").version();
+
+        // Update once to advance version
+        assertTrue(store.putIfVersion(ns, "k", Map.of("v", 2), currentVersion));
+        assertEquals(2L, store.get(ns, "k").version());
+
+        // Try again with the stale version — should be rejected
+        assertFalse(store.putIfVersion(ns, "k", Map.of("v", 3), currentVersion));
+        assertEquals(2, store.get(ns, "k").value().get("v"));
+        assertEquals(2L, store.get(ns, "k").version());
     }
 }

@@ -42,7 +42,9 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -64,6 +66,7 @@ class MongoSandboxExecutionGuardTest {
     private FindIterable findIterable;
 
     private AutoCloseable mocks;
+    private final List<MongoSandboxExecutionGuard> guards = new ArrayList<>();
 
     @BeforeEach
     @SuppressWarnings("unchecked")
@@ -79,9 +82,31 @@ class MongoSandboxExecutionGuardTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        // Close all guard instances to shut down their renewal executor threads
+        for (MongoSandboxExecutionGuard guard : guards) {
+            try {
+                guard.close();
+            } catch (Exception ignored) {
+                // best-effort cleanup
+            }
+        }
+        guards.clear();
         if (mocks != null) {
             mocks.close();
         }
+    }
+
+    private MongoSandboxExecutionGuard createGuard(
+            java.util.function.UnaryOperator<MongoSandboxExecutionGuard.Builder> customizer) {
+        MongoSandboxExecutionGuard.Builder builder =
+                MongoSandboxExecutionGuard.builder(mongoClient);
+        MongoSandboxExecutionGuard guard = customizer.apply(builder).build();
+        guards.add(guard);
+        return guard;
+    }
+
+    private MongoSandboxExecutionGuard createDefaultGuard() {
+        return createGuard(b -> b);
     }
 
     private SandboxIsolationKey key() {
@@ -101,32 +126,25 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void builderWithDefaultsCreatesGuard() {
-        MongoSandboxExecutionGuard guard = MongoSandboxExecutionGuard.builder(mongoClient).build();
+        MongoSandboxExecutionGuard guard = createDefaultGuard();
         assertNotNull(guard);
     }
 
     @Test
     void builderWithCustomDatabaseName() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient).databaseName("custom_db").build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.databaseName("custom_db"));
         assertNotNull(guard);
     }
 
     @Test
     void builderWithCustomCollectionName() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .collectionName("custom_locks")
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.collectionName("custom_locks"));
         assertNotNull(guard);
     }
 
     @Test
     void builderWithCustomTimeout() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         assertNotNull(guard);
     }
 
@@ -134,24 +152,16 @@ class MongoSandboxExecutionGuardTest {
     void builderRejectsNonPositiveTimeout() {
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .lockTimeout(Duration.ZERO)
-                                .build());
+                () -> createGuard(b -> b.lockTimeout(Duration.ZERO)));
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .lockTimeout(Duration.ofSeconds(-1))
-                                .build());
+                () -> createGuard(b -> b.lockTimeout(Duration.ofSeconds(-1))));
     }
 
     @Test
     void builderWithCustomRetryInterval() {
         MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .retryInterval(Duration.ofMillis(200))
-                        .build();
+                createGuard(b -> b.retryInterval(Duration.ofMillis(200)));
         assertNotNull(guard);
     }
 
@@ -159,56 +169,36 @@ class MongoSandboxExecutionGuardTest {
     void builderRejectsNonPositiveRetryInterval() {
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .retryInterval(Duration.ZERO)
-                                .build());
+                () -> createGuard(b -> b.retryInterval(Duration.ZERO)));
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .retryInterval(Duration.ofMillis(-1))
-                                .build());
+                () -> createGuard(b -> b.retryInterval(Duration.ofMillis(-1))));
     }
 
     @Test
     void builderWithCustomOwner() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient).owner("custom-owner").build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.owner("custom-owner"));
         assertNotNull(guard);
     }
 
     @Test
     void builderWithCustomLeaseTtl() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .leaseTtl(Duration.ofMinutes(10))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.leaseTtl(Duration.ofMinutes(10)));
         assertNotNull(guard);
     }
 
     @Test
     void builderRejectsNonPositiveLeaseTtl() {
         assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .leaseTtl(Duration.ZERO)
-                                .build());
+                IllegalArgumentException.class, () -> createGuard(b -> b.leaseTtl(Duration.ZERO)));
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        MongoSandboxExecutionGuard.builder(mongoClient)
-                                .leaseTtl(Duration.ofSeconds(-1))
-                                .build());
+                () -> createGuard(b -> b.leaseTtl(Duration.ofSeconds(-1))));
     }
 
     @Test
     void tryEnterAcquiresLockViaInsert() throws Exception {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         // insertOne succeeds — no duplicate key → lock acquired immediately
         SandboxLease lease = guard.tryEnter(key());
 
@@ -218,10 +208,7 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void tryEnterReclaimsExpiredLock() throws Exception {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(10))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(10)));
         // Step 1: insertOne fails with duplicate key → lock doc exists
         WriteError dupError = new WriteError(11000, "duplicate key", new BsonDocument());
         when(collection.insertOne(any(Document.class)))
@@ -246,10 +233,7 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void tryEnterPollsWhenLockHeldThenAcquires() throws Exception {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(10))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(10)));
         // insertOne always fails with duplicate key
         WriteError dupError = new WriteError(11000, "duplicate key", new BsonDocument());
         when(collection.insertOne(any(Document.class)))
@@ -273,10 +257,7 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void tryEnterTimesOutWhenLockNeverAcquired() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofMillis(200))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofMillis(200)));
         // insertOne always fails with duplicate key
         WriteError dupError = new WriteError(11000, "duplicate key", new BsonDocument());
         when(collection.insertOne(any(Document.class)))
@@ -291,10 +272,7 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void tryEnterPropagatesNonDuplicateKeyWriteException() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         // Non-duplicate-key write error from insertOne should propagate
         WriteError otherError = new WriteError(99999, "disk full", new BsonDocument());
         when(collection.insertOne(any(Document.class)))
@@ -305,10 +283,7 @@ class MongoSandboxExecutionGuardTest {
 
     @Test
     void tryEnterPropagatesNonWriteException() {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         RuntimeException unexpected = new RuntimeException("connection lost");
         when(collection.insertOne(any(Document.class))).thenThrow(unexpected);
 
@@ -316,24 +291,27 @@ class MongoSandboxExecutionGuardTest {
     }
 
     @Test
-    void leaseCloseReleasesLockWithOwnerCheck() throws Exception {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+    void leaseCloseReleasesLockWithTokenCheck() throws Exception {
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         SandboxLease lease = guard.tryEnter(key());
         lease.close();
 
-        // deleteOne should filter by both _id AND owner
-        verify(collection).deleteOne(any(Bson.class));
+        // deleteOne should filter by both _id AND token (not owner)
+        ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).deleteOne(filterCaptor.capture());
+
+        String filterJson =
+                filterCaptor
+                        .getValue()
+                        .toBsonDocument(
+                                BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry())
+                        .toJson();
+        assertTrue(filterJson.contains("token"), "release filter must be token-scoped");
     }
 
     @Test
     void leaseCloseHandlesReleaseFailure() throws Exception {
-        MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .build();
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(5)));
         SandboxLease lease = guard.tryEnter(key());
         doThrow(new RuntimeException("network error")).when(collection).deleteOne(any(Bson.class));
 
@@ -344,10 +322,8 @@ class MongoSandboxExecutionGuardTest {
     @Test
     void lockDocumentExpiryUsesLeaseTtlNotAcquisitionTimeout() throws Exception {
         MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(1))
-                        .leaseTtl(Duration.ofMinutes(10))
-                        .build();
+                createGuard(
+                        b -> b.lockTimeout(Duration.ofSeconds(1)).leaseTtl(Duration.ofMinutes(10)));
 
         SandboxLease lease = guard.tryEnter(key());
         lease.close();
@@ -374,10 +350,8 @@ class MongoSandboxExecutionGuardTest {
 
         // leaseTtl 300ms → renewal every 100ms
         MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .leaseTtl(Duration.ofMillis(300))
-                        .build();
+                createGuard(
+                        b -> b.lockTimeout(Duration.ofSeconds(5)).leaseTtl(Duration.ofMillis(300)));
         SandboxLease lease = guard.tryEnter(key());
         try {
             ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
@@ -393,7 +367,7 @@ class MongoSandboxExecutionGuardTest {
                                     BsonDocument.class,
                                     MongoClientSettings.getDefaultCodecRegistry())
                             .toJson();
-            assertTrue(filterJson.contains("owner"), "renewal filter must be owner-scoped");
+            assertTrue(filterJson.contains("token"), "renewal filter must be token-scoped");
 
             BsonDocument updateDoc =
                     updateCaptor
@@ -417,16 +391,15 @@ class MongoSandboxExecutionGuardTest {
 
         // leaseTtl 150ms → renewal every 50ms
         MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .leaseTtl(Duration.ofMillis(150))
-                        .build();
+                createGuard(
+                        b -> b.lockTimeout(Duration.ofSeconds(5)).leaseTtl(Duration.ofMillis(150)));
         SandboxLease lease = guard.tryEnter(key());
         verify(collection, timeout(3_000).atLeast(2)).updateOne(any(Bson.class), any(Bson.class));
 
         lease.close();
-        // Let an in-flight tick (if any) finish before counting
-        Thread.sleep(150);
+        // Wait well past one full renewal cycle to drain any in-flight ticks
+        Thread.sleep(500);
+        // Capture count AFTER the grace period, then verify no further growth
         int renewalsAfterClose = countUpdateOneInvocations();
 
         // Over several renewal intervals the count must not grow: close() cancelled the watchdog
@@ -443,10 +416,8 @@ class MongoSandboxExecutionGuardTest {
         when(collection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(lostResult);
 
         MongoSandboxExecutionGuard guard =
-                MongoSandboxExecutionGuard.builder(mongoClient)
-                        .lockTimeout(Duration.ofSeconds(5))
-                        .leaseTtl(Duration.ofMillis(150))
-                        .build();
+                createGuard(
+                        b -> b.lockTimeout(Duration.ofSeconds(5)).leaseTtl(Duration.ofMillis(150)));
         SandboxLease lease = guard.tryEnter(key());
         try {
             verify(collection, timeout(3_000).atLeast(3))

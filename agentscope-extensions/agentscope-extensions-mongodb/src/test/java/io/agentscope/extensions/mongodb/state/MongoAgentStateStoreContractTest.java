@@ -29,10 +29,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,14 +38,18 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Contract tests for optimistic concurrency on {@link AgentStateStore} against a real MongoDB.
  *
  * <p>Mirrors the canonical contract defined in {@code AgentStateStoreVersioningContractTest}
- * (agentscope-core). Skipped automatically when MongoDB is not reachable at {@code
- * localhost:27017}.
+ * (agentscope-core). Uses Testcontainers to spin up a real MongoDB instance, making the tests
+ * runnable in CI.
  */
+@Testcontainers
 @DisplayName("AgentStateStore versioning contract — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoAgentStateStoreContractTest {
@@ -55,27 +57,22 @@ class MongoAgentStateStoreContractTest {
     private static final String USER = "contract-user";
     private static final String SESSION = "contract-session";
 
+    @Container static final MongoDBContainer mongoContainer = new MongoDBContainer("mongo:7");
+
     private static MongoClient mongoClient;
     private static String dbName;
-    private static boolean connected;
 
     private AgentStateStore store;
 
     @BeforeAll
     static void connectMongo() {
         dbName = "test_state_contract_" + System.currentTimeMillis();
-        try {
-            mongoClient = MongoClients.create("mongodb://localhost:27017");
-            mongoClient.getDatabase("ping").runCommand(new Document("ping", 1));
-            connected = true;
-        } catch (Exception e) {
-            Assumptions.abort("MongoDB not available: " + e.getMessage());
-        }
+        mongoClient = MongoClients.create(mongoContainer.getConnectionString());
     }
 
     @AfterAll
     static void disconnectMongo() {
-        if (connected && mongoClient != null) {
+        if (mongoClient != null) {
             mongoClient.getDatabase(dbName).drop();
             mongoClient.close();
         }

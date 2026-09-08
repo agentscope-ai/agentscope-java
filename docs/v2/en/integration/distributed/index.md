@@ -20,12 +20,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Capability Matrix
 
-| Component | Interface | Redis | OSS | MySQL |
-|-----------|----------|:-----:|:---:|:-----:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| Component | Interface | Redis | OSS | MySQL | MongoDB |
+|-----------|----------|:-----:|:---:|:-----:|:-------:|
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
+| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
+| Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
 
 > OSS does not provide `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.
 
@@ -82,6 +82,7 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 
 - [Redis](redis.md) — full capability coverage, recommended for multi-replica production
 - [MySQL / JDBC](mysql.md) — for existing relational database infrastructure
+- [MongoDB](mongodb.md) — document-oriented storage, ideal for large conversation histories
 - [Alibaba Cloud OSS](oss.md) — object storage, best for large-capacity snapshots
 
 ## aistio Hosted Store

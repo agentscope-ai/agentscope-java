@@ -26,6 +26,8 @@ import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
+import io.agentscope.extensions.mongodb.MongoConstants;
+import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
@@ -34,7 +36,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -48,8 +52,8 @@ import org.slf4j.LoggerFactory;
  * MongoDB-based {@link SandboxExecutionGuard}.
  *
  * <p>Uses a dedicated MongoDB collection as a distributed lock mechanism. Each lock is a document
- * with a unique {@code _id} derived from the {@link SandboxIsolationKey} and a TTL index on {@code
- * expiresAt} to auto-release stale locks.
+ * with a unique {@code _id} derived from the {@link SandboxIsolationKey} and a TTL index on
+ * {@code expiresAt} to auto-release stale locks.
  *
  * <p>Lock acquisition uses a two-step approach for correct mutual exclusion:
  *
@@ -69,17 +73,25 @@ import org.slf4j.LoggerFactory;
  * watchdog only warns — like the Redis guard, TTL expiry remains a safety valve against permanent
  * deadlock rather than a correctness guarantee.
  *
- * <p>The lease releases the lock on close, filtered by owner to avoid releasing another process's
- * lock.
+ * <p>Each acquisition generates a random UUID token that is written into the lock document.
+ * Renewal and release filter by this token, not by a process-level identifier, so that two guard
+ * instances in the same JVM (or two processes with the same PID) cannot accidentally release
+ * each other's locks. This mirrors the Redis guard's {@code SET NX} + Lua CAS token pattern.
+ *
+ * <p>The renewal executor uses a fixed-size thread pool (2 threads) so that a slow
+ * {@code updateOne} on one lease does not block renewal of other leases. The guard implements
+ * {@link AutoCloseable} and should be closed by {@link io.agentscope.harness.agent.DistributedStore}
+ * to shut down the executor when the store is closed.
  */
-public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
+public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MongoSandboxExecutionGuard.class);
 
-    private static final String DEFAULT_COLLECTION = "agentscope_sandbox_locks";
     private static final String FIELD_LOCK_ID = "_id";
     private static final String FIELD_OWNER = "owner";
+    private static final String FIELD_TOKEN = "token";
     private static final String FIELD_EXPIRES_AT = "expiresAt";
+    private static final int RENEWAL_POOL_SIZE = 2;
 
     private final MongoCollection<Document> collection;
     private final long lockTimeoutMs;
@@ -96,7 +108,8 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         this.retryIntervalMs = builder.retryInterval.toMillis();
         this.owner = builder.owner;
         this.renewalExecutor =
-                Executors.newSingleThreadScheduledExecutor(
+                Executors.newScheduledThreadPool(
+                        RENEWAL_POOL_SIZE,
                         runnable -> {
                             Thread thread = new Thread(runnable, "mongo-sandbox-lease-renewal");
                             thread.setDaemon(true);
@@ -124,17 +137,19 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         while (true) {
             Date now = new Date();
             Date expiresAt = new Date(now.getTime() + leaseTtlMs);
+            String token = UUID.randomUUID().toString();
 
             // Step 1: Try to insert a new lock document. This is atomic — only one
             // concurrent caller can succeed due to the _id unique index.
             Document lockDoc =
                     new Document(FIELD_LOCK_ID, lockId)
                             .append(FIELD_OWNER, owner)
+                            .append(FIELD_TOKEN, token)
                             .append(FIELD_EXPIRES_AT, expiresAt);
             try {
                 collection.insertOne(lockDoc);
                 log.debug("[sandbox-guard] Acquired MongoDB lock (insert): {}", lockId);
-                return new MongoLease(collection, lockId, owner, leaseTtlMs, renewalExecutor);
+                return new MongoLease(collection, lockId, token, leaseTtlMs, renewalExecutor);
             } catch (MongoWriteException e) {
                 if (e.getError().getCode() != 11000) {
                     throw new RuntimeException("Failed to acquire MongoDB lock: " + lockId, e);
@@ -143,12 +158,14 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
             }
 
             // Step 2: Lock document exists. Try to reclaim it if it has expired.
+            // Write our own token so that renewal and release are scoped to us.
             Bson expiredFilter =
                     Filters.and(
                             Filters.eq(FIELD_LOCK_ID, lockId), Filters.lte(FIELD_EXPIRES_AT, now));
             Bson reclaimUpdate =
                     Updates.combine(
                             Updates.set(FIELD_OWNER, owner),
+                            Updates.set(FIELD_TOKEN, token),
                             Updates.set(FIELD_EXPIRES_AT, expiresAt));
 
             Document reclaimed =
@@ -162,7 +179,7 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
                         "[sandbox-guard] Acquired MongoDB lock (reclaimed from {}): {}",
                         reclaimed.getString(FIELD_OWNER),
                         lockId);
-                return new MongoLease(collection, lockId, owner, leaseTtlMs, renewalExecutor);
+                return new MongoLease(collection, lockId, token, leaseTtlMs, renewalExecutor);
             }
 
             // Lock exists and has not expired — held by someone else.
@@ -193,7 +210,8 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
     }
 
     private void ensureIndexes() {
-        collection.createIndex(
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
                 Indexes.ascending(FIELD_EXPIRES_AT),
                 new IndexOptions().expireAfter(0L, TimeUnit.SECONDS));
     }
@@ -203,13 +221,21 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder("lock:");
-            for (int i = 0; i < 8; i++) {
-                sb.append(String.format("%02x", hash[i]));
-            }
-            return sb.toString();
+            return "lock:" + HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    @Override
+    public void close() {
+        renewalExecutor.shutdownNow();
+        try {
+            if (!renewalExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                log.warn("[sandbox-guard] Renewal executor did not terminate cleanly");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -217,19 +243,19 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
 
         private final MongoCollection<Document> collection;
         private final String lockId;
-        private final String owner;
+        private final String token;
         private final long leaseTtlMs;
         private final ScheduledFuture<?> renewal;
 
         MongoLease(
                 MongoCollection<Document> collection,
                 String lockId,
-                String owner,
+                String token,
                 long leaseTtlMs,
                 ScheduledExecutorService renewalExecutor) {
             this.collection = collection;
             this.lockId = lockId;
-            this.owner = owner;
+            this.token = token;
             this.leaseTtlMs = leaseTtlMs;
             // Renew with 3x headroom before expiry so a single missed tick or a slow write
             // does not cost the lease.
@@ -244,17 +270,20 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
 
         /**
          * Watchdog tick: push {@code expiresAt} forward while the lease is open, so an
-         * execution longer than the initial lease TTL keeps holding its own lock.
+         * execution longer than the initial lease TTL keeps holding its own lock. Filters
+         * by the unique token so that only the current holder's lease is renewed.
          */
         private void renew() {
             try {
                 Date expiresAt = new Date(System.currentTimeMillis() + leaseTtlMs);
                 UpdateResult result =
                         collection.updateOne(
-                                Filters.and(Filters.eq(lockId), Filters.eq(FIELD_OWNER, owner)),
+                                Filters.and(
+                                        Filters.eq(FIELD_LOCK_ID, lockId),
+                                        Filters.eq(FIELD_TOKEN, token)),
                                 Updates.set(FIELD_EXPIRES_AT, expiresAt));
                 if (result.getMatchedCount() == 0) {
-                    // Lock document gone or owned by someone else: it expired and was
+                    // Lock document gone or token mismatch: it expired and was
                     // reclaimed before renewal succeeded. Warn only — like the Redis guard,
                     // TTL expiry is a safety valve, not a correctness guarantee.
                     log.warn(
@@ -276,12 +305,13 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         public void close() {
             renewal.cancel(false);
             try {
-                // Only delete if we still own the lock — prevents releasing someone else's
+                // Only delete if the token still matches — prevents releasing someone else's
                 // lock when close() is called after lease expiry and re-acquisition by another
                 // process. Also makes close() idempotent: if already released, deleteOne is a
                 // no-op.
                 collection.deleteOne(
-                        Filters.and(Filters.eq(lockId), Filters.eq(FIELD_OWNER, owner)));
+                        Filters.and(
+                                Filters.eq(FIELD_LOCK_ID, lockId), Filters.eq(FIELD_TOKEN, token)));
                 log.debug("[sandbox-guard] Released MongoDB lock: {}", lockId);
             } catch (Exception e) {
                 log.warn(
@@ -301,8 +331,8 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
         private static final Duration DEFAULT_LEASE_TTL = Duration.ofMinutes(30);
 
         private final MongoClient mongoClient;
-        private String databaseName = "agentscope";
-        private String collectionName = DEFAULT_COLLECTION;
+        private String databaseName = MongoConstants.DEFAULT_DATABASE;
+        private String collectionName = MongoConstants.SANDBOX_LOCKS_COLLECTION;
         private Duration lockTimeout = Duration.ofMinutes(30);
         private Duration leaseTtl = DEFAULT_LEASE_TTL;
         private Duration retryInterval = DEFAULT_RETRY_INTERVAL;
@@ -381,6 +411,14 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard {
             return this;
         }
 
+        /**
+         * Sets a human-readable owner label for diagnostics. The owner is stored in the lock
+         * document for visibility but is NOT used for renewal or release filtering — a random
+         * UUID token is used instead to guarantee uniqueness across guard instances.
+         *
+         * @param owner the owner label
+         * @return this builder
+         */
         public Builder owner(String owner) {
             this.owner = owner;
             return this;

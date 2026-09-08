@@ -32,13 +32,15 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Verifies that all MongoDB collections created by the extension have the correct indexes with
@@ -47,8 +49,9 @@ import org.junit.jupiter.api.TestMethodOrder;
  * <p>This covers a class of bugs invisible to unit and contract tests: wrong index parameters that
  * cause silent data loss (TTL=0) or startup failures on upgrade (IndexOptionsConflict).
  *
- * <p>Requires a local MongoDB at {@code localhost:27017}. Skipped in CI.
+ * <p>Uses Testcontainers to spin up a real MongoDB instance, making the tests runnable in CI.
  */
+@Testcontainers
 @DisplayName("Index lifecycle — MongoDB")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MongoIndexLifecycleContractTest {
@@ -56,25 +59,20 @@ class MongoIndexLifecycleContractTest {
     private static final long THIRTY_DAYS_SECONDS = 30L * 24 * 3600;
     private static final long SEVEN_DAYS_SECONDS = 7L * 24 * 3600;
 
+    @Container static final MongoDBContainer mongoContainer = new MongoDBContainer("mongo:7");
+
     private static MongoClient client;
     private static String dbName;
-    private static boolean connected;
 
     @BeforeAll
     static void connect() {
         dbName = "test_idx_lifecycle_" + System.currentTimeMillis();
-        try {
-            client = MongoClients.create("mongodb://localhost:27017");
-            client.getDatabase("ping").runCommand(new Document("ping", 1));
-            connected = true;
-        } catch (Exception e) {
-            Assumptions.abort("MongoDB not available: " + e.getMessage());
-        }
+        client = MongoClients.create(mongoContainer.getConnectionString());
     }
 
     @AfterAll
     static void disconnect() {
-        if (connected && client != null) {
+        if (client != null) {
             client.getDatabase(dbName).drop();
             client.close();
         }
@@ -165,31 +163,10 @@ class MongoIndexLifecycleContractTest {
 
     @Test
     @Order(4)
-    @DisplayName("BaseStore: index on namespace exists")
-    void baseStore_namespaceIndex() {
-        new MongoBaseStore(client.getDatabase(dbName), "idx_base");
-
-        Map<String, Document> indexes = indexMap(dbName, "idx_base");
-
-        Document nsIndex =
-                indexes.values().stream()
-                        .filter(
-                                i -> {
-                                    Object key = i.get("key");
-                                    return key instanceof Document d
-                                            && d.containsKey("namespace")
-                                            && d.size() == 1;
-                                })
-                        .findFirst()
-                        .orElse(null);
-
-        assertNotNull(nsIndex, "Index on 'namespace' must exist");
-    }
-
-    @Test
-    @Order(5)
     @DisplayName("BaseStore: compound index on (namespace, key) exists")
     void baseStore_compoundIndex() {
+        new MongoBaseStore(client.getDatabase(dbName), "idx_base");
+
         Map<String, Document> indexes = indexMap(dbName, "idx_base");
 
         Document compound =
@@ -211,7 +188,7 @@ class MongoIndexLifecycleContractTest {
     // ────────────────── SandboxExecutionGuard indexes ──────────────────
 
     @Test
-    @Order(6)
+    @Order(5)
     @DisplayName("SandboxExecutionGuard: TTL index on expiresAt with immediate expiry (0s)")
     void sandboxGuard_ttlIndex_immediate() {
         MongoSandboxExecutionGuard.builder(client)
@@ -241,7 +218,7 @@ class MongoIndexLifecycleContractTest {
     // ────────────────── RemoteSnapshotClient indexes ──────────────────
 
     @Test
-    @Order(7)
+    @Order(6)
     @DisplayName("RemoteSnapshotClient: TTL index on createdAt with 30-day expiry")
     void snapshotClient_ttlIndex_30days() {
         new MongoRemoteSnapshotClient(client, dbName, "idx_snapshots", true);
@@ -267,7 +244,7 @@ class MongoIndexLifecycleContractTest {
     }
 
     @Test
-    @Order(8)
+    @Order(7)
     @DisplayName("RemoteSnapshotClient: upgrade from old 7-day TTL index does not throw")
     void snapshotClient_ttlUpgrade_fromSevenDays() {
         String upgradeDb = "test_idx_snap_upgrade_" + System.currentTimeMillis();

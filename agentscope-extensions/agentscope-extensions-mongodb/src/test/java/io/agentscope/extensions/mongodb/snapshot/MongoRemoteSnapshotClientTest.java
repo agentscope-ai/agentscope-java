@@ -27,10 +27,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.ListIndexesIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.result.DeleteResult;
@@ -195,6 +198,7 @@ class MongoRemoteSnapshotClientTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void initSchemaMigratesConflictingTtlIndex() {
         // Simulate an existing collection whose createdAt TTL index still has the old 7-day
         // expireAfterSeconds: createIndex then fails with IndexOptionsConflict (error 85) and
@@ -204,6 +208,18 @@ class MongoRemoteSnapshotClientTest {
         when(collection.createIndex(any(Bson.class), any(IndexOptions.class)))
                 .thenThrow(conflict)
                 .thenReturn("createdAt_1");
+
+        // listIndexes must return the conflicting index so it can be found and dropped by name
+        ListIndexesIterable<Document> listIndexesIterable = mock(ListIndexesIterable.class);
+        MongoCursor<Document> cursor = mock(MongoCursor.class);
+        Document existingIndex =
+                new Document("key", new Document("createdAt", 1)).append("name", "createdAt_1");
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(existingIndex);
+        when(listIndexesIterable.iterator()).thenReturn(cursor);
+        when(collection.listIndexes()).thenReturn(listIndexesIterable);
+        when(collection.getCodecRegistry())
+                .thenReturn(MongoClientSettings.getDefaultCodecRegistry());
 
         new MongoRemoteSnapshotClient(mongoClient, "testdb", "snap_migrate", true);
 

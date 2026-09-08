@@ -23,12 +23,14 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
+import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
@@ -36,28 +38,30 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.bson.Document;
 import org.bson.conversions.Bson;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * MongoDB-backed implementation of {@link BaseStore}.
  *
- * <p>Each item is stored as a separate MongoDB document. Namespace paths and keys are encoded into
- * a compound {@code _id} for uniqueness. Supports optimistic concurrency via a {@code version}
- * field.
+ * <p>Each item is stored as a separate MongoDB document. Namespace paths and keys are encoded
+ * into a compound {@code _id} for uniqueness, using {@code \\u001F} (ASCII Unit Separator) as
+ * the segment delimiter. The {@code namespace} field stores the full namespace path with a
+ * trailing separator, enabling prefix-matching via range queries ({@code $gte}/{$lt}) on the
+ * compound index — consistent with {@code PostgresBaseStore} and {@code JdbcStore}.
+ *
+ * <p>Supports optimistic concurrency via a {@code version} field. Value serialization uses
+ * {@link ObjectMapper#convertValue} to avoid an intermediate JSON string round-trip.
  */
 public class MongoBaseStore implements BaseStore {
-
-    private static final Logger log = LoggerFactory.getLogger(MongoBaseStore.class);
 
     private static final String FIELD_ID = "_id";
     private static final String FIELD_KEY = "key";
     private static final String FIELD_NAMESPACE = "namespace";
     private static final String FIELD_VALUE = "value";
     private static final String FIELD_VERSION = "version";
+
+    static final char NS_SEPARATOR = '\u001F';
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -92,6 +96,7 @@ public class MongoBaseStore implements BaseStore {
 
     @Override
     public StoreItem get(List<String> namespace, String key) {
+        validateKey(key);
         String id = itemDocId(namespace, key);
         Document doc =
                 collection
@@ -108,33 +113,33 @@ public class MongoBaseStore implements BaseStore {
 
     @Override
     public void put(List<String> namespace, String key, Map<String, Object> value) {
+        validateKey(key);
         String id = itemDocId(namespace, key);
         String nsKey = namespacePath(namespace);
-        String json = serialize(value);
+        Document valueDoc = toDocument(value);
         Bson setFields =
+                Updates.combine(Updates.set(FIELD_VALUE, valueDoc), Updates.inc(FIELD_VERSION, 1L));
+        Bson setOnInsert =
                 Updates.combine(
-                        Updates.set(FIELD_VALUE, Document.parse(json)),
-                        Updates.set(FIELD_KEY, key),
-                        Updates.set(FIELD_NAMESPACE, nsKey));
-        Bson setOnInsert = Updates.setOnInsert(FIELD_ID, id);
-        collection.updateOne(
-                Filters.eq(id),
-                Updates.combine(setFields, setOnInsert, Updates.inc(FIELD_VERSION, 1L)),
-                upsert());
+                        Updates.setOnInsert(FIELD_ID, id),
+                        Updates.setOnInsert(FIELD_KEY, key),
+                        Updates.setOnInsert(FIELD_NAMESPACE, nsKey));
+        collection.updateOne(Filters.eq(id), Updates.combine(setFields, setOnInsert), upsert());
     }
 
     @Override
     public boolean putIfVersion(
             List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
+        validateKey(key);
         String id = itemDocId(namespace, key);
         String nsKey = namespacePath(namespace);
-        String json = serialize(value);
+        Document valueDoc = toDocument(value);
 
         Document result;
         if (expectedVersion == 0) {
             Document doc =
                     new Document(FIELD_ID, id)
-                            .append(FIELD_VALUE, Document.parse(json))
+                            .append(FIELD_VALUE, valueDoc)
                             .append(FIELD_KEY, key)
                             .append(FIELD_NAMESPACE, nsKey)
                             .append(FIELD_VERSION, 1L);
@@ -151,7 +156,7 @@ public class MongoBaseStore implements BaseStore {
             Bson filter = Filters.and(Filters.eq(id), Filters.eq(FIELD_VERSION, expectedVersion));
             Bson update =
                     Updates.combine(
-                            Updates.set(FIELD_VALUE, Document.parse(json)),
+                            Updates.set(FIELD_VALUE, valueDoc),
                             Updates.set(FIELD_KEY, key),
                             Updates.set(FIELD_NAMESPACE, nsKey),
                             Updates.inc(FIELD_VERSION, 1L));
@@ -165,15 +170,33 @@ public class MongoBaseStore implements BaseStore {
         return result != null;
     }
 
+    /**
+     * Searches for items within a namespace, including child namespaces (prefix matching).
+     *
+     * <p>The namespace path is encoded with a trailing separator so that a range query
+     * {@code gte(nsPrefix)} / {@code lt(nsPrefix + \uFFFF)} matches both the exact namespace
+     * and all descendant sub-namespaces, consistent with {@code InMemoryStore},
+     * {@code PostgresBaseStore}, and {@code JdbcStore}.
+     *
+     * <p><b>Note:</b> the upper bound uses {@code Character.MAX_VALUE} ({@code \uFFFF}), which
+     * does not match namespace segments containing Unicode supplementary characters (code points
+     * above {@code U+FFFF}, such as emoji). This is a theoretical limitation — supplementary
+     * characters are unlikely in namespace segments — and the range query preserves full B-tree
+     * index utilisation, which a {@code $regex} prefix match would not.
+     */
     @Override
     public List<StoreItem> search(List<String> namespace, int limit, int offset) {
         if (limit <= 0) {
             return List.of();
         }
-        String nsKey = namespacePath(namespace);
+        String nsPrefix = namespacePath(namespace);
         List<Document> docs =
                 collection
-                        .find(Filters.eq(FIELD_NAMESPACE, nsKey))
+                        .find(
+                                Filters.and(
+                                        Filters.gte(FIELD_NAMESPACE, nsPrefix),
+                                        Filters.lt(
+                                                FIELD_NAMESPACE, nsPrefix + Character.MAX_VALUE)))
                         .sort(Sorts.ascending(FIELD_KEY))
                         .skip(Math.max(offset, 0))
                         .limit(limit)
@@ -191,6 +214,7 @@ public class MongoBaseStore implements BaseStore {
 
     @Override
     public void delete(List<String> namespace, String key) {
+        validateKey(key);
         String id = itemDocId(namespace, key);
         collection.deleteOne(Filters.eq(id));
     }
@@ -198,25 +222,62 @@ public class MongoBaseStore implements BaseStore {
     // ────────────────── Internal Helpers ──────────────────
 
     private void ensureIndexes() {
-        collection.createIndex(
+        MongoIndexUtils.createIndexWithMigration(
+                collection,
                 Indexes.compoundIndex(
-                        Indexes.ascending(FIELD_NAMESPACE), Indexes.ascending(FIELD_KEY)));
+                        Indexes.ascending(FIELD_NAMESPACE), Indexes.ascending(FIELD_KEY)),
+                new IndexOptions());
+    }
+
+    private static void validateKey(String key) {
+        if (key == null || key.isEmpty()) {
+            throw new IllegalArgumentException("key must not be null or empty");
+        }
+        if (key.indexOf(NS_SEPARATOR) >= 0) {
+            throw new IllegalArgumentException("key must not contain the unit separator (0x1F)");
+        }
     }
 
     private static String itemDocId(List<String> namespace, String key) {
-        return namespacePath(namespace) + "\0" + key;
+        return namespacePath(namespace) + key;
     }
 
+    /**
+     * Encodes a namespace path into a string suitable for prefix matching. Segments are joined
+     * with {@code \\u001F} (ASCII Unit Separator), and a trailing separator is appended so that
+     * range queries ({@code gte}/{@code lt}) can match both the exact namespace and all
+     * descendant sub-namespaces — consistent with {@code PostgresBaseStore} and
+     * {@code JdbcStore}.
+     *
+     * @throws NullPointerException if namespace is null
+     * @throws IllegalArgumentException if any segment is null or contains the separator char
+     */
     private static String namespacePath(List<String> namespace) {
-        return namespace.stream().collect(Collectors.joining("\0"));
+        Objects.requireNonNull(namespace, "namespace must not be null");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < namespace.size(); i++) {
+            String segment = namespace.get(i);
+            if (segment == null) {
+                throw new IllegalArgumentException("namespace segment must not be null");
+            }
+            if (segment.indexOf(NS_SEPARATOR) >= 0) {
+                throw new IllegalArgumentException(
+                        "namespace segment must not contain the unit separator (0x1F)");
+            }
+            if (i > 0) {
+                sb.append(NS_SEPARATOR);
+            }
+            sb.append(segment);
+        }
+        sb.append(NS_SEPARATOR);
+        return sb.toString();
     }
 
-    private String serialize(Map<String, Object> value) {
-        try {
-            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize value", e);
-        }
+    @SuppressWarnings("unchecked")
+    private Document toDocument(Map<String, Object> value) {
+        Map<String, Object> map =
+                objectMapper.convertValue(value == null ? Map.of() : value, MAP_TYPE);
+        return new Document(map);
     }
 
     private Map<String, Object> parseValue(Object raw) {
@@ -228,13 +289,12 @@ public class MongoBaseStore implements BaseStore {
                 Map<String, Object> parsed = objectMapper.readValue(s, MAP_TYPE);
                 return parsed != null ? parsed : Map.of();
             } catch (JsonProcessingException e) {
-                log.warn(
-                        "Failed to parse stored JSON value, returning empty map: {}",
-                        e.getMessage());
-                return Map.of();
+                throw new IllegalStateException("Failed to decode store value", e);
             }
         }
-        return Map.of();
+        throw new IllegalStateException(
+                "Unexpected store value type: "
+                        + (raw == null ? "null" : raw.getClass().getName()));
     }
 
     private static UpdateOptions upsert() {

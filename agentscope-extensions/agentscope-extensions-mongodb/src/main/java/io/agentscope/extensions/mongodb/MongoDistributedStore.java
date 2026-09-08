@@ -30,6 +30,8 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * MongoDB-backed {@link DistributedStore}.
@@ -58,12 +60,12 @@ import java.util.Objects;
  * <p>When created via {@link #create(MongoClient)}, the caller owns the {@link MongoClient}
  * lifecycle; {@link #close()} will NOT close the client. When created via {@link
  * #fromConnectionString(String)}, the store owns the client and {@link #close()} will close it.
+ * In both cases, {@link #close()} also cascades to shut down any cached
+ * {@link MongoSandboxExecutionGuard} executor.
  */
 public class MongoDistributedStore implements DistributedStore, AutoCloseable {
 
-    private static final String DEFAULT_DATABASE = "agentscope";
-    private static final String STATE_COLLECTION = "agentscope_sessions";
-    private static final String BASE_COLLECTION = "agentscope_base";
+    private static final Logger log = LoggerFactory.getLogger(MongoDistributedStore.class);
 
     private final MongoClient mongoClient;
     private final boolean ownsClient;
@@ -82,7 +84,7 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
             MongoClient mongoClient, String databaseName, boolean ownsClient) {
         this.mongoClient = Objects.requireNonNull(mongoClient, "mongoClient");
         this.ownsClient = ownsClient;
-        this.databaseName = databaseName != null ? databaseName : DEFAULT_DATABASE;
+        this.databaseName = databaseName != null ? databaseName : MongoConstants.DEFAULT_DATABASE;
     }
 
     /**
@@ -110,15 +112,17 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
      * Creates a MongoDB distributed store from a connection string. A new {@link MongoClient} is
      * created internally and owned by the store; {@link #close()} will close it.
      *
+     * <p>If the connection string includes a database path (e.g.
+     * {@code "mongodb://host:27017/mydb"}), that database is used instead of the default.
+     *
      * @param connectionString the MongoDB connection string
      * @return a new MongoDB distributed store
      */
     public static MongoDistributedStore fromConnectionString(String connectionString) {
+        ConnectionString cs = new ConnectionString(connectionString);
         MongoClientSettings settings =
-                MongoClientSettings.builder()
-                        .applyConnectionString(new ConnectionString(connectionString))
-                        .build();
-        return new MongoDistributedStore(MongoClients.create(settings), null, true);
+                MongoClientSettings.builder().applyConnectionString(cs).build();
+        return new MongoDistributedStore(MongoClients.create(settings), cs.getDatabase(), true);
     }
 
     @Override
@@ -132,7 +136,7 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
                             MongoAgentStateStore.builder()
                                     .mongoClient(mongoClient)
                                     .databaseName(databaseName)
-                                    .collectionName(STATE_COLLECTION)
+                                    .collectionName(MongoConstants.SESSIONS_COLLECTION)
                                     .build();
                     cachedAgentStateStore = result;
                 }
@@ -149,7 +153,7 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
                 result = cachedBaseStore;
                 if (result == null) {
                     MongoDatabase db = mongoClient.getDatabase(databaseName);
-                    result = new MongoBaseStore(db, BASE_COLLECTION);
+                    result = new MongoBaseStore(db, MongoConstants.BASE_STORE_COLLECTION);
                     cachedBaseStore = result;
                 }
             }
@@ -182,6 +186,7 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
                     result =
                             MongoSandboxExecutionGuard.builder(mongoClient)
                                     .databaseName(databaseName)
+                                    .collectionName(MongoConstants.SANDBOX_LOCKS_COLLECTION)
                                     .build();
                     cachedExecutionGuard = result;
                 }
@@ -192,6 +197,13 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
 
     @Override
     public void close() {
+        if (cachedExecutionGuard instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                log.warn("Failed to close sandbox execution guard", e);
+            }
+        }
         if (ownsClient) {
             mongoClient.close();
         }
