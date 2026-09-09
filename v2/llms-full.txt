@@ -126,6 +126,10 @@ Confirm tool arguments, approve sensitive actions, or hand off mid-run to an ext
 
 If you are still evaluating whether to migrate, the [V1 Migration Guide](./change-log.md) breaks down every change with a Migration Guide (must-do vs. recommended) and a What's New section — enough to plan an upgrade end-to-end. For per-version changes, see [Release Notes](others/release-notes.md).
 
+## AgentScope Service
+
+[AgentScope Service: deployment and usage](../service/index.md)
+
 ---
 
 Source: https://java.agentscope.io/_sources/v2/en/docs/quickstart.md
@@ -12083,3 +12087,691 @@ TrainingRunner runner = TrainingRunner.builder()
 ## Pairs well with Studio
 
 Attach `StudioMessageHook` simultaneously and you can see in Studio which sessions get sampled and how rewards were computed.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/index.md
+
+# AgentScope Service
+
+AgentScope Service provides a shared control plane for managed Agents, existing Agent applications and Coding Agent runtimes. Create an Agent and run a Session, or attach an existing runtime and coordinate work through Issues, Teams and workflows.
+
+![AgentScope Service architecture](../../../imgs/agentservice/agentscope-service-architecture.png)
+
+## Start with your goal
+
+| Goal | Guide |
+| --- | --- |
+| Try a self-hosted installation | [Docker quickstart](quickstart.md) |
+| Run your first Agent | [Your first Session](first-session.md) |
+| Understand the platform objects | [Core concepts](concepts.md) |
+| Coordinate multiple Agents | [Issues and Teams](teams.md) |
+| Connect a Coding Agent computer | [Runtime Host](runtime-host.md) |
+| Attach an existing application | [SDKs and application integration](integrations.md) |
+| Deploy on Kubernetes | [Helm deployment](kubernetes.md) |
+| Maintain an installation | [Backup, upgrade and recovery](operations.md) |
+
+## What you deploy
+
+The Gateway is the public entry point. The Control Plane (`aistiod`) serves the APIs and Dashboard. The Dataplane executes managed Harness Sessions. The Scheduler handles channels, scheduled work and dispatch. PostgreSQL holds durable state; persistent volumes hold workspaces and artifacts.
+
+The service does not include model credits or third-party Coding Agent installations. After starting the platform, configure a model and execution Environment, or attach an existing runtime.
+
+These guides cover the complete Service in standalone HTTP mode. Use each release's notes for published registry addresses and tested platforms. A candidate version in the source tree does not imply public artifact availability.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/quickstart.md
+
+# Docker quickstart
+
+Start the complete Service, sign in, then run your first Agent Session.
+
+## Prerequisites
+
+Install Docker Engine or Docker Desktop, Compose v2 and OpenSSL. Published-image deployment does not require Maven, Go or Node.js. Model execution requires your own model credentials.
+
+```bash
+docker info
+docker compose version
+```
+
+Download `agentscope-service-VERSION-compose.tar.gz` and `SHA256SUMS` from the selected release. Verify the archive against the published checksum. Replace `VERSION` and `REGISTRY/NAMESPACE` below with the values from that release.
+
+## 1. Initialize and start
+
+```bash
+tar -xzf agentscope-service-VERSION-compose.tar.gz
+cd agentscope-service
+./init-env.sh VERSION REGISTRY/NAMESPACE
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+```
+
+The initializer creates database, JWT, internal-token, Vault and administrator secrets in a mode-`600` `.env` file. Running it again preserves existing configuration. Inspect this file locally and keep it out of Git.
+
+## 2. Sign in and check readiness
+
+```bash
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
+```
+
+Open `http://localhost:18080`. Use `admin` and the `AISTIO_BOOTSTRAP_PASSWORD` in `.env`, then change the password in Profile. The release deployment does not create demo users. Bootstrap credentials apply only to an empty database; restarting does not reset accounts.
+
+## 3. Configure execution
+
+For a trusted local evaluation, set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true` in `.env`, add model credentials such as `DASHSCOPE_API_KEY`, and repeat the startup command. Local tools execute inside the Dataplane container.
+
+For other installations, keep Local disabled and configure a Sandbox or Self-hosted Environment in the console. Continue with [Your first Session](first-session.md).
+
+## Stop and resume
+
+```bash
+docker compose down
+docker compose up -d --wait --wait-timeout 600
+```
+
+Database, workspace and artifact volumes remain available. `down -v` deletes volumes and is not a normal stop command. See [Docker deployment](docker.md) and [Operations](operations.md) for remote access and upgrades.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/concepts.md
+
+# Core concepts
+
+Separate access scope, reusable resources and execution location before interpreting tasks and execution records.
+
+| Object | Purpose |
+| --- | --- |
+| Namespace | Resource ownership and membership permissions |
+| Agent | Reusable identity, instructions, model, tools and execution configuration |
+| Workspace | Files, skills and working material; distinct from a Namespace |
+| Environment | Managed tool execution location: Local, Sandbox or Self-hosted |
+| Runtime Host | A daemon on a machine that runs installed providers for Hosted Agents |
+| Session | A continuing conversation and its event history |
+| Issue | A work objective, discussion, deliverables and acceptance state |
+| Team | A leader, members and collaboration policy |
+| AgentTask | A directed work obligation |
+| ExecutionAttempt | One physical attempt; retries can create new attempts |
+| Run | An orchestration execution and its node relationships |
+
+## How work flows
+
+```{mermaid}
+flowchart LR
+    A[Person or external event] --> B[Issue / Session]
+    B --> C[AgentTask / execution request]
+    C --> D[Managed or external Runtime]
+    D --> E[Events and deliverables]
+    E --> B
+```
+
+An idle Session, a successful Attempt and an accepted Issue describe different outcomes. After an Agent responds, inspect its deliverables and the Issue review state.
+
+Choose your path: [Managed Agents](agents.md), [Runtime Host](runtime-host.md) or [Application integration](integrations.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/first-session.md
+
+# Your first Session
+
+By the end of this guide, you should be able to send a message, receive an Agent response and find the conversation again after refreshing the console.
+
+## 1. Prepare a model and Environment
+
+Start the platform with the [quickstart](quickstart.md). Configure an available model and its credentials. Enable Local only for a trusted evaluation; otherwise create a Sandbox or Self-hosted Environment and confirm connectivity.
+
+## 2. Create an Agent
+
+Create a Managed Agent in Agents. Give it a name and instructions, such as “Answer briefly and explain which files you need before using them.” Select its model, Workspace and Environment. Enable only the tools needed for the first task.
+
+After saving, check the Environment binding. Saving a configuration does not start execution.
+
+## 3. Create a Session and send a message
+
+In Sessions, select the Agent and create a Session. Send “Introduce the work you can do in one sentence.” Follow messages, tool calls and state changes. Handle tool confirmations in the conversation when requested.
+
+For a file-based task, add a small example file to the Workspace and ask the Agent to list or summarize it. Verify that it uses the intended Environment.
+
+## 4. Check the result
+
+Refresh the page and reopen the Session to confirm that its history remains available. Refreshing during execution should not be treated as a request to resend the message. Judge completion from the result and state, rather than a streaming connection closing.
+
+## Corresponding APIs
+
+| Operation | API |
+| --- | --- |
+| Sign in | `POST /api/auth/login` |
+| Create Agent | `POST /api/v1/agents` |
+| Create Environment | `POST /api/environments` |
+| Create Session | `POST /api/sessions` |
+| Send message | `POST /api/sessions/{id}/events` |
+| Read history | `GET /api/sessions/{id}/events` |
+| Subscribe | `GET /api/sessions/{id}/events/stream` |
+
+Agent creation uses `/api/v1/agents` with `agentKey`, `displayName`, `binding` and `definition`. Without an explicit Namespace, requests use the account’s personal space. Do not assume a new installation contains a shared Namespace named `default`.
+
+A message body is `{"events":[{"type":"user.message","payload":{"text":"Hello"}}]}`. Use the signed-in user's Bearer token. Internal service tokens are not browser credentials.
+
+If no response arrives, inspect the model, Environment and Dataplane with the [troubleshooting guide](troubleshooting.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/agents.md
+
+# Agents, tools and skills
+
+An Agent is a reusable configuration. Choose its execution mode before configuring working material and capabilities.
+
+## Choose an execution mode
+
+| Mode | Use case | Prerequisites |
+| --- | --- | --- |
+| Managed | Platform-hosted Harness Sessions | Model, Environment and required resources |
+| External application | An existing Agent process remains independently operated | Application SDK and a reachable contract endpoint |
+| Hosted runtime | A Coding Agent runs on a selected host | Online Runtime Host and installed provider |
+
+## Configure and verify
+
+In Agents, configure the name, instructions and model. Attach the required Workspace, Memory, Vault and tools. Keep credentials out of shared instructions. Tool permission policies determine when human confirmation is required.
+
+Skills hold reusable task instructions and supporting files. After changing a skill, verify file visibility, permissions and results in a new Session before using it in a Team.
+
+Definitions, running instances and Sessions are separate objects. After updating configuration, check which version a new Session uses; do not assume all active Sessions switch immediately.
+
+## Share access
+
+Configure resource grants in the relevant Namespace and check access to dependent Workspaces, models and Vaults. Discovering an Agent does not grant access to all of its dependencies or other users' private work.
+
+Continue with [Workspaces and Environments](workspaces.md) and [Accounts and permissions](access.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/workspaces.md
+
+# Workspaces and Environments
+
+A Workspace holds working material. An Environment determines where a Managed Agent executes tools. A Namespace determines ownership and access.
+
+## Workspaces
+
+Create a Workspace, add task files or skills, and bind it to an Agent. A developer's absolute laptop path is not automatically a valid server path.
+
+Release deployments mount `/data/workspaces` into the control plane, Dataplane and Scheduler. Compose provides a shared volume; Kubernetes requires shared persistent storage. Database backups alone cannot recover these files.
+
+## Environments
+
+| Type | Tool execution location | Requirement |
+| --- | --- | --- |
+| Local | The Dataplane container or host | Explicit `BUILDER_ALLOW_LOCAL_ENVIRONMENT` opt-in |
+| Sandbox | A configured sandbox service | Credentials, template and network connectivity |
+| Self-hosted | Your Hands Worker | Worker connectivity, Environment credentials and heartbeat |
+
+A Local container filesystem is not the user's computer filesystem. A Self-hosted Hands Worker and a Coding Agent Runtime Host have different responsibilities and credentials.
+
+## Verify a binding
+
+After creating an Environment, check the Agent binding. In a new Session, perform a simple file read and inspect its location and any errors. Verify that persistent files remain after a container or Pod restart.
+
+See [Runtime Host](runtime-host.md) and [Backup and recovery](operations.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/sessions.md
+
+# Sessions, tasks and approvals
+
+Sessions support direct conversations and execution history. Tasks and Runs identify specific work within a collaboration.
+
+## Read an execution
+
+Start from the originating Session or Issue, then inspect its task and latest Attempt. Check the triggering input, selected Agent, Environment or Runtime, events and final result. Preserve failed-attempt records when retrying.
+
+Streaming responses use SSE. After disconnecting, the browser can read durable history again. Reverse proxies must allow long connections and forward events promptly. A page refresh is not a reason to submit the same work again.
+
+## Handle requests for human action
+
+Tool confirmation belongs to a Session; Issue review concerns deliverable acceptance; a resource request concerns authorization. Identify the request type, actor, resource and intended effect before acting.
+
+A denied tool may require an alternative approach. Missing access requires a grant from the resource owner or administrator. Retrying alone does not resolve these conditions.
+
+## Diagnose stalled work
+
+Check pending confirmations, model errors, Environment or Host connectivity, task dispatch and component logs. Preserve Session, Task, Attempt and Run IDs to correlate evidence.
+
+See [Troubleshooting](troubleshooting.md) and [Issues and Teams](teams.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/teams.md
+
+# Issues and Team collaboration
+
+Use an Issue to express a work objective, a Team to organize a leader and members, and execution records to understand progress.
+
+## Create a small Team
+
+Verify that each Agent can complete an independent task first. Create a Team, select a leader and members, and describe responsibilities such as research, implementation and review. Configure collaboration policy and human review requirements for the task.
+
+Create an Issue with a clear objective, such as “Compare two implementation options and recommend one with validation steps.” Specify deliverables and acceptance criteria, then assign it to the Team.
+
+## Follow collaboration
+
+Use the Issue discussion to inspect the leader's decisions, member results and artifacts. Use Tasks and Runs to inspect dispatch, attempts, failures and waiting reasons. Add new requirements to the original Issue so that the discussion remains available.
+
+A leader finishing one response does not mean every member has finished. A failed attempt does not require discarding the Issue. Identify the affected task and failure reason before retrying or supplying missing information.
+
+## Review work
+
+When review or approval is requested, inspect deliverables and explicitly accept them or describe the required changes. State the missing result and verifiable acceptance criteria. Preserve deliverable files as Artifacts rather than leaving only a temporary machine path in a conversation.
+
+Teams support dynamic collaboration; Workflows express predefined steps and dependencies. They can work together, but inspect Run node state separately from business acceptance of the Issue.
+
+Continue with [Sessions, tasks and approvals](sessions.md) and [Automation and channels](automation.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/access.md
+
+# Accounts, Namespaces and permissions
+
+Platform administrators manage accounts and spaces. Resource use and work visibility also depend on Namespace and work-specific permissions.
+
+## Initialize accounts
+
+Release deployments use a configurable bootstrap administrator rather than fixed demo passwords. Change its password in Profile after the first sign-in. Create everyday accounts in Management → Users and grant roles appropriate to their responsibilities.
+
+Profile manages display names, passwords, login sessions, personal connections and subscriptions. A password reset or account suspension can require a new sign-in.
+
+## Namespaces
+
+Use Management → Namespaces to manage shared spaces, members and roles. Users can inspect their effective access; owners and administrators manage members and resources within their authorization. A Namespace is distinct from a file Workspace.
+
+When sharing an Agent, check dependent resource grants too. Visibility of an Agent, Team or Workflow does not make every resulting Issue or Session visible to the same people.
+
+## Diagnose access failures
+
+Check the signed-in account, selected Namespace, resource ownership, current membership and whether the work itself is private. Refresh after grants change. On a version conflict, read the latest configuration before editing again.
+
+Platform administration does not automatically grant access to all private work. Auditing requires the appropriate space permissions. Do not distribute internal service tokens as a substitute for user authorization.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/automation.md
+
+# Automation and channels
+
+Verify a manual workflow before triggering the same work from schedules or external events.
+
+## Automation
+
+Create an Automation and choose its trigger and supported Agent, Team or orchestration target. Run it manually once and inspect inputs, resource permissions, execution records and deliverables before enabling recurring execution.
+
+Specify scope, output location and expected behavior on repeated runs. When a run fails, locate its Run or Task before retrying. Avoid creating duplicate schedules for the same work.
+
+## Channels
+
+Configure a platform connection and Agent association in Channels. Platform credentials, callback URLs, message routing and user identity pairing have different responsibilities. Remote callbacks require a reachable HTTPS endpoint; OAuth callbacks also require the correct public service URL.
+
+Send a test message and inspect the resulting work, authorization and reply delivery. Pair user identities where the channel workflow requires it. Profile provides personal connection and subscription management.
+
+Message formats and capabilities differ by channel. Use its configuration screen and verified behavior rather than assuming all channels implement identical webhook events.
+
+## Operational checks
+
+Check Scheduler health, control-plane connectivity, credential validity and third-party reachability of callback paths. After rotating credentials, verify the complete inbound and outbound path again.
+
+See [Configuration](configuration.md) and [Permissions](access.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/runtime-host.md
+
+# Connect a Runtime Host
+
+A Runtime Host runs on a computer or server with a Coding Agent provider installed. The control plane dispatches and records work; the Host executes it with the local provider.
+
+## Install
+
+Download `agentscope-cli-VERSION-OS-ARCH.tar.gz` for the operating system and CPU architecture from the same Service release. Verify its checksum and extract it. The archive contains `agentscope`, the compatibility name `aistioctl`, and `aistio-runtime-host`. Put all three executables in the same directory on PATH.
+
+Packaging targets Linux/macOS on amd64 and arm64; use the release notes for actually published and tested platforms. Install, authenticate and verify the provider separately.
+
+## Connect
+
+```bash
+agentscope connect https://agentscope.example.com
+agentscope runtime status
+agentscope runtime probe
+```
+
+Follow the CLI's login or enrollment prompts. Connection saves local configuration and starts the daemon. Normal operation does not require repeatedly supplying a shared internal service token.
+
+## Daily operation
+
+```bash
+agentscope runtime logs
+agentscope runtime stop
+agentscope runtime start
+```
+
+Configuration and state default to `~/.agentscope/runtime-host/`. Preserve the Host identity and state files to avoid accidentally registering an existing computer as a new instance. Do not distribute this directory as a public configuration example.
+
+After connecting, verify Host and provider availability in the console, bind a Hosted Agent and dispatch a small task. Diagnose failures with both Task Attempt records and Host logs.
+
+A Runtime Host is distinct from a Managed Agent Hands Worker. See [Workspaces and Environments](workspaces.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/integrations.md
+
+# SDKs and application integration
+
+Existing Agent applications can retain their own process lifecycle while exposing identity, availability, Session information and execution capabilities to the control plane.
+
+## Choose an integration
+
+| Component | Source directory | Distribution |
+| --- | --- | --- |
+| Java extension | `agentscope-extensions/agentscope-extensions-aistio` | Maven artifact |
+| Python SDK | `agentscope-service/aistio/sdk/python` | `aistio-sdk` wheel / sdist |
+| DSH plugin | `agentscope-service/aistio/sdk/dsh` | `@agentscope/dsh-aistio` npm package |
+| Coding Agent Host | `agentscope-service/aistio/cmd` | CLI / daemon archive |
+
+SDKs have their own versions. Do not infer package versions from the Service image tag; use the release manifest. Candidate packages not yet available in public registries can be installed from downloaded release artifacts.
+
+```bash
+python -m pip install ./aistio_sdk-0.1.0-py3-none-any.whl
+npm install ./agentscope-dsh-aistio-0.1.0.tgz
+```
+
+Use the actual downloaded filenames. Java applications use the matching `io.agentscope:agentscope-extensions-aistio` version and its dependencies.
+
+## Network and protocol
+
+Check the adapter's transport requirements first. The complete Service Compose and Helm deployments use standalone HTTP mode without ASDP gRPC. Adapters requiring ASDP need a Kubernetes-native Aistio deployment and correctly configured gRPC connectivity. An HTTP port is not a gRPC endpoint.
+
+The control plane must reach the application's advertised callback or contract address. `localhost` inside a container refers to that container; cross-host deployments need reachable addresses. Shared internal tokens are for trusted private service calls. External Hosts use dedicated identity credentials.
+
+## Verify integration
+
+Verify registration and heartbeat, create a Session and read its history, then exercise a supported task dispatch and result callback. Restart the application and verify identity continuity and recovery. Model execution, tools and application lifecycle remain the runtime's responsibility.
+
+Use the package's examples and version notes for exact APIs. A healthy Service deployment does not establish that every third-party framework adapter has been qualified.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/docker.md
+
+# Docker deployment
+
+Release deployments use the image references in `agentscope-service/deploy/compose.yaml`. The existing `agentscope-service/docker-compose.yml` builds a development stack from source and uses different initialization settings.
+
+## Services and storage
+
+| Service | Container port | Exposure |
+| --- | --- | --- |
+| Gateway | 8080 | `127.0.0.1:18080` by default |
+| Control | 8081 | Private network |
+| Dataplane | 8082 | Private network |
+| Scheduler | 8083 | Private network |
+| PostgreSQL | 5432 | Private network |
+
+Compose waits for database and upstream health before starting dependent services. `docker compose up -d --wait --wait-timeout 600` waits for the stack. A healthy Gateway endpoint alone does not verify the business workflow.
+
+Three named volumes hold PostgreSQL, shared workspaces and artifacts. Do not use development database-reset scripts on release installations.
+
+## Remote access
+
+Point your HTTPS reverse proxy at the Gateway, allow long-lived SSE connections and disable event-stream buffering. Set `BUILDER_OAUTH_PUBLIC_URL` in `.env` to the public origin used by users, then recreate the relevant container. Configure external callbacks against that public address.
+
+Use `BIND_ADDRESS` and `GATEWAY_PORT` to change the listener. Database and internal component ports do not need public exposure.
+
+## Configuration changes
+
+After editing `.env`, run:
+
+```bash
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+```
+
+`init-env.sh` preserves existing files and secrets. JWT, internal-token and Vault settings must match across the components using them. Vault-key rotation is not an ordinary configuration refresh.
+
+Before changing versions, follow [Backup and recovery](operations.md). See [Releasing](releasing.md) for artifact publication.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/kubernetes.md
+
+# Helm deployment
+
+The complete Service Chart installs the Gateway, Control Plane, Dataplane and Scheduler. You operate PostgreSQL and the storage provisioner separately.
+
+## Prerequisites
+
+Prepare a Kubernetes cluster, Helm 3.17+ or a compatible version, and reachable PostgreSQL. Run the release package's `postgres-init.sql` as the application database owner to create the `cp`, `rt` and `dp` schemas.
+
+Workspaces request ReadWriteMany storage by default. Supply an RWX StorageClass or an existing shared PVC. Artifacts request ReadWriteOnce. RWO workspace storage can work for a single-node test; this does not establish shared storage support across nodes.
+
+## 1. Create the configuration Secret
+
+Copy `kubernetes.env.example` from the release package to a private file. Fill database connections, random secrets and initial administrator credentials. URL-encode passwords inside Go DSNs; supply the raw JDBC password separately. Configure database TLS for your network and certificates.
+
+```bash
+kubectl create namespace agentscope
+kubectl -n agentscope create secret generic agentscope-service   --from-env-file=/private/path/service.env
+```
+
+Keep the completed file and rendered Secret out of Git.
+
+## 2. Install
+
+Use the Chart archive downloaded from the release:
+
+```bash
+helm upgrade --install service ./agentscope-service-VERSION.tgz   --namespace agentscope   --set imageRepository=REGISTRY/NAMESPACE   --set existingSecret=agentscope-service   --wait --timeout 10m
+```
+
+After OCI publication, use `oci://REGISTRY/NAMESPACE/charts/agentscope-service` with `--version VERSION` instead of a file. Private registries require both Helm authentication and Kubernetes `imagePullSecrets`.
+
+Configure storage with `persistence.workspaces.storageClass`, `persistence.workspaces.existingClaim` and the corresponding artifact settings. For Ingress, configure host, class, TLS and controller-specific SSE settings, and set `publicURL`.
+
+## 3. Verify
+
+```bash
+kubectl -n agentscope get pods,pvc,svc
+kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
+```
+
+Sign in and follow [Your first Session](first-session.md). Verify Bound PVCs, Ready components, and readable history and files after restarting.
+
+## Operational boundaries
+
+The Chart uses one replica per component and Recreate updates. Schedule a maintenance window. It does not promise zero-downtime database migration or qualified multi-replica HA. Restart affected Deployments after Secret updates.
+
+Uninstall retains PVCs. Reinstall with explicit existingClaim settings to reuse them. This Chart runs standalone HTTP mode; the legacy `aistio` Chart serves Kubernetes-native control-plane use cases. Do not blindly install both as one product stack.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/configuration.md
+
+# Configuration reference
+
+Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Secret and configure ingress and storage through Chart values.
+
+| Setting | Purpose | Notes |
+| --- | --- | --- |
+| `IMAGE_REPOSITORY` / `SERVICE_VERSION` | Compose image namespace and version | Use a specific published release |
+| `POSTGRES_DB` | Compose database name | Defaults to `agentscope`; can select a restored database |
+| `POSTGRES_PASSWORD` | Compose database password | Preserve after initialization; use URL-safe values |
+| `AISTIO_PRODUCT_DSN` | Product database | Uses schema `cp` |
+| `AISTIO_STORAGE_DSN` | Control-plane runtime database | Set `search_path=rt` |
+| `BUILDER_DB_URL` / `USER` / `PASSWORD` | Java JDBC connection | Full credential names: `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD`; schema `dp` |
+| `BUILDER_JWT_SECRET` | User token signing | At least 32 characters; consistent across components |
+| `BUILDER_INTERNAL_TOKEN` | Internal service authentication | At least 32 characters; not a user credential |
+| `BUILDER_VAULT_MASTER_KEY` | Credential encryption | Shared across components; back up with data |
+| `AISTIO_BOOTSTRAP_ADMIN` / `PASSWORD` | Initial administrator | Full password name: `AISTIO_BOOTSTRAP_PASSWORD`; 12–72 bytes |
+| `AISTIO_SEED_USERS` | Go demo-account seeding | Release configuration sets `false` |
+| `BUILDER_SEED_USERS` | Java legacy-account seeding | Release configuration sets `false` |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Permit Local Environments | Defaults to `false` |
+| `BUILDER_OAUTH_PUBLIC_URL` | Public origin | Must match OAuth callback configuration |
+| `DASHSCOPE_API_KEY` | Default DashScope model credentials | Required only for that model path |
+| `BUILDER_E2B_API_KEY` | E2B environment credentials | Required only for the corresponding Sandbox path |
+
+## Paths and internal addresses
+
+Release deployments share `/data/workspaces`. The control plane uses `AISTIO_WORKSPACE_ROOT`; Java uses `BUILDER_WORKSPACE_ROOT`. `AISTIO_ARTIFACT_ROOT` selects the artifact directory.
+
+`BUILDER_CONTROL_URL`, `BUILDER_DATA_URL` and `BUILDER_SCHEDULER_URL` are internally reachable addresses. Do not replace them with the browser's localhost address.
+
+## Schema management
+
+Dataplane and Scheduler currently default to Hibernate `update`; Go runs migrations on startup. Without separately managed versioned SQL migrations, changing `BUILDER_JPA_DDL_AUTO` to `validate` will not initialize a new database. Back up and rehearse upgrades with the [operations guide](operations.md).
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/operations.md
+
+# Backup, upgrade and recovery
+
+A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
+
+## Docker backup
+
+Schedule a maintenance window. Stop the four application components while leaving PostgreSQL running:
+
+```bash
+docker compose stop gateway scheduler data control
+mkdir -p backup
+chmod 700 backup
+docker compose exec -T db pg_dump -U agentscope -d agentscope -Fc > backup/database.dump
+```
+
+Use your volume-backup tool to snapshot the `workspaces` and `artifacts` volumes. Save `.env`, `SERVICE_VERSION`, image digests and snapshot time. Store backups on protected persistent storage outside the installation directory. Confirm that database and file snapshots belong to the same maintenance window before restarting applications.
+
+```bash
+docker compose up -d --wait --wait-timeout 600
+```
+
+Kubernetes also requires database backups and PVC snapshots. Follow the storage provider's snapshot procedure and preserve a protected copy of the configuration Secret.
+
+## Upgrade
+
+Read the release's migration and compatibility notes and rehearse against a test copy first. After backing up, update `SERVICE_VERSION` in Docker's `.env`, pull images and recreate containers. For Helm, upgrade using the specific Chart version.
+
+Go runs product and runtime migrations on startup; Java currently updates schema through Hibernate. Rolling back images does not establish that an older version can read a newer schema.
+
+## Recover
+
+Stop application writes before data recovery. Restore into an independent empty database, restore matching workspace and artifact snapshots and the original Vault key, then start the component versions corresponding to the backup. Do not point `pg_restore --clean` at a live application database.
+
+For a newly created recovery database:
+
+```bash
+pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.dump
+```
+
+After restoring into a new database on the same PostgreSQL instance, set `POSTGRES_DB` in Compose `.env` to its name and start with the original keys and matching file snapshots. The database container initializes databases only when its data directory is empty; create a recovery database explicitly on an existing instance.
+
+## Verify recovery
+
+Check administrator login, existing Agents and Session history, workspace files, Vault decryption, runtime connectivity and a new small task. Task and Issue acceptance state should match the backup point.
+
+A backup is qualified only when database, files and keys recover together. This release preparation does not claim multi-replica HA or zero-downtime upgrades.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/troubleshooting.md
+
+# Troubleshooting
+
+Start with the affected work record. Record the version, time and Session, Task, Attempt or Run IDs, then inspect the relevant component. Remove tokens, passwords and sensitive business data before sharing logs.
+
+| Symptom | Check first |
+| --- | --- |
+| Image pull fails | Published release availability, namespace, tag, authentication and architecture |
+| Container is unhealthy | `docker compose ps`, database readiness and component logs |
+| Helm Pod stays Pending | Bound PVCs and StorageClass access-mode support |
+| Login fails | Bootstrap versus existing password; whether the database already contains accounts |
+| Local Environment rejected | Explicit Local opt-in, or use Sandbox / Self-hosted |
+| Agent does not respond | Model credentials, Environment binding, tool confirmations and Dataplane logs |
+| Team remains waiting | Unfinished member tasks, missing input, approvals or deliverable review |
+| History disappears after restart | Accidental memory storage, changed database or volumes |
+| OAuth callback fails | Public origin, platform callback URL and HTTPS reachability |
+| Runtime Host offline | Installed provider, credentials, network and daemon logs |
+| SDK gRPC connection fails | Kubernetes-native ASDP availability and correct gRPC port |
+
+## Collect component logs
+
+```bash
+docker compose logs --tail=200 control data scheduler gateway
+kubectl -n agentscope logs deployment/service-agentscope-control --tail=200
+kubectl -n agentscope describe pod POD_NAME
+```
+
+Gateway health does not verify model or tool execution. Inspect the Dataplane for Session failures, the Scheduler for channel and scheduled-work failures, and Control for resources, accounts and dispatch.
+
+## Restarting did not reset the administrator password
+
+This is expected. `AISTIO_BOOTSTRAP_PASSWORD` applies only to an empty account table. Change existing passwords through Profile or administrator account management rather than regenerating `.env`.
+
+## Vault decryption fails
+
+Check that recovery preserved the original `BUILDER_VAULT_MASTER_KEY` and that all components use the same value. Restore matching configuration and data before trying to replace keys.
+
+---
+
+Source: https://java.agentscope.io/_sources/v2/en/service/releasing.md
+
+# Publishing components
+
+This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Installation starts with the [quickstart](quickstart.md).
+
+## Artifacts
+
+Publish four images: `agentscope-service-control`, `agentscope-service-gateway`, `agentscope-service-dataplane` and `agentscope-service-scheduler`. The console ships inside the control image.
+
+The release also contains the complete Helm Chart, Compose archive, platform CLI/Runtime Host archives, Python wheel/sdist, DSH npm package, `release-manifest.json` and `SHA256SUMS`. Publish the Java SDK and required libraries through Maven; service applications remain excluded from Maven Central by default.
+
+Service, Java and SDK versions may evolve independently. The manifest records their relationship and source commit. Check Python and DSH package versions before publishing; an already published version must not be overwritten.
+
+## Prepare locally
+
+Use Java 21, Maven, Go as specified by go.mod, Node.js 22, Python 3.10+, Docker Buildx and Helm. Create a Python environment and install `release/requirements.txt` plus the Python SDK dev dependencies.
+
+From the repository root:
+
+```bash
+python agentscope-service/release/release.py verify
+python agentscope-service/release/release.py package   --version VERSION --repository REGISTRY/NAMESPACE
+```
+
+Output defaults to `agentscope-service/release/dist/VERSION/`. Packaging refuses to overwrite an existing directory. Its explicit file allowlist excludes local `.env` files. Candidate packages may use uncommitted source and record dirty status; external pushes require a clean source tree.
+
+## Images and Chart
+
+Build and load a local platform:
+
+```bash
+python agentscope-service/release/release.py images --version VERSION   --repository REGISTRY/NAMESPACE --platforms linux/arm64
+```
+
+Authenticate Docker and Helm to the target registry. After candidate installation and compatibility checks, publish:
+
+```bash
+python agentscope-service/release/release.py images --version VERSION   --repository REGISTRY/NAMESPACE --platforms linux/amd64,linux/arm64 --push
+python agentscope-service/release/release.py publish-chart   --version VERSION --repository REGISTRY/NAMESPACE
+```
+
+Image pushes request SBOM and provenance attestations and record digests in `image-*.json`. OCI Charts use [Helm's registry publication workflow](https://helm.sh/docs/topics/registries/). Verify anonymous pulls separately if the release is intended to be public.
+
+## Release sequence
+
+Freeze source and versions, complete tests and candidate installation, create the corresponding Git tag, then run the `AgentScope Service release` workflow. It builds by default; publication requires selecting a tag and configuring registry credentials.
+
+Attach artifacts, checksums, digests, tested platforms and limitations to the Release. Publish Maven/Python/npm artifacts and verify installation from a new environment. See `agentscope-service/release/README.md` for package publication commands.
+
+The website workflow deploys `/docs` from `main`. Merge the matching documentation into that publication entry point, then verify both Service navigation trees, direct links, images and search.
