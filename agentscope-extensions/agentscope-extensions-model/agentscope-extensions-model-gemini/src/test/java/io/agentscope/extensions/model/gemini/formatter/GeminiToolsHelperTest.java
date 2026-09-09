@@ -316,8 +316,13 @@ class GeminiToolsHelperTest {
                                 Map.of("type", "integer", "enum", List.of("1")),
                                 Map.of("type", "null", "description", "No value")));
 
-        assertThrows(
-                IllegalArgumentException.class, () -> helper.convertParametersToSchema(parameters));
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> helper.convertParametersToSchema(parameters));
+
+        assertEquals(
+                "JSON Schema cannot combine a multi-type array with anyOf", exception.getMessage());
     }
 
     @Test
