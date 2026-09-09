@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.util;
 
+import java.util.IdentityHashMap;
+
 /**
  * Utility methods for exception handling.
  */
@@ -56,5 +58,25 @@ public final class ExceptionUtils {
 
         // Fall back to the exception class name
         return throwable.getClass().getSimpleName();
+    }
+
+    /**
+     * Whether the given throwable (or any throwable in its cause chain) is an
+     * {@link InterruptedException}. The cause chain is walked with an identity set guard so
+     * circular causes cannot cause an infinite loop.
+     *
+     * @param error the throwable to inspect (may be {@code null})
+     * @return {@code true} if an {@link InterruptedException} is present in the cause chain
+     */
+    public static boolean containsInterruptedException(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

@@ -37,7 +37,7 @@ import java.util.Set;
  *   <li>Trigger at 80,000 characters (~20 K tokens at 4 chars/token)</li>
  *   <li>Preview: first + last 2,000 characters of the original output</li>
  *   <li>Eviction path prefix: {@code large_tool_results} (relative to the workspace)</li>
- *   <li>Excluded tools: filesystem read/write/edit/list + memory tools (small or self-paginating)</li>
+ *   <li>Excluded tools: filesystem read/write/edit + memory tools (small or self-paginating)</li>
  * </ul>
  */
 public class ToolResultEvictionConfig {

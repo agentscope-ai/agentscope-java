@@ -21,6 +21,7 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverterRegistry;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
@@ -50,6 +51,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 
@@ -200,15 +202,17 @@ public class AguiAgentAdapter {
         String runId = input.getRunId();
 
         if (agent instanceof ReActAgent reAct) {
-            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
+            AguiStreamContext context =
+                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
-        if (isHarnessAgent(agent)) {
-            AguiStreamContext context = new AguiStreamContext(threadId, runId, config, input);
+        if (AguiUtil.isHarnessAgent(agent)) {
+            AguiStreamContext context =
+                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
@@ -274,17 +278,6 @@ public class AguiAgentAdapter {
         }
     }
 
-    private static boolean isHarnessAgent(Agent agent) {
-        Class<?> type = agent.getClass();
-        while (type != null) {
-            if ("io.agentscope.harness.agent.HarnessAgent".equals(type.getName())) {
-                return true;
-            }
-            type = type.getSuperclass();
-        }
-        return false;
-    }
-
     /**
      * Build the runtime context used for the agent invocation.
      *
@@ -328,6 +321,20 @@ public class AguiAgentAdapter {
             }
         }
         return Map.copyOf(interrupts);
+    }
+
+    /**
+     * External-tool detector backed by the live toolkit.
+     *
+     * <p>Used to decide whether {@code TOOL_CALL_ARGS} must still be emitted when
+     * {@code emitToolCallArgs} is disabled: external tools (frontend-provided or schema-only)
+     * execute outside the framework, so the client needs their arguments. Returns {@code null}
+     * when the agent exposes no toolkit, in which case the stream context falls back to
+     * matching names from {@link RunAgentInput#getTools()}.
+     */
+    private Predicate<String> externalToolDetector() {
+        Toolkit toolkit = agent.getToolkit();
+        return toolkit == null ? null : toolkit::isExternalTool;
     }
 
     private ToolInjection injectFrontendTools(RunAgentInput input) {

@@ -279,14 +279,15 @@ public final class AgentProtocolTaskStore {
             }
 
             String text = reply != null ? reply.getTextContent() : "";
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
             publishStatus(taskId, agentId, "success", null);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             return text;
         } catch (Exception e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("Protocol task {} failed", taskId, e);
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.FAILED, null, err, agentId, false, null);
             RemoteAgentEvent error = new RemoteAgentEvent();
             error.setType(RemoteEventType.RUN_ERROR);
@@ -295,7 +296,6 @@ public final class AgentProtocolTaskStore {
             error.setStatus("error");
             eventBus.publish(taskId, error);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             throw new RuntimeException(e);
         }
     }

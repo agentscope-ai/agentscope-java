@@ -13,16 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.agui.common;
+package io.agentscope.core.agui.runtime;
 
 import io.agentscope.core.agent.RuntimeContext;
 
 /**
  * Resolves a caller-provided {@link RuntimeContext} for an AG-UI request.
  *
- * <p>Spring applications can expose this as a bean to attach request-scoped values such as tenant
- * information, tracing data, or tool dependencies. The AG-UI runtime metadata is still supplied by
- * the protocol adapter and takes precedence over conflicting values.
+ * <p>Applications can expose this as a bean (or pass it programmatically to
+ * {@link io.agentscope.core.agui.processor.AguiRequestProcessor}) to attach request-scoped values
+ * such as tenant information, tracing data, or tool dependencies. The AG-UI runtime metadata is
+ * still supplied by the protocol adapter and takes precedence over conflicting values.
+ *
+ * <p>The native request type is transport-specific, so the request parameter uses a wildcard
+ * ({@code <?>}). Implementations that need the native request can obtain it via
+ * {@code request.getNativeRequest()} (returned as the captured type) and narrow it with
+ * {@code instanceof}.
  */
 @FunctionalInterface
 public interface AguiRuntimeContextResolver {
@@ -33,5 +39,5 @@ public interface AguiRuntimeContextResolver {
      * @param request The AG-UI request context
      * @return A runtime context to merge into the AG-UI run, or null
      */
-    RuntimeContext resolve(AguiRuntimeContextRequest request);
+    RuntimeContext resolve(AguiRuntimeContextRequest<?> request);
 }

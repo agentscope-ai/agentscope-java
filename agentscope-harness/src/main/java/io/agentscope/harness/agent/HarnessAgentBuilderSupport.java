@@ -319,6 +319,7 @@ final class HarnessAgentBuilderSupport {
         final var capturedRemoteSpec = b.remoteFilesystemSpec;
         final var capturedRoutes = Map.copyOf(b.filesystemRoutes);
 
+        final boolean capturedPendingToolRecovery = b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final AbstractFilesystem capturedBackend =
@@ -364,6 +365,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name("general-purpose-subagent")
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description("General-purpose subagent for isolated task execution")
                             .sysPrompt(buildSubagentSysPrompt(null))
                             .model(capturedModel)
@@ -441,6 +443,10 @@ final class HarnessAgentBuilderSupport {
         final var capturedRemoteSpec = b.remoteFilesystemSpec;
         final var capturedRoutes = Map.copyOf(b.filesystemRoutes);
 
+        final boolean capturedPendingToolRecovery =
+                decl.getEnablePendingToolRecovery() != null
+                        ? decl.getEnablePendingToolRecovery()
+                        : b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
@@ -500,6 +506,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name(decl.getName())
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description(decl.getDescription())
                             .model(effectiveModel)
                             .toolkit(

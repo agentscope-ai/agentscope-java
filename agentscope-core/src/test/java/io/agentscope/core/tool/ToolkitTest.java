@@ -518,7 +518,13 @@ class ToolkitTest {
         toolkit.createToolGroup("groupB", "Group B", false);
 
         toolkit.registration().tool(sampleTools).group("groupA").apply();
-        toolkit.registration().tool(sampleTools).group("groupB").apply();
+        AgentTool registeredTool = toolkit.getTool("add");
+        toolkit.addToolToGroup("groupB", "add");
+        toolkit.addToolToGroup("groupB", "add");
+
+        assertNotNull(registeredTool);
+        assertSame(registeredTool, toolkit.getTool("add"));
+        assertEquals(Set.of("add"), toolkit.getToolGroup("groupB").getTools());
 
         Map<String, Object> addInput = Map.of("a", 5, "b", 7);
         ToolUseBlock toolCall =
@@ -563,6 +569,26 @@ class ToolkitTest {
         assertTrue(
                 isErrorResult(resultWithNone),
                 "Should fail when no groups are active: " + getResultText(resultWithNone));
+    }
+
+    @Test
+    @DisplayName("Should reject adding an unknown group or tool")
+    void testAddToolToGroupValidation() {
+        toolkit.createToolGroup("existingGroup", "Existing group", false);
+        toolkit.registerAgentTool(namedAgentTool("registeredTool"));
+
+        IllegalArgumentException missingGroup =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.addToolToGroup("missingGroup", "registeredTool"));
+        assertEquals("Tool group 'missingGroup' does not exist", missingGroup.getMessage());
+
+        IllegalArgumentException missingTool =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> toolkit.addToolToGroup("existingGroup", "missingTool"));
+        assertEquals("Tool not found: missingTool", missingTool.getMessage());
+        assertTrue(toolkit.getToolGroup("existingGroup").getTools().isEmpty());
     }
 
     @Test

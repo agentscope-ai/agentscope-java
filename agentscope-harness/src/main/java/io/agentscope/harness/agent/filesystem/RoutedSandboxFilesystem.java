@@ -54,6 +54,14 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
         return primary;
     }
 
+    /**
+     * Returns the backend that would serve {@code path}: the longest matching prefix route, or
+     * the primary sandbox filesystem when no route matches.
+     */
+    public AbstractFilesystem backendFor(String path) {
+        return composite.filesystemFor(path);
+    }
+
     @Override
     public String id() {
         return primary.id();

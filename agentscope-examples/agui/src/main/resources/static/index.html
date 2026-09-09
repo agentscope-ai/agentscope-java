@@ -339,7 +339,7 @@
         </div>
 
         <div class="demo-actions">
-            <button id="approval-demo-btn">HITL interrupt（点击测试）</button>
+            <button id="approval-demo-btn">HITL 审批演示（点击测试）</button>
         </div>
 
         <div id="messages"></div>
@@ -372,11 +372,11 @@
         let messageHistory = [];
         let isRunning = false;
         let activeToolCalls = new Map();
-        let pendingApproval = null;
+        let pendingApprovalToolCall = null;
 
         const frontendTools = [{
             name: 'request_approval',
-            description: 'Ask the user to approve or reject an action before continuing. Always call this tool when the user asks for the approval interrupt demo.',
+            description: 'Ask the user to approve or reject an action before continuing. Always call this tool when the user asks for the approval demo.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -477,19 +477,21 @@
             }
         }
 
-        function appendApprovalDialog(interrupt) {
-            const toolCall = activeToolCalls.get(interrupt.toolCallId) || {};
+        function isFrontendTool(name) {
+            return frontendTools.some(tool => tool.name === name);
+        }
+
+        function appendApprovalDialog(toolCall) {
             const args = parseToolArgs(toolCall.args);
             const div = document.createElement('div');
             div.className = 'message tool';
             div.innerHTML = `
                 <div class="message-role">approval required</div>
                 <div class="message-content">${escapeHtml([
-                    `toolCallId: ${interrupt.toolCallId}`,
-                    `tool: ${toolCall.name || interrupt.metadata?.toolName || 'request_approval'}`,
+                    `toolCallId: ${toolCall.toolCallId}`,
+                    `tool: ${toolCall.name || 'request_approval'}`,
                     `action: ${args.action || '(not provided)'}`,
-                    args.reason ? `reason: ${args.reason}` : null,
-                    interrupt.message ? `message: ${interrupt.message}` : null
+                    args.reason ? `reason: ${args.reason}` : null
                 ].filter(Boolean).join('\n'))}</div>
                 <div class="approval-actions">
                     <button class="approve" type="button">Approve</button>
@@ -503,21 +505,15 @@
         }
 
         async function resolveApproval(approved, dialog) {
-            if (!pendingApproval || isRunning) return;
+            if (!pendingApprovalToolCall || isRunning) return;
 
-            const interrupt = pendingApproval;
-            const toolCall = activeToolCalls.get(interrupt.toolCallId) || {};
+            const toolCall = pendingApprovalToolCall;
             const args = parseToolArgs(toolCall.args);
             const payload = {
                 approved,
                 action: args.action || null,
                 reason: approved ? 'Approved in the AG-UI example dialog.' : 'Rejected in the AG-UI example dialog.'
             };
-            const resume = [{
-                interruptId: interrupt.id,
-                status: 'resolved',
-                payload
-            }];
 
             dialog.querySelectorAll('button').forEach(button => button.disabled = true);
             const actions = dialog.querySelector('.approval-actions');
@@ -525,25 +521,47 @@
                 actions.remove();
             }
             appendMessage('tool', `${approved ? 'Approved' : 'Rejected'} request_approval\n${JSON.stringify(payload)}`);
-            pendingApproval = null;
 
-            await runAgent([], resume);
+            // Frontend tools no longer emit interrupts; the result is fed back as a
+            // tool-role message whose toolCallId matches the assistant's tool call.
+            const toolCallEntry = {
+                id: toolCall.toolCallId,
+                type: 'function',
+                function: { name: toolCall.name || 'request_approval', arguments: toolCall.args || '{}' }
+            };
+            const lastMsg = messageHistory[messageHistory.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.toolCalls = [...(lastMsg.toolCalls || []), toolCallEntry];
+            } else {
+                messageHistory.push({
+                    id: 'msg-assistant-tc-' + toolCall.toolCallId,
+                    role: 'assistant',
+                    toolCalls: [toolCallEntry]
+                });
+            }
+            messageHistory.push({
+                id: 'msg-toolresult-' + toolCall.toolCallId,
+                role: 'tool',
+                toolCallId: toolCall.toolCallId,
+                content: JSON.stringify(payload)
+            });
+
+            pendingApprovalToolCall = null;
+            activeToolCalls.delete(toolCall.toolCallId);
+
+            await runAgent(messageHistory);
         }
 
-        function handleRunFinished(event) {
-            const interrupts = event?.outcome?.type === 'interrupt' ? event.outcome.interrupts || [] : [];
-            const toolInterrupt = interrupts.find(item => item.reason === 'tool_call' && item.toolCallId);
-            if (!toolInterrupt) {
-                setStatus('ready', 'Ready');
+        function handleRunFinished() {
+            if (pendingApprovalToolCall) {
+                setStatus('waiting', 'Awaiting approval');
+                appendApprovalDialog(pendingApprovalToolCall);
                 return;
             }
-
-            pendingApproval = toolInterrupt;
-            setStatus('waiting', 'Awaiting approval');
-            appendApprovalDialog(toolInterrupt);
+            setStatus('ready', 'Ready');
         }
 
-        async function runAgent(messagesForServer, resumeEntries = []) {
+        async function runAgent(messagesForServer) {
             isRunning = true;
             sendBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
@@ -562,9 +580,6 @@
                     messages: messagesForServer,
                     tools: frontendTools
                 };
-                if (resumeEntries.length > 0) {
-                    runInput.resume = resumeEntries;
-                }
 
                 await client.run(runInput, {
                     onRunStarted: () => {
@@ -636,6 +651,13 @@
                         if (toolCall?.args) {
                             appendMessage('tool', `Tool arguments for ${toolCall.name}\n${toolCall.args}`);
                         }
+                        if (toolCall && isFrontendTool(toolCall.name)) {
+                            pendingApprovalToolCall = {
+                                toolCallId: toolCallId,
+                                name: toolCall.name,
+                                args: toolCall.args || ''
+                            };
+                        }
                     },
                     onToolCallResult: (toolCallId, content) => {
                         hideTypingIndicator();
@@ -649,10 +671,10 @@
                         hideTypingIndicator();
                         appendMessage('custom', formatCustomEvent(event));
                     },
-                    onRunFinished: (threadId, runId, event) => {
+                    onRunFinished: () => {
                         console.log('Run finished');
                         hideTypingIndicator();
-                        handleRunFinished(event);
+                        handleRunFinished();
                     }
                 });
             } catch (error) {
@@ -698,141 +720,6 @@
             const userMessage = { id: 'msg-' + Date.now(), role: 'user', content: text };
             messageHistory.push(userMessage);
             await runAgent(messageHistory);
-            return;
-
-            isRunning = true;
-            sendBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            setStatus('running', 'Running...');
-
-            // Add user message
-            appendMessage('user', text);
-            messageHistory.push({ id: 'msg-' + Date.now(), role: 'user', content: text });
-
-            // Show typing indicator
-            showTypingIndicator();
-
-            let assistantContent = '';
-            let currentMessageId = null;
-            let reasoningContent = '';
-            let currentReasoningMessageId = null;
-            let currentReasoningDiv = null;
-
-            try {
-                await client.run({
-                    threadId: threadId,
-                    runId: 'run-' + Date.now(),
-                    messages: messageHistory
-                }, {
-                    onRunStarted: () => {
-                        console.log('Run started');
-                        currentAssistantDiv = null;
-                        currentReasoningDiv = null;
-                        reasoningContent = '';
-                    },
-                    onReasoningMessageStart: (messageId, role) => {
-                        console.log('Reasoning message start:', messageId, role);
-                        hideTypingIndicator();
-                        currentReasoningMessageId = messageId;
-                        reasoningContent = '';
-                        currentReasoningDiv = null;
-                    },
-                    onReasoningContent: (delta, messageId) => {
-                        console.log('Reasoning content delta:', delta);
-                        if (reasoningContent === '') {
-                            appendMessage('reasoning', delta);
-                        } else {
-                            appendMessage('reasoning', delta, true);
-                        }
-                        reasoningContent += delta;
-                    },
-                    onReasoningMessageEnd: (messageId) => {
-                        console.log('Reasoning message end:', messageId);
-                        currentReasoningDiv = null;
-                        reasoningContent = '';
-                    },
-                    onTextMessageStart: (messageId, role) => {
-                        console.log('Text message start:', messageId, role);
-                        hideTypingIndicator();
-                        currentMessageId = messageId;
-                        assistantContent = '';
-                        currentAssistantDiv = null;
-                    },
-                    onTextContent: (delta) => {
-                        console.log('Text content delta:', delta);
-                        if (assistantContent === '') {
-                            appendMessage('assistant', delta);
-                        } else {
-                            appendMessage('assistant', delta, true);
-                        }
-                        assistantContent += delta;
-                    },
-                    onTextMessageEnd: (messageId) => {
-                        console.log('Text message end:', messageId);
-                        if (assistantContent) {
-                            messageHistory.push({
-                                id: messageId,
-                                role: 'assistant',
-                                content: assistantContent
-                            });
-                        }
-                        currentAssistantDiv = null;
-                    },
-                    onToolCallStart: (toolCallId, toolName) => {
-                        hideTypingIndicator();
-                        currentAssistantDiv = null;
-                        appendMessage('tool', `🔧 Calling tool: ${toolName}`);
-                    },
-                    onToolCallEnd: (toolCallId) => {
-                        // Tool call completed
-                    },
-                    onError: (error) => {
-                        hideTypingIndicator();
-                        appendMessage('error', `Error: ${error}`);
-                    },
-                    onCustomEvent: (event) => {
-                        hideTypingIndicator();
-                        appendMessage('custom', formatCustomEvent(event));
-                    },
-                    onRunFinished: () => {
-                        console.log('Run finished');
-                        hideTypingIndicator();
-                        setStatus('ready', 'Ready');
-                    }
-                });
-            } catch (error) {
-                console.error('Error during agent run:', error);
-                hideTypingIndicator();
-
-                // Check if this was a user-initiated abort
-                if (error.name === 'AbortError') {
-                    console.log('Run was stopped by user');
-                    // Save whatever content we received before stopping
-                    if (assistantContent) {
-                        messageHistory.push({
-                            id: currentMessageId || 'msg-stopped-' + Date.now(),
-                            role: 'assistant',
-                            content: assistantContent + ' [stopped]'
-                        });
-                    }
-                    setStatus('ready', 'Stopped');
-                } else {
-                    appendMessage('error', `Error: ${error.message}`);
-                    setStatus('error', 'Error');
-                }
-            } finally {
-                console.log('Run complete, resetting state');
-                isRunning = false;
-                sendBtn.style.display = 'inline-block';
-                stopBtn.style.display = 'none';
-                hideTypingIndicator();
-                currentAssistantDiv = null;
-                currentReasoningDiv = null;
-                reasoningContent = '';
-                if (statusText.textContent === 'Running...') {
-                    setStatus('ready', 'Ready');
-                }
-            }
         }
 
         // Stop button handler
@@ -846,7 +733,7 @@
 
         function startApprovalDemo() {
             if (isRunning) return;
-            input.value = 'Run the approval interrupt demo. Call request_approval for deleting demo-file.txt, then continue after the user decision.';
+            input.value = 'Run the approval demo. Call request_approval for deleting demo-file.txt, then continue after the user decision.';
             sendMessage();
         }
 
