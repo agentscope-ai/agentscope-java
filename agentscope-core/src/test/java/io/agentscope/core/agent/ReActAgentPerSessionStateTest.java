@@ -435,6 +435,48 @@ class ReActAgentPerSessionStateTest {
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
+    @Test
+    @DisplayName("shutdown retry clears and uses the current non-default session state")
+    void shutdownRetryUsesCurrentSessionState() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState defaultState = agent.getAgentState();
+        AgentState sessionState = agent.getAgentState("u1", "sessA");
+        sessionState.setShutdownInterrupted(true);
+
+        Msg response =
+                agent.call(
+                                List.of(userMsg("duplicate prompt")),
+                                RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                        .block(Duration.ofSeconds(5));
+
+        assertEquals("ok", response.getTextContent());
+        assertFalse(sessionState.isShutdownInterrupted());
+        assertFalse(defaultState.isShutdownInterrupted());
+        assertTrue(
+                sessionState.getContext().stream()
+                        .noneMatch(msg -> "duplicate prompt".equals(msg.getTextContent())),
+                "the retry input must be discarded for the interrupted session");
+
+        ReActAgent otherAgent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState otherDefaultState = otherAgent.getAgentState();
+        AgentState otherSessionState = otherAgent.getAgentState("u1", "sessA");
+        otherDefaultState.setShutdownInterrupted(true);
+
+        otherAgent
+                .call(
+                        List.of(userMsg("new prompt")),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(otherDefaultState.isShutdownInterrupted());
+        assertTrue(
+                otherSessionState.getContext().stream()
+                        .anyMatch(msg -> "new prompt".equals(msg.getTextContent())),
+                "a default-session flag must not discard another session's input");
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
