@@ -183,6 +183,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final Toolkit ownedMcpToolkit;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -216,8 +217,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             MemoryConfig memoryConfig,
             Object subagentMiddleware,
             DistributedStore distributedStore,
-            WorkspacePathNormalizer pathNormalizer) {
+            WorkspacePathNormalizer pathNormalizer,
+            Toolkit ownedMcpToolkit) {
         this.delegate = delegate;
+        this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
@@ -471,6 +474,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     ownedWorkspaceIndex.close();
                 }
             } finally {
+                ownedMcpToolkit.closeMcpClients();
                 delegate.close();
             }
         }
@@ -1261,6 +1265,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean skillCuratorEnabled = false;
         SkillCuratorConfig skillCuratorConfig;
         io.agentscope.core.skill.SkillFilter skillFilter;
+        PermissionContextState permissionContextOverride;
 
         boolean planModeEnabled = false;
         boolean planModeAllowShell = false;
@@ -1697,6 +1702,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder permissionContext(PermissionContextState permissionContext) {
+            this.permissionContextOverride = permissionContext;
             inner.permissionContext(permissionContext);
             return this;
         }
@@ -2829,7 +2835,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 : null;
 
                 io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
-                if (disableShellTool) {
+                boolean shellToolAvailable =
+                        !disableShellTool
+                                && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
+                if (!shellToolAvailable) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 } else if (filesystem instanceof LocalFilesystemWithShell) {
@@ -2926,7 +2935,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     memoryConfig,
                     capturedSubagentMw,
                     distributedStore,
-                    pathNormalizer);
+                    pathNormalizer,
+                    agentToolkit);
         }
     }
 }

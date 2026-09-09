@@ -408,9 +408,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> currentEntries = snapshotFor(rc).entries();
-        if (currentEntries.isEmpty()) {
-            return next.apply(input);
-        }
         String sessionId = rc != null ? rc.getSessionId() : null;
 
         // ---- Phase B-3 push delivery -------------------------------------------------------
@@ -419,8 +416,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         // the legacy pull-only flow unchanged.
         List<TaskDelivery> pending = this.taskRepository.findPendingDeliveries(rc, sessionId);
         Msg deliveryMsg = null;
-        if (!pending.isEmpty() && agent instanceof ReActAgent reAct) {
+        if (!pending.isEmpty()) {
             deliveryMsg = buildDeliveryReminder(pending);
+        }
+        if (deliveryMsg != null && agent instanceof ReActAgent reAct) {
             try {
                 RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
             } catch (RuntimeException e) {
@@ -460,7 +459,12 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             downstream =
                     downstream.doOnComplete(
                             () -> {
-                                for (TaskDelivery d : pending) {
+                                for (TaskDelivery d :
+                                        pending.subList(
+                                                0,
+                                                Math.min(
+                                                        pending.size(),
+                                                        MAX_DELIVERIES_PER_REMINDER))) {
                                     try {
                                         repoRef.markDelivered(rcRef, sidRef, d.taskId());
                                     } catch (RuntimeException e) {

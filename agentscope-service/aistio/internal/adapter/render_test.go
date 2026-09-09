@@ -42,9 +42,6 @@ func declAgentWithExtras() *v1alpha1.Agent {
 				Subagents: []v1alpha1.SubagentSpec{
 					{Name: "researcher", Model: "qwen", Steps: 3},
 				},
-				TeamTemplates: []v1alpha1.TeamTemplateRef{
-					{Name: "review", Members: []v1alpha1.TeamTemplateMember{{Role: "lead", AgentRef: "a"}}},
-				},
 			},
 		},
 	}
@@ -62,9 +59,6 @@ func TestRenderAgentConfig_IncludesAllSections(t *testing.T) {
 	}
 	if _, ok := cfg["subagents"]; !ok {
 		t.Error("subagents missing")
-	}
-	if _, ok := cfg["teamTemplates"]; !ok {
-		t.Error("teamTemplates missing")
 	}
 	// Skills are NOT part of the agent config (delivered separately).
 	if _, ok := cfg["skills"]; ok {

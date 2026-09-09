@@ -53,15 +53,14 @@ public class TaskTool {
     @Tool(
             name = "task_output",
             description =
-                    "Retrieve the output of a background subagent task. Use when agent_spawn or"
-                        + " agent_send was called with timeout_seconds=0. Prefer block=false to"
-                        + " check status without waiting. Use block=true only for one specific task"
-                        + " you are ready to block on. For several async subagent tasks, prefer"
-                        + " wait_async_results(task_ids=...) or wait_async_results(wait_all=true)"
-                        + " when you need a barrier, otherwise keep reasoning and poll selected"
-                        + " tasks later with block=false. Do NOT call this immediately after"
-                        + " launching a task — the task status in conversation history is stale;"
-                        + " always call task_output or task_list to get the current state.")
+                    "Retrieve a background task created by agent_spawn/agent_send or"
+                        + " sessions_spawn/sessions_send with timeout_seconds=0. Prefer block=false"
+                        + " to check status without waiting. Use block=true only for one specific"
+                        + " task you are ready to block on. For several async subagent tasks,"
+                        + " prefer wait_async_results(task_ids=...) or"
+                        + " wait_async_results(wait_all=true) when you need a barrier. A returned"
+                        + " task ID is immediately queryable. not_found is a tracking/scope error,"
+                        + " never evidence that work is running.")
     public String taskOutput(
             RuntimeContext runtimeContext,
             @ToolParam(
@@ -85,21 +84,25 @@ public class TaskTool {
                     Long timeout) {
 
         if (taskId == null || taskId.isBlank()) {
-            return "Error: task_id is required";
+            throw new IllegalArgumentException("status: invalid_request\ntask_id is required");
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
-            return "Error: No background task found with ID: "
-                    + taskId
-                    + ". Use task_list() to see all known tasks for this session.";
+            throw new IllegalArgumentException(
+                    "status: not_found\ntask_id: "
+                            + taskId
+                            + "\n"
+                            + "No task with this ID exists in the current session. This is not"
+                            + " running; use task_list to reconcile the ID and report a tracking"
+                            + " error if missing.");
         }
 
         bgTask.updateLastCheckedAt();
 
         boolean shouldBlock = block == null || block;
-        long timeoutMs = timeout != null ? Math.min(timeout, 600_000) : 30_000;
+        long timeoutMs = timeout != null ? Math.max(0, Math.min(timeout, 600_000)) : 30_000;
 
         if (shouldBlock && !bgTask.isCompleted()) {
             // If the task has no local future (cross-node or post-restart), degrade gracefully
@@ -110,7 +113,7 @@ public class TaskTool {
                     bgTask.waitForCompletion(timeoutMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    return "Error: Wait for task interrupted";
+                    throw new IllegalStateException("status: interrupted\ntask_id: " + taskId, e);
                 }
                 // After waiting, if still not complete it may be running on another node
                 if (!bgTask.isCompleted()) {
@@ -146,13 +149,13 @@ public class TaskTool {
             @ToolParam(name = "task_id", description = "The task_id to cancel") String taskId) {
 
         if (taskId == null || taskId.isBlank()) {
-            return "Error: task_id is required";
+            throw new IllegalArgumentException("status: invalid_request\ntask_id is required");
         }
 
         String sessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         BackgroundTask bgTask = taskRepository.getTask(runtimeContext, sessionId, taskId);
         if (bgTask == null) {
-            return "Error: No background task found with ID: " + taskId;
+            throw new IllegalArgumentException("status: not_found\ntask_id: " + taskId);
         }
 
         TaskStatus currentStatus = bgTask.getTaskStatus();
