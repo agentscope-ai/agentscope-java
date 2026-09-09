@@ -86,7 +86,39 @@ public final class AgentSpecTypes {
             Map<String, String> headers,
             Map<String, String> queryParams,
             List<String> enableTools,
-            String timeout) {}
+            String timeout,
+            List<String> disableTools,
+            Boolean required,
+            String initializationTimeout) {
+        public McpServerSpec(
+                String name,
+                String type,
+                String url,
+                String transport,
+                String command,
+                List<String> args,
+                Map<String, String> env,
+                Map<String, String> headers,
+                Map<String, String> queryParams,
+                List<String> enableTools,
+                String timeout) {
+            this(
+                    name,
+                    type,
+                    url,
+                    transport,
+                    command,
+                    args,
+                    env,
+                    headers,
+                    queryParams,
+                    enableTools,
+                    timeout,
+                    null,
+                    null,
+                    null);
+        }
+    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonIgnoreProperties(ignoreUnknown = true)

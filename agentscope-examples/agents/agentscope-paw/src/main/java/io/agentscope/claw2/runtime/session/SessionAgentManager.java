@@ -388,6 +388,15 @@ public class SessionAgentManager {
         return getSession(sessionKey).map(SessionView::from);
     }
 
+    /** Resolve a runtime session without falling back to a global root requester. */
+    public String requesterKeyForSession(String sessionId) {
+        return sessionsByKey.values().stream()
+                .filter(e -> sessionId.equals(e.sessionId()))
+                .map(SessionEntry::sessionKey)
+                .findFirst()
+                .orElse(sessionId);
+    }
+
     // -----------------------------------------------------------------
     //  Execution (lane-aware, locked)
     // -----------------------------------------------------------------
@@ -402,6 +411,22 @@ public class SessionAgentManager {
             long timeoutMs,
             boolean announceToRequesterOnComplete,
             CommandLane lane) {
+        return execute(
+                sessionKeyOrLabel,
+                prompt,
+                timeoutMs,
+                announceToRequesterOnComplete,
+                lane,
+                RuntimeContext.empty());
+    }
+
+    public SendResult execute(
+            String sessionKeyOrLabel,
+            String prompt,
+            long timeoutMs,
+            boolean announceToRequesterOnComplete,
+            CommandLane lane,
+            RuntimeContext parent) {
         Optional<String> resolved = resolveSessionKey(sessionKeyOrLabel);
         if (resolved.isEmpty()) {
             return new SendResult(null, "error", null, "Unknown session: " + sessionKeyOrLabel);
@@ -442,7 +467,7 @@ public class SessionAgentManager {
 
             sessionLock.lock();
             try {
-                result = doExecute(entry, prompt, timeoutMs);
+                result = doExecute(entry, prompt, timeoutMs, parent);
             } finally {
                 sessionLock.unlock();
             }
@@ -463,7 +488,8 @@ public class SessionAgentManager {
         return result;
     }
 
-    private SendResult doExecute(SessionEntry entry, String prompt, long timeoutMs) {
+    private SendResult doExecute(
+            SessionEntry entry, String prompt, long timeoutMs, RuntimeContext parent) {
         long startedAt = System.currentTimeMillis();
         SubagentRunRegistry.RunRecord prevRun = runRegistry.get(entry.spawnRunId());
         if (prevRun != null) {
@@ -482,8 +508,36 @@ public class SessionAgentManager {
                             null));
         }
 
-        Agent agent = getOrCreateAgent(entry);
-        Mono<Msg> mono = delegate.invokeAgent(agent, entry.sessionId(), null, prompt.trim());
+        RuntimeContext childContext =
+                RuntimeContext.builder()
+                        .sessionId(entry.sessionId())
+                        .userId(parent == null ? null : parent.getUserId())
+                        .put("sessionKey", entry.sessionKey())
+                        .put(
+                                io.agentscope.harness.agent.subagent.task.TaskRepository
+                                        .SUPPRESS_COMPLETION_CALLBACK,
+                                parent != null
+                                        && Boolean.TRUE.equals(
+                                                parent.get(
+                                                        io.agentscope.harness.agent.subagent.task
+                                                                .TaskRepository
+                                                                .SUPPRESS_COMPLETION_CALLBACK)))
+                        .put(
+                                "agentTaskManaged",
+                                parent != null
+                                        && Boolean.TRUE.equals(parent.get("agentTaskManaged")))
+                        .build();
+        Agent agent =
+                agentCache.computeIfAbsent(
+                        entry.sessionKey(),
+                        k -> delegate.createAgent(entry.agentId(), childContext));
+        Mono<Msg> mono =
+                delegate.invokeAgent(
+                        agent,
+                        entry.sessionId(),
+                        childContext.getUserId(),
+                        prompt.trim(),
+                        childContext);
 
         Msg reply;
         try {
@@ -503,21 +557,6 @@ public class SessionAgentManager {
         touchSession(entry.sessionKey());
         finishRun(entry, "ok", text, null);
         return new SendResult(entry.sessionKey(), "ok", text, null);
-    }
-
-    /** Returns a cached agent instance for the session, or creates a new one. */
-    private Agent getOrCreateAgent(SessionEntry entry) {
-        return agentCache.computeIfAbsent(
-                entry.sessionKey(),
-                k -> delegate.createAgent(entry.agentId(), parentContext(entry)));
-    }
-
-    private static RuntimeContext parentContext(SessionEntry entry) {
-        RuntimeContext.Builder b = RuntimeContext.builder();
-        if (entry.sessionId() != null && !entry.sessionId().isBlank()) {
-            b.sessionId(entry.sessionId());
-        }
-        return b.build();
     }
 
     /** Evicts the cached agent for the given session key. */
@@ -834,6 +873,23 @@ public class SessionAgentManager {
     // -----------------------------------------------------------------
     //  Internal: announce formatting and enqueue
     // -----------------------------------------------------------------
+
+    /** Called only after the task repository has saved the outcome. */
+    public void announceCompletion(String keyOrLabel, String result, Throwable error) {
+        resolveSessionKey(keyOrLabel)
+                .map(sessionsByKey::get)
+                .ifPresent(
+                        entry -> {
+                            if (config.queueAnnounceToRequester()) {
+                                maybeEnqueueAnnounce(
+                                        entry,
+                                        error == null ? "ok" : "failed",
+                                        result,
+                                        error == null ? null : error.getMessage(),
+                                        System.currentTimeMillis());
+                            }
+                        });
+    }
 
     private void maybeEnqueueAnnounce(
             SessionEntry child,
