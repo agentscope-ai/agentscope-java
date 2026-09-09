@@ -138,6 +138,15 @@ class SubagentModeHiddenTest {
         assertFalse(
                 rendered.contains("- `compaction`:"),
                 "PRIMARY-only declaration must not appear in spawnable list");
+        assertTrue(rendered.contains("`agent_release`"), "default mode should advertise release");
+
+        String sessionRendered = SubagentsMiddleware.renderSubagentSection(entries, true);
+        assertFalse(
+                sessionRendered.contains("agent_release"),
+                "session mode must not advertise the local release tool");
+        assertFalse(
+                sessionRendered.contains("sessions_release"),
+                "session mode must not invent an external release tool");
     }
 
     @Test
