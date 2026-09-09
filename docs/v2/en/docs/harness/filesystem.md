@@ -248,7 +248,7 @@ Snapshots let the next `call()` restore the previous sandbox state (installed de
 | `NoopSnapshotSpec` | No snapshots (default) |
 | `LocalSnapshotSpec(Path)` | Snapshots stored on host local disk |
 | `RedisSnapshotSpec` | Snapshots stored in Redis |
-| `OssSnapshotSpec` | Snapshots stored in object storage (Alibaba Cloud OSS) |
+| `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | Snapshots stored in object storage (Alibaba Cloud OSS / AWS S3 / Tencent Cloud COS) |
 | `RemoteSnapshotSpec` | Snapshots stored in a `BaseStore` |
 
 #### Example: coding assistant (Docker + local snapshots)

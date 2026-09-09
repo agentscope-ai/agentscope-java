@@ -178,14 +178,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Alibaba Cloud OSS snapshot backend (optional: only needed when using OssSnapshotSpec) -->
-        <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.18.5</version>
-            <optional>true</optional>
-        </dependency>
-
         <!-- Optional sandbox stores (io.agentscope.harness.agent.sandbox.impl.*) -->
         <dependency>
             <groupId>io.fabric8</groupId>

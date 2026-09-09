@@ -26,30 +26,15 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions - OSS</name>
-    <description>AgentScope Extensions - Alibaba Cloud OSS backed AgentStateStore and BaseStore</description>
     <artifactId>agentscope-extensions-oss</artifactId>
+    <name>AgentScope Java - Extensions - OSS</name>
+    <description>Object storage backed AgentStateStore, BaseStore and snapshot storage across cloud vendors (Alibaba Cloud OSS, AWS S3, Tencent Cloud COS)</description>
+    <packaging>pom</packaging>
 
-    <dependencies>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-            <optional>true</optional>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-harness</artifactId>
-            <optional>true</optional>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- Alibaba Cloud OSS SDK -->
-        <dependency>
-            <groupId>com.aliyun.oss</groupId>
-            <artifactId>aliyun-sdk-oss</artifactId>
-            <version>3.18.5</version>
-        </dependency>
-    </dependencies>
+    <modules>
+        <module>agentscope-extensions-oss-base</module>
+        <module>agentscope-extensions-oss-aliyun</module>
+        <module>agentscope-extensions-oss-aws</module>
+        <module>agentscope-extensions-oss-tencent</module>
+    </modules>
 </project>

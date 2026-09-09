@@ -22,9 +22,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 功能组件 | 接口 | Redis | OSS | MySQL |
 |---------|------|:-----:|:---:|:-----:|
-| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
+| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `AliyunOssAgentStateStore` / `AwsS3AgentStateStore` / `TencentCosAgentStateStore` | `MysqlAgentStateStore` |
+| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `AliyunOssBaseStore` / `AwsS3BaseStore` / `TencentCosBaseStore` | `JdbcStore` |
+| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | `JdbcSnapshotSpec` |
 | 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
 
 > OSS 不提供 `SandboxExecutionGuard`——对象存储不适合做分布式锁。需要 sandbox 并发控制的 OSS 用户，用 `DistributedStore.builder()` 混入 Redis 的 guard。

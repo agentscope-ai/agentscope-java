@@ -22,9 +22,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Component | Interface | Redis | OSS | MySQL |
 |-----------|----------|:-----:|:---:|:-----:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `AliyunOssAgentStateStore` / `AwsS3AgentStateStore` / `TencentCosAgentStateStore` | `MysqlAgentStateStore` |
+| Workspace filesystem KV | `BaseStore` | `RedisStore` | `AliyunOssBaseStore` / `AwsS3BaseStore` / `TencentCosBaseStore` | `JdbcStore` |
+| Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `AliyunOssSnapshotSpec` / `AwsS3SnapshotSpec` / `TencentCosSnapshotSpec` | `JdbcSnapshotSpec` |
 | Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
 
 > OSS does not provide `SandboxExecutionGuard` — object storage is unsuitable for distributed locking. Mix in a Redis guard via `DistributedStore.builder()`.

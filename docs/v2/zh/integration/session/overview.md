@@ -19,7 +19,9 @@
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发（**HarnessAgent 默认**） |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | [多副本生产首选](../distributed/redis.md) |
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [已有数据库的场景](../distributed/mysql.md) |
-| `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](../distributed/oss.md) |
+| `AliyunOssAgentStateStore` | `agentscope-extensions-oss-aliyun` | [阿里云 OSS](../distributed/oss.md) |
+| `AwsS3AgentStateStore` | `agentscope-extensions-oss-aws` | [AWS S3](../distributed/oss.md) |
+| `TencentCosAgentStateStore` | `agentscope-extensions-oss-tencent` | [腾讯云 COS](../distributed/oss.md) |
 
 ## 单独配置
 

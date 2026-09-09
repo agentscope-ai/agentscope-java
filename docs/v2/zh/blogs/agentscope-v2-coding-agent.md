@@ -91,7 +91,7 @@ HarnessAgent agent = HarnessAgent.builder()
 Open SWE 用"persistent sandbox"解决——同一个 thread 的 follow-up message 复用同一个沙箱。我们的方案更精细，沙箱在每次 `call()` 结束时把工作区状态打包成快照，下次按需恢复：容器还在就直接接着用，容器没了就拿快照重新起一个，没快照就全量初始化。快照后端可选本地文件、OSS、Redis，生产环境加一行配置：
 
 ```java
-.snapshotSpec(new OssSnapshotSpec(ossClient, "my-bucket", "agentscope/"))
+.snapshotSpec(new AliyunOssSnapshotSpec(ossClient, "my-bucket", "agentscope/"))
 ```
 
 不光是沙箱的状态要续上。**对话历史、压缩摘要、Plan 状态、todo 列表、权限规则——整个 AgentState 每次 `call()` 结束自动落盘，下次同 `(userId, sessionId)` 的 `call()` 自动加载。** 默认存本地文件，多副本生产切 Redis 一行搞定。切到 Redis 之后，节点崩了会话漂到另一个节点，滚动发布新 pod 自动恢复，甚至 GitHub Issue 里聊到一半切到钉钉继续——只要 `sessionId` 一致，记忆都在。
@@ -183,7 +183,7 @@ Open SWE 用 Deep Agents 的 `task` tool 做子 agent 派发，Stripe 用 Bluepr
 .filesystem(new DockerFilesystemSpec()
     .image("agentscope/coding-sandbox:latest")
     .isolationScope(IsolationScope.USER)
-    .snapshotSpec(new OssSnapshotSpec(ossClient, "bucket", "prefix/"))
+    .snapshotSpec(new AliyunOssSnapshotSpec(ossClient, "bucket", "prefix/"))
     .executionGuard(RedisSandboxExecutionGuard.builder(jedis)
         .leaseTtl(Duration.ofMinutes(30)).build()))
 .stateStore(RedisAgentStateStore.builder().lettuceClient(redisClient).build())
