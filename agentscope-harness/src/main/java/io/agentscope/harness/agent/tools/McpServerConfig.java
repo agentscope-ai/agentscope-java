@@ -84,6 +84,56 @@ public class McpServerConfig {
     @JsonProperty("initializationTimeout")
     private Duration initializationTimeout;
 
+    private boolean defaultToolsEnabled = true;
+    private List<String> disableTools;
+    private boolean prefixToolNames;
+    private boolean required;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.util.function.Consumer<McpConnectionException> connectionFailureHandler;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public java.util.function.Consumer<McpConnectionException> getConnectionFailureHandler() {
+        return connectionFailureHandler;
+    }
+
+    public void setConnectionFailureHandler(
+            java.util.function.Consumer<McpConnectionException> handler) {
+        connectionFailureHandler = handler;
+    }
+
+    public boolean isDefaultToolsEnabled() {
+        return defaultToolsEnabled;
+    }
+
+    public void setDefaultToolsEnabled(boolean value) {
+        defaultToolsEnabled = value;
+    }
+
+    public List<String> getDisableTools() {
+        return disableTools;
+    }
+
+    public void setDisableTools(List<String> value) {
+        disableTools = value;
+    }
+
+    public boolean isPrefixToolNames() {
+        return prefixToolNames;
+    }
+
+    public void setPrefixToolNames(boolean value) {
+        prefixToolNames = value;
+    }
+
+    public boolean isRequired() {
+        return required;
+    }
+
+    public void setRequired(boolean value) {
+        required = value;
+    }
+
     public String getTransport() {
         return transport;
     }

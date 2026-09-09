@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -83,6 +84,10 @@ type sessionRow struct {
 	ResourcesJSON      *string
 	Status             string
 	StopReasonJSON     *string
+	RuntimeAgentTaskID *string
+	RuntimeAttemptID   *string
+	RuntimeDispatchGen *int64
+	RuntimeTurnID      *string
 	Version            int
 	ArchivedAt         *int64
 	CreatedAt          int64
@@ -131,14 +136,16 @@ func nullStrPtr(p *string) any {
 
 const sessionSelect = `SELECT session_id, owner_id, agent_id, agent_owner_id, agent_version, agent_ref_type,
 	agent_overrides_json, environment_id, external_key, memory_store_ids_json, vault_ids_json,
-	resources_json, status, stop_reason_json, version, archived_at, created_at, updated_at FROM sessions`
+	resources_json, status, stop_reason_json, runtime_agent_task_id, runtime_attempt_id,
+	runtime_dispatch_generation, runtime_turn_id, version, archived_at, created_at, updated_at FROM sessions`
 
 func (s *Server) scanSession(sc interface{ Scan(dest ...any) error }) (sessionRow, error) {
 	var r sessionRow
 	err := sc.Scan(
 		&r.SessionID, &r.OwnerID, &r.AgentID, &r.AgentOwnerID, &r.AgentVersion, &r.AgentRefType,
 		&r.AgentOverridesJSON, &r.EnvironmentID, &r.ExternalKey, &r.MemoryStoreIDsJSON, &r.VaultIDsJSON,
-		&r.ResourcesJSON, &r.Status, &r.StopReasonJSON, &r.Version, &r.ArchivedAt, &r.CreatedAt, &r.UpdatedAt,
+		&r.ResourcesJSON, &r.Status, &r.StopReasonJSON, &r.RuntimeAgentTaskID, &r.RuntimeAttemptID,
+		&r.RuntimeDispatchGen, &r.RuntimeTurnID, &r.Version, &r.ArchivedAt, &r.CreatedAt, &r.UpdatedAt,
 	)
 	return r, err
 }
@@ -211,7 +218,14 @@ func (s *Server) createSession(c *gin.Context) {
 	}
 	envID, memIDs, vaultIDs := mergeSessionMounts(a, req.EnvironmentID, memIDs, vaultIDs, memProvided, vaultProvided)
 	if envID == "" {
-		writeTextErr(c, http.StatusBadRequest, "environmentId required (set on session or agent.defaultEnvironmentId)")
+		envID, err = s.resolveDefaultEnvironmentID(c.Request.Context(), owner, agentID)
+		if err != nil {
+			writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
+			return
+		}
+	}
+	if _, err = s.validateEnvironmentBinding(c.Request.Context(), owner, envID); err != nil {
+		writeTextErr(c, environmentBindingHTTPStatus(err), err.Error())
 		return
 	}
 	sess, err := s.insertSession(c.Request.Context(), owner, agentID, owner, ver, refType,
@@ -225,6 +239,12 @@ func (s *Server) createSession(c *gin.Context) {
 
 func (s *Server) insertSession(ctx context.Context, owner, agentID, agentOwner string, ver int, refType,
 	envID, externalKey string, memIDs, vaultIDs []string, overrides, resources any) (sessionRow, error) {
+	if _, err := s.validateEnvironmentBinding(ctx, owner, envID); err != nil {
+		return sessionRow{}, err
+	}
+	if err := s.validateSessionResources(ctx, owner, memIDs, vaultIDs); err != nil {
+		return sessionRow{}, err
+	}
 	id := shortID("sess_")
 	now := nowMillis()
 	if memIDs == nil {
@@ -377,6 +397,10 @@ func (s *Server) applySessionUpdate(c *gin.Context, sessionID, owner string, req
 			writeErr(c, http.StatusBadRequest, "environmentId must not be empty")
 			return sessionRow{}, errBadRequest
 		}
+		if _, err = s.validateEnvironmentBinding(c.Request.Context(), sess.OwnerID, envID); err != nil {
+			writeErr(c, environmentBindingHTTPStatus(err), err.Error())
+			return sessionRow{}, errBadRequest
+		}
 	}
 	if req.MemoryStoreIDs != nil {
 		memIDs = *req.MemoryStoreIDs
@@ -524,4 +548,23 @@ func (s *Server) bestEffortDeleteSessionEvents(ctx context.Context, sessionID, o
 	if resp.StatusCode >= 300 {
 		log.Printf("session event cleanup status=%d session=%s", resp.StatusCode, sessionID)
 	}
+}
+
+func (s *Server) validateSessionResources(ctx context.Context, owner string, memoryIDs, vaultIDs []string) error {
+	for _, id := range memoryIDs {
+		if _, err := s.buildMemoryMount(ctx, id, owner); err != nil {
+			return fmt.Errorf("memory store unavailable: %s", id)
+		}
+	}
+	for _, id := range vaultIDs {
+		var exists bool
+		err := s.db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM vaults WHERE vault_id=$1 AND owner_id=$2 AND archived_at IS NULL)`, id, owner).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("vault unavailable: %s", id)
+		}
+	}
+	return nil
 }
