@@ -31,6 +31,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -q -e ".[dev]"
 
+      - name: Check documentation sources
+        run: |
+          python -m unittest discover -s docs/scripts/tests
+          python docs/scripts/check_service_docs.py --source-only
+
       - name: Build Docs
         run: |
           cd docs
