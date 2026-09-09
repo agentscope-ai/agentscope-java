@@ -56,11 +56,11 @@ func (r *metricsRepo) RecordSnapshot(ctx context.Context, s *store.SessionSnapsh
 		INSERT INTO session_snapshots (
 			session_fk, captured_at, message_count, prompt_tokens, completion_tokens,
 			total_tokens, context_pressure, is_compacted, effective_message_count,
-			context_hash, task_summary
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+			context_hash, task_summary, token_usage_reported, context_pressure_reported
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
 		s.SessionFK, s.CapturedAt, s.MessageCount, s.PromptTokens, s.CompletionTokens,
 		s.TotalTokens, s.ContextPressure, s.IsCompacted, s.EffectiveMessageCount,
-		nullStr(s.ContextHash), nullJSON(s.TaskSummary),
+		nullStr(s.ContextHash), nullJSON(s.TaskSummary), s.TokenUsageReported, s.ContextPressureReported,
 	).Scan(&s.ID)
 }
 
@@ -85,7 +85,7 @@ func (r *metricsRepo) LatestSnapshot(ctx context.Context, sessionFK uuid.UUID) (
 	row := r.pool.QueryRow(ctx, `
 		SELECT id, session_fk, captured_at, message_count, prompt_tokens, completion_tokens,
 			total_tokens, context_pressure, is_compacted, effective_message_count,
-			context_hash, task_summary
+			context_hash, task_summary, token_usage_reported, context_pressure_reported
 		FROM session_snapshots
 		WHERE session_fk=$1
 		ORDER BY captured_at DESC
@@ -96,7 +96,7 @@ func (r *metricsRepo) LatestSnapshot(ctx context.Context, sessionFK uuid.UUID) (
 	if err := row.Scan(
 		&s.ID, &s.SessionFK, &s.CapturedAt, &s.MessageCount, &s.PromptTokens, &s.CompletionTokens,
 		&s.TotalTokens, &s.ContextPressure, &s.IsCompacted, &s.EffectiveMessageCount,
-		&hash, &summary,
+		&hash, &summary, &s.TokenUsageReported, &s.ContextPressureReported,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, store.ErrNotFound
@@ -117,7 +117,7 @@ func (r *metricsRepo) LatestSnapshots(ctx context.Context, sessionFKs []uuid.UUI
 		SELECT DISTINCT ON (session_fk)
 			id, session_fk, captured_at, message_count, prompt_tokens, completion_tokens,
 			total_tokens, context_pressure, is_compacted, effective_message_count,
-			context_hash, task_summary
+			context_hash, task_summary, token_usage_reported, context_pressure_reported
 		FROM session_snapshots
 		WHERE session_fk = ANY($1)
 		ORDER BY session_fk, captured_at DESC`, sessionFKs)
@@ -132,7 +132,7 @@ func (r *metricsRepo) LatestSnapshots(ctx context.Context, sessionFKs []uuid.UUI
 		if err := rows.Scan(
 			&s.ID, &s.SessionFK, &s.CapturedAt, &s.MessageCount, &s.PromptTokens, &s.CompletionTokens,
 			&s.TotalTokens, &s.ContextPressure, &s.IsCompacted, &s.EffectiveMessageCount,
-			&hash, &summary,
+			&hash, &summary, &s.TokenUsageReported, &s.ContextPressureReported,
 		); err != nil {
 			return nil, err
 		}

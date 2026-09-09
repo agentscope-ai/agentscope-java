@@ -140,7 +140,7 @@ function ExecutionCard({ group, identities }: { group: ExecutionGroup; identitie
               );
             })}
           </ol>
-        ) : <p className="rounded-lg border border-dashed bg-white px-4 py-6 text-center text-sm text-slate-500">No AgentTask has been materialized for this execution yet.</p>}
+        ) : <p className="rounded-lg border border-dashed bg-white px-4 py-6 text-center text-sm text-slate-500">No Agent tasks have been created for this execution yet.</p>}
       </div>
     </details>
   );

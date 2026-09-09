@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { ResourceConsumers } from '../components/ResourceConsumers';
 import React, { useEffect, useState } from 'react';
 import {
   Vault,
@@ -256,13 +257,13 @@ export default function VaultsPage() {
         <button type="button" style={S.primaryBtn} onClick={() => setCreatingVault(true)}>＋ New vault</button>
       </div>
       <p style={S.blurb}>
-        Encrypted credential vaults mountable on managed sessions. Secrets are never displayed after creation.
+        Manage credentials that Agents can use through their configured Vault bindings. Each credential’s target identifies the connection or environment variable it serves.
       </p>
       <div style={S.notice}>🔒 Secret values are write-only — only metadata (type, label, target) is shown after add.</div>
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(0,2fr)', gap: 24 }}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)]">
         <div>
           {vaults.map(v => (
             <div
@@ -310,6 +311,7 @@ export default function VaultsPage() {
         <div>
           {selected ? (
             <div style={S.card}>
+              <ResourceConsumers kind="vault" id={selected.id} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{selected.displayName} — credentials</h2>
                 <button type="button" style={S.rowBtn} onClick={() => setAddingCred(true)}>＋ Add credential</button>

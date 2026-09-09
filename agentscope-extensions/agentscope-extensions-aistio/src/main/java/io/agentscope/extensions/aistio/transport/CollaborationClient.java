@@ -247,6 +247,37 @@ public final class CollaborationClient {
                 "task.complete");
     }
 
+    /** Submit an explicit business outcome; the server preserves partial results on failure. */
+    public JsonNode finish(
+            String taskId,
+            String token,
+            long expectedVersion,
+            String outcome,
+            String reason,
+            Object result,
+            List<String> processedInputIds,
+            List<String> deferredInputIds) {
+        return taskSend(
+                "POST",
+                taskId,
+                "complete",
+                token,
+                Map.of(
+                        "expectedVersion",
+                        expectedVersion,
+                        "outcome",
+                        outcome,
+                        "summary",
+                        reason == null ? "" : reason,
+                        "result",
+                        result == null ? Map.of() : result,
+                        "processedInputIds",
+                        processedInputIds == null ? List.of() : processedInputIds,
+                        "deferredInputIds",
+                        deferredInputIds == null ? List.of() : deferredInputIds),
+                "task.complete");
+    }
+
     public JsonNode fail(
             String taskId, String token, long expectedVersion, String code, String message) {
         return taskSend(

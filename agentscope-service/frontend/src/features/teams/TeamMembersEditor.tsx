@@ -33,6 +33,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
+import { useControlPlaneScope } from "@/app/ScopeContext";
 export function MembersEditor({
   teamId,
   teamVersion,
@@ -47,6 +48,8 @@ export function MembersEditor({
   canEdit: boolean;
 }) {
   const qc = useQueryClient();
+  const canConfigureRuntime = useControlPlaneScope().roles.includes("admin");
+  const [clearRuntimePolicy, setClearRuntimePolicy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [role, setRole] = useState("");
@@ -108,7 +111,7 @@ export function MembersEditor({
         role: editRole,
         instructions: editInstructions,
         capabilityRequirements: member.capabilityRequirements,
-        runtimeBindingPolicy: member.runtimeBindingPolicy,
+        runtimeBindingPolicy: clearRuntimePolicy ? null : member.runtimeBindingPolicy,
         expectedTeamVersion: teamVersion,
       }),
     onSuccess: () => {
@@ -141,6 +144,7 @@ export function MembersEditor({
                 <div className="grid gap-3 md:grid-cols-2">
                   <Input
                     value={editRole}
+                    aria-label="Worker role"
                     onChange={(event) => setEditRole(event.target.value)}
                     required
                   />
@@ -153,6 +157,7 @@ export function MembersEditor({
                   onChange={(event) => setEditInstructions(event.target.value)}
                   placeholder="Responsibilities and hand-off expectations"
                 />
+                {member.runtimeBindingPolicy && canConfigureRuntime && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={clearRuntimePolicy} onChange={event => setClearRuntimePolicy(event.target.checked)} />Use the Agent’s automatic runtime selection</label>}
                 <div className="flex gap-2">
                   <Button type="submit" size="sm" disabled={update.isPending}>
                     Save
@@ -195,6 +200,7 @@ export function MembersEditor({
                       size="sm"
                       onClick={() => {
                         setEditing(member.id);
+                        setClearRuntimePolicy(false);
                         setEditRole(member.role);
                         setEditInstructions(member.instructions ?? "");
                       }}
@@ -259,7 +265,9 @@ export function MembersEditor({
             onChange={(event) => setInstructions(event.target.value)}
             placeholder="Responsibilities and hand-off expectations"
           />
-          <label className="grid gap-1 text-sm">
+          <p className="text-sm text-muted-foreground">This worker uses the Agent’s automatic runtime selection.</p>
+          {canConfigureRuntime && <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Advanced runtime settings</summary>
+          <label className="mt-3 grid gap-1 text-sm">
             Runtime selection
             <select
               className="h-10 rounded-md border border-border bg-background px-3"
@@ -306,6 +314,7 @@ export function MembersEditor({
               </div>
             </>
           )}
+          </details>}
           <div>
             <Button type="submit" disabled={add.isPending}>
               Add member

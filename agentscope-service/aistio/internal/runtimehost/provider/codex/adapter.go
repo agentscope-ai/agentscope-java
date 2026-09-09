@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spring-ai-alibaba/aistio/internal/runtimehost/provider"
@@ -52,7 +53,8 @@ func (a *Adapter) Descriptor() provider.Descriptor {
 		Instructions: provider.Capability{Supported: true, Mode: "app-server", Target: "developerInstructions"},
 		Workspace:    provider.Capability{Supported: true, Mode: "cwd"},
 		Skills:       provider.Capability{Supported: true, Mode: "native-directory", Target: ".agents/skills"},
-		Tools:        provider.Capability{Supported: true, Mode: "native"},
+		Subagents:    provider.Capability{Supported: true, Mode: "cli-config", Target: "agents.<name>.config_file (shared workspace; Codex 0.153.4+)"},
+		Tools:        provider.Capability{Supported: false, Mode: "unsupported", Target: "Use Runtime Profile sandbox and approval settings for native tools"},
 		Shell:        provider.Capability{Supported: true, Mode: "native", Target: "shell"},
 		MCP:          provider.Capability{Supported: true, Mode: "cli-config"},
 		Model:        provider.Capability{Supported: true, Mode: "app-server", Target: "thread/start"},
@@ -82,11 +84,32 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 	if request.Workspace == "" {
 		return nil, fmt.Errorf("codex workspace is required")
 	}
+	if err := provider.ValidateDefinition(request.Definition, a.Descriptor()); err != nil {
+		return nil, err
+	}
 	customArgs, err := provider.ValidateCustomArgs(request.CustomArgs)
 	if err != nil {
 		return nil, err
 	}
 	request.CustomArgs = customArgs
+	subagents, err := provider.NativeSubagents(request.Definition, a.Descriptor().Runtime)
+	if err != nil {
+		return nil, err
+	}
+	if len(subagents) > 0 {
+		version, err := a.Detect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := provider.RequireSubagentVersion(version, 0, 153, 4); err != nil {
+			return nil, err
+		}
+	}
+	cleanupSubagents, err := projectSubagents(request.Workspace, subagents)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupSubagents()
 	cleanupSkills, err := provider.ProjectSkills(request.Workspace, ".agents/skills", a.Name())
 	if err != nil {
 		return nil, fmt.Errorf("project Codex skills: %w", err)
@@ -170,6 +193,15 @@ func buildArgs(request provider.Request, cfg configuration) []string {
 		}
 	}
 	args = append(args, customArgs...)
+	// Explicit registration works in non-Git Hosted workspaces too. Generated
+	// files stay outside .codex/agents to avoid duplicate implicit discovery.
+	if subagents, err := provider.NativeSubagents(request.Definition, "codex"); err == nil {
+		for _, subagent := range subagents {
+			key := "agents." + subagent.Name
+			args = append(args, "--config", fmt.Sprintf("%s.description=%q", key, subagent.Description),
+				"--config", fmt.Sprintf("%s.config_file=%q", key, filepath.Join(request.Workspace, ".agentscope", "native", "codex", "agents", subagent.Name+".toml")))
+		}
+	}
 	return args
 }
 
@@ -243,6 +275,7 @@ func runAppServerSession(client *appServerClient, request provider.Request, cfg 
 		return nil, fmt.Errorf("Codex returned an empty thread ID")
 	}
 	client.result.ProviderSessionID = started.Thread.ID
+	client.rootThreadID = started.Thread.ID
 	turnParams := map[string]any{
 		"threadId":          started.Thread.ID,
 		"input":             []map[string]string{{"type": "text", "text": request.Prompt}},
@@ -265,15 +298,16 @@ func runAppServerSession(client *appServerClient, request provider.Request, cfg 
 }
 
 type appServerClient struct {
-	context  context.Context
-	writer   io.Writer
-	scanner  *bufio.Scanner
-	sink     provider.EventSink
-	approver provider.ToolApprover
-	nextID   int64
-	result   *provider.Result
-	terminal bool
-	turnErr  error
+	rootThreadID string
+	context      context.Context
+	writer       io.Writer
+	scanner      *bufio.Scanner
+	sink         provider.EventSink
+	approver     provider.ToolApprover
+	nextID       int64
+	result       *provider.Result
+	terminal     bool
+	turnErr      error
 }
 
 func newAppServerClient(ctx context.Context, writer io.Writer, reader io.Reader, sink provider.EventSink,
@@ -366,13 +400,32 @@ func decodeRPCMessage(raw json.RawMessage) (rpcMessage, error) {
 }
 
 func (c *appServerClient) handleInbound(raw json.RawMessage, message rpcMessage) error {
+	var routing struct {
+		ThreadID string `json:"threadId"`
+		Thread   struct {
+			ID string `json:"id"`
+		} `json:"thread"`
+	}
+	_ = json.Unmarshal(message.Params, &routing)
+	eventThreadID := routing.ThreadID
+	if eventThreadID == "" {
+		eventThreadID = routing.Thread.ID
+	}
+	if eventThreadID == "" {
+		eventThreadID = c.result.ProviderSessionID
+	}
 	if c.sink != nil {
-		if err := c.sink(provider.Event{Type: message.Method, ProviderSessionID: c.result.ProviderSessionID, Raw: raw}); err != nil {
+		if err := c.sink(provider.Event{Type: message.Method, ProviderSessionID: eventThreadID, Raw: raw}); err != nil {
 			return err
 		}
 	}
 	if len(message.ID) > 0 {
 		return c.handleServerRequest(message)
+	}
+	// Child notifications remain observable and approvals are still bridged,
+	// but a child's result/termination cannot finish the parent's execution.
+	if c.rootThreadID != "" && eventThreadID != "" && eventThreadID != c.rootThreadID {
+		return nil
 	}
 	var params struct {
 		ThreadID string `json:"threadId"`

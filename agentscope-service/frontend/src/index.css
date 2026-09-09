@@ -19,6 +19,8 @@
   --color-accent-foreground: #3730a3;
   --color-card: #ffffff;
   --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
   --color-ring: #6366f1;
 
   --radius-lg: 0.75rem;

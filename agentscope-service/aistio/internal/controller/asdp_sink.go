@@ -31,6 +31,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/conversation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
 )
@@ -38,22 +39,24 @@ import (
 // ObservedSession is a neutral, transport-agnostic session snapshot reported by
 // the data plane (via the HTTP prober or the ASDP gRPC stream).
 type ObservedSession struct {
-	ID                    string
-	Phase                 string
-	Busy                  *bool
-	MessageCount          int32
-	PromptTokens          int64
-	CompletionTokens      int64
-	ContextPressure       float64
-	StartedAt             string
-	LastActiveAt          string
-	Framework             string
-	FrameworkVersion      string
-	ContextHash           string
-	IsCompacted           bool
-	EffectiveMessageCount int32
-	InstanceRef           string
-	InstanceIP            string
+	TokenUsageReported      bool
+	ContextPressureReported bool
+	ID                      string
+	Phase                   string
+	Busy                    *bool
+	MessageCount            int32
+	PromptTokens            int64
+	CompletionTokens        int64
+	ContextPressure         float64
+	StartedAt               string
+	LastActiveAt            string
+	Framework               string
+	FrameworkVersion        string
+	ContextHash             string
+	IsCompacted             bool
+	EffectiveMessageCount   int32
+	InstanceRef             string
+	InstanceIP              string
 }
 
 type ObservedConversationTurn struct {
@@ -89,6 +92,23 @@ func (s *SessionEventSink) ApplyConversationTurnReport(ctx context.Context, iden
 		return store.ErrNotFound
 	}
 	invocation, err := s.Store.Endpoints().GetInvocation(ctx, invocationID)
+	if errors.Is(err, store.ErrNotFound) {
+		// Personal Chat turns have no published Endpoint. Their admission and
+		// frozen runtime identity are persisted on the control-plane Session.
+		session, sessionErr := s.Store.Sessions().GetByID(ctx, conversationID)
+		if sessionErr != nil || session.Tenant != identity.Tenant || session.Namespace != identity.Namespace ||
+			session.SessionID != report.SessionID || session.AgentID != resolved.AgentUUID ||
+			session.BindingID != resolved.BindingUUID || session.AgentInstanceID != resolved.AgentInstanceUUID ||
+			session.InstanceGeneration != identity.InstanceGeneration || report.Generation != identity.InstanceGeneration {
+			return store.ErrNotFound
+		}
+		return conversation.Apply(ctx, s.Store, session, conversation.Report{
+			InvocationID: invocationID, ConversationID: conversationID, TurnID: turnID,
+			AgentID: resolved.AgentUUID, BindingID: resolved.BindingUUID, InstanceID: resolved.AgentInstanceUUID,
+			Generation: report.Generation, Action: report.Action, Sequence: report.Sequence, Payload: report.Payload,
+			ErrorCode: report.ErrorCode, ErrorMessage: report.ErrorMessage,
+		}, time.Now().UTC())
+	}
 	if err != nil || invocation.Mode != controlmodel.EndpointConversationMode || invocation.ConversationID == nil ||
 		*invocation.ConversationID != conversationID || invocation.TurnID == nil || *invocation.TurnID != turnID ||
 		invocation.SessionID != report.SessionID {
@@ -810,15 +830,17 @@ func upsertObservedSession(ctx context.Context, st store.Store, tenant string, a
 	}
 
 	snap := &store.SessionSnapshot{
-		SessionFK:             saved.ID,
-		MessageCount:          o.MessageCount,
-		PromptTokens:          o.PromptTokens,
-		CompletionTokens:      o.CompletionTokens,
-		TotalTokens:           o.PromptTokens + o.CompletionTokens,
-		ContextPressure:       o.ContextPressure,
-		IsCompacted:           o.IsCompacted,
-		EffectiveMessageCount: o.EffectiveMessageCount,
-		ContextHash:           o.ContextHash,
+		TokenUsageReported:      o.TokenUsageReported || o.PromptTokens != 0 || o.CompletionTokens != 0,
+		ContextPressureReported: o.ContextPressureReported || o.ContextPressure != 0,
+		SessionFK:               saved.ID,
+		MessageCount:            o.MessageCount,
+		PromptTokens:            o.PromptTokens,
+		CompletionTokens:        o.CompletionTokens,
+		TotalTokens:             o.PromptTokens + o.CompletionTokens,
+		ContextPressure:         o.ContextPressure,
+		IsCompacted:             o.IsCompacted,
+		EffectiveMessageCount:   o.EffectiveMessageCount,
+		ContextHash:             o.ContextHash,
 	}
 	prevSnap, _ := st.Metrics().LatestSnapshot(ctx, saved.ID)
 	dPrompt, dCompletion := store.TokenUsageDelta(prevSnap, o.PromptTokens, o.CompletionTokens)

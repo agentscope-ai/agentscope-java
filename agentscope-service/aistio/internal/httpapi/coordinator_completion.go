@@ -80,7 +80,7 @@ func (s *Server) concludeCoordinator(ctx context.Context, task *controlmodel.Age
 // exposed as failed. A retry of the second step is authorized by the fenced
 // terminal coordinator token.
 func (s *Server) failCoordinator(ctx context.Context, task *controlmodel.AgentTask,
-	code, message string, actor controlmodel.Actor) (*controlmodel.AgentTask, *controlmodel.RunNode, error) {
+	code, message string, actor controlmodel.Actor, result ...json.RawMessage) (*controlmodel.AgentTask, *controlmodel.RunNode, error) {
 	if task == nil {
 		return nil, nil, fmt.Errorf("Team leader task is required")
 	}
@@ -92,12 +92,12 @@ func (s *Server) failCoordinator(ctx context.Context, task *controlmodel.AgentTa
 		if controlmodel.IsAgentTaskTerminal(current.Status) {
 			return current, nil, fmt.Errorf("coordinator leader task ended in state %s", current.Status)
 		}
-		current, err = s.collaborationService().FailTask(ctx, current.ID, current.Version, code, message)
+		current, err = s.collaborationService().FailTask(ctx, current.ID, current.Version, code, message, result...)
 		if err != nil {
 			return current, nil, err
 		}
 	}
-	if err = s.projectCoordinatorOutcomeToRoot(context.WithoutCancel(ctx), current, nil, code, message, actor); err != nil {
+	if err = s.projectCoordinatorOutcomeToRoot(context.WithoutCancel(ctx), current, current.Result, code, message, actor); err != nil {
 		return current, nil, err
 	}
 	node, err := s.orchestrationService().FailCoordinatorNode(
@@ -105,7 +105,7 @@ func (s *Server) failCoordinator(ctx context.Context, task *controlmodel.AgentTa
 	if err != nil {
 		return current, nil, err
 	}
-	if err = s.projectCoordinatorOutcomeToRoot(context.WithoutCancel(ctx), current, nil, code, message, actor); err != nil {
+	if err = s.projectCoordinatorOutcomeToRoot(context.WithoutCancel(ctx), current, current.Result, code, message, actor); err != nil {
 		return current, node, err
 	}
 	if projectionErr := s.projectMCPTaskTerminal(ctx, current, nil); projectionErr != nil {

@@ -16,6 +16,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -188,6 +189,16 @@ func (r *sessionRepo) List(ctx context.Context, f store.SessionFilter) ([]*store
 		}
 		if f.Framework != "" && s.Framework != f.Framework {
 			continue
+		}
+		if f.PendingConversation {
+			var data struct {
+				Turn struct {
+					State string `json:"state"`
+				} `json:"conversationTurn"`
+			}
+			if json.Unmarshal(s.TaskContext, &data) != nil || (data.Turn.State != "dispatching" && data.Turn.State != "running") {
+				continue
+			}
 		}
 		if f.AgentTaskID != uuid.Nil && (s.AgentTaskID == nil || *s.AgentTaskID != f.AgentTaskID) {
 			continue

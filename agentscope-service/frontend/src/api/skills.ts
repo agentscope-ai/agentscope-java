@@ -24,6 +24,7 @@ export interface SkillMarketplaceMeta {
   repoLocation: string;
   originalName: string;
   installedAt: string;
+  version?: string;
 }
 
 export interface WorkspaceSkillInfo {
@@ -36,6 +37,7 @@ export interface WorkspaceSkillInfo {
   hasScripts: boolean;
   origin: SkillOrigin;
   marketplace?: SkillMarketplaceMeta;
+  modified?: boolean;
 }
 
 export interface WorkspaceSkillDetail {

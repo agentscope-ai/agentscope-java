@@ -170,6 +170,7 @@ type TaskFailure struct {
 	FencingToken       int64
 	Code               string
 	Message            string
+	Result             json.RawMessage
 	Checkpoint         json.RawMessage
 	Usage              json.RawMessage
 }
@@ -397,7 +398,7 @@ type CollaborationRepository interface {
 	CompleteAgentTaskWithComment(ctx context.Context, id uuid.UUID, completion TaskCompletion, comment *controlmodel.Comment, targets []CommentTarget) (*controlmodel.AgentTask, *controlmodel.Comment, error)
 	FailAgentTaskWithAttempt(ctx context.Context, id uuid.UUID, failure TaskFailure) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error)
 	RequeueAgentTaskAfterAttemptFailure(ctx context.Context, id uuid.UUID, failure TaskFailure) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error)
-	FailAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64, code, message string) (*controlmodel.AgentTask, error)
+	FailAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64, code, message string, result ...json.RawMessage) (*controlmodel.AgentTask, error)
 	CancelAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64) (*controlmodel.AgentTask, error)
 	RetryAgentTask(ctx context.Context, id uuid.UUID, actor controlmodel.Actor) (*controlmodel.AgentTask, error)
 

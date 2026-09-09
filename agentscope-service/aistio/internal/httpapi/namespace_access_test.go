@@ -31,10 +31,14 @@ import (
 	"testing"
 )
 
-func accessTestServer(t *testing.T) (*Server, store.Store) {
+func accessTestServer(t *testing.T, configs ...store.Config) (*Server, store.Store) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	st, err := store.Open(context.Background(), store.Config{Driver: store.DriverMemory})
+	cfg := store.Config{Driver: store.DriverMemory}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	st, err := store.Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,5 +308,64 @@ func TestNamespaceInfrastructureDiscoveryIsScoped(t *testing.T) {
 	w := accessRequest(s, "operator", "GET", "/api/v1/dataplanes?namespace=engineering", "")
 	if w.Code != 200 || strings.Contains(w.Body.String(), "foreign") || !strings.Contains(w.Body.String(), "own") {
 		t.Fatalf("infrastructure scope: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeletedChatSessionRemainsReadableByOwner(t *testing.T) {
+	testDeletedChatSessionAccess(t, store.Config{Driver: store.DriverMemory})
+}
+
+func TestDeletedChatSessionRemainsReadableByOwnerPostgres(t *testing.T) {
+	testDeletedChatSessionAccess(t, acceptancePostgresConfig(t))
+}
+
+func testDeletedChatSessionAccess(t *testing.T, cfg store.Config) {
+	s, st := accessTestServer(t, cfg)
+	ctx := context.Background()
+	agent, err := st.AgentCatalog().CreateAgent(ctx, &controlmodel.Agent{Tenant: "default", Namespace: "engineering", AgentKey: "deleted-chat-agent", DisplayName: "Chat Agent", Status: controlmodel.AgentActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: "default", Namespace: "engineering", AgentID: agent.ID, AgentName: agent.AgentKey, SessionID: "deleted-chat-runtime", Phase: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// bob is an ordinary member, not an auditor or administrator.
+	_, err = st.Chats().Create(ctx, &controlmodel.Chat{Tenant: session.Tenant, Namespace: session.Namespace, CreatorRef: "bob", AgentID: agent.ID, AgentName: agent.AgentKey, SessionID: session.ID, RuntimeSession: session.SessionID, Title: "Deleted private chat", Status: controlmodel.ChatDeleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "/api/v1/sessions/" + session.ID.String()
+	for _, suffix := range []string{"", "/events", "/turns", "/commands"} {
+		for _, query := range []string{"?tenant=default&namespace=engineering", "?tenant=default&namespace=engineering&agentId=" + agent.ID.String()} {
+			for _, user := range []string{"bob", "alice", "developer", "operator", "auditor", "outsider"} {
+				want := 404
+				if user == "bob" || user == "auditor" {
+					want = 200
+				}
+				w := accessRequest(s, user, "GET", base+suffix+query, "")
+				if w.Code != want {
+					t.Errorf("%s GET %s: got %d, want %d: %s", user, suffix+query, w.Code, want, w.Body.String())
+				}
+			}
+		}
+	}
+	if w := accessRequest(s, "bob", "GET", base+"?tenant=default&namespace=other", ""); w.Code != 404 {
+		t.Fatalf("cross-scope read: %d %s", w.Code, w.Body.String())
+	}
+	n, err := st.Access().GetNamespace(ctx, "default", "engineering")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &namespaceAccess{User: "bob", Refs: []string{"bob"}, Namespace: n, Roles: n.Roles("bob")}
+	if s.canAccessSession(ctx, a, session, true) {
+		t.Fatal("deleted Chat granted write access to its Session")
+	}
+	if w := accessRequest(s, "bob", "POST", base+"/user-message?tenant=default&namespace=engineering", `{"content":"should not run"}`); w.Code != 404 {
+		t.Fatalf("deleted session mutation: %d %s", w.Code, w.Body.String())
+	}
+	list := accessRequest(s, "bob", "GET", "/api/v1/sessions?tenant=default&namespace=engineering&agentId="+agent.ID.String(), "")
+	if list.Code != 200 || !strings.Contains(list.Body.String(), session.ID.String()) {
+		t.Fatalf("owner's execution history disappeared: %d %s", list.Code, list.Body.String())
 	}
 }

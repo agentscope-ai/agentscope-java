@@ -314,9 +314,6 @@ export async function fetchConfiguredActive(
 
   return {
     tools,
-    warnings: [
-      'Active list is derived from Agent body (tools / mcpServers). Live MCP tool introspection was removed with GET …/tools/active.',
-    ],
   };
 }
 

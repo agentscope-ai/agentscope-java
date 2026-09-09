@@ -281,7 +281,7 @@ func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter,
 		SELECT %s,
 			snap.id, snap.session_fk, snap.captured_at, snap.message_count, snap.prompt_tokens,
 			snap.completion_tokens, snap.total_tokens, snap.context_pressure, snap.is_compacted,
-			snap.effective_message_count, snap.context_hash, snap.task_summary
+			snap.effective_message_count, snap.context_hash, snap.task_summary, snap.token_usage_reported, snap.context_pressure_reported
 		FROM sessions s
 		INNER JOIN LATERAL (
 			SELECT * FROM session_snapshots ss
@@ -313,7 +313,7 @@ func (r *sessionRepo) ListByPressure(ctx context.Context, f store.SessionFilter,
 			&sess.StartedAt, &sess.LastActiveAt, &sess.TerminatedAt, &sess.CreatedAt, &sess.UpdatedAt,
 			&snap.ID, &snap.SessionFK, &snap.CapturedAt, &snap.MessageCount, &snap.PromptTokens,
 			&snap.CompletionTokens, &snap.TotalTokens, &snap.ContextPressure, &snap.IsCompacted,
-			&snap.EffectiveMessageCount, &hash, &summary,
+			&snap.EffectiveMessageCount, &hash, &summary, &snap.TokenUsageReported, &snap.ContextPressureReported,
 		); err != nil {
 			return nil, err
 		}
@@ -373,6 +373,9 @@ func sessionFilterCondsPrefixed(f store.SessionFilter, alias string) (conds []st
 	}
 	if f.Framework != "" {
 		add("framework", f.Framework)
+	}
+	if f.PendingConversation {
+		conds = append(conds, col("task_context")+"->'conversationTurn'->>'state' IN ('dispatching','running')")
 	}
 	if f.AgentTaskID != uuid.Nil {
 		add("agent_task_id", f.AgentTaskID)

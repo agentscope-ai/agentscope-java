@@ -110,4 +110,34 @@ class FilesystemToolTest {
         assertEquals("world", result);
         verify(filesystem).read(RT, "f.txt", 2, 5);
     }
+
+    @Test
+    void broadListingsAreBoundedAndExplicitlyTruncated() {
+        var entries =
+                java.util.stream.IntStream.range(0, 1000)
+                        .mapToObj(i -> FileInfo.ofDir("directory-" + i, ""))
+                        .toList();
+        when(filesystem.glob(RT, "**/*", "."))
+                .thenReturn(
+                        io.agentscope.harness.agent.filesystem.model.GlobResult.success(entries));
+        when(filesystem.ls(RT, ".")).thenReturn(LsResult.success(entries));
+        for (String result : List.of(tool.globFiles(RT, "**/*", "."), tool.listFiles(RT, "."))) {
+            assertTrue(result.contains("truncated"));
+            assertTrue(result.length() < 17000);
+            assertTrue(result.lines().count() <= 202);
+        }
+    }
+
+    @Test
+    void hugeGrepLineCannotFloodModelContext() {
+        when(filesystem.grep(RT, "pattern", ".", null))
+                .thenReturn(
+                        io.agentscope.harness.agent.filesystem.model.GrepResult.success(
+                                List.of(
+                                        new io.agentscope.harness.agent.filesystem.model.GrepMatch(
+                                                "file", 1, "x".repeat(300000)))));
+        String result = tool.grepFiles(RT, "pattern", ".", null);
+        assertTrue(result.contains("truncated"));
+        assertTrue(result.length() < 17000);
+    }
 }

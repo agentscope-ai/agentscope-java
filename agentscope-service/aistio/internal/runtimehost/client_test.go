@@ -20,8 +20,11 @@ package runtimehost
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +105,92 @@ func TestClientUsesBearerForRuntimeHostCredential(t *testing.T) {
 	host, err := client.Register(context.Background(), Registration{HostKey: "host-1", PoolName: "coding"})
 	if err != nil || host == nil || host.HostKey != "host-1" {
 		t.Fatalf("host=%+v err=%v", host, err)
+	}
+}
+
+func TestToolApprovalRetriesTransientCreatePollAndAck(t *testing.T) {
+	counts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Agent-Task-Token") != "task-token" {
+			t.Error("missing task credential")
+		}
+		counts[r.URL.Path]++
+		if counts[r.URL.Path] == 1 {
+			http.Error(w, "control plane restarting", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/decision"):
+			_, _ = w.Write([]byte(`{"approvalId":"00000000-0000-4000-8000-000000000001","decisionVersion":2,"status":"approved","allow":true}`))
+		case strings.HasSuffix(r.URL.Path, "/ack"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			_, _ = w.Write([]byte(`{"approval":{"id":"00000000-0000-4000-8000-000000000001"}}`))
+		}
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	decision, err := (&Client{BaseURL: server.URL}).AwaitToolApproval(ctx, "task", "task-token", provider.ToolApprovalRequest{ToolUseID: "tool-one", ToolName: "Read"})
+	if err != nil || !decision.Allow || decision.DecisionVersion != 2 {
+		t.Fatalf("approval did not recover: %+v %v", decision, err)
+	}
+	for path, n := range counts {
+		if n != 2 {
+			t.Errorf("%s requests=%d", path, n)
+		}
+	}
+}
+
+func TestToolApprovalDoesNotRetryStaleDecision(t *testing.T) {
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/decision") {
+			polls++
+			http.Error(w, "stale attempt", http.StatusConflict)
+			return
+		}
+		_, _ = w.Write([]byte(`{"approval":{"id":"00000000-0000-4000-8000-000000000001"}}`))
+	}))
+	defer server.Close()
+	_, err := (&Client{BaseURL: server.URL}).AwaitToolApproval(context.Background(), "task", "token", provider.ToolApprovalRequest{})
+	if err == nil || polls != 1 {
+		t.Fatalf("stale approval retried: polls=%d err=%v", polls, err)
+	}
+}
+
+type approvalTestTransport func(*http.Request) (*http.Response, error)
+
+func (f approvalTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestToolApprovalRetriesConnectionFailure(t *testing.T) {
+	calls := 0
+	client := &Client{BaseURL: "http://control.test", HTTPClient: &http.Client{Transport: approvalTestTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("connection reset during restart")
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"decisionVersion":2}`)), Request: r}, nil
+	})}}
+	var result map[string]any
+	status, err := client.approvalRequestWithRetry(context.Background(), http.MethodGet, "/decision", nil, &result, nil)
+	if err != nil || status != 200 || calls != 2 {
+		t.Fatalf("connection retry: status=%d calls=%d err=%v", status, calls, err)
+	}
+}
+
+func TestToolApprovalRetryHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	client := &Client{BaseURL: "http://control.test", HTTPClient: &http.Client{Transport: approvalTestTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		cancel()
+		return &http.Response{StatusCode: 503, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("restarting")), Request: r}, nil
+	})}}
+	_, err := client.approvalRequestWithRetry(ctx, http.MethodGet, "/decision", nil, nil, nil)
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("cancelled retry continued: calls=%d err=%v", calls, err)
 	}
 }

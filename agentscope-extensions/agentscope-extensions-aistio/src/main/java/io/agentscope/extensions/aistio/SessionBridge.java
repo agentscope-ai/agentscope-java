@@ -825,14 +825,20 @@ public final class SessionBridge implements ContractProvider, AutoCloseable {
             return;
         }
         reportConversationTurn(command, "started", null, null);
-        adapter.injectUserMessage(command.getSessionId(), content)
+        Mono.defer(() -> adapter.runConversationTurn(command.getSessionId(), content))
+                .filter(reply -> !reply.isBlank())
+                .switchIfEmpty(
+                        Mono.error(
+                                new IllegalStateException(
+                                        "conversation completed without an assistant reply")))
+                .flatMap(
+                        reply ->
+                                Mono.fromCallable(
+                                        () -> JSON.writeValueAsString(Map.of("content", reply))))
                 .timeout(Duration.ofMillis(remainingMillis))
                 .subscribe(
-                        ignored -> {},
-                        error -> reportConversationTurn(command, "failed", null, error),
-                        () ->
-                                reportConversationTurn(
-                                        command, "completed", "{\"accepted\":true}", null));
+                        reply -> reportConversationTurn(command, "completed", reply, null),
+                        error -> reportConversationTurn(command, "failed", null, error));
     }
 
     private void reportConversationTurn(

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -275,7 +276,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 		Approval *controlmodel.Approval `json:"approval"`
 	}
 	path := "/api/v1/agent-tasks/" + taskID + "/runtime-approvals"
-	_, err := c.requestWithHeaders(ctx, http.MethodPost, path, map[string]any{
+	_, err := c.approvalRequestWithRetry(ctx, http.MethodPost, path, map[string]any{
 		"kind": "tool_confirmation", "toolUseId": request.ToolUseID,
 		"toolName": request.ToolName, "inputPreview": request.Input,
 		"inputSha256": request.InputSHA256, "expiresAt": request.ExpiresAt,
@@ -295,7 +296,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 			Allow           bool   `json:"allow"`
 			DenyMessage     string `json:"denyMessage"`
 		}
-		status, pollErr := c.requestWithHeaders(ctx, http.MethodGet, decisionPath, nil, &result,
+		status, pollErr := c.approvalRequestWithRetry(ctx, http.MethodGet, decisionPath, nil, &result,
 			map[string]string{"X-Agent-Task-Token": taskToken})
 		if pollErr != nil {
 			return provider.ToolApprovalDecision{}, pollErr
@@ -312,7 +313,7 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 			return provider.ToolApprovalDecision{}, fmt.Errorf("runtime approval decision is missing a version")
 		}
 		ackPath := path + "/" + created.Approval.ID.String() + "/ack"
-		if _, ackErr := c.requestWithHeaders(ctx, http.MethodPost, ackPath,
+		if _, ackErr := c.approvalRequestWithRetry(ctx, http.MethodPost, ackPath,
 			map[string]any{"decisionVersion": result.DecisionVersion}, nil,
 			map[string]string{"X-Agent-Task-Token": taskToken}); ackErr != nil {
 			return provider.ToolApprovalDecision{}, ackErr
@@ -320,5 +321,37 @@ func (c *Client) AwaitToolApproval(ctx context.Context, taskID, taskToken string
 		return provider.ToolApprovalDecision{ApprovalID: result.ApprovalID,
 			DecisionVersion: result.DecisionVersion, Allow: result.Allow,
 			DenyMessage: result.DenyMessage}, nil
+	}
+}
+
+// Approval create/ack are idempotent for the same tool-use and decision version.
+// A brief control-plane outage must not discard an already approved tool call.
+func (c *Client) approvalRequestWithRetry(ctx context.Context, method, path string, body, out any, headers map[string]string) (int, error) {
+	retryCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	delay := 250 * time.Millisecond
+	for {
+		status, err := c.requestWithHeaders(retryCtx, method, path, body, out, headers)
+		if err == nil {
+			return status, nil
+		}
+		if retryCtx.Err() != nil {
+			return status, retryCtx.Err()
+		}
+		var transportError *url.Error
+		retryable := status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500 && status <= 599 || status == 0 && errors.As(err, &transportError) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)
+		if !retryable {
+			return status, err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-retryCtx.Done():
+			timer.Stop()
+			return status, retryCtx.Err()
+		case <-timer.C:
+		}
+		if delay < 2*time.Second {
+			delay *= 2
+		}
 	}
 }

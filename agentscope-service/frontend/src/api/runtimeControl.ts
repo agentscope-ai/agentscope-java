@@ -140,6 +140,10 @@ export function getRuntimeHost(id: string) {
   return api.get<{ host: RuntimeHost }>(`/api/v1/runtime-hosts/${encodeURIComponent(id)}`);
 }
 
+export function updateRuntimeHostCapacity(id: string, capacity: number, expectedCapacity: number) {
+  return api.patch<{ host: RuntimeHost }>(`/api/v1/runtime-hosts/${encodeURIComponent(id)}/capacity`, { capacity, expectedCapacity });
+}
+
 export function setRuntimeHostDraining(id: string, draining: boolean) {
   return api.post<{ host: RuntimeHost }>(
     `/api/v1/runtime-hosts/${encodeURIComponent(id)}/${draining ? 'drain' : 'resume'}`,

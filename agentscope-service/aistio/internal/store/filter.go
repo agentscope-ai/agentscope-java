@@ -30,6 +30,8 @@ type SessionFilter struct {
 	Phase       string
 	Framework   string
 	AgentTaskID uuid.UUID
+	// PendingConversation selects admitted External turns awaiting a terminal report.
+	PendingConversation bool
 	// Limit / Offset for pagination. Zero Limit means no limit.
 	Limit  int
 	Offset int

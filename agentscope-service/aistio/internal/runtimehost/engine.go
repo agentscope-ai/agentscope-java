@@ -96,12 +96,6 @@ func (e *Engine) Run(ctx context.Context) error {
 			e.workers.Wait()
 			return nil
 		}
-		if e.active.Load() >= e.Config.Registration.Capacity {
-			if !waitContext(ctx, e.Config.PollInterval) {
-				continue
-			}
-			continue
-		}
 		host := e.currentHost()
 		if host == nil {
 			if err := e.register(ctx); err != nil {
@@ -111,6 +105,15 @@ func (e *Engine) Run(ctx context.Context) error {
 				continue
 			}
 			host = e.currentHost()
+		}
+		// Registration and heartbeat responses carry the effective shared capacity.
+		capacity := host.Capacity
+		if capacity <= 0 {
+			capacity = e.Config.Registration.Capacity
+		}
+		if e.active.Load() >= capacity {
+			waitContext(ctx, e.Config.PollInterval)
+			continue
 		}
 		leaseToken := uuid.NewString()
 		work, err := e.Client.Claim(ctx, host, e.Config.Registration.HostKey+"/"+leaseToken, leaseToken, e.Config.LeaseTTL)

@@ -1116,7 +1116,19 @@ func (s *Server) getAgentTask(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"task": task})
+	inputs := make([]gin.H, 0, len(task.Inputs))
+	for _, input := range task.Inputs {
+		preview := gin.H{"inputId": input.ID, "commentId": input.CommentID, "version": input.CommentVersion, "state": "unavailable"}
+		if comment, err := s.store.Collaboration().GetComment(c.Request.Context(), input.CommentID); err == nil && comment.IssueID == task.IssueID && comment.Tenant == task.Tenant && comment.Namespace == task.Namespace && comment.DeletedAt == nil {
+			if comment.Version == input.CommentVersion {
+				preview["state"], preview["content"] = "recorded", comment.Content
+			} else {
+				preview["state"] = "changed"
+			}
+		}
+		inputs = append(inputs, preview)
+	}
+	c.JSON(http.StatusOK, gin.H{"task": task, "inputSummaries": inputs})
 }
 
 func (s *Server) getAgentTaskContext(c *gin.Context) {
@@ -1446,12 +1458,34 @@ func (s *Server) completeAgentTask(c *gin.Context) {
 		s.writeCollaborationError(c, err)
 		return
 	}
-	var req store.TaskCompletion
+	var req struct {
+		store.TaskCompletion
+		Outcome string `json:"outcome"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
-	completed, comment, err := s.collaborationService().CompleteTask(c.Request.Context(), id, req,
+	if req.Outcome != "" {
+		if req.ExpectedVersion > 0 && req.ExpectedVersion != task.Version {
+			s.writeCollaborationError(c, store.ErrConflict)
+			return
+		}
+		raw, _ := json.Marshal(req)
+		var args map[string]any
+		if err := json.Unmarshal(raw, &args); err != nil {
+			s.writeCollaborationError(c, err)
+			return
+		}
+		result, err := s.callCollaborationMCPTool(c, task, "task.complete", args)
+		if err != nil {
+			s.writeCollaborationError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	completed, comment, err := s.collaborationService().CompleteTask(c.Request.Context(), id, req.TaskCompletion,
 		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef})
 	if err != nil {
 		s.writeCollaborationError(c, err)

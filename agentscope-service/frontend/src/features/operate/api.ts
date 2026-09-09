@@ -28,6 +28,8 @@ export interface RuntimeSession {
   originRef?: string;
   namespace: string;
   framework?: string;
+  frameworkVersion?: string;
+  runtime?: { kind?: 'managed' | 'hosted-runtime' | 'external-application'; source: string; provider?: string; profile?: string; pool?: string; hostId?: string; attemptId?: string; framework?: string; frameworkVersion?: string };
   phase: string;
   busy?: boolean | null;
   instanceRef?: string;
@@ -40,6 +42,9 @@ export interface RuntimeSession {
   contractLevel?: number;
   model?: string;
   snapshot?: {
+    tokenUsageReported?: boolean;
+    contextPressureReported?: boolean;
+    capturedAt?: string;
     messageCount?: number;
     promptTokens?: number;
     completionTokens?: number;

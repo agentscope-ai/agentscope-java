@@ -73,7 +73,11 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 		if code != "" {
 			fmt.Fprintf(&b, "错误代码：%s\n", code)
 		}
-	} else if text := CoordinatorOutcomeText(output); text != "" {
+	}
+	if len(output) == 0 && leader != nil {
+		output = leader.Result
+	}
+	if text := CoordinatorOutcomeText(output); text != "" {
 		fmt.Fprintf(&b, "\n%s\n", text)
 	}
 	tasks, err := s.listRunSummaryTasks(ctx, run)
@@ -107,11 +111,29 @@ func (s *Service) PublishCoordinatorSummary(ctx context.Context, run *controlmod
 				latest = task
 			}
 		}
+		comments, listErr := s.listAllComments(ctx, child.ID)
+		if listErr != nil {
+			return listErr
+		}
+		var deliverable *controlmodel.Comment
+		for _, comment := range comments {
+			if comment.DeletedAt != nil || comment.Type != controlmodel.CommentResult || comment.SourceTaskID == nil {
+				continue
+			}
+			for _, source := range tasks {
+				if source.ID == *comment.SourceTaskID && (deliverable == nil || comment.CreatedAt.After(deliverable.CreatedAt)) {
+					deliverable = comment
+				}
+			}
+		}
+		if deliverable != nil {
+			fmt.Fprintf(&b, "  已保存交付（验收状态：%s）：%s\n", child.Status, deliverable.Content)
+		}
 		if latest == nil {
 			continue
 		}
 		fmt.Fprintf(&b, "  最近执行：%s\n", latest.Status)
-		if text := CoordinatorOutcomeText(latest.Result); text != "" {
+		if text := CoordinatorOutcomeText(latest.Result); text != "" && (deliverable == nil || !strings.Contains(deliverable.Content, text)) {
 			fmt.Fprintf(&b, "  交付内容：%s\n", text)
 		}
 		if latest.ErrorMessage != "" {
@@ -171,7 +193,11 @@ func CoordinatorOutcomeText(output json.RawMessage) string {
 	}
 	var value map[string]any
 	if json.Unmarshal(output, &value) == nil {
-		for _, key := range []string{"summary", "output", "message", "result", "reason"} {
+		for _, key := range []string{"result", "output", "summary", "message", "reason"} {
+			if nested, ok := value[key].(map[string]any); ok && len(nested) > 0 {
+				raw, _ := json.Marshal(nested)
+				return CoordinatorOutcomeText(raw)
+			}
 			if text, ok := value[key].(string); ok && strings.TrimSpace(text) != "" {
 				return strings.TrimSpace(text)
 			}

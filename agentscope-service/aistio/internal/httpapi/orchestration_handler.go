@@ -539,6 +539,15 @@ func (s *Server) attachAttemptSessionRefs(ctx context.Context, attempts []*contr
 				sessions = candidates
 			}
 		}
+		if len(sessions) == 0 && attempt.BackendKind == controlmodel.DataPlaneHostedRuntime {
+			if projected, projectErr := s.ensureHostedTaskSession(ctx, attempt); projectErr == nil && projected != nil {
+				// Keep the same private Issue access check as every Session detail read.
+				visible, readErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: attempt.Tenant, Namespace: attempt.Namespace, AgentID: attempt.AgentID, SessionID: attempt.SessionID, AgentTaskID: attempt.AgentTaskID, Limit: 2})
+				if readErr == nil {
+					sessions = visible
+				}
+			}
+		}
 		if len(sessions) != 1 {
 			continue
 		}

@@ -113,6 +113,7 @@ type RuntimeRegistryRepository interface {
 	GetRuntimeHostByKey(ctx context.Context, tenant, namespace, hostKey string) (*controlmodel.RuntimeHost, error)
 	ListRuntimeHosts(ctx context.Context, tenant, namespace, poolName, state string) ([]*controlmodel.RuntimeHost, error)
 	HeartbeatRuntimeHost(ctx context.Context, id uuid.UUID, generation int64, active int32, capabilities json.RawMessage) (*controlmodel.RuntimeHost, error)
+	SetRuntimeHostCapacity(ctx context.Context, id uuid.UUID, expectedCapacity, capacity int32) (*controlmodel.RuntimeHost, error)
 	SetRuntimeHostState(ctx context.Context, id uuid.UUID, generation int64, state string) (*controlmodel.RuntimeHost, error)
 	MarkRuntimeHostsOffline(ctx context.Context, before time.Time) (int64, error)
 }

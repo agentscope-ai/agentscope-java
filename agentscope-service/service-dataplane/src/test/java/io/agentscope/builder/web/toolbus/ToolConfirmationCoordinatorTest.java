@@ -23,7 +23,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -57,6 +56,8 @@ class ToolConfirmationCoordinatorTest {
     private final CoordinationStore store = mock(CoordinationStore.class);
     private final ControlPlaneClient controlPlaneClient = mock(ControlPlaneClient.class);
     private final AtomicReference<CoordinationStore.HitlTicket> ticket = new AtomicReference<>();
+    private final AtomicReference<CoordinationStore.LeaseHandle> turnLease =
+            new AtomicReference<>();
     private ToolConfirmationCoordinator coordinator;
 
     @BeforeEach
@@ -117,15 +118,15 @@ class ToolConfirmationCoordinatorTest {
                                     ? Optional.of(current)
                                     : Optional.empty();
                         });
+        turnLease.set(
+                new CoordinationStore.LeaseHandle(
+                        "session-a",
+                        "owner-a",
+                        "instance-a",
+                        System.currentTimeMillis(),
+                        System.currentTimeMillis() + 60_000L));
         when(store.getTurnLease("session-a"))
-                .thenReturn(
-                        Optional.of(
-                                new CoordinationStore.LeaseHandle(
-                                        "session-a",
-                                        "owner-a",
-                                        "instance-a",
-                                        System.currentTimeMillis(),
-                                        System.currentTimeMillis() + 60_000L)));
+                .thenAnswer(invocation -> Optional.ofNullable(turnLease.get()));
         when(store.resolveHitlTicket(any(), anyString(), anyLong(), anyBoolean(), any(), anyLong()))
                 .thenAnswer(
                         invocation -> {
@@ -396,7 +397,7 @@ class ToolConfirmationCoordinatorTest {
         CompletableFuture<Boolean> waiting =
                 requestManaged("tool-a", "web_search", Map.of("query", "weather"), "instance-a");
         CoordinationStore.HitlTicket created = ticket.get();
-        doReturn(Optional.empty()).when(store).getTurnLease("session-a");
+        turnLease.set(null);
 
         assertThat(
                         coordinator.resolveManaged(
@@ -426,12 +427,9 @@ class ToolConfirmationCoordinatorTest {
                 requestManaged("shared-tool", "web_search", Map.of("query", "old"), "instance-a");
         CoordinationStore.HitlTicket oldTicket = ticket.get();
 
-        doReturn(
-                        Optional.of(
-                                new CoordinationStore.LeaseHandle(
-                                        "session-a", "owner-a", "instance-b", 2L, Long.MAX_VALUE)))
-                .when(store)
-                .getTurnLease("session-a");
+        turnLease.set(
+                new CoordinationStore.LeaseHandle(
+                        "session-a", "owner-a", "instance-b", 2L, Long.MAX_VALUE));
         assertThat(
                         coordinator.resolveManaged(
                                 new ToolConfirmationCoordinator.ManagedDecision(
@@ -555,12 +553,9 @@ class ToolConfirmationCoordinatorTest {
         ManagedExecutionScope replacementScope =
                 new ManagedExecutionScope("tenant-a", "task-a", "attempt-b", 4, "turn-b");
         when(controlPlaneClient.managedExecutionScope("session-a")).thenReturn(replacementScope);
-        doReturn(
-                        Optional.of(
-                                new CoordinationStore.LeaseHandle(
-                                        "session-a", "owner-a", "instance-b", 2L, Long.MAX_VALUE)))
-                .when(store)
-                .getTurnLease("session-a");
+        turnLease.set(
+                new CoordinationStore.LeaseHandle(
+                        "session-a", "owner-a", "instance-b", 2L, Long.MAX_VALUE));
 
         assertThatThrownBy(
                         () ->

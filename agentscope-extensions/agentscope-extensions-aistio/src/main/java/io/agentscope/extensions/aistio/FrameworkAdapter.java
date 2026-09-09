@@ -141,6 +141,14 @@ public interface FrameworkAdapter {
         return Mono.error(unsupported("inbound-message"));
     }
 
+    /**
+     * Run a control-plane conversation turn and return its terminal assistant reply.
+     * Unlike message injection, completion must carry the answer, not just acknowledge input.
+     */
+    default Mono<String> runConversationTurn(String sessionId, String content) {
+        return Mono.error(unsupported("conversation-result"));
+    }
+
     /** Effective Definition snapshot for {@code GET /agentscope/info} → {@code agentConfig}. */
     default Map<String, Object> buildAgentConfig() {
         return Map.of();

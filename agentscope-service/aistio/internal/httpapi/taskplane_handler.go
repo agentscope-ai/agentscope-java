@@ -337,6 +337,32 @@ func (s *Server) getRuntimeHost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"host": host})
 }
 
+func (s *Server) updateRuntimeHostCapacity(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "hostId")
+	if !ok {
+		return
+	}
+	var req struct {
+		Capacity         int32  `json:"capacity"`
+		ExpectedCapacity *int32 `json:"expectedCapacity"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.ExpectedCapacity == nil || req.Capacity < 1 || req.Capacity > controlmodel.MaxRuntimeHostCapacity {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "capacity must be an integer between 1 and 50; expectedCapacity is required"})
+		return
+	}
+	host, err := s.store.RuntimeRegistry().GetRuntimeHost(c.Request.Context(), id)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	host, err = s.store.RuntimeRegistry().SetRuntimeHostCapacity(c.Request.Context(), id, *req.ExpectedCapacity, req.Capacity)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"host": host})
+}
+
 func (s *Server) drainRuntimeHost(c *gin.Context) {
 	s.setRuntimeHostStateFromOperations(c, controlmodel.RuntimeHostDraining)
 }
@@ -498,6 +524,10 @@ func (s *Server) claimExecutionAttempt(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	if _, err = s.ensureHostedTaskSession(c.Request.Context(), execution); err != nil {
 		s.writeControlPlaneError(c, err)
 		return
 	}

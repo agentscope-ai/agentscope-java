@@ -16,7 +16,7 @@
 
 import { api } from '@/lib/apiClient';
 
-export type ChatStatus = 'active' | 'archived';
+export type ChatStatus = 'active' | 'archived' | 'deleted';
 
 export interface Chat {
   id: string;
@@ -43,8 +43,11 @@ export interface ChatAgent {
   capability: { state: string; reason: string };
 }
 
-export const listChats = (tenant: string, namespace: string, archived = false) =>
-  api.get<{ items: Chat[] }>(`/api/v1/chats?tenant=${encodeURIComponent(tenant)}&namespace=${encodeURIComponent(namespace)}${archived ? '&archived=true' : ''}`);
+export const listChats = (tenant: string, namespace: string, view: ChatStatus = 'active') =>
+  api.get<{ items: Chat[] }>(`/api/v1/chats?tenant=${encodeURIComponent(tenant)}&namespace=${encodeURIComponent(namespace)}${view === 'active' ? '' : `&${view}=true`}`);
+
+export const deleteChat = (chat: Chat) =>
+  api.delete<{ chat: Chat }>(`/api/v1/chats/${encodeURIComponent(chat.id)}`);
 
 export const listChatAgents = (tenant: string, namespace: string) =>
   api.get<{ items: ChatAgent[] }>(`/api/v1/chat-agents?tenant=${encodeURIComponent(tenant)}&namespace=${encodeURIComponent(namespace)}`);

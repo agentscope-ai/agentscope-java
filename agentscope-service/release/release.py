@@ -61,6 +61,20 @@ def tracked_hygiene():
     print('Tracked source hygiene passed.')
 
 
+def verify_npm(directory):
+    # Vite empties its output directory, including this tracked source placeholder.
+    placeholder = SERVICE / 'aistio/ui/.gitkeep'
+    original = placeholder.read_bytes() if directory == SERVICE / 'frontend' and placeholder.is_file() else None
+    run('npm', 'ci', cwd=directory)
+    try:
+        run('npm', 'run', 'build', cwd=directory)
+    finally:
+        if original is not None:
+            placeholder.parent.mkdir(parents=True, exist_ok=True)
+            placeholder.write_bytes(original)
+    run('npm', 'test', cwd=directory)
+
+
 def verify():
     tracked_hygiene()
     run('mvn', '-B', '-ntp', '-pl', 'agentscope-service/service-gateway,agentscope-service/service-dataplane,agentscope-service/service-scheduler', '-am', 'clean', 'verify')
@@ -68,9 +82,7 @@ def verify():
     run('go', 'test', '-p', '1', './...', cwd=SERVICE / 'aistio')
     run('go', 'vet', './...', cwd=SERVICE / 'aistio')
     for directory in (SERVICE / 'frontend', SERVICE / 'aistio/sdk/dsh'):
-        run('npm', 'ci', cwd=directory)
-        run('npm', 'run', 'build', cwd=directory)
-        run('npm', 'test', cwd=directory)
+        verify_npm(directory)
     run(sys.executable, '-m', 'pytest', '-q', cwd=SERVICE / 'aistio/sdk/python')
     run('helm', 'lint', str(SERVICE / 'helm/agentscope-service'), '--set', 'imageRepository=example.com/ci', '--set', 'existingSecret=ci')
     run(sys.executable, '-m', 'unittest', 'discover', '-s', str(SERVICE / 'release/tests'))

@@ -500,7 +500,7 @@ func (s *Server) wsGetSkill(c *gin.Context) {
 	files, _ := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeTypeWorkspace, id, "skills/"+name)
 	for path, content := range files {
 		rel := strings.TrimPrefix(path, "skills/"+name+"/")
-		if rel == "" || rel == "SKILL.md" || rel == path {
+		if rel == "" || rel == "SKILL.md" || rel == marketplaceMetadataFile || rel == path {
 			continue
 		}
 		resources[rel] = content
@@ -543,9 +543,9 @@ func (s *Server) wsListSkills(c *gin.Context) {
 		if display == "" {
 			display = name
 		}
-		list = append(list, gin.H{
-			"dirName": name, "name": display, "description": nullStr(desc), "origin": "custom",
-		})
+		info := skillSourceInfo(files, name)
+		info["dirName"], info["name"], info["description"] = name, display, nullStr(desc)
+		list = append(list, info)
 	}
 	c.JSON(http.StatusOK, list)
 }
@@ -578,7 +578,7 @@ func (s *Server) wsPutSkill(c *gin.Context) {
 	}
 	for rel, content := range req.Resources {
 		relClean, err := cleanRelPath(rel)
-		if err != nil || relClean == "" || relClean == "SKILL.md" {
+		if err != nil || relClean == "" || relClean == "SKILL.md" || relClean == marketplaceMetadataFile {
 			continue
 		}
 		_ = s.putWorkspaceFile(c.Request.Context(), owner, scopeTypeWorkspace, id,
@@ -614,6 +614,14 @@ func (s *Server) wsDeleteSkill(c *gin.Context) {
 	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	name := c.Param("name")
+	if !validSkillDirectory(name) {
+		writeErr(c, http.StatusBadRequest, "invalid name")
+		return
+	}
+	if _, err := s.loadWorkspace(c.Request.Context(), owner, id); err != nil {
+		writeErr(c, http.StatusNotFound, "workspace not found")
+		return
+	}
 	disk := s.workspaceDiskRoot(owner, id)
 	if err := s.deleteWorkspaceFilePrefix(c.Request.Context(), owner, scopeTypeWorkspace, id, "skills/"+name, disk); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())

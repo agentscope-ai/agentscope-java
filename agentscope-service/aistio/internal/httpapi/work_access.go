@@ -270,9 +270,20 @@ func (s *Server) canAccessSession(ctx context.Context, a *namespaceAccess, sessi
 	if !write && controlmodel.NamespaceAllows(a.Roles, "work.audit") {
 		return true
 	}
-	for _, archived := range []bool{false, true} {
+	// Chat deletion keeps execution history. Its owner may still read that
+	// history, but a deleted Chat must not grant Session mutation access.
+	filters := []store.ChatFilter{{}, {Archived: true}}
+	if !write {
+		filters = append(filters, store.ChatFilter{Deleted: true})
+	}
+	for _, filter := range filters {
+		filter.Tenant = session.Tenant
+		filter.Namespace = session.Namespace
+		filter.CreatorRef = a.User
+		filter.Limit = 500
 		for offset := 0; ; offset += 500 {
-			chats, err := s.store.Chats().List(ctx, store.ChatFilter{Tenant: session.Tenant, Namespace: session.Namespace, CreatorRef: a.User, Archived: archived, Limit: 500, Offset: offset})
+			filter.Offset = offset
+			chats, err := s.store.Chats().List(ctx, filter)
 			if err != nil {
 				return false
 			}

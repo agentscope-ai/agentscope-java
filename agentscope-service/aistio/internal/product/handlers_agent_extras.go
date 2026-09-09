@@ -142,9 +142,9 @@ func (s *Server) listWorkspaceSkills(c *gin.Context) {
 		if display == "" {
 			display = name
 		}
-		list = append(list, gin.H{
-			"dirName": name, "name": display, "description": nullStr(desc), "origin": "custom",
-		})
+		info := skillSourceInfo(files, name)
+		info["dirName"], info["name"], info["description"] = name, display, nullStr(desc)
+		list = append(list, info)
 	}
 	if len(list) == 0 {
 		dir := filepath.Join(ws, "skills")
@@ -190,7 +190,7 @@ func (s *Server) getWorkspaceSkill(c *gin.Context) {
 		files, _ := s.listWorkspaceFileContents(c.Request.Context(), owner, scopeType, scopeID, "skills/"+name)
 		for path, content := range files {
 			rel := strings.TrimPrefix(path, "skills/"+name+"/")
-			if rel == "" || rel == "SKILL.md" || rel == path {
+			if rel == "" || rel == "SKILL.md" || rel == marketplaceMetadataFile || rel == path {
 				continue
 			}
 			resources[rel] = content
@@ -265,7 +265,7 @@ func (s *Server) putWorkspaceSkill(c *gin.Context) {
 	}
 	for rel, content := range req.Resources {
 		relClean, err := cleanRelPath(rel)
-		if err != nil || relClean == "" || relClean == "SKILL.md" {
+		if err != nil || relClean == "" || relClean == "SKILL.md" || relClean == marketplaceMetadataFile {
 			continue
 		}
 		_ = s.putWorkspaceFile(c.Request.Context(), owner, scopeType, scopeID,
@@ -314,8 +314,11 @@ func (s *Server) marketplaceInstallSkill(c *gin.Context) {
 	scopeType, scopeID := a.resolveDefinitionScope()
 	ws, _, _ := s.resolveAgentWorkspace(c.Request.Context(), owner, agentID)
 	if err := s.installMarketplaceSkill(c.Request.Context(), owner, scopeType, scopeID, ws, req); err != nil {
-		writeErr(c, http.StatusBadRequest, err.Error())
+		writeErr(c, marketplaceInstallStatus(err), err.Error())
 		return
+	}
+	if scopeType == scopeTypeWorkspace {
+		s.rematerializeLinkedAgents(c.Request.Context(), owner, scopeID)
 	}
 	c.JSON(http.StatusOK, gin.H{"installed": req.SkillName, "origin": "marketplace"})
 }

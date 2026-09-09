@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/conversation"
 	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
@@ -89,6 +90,9 @@ func (w *RuntimeControlSweeper) Sweep(ctx context.Context, now time.Time) {
 	}
 	if _, err := w.Store.RuntimeRegistry().MarkAgentInstancesOffline(ctx, now.Add(-timeout)); err != nil {
 		logger.Error(err, "marking agent instances offline")
+	}
+	if err := conversation.Sweep(ctx, w.Store, now); err != nil {
+		logger.Error(err, "recovering unresponsive conversation turns")
 	}
 	if _, err := w.Store.Collaboration().RequeueRetryableInputs(ctx, now, batch); err != nil {
 		logger.Error(err, "requeueing retryable AgentTask inputs")

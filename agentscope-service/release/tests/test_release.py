@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -29,6 +30,35 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_frontend_verification_preserves_tracked_placeholder(self):
+        self.check_frontend_placeholder(build_fails=False)
+
+    def test_failed_frontend_build_preserves_tracked_placeholder(self):
+        self.check_frontend_placeholder(build_fails=True)
+
+    def check_frontend_placeholder(self, build_fails):
+        with tempfile.TemporaryDirectory() as directory:
+            service = Path(directory)
+            placeholder = service / 'aistio/ui/.gitkeep'
+            placeholder.parent.mkdir(parents=True)
+            placeholder.write_bytes(b'original contents\n')
+
+            def simulated_npm(*args, **kwargs):
+                if args == ('npm', 'run', 'build'):
+                    placeholder.unlink()
+                    (placeholder.parent / 'index.html').write_text('built dashboard')
+                    if build_fails:
+                        raise subprocess.CalledProcessError(1, args)
+
+            with mock.patch.object(release, 'SERVICE', service), mock.patch.object(release, 'run', side_effect=simulated_npm):
+                if build_fails:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        release.verify_npm(service / 'frontend')
+                else:
+                    release.verify_npm(service / 'frontend')
+            self.assertEqual(placeholder.read_bytes(), b'original contents\n')
+            self.assertEqual((placeholder.parent / 'index.html').read_text(), 'built dashboard')
+
     def test_version_cannot_escape_output_path(self):
         for value in ('../other', 'v1.0.0', '1.0', '1.0.0;touch x', '1.0.0+meta'):
             with self.subTest(value=value), self.assertRaises(ValueError):

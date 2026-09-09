@@ -258,6 +258,9 @@ type RuntimePool struct {
 
 // RuntimeHost is a user-operated execution node. It manages provider
 // processes and workspaces, not arbitrary application deployments.
+// MaxRuntimeHostCapacity bounds capacity configured through the console.
+const MaxRuntimeHostCapacity int32 = 50
+
 type RuntimeHost struct {
 	ID              uuid.UUID       `json:"id"`
 	Tenant          string          `json:"tenant"`
@@ -271,6 +274,7 @@ type RuntimeHost struct {
 	Capabilities    json.RawMessage `json:"capabilities,omitempty"`
 	State           string          `json:"state"`
 	Capacity        int32           `json:"capacity"`
+	CapacityManaged bool            `json:"capacityManaged"`
 	Active          int32           `json:"active"`
 	LastSeenAt      time.Time       `json:"lastSeenAt"`
 	LeaseGeneration int64           `json:"leaseGeneration"`

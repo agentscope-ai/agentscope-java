@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { EndpointUsage } from './EndpointUsage';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, Rocket } from 'lucide-react';
@@ -188,8 +189,9 @@ export function PublishEndpointCard({
 
         {currentItems.map(endpoint => <div key={endpoint.id} className="rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2"><Check className="h-4 w-4 text-emerald-600" /><strong className="text-sm">{endpoint.name}</strong><Badge tone={endpoint.status === 'published' ? 'success' : endpoint.status === 'disabled' ? 'warning' : 'info'}>{endpoint.status}</Badge>{endpoint.activeRelease ? <Badge>release {endpoint.activeRelease}</Badge> : null}</div>
+          <EndpointUsage endpoint={endpoint} />
           <code className="mt-2 block break-all text-xs text-muted-foreground">{endpointPath(endpoint)}</code>
-          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint))}>Manage API<ExternalLink className="h-3 w-3" /></Link></Button>{endpoint.status === 'published' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint, 'playground'))}>Test API<ExternalLink className="h-3 w-3" /></Link></Button>}<Button size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(endpointPath(endpoint))}><Copy className="h-3 w-3" />Copy URL</Button></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint))}>Manage API<ExternalLink className="h-3 w-3" /></Link></Button>{endpoint.status === 'published' && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(endpointDetailPath(endpoint, 'playground'))}>Test API<ExternalLink className="h-3 w-3" /></Link></Button>}<Button size="sm" variant="ghost" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${endpointPath(endpoint)}`)}><Copy className="h-3 w-3" />Copy URL</Button></div>
         </div>)}
         {!endpoints.isLoading && currentItems.length === 0 && !showCreate && <p className="text-sm text-muted-foreground">Not published yet. Create an API when external systems need a stable address.</p>}
 

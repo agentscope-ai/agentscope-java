@@ -178,21 +178,45 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
  */
 export function runtimeEventsToMessages(events: SessionEventItem[]): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
+  const streamedMessages = new Map<string, ConversationMessage>();
   const toolBlocks = new Map<string, ConversationContentBlock>();
   const starts = new Map<string, { block: ConversationContentBlock; at?: string }>();
   const callTimes = new Map<string, string | undefined>();
   for (const [index, event] of events.entries()) {
     const type = event.eventType || 'event';
     const category = eventCategory(type, event.role);
+    const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
+    const scope = [meta.turnId || '', meta.attemptId || '', meta.dispatchGeneration || ''].join(':');
+    if (/^turn\.(completed|failed|cancelled)$/.test(type)) {
+      const message = streamedMessages.get(scope);
+      if (message) message.state = 'complete';
+    }
     if (/^session\.(status_idle|status_terminated|interrupted|error)$/.test(type)) {
+      for (const message of streamedMessages.values()) message.state = 'complete';
       for (const { block } of starts.values()) block.toolState = 'unavailable';
       for (const block of toolBlocks.values()) if (block.result === undefined) block.toolState = 'unavailable';
     }
     if (!['message', 'tool', 'error', 'model'].includes(category)) continue;
     const id = `runtime-event-message-${event.id ?? event.seq ?? index}`;
     const role = roleOf(event.role || (category === 'tool' ? 'assistant' : category === 'error' ? 'error' : 'system'));
-    const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
-    const scope = [meta.turnId || '', meta.attemptId || '', meta.dispatchGeneration || ''].join(':');
+    if (meta.turnId && (type === 'assistant.delta' || type === 'assistant.message')) {
+      const existing = streamedMessages.get(scope);
+      if (existing) {
+        existing.blocks[0].text = type === 'assistant.delta'
+          ? (existing.blocks[0].text || '') + (event.content || '')
+          : event.content || '';
+        existing.state = type === 'assistant.delta' ? 'streaming' : 'complete';
+      } else {
+        const message: ConversationMessage = {
+          id, seq: event.seq, role: 'assistant', occurredAt: event.occurredAt,
+          blocks: [{ kind: 'text', id: `${id}-text`, text: event.content || '' }],
+          state: type === 'assistant.delta' ? 'streaming' : 'complete', raw: event,
+        };
+        streamedMessages.set(scope, message);
+        messages.push(message);
+      }
+      continue;
+    }
     if (category === 'model') {
       const thinking = /thinking|reasoning/.test(type);
       const key = `${scope}:${meta.spanId || meta.requestId || 'model'}`;

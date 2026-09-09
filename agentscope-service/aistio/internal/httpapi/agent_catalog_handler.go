@@ -1014,6 +1014,14 @@ func validateHostedExecutionOverrides(profile *controlmodel.RuntimeProfile, over
 		}
 	}
 	if mode, ok := configuration["permissionMode"].(string); ok {
+		if profile.Provider == "qoder" {
+			switch mode {
+			case "", "default", "auto", "accept_edits", "dont_ask", "bypass_permissions":
+				return nil
+			default:
+				return fmt.Errorf("unsupported Qoder permission mode %q", mode)
+			}
+		}
 		lower := strings.ToLower(mode)
 		if strings.Contains(lower, "bypass") || strings.Contains(lower, "danger") || strings.Contains(lower, "yolo") {
 			if baseline, _ := base["permissionMode"].(string); baseline != mode {

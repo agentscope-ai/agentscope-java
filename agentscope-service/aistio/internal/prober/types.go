@@ -75,16 +75,17 @@ func (c *ProbeAgentConfig) ToolNames() []string {
 
 // SessionSnapshot represents a session as reported by the data plane.
 type SessionSnapshot struct {
-	ID              string       `json:"id"`
-	Phase           string       `json:"phase"`
-	Busy            *bool        `json:"busy,omitempty"`
-	Model           string       `json:"model,omitempty"`
-	StartedAt       string       `json:"startedAt,omitempty"`
-	LastActiveAt    string       `json:"lastActiveAt,omitempty"`
-	MessageCount    int32        `json:"messageCount,omitempty"`
-	TokenUsage      *TokenUsage  `json:"tokenUsage,omitempty"`
-	ContextPressure float64      `json:"contextPressure,omitempty"`
-	TaskSummary     *TaskSummary `json:"taskSummary,omitempty"`
+	ContextPressureReported bool         `json:"-"`
+	ID                      string       `json:"id"`
+	Phase                   string       `json:"phase"`
+	Busy                    *bool        `json:"busy,omitempty"`
+	Model                   string       `json:"model,omitempty"`
+	StartedAt               string       `json:"startedAt,omitempty"`
+	LastActiveAt            string       `json:"lastActiveAt,omitempty"`
+	MessageCount            int32        `json:"messageCount,omitempty"`
+	TokenUsage              *TokenUsage  `json:"tokenUsage,omitempty"`
+	ContextPressure         float64      `json:"contextPressure,omitempty"`
+	TaskSummary             *TaskSummary `json:"taskSummary,omitempty"`
 
 	// Level-1 extensions (see sdk-design.md §3.1).
 	Framework             string `json:"framework,omitempty"`
@@ -92,6 +93,26 @@ type SessionSnapshot struct {
 	ContextHash           string `json:"contextHash,omitempty"`
 	IsCompacted           bool   `json:"isCompacted,omitempty"`
 	EffectiveMessageCount int32  `json:"effectiveMessageCount,omitempty"`
+}
+
+// Retain field presence: a measured empty context is different from a runtime
+// that does not expose context pressure. Legacy protobuf scalar zero remains
+// unknown because that transport did not encode presence.
+func (s *SessionSnapshot) UnmarshalJSON(data []byte) error {
+	type snapshotAlias SessionSnapshot
+	var decoded snapshotAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*s = SessionSnapshot(decoded)
+	if raw, present := fields["contextPressure"]; present && string(raw) != "null" {
+		s.ContextPressureReported = true
+	}
+	return nil
 }
 
 // TokenUsage tracks token counts.

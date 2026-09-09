@@ -39,7 +39,7 @@ test('conversation shows reasoning, paired tools and explanatory event details a
     if (!path.startsWith('/api/')) return route.continue();
     const json = (data: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
     if (path === '/api/auth/me') return json({ username: 'alice', roles: ['admin'], isAdmin: true });
-    if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false });
+    if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false, namespaces: [{ tenant: 'default', name: 'default', roles: ['admin', 'developer', 'operator', 'member'] }] });
     if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: '' });
     if (path.endsWith('/events')) return json({ events: url.searchParams.has('after') ? [] : events });
     if (path === `/api/v1/sessions/${sessionId}`) return json({ id: sessionId, sessionId: 'test-session', agentName: 'MA1', phase: 'idle', capabilities: [], framework: 'managed' });

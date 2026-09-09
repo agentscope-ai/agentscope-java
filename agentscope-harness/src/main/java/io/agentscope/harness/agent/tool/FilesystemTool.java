@@ -29,7 +29,6 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * File system tools backed by a {@link AbstractFilesystem}, exposing read/write/edit/grep/glob
@@ -48,6 +47,29 @@ public class FilesystemTool {
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+    }
+
+    static final int MAX_LISTING_ENTRIES = 200;
+    static final int MAX_LISTING_CHARS = 16000;
+
+    private static String boundedListing(java.util.stream.Stream<String> lines) {
+        StringBuilder out = new StringBuilder();
+        var iterator = lines.iterator();
+        int count = 0;
+        while (iterator.hasNext()) {
+            String line = iterator.next();
+            if (count >= MAX_LISTING_ENTRIES
+                    || out.length() + line.length() + 1 > MAX_LISTING_CHARS) {
+                out.append(
+                        "\n"
+                            + "[truncated: listing output limit reached; narrow the directory or"
+                            + " pattern]");
+                break;
+            }
+            if (count++ > 0) out.append('\n');
+            out.append(line);
+        }
+        return out.toString();
     }
 
     private String norm(String path) {
@@ -140,9 +162,8 @@ public class FilesystemTool {
         if (matches == null || matches.isEmpty()) {
             return "No matches found";
         }
-        return matches.stream()
-                .map(m -> m.path() + ":" + m.line() + ":" + m.text())
-                .collect(Collectors.joining("\n"));
+        return boundedListing(
+                matches.stream().map(m -> m.path() + ":" + m.line() + ":" + m.text()));
     }
 
     @Tool(name = "glob_files", readOnly = true, description = "Find files matching a glob pattern.")
@@ -163,9 +184,14 @@ public class FilesystemTool {
         if (files == null || files.isEmpty()) {
             return "No matching files found";
         }
-        return files.stream()
-                .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)"))
-                .collect(Collectors.joining("\n"));
+        return boundedListing(
+                files.stream()
+                        .map(
+                                f ->
+                                        f.path()
+                                                + (f.isDirectory()
+                                                        ? "/"
+                                                        : " (" + f.size() + " bytes)")));
     }
 
     @Tool(
@@ -183,12 +209,14 @@ public class FilesystemTool {
         if (infos == null || infos.isEmpty()) {
             return "Empty or not a directory: " + path;
         }
-        return infos.stream()
-                .map(
-                        f ->
-                                (f.isDirectory() ? "[DIR]  " : "[FILE] ")
-                                        + f.path()
-                                        + (f.isDirectory() ? "" : " (" + f.size() + " bytes)"))
-                .collect(Collectors.joining("\n"));
+        return boundedListing(
+                infos.stream()
+                        .map(
+                                f ->
+                                        (f.isDirectory() ? "[DIR]  " : "[FILE] ")
+                                                + f.path()
+                                                + (f.isDirectory()
+                                                        ? ""
+                                                        : " (" + f.size() + " bytes)")));
     }
 }

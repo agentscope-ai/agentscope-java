@@ -30,6 +30,7 @@ type ChatStatus string
 const (
 	ChatActive   ChatStatus = "active"
 	ChatArchived ChatStatus = "archived"
+	ChatDeleted  ChatStatus = "deleted"
 )
 
 // Chat is a user-owned Work Hub conversation. It deliberately references, but

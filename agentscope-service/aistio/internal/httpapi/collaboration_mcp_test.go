@@ -638,7 +638,7 @@ func TestLeaderFailurePublishesRootSummaryBeforeBlocked(t *testing.T) {
 			}
 			body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 				"params": map[string]any{"name": tool, "arguments": map[string]any{
-					"code": "unrecoverable", "message": "cannot converge", "outcome": "blocked"}}})
+					"code": "unrecoverable", "message": "cannot converge", "outcome": "failed", "result": "partial research evidence"}}})
 			req := httptest.NewRequest(http.MethodPost, "/mcp/collaboration", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Agent-Task-Token", token)
@@ -668,7 +668,7 @@ func TestLeaderFailurePublishesRootSummaryBeforeBlocked(t *testing.T) {
 				t.Fatalf("failed coordinator did not leave a root Issue response: comments=%+v err=%v", comments, err)
 			}
 
-			if !strings.Contains(comments[0].Content, "cannot converge") || !strings.Contains(comments[0].Content, "下一步") || comments[0].CreatedAt.After(issue.UpdatedAt) {
+			if !strings.Contains(comments[0].Content, "partial research evidence") || !strings.Contains(comments[0].Content, "cannot converge") || !strings.Contains(comments[0].Content, "下一步") || comments[0].CreatedAt.After(issue.UpdatedAt) {
 				t.Fatalf("summary must explain the outcome before the status change: comment=%+v issue=%+v", comments[0], issue)
 			}
 		})

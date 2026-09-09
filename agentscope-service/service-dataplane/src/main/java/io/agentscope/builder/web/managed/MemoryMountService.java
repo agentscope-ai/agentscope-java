@@ -120,8 +120,9 @@ public class MemoryMountService {
         StringBuilder sb = new StringBuilder();
         sb.append("\n\n## Mounted Memory Stores\n");
         sb.append(
-                "The following directories contain persistent cross-session memory. Read and update"
-                    + " files under these paths; changes are versioned immediately on write.\n");
+                "These stores contain shared knowledge. Read documents on demand using the memory"
+                    + " tools. Each mount's access mode is listed below. Keep private working notes"
+                    + " in this session's workspace.\n");
         for (MountInfo mount : mounts) {
             sb.append("- `")
                     .append(mount.relativePath())
@@ -131,6 +132,8 @@ public class MemoryMountService {
                     .append(mount.storeName())
                     .append("\", storeId=")
                     .append(mount.storeId())
+                    .append(", access=")
+                    .append(mount.accessMode())
                     .append("\n");
         }
         return sb.toString();
@@ -192,5 +195,10 @@ public class MemoryMountService {
     }
 
     /** Description of one mounted memory store. */
-    public record MountInfo(String storeId, String storeName, String relativePath) {}
+    public record MountInfo(
+            String storeId, String storeName, String relativePath, String accessMode) {
+        public MountInfo(String storeId, String storeName, String relativePath) {
+            this(storeId, storeName, relativePath, "read_write");
+        }
+    }
 }

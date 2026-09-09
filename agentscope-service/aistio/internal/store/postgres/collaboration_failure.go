@@ -61,9 +61,9 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 	abortManaged := store.ManagedAttemptNeedsAbort(task, attempt, failure.Code)
 	attempt, err = scanExecutionAttempt(tx.QueryRow(ctx, `UPDATE execution_attempts SET state=$2,
 		checkpoint=COALESCE($3,checkpoint),usage=COALESCE($4,usage),failure_code=$5,failure_message=$6,
-		lease_expires_at=NULL,version=version+1,updated_at=now(),completed_at=now()
+		result=COALESCE($7,result),lease_expires_at=NULL,version=version+1,updated_at=now(),completed_at=now()
 		WHERE id=$1 RETURNING `+executionAttemptColumns, attempt.ID, controlmodel.ExecutionFailed,
-		nullJSON(failure.Checkpoint), nullJSON(failure.Usage), nullStr(failure.Code), nullStr(failure.Message)))
+		nullJSON(failure.Checkpoint), nullJSON(failure.Usage), nullStr(failure.Code), nullStr(failure.Message), nullJSON(failure.Result)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,8 +71,8 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(ctx context.Context, id uui
 		return nil, nil, err
 	}
 	task, err = scanAgentTask(tx.QueryRow(ctx, `UPDATE agent_tasks SET status=$2,error_code=$3,
-		error_message=$4,version=version+1,completed_at=now() WHERE id=$1 RETURNING `+agentTaskColumns,
-		task.ID, controlmodel.AgentTaskFailed, nullStr(failure.Code), nullStr(failure.Message)))
+		error_message=$4,result=COALESCE($5,result),version=version+1,completed_at=now() WHERE id=$1 RETURNING `+agentTaskColumns,
+		task.ID, controlmodel.AgentTaskFailed, nullStr(failure.Code), nullStr(failure.Message), nullJSON(failure.Result)))
 	if err != nil {
 		return nil, nil, err
 	}

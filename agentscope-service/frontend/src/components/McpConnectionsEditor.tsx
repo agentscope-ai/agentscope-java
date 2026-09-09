@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import McpOAuthConnect from './McpOAuthConnect';
 import { isGitHubMcp } from '../api/mcpOAuth';
 import type { AgentToolset, McpServerSpec, ToolConfigEntry } from '../api/agents';
@@ -26,6 +26,8 @@ interface Props {
   canConnect?: boolean;
   onOAuthConnected?: (vaultId: string) => Promise<void>;
   onSave: (servers: McpServerSpec[], tools: AgentToolset[]) => Promise<unknown>;
+  catalogDraft?: McpServerSpec;
+  onDraftConsumed?: () => void;
 }
 const field: React.CSSProperties = { padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, width: '100%', boxSizing: 'border-box' };
 const button: React.CSSProperties = { padding: '7px 12px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' };
@@ -40,7 +42,8 @@ export function editorTransport(server: McpServerSpec): string {
 }
 const ignoredEnvironment = 'Environment variables are only passed to local stdio processes. This remote connection ignores them. Configure authentication in Headers or attach a Vault with a bearer credential for this connection.';
 
-export default function McpConnectionsEditor({ servers, tools, readOnly, onSave, canConnect, onOAuthConnected }: Props) {
+export default function McpConnectionsEditor({ servers, tools, readOnly, onSave, canConnect, onOAuthConnected, catalogDraft, onDraftConsumed }: Props) {
+  const sectionRef = useRef<HTMLElement>(null);
   const [oauthServer, setOAuthServer] = useState<McpServerSpec>();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<McpServerSpec>({ name: '', transport: 'http', required: true });
@@ -52,6 +55,15 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave,
   const [args, setArgs] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!catalogDraft || readOnly) return;
+    edit(catalogDraft);
+    setEditing('');
+    setEnabled(false);
+    onDraftConsumed?.();
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [catalogDraft, readOnly]);
 
   function edit(server?: McpServerSpec) {
     const toolset = tools.find(t => t.type === 'mcp_toolset' && t.mcpServerName === server?.name);
@@ -92,7 +104,7 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave,
     catch (e) { setError(e instanceof Error ? e.message : 'Failed to remove connection'); }
     finally { setBusy(false); }
   }
-  return <section style={{ padding: 16, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff' }}>
+  return <section ref={sectionRef} aria-label="Configured MCP connections" style={{ padding: 16, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff', minWidth: 0 }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><h3>MCP connections</h3>{!readOnly && <button style={button} disabled={busy} onClick={() => edit()}>Add connection</button>}</div>
     <p style={{ color: '#64748b', fontSize: 13 }}>Configure external tools here. Attach a Vault when starting a session; bearer credentials target the connection name or exact endpoint URL. Connection failures appear in session events.</p>
     {servers.map(server => <div key={server.name} style={{ display: 'flex', gap: 10, padding: '8px 0', alignItems: 'center' }}>

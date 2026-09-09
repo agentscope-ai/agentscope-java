@@ -24,6 +24,29 @@ import {
 } from './adapters';
 
 describe('conversation adapters', () => {
+  it('closes partial streamed output when a terminal event is replayed after reconnecting', () => {
+    for (const eventType of ['turn.completed', 'turn.failed', 'turn.cancelled', 'session.status_idle', 'session.interrupted']) {
+      const messages = runtimeEventsToMessages([
+        { seq: 1, eventType: 'assistant.delta', role: 'assistant', content: 'partial answer', frameworkMeta: { turnId: 'one' } },
+        { seq: 2, eventType, frameworkMeta: { turnId: 'one' } },
+      ]);
+      expect(messages[0]).toMatchObject({ state: 'complete', blocks: [{ text: 'partial answer' }] });
+    }
+  });
+  it('combines External deltas and replaces them with the final response once', () => {
+    const events = [
+      { seq: 1, eventType: 'assistant.delta', role: 'assistant', content: 'hel', frameworkMeta: { turnId: 'one' } },
+      { seq: 2, eventType: 'assistant.delta', role: 'assistant', content: 'lo', frameworkMeta: { turnId: 'one' } },
+    ];
+    expect(runtimeEventsToMessages(events)[0]).toMatchObject({ state: 'streaming', blocks: [{ text: 'hello' }] });
+    const messages = runtimeEventsToMessages([...events,
+      { seq: 3, eventType: 'assistant.message', role: 'assistant', content: 'hello!', frameworkMeta: { turnId: 'one' } },
+      { seq: 4, eventType: 'assistant.message', role: 'assistant', content: 'next', frameworkMeta: { turnId: 'two' } },
+    ]);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ state: 'complete', blocks: [{ text: 'hello!' }] });
+    expect(messages[1].blocks[0].text).toBe('next');
+  });
   it('projects runtime tool messages without losing the call identity', () => {
     const [message] = runtimeMessagesToConversation([{
       seq: 7,

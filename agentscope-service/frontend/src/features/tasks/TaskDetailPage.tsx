@@ -14,24 +14,97 @@
  * limitations under the License.
  */
 
-import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
-import { Link,useParams } from 'react-router-dom';
-import { cancelTask,getTask,retryTask } from '@/api/collaboration';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import { cancelTask, getTask, retryTask } from '@/api/collaboration';
 import { listAttempts } from '@/api/orchestration';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import { EntityIdentityText, useEntityIdentities } from '@/components/EntityIdentity';
-import { Page,PageHeader } from '@/components/Page';
+import { Page, PageHeader } from '@/components/Page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-export default function TaskDetailPage(){
-  const {taskId=''}=useParams();const scope=useControlPlaneScope();const qc=useQueryClient();
-  const detail=useQuery({queryKey:['agent-task',taskId],queryFn:()=>getTask(taskId),enabled:!!taskId,refetchInterval:query=>['completed','failed','cancelled'].includes(query.state.data?.task.status??'')?false:3000,refetchIntervalInBackground:false});
-  const attempts=useQuery({queryKey:['execution-attempts',taskId],queryFn:()=>listAttempts(scope.tenant,scope.namespace,taskId),enabled:!!taskId,refetchInterval:()=>['completed','failed','cancelled'].includes(detail.data?.task.status??'')?false:3000,refetchIntervalInBackground:false});
-  const identities=useEntityIdentities([{type:'agent',ref:detail.data?.task.agentId},{type:'issue',ref:detail.data?.task.issueId},{type:'team',ref:detail.data?.task.teamId},{type:detail.data?.task.originator.type,ref:detail.data?.task.originator.ref},...(attempts.data?.attempts||[]).map(a=>({type:'runtime_host',ref:a.hostId}))]);
-  const refresh=()=>{void qc.invalidateQueries({queryKey:['agent-task',taskId]});void qc.invalidateQueries({queryKey:['execution-attempts',taskId]})};
-  const cancel=useMutation({mutationFn:()=>cancelTask(taskId,detail.data?.task.version||0),onSuccess:refresh});
-  const retry=useMutation({mutationFn:()=>retryTask(taskId),onSuccess:refresh});
-  if(!detail.data)return <Page>Loading AgentTask…</Page>;const task=detail.data.task;
-  return <Page><Link to={scope.scopedPath(`/work/executions/${task.orchestrationRunId}`)} className="text-sm text-muted-foreground">← Execution</Link><PageHeader title={<span className="flex gap-3">AgentTask {task.id.slice(0,8)}<Badge tone={task.status==='completed'?'success':task.status==='failed'?'danger':'warning'}>{task.status}</Badge></span>} description={<><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} secondary /> · {task.triggerType}</>} actions={<div className="flex gap-2">{task.status==='failed'&&<Button variant="outline" onClick={()=>retry.mutate()}>Retry</Button>}{!['completed','failed','cancelled'].includes(task.status)&&<Button variant="destructive" onClick={()=>cancel.mutate()}>Cancel</Button>}</div>}/><div className="mb-5 grid gap-3 sm:grid-cols-3"><Link className="rounded-xl border bg-white p-4 text-sm hover:border-primary" to={scope.scopedPath(`/work/executions/${task.orchestrationRunId}`)}><span className="text-muted-foreground">Run</span><div className="font-mono">{task.orchestrationRunId.slice(0,12)}</div></Link><div className="rounded-xl border bg-white p-4 text-sm"><span className="text-muted-foreground">Node</span><div className="font-mono">{task.runNodeId.slice(0,12)}</div></div><Link className="rounded-xl border bg-white p-4 text-sm hover:border-primary" to={scope.scopedPath(`/work/issues/${task.issueId}`)}><span className="text-muted-foreground">Issue</span><div><EntityIdentityText identities={identities} type="issue" entityRef={task.issueId} secondary /></div></Link></div><div className="grid gap-5 lg:grid-cols-2"><section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">Inputs</h2><ul className="mt-3 space-y-2">{(task.inputs||[]).map(input=><li key={input.id} className="rounded-lg bg-muted p-3 text-sm"><div className="font-mono">{input.commentId.slice(0,8)} v{input.commentVersion}</div><div className="text-muted-foreground">#{input.sequence} · {input.state} · attempts {input.attempts}</div></li>)}</ul>{task.result!=null&&<pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 text-xs">{JSON.stringify(task.result,null,2)}</pre>}</section><section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">ExecutionAttempt history</h2><div className="mt-3 space-y-3">{attempts.data?.attempts.map(a=><article key={a.id} className="rounded-lg bg-muted p-3 text-sm"><div className="flex justify-between"><span className="font-mono">{a.id.slice(0,10)} · #{a.attempt}</span><Badge tone={a.state==='succeeded'?'success':a.state==='failed'?'danger':'warning'}>{a.state}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{a.backendKind} · generation {a.dispatchGeneration}{a.hostId&&<> · <EntityIdentityText identities={identities} type="runtime_host" entityRef={a.hostId}/></>}</p>{a.sessionRef&&<Button asChild size="sm" variant="outline" className="mt-2"><Link to={scope.scopedPath(`/work/sessions/${a.sessionRef}`)}>Open session</Link></Button>}{a.sessionId&&!a.sessionRef&&<p className="mt-1 break-all text-xs text-amber-700">Runtime session: {a.sessionId} · diagnostics link pending</p>}{a.providerSessionId&&<p className="mt-1 break-all text-xs text-muted-foreground">Provider session: {a.providerSessionId}</p>}{a.failureMessage&&<p className="mt-2 text-xs text-red-600">{a.failureCode}: {a.failureMessage}</p>}{a.result!=null&&<pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background p-2 text-xs">{JSON.stringify(a.result,null,2)}</pre>}</article>)}</div><pre className="mt-3 overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{JSON.stringify(task.runtimeBinding||{},null,2)}</pre></section></div></Page>;
+const terminal = (state?: string) => ['completed', 'failed', 'cancelled'].includes(state || '');
+const time = (value?: string) => value ? new Date(value).toLocaleString() : 'Not recorded';
+function duration(start?: string, end?: string) {
+  if (!start || !end) return '';
+  const seconds = Math.max(0, (Date.parse(end) - Date.parse(start)) / 1000);
+  return Number.isFinite(seconds) ? `${seconds.toFixed(1)} s` : '';
+}
+function ResultContent({ value }: { value: unknown }) {
+  if (value == null) return <p className="text-sm text-muted-foreground">No result was recorded.</p>;
+  if (typeof value === 'string') return <div className="md-text break-words leading-7"><ReactMarkdown>{value}</ReactMarkdown></div>;
+  if (typeof value !== 'object') return <p>{String(value)}</p>;
+  const entries = Array.isArray(value) ? value.map((item, index) => [String(index + 1), item] as const) : Object.entries(value);
+  if (!entries.length) return <p className="text-sm text-muted-foreground">The execution returned an empty result.</p>;
+  const main = entries.find(([key, item]) => ['output', 'final', 'response', 'message', 'content', 'result', 'text'].includes(key) && typeof item === 'string' && item.trim());
+  const fields = main ? entries.filter(([key]) => key !== main[0]) : entries;
+  return <div className="space-y-4">{main && <ResultContent value={main[1]} />}<dl className="space-y-3">{fields.map(([key, item]) => <div key={key} className="min-w-0 rounded-lg bg-muted/50 p-3"><dt className="mb-1 text-xs font-semibold capitalize text-muted-foreground">{key}</dt><dd className="break-words text-sm"><ResultContent value={item} /></dd></div>)}</dl></div>;
+}
+function Diagnostics({ value }: { value: unknown }) {
+  return <details className="mt-3"><summary className="cursor-pointer text-sm text-muted-foreground">Diagnostic details</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{JSON.stringify(value, null, 2)}</pre></details>;
+}
+
+export default function TaskDetailPage() {
+  const { taskId = '' } = useParams();
+  const scope = useControlPlaneScope();
+  const qc = useQueryClient();
+  const detail = useQuery({ queryKey: ['agent-task', taskId], queryFn: () => getTask(taskId), enabled: !!taskId, refetchInterval: query => terminal(query.state.data?.task.status) ? false : 3000, refetchIntervalInBackground: false });
+  const attempts = useQuery({ queryKey: ['execution-attempts', taskId], queryFn: () => listAttempts(scope.tenant, scope.namespace, taskId), enabled: !!taskId, refetchInterval: () => terminal(detail.data?.task.status) ? false : 3000, refetchIntervalInBackground: false });
+  const task = detail.data?.task;
+  const history = [...(attempts.data?.attempts || [])].sort((a, b) => a.attempt - b.attempt || a.createdAt.localeCompare(b.createdAt));
+  const identities = useEntityIdentities([{ type: 'agent', ref: task?.agentId }, { type: 'issue', ref: task?.issueId }, { type: 'team', ref: task?.teamId }, ...history.map(attempt => ({ type: 'runtime_host', ref: attempt.hostId }))]);
+  const refresh = () => { void qc.invalidateQueries({ queryKey: ['agent-task', taskId] }); void qc.invalidateQueries({ queryKey: ['execution-attempts', taskId] }); };
+  const cancel = useMutation({ mutationFn: () => cancelTask(taskId, task?.version || 0), onSuccess: refresh });
+  const retry = useMutation({ mutationFn: () => retryTask(taskId), onSuccess: refresh });
+  if (detail.isError) return <Page><p role="alert">Unable to load task: {String(detail.error)}</p></Page>;
+  if (!task) return <Page>Loading task…</Page>;
+  const finalResult = task.result ?? history[history.length - 1]?.result;
+  const mutationError = cancel.error || retry.error;
+  const issuePath = scope.scopedPath(`/work/issues/${task.issueId}`);
+  return <Page>
+    <Link to={scope.scopedPath(task.orchestrationRunId ? `/work/executions/${task.orchestrationRunId}` : '/work/executions')} className="text-sm text-muted-foreground">← Execution</Link>
+    <PageHeader title={<span className="flex flex-wrap items-center gap-3">{task.teamRole ? `${task.teamRole} task` : 'Agent task'}<Badge tone={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'warning'}>{task.status}</Badge></span>}
+      description={<><EntityIdentityText identities={identities} type="agent" entityRef={task.agentId} /> · Created {time(task.createdAt)}</>}
+      actions={<div className="flex gap-2">{task.status === 'failed' && <Button disabled={retry.isPending} variant="outline" onClick={() => retry.mutate()}>{retry.isPending ? 'Retrying…' : 'Retry'}</Button>}{!terminal(task.status) && <Button disabled={cancel.isPending} variant="destructive" onClick={() => cancel.mutate()}>{cancel.isPending ? 'Cancelling…' : 'Cancel'}</Button>}</div>} />
+    {mutationError && <p role="alert" className="text-sm text-destructive">{String(mutationError)}</p>}
+    <div className="mb-5 flex flex-wrap items-center gap-4 text-sm">
+      <Link className="text-primary underline" to={issuePath}>Issue: <EntityIdentityText identities={identities} type="issue" entityRef={task.issueId} /></Link>
+      <Link className="text-primary underline" to={scope.scopedPath(task.orchestrationRunId ? `/work/executions/${task.orchestrationRunId}` : '/work/executions')}>View execution</Link>
+      <span className="text-muted-foreground">{task.triggerType}{task.startedAt && ` · Started ${time(task.startedAt)}`}{task.completedAt && ` · Finished ${time(task.completedAt)}`}{duration(task.startedAt, task.completedAt) && ` · ${duration(task.startedAt, task.completedAt)}`}</span>
+    </div>
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-5">
+        <section className="rounded-xl border border-border bg-white p-5"><h2 className="mb-3 font-semibold">Result</h2>
+          {task.errorMessage && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{task.errorMessage}{task.errorCode && <span className="mt-1 block font-mono text-xs">{task.errorCode}</span>}</p>}
+          {finalResult == null && !terminal(task.status) ? <p className="text-sm text-muted-foreground">The result will appear when the execution finishes.</p> : <ResultContent value={finalResult} />}
+        </section>
+        <section className="rounded-xl border border-border bg-white p-5"><h2 className="mb-3 font-semibold">Inputs</h2>
+          {!task.inputs?.length && <p className="text-sm text-muted-foreground">This task was started from the <Link className="text-primary underline" to={issuePath}>Issue and execution context</Link>.</p>}
+          <ol className="space-y-3">{(task.inputs || []).map(input => {
+            const summary = detail.data?.inputSummaries?.find(item => item.inputId === input.id);
+            return <li key={input.id} className="rounded-lg border border-border p-3"><div className="mb-2 flex justify-between text-xs text-muted-foreground"><span>Input #{input.sequence}</span><span>{input.state}</span></div>
+              {summary?.state === 'recorded' ? <ResultContent value={summary.content} /> : <p className="text-sm text-muted-foreground">{summary?.state === 'changed' ? 'The source comment changed after this input was captured. Its current text is not shown as the original input.' : 'Input text is unavailable.'}</p>}
+              <Link className="mt-2 inline-block text-xs text-primary underline" to={`${issuePath}${issuePath.includes('?') ? '&' : '?'}comment=${encodeURIComponent(input.commentId)}`}>Open source comment · version {input.commentVersion}</Link>
+            </li>;
+          })}</ol>
+        </section>
+      </div>
+      <section className="min-w-0 rounded-xl border border-border bg-white p-5"><h2 className="font-semibold">Execution history</h2>
+        {attempts.isError && <p role="alert" className="mt-3 text-sm text-destructive">Unable to load execution history: {String(attempts.error)}</p>}
+        {!history.length && <p className="mt-3 text-sm text-muted-foreground">{attempts.isLoading ? 'Loading attempts…' : 'Waiting for a runtime to accept this task.'}</p>}
+        <ol className="mt-4 space-y-4">{history.map(attempt => <li key={attempt.id} className="rounded-lg border border-border p-4">
+          <div className="flex justify-between gap-2"><h3 className="text-sm font-semibold">Attempt {attempt.attempt}</h3><Badge tone={attempt.state === 'succeeded' ? 'success' : attempt.state === 'failed' ? 'danger' : 'warning'}>{attempt.state}</Badge></div>
+          <p className="mt-1 text-xs text-muted-foreground">{attempt.backendKind}{attempt.hostId && <> · <EntityIdentityText identities={identities} type="runtime_host" entityRef={attempt.hostId} /></>}</p>
+          <ol className="my-3 space-y-2 border-l-2 pl-3 text-xs text-muted-foreground"><li>Created · {time(attempt.createdAt)}</li>{attempt.startedAt && <li>Started · {time(attempt.startedAt)}</li>}{attempt.completedAt && <li>Finished · {time(attempt.completedAt)} · {duration(attempt.startedAt, attempt.completedAt)}</li>}</ol>
+          {attempt.failureMessage && <p className="mb-2 text-sm text-red-700">{attempt.failureMessage}</p>}
+          {attempt.sessionRef && <Button asChild size="sm" variant="outline"><Link to={scope.scopedPath(`/work/sessions/${attempt.sessionRef}`)}>View conversation and events</Link></Button>}
+          {attempt.result != null && JSON.stringify(attempt.result) !== JSON.stringify(finalResult) && <details className="mt-3"><summary className="cursor-pointer text-sm">Attempt result</summary><div className="mt-2"><ResultContent value={attempt.result} /></div></details>}
+          <Diagnostics value={{ id: attempt.id, bindingId: attempt.bindingId, dispatchGeneration: attempt.dispatchGeneration, sessionId: attempt.sessionId, providerSessionId: attempt.providerSessionId, failureCode: attempt.failureCode, runtimeBinding: attempt.runtimeBinding, result: attempt.result, usage: attempt.usage }} />
+        </li>)}</ol>
+        <Diagnostics value={{ taskId: task.id, runId: task.orchestrationRunId, nodeId: task.runNodeId, runtimeBinding: task.runtimeBinding, result: task.result }} />
+      </section>
+    </div>
+  </Page>;
 }

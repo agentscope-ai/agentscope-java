@@ -544,14 +544,26 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
     @Override
     public Mono<Void> injectUserMessage(String sessionId, String content) {
-        Agent target = requireAgent();
-        rememberSession(sessionId, sessionUsers.getOrDefault(sessionId, ""), target);
-        Msg msg = Msg.builder().role(MsgRole.USER).textContent(content).build();
-        if (target instanceof HarnessAgent harness) {
-            RuntimeContext rc = RuntimeContext.builder().sessionId(sessionId).build();
-            return harness.call(msg, rc).then();
-        }
-        return target.call(msg).then();
+        return callUserMessage(sessionId, content).then();
+    }
+
+    @Override
+    public Mono<String> runConversationTurn(String sessionId, String content) {
+        return callUserMessage(sessionId, content).map(Msg::getTextContent);
+    }
+
+    private Mono<Msg> callUserMessage(String sessionId, String content) {
+        return Mono.defer(
+                () -> {
+                    Agent target = requireAgent();
+                    rememberSession(sessionId, sessionUsers.getOrDefault(sessionId, ""), target);
+                    Msg msg = Msg.builder().role(MsgRole.USER).textContent(content).build();
+                    if (target instanceof HarnessAgent harness) {
+                        RuntimeContext rc = RuntimeContext.builder().sessionId(sessionId).build();
+                        return harness.call(msg, rc);
+                    }
+                    return target.call(msg);
+                });
     }
 
     // ─── tasks ───

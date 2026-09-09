@@ -28,7 +28,8 @@ test('workspace MCP editor persists scoped policies and removes their server bin
     if (!path.startsWith('/api/')) return route.continue();
     const json = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) });
     if (path === '/api/auth/me') return json({ username: 'alice', roles: ['admin'], isAdmin: true });
-    if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false });
+    if (path === '/api/v1/me/scope') return json({ tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false, namespaces: [{ tenant: 'default', name: 'default', roles: ['admin', 'developer', 'operator', 'member'] }] });
+    if (path === '/api/workspaces/review/revisions' || path === '/api/workspaces/review/agents') return json({ items: [] });
     if (path === '/api/workspaces/review') return json({ id: 'review', name: 'Managed MCP review', version: 1 });
     if (path === '/api/workspaces/review/tools') {
       if (route.request().method() === 'PUT') definition = route.request().postDataJSON();
@@ -58,5 +59,15 @@ test('workspace MCP editor persists scoped policies and removes their server bin
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByText('crm', { exact: true })).toHaveCount(0);
   expect(definition).toEqual({ tools: [], mcpServers: [] });
+  await page.setViewportSize({ width: 620, height: 900 });
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('local-docs');
+  await page.getByRole('combobox', { name: /^Transport/ }).selectOption('stdio');
+  await expect(page.getByLabel('Endpoint URL')).toHaveCount(0);
+  await page.getByLabel('Command', { exact: true }).fill('node');
+  await page.getByLabel('Arguments, one per line').fill('server.js');
+  await page.getByRole('button', { name: 'Save connection', exact: true }).click();
+  expect(definition.mcpServers).toEqual([expect.objectContaining({ name: 'local-docs', transport: 'stdio', command: 'node', args: ['server.js'] })]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

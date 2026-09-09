@@ -27,10 +27,14 @@ import (
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 )
 
-func setupConversationAgent(t *testing.T) (store.Store, *controlmodel.Agent, *controlmodel.AgentBinding, *controlmodel.AgentInstance) {
+func setupConversationAgent(t *testing.T, configs ...store.Config) (store.Store, *controlmodel.Agent, *controlmodel.AgentBinding, *controlmodel.AgentInstance) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	cfg := store.Config{Driver: store.DriverMemory}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	st, err := store.Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +80,15 @@ func TestHostProviderResumeUsesAdvertisedAdapterCapability(t *testing.T) {
 	}
 }
 
-func setupHostedConversationAgent(t *testing.T) (store.Store, *controlmodel.Agent,
+func setupHostedConversationAgent(t *testing.T, configs ...store.Config) (store.Store, *controlmodel.Agent,
 	*controlmodel.AgentBinding, *controlmodel.RuntimeHost) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	cfg := store.Config{Driver: store.DriverMemory}
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	st, err := store.Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

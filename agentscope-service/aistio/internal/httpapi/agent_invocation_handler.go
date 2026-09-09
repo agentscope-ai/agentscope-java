@@ -30,6 +30,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/asdp"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/conversation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -229,7 +230,13 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 		if json.Unmarshal(binding.Configuration, &cfg) != nil {
 			return fmt.Errorf("Managed binding configuration is invalid")
 		}
-		return s.product.PostSessionWakeEvent(ctx, session.SessionID, cfg.OwnerRef, message)
+		key := session.Tenant + "\x00" + session.Namespace + "\x00" + session.AgentID.String() + "\x00" + session.SessionID
+		return s.store.WithSessionLock(ctx, key, func(ctx context.Context) error {
+			if err := conversation.CheckChatActive(ctx, s.store, session); err != nil {
+				return err
+			}
+			return s.product.PostSessionWakeEvent(ctx, session.SessionID, cfg.OwnerRef, message)
+		})
 	case controlmodel.DataPlaneExternalApplication:
 		instance, instanceErr := s.store.RuntimeRegistry().GetAgentInstance(ctx, session.AgentInstanceID)
 		if instanceErr != nil || instance.BindingID != binding.ID || instance.Generation != session.InstanceGeneration || instance.Health != controlmodel.RuntimeHealthHealthy {
@@ -239,14 +246,23 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 		if !ok {
 			return fmt.Errorf("External conversation transport is unavailable")
 		}
-		invocationID, conversationID, turnID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+		turn, err := conversation.Begin(ctx, s.store, session, message, time.Now().UTC())
+		if err != nil {
+			return err
+		}
 		input, _ := json.Marshal(gin.H{"message": message})
-		return sender.SendConversationTurn(session.Tenant, session.Namespace, instance.InstanceKey, &asdp.ConversationTurnCommand{
-			InvocationId: invocationID, ConversationId: conversationID, TurnId: turnID, SessionId: session.SessionID,
+		err = sender.SendConversationTurn(session.Tenant, session.Namespace, instance.InstanceKey, &asdp.ConversationTurnCommand{
+			InvocationId: turn.InvocationID.String(), ConversationId: turn.ConversationID.String(), TurnId: turn.ID.String(), SessionId: session.SessionID,
 			AgentId: session.AgentID.String(), BindingId: session.BindingID.String(), InstanceId: instance.ID.String(),
-			Generation: session.InstanceGeneration, Input: input, Deadline: time.Now().Add(5 * time.Minute).UnixMilli(),
-			CorrelationId: invocationID,
+			Generation: session.InstanceGeneration, Input: input, Deadline: turn.Deadline.UnixMilli(),
+			CorrelationId: turn.InvocationID.String(),
 		})
+		if err != nil {
+			if failErr := conversation.Fail(ctx, s.store, session, turn.ID, "conversation_dispatch_failed", err.Error(), time.Now().UTC()); failErr != nil {
+				return errors.Join(err, failErr)
+			}
+		}
+		return err
 	case controlmodel.DataPlaneHostedRuntime:
 		_, err = s.dispatchHostedConversationTurn(ctx, session, binding, message, uuid.NewString(),
 			sourceType, sourceRef)

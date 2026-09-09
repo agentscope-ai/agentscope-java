@@ -665,15 +665,17 @@ public class HarnessAgentBuildService {
                                                 fs.storeId(),
                                                 fs.storeName(),
                                                 MemoryStoreFilesystem.routePrefix(fs.storeName())
-                                                        .replaceAll("/+$", "")))
+                                                        .replaceAll("/+$", ""),
+                                                fs.accessMode()))
                         .toList();
         String appendix = memoryMountService.promptAppendix(mounts);
         if (!filesystems.isEmpty())
             appendix +=
                     "\n"
-                        + "Use memory_store_list/read/write/edit for live persistent stores in"
-                        + " every environment. Shell commands and Worker file tools do not access"
-                        + " these live mounts.\n";
+                        + "Use memory_store_list and memory_store_read for these read-only shared"
+                        + " stores in every environment. Do not write or edit shared knowledge."
+                        + " Shell commands and Worker file tools do not access these live"
+                        + " mounts.\n";
         if (appendix != null) {
             String combined = (baseSysPrompt == null ? "" : baseSysPrompt) + appendix;
             b.sysPrompt(combined);

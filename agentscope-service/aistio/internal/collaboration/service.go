@@ -1344,7 +1344,7 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 			if err = s.addCoordinatorContext(ctx, envelope); err != nil {
 				return nil, err
 			}
-			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan")
+			envelope.AvailableActions = append(envelope.AvailableActions, "issue.child.create", "issue.accept", "issue.acceptance.update", "issue.cancel", "run.node.complete", "run.node.fail", "run.replan")
 		}
 	}
 	envelope.Artifacts, err = s.Store.Collaboration().ListArtifacts(ctx, task.Tenant, task.Namespace, "issue", task.IssueID.String())
@@ -1643,21 +1643,25 @@ func (s *Service) convergeQuiescentBlockedTeamRoot(ctx context.Context, complete
 // FailTask is the only logical failure entry point. When a physical Attempt
 // exists it fences and commits both records atomically; queued tasks without
 // an Attempt fail only at the logical layer.
-func (s *Service) FailTask(ctx context.Context, taskID uuid.UUID, expectedVersion int64, code, message string) (*controlmodel.AgentTask, error) {
+func (s *Service) FailTask(ctx context.Context, taskID uuid.UUID, expectedVersion int64, code, message string, result ...json.RawMessage) (*controlmodel.AgentTask, error) {
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	if task.CurrentAttemptID == nil {
-		return s.Store.Collaboration().FailAgentTask(ctx, taskID, expectedVersion, code, message)
+		return s.Store.Collaboration().FailAgentTask(ctx, taskID, expectedVersion, code, message, result...)
 	}
 	attempt, err := s.Store.ExecutionAttempts().Get(ctx, *task.CurrentAttemptID)
 	if err != nil {
 		return nil, err
 	}
+	var partial json.RawMessage
+	if len(result) > 0 {
+		partial = result[0]
+	}
 	failed, _, err := s.Store.Collaboration().FailAgentTaskWithAttempt(ctx, taskID, store.TaskFailure{
 		ExpectedVersion: expectedVersion, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
-		Code: code, Message: message})
+		Code: code, Message: message, Result: partial})
 	return failed, err
 }
 

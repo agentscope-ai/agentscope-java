@@ -365,8 +365,7 @@ export default function OperateSessionDetailPage() {
           <div>
             <CardTitle>Context</CardTitle>
             <CardDescription>
-              Effective AgentState for the next model call (sys prompt, tools, window occupancy) —
-              not lifetime API spend and not the full session transcript.
+              Inspect the instructions, tools and messages available to the next model call.
             </CardDescription>
           </div>
           <Button
@@ -382,7 +381,7 @@ export default function OperateSessionDetailPage() {
           {!sessionReady || session.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : !canQueryContext(capabilities) ? (
-            <p className="text-sm text-muted-foreground">context-query not advertised by data plane.</p>
+            <p className="text-sm text-muted-foreground">This runtime does not provide a context inspection capability.</p>
           ) : context.isError ? (
             <p className="text-sm text-red-600">Failed to load context.</p>
           ) : context.isLoading || (context.isFetching && !context.data) ? (
@@ -411,15 +410,14 @@ export default function OperateSessionDetailPage() {
           <DialogHeader>
             <DialogTitle>Context</DialogTitle>
             <DialogDescription>
-              Effective AgentState window (sys prompt, tools, effective messages). Window tokens are
-              latest-turn input size, not lifetime spend.
+              View the latest reported model context, including instructions, tools and messages.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <ContextPanel
               data={context.data}
               unavailableReason={
-                !canQueryContext(capabilities) ? 'context-query not advertised by data plane.' : undefined
+                !canQueryContext(capabilities) ? 'This runtime does not provide a context inspection capability.' : undefined
               }
               error={context.isError}
               loading={context.isLoading}

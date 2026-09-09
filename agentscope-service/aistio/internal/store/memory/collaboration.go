@@ -1281,8 +1281,12 @@ func (r *collaborationRepo) reconcileCompletedTaskLocked(task *controlmodel.Agen
 	return nil
 }
 
-func (r *collaborationRepo) FailAgentTask(_ context.Context, id uuid.UUID, expectedVersion int64, code, message string) (*controlmodel.AgentTask, error) {
-	return r.transitionTask(id, expectedVersion, controlmodel.AgentTaskFailed, nil, code, message)
+func (r *collaborationRepo) FailAgentTask(_ context.Context, id uuid.UUID, expectedVersion int64, code, message string, result ...json.RawMessage) (*controlmodel.AgentTask, error) {
+	var partial json.RawMessage
+	if len(result) > 0 {
+		partial = result[0]
+	}
+	return r.transitionTask(id, expectedVersion, controlmodel.AgentTaskFailed, partial, code, message)
 }
 
 func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.UUID, failure store.TaskFailure) (*controlmodel.AgentTask, *controlmodel.ExecutionAttempt, error) {
@@ -1310,6 +1314,9 @@ func (r *collaborationRepo) FailAgentTaskWithAttempt(_ context.Context, id uuid.
 	now := time.Now().UTC()
 	attempt.State, attempt.FailureCode, attempt.FailureMessage = controlmodel.ExecutionFailed, failure.Code, failure.Message
 	attempt.Checkpoint, attempt.Usage = cloneJSON(failure.Checkpoint), cloneJSON(failure.Usage)
+	if len(failure.Result) > 0 {
+		task.Result, attempt.Result = cloneJSON(failure.Result), cloneJSON(failure.Result)
+	}
 	if run := r.s.runs[task.OrchestrationRunID]; run != nil {
 		run.Usage = store.MergeUsage(run.Usage, failure.Usage)
 	}

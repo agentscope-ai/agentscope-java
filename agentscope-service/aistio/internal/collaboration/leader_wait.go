@@ -92,7 +92,7 @@ func (s *Service) PendingDelegationTasks(ctx context.Context, task *controlmodel
 // WaitForDelegatedWork completes only the leader's physical turn. Its shared
 // coordinator node remains waiting and the worker outcome owns the next wake.
 // The status comment deliberately has no routes, avoiding self-wake loops.
-func (s *Service) WaitForDelegatedWork(ctx context.Context, taskID uuid.UUID, summary string) (*controlmodel.AgentTask, *controlmodel.Comment, error) {
+func (s *Service) WaitForDelegatedWork(ctx context.Context, taskID uuid.UUID, summary string, partial ...json.RawMessage) (*controlmodel.AgentTask, *controlmodel.Comment, error) {
 	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
 	if err != nil {
 		return nil, nil, err
@@ -102,13 +102,17 @@ func (s *Service) WaitForDelegatedWork(ctx context.Context, taskID uuid.UUID, su
 		return nil, nil, err
 	}
 	if len(pending) == 0 {
-		return nil, nil, fmt.Errorf("waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. If the whole objective is blocked, call run.node.fail with the missing inputs and next action in its message; this publishes the root summary and cancels remaining work. A plain comment or a summary claiming the Issue is blocked does not change its status")
+		return nil, nil, fmt.Errorf("waiting requires outstanding delegated work or a queued outcome after deciding the current child; do not repeat this call unchanged. Read task.get and decide the current result. For missing human input, call issue.comment.add with mentions=[{type:human,ref:<accountableHumanRef>}] and then task.complete(outcome=succeeded) to end only this decision turn. For recoverable missing input use task.complete(outcome=blocked, result=<partial deliverable>) with the next action in summary; the coordinator stays resumable. Use run.node.fail only to explicitly abort the whole objective. A plain comment or a summary claiming the Issue is blocked does not change its status")
 	}
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
 		summary = "Waiting for delegated work; the coordinator will resume when its outcome arrives."
 	}
-	result, _ := json.Marshal(map[string]any{"outcome": "waiting", "summary": summary, "waitingForTaskIds": pending})
+	payload := map[string]any{"outcome": "waiting", "summary": summary, "waitingForTaskIds": pending}
+	if len(partial) > 0 && len(partial[0]) > 0 {
+		payload["result"] = partial[0]
+	}
+	result, _ := json.Marshal(payload)
 	completion := store.TaskCompletion{ExpectedVersion: task.Version, Summary: summary, Result: result}
 	for _, input := range task.Inputs {
 		completion.ProcessedInputIDs = append(completion.ProcessedInputIDs, input.ID)
@@ -128,4 +132,74 @@ func (s *Service) WaitForDelegatedWork(ctx context.Context, taskID uuid.UUID, su
 	}
 	_, err = s.Store.Orchestration().AppendRunEvent(context.WithoutCancel(ctx), &controlmodel.RunEvent{RunID: task.OrchestrationRunID, Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: task.CurrentAttemptID, Type: "coordinator.waiting", Actor: actor, Payload: result, IdempotencyKey: "coordinator-waiting:" + task.ID.String()})
 	return completed, comment, err
+}
+
+// BlockCoordinatorForHuman ends the physical decision turn without aborting the
+// coordinator. Partial work is durable and visible on the root; a human follow-up
+// can use the existing blocked-Issue resume path.
+func (s *Service) BlockCoordinatorForHuman(ctx context.Context, taskID uuid.UUID, reason string, partial json.RawMessage, codes ...string) (*controlmodel.AgentTask, *controlmodel.Comment, error) {
+	task, err := s.Store.Collaboration().GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !task.LeaderTask || task.TeamID == nil || task.TriggerType == controlmodel.AgentTaskReviewComment || controlmodel.IsAgentTaskTerminal(task.Status) {
+		return nil, nil, fmt.Errorf("blocked coordinator requires an active Team leader")
+	}
+	if strings.TrimSpace(reason) == "" {
+		return nil, nil, fmt.Errorf("blocked requires a concrete reason and next action")
+	}
+	run, err := s.Store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+	if err != nil {
+		return nil, nil, err
+	}
+	actor := controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: task.AgentRef}
+	// Mark the affected Issue before ending the attempt, so recovery never treats
+	// the partial result as an accepted deliverable.
+	for _, id := range []uuid.UUID{task.IssueID, run.RootIssueID} {
+		issue, loadErr := s.Store.Collaboration().GetIssue(ctx, id)
+		if loadErr != nil {
+			return nil, nil, loadErr
+		}
+		if issue.Status != controlmodel.IssueBlocked && issue.Status != controlmodel.IssueDone && issue.Status != controlmodel.IssueCancelled {
+			if _, err = s.Store.Collaboration().TransitionIssue(ctx, id, issue.Version, controlmodel.IssueBlocked, actor, reason); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	code := "objective_blocked"
+	if len(codes) > 0 && strings.TrimSpace(codes[0]) != "" {
+		code = codes[0]
+	}
+	result, err := json.Marshal(map[string]any{"outcome": "blocked", "code": code, "reason": reason, "result": partial})
+	if err != nil {
+		return nil, nil, err
+	}
+	completion := store.TaskCompletion{ExpectedVersion: task.Version, Summary: reason, Result: result}
+	for _, input := range task.Inputs {
+		completion.ProcessedInputIDs = append(completion.ProcessedInputIDs, input.ID)
+	}
+	if task.CurrentAttemptID != nil {
+		attempt, err := s.Store.ExecutionAttempts().Get(ctx, *task.CurrentAttemptID)
+		if err != nil {
+			return nil, nil, err
+		}
+		completion.AttemptID, completion.DispatchGeneration = attempt.ID, attempt.DispatchGeneration
+	}
+	content := "处理状态：blocked（等待补充条件，协调器保留）\n原因：" + reason + "\n错误代码：" + code
+	if text := CoordinatorOutcomeText(partial); text != "" {
+		content += "\n\n已保存的部分交付（尚未完成验收）：\n" + text
+	}
+	// Unique per decision turn, separate from the final coordinator summary ID.
+	rootComment := &controlmodel.Comment{ID: uuid.NewSHA1(task.ID, []byte("coordinator-blocked")), IssueID: run.RootIssueID, Author: actor, Type: controlmodel.CommentStatus, Content: content, SourceTaskID: &task.ID, SourceAttemptID: task.CurrentAttemptID}
+	if _, err = s.Store.Collaboration().CreateComment(ctx, store.CreateCommentRequest{Comment: rootComment}); err != nil {
+		if _, readErr := s.Store.Collaboration().GetComment(ctx, rootComment.ID); readErr != nil {
+			return nil, nil, err
+		}
+	}
+	completed, err := s.Store.Collaboration().CompleteAgentTask(ctx, task.ID, completion)
+	if err != nil {
+		return completed, rootComment, err
+	}
+	_, err = s.Store.Orchestration().AppendRunEvent(context.WithoutCancel(ctx), &controlmodel.RunEvent{RunID: run.ID, Tenant: task.Tenant, Namespace: task.Namespace, NodeID: &task.RunNodeID, AgentTaskID: &task.ID, AttemptID: task.CurrentAttemptID, Type: "coordinator.blocked", Actor: actor, Payload: result, IdempotencyKey: "coordinator-blocked:" + task.ID.String()})
+	return completed, rootComment, err
 }

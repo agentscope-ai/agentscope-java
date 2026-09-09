@@ -34,3 +34,17 @@ func TestWorkspaceUnsupportedCapabilitiesFailExplicitly(t *testing.T) {
 		t.Fatal("unsupported MCP accepted")
 	}
 }
+
+func TestMCPOnlyDefinitionDoesNotRequireBuiltinPolicySupport(t *testing.T) {
+	descriptor := Descriptor{Runtime: "codex", DisplayName: "Codex", MCP: Capability{Supported: true}}
+	def := &AgentDefinition{Tools: []byte(`[{"type":"mcp_toolset","mcpServerName":"docs"},{"type":"agent_toolset","configs":[]}]`)}
+	if err := ValidateDefinition(def, descriptor); err != nil {
+		t.Fatal(err)
+	}
+	for _, enabled := range []string{"true", "false"} {
+		def.Tools = []byte(`[{"type":"agent_toolset","configs":[{"name":"bash","enabled":` + enabled + `}]}]`)
+		if err := ValidateDefinition(def, descriptor); err == nil {
+			t.Fatal("Codex silently accepted unenforceable tool policy")
+		}
+	}
+}

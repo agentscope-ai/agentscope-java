@@ -30,6 +30,7 @@ type ChatFilter struct {
 	Namespace  string
 	CreatorRef string
 	Archived   bool
+	Deleted    bool
 	Limit      int
 	Offset     int
 }

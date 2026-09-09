@@ -150,22 +150,24 @@ func (r *SessionPollerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func (r *SessionPollerReconciler) syncSession(ctx context.Context, agent *v1alpha1.Agent, endpoint string, snap *prober.SessionSnapshot) error {
 	o := ObservedSession{
-		ID:                    snap.ID,
-		Phase:                 snap.Phase,
-		MessageCount:          snap.MessageCount,
-		ContextPressure:       snap.ContextPressure,
-		StartedAt:             snap.StartedAt,
-		LastActiveAt:          snap.LastActiveAt,
-		Framework:             snap.Framework,
-		FrameworkVersion:      snap.FrameworkVersion,
-		ContextHash:           snap.ContextHash,
-		IsCompacted:           snap.IsCompacted,
-		EffectiveMessageCount: snap.EffectiveMessageCount,
+		ContextPressureReported: snap.ContextPressureReported,
+		ID:                      snap.ID,
+		Phase:                   snap.Phase,
+		MessageCount:            snap.MessageCount,
+		ContextPressure:         snap.ContextPressure,
+		StartedAt:               snap.StartedAt,
+		LastActiveAt:            snap.LastActiveAt,
+		Framework:               snap.Framework,
+		FrameworkVersion:        snap.FrameworkVersion,
+		ContextHash:             snap.ContextHash,
+		IsCompacted:             snap.IsCompacted,
+		EffectiveMessageCount:   snap.EffectiveMessageCount,
 	}
 	if o.Framework == "" {
 		o.Framework = agent.Spec.Runtime
 	}
 	if snap.TokenUsage != nil {
+		o.TokenUsageReported = true
 		o.PromptTokens = snap.TokenUsage.PromptTokens
 		o.CompletionTokens = snap.TokenUsage.CompletionTokens
 	}

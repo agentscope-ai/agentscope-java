@@ -173,18 +173,20 @@ type SessionCommand struct {
 
 // SessionSnapshot is a Level-1 summary captured on each poll / report.
 type SessionSnapshot struct {
-	ID                    int64           `json:"id"`
-	SessionFK             uuid.UUID       `json:"sessionFk"`
-	CapturedAt            time.Time       `json:"capturedAt"`
-	MessageCount          int32           `json:"messageCount,omitempty"`
-	PromptTokens          int64           `json:"promptTokens,omitempty"`
-	CompletionTokens      int64           `json:"completionTokens,omitempty"`
-	TotalTokens           int64           `json:"totalTokens,omitempty"`
-	ContextPressure       float64         `json:"contextPressure,omitempty"`
-	IsCompacted           bool            `json:"isCompacted,omitempty"`
-	EffectiveMessageCount int32           `json:"effectiveMessageCount,omitempty"`
-	ContextHash           string          `json:"contextHash,omitempty"`
-	TaskSummary           json.RawMessage `json:"taskSummary,omitempty"`
+	TokenUsageReported      bool            `json:"tokenUsageReported,omitempty"`
+	ContextPressureReported bool            `json:"contextPressureReported,omitempty"`
+	ID                      int64           `json:"id"`
+	SessionFK               uuid.UUID       `json:"sessionFk"`
+	CapturedAt              time.Time       `json:"capturedAt"`
+	MessageCount            int32           `json:"messageCount,omitempty"`
+	PromptTokens            int64           `json:"promptTokens,omitempty"`
+	CompletionTokens        int64           `json:"completionTokens,omitempty"`
+	TotalTokens             int64           `json:"totalTokens,omitempty"`
+	ContextPressure         float64         `json:"contextPressure,omitempty"`
+	IsCompacted             bool            `json:"isCompacted,omitempty"`
+	EffectiveMessageCount   int32           `json:"effectiveMessageCount,omitempty"`
+	ContextHash             string          `json:"contextHash,omitempty"`
+	TaskSummary             json.RawMessage `json:"taskSummary,omitempty"`
 }
 
 // SessionTranscriptIndex is a narrow one-row-per-session aggregate for Operate

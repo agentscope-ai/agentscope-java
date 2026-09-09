@@ -23,12 +23,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
 // SessionWithSnapshot is a runtime session plus its latest Level-1 snapshot.
 // Also carries resolved instance capability metadata when available.
 type SessionWithSnapshot struct {
+	Runtime *SessionRuntimeSummary `json:"runtime,omitempty"`
 	*store.Session
 	Snapshot        *store.SessionSnapshot `json:"snapshot,omitempty"`
 	InstanceHealthy *bool                  `json:"instanceHealthy,omitempty"`
@@ -91,8 +93,11 @@ func (s *Server) getSession(c *gin.Context) {
 	if snap, err := s.store.Metrics().LatestSnapshot(c.Request.Context(), sess.ID); err == nil {
 		item.Snapshot = snap
 	}
-	s.enrichSessionInstance(sess, &item)
-	s.enrichSessionModel(c, sess, &item)
+	s.enrichSessionRuntime(c.Request.Context(), sess, &item)
+	if item.Runtime.Kind == model.DataPlaneManaged || (item.Runtime.Kind == "" && sess.Framework == "managed") {
+		s.enrichSessionInstance(sess, &item)
+		s.enrichSessionModel(c, sess, &item)
+	}
 	c.JSON(http.StatusOK, item)
 }
 

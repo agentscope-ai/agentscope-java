@@ -17,6 +17,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -27,6 +28,7 @@ type DefinitionCapability struct {
 	Supported bool   `json:"supported"`
 	Requested bool   `json:"requested"`
 	Target    string `json:"target,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 func DefinitionCapabilities(definition *AgentDefinition, descriptor Descriptor) []DefinitionCapability {
@@ -34,6 +36,20 @@ func DefinitionCapabilities(definition *AgentDefinition, descriptor Descriptor) 
 	if definition != nil {
 		requested["instructions"] = definition.System != ""
 		requested["tools"] = len(definition.Tools) > 0 && string(definition.Tools) != "null" && string(definition.Tools) != "[]"
+		// MCP registration is separate from portable built-in tool policies.
+		// An MCP-only Workspace must not require a built-in policy adapter.
+		var toolsets []struct {
+			Type    string            `json:"type"`
+			Configs []json.RawMessage `json:"configs"`
+		}
+		if json.Unmarshal(definition.Tools, &toolsets) == nil {
+			requested["tools"] = false
+			for _, toolset := range toolsets {
+				if toolset.Type != "mcp_toolset" && (toolset.Type != "agent_toolset" || len(toolset.Configs) > 0) {
+					requested["tools"] = true
+				}
+			}
+		}
 		requested["mcp"] = len(definition.MCPServers) > 0 && string(definition.MCPServers) != "null" && string(definition.MCPServers) != "[]"
 		for path := range definition.Files {
 			if strings.HasPrefix(path, "skills/") {
@@ -53,7 +69,16 @@ func DefinitionCapabilities(definition *AgentDefinition, descriptor Descriptor) 
 		if !item.cap.Supported {
 			mode = "unsupported"
 		}
-		out = append(out, DefinitionCapability{Name: item.name, Mode: mode, Supported: item.cap.Supported, Requested: requested[item.name], Target: item.cap.Target})
+		capability := DefinitionCapability{Name: item.name, Mode: mode, Supported: item.cap.Supported, Requested: requested[item.name], Target: item.cap.Target}
+		if item.name == "tools" && !item.cap.Supported && requested[item.name] && descriptor.Runtime == "codex" {
+			capability.Reason = "Codex cannot enforce Managed built-in tool settings. Remove the built-in tool policies from this Workspace or use a Managed Agent; configure Codex sandbox and approval settings in its Runtime Profile. MCP connections remain supported."
+		}
+		if item.name == "subagents" && item.cap.Supported && requested[item.name] {
+			if _, err := NativeSubagents(definition, descriptor.Runtime); err != nil {
+				capability.Supported, capability.Mode, capability.Reason = false, "unsupported", err.Error()
+			}
+		}
+		out = append(out, capability)
 	}
 	return out
 }
@@ -61,6 +86,9 @@ func DefinitionCapabilities(definition *AgentDefinition, descriptor Descriptor) 
 func ValidateDefinition(definition *AgentDefinition, descriptor Descriptor) error {
 	for _, cap := range DefinitionCapabilities(definition, descriptor) {
 		if cap.Requested && !cap.Supported {
+			if cap.Reason != "" {
+				return fmt.Errorf("%s", cap.Reason)
+			}
 			return fmt.Errorf("%s does not support Workspace capability %s", descriptor.DisplayName, cap.Name)
 		}
 	}

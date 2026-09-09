@@ -46,6 +46,13 @@ func TestBuildArgsDoesNotBypassPermissionsImplicitly(t *testing.T) {
 	}
 }
 
+func TestBuildArgsUsesExplicitFullAccessPermissionMode(t *testing.T) {
+	args := buildArgs(provider.Request{Workspace: "/tmp/work"}, configuration{PermissionMode: "bypass_permissions"}, "", "")
+	if !strings.Contains(strings.Join(args, " "), "--permission-mode bypass_permissions") {
+		t.Fatalf("explicit permission mode not passed to Qoder: %v", args)
+	}
+}
+
 func TestConsumeStreamJSONBridgesToolApproval(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"system","subtype":"init","session_id":"session-1"}`,
@@ -226,5 +233,29 @@ func TestQoderExitErrorOmitsAmbientAuthTypeWarning(t *testing.T) {
 	if strings.Contains(err.Error(), "authType") ||
 		!strings.Contains(err.Error(), `Invalid session identifier "session-1"`) {
 		t.Fatalf("unexpected Qoder failure: %v", err)
+	}
+}
+
+func TestRunStopsChildWhenApprovalTransportFails(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "qoder-test")
+	script := `#!/bin/sh
+printf '%s\n' '{"type":"control_request","request_id":"request","request":{"subtype":"can_use_tool","tool_name":"Read","tool_use_id":"tool","input":{"path":"README.md"}}}'
+exec sleep 30
+`
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	began := time.Now()
+	_, err := (&Adapter{Binary: binary}).Run(ctx, provider.Request{Workspace: dir, ApproveTool: func(context.Context, provider.ToolApprovalRequest) (provider.ToolApprovalDecision, error) {
+		return provider.ToolApprovalDecision{}, errors.New("approval transport failed")
+	}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "approval transport failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if time.Since(began) > time.Second {
+		t.Fatal("approval error waited for provider exit instead of stopping the child")
 	}
 }

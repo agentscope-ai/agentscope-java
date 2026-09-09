@@ -18,6 +18,8 @@
 package httpapi
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/conversation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
@@ -66,7 +69,8 @@ func (s *Server) listChats(c *gin.Context) {
 	items, err := s.store.Chats().List(c, store.ChatFilter{
 		Tenant: c.DefaultQuery("tenant", "default"), Namespace: c.DefaultQuery("namespace", "default"),
 		CreatorRef: catalogOwnerRef(c, ""), Archived: parseTruthyQuery(c.Query("archived")),
-		Limit: parseLimit(c, 100), Offset: parseOffset(c),
+		Deleted: parseTruthyQuery(c.Query("deleted")),
+		Limit:   parseLimit(c, 100), Offset: parseOffset(c),
 	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
@@ -198,7 +202,7 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 		}
 	}
 	if value.Status != controlmodel.ChatActive {
-		c.JSON(http.StatusConflict, ErrorResponse{Error: "Archived Chat is read-only"})
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "Restore this Chat before sending a message"})
 		return
 	}
 	var req struct {
@@ -224,4 +228,56 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 		"eventsUrl":      "/api/v1/sessions/" + session.ID.String() + "/events?chatId=" + value.ID.String(),
 		"eventStreamUrl": "/api/v1/sessions/" + session.ID.String() + "/events/stream?chatId=" + value.ID.String(),
 	})
+}
+
+// Delete removes a Chat from the personal list while retaining its Session and
+// execution evidence. Deleted Chats can be restored with the existing status API.
+func (s *Server) deleteChat(c *gin.Context) {
+	value, ok := s.ownedChat(c)
+	if !ok {
+		return
+	}
+	session, err := s.store.Sessions().GetByID(c, value.SessionID)
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	key := session.Tenant + "\x00" + session.Namespace + "\x00" + session.AgentID.String() + "\x00" + session.SessionID
+	err = s.store.WithSessionLock(c, key, func(ctx context.Context) error {
+		current, err := s.store.Chats().Get(ctx, value.ID)
+		if err != nil {
+			return err
+		}
+		if current.Status == controlmodel.ChatDeleted {
+			value = current
+			return nil
+		}
+		sess, err := s.store.Sessions().GetByID(ctx, current.SessionID)
+		if err != nil {
+			return err
+		}
+		busy := conversation.Read(sess).Pending()
+		if sess.AgentTaskID != nil {
+			task, err := s.store.Collaboration().GetAgentTask(ctx, *sess.AgentTaskID)
+			if err != nil {
+				return err
+			}
+			busy = busy || !controlmodel.IsAgentTaskTerminal(task.Status)
+		}
+		turn, err := s.store.Turns().CurrentRunning(ctx, sess.ID)
+		if err != nil && err != store.ErrNotFound {
+			return err
+		}
+		if busy || turn != nil {
+			return fmt.Errorf("wait for the current turn to finish before deleting this Chat: %w", store.ErrConflict)
+		}
+		current.Status = controlmodel.ChatDeleted
+		value, err = s.store.Chats().Update(ctx, current, current.Version)
+		return err
+	})
+	if err != nil {
+		s.writeControlPlaneError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"chat": value})
 }

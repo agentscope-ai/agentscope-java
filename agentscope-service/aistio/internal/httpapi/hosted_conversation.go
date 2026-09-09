@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/conversation"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"github.com/spring-ai-alibaba/aistio/internal/taskplane"
 )
@@ -184,6 +185,9 @@ func (s *Server) dispatchHostedConversationTurn(ctx context.Context, session *st
 				return fmt.Errorf("conversation already has a turn in progress: %w", store.ErrConflict)
 			}
 		}
+		if err := conversation.CheckChatActive(lockCtx, s.store, current); err != nil {
+			return err
+		}
 		candidate, err := s.hostedCandidateForBinding(lockCtx, current, binding)
 		if err != nil {
 			return err
@@ -203,6 +207,21 @@ func (s *Server) dispatchHostedConversationTurn(ctx context.Context, session *st
 		issueID := uuid.NewSHA1(turnUUID, []byte("conversation-issue"))
 		runID := uuid.NewSHA1(turnUUID, []byte("conversation-run"))
 		actor := controlmodel.Actor{Type: controlmodel.ActorSystem, Ref: sourceType}
+		if current.OriginType == "chat" {
+			chatID, parseErr := uuid.Parse(current.OriginRef)
+			if parseErr != nil {
+				return fmt.Errorf("conversation Chat identity is invalid: %w", parseErr)
+			}
+			chat, chatErr := s.store.Chats().Get(lockCtx, chatID)
+			if chatErr != nil || chat.SessionID != current.ID || chat.AgentID != current.AgentID ||
+				chat.Tenant != current.Tenant || chat.Namespace != current.Namespace {
+				return fmt.Errorf("conversation Chat is unavailable: %w", store.ErrNotFound)
+			}
+			// Private turn work belongs to the Chat's owner. A system-created
+			// private Issue is invisible to that owner during materialization
+			// and later diagnostics, even though the Chat itself is accessible.
+			actor = controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: chat.CreatorRef}
+		}
 		contextRefs, _ := json.Marshal(map[string]any{"prompt": prompt})
 		issue := &controlmodel.Issue{
 			ID: issueID, Tenant: current.Tenant, Namespace: current.Namespace,
@@ -360,6 +379,9 @@ func (s *Server) appendHostedSessionEvent(ctx context.Context, attempt *controlm
 	if attempt == nil || attempt.SessionID == "" || attempt.AgentID == uuid.Nil {
 		return nil
 	}
+	if _, err := s.ensureHostedTaskSession(ctx, attempt); err != nil {
+		return err
+	}
 	sessions, err := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: attempt.Tenant,
 		Namespace: attempt.Namespace, AgentID: attempt.AgentID, SessionID: attempt.SessionID, Limit: 1})
 	if err != nil || len(sessions) == 0 {
@@ -378,17 +400,20 @@ func (s *Server) projectHostedProviderEvent(ctx context.Context, attempt *contro
 	if attempt == nil || attempt.SessionID == "" {
 		return nil
 	}
+	return s.appendHostedSessionEvent(ctx, attempt,
+		fmt.Sprintf("provider-event:%s:%d", attempt.ID, ordinal),
+		hostedProviderSessionEvent(attempt, providerName, eventType, providerSessionID, ordinal, raw))
+}
+
+func hostedProviderSessionEvent(attempt *controlmodel.ExecutionAttempt, providerName, eventType, providerSessionID string, ordinal int64, raw json.RawMessage) *store.SessionEvent {
 	summary := providerEventSummary(raw)
 	if len(summary) > 4096 {
 		summary = summary[:4096]
 	}
-	return s.appendHostedSessionEvent(ctx, attempt,
-		fmt.Sprintf("provider-event:%s:%d", attempt.ID, ordinal), &store.SessionEvent{
-			EventType: "provider." + strings.ReplaceAll(eventType, "/", "."), Content: summary,
-			FrameworkMeta: mustJSON(map[string]any{"provider": providerName, "providerEventType": eventType,
-				"providerSessionId": providerSessionID, "attemptId": attempt.ID, "turnId": attempt.TurnID,
-				"ordinal": ordinal, "raw": json.RawMessage(raw)}),
-		})
+	return &store.SessionEvent{
+		EventType: "provider." + strings.ReplaceAll(eventType, "/", "."), Content: summary,
+		FrameworkMeta: mustJSON(map[string]any{"provider": providerName, "providerEventType": eventType, "providerSessionId": providerSessionID, "attemptId": attempt.ID, "turnId": attempt.TurnID, "ordinal": ordinal, "raw": json.RawMessage(raw)}),
+	}
 }
 
 func providerEventSummary(raw json.RawMessage) string {

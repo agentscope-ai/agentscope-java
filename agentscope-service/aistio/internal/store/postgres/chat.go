@@ -81,6 +81,9 @@ func (r *chatRepo) List(ctx context.Context, filter store.ChatFilter) ([]*contro
 	if filter.Archived {
 		args[0] = controlmodel.ChatArchived
 	}
+	if filter.Deleted {
+		args[0] = controlmodel.ChatDeleted
+	}
 	add := func(column string, value any) {
 		args = append(args, value)
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", column, len(args)))

@@ -30,6 +30,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
 
+import { RuntimeHostCapacity } from './RuntimeHostCapacity';
+
 const reasoningLevels = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
 const claudePermissionModes = [
@@ -45,6 +47,7 @@ const qoderPermissionModes = [
   ['default', 'Default — use explicit allow rules'],
   ['auto', 'Auto — unattended policy decision'],
   ['accept_edits', 'Accept edits — approve workspace edits'],
+  ['bypass_permissions', 'Full access — allow tools without approval'],
   ['dont_ask', 'Don’t ask — deny actions needing approval'],
 ] as const;
 
@@ -126,7 +129,8 @@ function PermissionModeSetting({ provider, value, disabled, onChange }: {
     <select className="h-10 rounded-md border bg-background px-3" value={String(value ?? '')} disabled={disabled} onChange={event => onChange(event.target.value)}>
       {options.map(([mode, label]) => <option key={mode || 'inherit'} value={mode}>{label}</option>)}
     </select>
-    <span className="text-xs text-muted-foreground">Dangerous permission bypass modes are intentionally not offered as Agent-level presets.</span>
+    {provider === 'claude-code' && <span className="text-xs text-muted-foreground">Dangerous permission bypass modes are intentionally not offered as Agent-level presets.</span>}
+    {provider === 'qoder' && value === 'bypass_permissions' && <span className="text-xs text-muted-foreground">Tools run without Qoder approval prompts, with the permissions of the Host process. Applies to new executions after saving.</span>}
     {provider === 'qoder' && <span className="text-xs text-muted-foreground">In default mode, sensitive tool requests are forwarded to AgentScope Approvals. Auto mode may decide without a human review.</span>}
   </label>;
 }
@@ -241,10 +245,12 @@ export function HostedAgentSettings({ agent, canEdit }: { agent: AgentDefinition
         <div className="grid gap-4 md:grid-cols-3">
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Thinking</span><select className="h-10 rounded-md border bg-background px-3" value={reasoningEffort} disabled={!canEdit} onChange={event => setReasoningEffort(event.target.value)}>{reasoningLevels.map(level => <option key={level || 'default'} value={level}>{level || 'Follow CLI config'}</option>)}</select></label>
           <label className="grid gap-1.5 text-sm"><span className="font-medium">Speed</span><select className="h-10 rounded-md border bg-background px-3" value={serviceTier} disabled={!canEdit || provider !== 'codex'} onChange={event => setServiceTier(event.target.value)}><option value="">Runtime default</option><option value="priority">Priority / fast</option></select></label>
-          <label className="grid gap-1.5 text-sm"><span className="font-medium">Concurrency</span><Input type="number" min="0" max="50" value={maxConcurrency} disabled={!canEdit} onChange={event => setMaxConcurrency(event.target.value)} /><span className="text-xs text-muted-foreground">0 uses the scheduler default; maximum 50.</span></label>
+          <label className="grid gap-1.5 text-sm"><span className="font-medium">Agent concurrency</span><Input type="number" min="0" max="50" value={maxConcurrency} disabled={!canEdit} onChange={event => setMaxConcurrency(event.target.value)} /><span className="text-xs text-muted-foreground">Per-Agent limit. 0 uses the scheduler default; maximum 50. Host capacity can further limit parallel execution.</span></label>
         </div>
       </CardContent>
     </Card>
+
+    <RuntimeHostCapacity poolName={settings.runtimePool.name} />
 
     <Card>
       <CardHeader><CardTitle>Provider settings</CardTitle><CardDescription>Structured overrides for {provider || 'the selected provider'}; the shared profile remains unchanged.</CardDescription></CardHeader>

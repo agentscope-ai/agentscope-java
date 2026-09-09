@@ -344,24 +344,24 @@ export default function AgentSettingsForm({
       {show('runtime') && <div style={S.card}>
         <span style={S.cardLabel}>Session defaults</span>
         <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 14, lineHeight: 1.5 }}>
-          Prefills the New session form and is used when Channel / Deploy omit mounts.
-          Per-session mounts remain the runtime source of truth and can be edited later.
+          These resources are selected by default for new Managed sessions. A session can keep its own explicit bindings.
         </div>
         <div style={S.row}>
-          <label style={S.fieldLabel}>Default environment</label>
+          <label style={S.fieldLabel} htmlFor="agent-default-environment">Default environment</label>
           <select
             style={S.input}
+            id="agent-default-environment"
             value={defaultEnvironmentId}
             onChange={e => setDefaultEnvironmentId(e.target.value)}
             disabled={readOnly}
           >
-            <option value="">None (use owner heuristic / ensure default)</option>
+            <option value="">Automatic default</option>
             {environments.map(env => (
               <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
             ))}
           </select>
           <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
-            Manage environments under Resources → Environments.
+            <Link to={scope.scopedPath('/agent-center/environments')} className="text-primary underline">Manage environments</Link> to configure local, remote, sandbox or self_hosted execution.
           </div>
         </div>
         <div style={S.row}>

@@ -72,11 +72,18 @@ func (r *chatRepo) List(_ context.Context, filter store.ChatFilter) ([]*controlm
 	r.s.mu.RLock()
 	defer r.s.mu.RUnlock()
 	out := make([]*controlmodel.Chat, 0)
+	status := controlmodel.ChatActive
+	if filter.Archived {
+		status = controlmodel.ChatArchived
+	}
+	if filter.Deleted {
+		status = controlmodel.ChatDeleted
+	}
 	for _, value := range r.s.chats {
 		if filter.Tenant != "" && value.Tenant != filter.Tenant ||
 			filter.Namespace != "" && value.Namespace != filter.Namespace ||
 			filter.CreatorRef != "" && value.CreatorRef != filter.CreatorRef ||
-			(value.Status == controlmodel.ChatArchived) != filter.Archived {
+			value.Status != status {
 			continue
 		}
 		out = append(out, cloneChat(value))

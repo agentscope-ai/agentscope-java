@@ -51,7 +51,8 @@ for (const scenario of ['agent', 'cancel', 'denied'] as const) {
       }
       if (path === '/api/v1/agents/agent/bindings') return json({ items: [{ id: 'binding', kind: 'managed', enabled: true }] });
       if (path === '/api/v1/agents/agent/overview') return json({ readiness: { state: 'ready', reasons: [] }, runtime: {}, activity: {}, inventory: {}, summary: {} });
-      if (path === '/api/workspaces/review') return json({ id: 'review', name: 'CRM workspace', version: 1 });
+      if (path === '/api/workspaces/review/revisions' || path === '/api/workspaces/review/agents') return json({ items: [] });
+    if (path === '/api/workspaces/review') return json({ id: 'review', name: 'CRM workspace', version: 1 });
       if (path === '/api/workspaces/review/tools') return json({ mcpServers: [server], tools: [] });
       if (path.endsWith('/file')) return json({ content: '', path: 'AGENTS.md' });
       if (path === '/api/vaults') return json([{ id: 'vault', displayName: 'CRM team', createdAt: 1, updatedAt: 1 }]);

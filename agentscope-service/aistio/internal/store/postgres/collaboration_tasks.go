@@ -882,8 +882,12 @@ func (r *collaborationRepo) CompleteAgentTask(ctx context.Context, id uuid.UUID,
 	return task, nil
 }
 
-func (r *collaborationRepo) FailAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64, code, message string) (*controlmodel.AgentTask, error) {
-	return r.transitionAgentTask(ctx, id, expectedVersion, controlmodel.AgentTaskFailed, nil, code, message)
+func (r *collaborationRepo) FailAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64, code, message string, result ...json.RawMessage) (*controlmodel.AgentTask, error) {
+	var partial json.RawMessage
+	if len(result) > 0 {
+		partial = result[0]
+	}
+	return r.transitionAgentTask(ctx, id, expectedVersion, controlmodel.AgentTaskFailed, partial, code, message)
 }
 
 func (r *collaborationRepo) CancelAgentTask(ctx context.Context, id uuid.UUID, expectedVersion int64) (*controlmodel.AgentTask, error) {

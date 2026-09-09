@@ -19,7 +19,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search } from 'lucide-react';
 import { AgentDefinition, listAgents } from '@/api/agents';
-import { getRoles } from '@/api/auth';
+import { listAgentInstances } from '@/api/runtimeControl';
+import { frameworkSummary } from './frameworkSummary';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -69,12 +70,18 @@ export default function AgentsHubPage() {
     queryKey: ['product-agents', scope.tenant, scope.namespace],
     queryFn: () => listAgents(scope.tenant, scope.namespace),
   });
+  const instancesQ = useQuery({ queryKey: ['agent-instances', scope.tenant, scope.namespace], queryFn: () => listAgentInstances(scope.tenant, scope.namespace) });
+  const frameworks = useMemo(() => {
+    const byAgent = new Map<string, NonNullable<typeof instancesQ.data>['items']>();
+    for (const instance of instancesQ.data?.items ?? []) byAgent.set(instance.agentId, [...(byAgent.get(instance.agentId) ?? []), instance]);
+    return new Map([...byAgent].map(([id, instances]) => [id, frameworkSummary(instances)]));
+  }, [instancesQ.data]);
   const agents = useMemo(() => agentsQ.data || [], [agentsQ.data]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return agents.filter((agent) => bucket(agent).includes(filter) && (!needle || [agent.name, agent.agentKey, agent.description, agent.runtimeKind, agent.status].filter(Boolean).join(' ').toLowerCase().includes(needle)));
-  }, [agents, filter, query]);
+    return agents.filter((agent) => bucket(agent).includes(filter) && (!needle || [agent.name, agent.agentKey, agent.description, agent.runtimeKind, agent.status, ...(frameworks.get(agent.id) ?? []).map(item => item.label)].filter(Boolean).join(' ').toLowerCase().includes(needle)));
+  }, [agents, filter, query, frameworks]);
 
   function openAgent(agent: AgentDefinition) {
     navigate(scope.scopedPath(agentDetailPath(agent)));
@@ -84,7 +91,7 @@ export default function AgentsHubPage() {
     <Page className="max-w-[1440px]">
       <PageHeader
         title="Agents"
-        description="One logical identity across Managed, External Application, and Hosted Runtime bindings."
+        description="Choose an Agent to manage its capabilities, runtime connections and recent work."
         actions={canCreate ? <Button onClick={() => navigate(scope.scopedPath('/agent-center/agents/new'))}><Plus className="h-4 w-4" />New agent</Button> : undefined}
       />
 
@@ -147,6 +154,8 @@ export default function AgentsHubPage() {
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
                   <code className="truncate font-mono text-[12px] text-muted-foreground">{a.agentKey || a.id}</code>
+                  {!!frameworks.get(a.id)?.length && <div className="flex flex-wrap gap-1">{frameworks.get(a.id)!.map(item => <Badge key={item.label} tone={item.online ? 'info' : 'warning'}>{item.label}{item.count > 1 ? ` · ${item.count} instances` : ''}{item.online ? '' : ' · offline'}</Badge>)}</div>}
+                  {a.runtimeKind === 'external-application' && !frameworks.get(a.id)?.length && <p className="text-xs text-muted-foreground">{instancesQ.isError ? 'Framework information unavailable' : instancesQ.isLoading ? 'Loading framework…' : 'No registered instance'}</p>}
                   {a.workspaceId && (
                     <button
                       type="button"

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { namespaceCan } from '../lib/namespaceScope';
+import { useControlPlaneScope } from '../app/ScopeContext';
 import React, { useEffect, useState } from 'react';
 import {
   Environment,
@@ -72,6 +74,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function EnvironmentsHubPage() {
+  const canManage = namespaceCan(useControlPlaneScope().roles, 'configure');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [items, setItems] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,12 +194,12 @@ export default function EnvironmentsHubPage() {
       </div>}
       <div style={S.header}>
         <h1 style={S.title}>Environments</h1>
-        <button type="button" style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New environment</button>
+        <button type="button" style={S.primaryBtn} hidden={!canManage} onClick={() => setCreating(true)}>＋ New environment</button>
       </div>
       <p style={S.blurb}>
-        Execution environment templates used by managed agent sessions. Each session runs against one environment.
+        Environments determine where Managed Agents read files and run commands. New sessions use the Agent’s default automatically. Configure local execution, remote filesystems, sandbox templates or self_hosted Environment Workers here, then select the environment in the Agent’s Runtime tab or when creating a session.
       </p>
-      {hands && (
+      {canManage && hands && (
         <div style={{ ...S.card, marginBottom: 18 }}>
           <div style={{ fontWeight: 600 }}>Hands / worker status</div>
           <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
@@ -227,7 +230,7 @@ export default function EnvironmentsHubPage() {
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'monospace' }}>{env.id}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <div hidden={!canManage} style={canManage ? { display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' } : { display: 'none' }}>
               {!env.archivedAt && (
                 <button type="button" style={S.rowBtn} disabled={busyId === env.id} onClick={() => openEdit(env)}>
                   Edit
@@ -245,7 +248,7 @@ export default function EnvironmentsHubPage() {
           </div>
         ))}
         {!loading && items.length === 0 && (
-          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No environments yet.</div>
+          <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No custom environments yet. A default environment is created automatically when a Managed session needs one.</div>
         )}
       </div>
 
@@ -254,10 +257,10 @@ export default function EnvironmentsHubPage() {
           <div style={S.modalBody} onClick={e => e.stopPropagation()}>
             <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>New environment</h2>
             <form onSubmit={handleCreate}>
-              <label style={S.formField}>Name</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
-              <label style={S.formField}>Type</label>
-              <select style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
+              <label style={S.formField} htmlFor="environment-name">Name</label>
+              <input id="environment-name" style={{ ...S.input, marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="default-local" autoFocus />
+              <label style={S.formField} htmlFor="environment-type">Type</label>
+              <select id="environment-type" style={{ ...S.input, marginBottom: 20 }} value={type} onChange={e => setType(e.target.value)}>
                 <option value="local">local</option>
                 <option value="sandbox">sandbox</option>
                 <option value="remote">remote</option>

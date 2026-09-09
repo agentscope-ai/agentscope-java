@@ -107,6 +107,11 @@ final class AgentTaskCollaborationTool implements AgentTool {
                                             param.getToolUseBlock() == null
                                                     ? null
                                                     : param.getToolUseBlock().getId());
+                            if (Set.of("run.node.complete", "run.node.fail").contains(name)) {
+                                AgentTaskOutcome.State state =
+                                        runtimeContext.get(AgentTaskOutcome.State.class);
+                                if (state != null) state.markTerminalCommitted();
+                            }
                             return ToolResultBlock.text(result.toString());
                         })
                 .subscribeOn(Schedulers.boundedElastic());

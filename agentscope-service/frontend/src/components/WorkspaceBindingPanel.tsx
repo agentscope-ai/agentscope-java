@@ -23,7 +23,7 @@ import { updateAgent, type AgentDefinition, type WorkspaceBinding } from '@/api/
 import { listWorkspaces, workspaceRevisions } from '@/api/workspaces';
 import { Button } from '@/components/ui/button';
 
-export type WorkspaceCapabilities = { bindings: Array<{ bindingId: string; kind: string; runtime: string; status: string; capabilities: Array<{ name: string; mode: string; requested: boolean; supported: boolean; target?: string }> }>; applications?: Array<{ digest: string; version: number; workspaceVersion: number; appliedAt: number }> };
+export type WorkspaceCapabilities = { bindings: Array<{ bindingId: string; kind: string; runtime: string; status: string; capabilities: Array<{ name: string; mode: string; requested: boolean; supported: boolean; target?: string; reason?: string }> }>; applications?: Array<{ digest: string; version: number; workspaceVersion: number; appliedAt: number }> };
 
 export default function WorkspaceBindingPanel({ agent, canEdit, onSaved }: { agent: AgentDefinition; canEdit: boolean; onSaved: () => Promise<unknown> }) {
   const scope = useControlPlaneScope();
@@ -64,7 +64,7 @@ export default function WorkspaceBindingPanel({ agent, canEdit, onSaved }: { age
     <div className="space-y-3 border-t pt-4"><h3 className="text-sm font-semibold">Runtime compatibility · saved definition</h3>
       {capabilities.isLoading && <p className="text-sm text-muted-foreground">Loading runtime capabilities…</p>}
       {capabilities.error && <p role="alert" className="text-sm text-red-600">Unable to load runtime compatibility.</p>}
-      {capabilities.data?.bindings.map(runtime => <div key={runtime.bindingId} className="space-y-2"><p className="text-sm">{runtime.runtime} · {runtime.status.replace(/-/g, ' ')}</p><div className="grid gap-2 sm:grid-cols-3">{runtime.capabilities.map(cap => <div key={cap.name} className={`rounded-lg border p-2 text-xs ${cap.requested && !cap.supported ? 'border-amber-300 bg-amber-50' : 'bg-slate-50'}`}><div className="font-semibold capitalize">{cap.name}</div><div className="mt-1">{cap.mode.replace(/-/g, ' ')}{cap.requested ? ' · in use' : ''}</div>{cap.requested && !cap.supported && <div className="mt-1 text-amber-800">Requires a compatible runtime before execution.</div>}</div>)}</div></div>)}
+      {capabilities.data?.bindings.map(runtime => <div key={runtime.bindingId} className="space-y-2"><p className="text-sm">{runtime.runtime} · {runtime.status.replace(/-/g, ' ')}</p><div className="grid gap-2 sm:grid-cols-3">{runtime.capabilities.map(cap => <div key={cap.name} className={`rounded-lg border p-2 text-xs ${cap.requested && !cap.supported ? 'border-amber-300 bg-amber-50' : 'bg-slate-50'}`}><div className="font-semibold capitalize">{cap.name}</div><div className="mt-1">{cap.mode.replace(/-/g, ' ')}{cap.requested ? ' · in use' : ''}</div>{cap.requested && !cap.supported && <div className="mt-1 text-amber-800">{cap.reason || 'Requires a compatible runtime before execution.'}</div>}</div>)}</div></div>)}
       {!!capabilities.data?.applications?.length && <p className="text-xs text-muted-foreground">External application last loaded Agent v{capabilities.data.applications[0].version}, Workspace v{capabilities.data.applications[0].workspaceVersion} at {new Date(capabilities.data.applications[0].appliedAt).toLocaleString()}.</p>}
     </div>
   </section>;

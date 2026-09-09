@@ -2,7 +2,7 @@
 
 ## 发布部署与文档
 
-发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [发布维护手册](release/README.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
+发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
 
 
 > **基于 AgentScope Harness 构建的 Agent 管控与治理平台，为企业提供统一的控制面与编排中心。**

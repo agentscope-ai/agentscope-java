@@ -365,10 +365,15 @@ func (r *controlPlaneRepo) UpsertRuntimeHost(_ context.Context, in *controlmodel
 		}
 	}
 	cp := cloneRuntimeHost(in)
+	cp.CapacityManaged = false
 	if current != nil {
 		cp.ID = current.ID
 		cp.CreatedAt = current.CreatedAt
 		cp.LeaseGeneration = current.LeaseGeneration + 1
+		cp.CapacityManaged = current.CapacityManaged
+		if current.CapacityManaged {
+			cp.Capacity = current.Capacity
+		}
 	} else {
 		if cp.ID == uuid.Nil {
 			cp.ID = uuid.New()
@@ -441,6 +446,24 @@ func (r *controlPlaneRepo) HeartbeatRuntimeHost(_ context.Context, id uuid.UUID,
 	}
 	host.LastSeenAt = time.Now().UTC()
 	host.UpdatedAt = host.LastSeenAt
+	return cloneRuntimeHost(host), nil
+}
+
+func (r *controlPlaneRepo) SetRuntimeHostCapacity(_ context.Context, id uuid.UUID, expectedCapacity, capacity int32) (*controlmodel.RuntimeHost, error) {
+	if capacity < 1 || capacity > controlmodel.MaxRuntimeHostCapacity {
+		return nil, fmt.Errorf("capacity must be between 1 and %d", controlmodel.MaxRuntimeHostCapacity)
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	host, ok := r.s.runtimeHosts[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	if host.Capacity != expectedCapacity {
+		return nil, store.ErrConflict
+	}
+	host.Capacity, host.CapacityManaged = capacity, true
+	host.UpdatedAt = time.Now().UTC()
 	return cloneRuntimeHost(host), nil
 }
 

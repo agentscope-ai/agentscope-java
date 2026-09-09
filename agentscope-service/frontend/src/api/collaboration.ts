@@ -185,7 +185,7 @@ export interface TeamMember {
   role: string;
   instructions?: string;
   capabilityRequirements?: Record<string, unknown>;
-  runtimeBindingPolicy?: RuntimeBindingPolicy;
+  runtimeBindingPolicy?: RuntimeBindingPolicy | null;
 }
 export interface Team {
   id: string;
@@ -472,7 +472,7 @@ export const listTeamTasks = (tenant: string, namespace: string, teamId: string)
     `/api/v1/agent-tasks${query({ tenant, namespace, teamId })}`,
   );
 export const getTask = (id: string) =>
-  api.get<{ task: AgentTask }>(`/api/v1/agent-tasks/${encodeURIComponent(id)}`);
+  api.get<{ task: AgentTask; inputSummaries?: Array<{ inputId: string; commentId: string; version: number; state: string; content?: string }> }>(`/api/v1/agent-tasks/${encodeURIComponent(id)}`);
 export const cancelTask = (id: string, expectedVersion: number) =>
   api.post<{ task: AgentTask }>(
     `/api/v1/agent-tasks/${encodeURIComponent(id)}/cancel`,
@@ -499,7 +499,7 @@ export const addTeamMember = (
     agentId: string;
     role: string;
     instructions?: string;
-    runtimeBindingPolicy?: RuntimeBindingPolicy;
+    runtimeBindingPolicy?: RuntimeBindingPolicy | null;
   },
 ) =>
   api.post<{ member: TeamMember }>(
@@ -513,7 +513,7 @@ export const updateTeamMember = (
     role: string;
     instructions?: string;
     capabilityRequirements?: Record<string, unknown>;
-    runtimeBindingPolicy?: RuntimeBindingPolicy;
+    runtimeBindingPolicy?: RuntimeBindingPolicy | null;
     expectedTeamVersion: number;
   },
 ) => api.patch<{ member: TeamMember }>(

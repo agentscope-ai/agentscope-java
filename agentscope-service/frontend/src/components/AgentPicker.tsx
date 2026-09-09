@@ -95,6 +95,7 @@ export function AgentPicker({
 }: AgentPickerProps) {
   const agents = useCatalogAgents();
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeOptionRef = useRef<HTMLButtonElement>(null);
   const listboxId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -108,6 +109,10 @@ export function AgentPicker({
     [agents.data, excluded, includeInactive, search, value],
   );
   const inputValue = open ? query : selectedLabel;
+
+  useEffect(() => {
+    if (open) activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [open, highlighted]);
 
   useEffect(() => {
     inputRef.current?.setCustomValidity(required && !value ? 'Select a registered Agent.' : '');
@@ -175,6 +180,7 @@ export function AgentPicker({
           aria-label={ariaLabel}
           aria-expanded={open}
           aria-controls={listboxId}
+          aria-activedescendant={open && options[highlighted] ? `${listboxId}-option-${highlighted}` : undefined}
           aria-autocomplete="list"
           className="pr-10"
         />
@@ -194,7 +200,7 @@ export function AgentPicker({
         <div
           id={listboxId}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-64 w-full min-w-64 overflow-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+          className="absolute z-50 mt-1 max-h-64 w-full min-w-0 overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
         >
           {agents.isError && <div className="px-3 py-2 text-sm text-destructive">Failed to load registered Agents.</div>}
           {!agents.isLoading && !agents.isError && options.length === 0 && (
@@ -203,6 +209,8 @@ export function AgentPicker({
           {options.map((agent, index) => (
             <button
               key={agent.id}
+              id={`${listboxId}-option-${index}`}
+              ref={index === highlighted ? activeOptionRef : undefined}
               type="button"
               role="option"
               aria-selected={agent.id === value}

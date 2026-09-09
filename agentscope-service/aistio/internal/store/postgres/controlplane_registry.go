@@ -278,7 +278,7 @@ func (r *runtimeRegistryRepo) ListRuntimePools(ctx context.Context, tenant, name
 
 const runtimeHostColumns = `id, tenant, namespace, host_key, pool_name, daemon_version, os,
 	arch, labels, capabilities, state, capacity, active, last_seen_at, lease_generation,
-	created_at, updated_at`
+	created_at, updated_at, capacity_managed`
 
 func scanRuntimeHost(row scannable) (*controlmodel.RuntimeHost, error) {
 	in := &controlmodel.RuntimeHost{}
@@ -286,7 +286,7 @@ func scanRuntimeHost(row scannable) (*controlmodel.RuntimeHost, error) {
 	var labels, capabilities []byte
 	err := row.Scan(&in.ID, &in.Tenant, &in.Namespace, &in.HostKey, &in.PoolName,
 		&daemonVersion, &osName, &arch, &labels, &capabilities, &in.State, &in.Capacity,
-		&in.Active, &in.LastSeenAt, &in.LeaseGeneration, &in.CreatedAt, &in.UpdatedAt)
+		&in.Active, &in.LastSeenAt, &in.LeaseGeneration, &in.CreatedAt, &in.UpdatedAt, &in.CapacityManaged)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, store.ErrNotFound
@@ -322,7 +322,7 @@ func (r *runtimeRegistryRepo) UpsertRuntimeHost(ctx context.Context, in *control
 			pool_name=EXCLUDED.pool_name, daemon_version=EXCLUDED.daemon_version,
 			os=EXCLUDED.os, arch=EXCLUDED.arch, labels=EXCLUDED.labels,
 			capabilities=EXCLUDED.capabilities, state=EXCLUDED.state,
-			capacity=EXCLUDED.capacity, active=EXCLUDED.active,
+			capacity=CASE WHEN runtime_hosts.capacity_managed THEN runtime_hosts.capacity ELSE EXCLUDED.capacity END, active=EXCLUDED.active,
 			last_seen_at=EXCLUDED.last_seen_at,
 			lease_generation=runtime_hosts.lease_generation+1, updated_at=now()
 		RETURNING `+runtimeHostColumns,
@@ -367,6 +367,18 @@ func (r *runtimeRegistryRepo) HeartbeatRuntimeHost(ctx context.Context, id uuid.
 		last_seen_at=now(), updated_at=now()
 		WHERE id=$1 AND lease_generation=$2 RETURNING `+runtimeHostColumns,
 		id, generation, active, nullJSON(capabilities), controlmodel.RuntimeHostOffline, controlmodel.RuntimeHostOnline))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, store.ErrConflict
+	}
+	return host, err
+}
+
+func (r *runtimeRegistryRepo) SetRuntimeHostCapacity(ctx context.Context, id uuid.UUID, expectedCapacity, capacity int32) (*controlmodel.RuntimeHost, error) {
+	if capacity < 1 || capacity > controlmodel.MaxRuntimeHostCapacity {
+		return nil, fmt.Errorf("capacity must be between 1 and %d", controlmodel.MaxRuntimeHostCapacity)
+	}
+	host, err := scanRuntimeHost(r.pool.QueryRow(ctx, `UPDATE runtime_hosts SET capacity=$3,capacity_managed=true,updated_at=now()
+  WHERE id=$1 AND capacity=$2 RETURNING `+runtimeHostColumns, id, expectedCapacity, capacity))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, store.ErrConflict
 	}

@@ -64,6 +64,7 @@ func (a *Adapter) Descriptor() provider.Descriptor {
 		Instructions: provider.Capability{Supported: true, Mode: "prompt"},
 		Workspace:    provider.Capability{Supported: true, Mode: "cwd"},
 		Skills:       provider.Capability{Supported: true, Mode: "context-directory", Target: ".agentscope/definition/skills"},
+		Subagents:    provider.Capability{Supported: true, Mode: "cli-argument", Target: "--agents (shared workspace; Qoder 1.0.37+)"},
 		Tools:        provider.Capability{Supported: true, Mode: "allowlist"},
 		Shell:        provider.Capability{Supported: true, Mode: "native", Target: "Bash"},
 		MCP:          provider.Capability{Supported: true, Mode: "cli-config", Target: "--mcp-config"},
@@ -103,10 +104,34 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 		return nil, err
 	}
 	request.CustomArgs = customArgs
+	subagents, err := provider.QoderSubagentsJSON(request.Definition)
+	if err != nil {
+		return nil, err
+	}
+	if subagents != "" {
+		version, err := a.Detect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := provider.RequireSubagentVersion(version, 1, 0, 37); err != nil {
+			return nil, err
+		}
+		for _, argument := range customArgs {
+			if argument == "--agents" || strings.HasPrefix(argument, "--agents=") {
+				return nil, fmt.Errorf("custom --agents conflicts with Workspace subagents")
+			}
+		}
+	}
 	var cfg configuration
 	if len(request.Configuration) > 0 {
 		if err := json.Unmarshal(request.Configuration, &cfg); err != nil {
 			return nil, fmt.Errorf("decode Qoder configuration: %w", err)
+		}
+	}
+	if subagents != "" {
+		subagents, err = constrainSubagentTools(subagents, request, cfg)
+		if err != nil {
+			return nil, err
 		}
 	}
 	mcpConfig, cleanup, err := provider.WriteMCPConfig(request)
@@ -118,7 +143,11 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, a.binary(), buildArgs(request, cfg, mcpConfig, configDir)...)
+	args := buildArgs(request, cfg, mcpConfig, configDir)
+	if subagents != "" {
+		args = append(args, "--agents", subagents)
+	}
+	cmd := exec.CommandContext(ctx, a.binary(), args...)
 	cmd.Dir = request.Workspace
 	provider.ApplyTaskEnvironment(cmd, request)
 	stdin, err := cmd.StdinPipe()
@@ -149,6 +178,11 @@ func (a *Adapter) Run(ctx context.Context, request provider.Request, sink provid
 	result := &provider.Result{ProviderSessionID: request.ProviderSessionID}
 	readErr := consumeStreamJSON(ctx, stdout, stdin, result, sink, request.ApproveTool)
 	_ = stdin.Close()
+	if readErr != nil {
+		// Once the protocol reader stops, the child can block on stdout or wait
+		// for another approval forever. End it before joining the process.
+		_ = cmd.Process.Kill()
+	}
 	waitErr := cmd.Wait()
 	if readErr != nil {
 		return nil, readErr
@@ -185,10 +219,7 @@ func buildArgs(request provider.Request, cfg configuration, mcpConfig, configDir
 	if configDir != "" {
 		args = append(args, "--config-dir", configDir, "--setting-sources", "project")
 	}
-	definitionAllowed, definitionDenied := provider.DefinitionToolPolicy(request, map[string]string{
-		"read": "Read", "read_file": "Read", "write": "Write", "write_file": "Write",
-		"edit": "Edit", "shell": "Bash", "bash": "Bash", "grep": "Grep", "glob": "Glob",
-	})
+	definitionAllowed, definitionDenied := provider.DefinitionToolPolicy(request, qoderToolAliases)
 	allowedTools := provider.MergeUnique(cfg.AllowedTools, definitionAllowed)
 	disallowedTools := provider.MergeUnique(cfg.DisallowedTools, definitionDenied)
 	// RuntimeProfile allowedTools are permission grants, not an exposure list.
@@ -339,12 +370,13 @@ func consumeStreamJSON(ctx context.Context, reader io.Reader, writer io.Writer, 
 	for scanner.Scan() {
 		raw := append(json.RawMessage(nil), scanner.Bytes()...)
 		var envelope struct {
-			Type      string `json:"type"`
-			Subtype   string `json:"subtype"`
-			SessionID string `json:"session_id"`
-			IsError   bool   `json:"is_error"`
-			Result    string `json:"result"`
-			Message   struct {
+			ParentToolUseID string `json:"parent_tool_use_id"`
+			Type            string `json:"type"`
+			Subtype         string `json:"subtype"`
+			SessionID       string `json:"session_id"`
+			IsError         bool   `json:"is_error"`
+			Result          string `json:"result"`
+			Message         struct {
 				Content []struct {
 					Type    string `json:"type"`
 					Text    string `json:"text"`
@@ -363,6 +395,20 @@ func consumeStreamJSON(ctx context.Context, reader io.Reader, writer io.Writer, 
 		}
 		if err := json.Unmarshal(raw, &envelope); err != nil {
 			return fmt.Errorf("decode Qoder JSONL event: %w", err)
+		}
+		if sink != nil {
+			if err := sink(provider.Event{Type: envelope.Type, ProviderSessionID: envelope.SessionID, Raw: raw}); err != nil {
+				return err
+			}
+		}
+		if envelope.Type == "control_request" && envelope.Request.Subtype == "can_use_tool" {
+			if err := handleToolApproval(ctx, writer, envelope.RequestID, envelope.Request.ToolUseID,
+				envelope.Request.ToolName, envelope.Request.DisplayName, envelope.Request.Input, approver); err != nil {
+				return err
+			}
+		}
+		if envelope.ParentToolUseID != "" || (result.ProviderSessionID != "" && envelope.SessionID != "" && envelope.SessionID != result.ProviderSessionID) {
+			continue
 		}
 		if envelope.SessionID != "" {
 			result.ProviderSessionID = envelope.SessionID
@@ -386,17 +432,6 @@ func consumeStreamJSON(ctx context.Context, reader io.Reader, writer io.Writer, 
 			}
 			if isPermissionFailure(message) {
 				permissionFailure = message
-			}
-		}
-		if sink != nil {
-			if err := sink(provider.Event{Type: envelope.Type, ProviderSessionID: envelope.SessionID, Raw: raw}); err != nil {
-				return err
-			}
-		}
-		if envelope.Type == "control_request" && envelope.Request.Subtype == "can_use_tool" {
-			if err := handleToolApproval(ctx, writer, envelope.RequestID, envelope.Request.ToolUseID,
-				envelope.Request.ToolName, envelope.Request.DisplayName, envelope.Request.Input, approver); err != nil {
-				return err
 			}
 		}
 		if envelope.Type == "result" {

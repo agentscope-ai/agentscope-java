@@ -1,5 +1,7 @@
 # AgentScope Service release runbook
 
+[中文发布手册（项目管理员操作指南）](README_zh.md)
+
 Run all commands from the monorepo root. Development continues in the existing checkout; these scripts do not create a worktree or modify version files automatically.
 
 ## Distribution contract
@@ -106,6 +108,8 @@ mvn -B -ntp -pl agentscope-extensions/agentscope-extensions-aistio -am \
 ```
 
 This command includes required reactor dependencies and parent POMs; review the reactor and publish them only under new, intentional versions. Do not enable Maven deployment for the executable Service modules just to publish the SDK.
+
+The current release profile does not enable `autoPublish`. After Maven succeeds, inspect the deployment in Central Portal, finish the manual Publish step, and verify availability from a consumer project. See the [Central publishing plugin documentation](https://central.sonatype.org/publish/publish-portal-maven/).
 
 ## 7. Publish documentation and release notes
 

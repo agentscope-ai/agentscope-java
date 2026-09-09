@@ -225,15 +225,18 @@ export function WorkflowExecution({
                     .map((a) => (
                       <div className="mt-2 text-xs" key={a.id}>
                         {a.backendKind} · Attempt {a.attempt} · {a.state}
-                        {(a.sessionRef || a.sessionId) && (
+                        {a.sessionRef && (
                           <Link
                             className="ml-2 text-primary"
                             to={scope.scopedPath(
-                              `/work/sessions/${a.sessionRef || a.sessionId}?agent=${encodeURIComponent(task.agentId)}`,
+                              `/work/sessions/${a.sessionRef}`,
                             )}
                           >
                             Session ↗
                           </Link>
+                        )}
+                        {a.sessionId && !a.sessionRef && (
+                          <span className="ml-2 text-muted-foreground">Session diagnostics are not available yet. See this task’s execution details.</span>
                         )}
                       </div>
                     ))}
