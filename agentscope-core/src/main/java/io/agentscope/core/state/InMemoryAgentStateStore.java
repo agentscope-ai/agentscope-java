@@ -209,10 +209,8 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         private final Map<String, VersionedEntry> singleStates = new ConcurrentHashMap<>();
         private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
 
-        synchronized void setSingleState(String key, State value) {
-            VersionedEntry prev = singleStates.get(key);
-            long next = prev == null ? 1L : prev.version() + 1L;
-            singleStates.put(key, new VersionedEntry(value, next));
+        void setSingleState(String key, State value) {
+            casSingleState(key, value, UNVERSIONED);
         }
 
         synchronized long casSingleState(String key, State value, long expectedVersion) {
