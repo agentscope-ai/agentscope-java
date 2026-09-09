@@ -1,4 +1,6 @@
-# Docker 快速上手
+---
+title: Docker 快速上手
+---
 
 目标：启动完整 Service，登录控制台，然后进入第一个 Agent 会话。
 
@@ -38,7 +40,7 @@ curl -fsS http://localhost:18080/actuator/health
 
 用于可信本地体验时，可以在 `.env` 中设置 `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`，并填写模型凭据，例如 `DASHSCOPE_API_KEY`，然后重新执行启动命令。Local 工具运行在 Dataplane 容器内。
 
-其他部署保持 Local 关闭，在控制台配置 Sandbox 或 Self-hosted Environment。接着完成[第一个 Session](first-session.md)。
+其他部署保持 Local 关闭，在控制台配置 Sandbox 或 Self-hosted Environment。接着完成[第一个 Session](/v2/zh/service/first-session)。
 
 ## 停止与继续
 
@@ -47,4 +49,4 @@ docker compose down
 docker compose up -d --wait --wait-timeout 600
 ```
 
-数据库、Workspace 和 Artifact 卷会保留。`down -v` 会删除数据卷，不能用作日常停止命令。远程访问和升级见 [Docker 部署](docker.md) 与[运维](operations.md)。
+数据库、Workspace 和 Artifact 卷会保留。`down -v` 会删除数据卷，不能用作日常停止命令。远程访问和升级见 [Docker 部署](/v2/zh/service/docker) 与[运维](/v2/zh/service/operations)。

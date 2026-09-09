@@ -1,4 +1,6 @@
-# Backup, upgrade and recovery
+---
+title: Backup, upgrade and recovery
+---
 
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
 

@@ -1,4 +1,6 @@
-# Text-to-Speech (TTS)
+---
+title: Text-to-Speech (TTS)
+---
 
 AgentScope Java provides comprehensive TTS capabilities, enabling Agents not only to think and respond, but also to speak. Compared to text-only scenarios, voice is a more natural interaction method, suitable for intelligent customer service, in-car assistants, and real-time conversation scenarios that generate and speak simultaneously.
 
@@ -201,6 +203,6 @@ Msg response = agent.call(Msg.builder().textContent("请用语音说一句'欢�
 |-----------|------|---------|-------------|
 | ttsModel | DashScopeRealtimeTTSModel | - | TTS model (required) |
 | audioPlayer | AudioPlayer | null | Local player (optional) |
-| audioCallback | Consumer<AudioBlock> | null | Audio callback (optional) |
+| audioCallback | `Consumer<AudioBlock>` | null | Audio callback (optional) |
 | realtimeMode | boolean | true | Whether to enable real-time mode |
 | autoStartPlayer | boolean | true | Whether to auto-start player |
