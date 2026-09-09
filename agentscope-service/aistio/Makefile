@@ -1,10 +1,11 @@
 # Aistio
 
 IMG ?= aistio:latest
-CONTROLLER_GEN ?= $(shell which controller-gen)
+PREFIX ?= /usr/local
+CONTROLLER_GEN ?= $(shell command -v controller-gen 2>/dev/null || printf '%s/bin/controller-gen' "$$(go env GOPATH)")
 HELM_CHART ?= helm/aistio
 
-.PHONY: all build test run generate manifests fmt vet ci verify sync-helm helm-lint helm-template docker-build docker-push clean install-tools proto
+.PHONY: all build build-runtime-cli install-runtime-cli test run generate manifests fmt vet ci verify sync-helm helm-lint helm-template docker-build docker-push clean install-tools proto
 
 ci: vet test
 
@@ -32,6 +33,18 @@ all: build
 
 build:
 	go build -o bin/aistiod ./cmd/aistiod
+	go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
+	go build -o bin/aistioctl ./cmd/aistioctl
+	go build -o bin/agentscope ./cmd/aistioctl
+
+build-runtime-cli:
+	go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
+	go build -o bin/agentscope ./cmd/aistioctl
+
+install-runtime-cli: build-runtime-cli
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 bin/agentscope $(DESTDIR)$(PREFIX)/bin/agentscope
+	install -m 0755 bin/aistio-runtime-host $(DESTDIR)$(PREFIX)/bin/aistio-runtime-host
 
 run: build
 	./bin/aistiod
@@ -40,16 +53,25 @@ test:
 	go test ./... -coverprofile cover.out
 
 ENVTEST_K8S_VERSION ?= 1.32.x
+ENVTEST_K8S_INSTALLED_VERSION ?= 1.32.0
 LOCALBIN ?= $(shell pwd)/bin
 ENVTEST ?= $(shell which setup-envtest 2>/dev/null || echo "$(LOCALBIN)/setup-envtest")
 
 .PHONY: envtest
 envtest: ## Download setup-envtest if necessary.
-	@test -x $(ENVTEST) || go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	@test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: test-integration
 test-integration: envtest ## Run envtest integration tests.
-	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/controller/... -v -count=1
+	@set -e; assets=""; \
+	if ! assets="$$($(ENVTEST) use -i $(ENVTEST_K8S_INSTALLED_VERSION) --bin-dir $(LOCALBIN) -p path 2>/dev/null)"; then \
+		for attempt in 1 2 3; do \
+			if assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; then break; fi; \
+		done; \
+	fi; \
+	test -x "$$assets/etcd"; \
+	test -x "$$assets/kube-apiserver"; \
+	KUBEBUILDER_ASSETS="$$assets" go test ./internal/controller/... -v -count=1
 
 fmt:
 	go fmt ./...
@@ -73,10 +95,10 @@ proto-verify: proto
 	git diff --exit-code -- internal/asdp/*.pb.go
 
 docker-build:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMG) .
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) ../..
 
 docker-push:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMG) --push .
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) --push ../..
 
 install-yaml: manifests sync-helm
 	@echo "Generating install/install.yaml from Helm chart..."

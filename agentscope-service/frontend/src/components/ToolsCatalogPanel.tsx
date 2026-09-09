@@ -33,6 +33,7 @@ import {
 interface Props {
   agentId: string;
   onSaved: () => void;
+  allowMcp?: boolean;
 }
 
 type Tab = 'builtin' | 'mcp';
@@ -112,19 +113,20 @@ const S: Record<string, React.CSSProperties> = {
   },
 };
 
-export default function ToolsCatalogPanel({ agentId, onSaved }: Props) {
+export default function ToolsCatalogPanel({ agentId, onSaved, allowMcp = true }: Props) {
   const [tab, setTab] = useState<Tab>('builtin');
+  const activeTab = allowMcp ? tab : 'builtin';
   return (
     <div style={S.root}>
       <div style={S.tabs}>
         <button style={tabStyle(tab === 'builtin')} onClick={() => setTab('builtin')}>
           Built-in tools
         </button>
-        <button style={tabStyle(tab === 'mcp')} onClick={() => setTab('mcp')}>
+        {allowMcp && <button style={tabStyle(activeTab === 'mcp')} onClick={() => setTab('mcp')}>
           MCP servers
-        </button>
+        </button>}
       </div>
-      {tab === 'builtin' ? (
+      {activeTab === 'builtin' ? (
         <BuiltinTab agentId={agentId} onSaved={onSaved} />
       ) : (
         <McpTab agentId={agentId} onSaved={onSaved} />

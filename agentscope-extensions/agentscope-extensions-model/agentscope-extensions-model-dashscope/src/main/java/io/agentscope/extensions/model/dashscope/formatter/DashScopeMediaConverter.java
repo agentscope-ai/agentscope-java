@@ -40,11 +40,11 @@ public class DashScopeMediaConverter {
     /**
      * Convert ImageBlock to URL string for DashScope API.
      *
-     * <p>Uses file:// protocol for local files for consistent behavior.
+     * <p>Embeds local images as data URLs because the HTTP API cannot read local files.
      *
      * <p>Handles:
      * <ul>
-     *   <li>Local files → file:// protocol URL (e.g., file:///absolute/path/image.png)
+     *   <li>Local files → Base64 data URL with the image media type
      *   <li>Remote URLs → Direct URL (e.g., https://example.com/image.png)
      *   <li>Base64 sources → Data URL (e.g., data:image/png;base64,...)
      * </ul>
@@ -59,7 +59,14 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             MediaUtils.validateImageExtension(url);
-            return MediaUtils.urlToProtocolUrl(url);
+            if (url.startsWith("file:")) {
+                return MediaUtils.urlToBase64DataUrl(
+                        java.nio.file.Path.of(java.net.URI.create(url)).toString());
+            }
+            if (MediaUtils.isLocalFile(url)) {
+                return MediaUtils.urlToBase64DataUrl(url);
+            }
+            return url;
 
         } else if (source instanceof Base64Source base64Source) {
             // Base64 source: construct data URL
