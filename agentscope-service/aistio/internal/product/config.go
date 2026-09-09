@@ -18,6 +18,7 @@ package product
 // The module does not own an HTTP listener; aistiod mounts it onto the
 // shared REST server.
 type Config struct {
+	OAuthPublicURL        string // BUILDER_OAUTH_PUBLIC_URL: public console origin for OAuth callbacks
 	DSN                   string
 	JWTSecret             string
 	InternalToken         string

@@ -18,6 +18,8 @@ import { namespaceHeaders } from "@/lib/namespaceScope";
 import { getToken } from './auth';
 
 export interface ChannelInfo {
+  workEnabled?: boolean;
+  workTargets?: ChannelWorkTarget[];
   channelId: string;
   type?: string | null;
   dmScope: string | null;
@@ -338,3 +340,32 @@ export function resolveCallbackUrl(
   }
   return path;
 }
+
+export interface ChannelWorkTarget { targetType: 'agent' | 'team'; targetRef: string }
+export interface ChannelWorkRoute extends ChannelWorkTarget { accountId: string; peerKind: 'DIRECT' | 'GROUP'; peerId: string; threadId?: string }
+export interface ChannelWorkSettings {
+  enabled: boolean; defaultTarget: ChannelWorkTarget; routes: ChannelWorkRoute[];
+  allowGroupWork: boolean; notifyEvents: string[]; version: number;
+}
+export interface ChannelWorkActivity {
+  inbounds?: { id: string; state: string; attempts: number }[];
+  identities: { accountId: string; senderId: string }[];
+  deliveries: { id: string; issueId?: string; state: string; attempts: number; providerMessageId: string; lastError: string }[];
+  links: { id: string; issueId: string; active: boolean; address: { peerId: string; threadId?: string } }[];
+}
+async function channelWorkRequest<T>(channelId: string, path: string, method = 'GET', body?: unknown): Promise<T> {
+  const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/${path}`, {
+    method, headers: jsonHeaders(), ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) return failOn(res, 'Channel operation failed');
+  return res.status === 204 ? undefined as T : res.json();
+}
+export const getChannelWorkSettings = (id: string) => channelWorkRequest<ChannelWorkSettings>(id, 'collaboration');
+export const saveChannelWorkSettings = (id: string, value: ChannelWorkSettings) => channelWorkRequest<ChannelWorkSettings>(id, 'collaboration', 'PUT', value);
+export const createChannelPairing = (id: string) => channelWorkRequest<{ command: string; expiresInSeconds: number }>(id, 'pairing', 'POST');
+export const getChannelWorkActivity = (id: string) => channelWorkRequest<ChannelWorkActivity>(id, 'activity');
+export const unlinkChannelIdentity = (id: string) => channelWorkRequest<void>(id, 'identity', 'DELETE');
+export const retryChannelDelivery = (id: string, delivery: string) => channelWorkRequest<void>(id, `deliveries/${encodeURIComponent(delivery)}/retry`, 'POST');
+export const unsubscribeChannelWork = (id: string, link: string) => channelWorkRequest<void>(id, `links/${encodeURIComponent(link)}`, 'DELETE');
+
+export const retryChannelIntake = (id: string, message: string) => channelWorkRequest<void>(id, `messages/${encodeURIComponent(message)}/retry`, 'POST');

@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T03:09:23.021430+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/14206c8f-59e3-4592-8ef1-296ebd900fc2?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+      "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+      "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+      "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+      "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+          "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "sessionId": "sess_088b5383cf04",
+        "resolvedAt": "2026-09-08T03:05:05.945573Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "sessionId": "sess_088b5383cf04",
+      "sessionRef": "193ea62e-1f9d-4335-b711-b44f62a3e71d",
+      "turnId": "1cdcba0b-5f85-4790-9814-deae76238326",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:05:42.81117+08:00",
+      "failureCode": "MISSING_API_KEY",
+      "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+      "version": 20,
+      "createdAt": "2026-09-08T11:05:05.940675+08:00",
+      "updatedAt": "2026-09-08T11:05:42.831962+08:00",
+      "startedAt": "2026-09-08T11:05:06.050943+08:00",
+      "completedAt": "2026-09-08T11:05:42.831962+08:00"
+    }
+  }
+}

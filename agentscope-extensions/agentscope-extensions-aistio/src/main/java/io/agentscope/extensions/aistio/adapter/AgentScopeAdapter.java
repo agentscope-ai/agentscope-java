@@ -178,6 +178,8 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         }
         if (agentTaskStarter != null) {
             caps.add(CAP_AGENT_TASK);
+            if (agentTaskStarter instanceof HarnessAgentTaskStarter starter
+                    && starter.consumesWorkspaceDefinition()) caps.add("workspace-definition-v1");
         }
         return caps;
     }

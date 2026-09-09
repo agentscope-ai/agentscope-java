@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T03:09:23.047357+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/065c4d71-e9b6-42b4-b754-84ab01c4d2d5?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+      "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+      "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+      "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+      "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+          "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "sessionId": "sess_bc8cd60a34c4",
+        "resolvedAt": "2026-09-08T03:06:51.919121Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "sessionId": "sess_bc8cd60a34c4",
+      "sessionRef": "cecb1ea6-0971-4267-baf8-73e5b53b86d5",
+      "turnId": "682f07b7-c836-4294-82f8-fbfadfca539b",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:07:19.922897+08:00",
+      "failureCode": "MISSING_CREDENTIAL",
+      "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+      "version": 19,
+      "createdAt": "2026-09-08T11:06:51.918094+08:00",
+      "updatedAt": "2026-09-08T11:07:21.286756+08:00",
+      "startedAt": "2026-09-08T11:06:52.043149+08:00",
+      "completedAt": "2026-09-08T11:07:21.286756+08:00"
+    }
+  }
+}

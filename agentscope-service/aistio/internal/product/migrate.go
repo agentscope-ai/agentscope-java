@@ -302,11 +302,14 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_turn_id TEXT;
 
 func migrate(ctx context.Context, db *DB) error {
 	log.Printf("running cp schema migration")
-	if _, err := db.Pool.Exec(ctx, migrationSQL); err != nil {
+	if _, err := db.Pool.Exec(ctx, migrationSQL+channelWorkMigrationSQL+oauthMigrationSQL+workspacePublicationMigration); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if _, err := db.Pool.Exec(ctx, migrationAlterSQL); err != nil {
 		return fmt.Errorf("migrate alter: %w", err)
+	}
+	if _, err := db.Pool.Exec(ctx, accountManagementSQL); err != nil {
+		return fmt.Errorf("migrate accounts: %w", err)
 	}
 	log.Printf("cp schema migration complete")
 	return nil

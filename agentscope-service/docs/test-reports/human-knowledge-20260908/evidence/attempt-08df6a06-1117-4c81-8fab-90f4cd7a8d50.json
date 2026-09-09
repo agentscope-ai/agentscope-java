@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-08T03:09:22.823978+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/5bb6ea50-eb07-4f88-8f6d-aff7bce30596?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "5bb6ea50-eb07-4f88-8f6d-aff7bce30596",
+      "agentTaskId": "08df6a06-1117-4c81-8fab-90f4cd7a8d50",
+      "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+      "runId": "4c3c18dc-e92f-4670-887e-b4d9bd162d42",
+      "nodeId": "f87e7522-d5a5-457b-b6c9-96bf94776bde",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+          "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "58e66260-8472-445b-8fb3-1bd438bb9abf"
+        },
+        "sessionId": "sess_ce0454298163",
+        "resolvedAt": "2026-09-08T03:04:02.005101Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "sessionId": "sess_ce0454298163",
+      "sessionRef": "7b0d27b7-9a29-4c52-a365-4a8b5059759e",
+      "turnId": "e026edbf-04d9-4457-88d2-ab106731b051",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:05:03.126941+08:00",
+      "result": null,
+      "version": 27,
+      "createdAt": "2026-09-08T11:04:01.884292+08:00",
+      "updatedAt": "2026-09-08T11:05:03.234504+08:00",
+      "startedAt": "2026-09-08T11:04:02.039151+08:00",
+      "completedAt": "2026-09-08T11:05:03.234504+08:00"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "at": "2026-09-08T03:06:51.471443+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues/d52f4ccc-4af1-4636-b144-2f91c5cb60d5/comments?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": {
+    "content": "仍然需要今天的实时来源和可核验链接，不接受基于自身知识的替代报告；缺少搜索能力时请明确说明阻塞。"
+  },
+  "status": 201,
+  "response": {
+    "Comment": {
+      "id": "675ab427-0c9a-443b-8b83-060619dba89a",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "threadRootId": "675ab427-0c9a-443b-8b83-060619dba89a",
+      "author": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "content": "仍然需要今天的实时来源和可核验链接，不接受基于自身知识的替代报告；缺少搜索能力时请明确说明阻塞。",
+      "type": "comment",
+      "version": 1,
+      "createdAt": "2026-09-08T11:06:51.475241+08:00",
+      "updatedAt": "2026-09-08T11:06:51.475241+08:00",
+      "routes": [
+        {
+          "id": "4c00c9d1-f55b-4046-bb1c-87a680528c62",
+          "tenant": "default",
+          "namespace": "personal-8c6976e5b5410415bde9",
+          "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+          "commentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+          "commentVersion": 1,
+          "targetType": "agent",
+          "targetRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+          "routeType": "assignee",
+          "outcome": "queued",
+          "taskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+          "createdAt": "2026-09-08T11:06:51.475241+08:00"
+        }
+      ]
+    },
+    "Routes": [
+      {
+        "id": "4c00c9d1-f55b-4046-bb1c-87a680528c62",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "commentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "commentVersion": 1,
+        "targetType": "agent",
+        "targetRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+        "routeType": "assignee",
+        "outcome": "queued",
+        "taskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+        "createdAt": "2026-09-08T11:06:51.475241+08:00"
+      }
+    ],
+    "Tasks": [
+      {
+        "id": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "orchestrationRunId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+        "runNodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+        "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+        "status": "queued",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "version": 1,
+        "createdAt": "2026-09-08T11:06:51.475241+08:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+  * freeing :18080 from stale gateway plane (pid 91567)
+  * freeing :8081 from stale control plane (pid 91543)
+  * freeing :8082 from stale data plane (pid 91548)
+  * freeing :8083 from stale scheduler plane (pid 91557)
+==> Waiting for Postgres
+  OK Postgres ready
+NOTICE:  schema "cp" already exists, skipping
+NOTICE:  schema "rt" already exists, skipping
+NOTICE:  schema "dp" already exists, skipping
+==> Starting planes (Postgres: jdbc:postgresql://localhost:5432/builder?currentSchema=dp)
+  * control started (pid 1282)
+  * data started (pid 1290)
+  * scheduler started (pid 1301)
+  * gateway started (pid 1313)
+==> Waiting for health
+  OK control healthy on :8081
+  OK data healthy on :8082
+  OK scheduler healthy on :8083
+  OK gateway healthy on :18080
+==> Verifying database schemas and v4 terminal migrations
+  OK cp/rt/dp schemas and v4 collaboration/orchestration/runtime tables
+
+==> AgentScope Service stack is up (aistiod + Java DP)
+
+  Console (SPA via gateway):  http://localhost:18080/
+  Default login:              admin / admin
+
+  Frontend HMR (optional):    cd frontend && npm run dev
+
+  Logs:   /Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/logs
+  Verify: scripts/smoke.sh
+  Stop:   scripts/dev-down.sh

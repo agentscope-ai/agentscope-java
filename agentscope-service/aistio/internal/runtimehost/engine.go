@@ -255,6 +255,11 @@ func (e *Engine) execute(parent context.Context, hostID uuid.UUID, work *Claimed
 		e.failAndFinalize(parent, journal, record, hostID, execution, "provider_unavailable", "provider "+work.Profile.Provider+" is not installed", nil)
 		return
 	}
+	if err := provider.ValidateDefinition(work.Definition, provider.Describe(adapter)); err != nil {
+		e.failAndFinalize(parent, journal, record, hostID, execution, "workspace_capability_unsupported", err.Error(), nil)
+		return
+	}
+
 	prompt, err = appendRuntimeContext(prompt, work.Context.Task, provider.Describe(adapter),
 		e.Config.CollaborationMCP, e.Config.CollaborationCLI, work.TaskToken)
 	if err != nil {

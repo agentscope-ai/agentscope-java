@@ -25,20 +25,21 @@ var ErrManagedDefinitionConflict = errors.New("managed definition version confli
 // this definition; logical identity and lifecycle remain owned by the rt
 // Agent Catalog.
 type ManagedDefinitionInput struct {
-	Name                  string   `json:"name"`
-	Description           string   `json:"description,omitempty"`
-	System                string   `json:"system,omitempty"`
-	Model                 string   `json:"model,omitempty"`
-	MaxIters              int      `json:"maxIters,omitempty"`
-	Tools                 any      `json:"tools,omitempty"`
-	MCPServers            any      `json:"mcpServers,omitempty"`
-	Skills                any      `json:"skills,omitempty"`
-	Multiagent            any      `json:"multiagent,omitempty"`
-	WorkspacePath         string   `json:"workspacePath,omitempty"`
-	WorkspaceID           string   `json:"workspaceId,omitempty"`
-	DefaultEnvironmentID  string   `json:"defaultEnvironmentId,omitempty"`
-	DefaultVaultIDs       []string `json:"defaultVaultIds,omitempty"`
-	DefaultMemoryStoreIDs []string `json:"defaultMemoryStoreIds,omitempty"`
+	Name                  string            `json:"name"`
+	Description           string            `json:"description,omitempty"`
+	System                string            `json:"system,omitempty"`
+	Model                 string            `json:"model,omitempty"`
+	MaxIters              int               `json:"maxIters,omitempty"`
+	Tools                 any               `json:"tools,omitempty"`
+	MCPServers            any               `json:"mcpServers,omitempty"`
+	Skills                any               `json:"skills,omitempty"`
+	Multiagent            any               `json:"multiagent,omitempty"`
+	WorkspacePath         string            `json:"workspacePath,omitempty"`
+	WorkspaceID           string            `json:"workspaceId,omitempty"`
+	WorkspaceBinding      *WorkspaceBinding `json:"workspaceBinding,omitempty"`
+	DefaultEnvironmentID  string            `json:"defaultEnvironmentId,omitempty"`
+	DefaultVaultIDs       []string          `json:"defaultVaultIds,omitempty"`
+	DefaultMemoryStoreIDs []string          `json:"defaultMemoryStoreIds,omitempty"`
 	// ProvisionDefaultEnvironment is set by the Managed binding workflow. A
 	// Hosted Agent may share this portable definition but does not execute via
 	// a Managed data-plane Environment.
@@ -77,32 +78,15 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 	if maxIters <= 0 {
 		maxIters = 20
 	}
+	if _, err := s.resolveWorkspaceInput(ctx, ownerID, &in); err != nil {
+		return nil, err
+	}
 	tools, mcpServers, skills, system := in.Tools, in.MCPServers, in.Skills, in.System
 	workspacePath := in.WorkspacePath
 	if workspacePath == "" {
 		workspacePath = filepath.Join(s.cfg.WorkspaceRoot, ownerID, agentID)
 	}
-	if in.WorkspaceID != "" {
-		materialized, materializeErr := s.materializeFromWorkspace(ctx, ownerID, in.WorkspaceID)
-		if materializeErr != nil {
-			return nil, materializeErr
-		}
-		if tools == nil {
-			tools = materialized.Tools
-		}
-		if mcpServers == nil {
-			mcpServers = materialized.McpServers
-		}
-		if skills == nil {
-			skills = materialized.Skills
-		}
-		if system == "" {
-			system = materialized.System
-		}
-		if materialized.DiskPath != "" {
-			workspacePath = materialized.DiskPath
-		}
-	}
+
 	if err := validateManagedTools(tools, mcpServers); err != nil {
 		return nil, err
 	}
@@ -129,7 +113,7 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 	if tag.RowsAffected() > 0 {
 		snapshot, err := s.agentSnapshot(ctx, ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
 			tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
-			defaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, 1, now, now)
+			defaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, 1, now, now, in.WorkspaceBinding)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +130,15 @@ func (s *Server) EnsureManagedDefinition(ctx context.Context, ownerID, agentID s
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any(definition.toJSON()), nil
+	out := map[string]any(definition.toJSON())
+	if snapshot, err := s.definitionSnapshot(ctx, ownerID, agentID, definition.HeadVersion); err == nil {
+		for _, key := range []string{"workspaceBinding", "workspaceVersion", "definitionDigest"} {
+			if value, ok := snapshot[key]; ok {
+				out[key] = value
+			}
+		}
+	}
+	return out, nil
 }
 
 // ManagedDefinition reads the cp definition associated with one Catalog Agent.
@@ -158,7 +150,15 @@ func (s *Server) ManagedDefinition(ctx context.Context, ownerID, agentID string)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any(definition.toJSON()), nil
+	out := map[string]any(definition.toJSON())
+	if snapshot, err := s.definitionSnapshot(ctx, ownerID, agentID, definition.HeadVersion); err == nil {
+		for _, key := range []string{"workspaceBinding", "workspaceVersion", "definitionDigest"} {
+			if value, ok := snapshot[key]; ok {
+				out[key] = value
+			}
+		}
+	}
+	return out, nil
 }
 
 // RuntimeDefinition returns the portable definition plus its linked
@@ -166,23 +166,31 @@ func (s *Server) ManagedDefinition(ctx context.Context, ownerID, agentID string)
 // workspace, so provider adapters do not need access to the product database
 // or the control plane's local filesystem.
 func (s *Server) RuntimeDefinition(ctx context.Context, ownerID, agentID string) (map[string]any, error) {
-	definition, err := s.ManagedDefinition(ctx, ownerID, agentID)
-	if err != nil {
-		return nil, err
-	}
 	agent, err := s.loadAgent(ctx, ownerID, agentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrManagedDefinitionNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	scopeType, scopeID := agent.resolveDefinitionScope()
-	files, err := s.listWorkspaceFileContents(ctx, ownerID, scopeType, scopeID, "")
+	definition, err := s.definitionSnapshot(ctx, ownerID, agentID, agent.HeadVersion)
 	if err != nil {
 		return nil, err
 	}
-	if len(files) > 0 {
-		definition["files"] = files
-	}
+	definition["files"] = enabledDefinitionFiles(definition)
+	delete(definition, "definitionFiles")
 	return definition, nil
+}
+
+func (s *Server) definitionSnapshot(ctx context.Context, ownerID, agentID string, version int) (map[string]any, error) {
+	var raw string
+	err := s.db.Pool.QueryRow(ctx, `SELECT snapshot_json FROM agent_versions WHERE owner_id=$1 AND agent_id=$2 AND version=$3`, ownerID, agentID, version).Scan(&raw)
+	if err != nil {
+		return nil, err
+	}
+	var snapshot map[string]any
+	err = json.Unmarshal([]byte(raw), &snapshot)
+	return snapshot, err
 }
 
 // ManagedDefinitionVersions returns immutable cp snapshots newest first.
@@ -249,6 +257,22 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 		}
 		in.DefaultEnvironmentID = id
 	}
+	if in.WorkspaceID != "" && in.WorkspaceID == deref(a.WorkspaceID) && in.WorkspaceBinding == nil {
+		snapshot, e := s.definitionSnapshot(ctx, ownerID, agentID, a.HeadVersion)
+		if e != nil {
+			return nil, e
+		}
+		if raw := snapshot["workspaceBinding"]; raw != nil {
+			var binding WorkspaceBinding
+			if e = json.Unmarshal([]byte(mustJSON(raw)), &binding); e != nil {
+				return nil, e
+			}
+			if in.System != deref(a.SysPrompt) {
+				binding.Instructions = in.System
+			}
+			in.WorkspaceBinding = &binding
+		}
+	}
 	maxIters := in.MaxIters
 	if maxIters <= 0 {
 		maxIters = 20
@@ -257,28 +281,11 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 	if workspacePath == "" {
 		workspacePath = filepath.Join(s.cfg.WorkspaceRoot, ownerID, agentID)
 	}
-	tools, mcpServers, skills, system := in.Tools, in.MCPServers, in.Skills, in.System
-	if in.WorkspaceID != "" {
-		materialized, materializeErr := s.materializeFromWorkspace(ctx, ownerID, in.WorkspaceID)
-		if materializeErr != nil {
-			return nil, materializeErr
-		}
-		if tools == nil {
-			tools = materialized.Tools
-		}
-		if mcpServers == nil {
-			mcpServers = materialized.McpServers
-		}
-		if skills == nil {
-			skills = materialized.Skills
-		}
-		if system == "" {
-			system = materialized.System
-		}
-		if materialized.DiskPath != "" {
-			workspacePath = materialized.DiskPath
-		}
+	if _, err := s.resolveWorkspaceInput(ctx, ownerID, &in); err != nil {
+		return nil, err
 	}
+	tools, mcpServers, skills, system := in.Tools, in.MCPServers, in.Skills, in.System
+
 	if err := validateManagedTools(tools, mcpServers); err != nil {
 		return nil, err
 	}
@@ -304,7 +311,7 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 	}
 	snapshot, err := s.agentSnapshot(ctx, ownerID, agentID, in.Name, in.Description, system, in.Model, maxIters,
 		tools, mcpServers, skills, in.Multiagent, workspacePath, in.WorkspaceID,
-		in.DefaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, nextVersion, a.CreatedAt, now)
+		in.DefaultEnvironmentID, in.DefaultVaultIDs, in.DefaultMemoryStoreIDs, nextVersion, a.CreatedAt, now, in.WorkspaceBinding)
 	if err != nil {
 		return nil, err
 	}
@@ -315,9 +322,36 @@ func (s *Server) UpdateManagedDefinition(ctx context.Context, ownerID, agentID s
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	updated, err := s.loadAgent(ctx, ownerID, agentID)
-	if err != nil {
-		return nil, err
+	return s.ManagedDefinition(ctx, ownerID, agentID)
+}
+
+// enabledDefinitionFiles prevents provider filesystem discovery from bypassing skill selection.
+// Keep definitionFiles intact for revision inspection; only files is the runtime projection.
+func enabledDefinitionFiles(definition map[string]any) map[string]any {
+	enabled := map[string]bool{}
+	if skills, ok := definition["skills"].([]any); ok {
+		for _, value := range skills {
+			if skill, ok := value.(map[string]any); ok {
+				name, _ := skill["name"].(string)
+				if name == "" {
+					name, _ = skill["id"].(string)
+				}
+				enabled[name] = true
+			}
+		}
 	}
-	return map[string]any(updated.toJSON()), nil
+	files := map[string]any{}
+	if source, ok := definition["definitionFiles"].(map[string]any); ok {
+		for path, content := range source {
+			if !definitionFile(path) {
+				continue
+			}
+			parts := strings.Split(strings.ReplaceAll(path, "\\", "/"), "/")
+			if len(parts) > 1 && strings.EqualFold(parts[0], "skills") && !enabled[parts[1]] {
+				continue
+			}
+			files[path] = content
+		}
+	}
+	return files
 }

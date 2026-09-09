@@ -15,8 +15,9 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { isAdmin } from '../api/auth';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import ChannelWorkPanel from '@/components/ChannelWorkPanel';
 import {
   BindingConfigEntry,
   ChannelDetail,
@@ -92,7 +93,7 @@ function describe(b: BindingConfigEntry): string {
   if (b.parentPeer) parts.push(`parentPeer=${b.parentPeer}`);
   if (b.guild) parts.push(`guild=${b.guild}`);
   if (b.roles && b.roles.length) parts.push(`roles=${b.roles.join('|')}`);
-  if (b.team) parts.push(`team=${b.team}`);
+  if (b.team) parts.push(`platformTeam=${b.team}`);
   if (b.account) parts.push(`account=${b.account}`);
   return parts.join(', ') || '(catch-all)';
 }
@@ -138,7 +139,8 @@ function formToBinding(f: BindingForm): BindingConfigEntry {
 }
 
 export default function ChannelDetailPage() {
-  const admin = isAdmin();
+  const scope = useControlPlaneScope();
+  const admin = scope.roles.some(r => ['developer', 'admin'].includes(r));
   const { channelId = '' } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
@@ -179,7 +181,7 @@ export default function ChannelDetailPage() {
     }
   }
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [channelId]);
+  useEffect(() => { if (admin) void load(); /* eslint-disable-next-line */ }, [channelId, admin]);
 
   function onTypeChange(next: string) {
     if (next === type) return;
@@ -273,7 +275,7 @@ export default function ChannelDetailPage() {
   }, [detail]);
 
   if (!admin) {
-    return <Navigate to="/agent-center/agents" replace />;
+    return <div className="console-page-legacy" style={S.root}><h1 style={S.title}>{channelId}</h1><ChannelWorkPanel channelId={channelId} canConfigure={false} /></div>;
   }
 
   if (!detail && !err) {
@@ -284,16 +286,17 @@ export default function ChannelDetailPage() {
     <div className="console-page-legacy" style={S.root}>
       <button style={S.backLink} onClick={() => navigate('/agent-center/entrypoints')}>← All channels</button>
       <h1 style={S.title}>{channelId}</h1>
-      <div style={S.subtle}>External ingress configuration. Bind routing to logical Agents, never runtime instances.</div>
+      <div style={S.subtle}>连接平台、配置工作接待，并按已授权的工作关联回传消息。</div>
 
       {err && <div style={{ ...S.err, marginTop: 16 }}>{err}</div>}
       {info && <div style={{ ...S.ok, marginTop: 16 }}>{info}</div>}
 
+      <ChannelWorkPanel channelId={channelId} canConfigure={admin} />
       {detail && (
         <>
           <div style={{ ...S.section, marginTop: 18 }}>
             <div style={S.sectionHead}>
-              <h2 style={S.sectionTitle}>Configuration</h2>
+              <h2 style={S.sectionTitle}>平台连接与普通会话</h2>
               <span style={S.badge}>{status}</span>
               {detail.lastError ? <span style={{ ...S.badge, color: '#dc2626' }}>{detail.lastError}</span> : null}
               <span style={{ flex: 1 }} />
@@ -322,7 +325,7 @@ export default function ChannelDetailPage() {
                 </select>
               </div>
               <div style={{ gridColumn: '1 / span 2' }}>
-                <label style={S.field}>Default Agent</label>
+                <label style={S.field}>普通私聊默认 Agent</label>
                 <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} aria-label="Channel default Agent" />
               </div>
             </div>

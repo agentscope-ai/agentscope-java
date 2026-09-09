@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
@@ -241,6 +242,34 @@ func TestResolverDispatchesSameAgentTaskContractToEveryBackend(t *testing.T) {
 		if json.Unmarshal(external.payload, &payload) != nil || payload["agentTaskId"] != task.ID.String() || payload["taskToken"] == "" {
 			t.Fatalf("external payload: %s", external.payload)
 		}
+		// A portable definition requires an explicit consumer. Legacy instances remain usable only without one.
+		resolver.Tasks = &taskplane.Service{Store: st, ResolveDefinition: func(context.Context, uuid.UUID) (json.RawMessage, error) {
+			return json.RawMessage(`{"version":1,"definitionDigest":"frozen"}`), nil
+		}}
+		next := newTask(agent.ID.String())
+		if _, err := resolver.Dispatch(ctx, next.ID, nil); err == nil {
+			t.Fatal("legacy instance consumed platform definition")
+		}
+		consumer := *instance
+		consumer.ID = uuid.Nil
+		consumer.InstanceKey = "workspace-consumer"
+		consumer.Capabilities = json.RawMessage(`["workspace-definition-v1"]`)
+		registered, err := st.RuntimeRegistry().UpsertAgentInstance(ctx, &consumer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := resolver.Dispatch(ctx, next.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.AgentInstanceID == nil || *selected.AgentInstanceID != registered.ID {
+			t.Fatal("selected incompatible external instance")
+		}
+		var frozen controlmodel.RuntimeDispatchSnapshot
+		if json.Unmarshal(selected.Task.RuntimeBinding, &frozen) != nil || !strings.Contains(string(frozen.Definition), "frozen") {
+			t.Fatal("missing immutable definition")
+		}
+
 	})
 
 	t.Run("hosted", func(t *testing.T) {
@@ -416,5 +445,32 @@ func TestTeamLeaderTaskCompletesThroughHostedAttempt(t *testing.T) {
 	final, err := st.Collaboration().GetAgentTask(ctx, tasks[0].ID)
 	if err != nil || final.Status != controlmodel.AgentTaskCompleted {
 		t.Fatalf("hosted Team task did not complete: task=%+v err=%v", final, err)
+	}
+}
+
+func TestManagedWakeCarriesHumanRevisionForWorkersAndLeaders(t *testing.T) {
+	teamID, parentID := uuid.New(), uuid.New()
+	for _, leader := range []bool{false, true} {
+		task := &controlmodel.AgentTask{TeamID: &teamID, ParentTaskID: &parentID, LeaderTask: leader, TriggerType: "comment"}
+		revisionID := uuid.New()
+		brief := &collaboration.ExecutionBrief{OriginalObjective: "Research latest phone technology", TriggerInput: "worker failed: missing key", HumanRevisions: []collaboration.HumanRevision{{CommentID: revisionID, Content: "直接根据自己的认知回答"}}, DecisionRule: "Respect revised evidence requirements"}
+		wake := managedWakeWithBrief(task, brief)
+		if !strings.Contains(wake, brief.HumanRevisions[0].Content) || !strings.Contains(wake, "CURRENT EXECUTION BRIEF") || !strings.Contains(wake, brief.DecisionRule) || strings.Contains(wake, revisionID.String()) {
+			t.Fatalf("wake lost revised instructions or exposed bookkeeping identity: %s", wake)
+		}
+	}
+}
+
+func TestWorkflowWakeIncludesStepAndUpstreamDeliverable(t *testing.T) {
+	brief := &collaboration.ExecutionBrief{OriginalObjective: "Write then refine a poem", Workflow: &collaboration.WorkflowStepContext{NodeKey: "refine", NodeInput: json.RawMessage(`{"style":"concise"}`), Predecessors: []collaboration.WorkflowStepResult{{NodeKey: "draft", State: controlmodel.RunNodeSucceeded, Output: json.RawMessage(`{"poem":"upstream draft"}`)}}}}
+	wake := managedWakeWithBrief(&controlmodel.AgentTask{TriggerType: "orchestration_node"}, brief)
+	for _, want := range []string{`"nodeKey":"refine"`, `"poem":"upstream draft"`, `"style":"concise"`, "optional preferences", "task.complete before ending the turn", "workflow engine schedules subsequent steps"} {
+		if !strings.Contains(wake, want) {
+			t.Fatalf("workflow wake missing %q: %s", want, wake)
+		}
+	}
+	plain := managedWakeWithBrief(&controlmodel.AgentTask{}, &collaboration.ExecutionBrief{})
+	if strings.Contains(plain, "declared workflow") {
+		t.Fatal("workflow contract leaked into ordinary tasks")
 	}
 }

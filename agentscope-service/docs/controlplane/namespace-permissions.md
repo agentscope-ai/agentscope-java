@@ -26,9 +26,12 @@ No running service or production database was changed.
 
 ## Contract
 
-- A namespace is the logical ownership boundary. Personal namespaces and shared
-  namespaces use the same membership model. Runtime file workspaces and console
-  navigation areas are separate concepts.
+- A namespace is the logical ownership boundary. The platform provisions a global
+  `default` namespace at startup and selects it when the user has no explicit
+  preference. Every account can use, configure and operate this namespace, while
+  membership management and private-work auditing remain restricted. Each account
+  also receives a personal namespace; administrators can provision shared namespaces.
+  Runtime file workspaces and console navigation areas are separate concepts.
 - Namespace membership is read from durable storage on every request. Roles are
   viewer, member, developer, operator, admin and auditor. Namespace admins manage
   membership and definitions; only an explicit auditor role grants access to all
@@ -57,9 +60,10 @@ memory and PostgreSQL stores. Build and test the console and affected Go modules
 
 ## Rollout
 
-Existing namespaces require explicit membership provisioning by a platform admin.
-Authenticated users receive a personal namespace. Existing global console roles
-remain navigation hints; namespace roles are the resource authority. Static-token
+The platform-managed global `default` namespace and each authenticated user's
+personal namespace appear together in the namespace selector. Other existing
+namespaces require explicit membership provisioning by a platform admin. Existing
+global console roles remain navigation hints; namespace roles are the resource authority. Static-token
 development mode and Kubernetes SAR retain their existing authentication boundary.
 Private workload isolation also requires separate runtime memory/file mounts;
 shared provider infrastructure is not a confidentiality boundary against its host
@@ -73,10 +77,15 @@ Requests carry `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; explicit quer
 body and persisted-object scope must agree. Switching scopes clears cached data
 and remounts forms.
 
-`/work/permissions` manages shared namespaces and membership:
+`/settings/namespaces` manages shared namespaces and membership. The legacy
+`/work/permissions` route redirects to the current authorized namespace. See
+[Account and namespace management](account-namespace-management.md) for the
+Users, Profile, lifecycle and audit increment implemented on 2026-09-08.
 
 - `POST /api/v1/namespaces`: platform admin provisions a namespace; no implicit
   ownership claim by an ordinary account over pre-existing resources.
+- The global `default` namespace is platform-managed and cannot be transferred,
+  archived or edited through namespace membership APIs.
 - `GET/PUT /api/v1/namespaces/:name`: namespace admin or platform admin;
   membership writes require the current `version` and are audited transactionally.
 - `PUT /api/v1/issues/:id/access`: root human creator only, expected `version`,
@@ -113,9 +122,10 @@ Infrastructure administrators and static/internal service tokens remain trusted.
 
 1. Back up the control-plane database and apply migration `0108`. It preserves
    existing Issue visibility as `namespace`, while new Issue rows default private.
-2. Provision each existing namespace through the platform admin page and add its
-   account IDs/roles. Ordinary console accounts no longer gain resource access
-   from the old global navigation roles.
+2. Confirm the platform-created global `default` namespace is visible beside each
+   user's Personal namespace. Provision other existing namespaces through the
+   platform admin page and add their account IDs/roles. Ordinary console accounts
+   no longer gain resource access from the old global navigation roles.
 3. Test a member and a developer in the same namespace, including sharing and
    revocation. Shared product resources use owner partition
    `namespace:<tenant>:<name>`; existing account-owned product definitions retain

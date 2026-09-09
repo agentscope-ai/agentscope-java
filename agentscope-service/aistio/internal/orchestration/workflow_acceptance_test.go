@@ -11,6 +11,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/postgres"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -182,6 +183,52 @@ func TestWorkflowAcceptance(t *testing.T) {
 				runs, err := st.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: d.Tenant, Namespace: d.Namespace, DefinitionID: d.ID, Limit: 2, Offset: 2})
 				if err != nil || len(runs) != 1 {
 					t.Fatalf("page=%d err=%v", len(runs), err)
+				}
+			})
+			t.Run("agent_context_preserves_workflow_step_and_upstream_result", func(t *testing.T) {
+				d := makeDefinition(fmt.Sprintf(`{"nodes":[{"key":"draft","type":"agent","agentId":%q},{"key":"source","type":"signal","signalName":"draft-ready"},{"key":"refine","type":"agent","agentId":%q}],"edges":[{"from":"source","to":"refine"}]}`, uuid.NewString(), uuid.NewString()))
+				run, err := svc.Start(ctx, d.ID, request("step-context"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, Limit: 10})
+				if err != nil || len(tasks) != 1 {
+					t.Fatalf("tasks=%v err=%v", tasks, err)
+				}
+				cs := &collaboration.Service{Store: st}
+				first, err := cs.BuildContext(ctx, tasks[0].ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if first.Node == nil || first.ExecutionBrief.Workflow == nil || first.ExecutionBrief.Workflow.NodeKey != "draft" || len(first.ExecutionBrief.Workflow.Predecessors) != 0 {
+					t.Fatalf("first context=%+v", first)
+				}
+				var runInput map[string]int
+				if err := json.Unmarshal(first.ExecutionBrief.Workflow.RunInput, &runInput); err != nil || runInput["value"] != 42 {
+					t.Fatalf("lost run input: %s", first.ExecutionBrief.Workflow.RunInput)
+				}
+				if err := svc.Signal(ctx, run.ID, "draft-ready", "draft-output", json.RawMessage(`{"poem":"the actual upstream poem"}`), actor); err != nil {
+					t.Fatal(err)
+				}
+				tasks, err = st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, Limit: 10})
+				if err != nil || len(tasks) != 2 {
+					t.Fatalf("tasks=%v err=%v", tasks, err)
+				}
+				for _, task := range tasks {
+					next, err := cs.BuildContext(ctx, task.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if next.Node.NodeKey != "refine" {
+						continue
+					}
+					step := next.ExecutionBrief.Workflow
+					if len(step.Predecessors) != 1 || step.Predecessors[0].NodeKey != "source" || step.Predecessors[0].State != controlmodel.RunNodeSucceeded || !strings.Contains(string(step.Predecessors[0].Output), "the actual upstream poem") {
+						t.Fatalf("lost upstream output or included unrelated draft: %+v", step)
+					}
+					if len(next.Node.Input) > 0 && string(next.Node.Input) != "{}" {
+						t.Fatalf("context silently changed explicit mapping: %s", next.Node.Input)
+					}
 				}
 			})
 			t.Run("team_reuses_declared_coordinator", func(t *testing.T) {

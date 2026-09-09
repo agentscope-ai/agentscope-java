@@ -1,16 +1,31 @@
 import React, { useState } from 'react';
+import McpOAuthConnect from './McpOAuthConnect';
+import { isGitHubMcp } from '../api/mcpOAuth';
 import type { AgentToolset, McpServerSpec, ToolConfigEntry } from '../api/agents';
 
 interface Props {
   servers: McpServerSpec[];
   tools: AgentToolset[];
   readOnly?: boolean;
+  canConnect?: boolean;
+  onOAuthConnected?: (vaultId: string) => Promise<void>;
   onSave: (servers: McpServerSpec[], tools: AgentToolset[]) => Promise<unknown>;
 }
 const field: React.CSSProperties = { padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, width: '100%', boxSizing: 'border-box' };
 const button: React.CSSProperties = { padding: '7px 12px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' };
+const headersExample = JSON.stringify({ Authorization: 'Bearer ${MCP_TOKEN}', 'X-Client': 'agentscope' }, null, 2);
+const environmentExample = JSON.stringify({ API_KEY: '${MCP_TOKEN}', LOG_LEVEL: 'info' }, null, 2);
+const jsonField: React.CSSProperties = { ...field, fontFamily: 'monospace', resize: 'vertical' };
+const example: React.CSSProperties = { margin: '6px 0 16px', padding: 12, borderRadius: 6, background: '#f8fafc', fontSize: 13, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 
-export default function McpConnectionsEditor({ servers, tools, readOnly, onSave }: Props) {
+export function editorTransport(server: McpServerSpec): string {
+  const transport = server.transport ?? (server.url ? 'http' : 'stdio');
+  return ['streamable-http', 'streamablehttp'].includes(transport) ? 'http' : transport;
+}
+const ignoredEnvironment = 'Environment variables are only passed to local stdio processes. This remote connection ignores them. Configure authentication in Headers or attach a Vault with a bearer credential for this connection.';
+
+export default function McpConnectionsEditor({ servers, tools, readOnly, onSave, canConnect, onOAuthConnected }: Props) {
+  const [oauthServer, setOAuthServer] = useState<McpServerSpec>();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<McpServerSpec>({ name: '', transport: 'http', required: true });
   const [enabled, setEnabled] = useState(false);
@@ -25,7 +40,7 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave 
   function edit(server?: McpServerSpec) {
     const toolset = tools.find(t => t.type === 'mcp_toolset' && t.mcpServerName === server?.name);
     setEditing(server?.name ?? '');
-    setDraft(server ? { ...server, transport: server.transport ?? (server.url ? 'http' : 'stdio') } : { name: '', transport: 'http', required: true, timeout: 'PT30S' });
+    setDraft(server ? { ...server, transport: editorTransport(server) } : { name: '', transport: 'http', required: true, timeout: 'PT30S' });
     setEnabled(server ? toolset?.defaultConfig?.enabled !== false : false);
     setPolicy(toolset?.defaultConfig?.permissionPolicy?.type ?? 'always_ask');
     setEntries(toolset?.configs ?? []);
@@ -48,6 +63,7 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave 
       if (draft.transport === 'stdio' && !draft.command?.trim()) throw new Error('Enter a command.');
       if (entries.some(e => !e.name?.trim()) || new Set(entries.map(e => e.name)).size !== entries.length) throw new Error('Tool names must be nonempty and unique.');
       const server = { ...draft, type: draft.transport === 'stdio' ? 'stdio' : 'url', env: stringMap(environment), headers: stringMap(headers), args: args.split('\n').filter(Boolean) };
+      if (server.transport !== 'stdio' && Object.keys(server.env).length > 0) throw new Error(`${ignoredEnvironment} Clear the unused Environment before saving.`);
       const toolset: AgentToolset = { type: 'mcp_toolset', mcpServerName: draft.name, defaultConfig: { enabled, permissionPolicy: { type: policy } }, configs: entries };
       await onSave([...servers.filter(s => s.name !== editing), server], [...tools.filter(t => !(t.type === 'mcp_toolset' && t.mcpServerName === editing)), toolset]);
       setEditing(null);
@@ -64,7 +80,10 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave 
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><h3>MCP connections</h3>{!readOnly && <button style={button} disabled={busy} onClick={() => edit()}>Add connection</button>}</div>
     <p style={{ color: '#64748b', fontSize: 13 }}>Configure external tools here. Attach a Vault when starting a session; bearer credentials target the connection name or exact endpoint URL. Connection failures appear in session events.</p>
     {servers.map(server => <div key={server.name} style={{ display: 'flex', gap: 10, padding: '8px 0', alignItems: 'center' }}>
-      <span style={{ flex: 1 }}><strong>{server.name}</strong> · {server.transport ?? 'http'} · {server.required === false ? 'optional' : 'required'}<br /><small>{server.url ?? server.command}</small></span>
+      <span style={{ flex: 1 }}><strong>{server.name}</strong> · {server.transport ?? 'http'} · {server.required === false ? 'optional' : 'required'}<br /><small>{server.url ?? server.command}</small>
+        {editorTransport(server) !== 'stdio' && Object.keys(server.env ?? {}).length > 0 && <span role="alert" style={{ display: 'block', color: '#b45309', fontSize: 13 }}>{ignoredEnvironment}</span>}
+      </span>
+      {(canConnect ?? !readOnly) && server.url?.startsWith('https://') && <button style={button} disabled={busy} onClick={() => setOAuthServer(server)}>{isGitHubMcp(server.url) ? 'Connect GitHub' : 'Connect account'}</button>}
       {!readOnly && <><button style={button} disabled={busy} onClick={() => edit(server)}>Edit</button><button style={button} disabled={busy} onClick={() => void remove(server.name)}>Remove</button></>}
     </div>)}
     {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
@@ -84,8 +103,22 @@ export default function McpConnectionsEditor({ servers, tools, readOnly, onSave 
         <button style={button} type="button" onClick={() => setEntries(entries.filter((_, i) => i !== index))}>Remove</button>
       </div>)}
       <button style={button} type="button" onClick={() => setEntries([...entries, { name: '', enabled: true }])}>Add tool override</button>
-      <details><summary>Headers and stdio environment</summary><p>Use explicit Vault environment placeholders such as {'${TOKEN}'}. Keep credentials out of the definition.</p><label>Headers<textarea style={field} value={headers} onChange={e => setHeaders(e.target.value)} /></label><label>Environment<textarea style={field} value={environment} onChange={e => setEnvironment(e.target.value)} /></label></details>
+      <details>
+        <summary>{draft.transport === 'stdio' ? 'Headers and stdio environment' : 'Headers and authentication'}</summary>
+        <p>Both fields accept JSON objects with string values. Use {'{}'} when no configuration is needed.</p>
+        <p>To use <code>{'${MCP_TOKEN}'}</code>, create a Vault credential with type <code>environment_variable</code>, target <code>MCP_TOKEN</code>, and your token as its secret. Attach that Vault when starting the session.</p>
+        <label>Headers<textarea style={jsonField} rows={4} value={headers} placeholder={headersExample} onChange={e => setHeaders(e.target.value)} /></label>
+        <p style={{ color: '#64748b', fontSize: 13, margin: '6px 0' }}>Example: request headers for an HTTP or SSE MCP server. Replace header names to match your server.</p>
+        <pre style={example}>{headersExample}</pre>
+        {(draft.transport === 'stdio' || environment.trim() !== '{}') && <>
+        {draft.transport !== 'stdio' && <p role="alert" style={{ color: '#b45309' }}>{ignoredEnvironment} <button type="button" style={button} onClick={() => setEnvironment('{}')}>Clear unused Environment</button></p>}
+        <label>Environment (stdio only)<textarea style={jsonField} rows={4} value={environment} placeholder={environmentExample} onChange={e => setEnvironment(e.target.value)} /></label>
+        <p style={{ color: '#64748b', fontSize: 13, margin: '6px 0' }}>Example: environment variables passed to the stdio MCP process. Replace variable names to match your command; these do not configure the session Environment resource.</p>
+        <pre style={example}>{environmentExample}</pre>
+        </>}
+      </details>
       <div style={{ display: 'flex', gap: 8 }}><button style={button} type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save connection'}</button><button style={button} type="button" disabled={busy} onClick={() => setEditing(null)}>Cancel</button></div>
     </form>}
+    {oauthServer && <McpOAuthConnect server={oauthServer} onClose={() => setOAuthServer(undefined)} onConnected={onOAuthConnected} />}
   </section>;
 }

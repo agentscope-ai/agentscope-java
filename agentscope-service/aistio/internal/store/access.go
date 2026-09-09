@@ -15,6 +15,8 @@ type AccessRepository interface {
 	ListNamespaces(context.Context, string, string, int, int) ([]*controlmodel.Namespace, error)
 	// PutNamespace uses optimistic concurrency; version zero means create only.
 	PutNamespace(context.Context, *controlmodel.Namespace, int64, string) (*controlmodel.Namespace, error)
+	TransferNamespace(context.Context, string, string, string, int64, string) (*controlmodel.Namespace, error)
+	ListNamespaceAudit(context.Context, string, string, int, int) ([]*controlmodel.NamespaceAudit, error)
 }
 
 // WorkAccess is attached only by the authenticated API boundary. Empty Refs with

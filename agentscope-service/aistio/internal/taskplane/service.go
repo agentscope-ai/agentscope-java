@@ -21,9 +21,10 @@ import (
 )
 
 type Service struct {
-	Store         store.Store
-	CancelBackend func(context.Context, *controlmodel.ExecutionAttempt) error
-	CommentSink   func(context.Context, *controlmodel.Comment) error
+	ResolveDefinition func(context.Context, uuid.UUID) (json.RawMessage, error)
+	Store             store.Store
+	CancelBackend     func(context.Context, *controlmodel.ExecutionAttempt) error
+	CommentSink       func(context.Context, *controlmodel.Comment) error
 }
 
 // DispatchHosted freezes a hosted-runtime binding on a queued AgentTask and
@@ -124,7 +125,14 @@ func (s *Service) dispatchHostedCandidate(ctx context.Context, taskID uuid.UUID,
 	if len(dispatchPolicyValues) > 0 {
 		dispatchPolicy, _ = json.Marshal(dispatchPolicyValues)
 	}
-	snapshot, err := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding,
+	var definition json.RawMessage
+	if s.ResolveDefinition != nil {
+		definition, err = s.ResolveDefinition(ctx, binding.AgentID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve Agent definition: %w", err)
+		}
+	}
+	snapshot, err := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding, Definition: definition,
 		RuntimeProfile: profile, RuntimePool: pool, ExecutionOverrides: binding.ExecutionOverrides,
 		ResolvedProviderConfiguration: resolvedConfiguration,
 		SessionID:                     conversation.SessionID,

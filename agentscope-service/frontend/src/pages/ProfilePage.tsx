@@ -1,93 +1,43 @@
-/*
- * Copyright 2024-2026 the original author or authors.
- * Licensed under the Apache License, Version 2.0.
- */
-
 import { useEffect, useState } from 'react';
-import { KeyRound, UserRound } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { changePassword, getProfile, listLoginSessions, revokeLoginSession, revokeOtherLoginSessions, updateProfile } from '@/api/auth';
+import { getMyPreferences, setDefaultNamespace } from '@/api/permissions';
+import { api } from '@/lib/apiClient';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { namespaceCan } from '@/lib/namespaceScope';
+import { Page, PageHeader } from '@/components/Page';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ErrorNotice, RoleBadges, RoleGuide } from '@/features/settings/AccessComponents';
 
-import { changePassword, getProfile, type UserProfile } from '../api/auth';
-import { Page, PageHeader } from '../components/Page';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Input } from '../components/ui/input';
+type IMIdentity = { channelId: string; platform: string; accountId: string; senderId: string };
+type Connections = { identities: IMIdentity[]; subscriptions: { id: string; channelId: string; platform: string; issueId: string }[] };
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [curPwd, setCurPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [conPwd, setConPwd] = useState('');
-  const [pwdErr, setPwdErr] = useState<string | null>(null);
-  const [pwdOk, setPwdOk] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    getProfile().then(setProfile).catch((error) => setLoadErr(error.message));
-  }, []);
-
-  async function handleChangePwd() {
-    setPwdErr(null);
-    setPwdOk(false);
-    if (newPwd.length < 6) { setPwdErr('Password must be at least 6 characters'); return; }
-    if (newPwd !== conPwd) { setPwdErr('Passwords do not match'); return; }
-    setSaving(true);
-    try {
-      await changePassword(curPwd, newPwd);
-      setPwdOk(true);
-      setCurPwd('');
-      setNewPwd('');
-      setConPwd('');
-    } catch (error: unknown) {
-      setPwdErr(error instanceof Error ? error.message : 'Password update failed');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Page className="max-w-[1000px]">
-      <PageHeader title="Profile" description="Review your console identity and update account security." />
-      {loadErr && <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{loadErr}</p>}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <Card>
-          <CardHeader>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><UserRound className="h-4 w-4" /></span>
-            <CardTitle className="pt-2">Account</CardTitle>
-            <CardDescription>Your authenticated console identity and assigned roles.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {profile ? (
-              <dl className="divide-y divide-slate-100 text-sm">
-                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">Username</dt><dd className="font-medium text-slate-900">{profile.username}</dd></div>
-                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">User ID</dt><dd className="break-all font-mono text-xs text-slate-600">{profile.userId}</dd></div>
-                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 py-3"><dt className="text-slate-500">Roles</dt><dd className="flex flex-wrap gap-1.5">{profile.roles.map((role) => <Badge key={role} tone={role === 'admin' ? 'info' : 'default'}>{role}</Badge>)}</dd></div>
-              </dl>
-            ) : <div className="py-8 text-center text-sm text-slate-500">Loading profile…</div>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><KeyRound className="h-4 w-4" /></span>
-            <CardTitle className="pt-2">Change password</CardTitle>
-            <CardDescription>Choose a password with at least six characters.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={(event) => { event.preventDefault(); void handleChangePwd(); }} className="space-y-4">
-              <label className="block space-y-2 text-sm font-medium text-slate-700">Current password<Input type="password" value={curPwd} onChange={(event) => setCurPwd(event.target.value)} autoComplete="current-password" /></label>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block space-y-2 text-sm font-medium text-slate-700">New password<Input type="password" value={newPwd} onChange={(event) => setNewPwd(event.target.value)} autoComplete="new-password" /></label>
-                <label className="block space-y-2 text-sm font-medium text-slate-700">Confirm password<Input type="password" value={conPwd} onChange={(event) => setConPwd(event.target.value)} autoComplete="new-password" /></label>
-              </div>
-              {pwdErr && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{pwdErr}</p>}
-              {pwdOk && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password changed successfully.</p>}
-              <Button type="submit" disabled={saving || !curPwd || !newPwd || !conPwd}>{saving ? 'Updating…' : 'Update password'}</Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </Page>
-  );
+  const scope = useControlPlaneScope(); const qc = useQueryClient(); const navigate = useNavigate();
+  const [tab, setTab] = useState('account'); const [displayName, setDisplayName] = useState('');
+  const [current, setCurrent] = useState(''); const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState('');
+  const [defaultSpace, setDefaultSpace] = useState(''); const [notice, setNotice] = useState('');
+  const profile = useQuery({ queryKey: ['my-profile'], queryFn: getProfile });
+  const preferences = useQuery({ queryKey: ['my-preferences'], queryFn: getMyPreferences });
+  const sessions = useQuery({ queryKey: ['my-login-sessions'], queryFn: listLoginSessions, enabled: tab === 'security' });
+  const connections = useQuery({ queryKey: ['my-channel-connections'], queryFn: () => api.get<Connections>('/api/user/channel-connections'), enabled: tab === 'connections' });
+  useEffect(() => { if (profile.data) setDisplayName(profile.data.displayName || ''); }, [profile.data]);
+  useEffect(() => { if (preferences.data) setDefaultSpace(preferences.data.preferences.defaultNamespace || ''); }, [preferences.data]);
+  const saveProfile = useMutation({ mutationFn: () => updateProfile(displayName.trim()), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['my-profile'] }); setNotice('Profile saved.'); } });
+  const saveDefault = useMutation({ mutationFn: () => setDefaultNamespace(defaultSpace), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['my-preferences'] }); scope.refreshNamespaces(); setNotice('Default namespace saved. It is used when no recent or explicit selection is available.'); } });
+  const change = useMutation({ mutationFn: () => changePassword(current, password), onSuccess: () => { setCurrent(''); setPassword(''); setConfirm(''); setNotice('Password updated. Other login sessions have been revoked.'); void qc.invalidateQueries({ queryKey: ['my-login-sessions'] }); } });
+  const revoke = useMutation({ mutationFn: (id: string) => id === 'others' ? revokeOtherLoginSessions() : revokeLoginSession(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['my-login-sessions'] }); setNotice('Login access revoked.'); } });
+  const disconnect = useMutation({ mutationFn: (value: IMIdentity | string) => typeof value === 'string' ? api.delete(`/api/user/channel-subscriptions/${encodeURIComponent(value)}`) : api.delete('/api/user/channel-connections', value), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['my-channel-connections'] }); setNotice('Connection preferences updated.'); } });
+  const tabs = ['account', 'my namespaces', 'security', 'connections'];
+  return <Page className="max-w-5xl"><PageHeader title="Profile" description="Manage your identity, namespace preferences, account security and IM connections." /><nav aria-label="Profile settings" className="flex gap-5 overflow-x-auto border-b">{tabs.map(t => <button key={t} onClick={() => { setTab(t); setNotice(''); }} className={`whitespace-nowrap border-b-2 pb-3 text-sm font-medium capitalize ${tab === t ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500'}`}>{t}</button>)}</nav>
+    {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
+    <ErrorNotice error={profile.error || saveProfile.error || saveDefault.error || change.error || revoke.error || disconnect.error} />
+    {tab === 'account' && <section className="space-y-5 rounded-xl border p-5"><h2 className="text-lg font-semibold">Account</h2>{profile.data ? <><dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Username</dt><dd className="mt-1 font-medium">{profile.data.username}</dd></div><div><dt className="text-slate-500">Account ID</dt><dd className="mt-1 break-all font-mono text-xs">{profile.data.userId}</dd></div><div><dt className="text-slate-500">Platform access</dt><dd className="mt-1"><Badge>{profile.data.roles.includes('admin') ? 'Platform administrator' : 'Console user'}</Badge></dd></div></dl><form className="space-y-4 border-t pt-4" onSubmit={e => { e.preventDefault(); saveProfile.mutate(); }}><label className="block max-w-md space-y-2 text-sm font-medium">Display name<Input maxLength={100} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={profile.data.username} /></label><Button type="submit" disabled={saveProfile.isPending}>Save profile</Button></form></> : <p className="text-sm text-slate-500">Loading account…</p>}</section>}
+    {tab === 'my namespaces' && <div className="space-y-5"><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Default namespace</h2><ErrorNotice error={preferences.error} /><select aria-label="Default namespace" className="h-10 w-full max-w-md rounded-lg border bg-white px-3 text-sm" value={defaultSpace} onChange={e => setDefaultSpace(e.target.value)}><option value="">System default (Default)</option>{scope.namespaces.map(n => <option key={n.name} value={n.name}>{n.displayName}</option>)}</select><div><Button disabled={saveDefault.isPending || preferences.isLoading || !!preferences.error} onClick={() => saveDefault.mutate()}>Save default</Button></div></section><section className="space-y-4"><h2 className="text-lg font-semibold">My namespaces</h2>{scope.namespaces.map(n => <article key={n.name} className="space-y-3 rounded-xl border p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{n.displayName} <span className="font-normal text-slate-400">{n.name}</span></h3><Button variant="outline" size="sm" onClick={() => { scope.setScope(n.tenant, n.name); navigate(`/work/overview?tenant=${encodeURIComponent(n.tenant)}&namespace=${encodeURIComponent(n.name)}`); }}>Open namespace</Button></div><RoleBadges roles={n.roles} /><p className="text-sm text-slate-500">{namespaceCan(n.roles, 'configure') ? 'You can configure resources and run work.' : namespaceCan(n.roles, 'write') ? 'You can create and run work using available resources.' : namespaceCan(n.roles, 'operate') ? 'You can operate namespace infrastructure.' : 'You can read the content shared with you.'} {namespaceCan(n.roles, 'audit') ? 'Auditor access includes private business work.' : 'Private work requires an explicit sharing grant.'}</p><Link className="text-sm text-indigo-600" to={`/settings/namespaces/${encodeURIComponent(n.name)}`}>{namespaceCan(n.roles, 'manage') ? 'Manage members & permissions' : 'View access and namespace owner'}</Link></article>)}</section><details className="rounded-xl border p-5"><summary className="cursor-pointer text-sm font-medium">Understand namespace roles</summary><div className="mt-4"><RoleGuide /></div></details></div>}
+    {tab === 'security' && <div className="space-y-5"><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Change password</h2><form className="max-w-lg space-y-4" onSubmit={e => { e.preventDefault(); if (password === confirm) change.mutate(); }}><label className="block space-y-2 text-sm">Current password<Input type="password" required autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} /></label><label className="block space-y-2 text-sm">New password<Input type="password" required minLength={6} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><label className="block space-y-2 text-sm">Confirm password<Input type="password" required autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>{confirm && password !== confirm && <p className="text-sm text-red-600">Passwords do not match.</p>}<Button type="submit" disabled={change.isPending || !current || password.length < 6 || password !== confirm}>Update password</Button></form></section><section className="space-y-4 rounded-xl border p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Login sessions</h2><Button variant="outline" disabled={revoke.isPending || !sessions.data?.items.some(s => !s.current)} onClick={() => revoke.mutate('others')}>Sign out other sessions</Button></div><ErrorNotice error={sessions.error} />{sessions.isLoading && <p className="text-sm text-slate-500">Loading sessions…</p>}{sessions.data?.items.map(s => <div key={s.id} className="flex items-start justify-between gap-4 border-t pt-4"><div className="min-w-0"><p className="break-words text-sm">{s.userAgent || 'Existing login'} {s.current && <Badge tone="info">This session</Badge>}</p><p className="mt-2 text-xs text-slate-500">Last active {new Date(s.lastSeenAt).toLocaleString()} · Expires {new Date(s.expiresAt).toLocaleString()}</p></div>{!s.current && <Button variant="ghost" size="sm" disabled={revoke.isPending} onClick={() => revoke.mutate(s.id)}>Sign out</Button>}</div>)}</section></div>}
+    {tab === 'connections' && <div className="space-y-5"><ErrorNotice error={connections.error} />{connections.isLoading && <p className="text-sm text-slate-500">Loading connections…</p>}<section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">My IM identities</h2><p className="text-sm text-slate-500">These identities connect your IM messages to your account. Pair a new identity from the relevant Channel page.</p>{connections.data?.identities.map(i => <div key={`${i.channelId}/${i.accountId}/${i.senderId}`} className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div><p className="text-sm font-medium">{i.platform} · {i.channelId}</p><p className="mt-1 break-all text-xs text-slate-500">{i.senderId}</p></div><Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate(i)}>Unlink identity</Button></div>)}{connections.data?.identities.length === 0 && <p className="text-sm text-slate-500">No linked IM identities.</p>}</section><section className="space-y-4 rounded-xl border p-5"><h2 className="font-semibold">Work notifications</h2><p className="text-sm text-slate-500">Manage your active Issue notifications to IM. Unsubscribing stops future event notifications for this subscription.</p>{connections.data?.subscriptions.map(s => <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div><p className="text-sm font-medium">{s.platform} · {s.channelId}</p><p className="mt-1 break-all text-xs text-slate-500">Issue {s.issueId}</p></div><Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate(s.id)}>Unsubscribe</Button></div>)}{connections.data?.subscriptions.length === 0 && <p className="text-sm text-slate-500">No active IM notification subscriptions.</p>}</section></div>}
+  </Page>;
 }

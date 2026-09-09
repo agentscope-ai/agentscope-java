@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-08T13:48:31.528338+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/53cad882-be2a-41bc-bee0-ca0ff13a1a7e?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+      "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+      "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+      "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+      "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+      "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+          "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+        },
+        "sessionId": "sess_4689f2c94f22",
+        "resolvedAt": "2026-09-08T13:47:16.744634Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+      "sessionId": "sess_4689f2c94f22",
+      "sessionRef": "1383611f-8e36-4ed7-a0a0-dac9e761b73e",
+      "turnId": "1c54ce02-0511-4b78-9765-1388116b24d0",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:47:36.055703+08:00",
+      "result": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+      "version": 14,
+      "createdAt": "2026-09-08T21:47:16.74379+08:00",
+      "updatedAt": "2026-09-08T21:47:36.085049+08:00",
+      "startedAt": "2026-09-08T21:47:16.816139+08:00",
+      "completedAt": "2026-09-08T21:47:36.085049+08:00"
+    }
+  }
+}

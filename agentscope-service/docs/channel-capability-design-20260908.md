@@ -1,8 +1,8 @@
 # Channel 总体能力、定位与协作关联设计
 
-日期：2026-09-08。状态：分析与设计建议，尚未实施本文提出的改造。
+日期：2026-09-08。状态：首期工作闭环及接待／回传配置已实施，当前实现与边界见第 13 节。
 
-分析基于主目录 `/Users/ken/agentscope-2/agentscope-java`、分支 `agentscope-service-v5` 的工作区源码，包括当时已有的未提交改动。本轮进行了静态源码分析，没有执行 IM 联调、构建或部署。本文中的“已有”表示已检查代码中存在相关实现，不代表已经通过当前部署环境的端到端验收；“建议”表示后续设计方向。
+第 1–12 节保留改造前的设计分析，基于主目录 `/Users/ken/agentscope-2/agentscope-java`、分支 `agentscope-service-v5` 当时的工作区源码。其中“已有／尚未实现”描述的是设计时的基线。第 13 节记录本次实际实现、验证及尚未覆盖的能力，以第 13 节判断当前状态。
 
 本文用于跨 session 传递设计上下文。后续实施前应重新核对当前主目录、分支和相关调用链，保留工作区已有改动。
 
@@ -287,3 +287,106 @@ Automation 适合表达“符合条件的 Channel 事件触发固定工作”，
 - [Automation 服务及 Channel trigger 校验](/Users/ken/agentscope-2/agentscope-java/agentscope-service/aistio/internal/automation/service.go)
 - [现有 Agent Center 信息架构中的 Channel 定位](/Users/ken/agentscope-2/agentscope-java/agentscope-service/docs/controlplane/agent-center-activity-information-architecture.md)
 - [Automation 能力分析与设计](/Users/ken/agentscope-2/agentscope-java/agentscope-service/docs/automation-capability-design-20260907.md)
+
+
+## 13. 2026-09-08 实施记录
+
+### 13.1 本次落地范围
+
+本次在项目主目录、`agentscope-service-v5` 分支直接改造，覆盖飞书文本工作接待的完整闭环，并增加按会话路由、独立回传订阅及控制台管理。Channel 使用现有 namespace 权限边界，实际执行继续使用现有 Collaboration／AgentTask／Team 编排，不另建任务系统。
+
+```mermaid
+sequenceDiagram
+    participant IM as 飞书
+    participant S as Scheduler
+    participant C as 控制面
+    participant DB as 持久化存储
+    participant W as Issue / Team / AgentTask
+    IM->>S: 已验证的文本事件、发送者、消息与回复 ID
+    S->>C: internal/channels/inbound
+    C->>C: 查外部身份、当前成员资格
+    C->>DB: 幂等保存接收消息
+    C-->>S: accepted
+    S-->>IM: 回调确认
+    C->>W: 后台创建 Issue 或补充 Comment
+    W->>DB: 工作结果 / 状态
+    C->>DB: 关联会话的持久化发送记录
+    S->>C: claim 一条待发送记录
+    C->>C: 重新检查身份、Issue ACL、群发布权限和订阅
+    C-->>S: 消息、稳定发送 ID、租约
+    S->>IM: 发送，携带稳定幂等键
+    IM-->>S: 平台 message_id 或错误
+    S->>C: 按租约保存回执或安排重试
+```
+
+| 能力 | 当前实现 |
+|---|---|
+| 接待对象 | `defaultTarget` 和 `routes[]` 使用 `targetType: agent / team`、`targetRef`；目标必须是当前 namespace 中可用的逻辑资源 |
+| Team 接待 | 创建指派给 Team 的 Issue，原有 Collaboration repository 原子创建 Team 任务及编排关联，不转成 Leader 的普通聊天 |
+| 路由 | 组织、会话类型、会话 ID、可选线程 ID；精确线程规则优先于会话规则，最后使用默认对象 |
+| 身份 | 控制台生成十分钟一次性绑定码，只能绑定当前登录账号；在机器人私聊发送 `/bind` 完成映射；数据库仅保存绑定码哈希 |
+| 私有工作 | 私聊工作默认 `private`，Creator 是实际发言人映射的稳定内部账号；Channel 配置者不代替外部用户 |
+| 群发布 | 默认不允许；开启群接待后仍需创建者使用 `/new-shared`，工作对 namespace 可见并明确向该群发布。已有工作向新群发布需要创建者 `/follow`；其他人的 Issue 可见权限不能单独授权向新群发布 |
+| 工作关联 | 保存会话／线程、用户、Issue 的持久化关联；消息 ID 映射到 Issue／Comment。回复关联优先于无锚点会话推断；显式 ID 与回复锚点冲突时拒绝并要求澄清 |
+| 多工作歧义 | 同一会话存在多个当前用户可访问的活跃工作时，要求回复具体工作消息或指定 ID，不选“最近一个 Session” |
+| 补充与反馈 | 进入原有 `AddComment`，保留线程父 Comment 和实际作者；复用已有 review feedback 机制，感谢／收到不会直接验收 |
+| 待审批提示 | 向具有工作读取权限的指定 Approver 回传控制台审批提示，不包含工具参数；发送领取时再次确认审批仍 pending，普通 IM 回复不构成审批决定 |
+| 验收 | `/accept <Issue ID> <版本号>`，仅 Creator；复用现有状态、版本、未完成任务／子 Issue／审批及验收条件检查 |
+| 长任务回传 | 控制面后台扫描持久化工作关联和增量评论，与原始请求和 120 秒回复等待脱钩；只推送订阅的结果／状态，不转发所有工具事件 |
+| 重复和恢复 | 入站消息按连接、组织和平台 message ID 去重，重用 ID 的不同内容返回冲突。Issue／Comment 使用确定性 ID；崩溃发生在协作事务提交之后，恢复也不会重复创建任务或评论 |
+| 发送语义 | `pending → submitted → provider_accepted`；失败退避重试，租约超时重新领取，最多十次后 `failed`，控制台可重试。失效权限／撤销订阅会取消发送 |
+| 回执 | 保存平台 message ID，后续用户可回复该消息；`provider_accepted` 不表示用户送达／已读、Inbox 已读、工作验收或审批完成 |
+| 权限撤销 | 入站处理及发送领取时重查活跃账号、外部映射、namespace 角色、根 Issue ACL；禁止跨 namespace 指派。普通配置管理员也不能查看他人的私有 Channel 工作记录 |
+| 控制台 | Channel 页面提供个人绑定、Agent／Team 接待、路由、结果／状态订阅、工作关联、收发重试记录；使用 namespace 角色而非平台全局 admin 控制配置能力 |
+| 资源关联 | Agent、Team 详情展示其工作接待 Channel；Issue 来源链接回 Channel；平台原有 `team` 匹配字段明确标为平台组织维度 |
+
+### 13.2 配置和使用
+
+1. 构建并更新控制面与 Scheduler。控制面启动自动创建新增的 `cp.channel_*` 表；本次没有重启或部署用户正在运行的服务。
+2. 在所属 namespace 的 Channel 页面配置飞书凭证，必须填写 Verification Token。事件回调验证 token；加密模式下提供的签名必须正确。未配置 token 的旧飞书连接需要补充凭证。
+3. 选择当前 namespace 的 Agent 或 Team，启用“工作接待”，选择需要回传的结果／状态事件。原来的普通会话默认 Agent 与绑定继续保留，与工作接待配置分开。
+4. 每位用户在该 Channel 页面生成自己的绑定码，在与机器人的私聊中发送。群里发送绑定码不会绑定；已有外部身份不能静默改绑到另一个账号。
+5. 私聊 `/new 排查发布失败` 创建新工作；工作接待开启时，无关联的新文本默认按新工作接收。已有唯一活跃工作时，新文本作为补充。
+6. 回复系统工作消息或发送 `/issue <完整 Issue UUID> 补充回滚方案` 续办。群创建需要管理员开启群接待，并由用户明确发送 `/new-shared 内容`。
+7. `/status <Issue UUID>` 查询状态；`/follow <Issue UUID>` 建立或恢复当前位置回传；控制台“停止回传”取消自己的该位置订阅。群中关联已有工作还要求它对 namespace 可见并由 Creator 授权该群。
+8. 验收使用系统状态消息中的 `/accept <Issue UUID> <version>`。版本过期时重新查询状态；工具审批继续在控制台完成。
+
+关闭工作接待时，普通聊天仅允许个人 namespace 中已绑定为该个人所有者的私聊。飞书、钉钉和企微传入稳定的消息身份；旧系统让任意外部发言人借用配置者身份的行为已经关闭。GitHub／GitLab 仍保留连接适配器，但其公开评论没有私聊绑定流程，本次不开放其以用户身份接入工作；对象同步继续使用 Work Source。
+
+### 13.3 持久化及接口
+
+新增数据位于 product 的 `cp` schema，迁移采用现有启动时幂等建表机制：
+
+- `channel_work_settings`：接待路由、回传事件和配置版本，写入使用乐观并发控制。
+- `channel_pairing_codes`、`channel_identities`：一次性账号证明及组织内外部用户映射。
+- `channel_inbound`：不可变入站正文、实际账号、处理状态和幂等结果。
+- `channel_work_links`：会话／线程与工作关联、当前订阅、增量评论游标。
+- `channel_deliveries`：独立发送记录、尝试次数、租约、平台消息 ID 和错误状态。
+
+控制台接口均继承 namespace 授权：
+
+- `GET/PUT /api/channels/:channelId/collaboration`
+- `POST /api/channels/:channelId/pairing`
+- `DELETE /api/channels/:channelId/identity`（解除当前用户的绑定）
+- `GET /api/channels/:channelId/activity`（当前用户的记录）
+- `DELETE /api/channels/:channelId/links/:linkId`
+- `POST /api/channels/:channelId/messages/:messageId/retry`
+- `POST /api/channels/:channelId/deliveries/:deliveryId/retry`
+
+内部入站、发送领取与回执使用 `/api/internal/channels/*`，只接受内部服务凭证。原始 `/api/outbound/send` 限内部身份使用，响应只表示 `submitted`，不再作为控制台绕过工作授权的发送入口。
+
+### 13.4 验证和边界
+
+验证覆盖 PostgreSQL 真实落库、接收去重及协作事务恢复、私有 Issue 越权、群发布授权、多工作歧义、Team 编排任务、显式验收与版本冲突、长任务结果、发送失败与回执、租约替换、成员／身份撤销、配置 CAS、订阅恢复，以及 namespace 角色下的控制台流程。
+
+- Go：独立 PostgreSQL 测试库串行执行 `go test -p 1 ./...`；Channel 专项测试单独复验。初次全量并行执行出现了不同测试包之间的数据库迁移锁竞争，串行独立库复验通过。
+- Java：Scheduler 及依赖 reactor 执行 `mvn -pl agentscope-service/service-scheduler -am verify -Dmaven.javadoc.skip=true -Dtest='io.agentscope.builder.web.**.*Test,FeishuChannelCallbackTest' -Dsurefire.failIfNoSpecifiedTests=false`；包括真实本地 HTTP 模拟的飞书错误码、message ID、线程发送、幂等键，以及回调认证与持久化失败重试。
+- 前端：`npm test`、`npm run build`；`npx playwright test -c playwright.channel.config.ts` 使用生产构建验证空间开发者配置和普通成员自助绑定。
+
+当前明确边界：
+
+- 完整持久化工作回传首先支持飞书文本；钉钉、企微的普通个人私聊仍走已有同步 Session 路径，其长对话回复等待不属于本次持久化工作回传保证。
+- 未进行真实飞书组织联调；本地模拟验证不替代上线时的平台凭证、回调网络和机器人群权限验收。
+- 工具审批卡片／动作、附件及多媒体、自然语言自动区分“闲聊还是新工作”、可配置摘要模板、Channel Automation 事件接线仍属后续阶段；本次没有将尚未实现的 Channel trigger 标成可用。
+- 结果评论按持久化游标补发；状态通知按当前工作状态合并，超长文本截断并引导到控制台完整 Issue，不把内部工具日志作为默认回传内容。
+- 本地 Issue／Comment 副作用有确定性幂等保证。跨外部平台发送复用稳定幂等键；网络超时后的实际去重仍受平台幂等能力和保留窗口约束，不宣称跨系统绝对 exactly-once 或已读保证。

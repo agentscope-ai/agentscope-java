@@ -1,3 +1,4 @@
+import ChannelAssociations from "@/components/ChannelAssociations";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, RefreshCw } from "lucide-react";
@@ -142,6 +143,7 @@ export default function TeamDetailPage() {
         <span>{overview.endpoints.published} published APIs</span>
         <span>{overview.reason}</span>
       </div>
+      <ChannelAssociations targetType="team" targetRef={teamId} />
       <nav
         aria-label="Team sections"
         className="flex gap-1 overflow-x-auto border-b border-border"

@@ -20,7 +20,7 @@ import ToolsActivePanel from '../components/ToolsActivePanel';
 import ToolsCatalogPanel from '../components/ToolsCatalogPanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
 import McpConnectionsEditor from '../components/McpConnectionsEditor';
-import { updateAgent } from '../api/agents';
+import { getAgent, updateAgent } from '../api/agents';
 import type { AgentDefinition } from '../api/agents';
 
 const helpStyle: React.CSSProperties = {
@@ -90,7 +90,13 @@ export default function AgentToolsPage() {
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {agent && <McpConnectionsEditor servers={agent.mcpServers ?? []} tools={agent.tools ?? []} readOnly={!!linked || !canEdit} onSave={async (servers, tools) => {
+        {agent && <McpConnectionsEditor servers={agent.mcpServers ?? []} tools={agent.tools ?? []} readOnly={(!!linked && !(agent?.workspaceBinding?.overrides.includes('tools') && agent?.workspaceBinding?.overrides.includes('mcpServers'))) || !canEdit} canConnect={canEdit} onOAuthConnected={async vaultId => {
+          const latest = await getAgent(agentId);
+          if (!(latest.defaultVaultIds ?? []).includes(vaultId)) {
+            await updateAgent(agentId, { name: latest.name, version: latest.version, defaultVaultIds: [...(latest.defaultVaultIds ?? []), vaultId] });
+          }
+          await refreshAgent?.();
+        }} onSave={async (servers, tools) => {
           await updateAgent(agentId, { name: agent.name, version: agent.version, mcpServers: servers, tools });
           bumpRefresh();
         }} />}
@@ -99,7 +105,7 @@ export default function AgentToolsPage() {
           refreshKey={refreshKey}
           onChange={bumpRefresh}
           onRequestBrowse={() => setBrowseOpen(true)}
-          readOnly={!!linked || !canEdit}
+          readOnly={(!!linked && !agent?.workspaceBinding?.overrides.includes('tools')) || !canEdit}
         />
       </div>
       {browseOpen && !linked && canEdit && (

@@ -29,6 +29,15 @@ func testNamespaceAccess(t *testing.T, ctx context.Context, s store.Store) {
 	if err != nil || len(items) != 0 {
 		t.Fatalf("outsider list: %v %+v", err, items)
 	}
+	globalTenant := "global-" + uuid.NewString()
+	global, err := s.Access().PutNamespace(ctx, &controlmodel.Namespace{Tenant: globalTenant, Name: "default", DisplayName: "Default", Kind: "global", Owner: "system", Members: map[string][]string{}}, 0, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.Access().ListNamespaces(ctx, globalTenant, "outsider", 10, 0)
+	if err != nil || len(items) != 1 || items[0].Name != global.Name || !controlmodel.NamespaceAllows(items[0].Roles("outsider"), "operate") || controlmodel.NamespaceAllows(items[0].Roles("outsider"), "members.manage") {
+		t.Fatalf("global namespace access: %v %+v", err, items)
+	}
 	// Returned membership maps are detached from the stored authority.
 	n.Members["intruder"] = []string{"admin"}
 	reloaded, _ := s.Access().GetNamespace(ctx, tenant, n.Name)
@@ -47,6 +56,31 @@ func testNamespaceAccess(t *testing.T, ctx context.Context, s store.Store) {
 	_, err = s.Access().PutNamespace(ctx, n, n.Version-1, "alice")
 	if err != store.ErrConflict {
 		t.Fatalf("stale membership: %v", err)
+	}
+	if _, err = s.Access().TransferNamespace(ctx, tenant, n.Name, "bob", n.Version-1, "alice"); err != store.ErrConflict {
+		t.Fatalf("stale transfer: %v", err)
+	}
+	n, err = s.Access().TransferNamespace(ctx, tenant, n.Name, "bob", n.Version, "alice")
+	if err != nil || n.Owner != "bob" || !controlmodel.NamespaceAllows(n.Roles("alice"), "members.manage") {
+		t.Fatalf("ownership transfer: %+v %v", n, err)
+	}
+	n.Archived = true
+	n, err = s.Access().PutNamespace(ctx, n, n.Version, "bob")
+	if err != nil || len(n.Roles("bob")) != 0 {
+		t.Fatalf("archive authority: %+v %v", n, err)
+	}
+	items, err = s.Access().ListNamespaces(ctx, tenant, "bob", 10, 0)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("archived namespace in selector: %+v %v", items, err)
+	}
+	audit, err := s.Access().ListNamespaceAudit(ctx, tenant, n.Name, 50, 0)
+	if err != nil || len(audit) != 4 || audit[0].Version != n.Version || !audit[0].Namespace.Archived {
+		t.Fatalf("namespace audit: %+v %v", audit, err)
+	}
+	n.Archived = false
+	n, err = s.Access().PutNamespace(ctx, n, n.Version, "bob")
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	create := func(title, mode string, parent *uuid.UUID) *controlmodel.Issue {

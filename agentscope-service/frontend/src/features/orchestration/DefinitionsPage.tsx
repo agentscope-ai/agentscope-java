@@ -25,7 +25,7 @@ import {
   type OrchestrationDefinition,
 } from "@/api/orchestration";
 import { listTeams } from "@/api/collaboration";
-import { getRoles } from "@/api/auth";
+import { namespaceCan } from "@/lib/namespaceScope";
 import { useControlPlaneScope } from "@/app/ScopeContext";
 import { AgentPicker } from "@/components/AgentPicker";
 import { PublishEndpointCard } from "@/components/PublishEndpointCard";
@@ -60,10 +60,6 @@ const tabs = [
   "connections",
   "settings",
 ];
-function editable() {
-  const roles = getRoles().map((r) => r.toLowerCase());
-  return roles.includes("admin") || roles.includes("agent_developer");
-}
 function ErrorMessage({ error }: { error: unknown }) {
   return error ? (
     <p
@@ -84,6 +80,7 @@ export default function DefinitionsPage() {
 }
 function WorkflowList() {
   const scope = useControlPlaneScope();
+  const canCreate = namespaceCan(scope.roles, "configure");
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [archived, setArchived] = useState(false);
@@ -127,7 +124,7 @@ function WorkflowList() {
         title="Workflows"
         description="Design repeatable work, publish a version and follow each execution."
         actions={
-          editable() && (
+          canCreate && (
             <Button onClick={() => setCreating(true)}>Create Workflow</Button>
           )
         }
@@ -174,7 +171,12 @@ function WorkflowList() {
         !query.isError && (
           <EmptyState
             title="No Workflows"
-            description="Create a Workflow, configure its steps, then publish a version to run it."
+            description={canCreate
+              ? "Create a Workflow, configure its steps, then publish a version to run it."
+              : "No workflows are available in this namespace yet."}
+            action={canCreate && (
+              <Button onClick={() => setCreating(true)}>Create Workflow</Button>
+            )}
           />
         )
       )}
@@ -306,7 +308,7 @@ function WorkflowDetail({ id }: { id: string }) {
     JSON.stringify(definition?.draftSpec || { nodes: [], edges: [] }, null, 2);
   const parsed = parseWorkflow(text);
   const dirty = draft !== null;
-  const canEdit = editable() && !definition?.archivedAt;
+  const canEdit = namespaceCan(scope.roles, "configure") && !definition?.archivedAt;
   const versions = revisions.data?.revisions || [];
   const selectedRevision =
     versions.find((r) => r.id === revisionId) || versions[0];
@@ -544,7 +546,7 @@ function WorkflowDetail({ id }: { id: string }) {
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
-            {editable() && (
+            {namespaceCan(scope.roles, "write") && (
               <Button
                 size="sm"
                 disabled={!selectedRevision || !!definition.archivedAt}
@@ -909,6 +911,8 @@ function WorkflowSettings({
   definition: OrchestrationDefinition;
   onSaved: () => void;
 }) {
+  const scope = useControlPlaneScope();
+  const canEdit = namespaceCan(scope.roles, "configure");
   const [name, setName] = useState(definition.name);
   const [description, setDescription] = useState(definition.description || "");
   const [archived, setArchived] = useState(!!definition.archivedAt);
@@ -931,7 +935,7 @@ function WorkflowSettings({
       }}
     >
       <fieldset
-        disabled={!editable() || save.isPending}
+        disabled={!canEdit || save.isPending}
         className="min-w-0 space-y-4"
       >
         <label className="block text-sm">
@@ -962,7 +966,7 @@ function WorkflowSettings({
         {definition.id} · Version {definition.version}
       </p>
       <ErrorMessage error={save.error} />
-      {editable() && (
+      {canEdit && (
         <Button disabled={!name.trim() || save.isPending}>Save settings</Button>
       )}
     </form>

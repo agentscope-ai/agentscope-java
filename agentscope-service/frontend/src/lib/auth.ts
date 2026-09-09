@@ -1,3 +1,4 @@
+import { getAccountIdentity, setAccountIdentity } from "./accountIdentity";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -38,7 +39,10 @@ export async function login(username: string, password: string): Promise<LoginRe
 }
 
 export async function me(): Promise<MeResponse> {
-  return api.get<MeResponse>('/api/auth/me');
+  const token = getToken();
+  const account = await api.get<MeResponse>('/api/auth/me');
+  if (token && token === getToken()) setAccountIdentity(token, account);
+  return account;
 }
 
 export function logout() {
@@ -58,16 +62,7 @@ export function getUsername(): string {
   }
 }
 
-export function getRoles(): string[] {
-  try {
-    const token = getToken();
-    if (!token) return [];
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return Array.isArray(payload.roles) ? payload.roles.map(String) : [];
-  } catch {
-    return [];
-  }
-}
+export function getRoles(): string[] { return getAccountIdentity(getToken())?.roles || []; }
 
 export function isAdmin(): boolean {
 	return getRoles().map((role) => role.toLowerCase()).includes('admin');

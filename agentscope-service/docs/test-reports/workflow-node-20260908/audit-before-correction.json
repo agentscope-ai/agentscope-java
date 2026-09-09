@@ -1,0 +1,44 @@
+{
+  "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+  "issueStatus": "blocked",
+  "runState": "failed",
+  "nodes": [
+    {
+      "nodeKey": "node2",
+      "state": "cancelled",
+      "failureCode": "fail_fast",
+      "output": null
+    },
+    {
+      "nodeKey": "node3",
+      "state": "cancelled",
+      "failureCode": "fail_fast",
+      "output": null
+    },
+    {
+      "nodeKey": "work",
+      "state": "failed",
+      "failureCode": "managed_turn_incomplete",
+      "output": {}
+    }
+  ],
+  "tasks": [
+    {
+      "id": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+      "status": "failed",
+      "errorCode": "managed_turn_incomplete",
+      "runNodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+      "attemptState": "failed",
+      "tools": [
+        "task.get"
+      ],
+      "workflow": {
+        "nodeKey": "work",
+        "runInput": {},
+        "nodeInput": {},
+        "predecessors": []
+      },
+      "nodeReturned": true
+    }
+  ]
+}

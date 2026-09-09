@@ -1,0 +1,4395 @@
+{
+  "at": "2026-09-08T13:48:31.460560+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f/export?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "558421ab-d133-4114-9265-6ad44041ae7c",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "createdAt": "2026-09-08T21:15:47.228484+08:00"
+      },
+      {
+        "id": "68bf4540-ee65-4b1b-89b8-1e6cdb7c28a1",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+        "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:15:48.046334+08:00"
+      },
+      {
+        "id": "173efac8-07b3-4c0f-99bd-62095ce7fe87",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:02d63988-c67d-4e2a-940f-ec39c58e30dc"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: managed_turn_incomplete"
+        },
+        "createdAt": "2026-09-08T21:16:02.653503+08:00"
+      },
+      {
+        "id": "efad8876-5b58-4c67-8975-363c30fbb89b",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+        "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:24:42.585506+08:00"
+      },
+      {
+        "id": "c0ed3fa1-0984-4c46-aa4a-4da7952f3121",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:49ea86f1-fde4-4ca4-8405-05a770f17881"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: mcp_connection_failed_error"
+        },
+        "createdAt": "2026-09-08T21:24:43.638505+08:00"
+      },
+      {
+        "id": "026b7b49-e12f-4678-b5f7-27fc5af2e12d",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+        "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:28:57.355205+08:00"
+      },
+      {
+        "id": "8d010e91-19cc-4ddd-94db-268158d04593",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:6ed6f60a-360c-43c3-bfe0-497d7f35fa8d"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: mcp_connection_failed_error"
+        },
+        "createdAt": "2026-09-08T21:28:58.120707+08:00"
+      },
+      {
+        "id": "ce2a45ef-39d1-4a6c-bb52-cf2de245f060",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+        "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:36:15.627349+08:00"
+      },
+      {
+        "id": "5b67a8d8-4e60-4a51-9874-fb1f13200230",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+        "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+        "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "createdAt": "2026-09-08T21:36:32.936408+08:00"
+      },
+      {
+        "id": "67405b38-c5cf-4276-b29e-a7dfa2b7c8fa",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:8d63f95d-afd0-4f7c-b08c-05eded088056"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: managed_turn_incomplete"
+        },
+        "createdAt": "2026-09-08T21:36:48.493618+08:00"
+      },
+      {
+        "id": "ff78e193-0176-46ce-a446-5d7e4736646b",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+        "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:40:18.821552+08:00"
+      },
+      {
+        "id": "ce5db067-6656-434e-9c85-22e48baa8cca",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "system",
+          "ref": "orchestration-run:4491d633-62cb-413c-96bf-b069a2ca984b"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "orchestration run failed: managed_turn_incomplete"
+        },
+        "createdAt": "2026-09-08T21:40:32.232213+08:00"
+      },
+      {
+        "id": "039771c6-7bcc-461c-bd91-5816776db55b",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "causationId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T21:46:52.018059+08:00"
+      },
+      {
+        "id": "7fe9eee6-5765-449d-b322-2fb611dce1fc",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+        "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "createdAt": "2026-09-08T21:47:14.862259+08:00"
+      },
+      {
+        "id": "b2b4cb08-f7da-4461-abd1-861b7472eaf1",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+        "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "createdAt": "2026-09-08T21:47:36.148801+08:00"
+      },
+      {
+        "id": "26be9841-f764-4182-8123-1e36b981dfbb",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-08T21:47:55.256947+08:00"
+      },
+      {
+        "id": "76577c07-e89e-46ff-95b0-b948c1a71539",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "actor": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "18b7a315-e416-491c-b827-b1299130646b",
+        "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "createdAt": "2026-09-08T21:47:55.261483+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "5d21809a-b44d-4270-ba3a-adc4cbc0d723",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "threadRootId": "5d21809a-b44d-4270-ba3a-adc4cbc0d723",
+        "author": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "content": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+        "type": "result",
+        "sourceTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+        "sourceAttemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+        "version": 1,
+        "createdAt": "2026-09-08T21:36:32.926321+08:00",
+        "updatedAt": "2026-09-08T21:36:32.926321+08:00"
+      },
+      {
+        "id": "f340285d-809d-4f26-b219-cae23d2c5edd",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "threadRootId": "f340285d-809d-4f26-b219-cae23d2c5edd",
+        "author": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "content": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+        "type": "result",
+        "sourceTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+        "sourceAttemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+        "version": 1,
+        "createdAt": "2026-09-08T21:47:14.84858+08:00",
+        "updatedAt": "2026-09-08T21:47:14.84858+08:00"
+      },
+      {
+        "id": "ad62d5b4-4252-4c97-867a-5ed67b9e4783",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "threadRootId": "ad62d5b4-4252-4c97-867a-5ed67b9e4783",
+        "author": {
+          "type": "agent",
+          "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+        },
+        "content": "已根据上一节点提供的诗歌进行了优化，提升了诗句的艺术性和整体意境。\n\n秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+        "type": "result",
+        "sourceTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+        "sourceAttemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+        "version": 1,
+        "createdAt": "2026-09-08T21:47:36.085049+08:00",
+        "updatedAt": "2026-09-08T21:47:36.085049+08:00"
+      },
+      {
+        "id": "a9fd1703-46e2-4349-ab91-7cc2e3aad2d1",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "threadRootId": "a9fd1703-46e2-4349-ab91-7cc2e3aad2d1",
+        "author": {
+          "type": "agent",
+          "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "content": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+        "type": "result",
+        "sourceTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+        "sourceAttemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+        "version": 1,
+        "createdAt": "2026-09-08T21:47:55.241706+08:00",
+        "updatedAt": "2026-09-08T21:47:55.241706+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-08T13:48:31.502822Z",
+    "issue": {
+      "access": {
+        "mode": "private"
+      },
+      "id": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+      "tenant": "default",
+      "namespace": "demo",
+      "title": "帮我写一首诗，逐步优化",
+      "description": "Started from Workflow workflow1",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 17,
+      "createdAt": "2026-09-08T21:15:47.221577+08:00",
+      "updatedAt": "2026-09-08T21:47:55.241706+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "5c053675-31da-446c-96cd-4bba5aeac3f5",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:88e41f16-8d65-4a95-afab-c2201e97f335",
+            "occurredAt": "2026-09-08T21:46:51.540247+08:00"
+          },
+          {
+            "id": "a5c5c0eb-6db4-45ee-9af4-0f2d2a4039da",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "agent-task-queued:adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "occurredAt": "2026-09-08T21:46:51.548149+08:00"
+          },
+          {
+            "id": "df9a00d8-f084-4c7d-8003-14501c139e09",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-queued:2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "occurredAt": "2026-09-08T21:46:51.750915+08:00"
+          },
+          {
+            "id": "48e22bc4-2558-47aa-bcbf-d05e8ccd653e",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "occurredAt": "2026-09-08T21:46:52.011057+08:00"
+          },
+          {
+            "id": "f10a55fe-2abe-4fbd-91f7-bbfae7960bf9",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-succeeded:2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+            "occurredAt": "2026-09-08T21:47:14.84858+08:00"
+          },
+          {
+            "id": "7b07c9b9-14e7-47ed-a5bd-e8997a353fba",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "output": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。"
+            },
+            "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "node-succeeded:7367c2f5-8c36-577f-92be-dedf389fe400",
+            "occurredAt": "2026-09-08T21:47:14.84858+08:00"
+          },
+          {
+            "id": "be37ed74-ddef-4f13-9696-43d5283b34d5",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 7,
+            "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "agent-task-queued:766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "occurredAt": "2026-09-08T21:47:15.738544+08:00"
+          },
+          {
+            "id": "eeba5b3d-3c67-41a6-ab37-3f1d055b5545",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 8,
+            "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "attemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-queued:53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "occurredAt": "2026-09-08T21:47:16.74379+08:00"
+          },
+          {
+            "id": "9d804f2d-8987-4350-98fa-1677a62e46df",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 9,
+            "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "attemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+            },
+            "idempotencyKey": "attempt-running:53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "occurredAt": "2026-09-08T21:47:16.816139+08:00"
+          },
+          {
+            "id": "eb140b98-db40-41cb-9aa4-f6c8818eb449",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 10,
+            "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "attemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+            },
+            "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-succeeded:53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+            "occurredAt": "2026-09-08T21:47:36.085049+08:00"
+          },
+          {
+            "id": "8b662694-9374-4242-be78-d44f66339862",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 11,
+            "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+            },
+            "payload": {
+              "output": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。"
+            },
+            "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "node-succeeded:91d83707-0e48-57a3-95cc-394eb92a990f",
+            "occurredAt": "2026-09-08T21:47:36.085049+08:00"
+          },
+          {
+            "id": "ed58f365-8b18-4acb-bcfa-3e54c5681c37",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 12,
+            "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "agent-task-queued:18b7a315-e416-491c-b827-b1299130646b",
+            "occurredAt": "2026-09-08T21:47:36.745563+08:00"
+          },
+          {
+            "id": "5e2c35b7-5058-4272-93da-9f863ad99683",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 13,
+            "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+            "attemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-queued:9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "occurredAt": "2026-09-08T21:47:37.750696+08:00"
+          },
+          {
+            "id": "126c549a-1fdf-4973-bf80-67470f673216",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 14,
+            "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+            "attemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "occurredAt": "2026-09-08T21:47:37.824993+08:00"
+          },
+          {
+            "id": "166cb05a-3f55-4a6b-90f4-2829f5d54a87",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 15,
+            "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+            "attemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "attempt-succeeded:9097212d-1162-405b-bafd-1cb7bf8a7be9",
+            "occurredAt": "2026-09-08T21:47:55.241706+08:00"
+          },
+          {
+            "id": "313c6383-9b4b-4ca6-aa8d-756eed6986ab",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 16,
+            "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "output": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。"
+            },
+            "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "node-succeeded:686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "occurredAt": "2026-09-08T21:47:55.241706+08:00"
+          },
+          {
+            "id": "0cb238e3-fb6d-4851-a054-840484452d91",
+            "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 17,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+            "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "idempotencyKey": "run-succeeded:88e41f16-8d65-4a95-afab-c2201e97f335",
+            "occurredAt": "2026-09-08T21:47:55.241706+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "88e41f16-8d65-4a95-afab-c2201e97f335",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "triggerType": "rerun",
+            "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "workflow-node-fix-20260908-5",
+            "input": {},
+            "variables": {},
+            "output": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+            "policySnapshot": {},
+            "state": "succeeded",
+            "version": 10,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:46:51.529846+08:00",
+            "updatedAt": "2026-09-08T21:47:55.241706+08:00",
+            "startedAt": "2026-09-08T21:46:51.5447+08:00",
+            "completedAt": "2026-09-08T21:47:55.241706+08:00"
+          },
+          "nodes": [
+            {
+              "id": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "succeeded",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+              "iteration": 1,
+              "version": 4,
+              "createdAt": "2026-09-08T21:46:51.536955+08:00",
+              "updatedAt": "2026-09-08T21:47:36.085049+08:00",
+              "startedAt": "2026-09-08T21:47:15.74312+08:00",
+              "completedAt": "2026-09-08T21:47:36.085049+08:00"
+            },
+            {
+              "id": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "succeeded",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+              "iteration": 1,
+              "version": 4,
+              "createdAt": "2026-09-08T21:46:51.53735+08:00",
+              "updatedAt": "2026-09-08T21:47:55.241706+08:00",
+              "startedAt": "2026-09-08T21:47:36.756344+08:00",
+              "completedAt": "2026-09-08T21:47:55.241706+08:00"
+            },
+            {
+              "id": "7367c2f5-8c36-577f-92be-dedf389fe400",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "succeeded",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-08T21:46:51.53627+08:00",
+              "updatedAt": "2026-09-08T21:47:14.84858+08:00",
+              "startedAt": "2026-09-08T21:46:51.554559+08:00",
+              "completedAt": "2026-09-08T21:47:14.84858+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "0ccc2c65-bbf3-5a88-b2ba-3d7bd4dd4c1e",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+              "toNodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:46:51.538406+08:00"
+            },
+            {
+              "id": "69102956-f6e2-531f-9112-5d686d5b564a",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "toNodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:46:51.538406+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "runNodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+              "currentAttemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+              "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_5eb87c484f12",
+                "resolvedAt": "2026-09-08T13:46:51.751519Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_5eb87c484f12",
+              "result": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:46:51.548149+08:00",
+              "dispatchedAt": "2026-09-08T21:46:51.750915+08:00",
+              "startedAt": "2026-09-08T21:46:52.011057+08:00",
+              "completedAt": "2026-09-08T21:47:14.84858+08:00"
+            },
+            {
+              "id": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "runNodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "currentAttemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+              "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+                },
+                "sessionId": "sess_4689f2c94f22",
+                "resolvedAt": "2026-09-08T13:47:16.744634Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_4689f2c94f22",
+              "result": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:47:15.738544+08:00",
+              "dispatchedAt": "2026-09-08T21:47:16.74379+08:00",
+              "startedAt": "2026-09-08T21:47:16.816139+08:00",
+              "completedAt": "2026-09-08T21:47:36.085049+08:00"
+            },
+            {
+              "id": "18b7a315-e416-491c-b827-b1299130646b",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "runNodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+              "currentAttemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+              "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_f2e7aceee831",
+                "resolvedAt": "2026-09-08T13:47:37.806066Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_f2e7aceee831",
+              "result": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:47:36.745563+08:00",
+              "dispatchedAt": "2026-09-08T21:47:37.750696+08:00",
+              "startedAt": "2026-09-08T21:47:37.824993+08:00",
+              "completedAt": "2026-09-08T21:47:55.241706+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+              "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "nodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_5eb87c484f12",
+                "resolvedAt": "2026-09-08T13:46:51.751519Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_5eb87c484f12",
+              "sessionRef": "636ada31-98b8-40b0-9533-764eeec9b89f",
+              "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:47:14.80357+08:00",
+              "result": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+              "version": 16,
+              "createdAt": "2026-09-08T21:46:51.750915+08:00",
+              "updatedAt": "2026-09-08T21:47:14.84858+08:00",
+              "startedAt": "2026-09-08T21:46:52.011057+08:00",
+              "completedAt": "2026-09-08T21:47:14.84858+08:00"
+            },
+            {
+              "id": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+              "agentTaskId": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+              "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "nodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+                },
+                "sessionId": "sess_4689f2c94f22",
+                "resolvedAt": "2026-09-08T13:47:16.744634Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "sessionId": "sess_4689f2c94f22",
+              "sessionRef": "1383611f-8e36-4ed7-a0a0-dac9e761b73e",
+              "turnId": "1c54ce02-0511-4b78-9765-1388116b24d0",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:47:36.055703+08:00",
+              "result": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+              "version": 14,
+              "createdAt": "2026-09-08T21:47:16.74379+08:00",
+              "updatedAt": "2026-09-08T21:47:36.085049+08:00",
+              "startedAt": "2026-09-08T21:47:16.816139+08:00",
+              "completedAt": "2026-09-08T21:47:36.085049+08:00"
+            },
+            {
+              "id": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+              "agentTaskId": "18b7a315-e416-491c-b827-b1299130646b",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+              "nodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_f2e7aceee831",
+                "resolvedAt": "2026-09-08T13:47:37.806066Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_f2e7aceee831",
+              "sessionRef": "5c383124-e12a-4891-b65e-15acab79e0ab",
+              "turnId": "106a8ea3-80d7-4495-9094-9ad0b90eed21",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:47:55.209009+08:00",
+              "result": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+              "version": 15,
+              "createdAt": "2026-09-08T21:47:37.750696+08:00",
+              "updatedAt": "2026-09-08T21:47:55.241706+08:00",
+              "startedAt": "2026-09-08T21:47:37.824993+08:00",
+              "completedAt": "2026-09-08T21:47:55.241706+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "87f1295f-d6a8-4f34-959c-ed0cdcb0561b",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:4491d633-62cb-413c-96bf-b069a2ca984b",
+            "occurredAt": "2026-09-08T21:40:17.779169+08:00"
+          },
+          {
+            "id": "67e5335b-84b4-4020-8bf4-07c164b4676e",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "idempotencyKey": "agent-task-queued:4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+            "occurredAt": "2026-09-08T21:40:17.785473+08:00"
+          },
+          {
+            "id": "277ebc05-fdab-4c2a-b517-9d06baf1a16d",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+            "attemptId": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "idempotencyKey": "attempt-queued:0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "occurredAt": "2026-09-08T21:40:18.537708+08:00"
+          },
+          {
+            "id": "995d6ce9-7b26-4e49-b61f-c7ac69ad88f9",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+            "attemptId": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "occurredAt": "2026-09-08T21:40:18.81164+08:00"
+          },
+          {
+            "id": "07eec204-48e9-4177-9bfa-43343281a023",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+            "attemptId": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "code": "managed_turn_incomplete",
+              "message": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。"
+            },
+            "causationId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+            "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "idempotencyKey": "attempt-failed:0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+            "occurredAt": "2026-09-08T21:40:32.207992+08:00"
+          },
+          {
+            "id": "9b7fa5b5-c452-401a-ae75-432220023ec5",
+            "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。"
+            },
+            "idempotencyKey": "run-failed:4491d633-62cb-413c-96bf-b069a2ca984b",
+            "occurredAt": "2026-09-08T21:40:32.226232+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "4491d633-62cb-413c-96bf-b069a2ca984b",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "triggerType": "rerun",
+            "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "workflow-node-fix-20260908-4",
+            "input": {},
+            "variables": {},
+            "policySnapshot": {},
+            "state": "failed",
+            "failureCode": "managed_turn_incomplete",
+            "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+            "version": 6,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:40:17.767275+08:00",
+            "updatedAt": "2026-09-08T21:40:32.226232+08:00",
+            "startedAt": "2026-09-08T21:40:17.782267+08:00",
+            "completedAt": "2026-09-08T21:40:32.226232+08:00"
+          },
+          "nodes": [
+            {
+              "id": "92ecf5ba-f087-5f4a-b9c4-75c1c2a9d881",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:40:17.775935+08:00",
+              "updatedAt": "2026-09-08T21:40:32.224133+08:00",
+              "completedAt": "2026-09-08T21:40:32.224133+08:00"
+            },
+            {
+              "id": "80735de4-7fe6-5dbe-985a-fcd52a192526",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:40:17.776278+08:00",
+              "updatedAt": "2026-09-08T21:40:32.225608+08:00",
+              "completedAt": "2026-09-08T21:40:32.225608+08:00"
+            },
+            {
+              "id": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "failed",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": {},
+              "iteration": 1,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+              "version": 3,
+              "createdAt": "2026-09-08T21:40:17.775488+08:00",
+              "updatedAt": "2026-09-08T21:40:32.221213+08:00",
+              "startedAt": "2026-09-08T21:40:17.790686+08:00",
+              "completedAt": "2026-09-08T21:40:32.221213+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "a2b42901-ecbe-57ae-814f-33243f0b3bfd",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+              "toNodeId": "92ecf5ba-f087-5f4a-b9c4-75c1c2a9d881",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:40:17.778019+08:00"
+            },
+            {
+              "id": "fe757b5b-23cc-558b-b3a4-2a6e9277f087",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "92ecf5ba-f087-5f4a-b9c4-75c1c2a9d881",
+              "toNodeId": "80735de4-7fe6-5dbe-985a-fcd52a192526",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:40:17.778019+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "runNodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+              "currentAttemptId": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+              "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_ea3d95ab176d",
+                "resolvedAt": "2026-09-08T13:40:18.537954Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_ea3d95ab176d",
+              "errorCode": "managed_turn_incomplete",
+              "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:40:17.785473+08:00",
+              "dispatchedAt": "2026-09-08T21:40:18.537708+08:00",
+              "startedAt": "2026-09-08T21:40:18.81164+08:00",
+              "completedAt": "2026-09-08T21:40:32.207992+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+              "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+              "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_ea3d95ab176d",
+                "resolvedAt": "2026-09-08T13:40:18.537954Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_ea3d95ab176d",
+              "sessionRef": "5dd8ecaf-1eb2-4927-a920-8c532c1b1b3b",
+              "turnId": "7c312b72-82c5-4929-b179-e53d365ed532",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:40:32.201798+08:00",
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+              "version": 16,
+              "createdAt": "2026-09-08T21:40:18.537708+08:00",
+              "updatedAt": "2026-09-08T21:40:32.207992+08:00",
+              "startedAt": "2026-09-08T21:40:18.81164+08:00",
+              "completedAt": "2026-09-08T21:40:32.207992+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "ffa3a476-a725-4486-a34e-64435f46b21c",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "occurredAt": "2026-09-08T21:36:14.895136+08:00"
+          },
+          {
+            "id": "3e5a8049-7108-4d41-aec4-a4ca4c68555b",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "agent-task-queued:fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "occurredAt": "2026-09-08T21:36:14.903985+08:00"
+          },
+          {
+            "id": "bb337206-2c66-4aa9-a10b-25f0cc8a5832",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "attemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "attempt-queued:b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "occurredAt": "2026-09-08T21:36:15.304322+08:00"
+          },
+          {
+            "id": "efb8e0fd-647f-49a7-8dbd-5b235d65c783",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "attemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "occurredAt": "2026-09-08T21:36:15.62051+08:00"
+          },
+          {
+            "id": "c5276fa0-b628-4717-81e5-0772cb09e620",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "attemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "attempt-succeeded:b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+            "occurredAt": "2026-09-08T21:36:32.926321+08:00"
+          },
+          {
+            "id": "fb0250dd-1f73-43ee-9697-611b1b4a8c86",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "output": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。"
+            },
+            "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "node-succeeded:7c8b1263-564a-59a5-bf6b-ce1540e28727",
+            "occurredAt": "2026-09-08T21:36:32.926321+08:00"
+          },
+          {
+            "id": "ba5ee6ae-9aea-40d5-a3da-719568482a6e",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 7,
+            "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "agent-task-queued:d0929720-6d82-483c-921b-52046bfbcdc2",
+            "occurredAt": "2026-09-08T21:36:33.28385+08:00"
+          },
+          {
+            "id": "ba301653-2d79-46c7-86d1-9f891edf7fd0",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 8,
+            "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+            "attemptId": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "attempt-queued:5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "occurredAt": "2026-09-08T21:36:34.295289+08:00"
+          },
+          {
+            "id": "7cb72059-0305-4029-bf66-0eb60d7df29c",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 9,
+            "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+            "attemptId": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+            },
+            "idempotencyKey": "attempt-running:5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "occurredAt": "2026-09-08T21:36:34.365452+08:00"
+          },
+          {
+            "id": "d6f06a99-c5c4-43e7-937d-65213baf0369",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 10,
+            "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+            "attemptId": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+            },
+            "payload": {
+              "code": "managed_turn_incomplete",
+              "message": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。"
+            },
+            "causationId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+            "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "idempotencyKey": "attempt-failed:5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+            "occurredAt": "2026-09-08T21:36:48.45932+08:00"
+          },
+          {
+            "id": "5bef5084-3414-445f-bd0c-0d006a73c0d0",
+            "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 11,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。"
+            },
+            "idempotencyKey": "run-failed:8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "occurredAt": "2026-09-08T21:36:48.484978+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "triggerType": "rerun",
+            "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "workflow-node-fix-20260908-3",
+            "input": {},
+            "variables": {},
+            "policySnapshot": {},
+            "state": "failed",
+            "failureCode": "managed_turn_incomplete",
+            "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+            "version": 8,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:36:14.880491+08:00",
+            "updatedAt": "2026-09-08T21:36:48.484978+08:00",
+            "startedAt": "2026-09-08T21:36:14.900217+08:00",
+            "completedAt": "2026-09-08T21:36:48.484978+08:00"
+          },
+          "nodes": [
+            {
+              "id": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "failed",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": {},
+              "iteration": 1,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:36:14.890509+08:00",
+              "updatedAt": "2026-09-08T21:36:48.479259+08:00",
+              "startedAt": "2026-09-08T21:36:33.287367+08:00",
+              "completedAt": "2026-09-08T21:36:48.479259+08:00"
+            },
+            {
+              "id": "492aae7b-f627-50ee-b5d5-a1afff889f89",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:36:14.890951+08:00",
+              "updatedAt": "2026-09-08T21:36:48.484127+08:00",
+              "completedAt": "2026-09-08T21:36:48.484127+08:00"
+            },
+            {
+              "id": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "succeeded",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-08T21:36:14.889961+08:00",
+              "updatedAt": "2026-09-08T21:36:32.926321+08:00",
+              "startedAt": "2026-09-08T21:36:14.911378+08:00",
+              "completedAt": "2026-09-08T21:36:32.926321+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "73a19c97-9b56-54aa-bbf6-3a81931d3081",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "toNodeId": "492aae7b-f627-50ee-b5d5-a1afff889f89",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:36:14.893912+08:00"
+            },
+            {
+              "id": "9cabf661-62da-52f9-bd96-8502a8d9e031",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+              "toNodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:36:14.893912+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "runNodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+              "currentAttemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+              "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_56920755f567",
+                "resolvedAt": "2026-09-08T13:36:15.304944Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_56920755f567",
+              "result": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:36:14.903985+08:00",
+              "dispatchedAt": "2026-09-08T21:36:15.304322+08:00",
+              "startedAt": "2026-09-08T21:36:15.62051+08:00",
+              "completedAt": "2026-09-08T21:36:32.926321+08:00"
+            },
+            {
+              "id": "d0929720-6d82-483c-921b-52046bfbcdc2",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "runNodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "currentAttemptId": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+              "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+                },
+                "sessionId": "sess_f7f3e1110de4",
+                "resolvedAt": "2026-09-08T13:36:34.295611Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_f7f3e1110de4",
+              "errorCode": "managed_turn_incomplete",
+              "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:36:33.28385+08:00",
+              "dispatchedAt": "2026-09-08T21:36:34.295289+08:00",
+              "startedAt": "2026-09-08T21:36:34.365452+08:00",
+              "completedAt": "2026-09-08T21:36:48.45932+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+              "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_56920755f567",
+                "resolvedAt": "2026-09-08T13:36:15.304944Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_56920755f567",
+              "sessionRef": "91926df3-5255-42f5-ba11-77bc0893ecf4",
+              "turnId": "cab47ca7-e370-482b-8930-fa4f7a9b8a72",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:36:32.899216+08:00",
+              "result": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+              "version": 15,
+              "createdAt": "2026-09-08T21:36:15.304322+08:00",
+              "updatedAt": "2026-09-08T21:36:32.926321+08:00",
+              "startedAt": "2026-09-08T21:36:15.62051+08:00",
+              "completedAt": "2026-09-08T21:36:32.926321+08:00"
+            },
+            {
+              "id": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+              "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+              "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+              "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+              "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+                },
+                "sessionId": "sess_f7f3e1110de4",
+                "resolvedAt": "2026-09-08T13:36:34.295611Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+              "sessionId": "sess_f7f3e1110de4",
+              "sessionRef": "42a5d277-b68d-4f72-8d3c-98d8de73121c",
+              "turnId": "7d6c740f-c23f-4d61-9ebc-be1f3fd69377",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:36:48.453011+08:00",
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+              "version": 15,
+              "createdAt": "2026-09-08T21:36:34.295289+08:00",
+              "updatedAt": "2026-09-08T21:36:48.45932+08:00",
+              "startedAt": "2026-09-08T21:36:34.365452+08:00",
+              "completedAt": "2026-09-08T21:36:48.45932+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "dc103480-226c-47c9-a905-3b6036de9498",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "occurredAt": "2026-09-08T21:28:57.085628+08:00"
+          },
+          {
+            "id": "88f4568e-900e-4c19-87e0-b7ac6d0b7542",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "agentTaskId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "idempotencyKey": "agent-task-queued:7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+            "occurredAt": "2026-09-08T21:28:57.090806+08:00"
+          },
+          {
+            "id": "80483af0-380b-468c-942a-dc31c7e5c9bf",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "agentTaskId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+            "attemptId": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "idempotencyKey": "attempt-queued:ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "occurredAt": "2026-09-08T21:28:57.252062+08:00"
+          },
+          {
+            "id": "b2eba6b2-be10-4da2-9f17-7c5afd6ba02a",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "agentTaskId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+            "attemptId": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "occurredAt": "2026-09-08T21:28:57.348157+08:00"
+          },
+          {
+            "id": "e7ba15ab-d2bf-45b0-93e1-c470274b3b04",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "agentTaskId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+            "attemptId": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "code": "mcp_connection_failed_error",
+              "message": "MCP connection failed: github"
+            },
+            "causationId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+            "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "idempotencyKey": "attempt-failed:ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+            "occurredAt": "2026-09-08T21:28:58.07826+08:00"
+          },
+          {
+            "id": "3622c131-7f73-4a6d-8167-fa1150413178",
+            "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github"
+            },
+            "idempotencyKey": "run-failed:6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "occurredAt": "2026-09-08T21:28:58.11106+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "triggerType": "rerun",
+            "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "workflow-node-fix-20260908-2",
+            "input": {},
+            "variables": {},
+            "policySnapshot": {},
+            "state": "failed",
+            "failureCode": "mcp_connection_failed_error",
+            "failureMessage": "MCP connection failed: github",
+            "version": 6,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:28:57.075039+08:00",
+            "updatedAt": "2026-09-08T21:28:58.11106+08:00",
+            "startedAt": "2026-09-08T21:28:57.087936+08:00",
+            "completedAt": "2026-09-08T21:28:58.11106+08:00"
+          },
+          "nodes": [
+            {
+              "id": "7a4bf3f8-563b-5247-8da5-ee1cc75ab039",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:28:57.083192+08:00",
+              "updatedAt": "2026-09-08T21:28:58.107832+08:00",
+              "completedAt": "2026-09-08T21:28:58.107832+08:00"
+            },
+            {
+              "id": "13da4dd1-07e8-528f-8087-9aefd49f3af7",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:28:57.083632+08:00",
+              "updatedAt": "2026-09-08T21:28:58.110182+08:00",
+              "completedAt": "2026-09-08T21:28:58.110182+08:00"
+            },
+            {
+              "id": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "failed",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": {},
+              "iteration": 1,
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github",
+              "version": 3,
+              "createdAt": "2026-09-08T21:28:57.082709+08:00",
+              "updatedAt": "2026-09-08T21:28:58.102596+08:00",
+              "startedAt": "2026-09-08T21:28:57.094022+08:00",
+              "completedAt": "2026-09-08T21:28:58.102596+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "0eb7c263-b0c5-5408-b5cf-25de786419c6",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "7a4bf3f8-563b-5247-8da5-ee1cc75ab039",
+              "toNodeId": "13da4dd1-07e8-528f-8087-9aefd49f3af7",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:28:57.084389+08:00"
+            },
+            {
+              "id": "414b0151-a841-5b6a-b706-72fdfbeedaea",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+              "toNodeId": "7a4bf3f8-563b-5247-8da5-ee1cc75ab039",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:28:57.084389+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "runNodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+              "currentAttemptId": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+              "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_a7125f086311",
+                "resolvedAt": "2026-09-08T13:28:57.252692Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_a7125f086311",
+              "errorCode": "mcp_connection_failed_error",
+              "errorMessage": "MCP connection failed: github",
+              "version": 4,
+              "createdAt": "2026-09-08T21:28:57.090806+08:00",
+              "dispatchedAt": "2026-09-08T21:28:57.252062+08:00",
+              "startedAt": "2026-09-08T21:28:57.348157+08:00",
+              "completedAt": "2026-09-08T21:28:58.07826+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+              "agentTaskId": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+              "nodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_a7125f086311",
+                "resolvedAt": "2026-09-08T13:28:57.252692Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_a7125f086311",
+              "sessionRef": "d683c829-1dbf-4176-bca9-3ac407fb6df7",
+              "turnId": "c5afbc75-9bd4-4f81-942a-6d0bda9125fb",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:28:58.075071+08:00",
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github",
+              "version": 7,
+              "createdAt": "2026-09-08T21:28:57.252062+08:00",
+              "updatedAt": "2026-09-08T21:28:58.07826+08:00",
+              "startedAt": "2026-09-08T21:28:57.348157+08:00",
+              "completedAt": "2026-09-08T21:28:58.07826+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "722a3075-80e8-42cb-bf8f-fecee6729c9d",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "occurredAt": "2026-09-08T21:24:41.4907+08:00"
+          },
+          {
+            "id": "5b6b0589-e74e-4cad-805f-fd3bd534a80f",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "idempotencyKey": "agent-task-queued:53faf844-09cb-4f92-9527-4bcd449f39de",
+            "occurredAt": "2026-09-08T21:24:41.497508+08:00"
+          },
+          {
+            "id": "26b9451c-5651-4601-9f3f-d8ae0631a1ee",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+            "attemptId": "22d892d1-a7e4-4439-8384-f1609fd00673",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "idempotencyKey": "attempt-queued:22d892d1-a7e4-4439-8384-f1609fd00673",
+            "occurredAt": "2026-09-08T21:24:42.264856+08:00"
+          },
+          {
+            "id": "9e47ad25-34dc-4ac4-ae50-9be7c161521e",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+            "attemptId": "22d892d1-a7e4-4439-8384-f1609fd00673",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:22d892d1-a7e4-4439-8384-f1609fd00673",
+            "occurredAt": "2026-09-08T21:24:42.580086+08:00"
+          },
+          {
+            "id": "6c8be246-e3d6-4661-b144-a7817397034f",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+            "attemptId": "22d892d1-a7e4-4439-8384-f1609fd00673",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "code": "mcp_connection_failed_error",
+              "message": "MCP connection failed: github"
+            },
+            "causationId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+            "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "idempotencyKey": "attempt-failed:22d892d1-a7e4-4439-8384-f1609fd00673",
+            "occurredAt": "2026-09-08T21:24:43.608724+08:00"
+          },
+          {
+            "id": "a8a74dde-6563-40f1-a6dc-fdcf0ffa688a",
+            "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github"
+            },
+            "idempotencyKey": "run-failed:49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "occurredAt": "2026-09-08T21:24:43.631733+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "triggerType": "rerun",
+            "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "workflow-node-fix-20260908-1",
+            "input": {},
+            "variables": {},
+            "policySnapshot": {},
+            "state": "failed",
+            "failureCode": "mcp_connection_failed_error",
+            "failureMessage": "MCP connection failed: github",
+            "version": 6,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:24:41.480403+08:00",
+            "updatedAt": "2026-09-08T21:24:43.631733+08:00",
+            "startedAt": "2026-09-08T21:24:41.494483+08:00",
+            "completedAt": "2026-09-08T21:24:43.631733+08:00"
+          },
+          "nodes": [
+            {
+              "id": "594fe3a3-7b92-5a12-a60e-3e378807517a",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:24:41.488227+08:00",
+              "updatedAt": "2026-09-08T21:24:43.629001+08:00",
+              "completedAt": "2026-09-08T21:24:43.629001+08:00"
+            },
+            {
+              "id": "1e1ff427-265f-5682-8ca7-4aa9d281b791",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:24:41.488619+08:00",
+              "updatedAt": "2026-09-08T21:24:43.630903+08:00",
+              "completedAt": "2026-09-08T21:24:43.630903+08:00"
+            },
+            {
+              "id": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "failed",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": {},
+              "iteration": 1,
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github",
+              "version": 3,
+              "createdAt": "2026-09-08T21:24:41.487334+08:00",
+              "updatedAt": "2026-09-08T21:24:43.624716+08:00",
+              "startedAt": "2026-09-08T21:24:41.502614+08:00",
+              "completedAt": "2026-09-08T21:24:43.624716+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "b2c063aa-558e-53ee-8ad1-47b9b889a2d7",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "594fe3a3-7b92-5a12-a60e-3e378807517a",
+              "toNodeId": "1e1ff427-265f-5682-8ca7-4aa9d281b791",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:24:41.489509+08:00"
+            },
+            {
+              "id": "efb4462b-f868-5f9e-aaef-18bdd070cde9",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+              "toNodeId": "594fe3a3-7b92-5a12-a60e-3e378807517a",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:24:41.489509+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "53faf844-09cb-4f92-9527-4bcd449f39de",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "runNodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+              "currentAttemptId": "22d892d1-a7e4-4439-8384-f1609fd00673",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+              "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_c9e24214998e",
+                "resolvedAt": "2026-09-08T13:24:42.265342Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_c9e24214998e",
+              "errorCode": "mcp_connection_failed_error",
+              "errorMessage": "MCP connection failed: github",
+              "version": 4,
+              "createdAt": "2026-09-08T21:24:41.497508+08:00",
+              "dispatchedAt": "2026-09-08T21:24:42.264856+08:00",
+              "startedAt": "2026-09-08T21:24:42.580086+08:00",
+              "completedAt": "2026-09-08T21:24:43.608724+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "22d892d1-a7e4-4439-8384-f1609fd00673",
+              "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+              "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_c9e24214998e",
+                "resolvedAt": "2026-09-08T13:24:42.265342Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_c9e24214998e",
+              "sessionRef": "b21d9cef-3ee0-4290-8994-cadfd2b9c9a4",
+              "turnId": "c2c2ebda-bde8-41bd-950b-e7a8075c61da",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:24:43.606556+08:00",
+              "failureCode": "mcp_connection_failed_error",
+              "failureMessage": "MCP connection failed: github",
+              "version": 7,
+              "createdAt": "2026-09-08T21:24:42.264856+08:00",
+              "updatedAt": "2026-09-08T21:24:43.608724+08:00",
+              "startedAt": "2026-09-08T21:24:42.580086+08:00",
+              "completedAt": "2026-09-08T21:24:43.608724+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "ad6c9e4c-67ff-462e-b17e-c808810aa570",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 1,
+            "type": "run.started",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "idempotencyKey": "run-started:02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "occurredAt": "2026-09-08T21:15:47.255324+08:00"
+          },
+          {
+            "id": "974f95f6-b00d-48f5-a4a5-664634a8291e",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 2,
+            "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "agent-task-queued:9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+            "occurredAt": "2026-09-08T21:15:47.269667+08:00"
+          },
+          {
+            "id": "61272221-fc6f-4d0a-8d2e-02d0ddaaea3d",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 3,
+            "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+            "attemptId": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "attempt-queued:1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "occurredAt": "2026-09-08T21:15:47.690235+08:00"
+          },
+          {
+            "id": "cd585b7d-2e88-4da2-8b6a-9816c44d12d4",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 4,
+            "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+            "attemptId": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "idempotencyKey": "attempt-running:1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "occurredAt": "2026-09-08T21:15:48.034372+08:00"
+          },
+          {
+            "id": "e07ca1e5-2b06-402a-9733-5ea156274504",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 5,
+            "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+            "attemptId": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+            },
+            "payload": {
+              "code": "managed_turn_incomplete",
+              "message": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。"
+            },
+            "causationId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+            "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "idempotencyKey": "attempt-failed:1974a8c6-5313-45ee-8da9-5a052367fe7d",
+            "occurredAt": "2026-09-08T21:16:02.59683+08:00"
+          },
+          {
+            "id": "843d1d15-2f75-4340-9fd4-e9d6278a8b4d",
+            "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。"
+            },
+            "idempotencyKey": "run-failed:02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "occurredAt": "2026-09-08T21:16:02.634607+08:00"
+          }
+        ],
+        "graph": {
+          "definition": {
+            "id": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "name": "workflow1",
+            "draftSpec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "type": "agent",
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "type": "agent",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "draftVersion": 2,
+            "version": 2,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:08:18.454033+08:00",
+            "updatedAt": "2026-09-08T21:15:09.873499+08:00"
+          },
+          "revision": {
+            "id": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "definitionId": "49930c64-0d8b-4b0c-8d0c-84c0afcb93ca",
+            "tenant": "default",
+            "namespace": "demo",
+            "revision": 1,
+            "spec": {
+              "edges": [
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node2",
+                  "from": "work"
+                },
+                {
+                  "on": [
+                    "succeeded"
+                  ],
+                  "to": "node3",
+                  "from": "node2"
+                }
+              ],
+              "nodes": [
+                {
+                  "key": "work",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node2",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                },
+                {
+                  "key": "node3",
+                  "join": {},
+                  "type": "agent",
+                  "retry": {},
+                  "timer": {},
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "approval": {},
+                  "issueMode": "inherit",
+                  "failurePolicy": "fail_fast"
+                }
+              ]
+            },
+            "checksum": "8202fd909f02dc4cae0a2b40bdb25142360d5365d166e3deedec4c3eadf28fc6",
+            "publishedBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "publishedAt": "2026-09-08T21:15:14.908319+08:00"
+          },
+          "run": {
+            "id": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+            "tenant": "default",
+            "namespace": "demo",
+            "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+            "mode": "declared",
+            "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+            "triggerType": "definition",
+            "idempotencyKey": "89ef6a37-297f-4039-ac47-9ae020bdc056",
+            "input": {},
+            "variables": {},
+            "policySnapshot": {},
+            "state": "failed",
+            "failureCode": "managed_turn_incomplete",
+            "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+            "version": 6,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T21:15:47.229628+08:00",
+            "updatedAt": "2026-09-08T21:16:02.634607+08:00",
+            "startedAt": "2026-09-08T21:15:47.263416+08:00",
+            "completedAt": "2026-09-08T21:16:02.634607+08:00"
+          },
+          "nodes": [
+            {
+              "id": "74e410b9-f3e0-5c84-810e-1770dc9362bc",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node2",
+              "definitionNodeKey": "node2",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node2",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:15:47.247797+08:00",
+              "updatedAt": "2026-09-08T21:16:02.630797+08:00",
+              "completedAt": "2026-09-08T21:16:02.630797+08:00"
+            },
+            {
+              "id": "a981453a-b0e3-5043-9461-dc7ebc74b483",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "node3",
+              "definitionNodeKey": "node3",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "cancelled",
+              "config": {
+                "key": "node3",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "iteration": 1,
+              "failureCode": "fail_fast",
+              "failureMessage": "cancelled after node failure",
+              "version": 2,
+              "createdAt": "2026-09-08T21:15:47.248457+08:00",
+              "updatedAt": "2026-09-08T21:16:02.633622+08:00",
+              "completedAt": "2026-09-08T21:16:02.633622+08:00"
+            },
+            {
+              "id": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "nodeKey": "work",
+              "definitionNodeKey": "work",
+              "type": "agent",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "state": "failed",
+              "config": {
+                "key": "work",
+                "join": {},
+                "type": "agent",
+                "retry": {},
+                "timer": {},
+                "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                "approval": {},
+                "issueMode": "inherit",
+                "failurePolicy": "fail_fast"
+              },
+              "input": {},
+              "output": {},
+              "iteration": 1,
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+              "version": 3,
+              "createdAt": "2026-09-08T21:15:47.246565+08:00",
+              "updatedAt": "2026-09-08T21:16:02.625471+08:00",
+              "startedAt": "2026-09-08T21:15:47.279316+08:00",
+              "completedAt": "2026-09-08T21:16:02.625471+08:00"
+            }
+          ],
+          "edges": [
+            {
+              "id": "49a4291f-042a-56e6-8f32-a868e3e38d2e",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "74e410b9-f3e0-5c84-810e-1770dc9362bc",
+              "toNodeId": "a981453a-b0e3-5043-9461-dc7ebc74b483",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:15:47.249875+08:00"
+            },
+            {
+              "id": "976cc154-4ede-58ba-9153-834a6c03ede8",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "tenant": "default",
+              "namespace": "demo",
+              "fromNodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+              "toNodeId": "74e410b9-f3e0-5c84-810e-1770dc9362bc",
+              "onStates": [
+                "succeeded"
+              ],
+              "ordinal": 0,
+              "createdAt": "2026-09-08T21:15:47.249875+08:00"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+              "tenant": "default",
+              "namespace": "demo",
+              "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+              "orchestrationRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "runNodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+              "currentAttemptId": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "orchestration_node",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+              "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_2057f95ef1d5",
+                "resolvedAt": "2026-09-08T13:15:47.693207Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_2057f95ef1d5",
+              "errorCode": "managed_turn_incomplete",
+              "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+              "version": 4,
+              "createdAt": "2026-09-08T21:15:47.269667+08:00",
+              "dispatchedAt": "2026-09-08T21:15:47.690235+08:00",
+              "startedAt": "2026-09-08T21:15:48.034372+08:00",
+              "completedAt": "2026-09-08T21:16:02.59683+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+              "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+              "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+              "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+              "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+              "tenant": "default",
+              "namespace": "demo",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+                  "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "namespace:default:demo",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+                },
+                "sessionId": "sess_2057f95ef1d5",
+                "resolvedAt": "2026-09-08T13:15:47.693207Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "namespace:default:demo",
+              "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+              "sessionId": "sess_2057f95ef1d5",
+              "sessionRef": "883a4033-eb46-4613-850e-d02c6af84c6a",
+              "turnId": "cf5296d8-c74e-4749-bcf7-87c5f34843e8",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T21:16:02.588535+08:00",
+              "failureCode": "managed_turn_incomplete",
+              "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+              "version": 15,
+              "createdAt": "2026-09-08T21:15:47.690235+08:00",
+              "updatedAt": "2026-09-08T21:16:02.59683+08:00",
+              "startedAt": "2026-09-08T21:15:48.034372+08:00",
+              "completedAt": "2026-09-08T21:16:02.59683+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "triggerType": "rerun",
+        "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "idempotencyKey": "workflow-node-fix-20260908-5",
+        "input": {},
+        "variables": {},
+        "output": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+        "policySnapshot": {},
+        "state": "succeeded",
+        "version": 10,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:46:51.529846+08:00",
+        "updatedAt": "2026-09-08T21:47:55.241706+08:00",
+        "startedAt": "2026-09-08T21:46:51.5447+08:00",
+        "completedAt": "2026-09-08T21:47:55.241706+08:00"
+      },
+      {
+        "id": "4491d633-62cb-413c-96bf-b069a2ca984b",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "triggerType": "rerun",
+        "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "idempotencyKey": "workflow-node-fix-20260908-4",
+        "input": {},
+        "variables": {},
+        "policySnapshot": {},
+        "state": "failed",
+        "failureCode": "managed_turn_incomplete",
+        "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+        "version": 6,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:40:17.767275+08:00",
+        "updatedAt": "2026-09-08T21:40:32.226232+08:00",
+        "startedAt": "2026-09-08T21:40:17.782267+08:00",
+        "completedAt": "2026-09-08T21:40:32.226232+08:00"
+      },
+      {
+        "id": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "triggerType": "rerun",
+        "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "idempotencyKey": "workflow-node-fix-20260908-3",
+        "input": {},
+        "variables": {},
+        "policySnapshot": {},
+        "state": "failed",
+        "failureCode": "managed_turn_incomplete",
+        "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+        "version": 8,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:36:14.880491+08:00",
+        "updatedAt": "2026-09-08T21:36:48.484978+08:00",
+        "startedAt": "2026-09-08T21:36:14.900217+08:00",
+        "completedAt": "2026-09-08T21:36:48.484978+08:00"
+      },
+      {
+        "id": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "triggerType": "rerun",
+        "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "idempotencyKey": "workflow-node-fix-20260908-2",
+        "input": {},
+        "variables": {},
+        "policySnapshot": {},
+        "state": "failed",
+        "failureCode": "mcp_connection_failed_error",
+        "failureMessage": "MCP connection failed: github",
+        "version": 6,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:28:57.075039+08:00",
+        "updatedAt": "2026-09-08T21:28:58.11106+08:00",
+        "startedAt": "2026-09-08T21:28:57.087936+08:00",
+        "completedAt": "2026-09-08T21:28:58.11106+08:00"
+      },
+      {
+        "id": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "triggerType": "rerun",
+        "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "idempotencyKey": "workflow-node-fix-20260908-1",
+        "input": {},
+        "variables": {},
+        "policySnapshot": {},
+        "state": "failed",
+        "failureCode": "mcp_connection_failed_error",
+        "failureMessage": "MCP connection failed: github",
+        "version": 6,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:24:41.480403+08:00",
+        "updatedAt": "2026-09-08T21:24:43.631733+08:00",
+        "startedAt": "2026-09-08T21:24:41.494483+08:00",
+        "completedAt": "2026-09-08T21:24:43.631733+08:00"
+      },
+      {
+        "id": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "tenant": "default",
+        "namespace": "demo",
+        "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "mode": "declared",
+        "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+        "triggerType": "definition",
+        "idempotencyKey": "89ef6a37-297f-4039-ac47-9ae020bdc056",
+        "input": {},
+        "variables": {},
+        "policySnapshot": {},
+        "state": "failed",
+        "failureCode": "managed_turn_incomplete",
+        "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+        "version": 6,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T21:15:47.229628+08:00",
+        "updatedAt": "2026-09-08T21:16:02.634607+08:00",
+        "startedAt": "2026-09-08T21:15:47.263416+08:00",
+        "completedAt": "2026-09-08T21:16:02.634607+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "runNodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+        "currentAttemptId": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+        "correlationId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_2057f95ef1d5",
+          "resolvedAt": "2026-09-08T13:15:47.693207Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_2057f95ef1d5",
+        "errorCode": "managed_turn_incomplete",
+        "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:15:47.269667+08:00",
+        "dispatchedAt": "2026-09-08T21:15:47.690235+08:00",
+        "startedAt": "2026-09-08T21:15:48.034372+08:00",
+        "completedAt": "2026-09-08T21:16:02.59683+08:00"
+      },
+      {
+        "id": "53faf844-09cb-4f92-9527-4bcd449f39de",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+        "runNodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+        "currentAttemptId": "22d892d1-a7e4-4439-8384-f1609fd00673",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+        "correlationId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_c9e24214998e",
+          "resolvedAt": "2026-09-08T13:24:42.265342Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_c9e24214998e",
+        "errorCode": "mcp_connection_failed_error",
+        "errorMessage": "MCP connection failed: github",
+        "version": 4,
+        "createdAt": "2026-09-08T21:24:41.497508+08:00",
+        "dispatchedAt": "2026-09-08T21:24:42.264856+08:00",
+        "startedAt": "2026-09-08T21:24:42.580086+08:00",
+        "completedAt": "2026-09-08T21:24:43.608724+08:00"
+      },
+      {
+        "id": "7a35a10d-135d-4a51-a6e2-67c14d456cb4",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+        "runNodeId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+        "currentAttemptId": "ba7ed467-ef43-49da-b51b-9c2593e9ebdb",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "339a4665-6d86-5a5d-bc43-31736efcf1ae",
+        "correlationId": "6ed6f60a-360c-43c3-bfe0-497d7f35fa8d",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_a7125f086311",
+          "resolvedAt": "2026-09-08T13:28:57.252692Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_a7125f086311",
+        "errorCode": "mcp_connection_failed_error",
+        "errorMessage": "MCP connection failed: github",
+        "version": 4,
+        "createdAt": "2026-09-08T21:28:57.090806+08:00",
+        "dispatchedAt": "2026-09-08T21:28:57.252062+08:00",
+        "startedAt": "2026-09-08T21:28:57.348157+08:00",
+        "completedAt": "2026-09-08T21:28:58.07826+08:00"
+      },
+      {
+        "id": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "runNodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+        "currentAttemptId": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+        "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_56920755f567",
+          "resolvedAt": "2026-09-08T13:36:15.304944Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_56920755f567",
+        "result": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:36:14.903985+08:00",
+        "dispatchedAt": "2026-09-08T21:36:15.304322+08:00",
+        "startedAt": "2026-09-08T21:36:15.62051+08:00",
+        "completedAt": "2026-09-08T21:36:32.926321+08:00"
+      },
+      {
+        "id": "d0929720-6d82-483c-921b-52046bfbcdc2",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "runNodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+        "currentAttemptId": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+        "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+        "correlationId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+            "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+          },
+          "sessionId": "sess_f7f3e1110de4",
+          "resolvedAt": "2026-09-08T13:36:34.295611Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_f7f3e1110de4",
+        "errorCode": "managed_turn_incomplete",
+        "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:36:33.28385+08:00",
+        "dispatchedAt": "2026-09-08T21:36:34.295289+08:00",
+        "startedAt": "2026-09-08T21:36:34.365452+08:00",
+        "completedAt": "2026-09-08T21:36:48.45932+08:00"
+      },
+      {
+        "id": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+        "runNodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+        "currentAttemptId": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+        "correlationId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_ea3d95ab176d",
+          "resolvedAt": "2026-09-08T13:40:18.537954Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_ea3d95ab176d",
+        "errorCode": "managed_turn_incomplete",
+        "errorMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:40:17.785473+08:00",
+        "dispatchedAt": "2026-09-08T21:40:18.537708+08:00",
+        "startedAt": "2026-09-08T21:40:18.81164+08:00",
+        "completedAt": "2026-09-08T21:40:32.207992+08:00"
+      },
+      {
+        "id": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "runNodeId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+        "currentAttemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "7367c2f5-8c36-577f-92be-dedf389fe400",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_5eb87c484f12",
+          "resolvedAt": "2026-09-08T13:46:51.751519Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_5eb87c484f12",
+        "result": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:46:51.548149+08:00",
+        "dispatchedAt": "2026-09-08T21:46:51.750915+08:00",
+        "startedAt": "2026-09-08T21:46:52.011057+08:00",
+        "completedAt": "2026-09-08T21:47:14.84858+08:00"
+      },
+      {
+        "id": "766c4508-ae12-43f5-9f8f-f92ec3b52fee",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "runNodeId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+        "currentAttemptId": "53cad882-be2a-41bc-bee0-ca0ff13a1a7e",
+        "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "91d83707-0e48-57a3-95cc-394eb92a990f",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+            "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+          },
+          "sessionId": "sess_4689f2c94f22",
+          "resolvedAt": "2026-09-08T13:47:16.744634Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_4689f2c94f22",
+        "result": "秋风轻摇落叶，\n寒露细润草尖。\n江山更迭新装，\n岁月悠悠如烟。\n\n夕阳垂落西山，\n皓月东升海边。\n星河伴夜漫长，\n梦境重回旧年。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:47:15.738544+08:00",
+        "dispatchedAt": "2026-09-08T21:47:16.74379+08:00",
+        "startedAt": "2026-09-08T21:47:16.816139+08:00",
+        "completedAt": "2026-09-08T21:47:36.085049+08:00"
+      },
+      {
+        "id": "18b7a315-e416-491c-b827-b1299130646b",
+        "tenant": "default",
+        "namespace": "demo",
+        "issueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+        "orchestrationRunId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "runNodeId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+        "currentAttemptId": "9097212d-1162-405b-bafd-1cb7bf8a7be9",
+        "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "orchestration_node",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "686b1ecb-f9fc-5266-a4cb-08638d497995",
+        "correlationId": "88e41f16-8d65-4a95-afab-c2201e97f335",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+            "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "namespace:default:demo",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+          },
+          "sessionId": "sess_f2e7aceee831",
+          "resolvedAt": "2026-09-08T13:47:37.806066Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_f2e7aceee831",
+        "result": "秋风轻拂落叶黄，\n寒露滋润草尖凉。\n江山换上新衣裳，\n岁月流转似轻霜。\n\n夕阳缓缓落西岗，\n明月悄然升海旁。\n星空映照长夜广，\n梦回往昔旧时光。",
+        "version": 4,
+        "createdAt": "2026-09-08T21:47:36.745563+08:00",
+        "dispatchedAt": "2026-09-08T21:47:37.750696+08:00",
+        "startedAt": "2026-09-08T21:47:37.824993+08:00",
+        "completedAt": "2026-09-08T21:47:55.241706+08:00"
+      }
+    ]
+  }
+}

@@ -103,7 +103,7 @@ func collaborationMCPTools() []mcpTool {
 		{Name: "task.start", Description: "Acknowledge that execution of this dispatched AgentTask has started.", InputSchema: object(map[string]any{})},
 		{Name: "task.progress", Description: "Write a meaningful intermediate progress Comment for a long-running AgentTask. Do not repeat the final conclusion that task.complete will publish.", InputSchema: object(map[string]any{"content": stringProp, "mentions": mentions}, "content")},
 		{Name: "task.respond", Description: "Write the result Comment for this AgentTask. A later task.complete call reuses it instead of publishing a duplicate.", InputSchema: object(map[string]any{"content": stringProp, "parentId": stringProp, "mentions": mentions}, "content")},
-		{Name: "task.complete", Description: "Complete this AgentTask with a usable result, or let a Team leader yield with outcome=waiting while delegated work is pending. Reconcile every input and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids, "outcome": map[string]any{"type": "string", "enum": []string{"succeeded", "failed", "blocked", "waiting"}, "description": "Report whether the assigned objective was achieved. Team leaders use waiting to yield after delegating work or asking a worker a follow-up. Waiting is not objective failure. Missing required tools or evidence with no pending delegation is blocked/failed, never succeeded."}, "code": stringProp, "message": stringProp}, "outcome")},
+		{Name: "task.complete", Description: "Complete this AgentTask with the actual deliverable in result (full text or structured output); summary is only a short description. For successful completion, message is a legacy alias for result when result is omitted. Or let a Team leader yield with outcome=waiting while delegated work is pending. Reconcile every input and reuse any result previously written by task.respond. If required tools, credentials, capabilities, or inputs are unavailable, use task.fail instead.", InputSchema: object(map[string]any{"summary": stringProp, "result": map[string]any{}, "processedInputIds": ids, "deferredInputIds": ids, "outcome": map[string]any{"type": "string", "enum": []string{"succeeded", "failed", "blocked", "waiting"}, "description": "Report whether the assigned objective was achieved. Team leaders use waiting to yield after delegating work or asking a worker a follow-up. Waiting is not objective failure. Missing required tools or evidence with no pending delegation is blocked/failed, never succeeded."}, "code": stringProp, "message": stringProp}, "outcome")},
 		{Name: "task.fail", Description: "Fail this AgentTask with a durable error code and message when required work cannot be completed, including unavailable tools, credentials, capabilities, or inputs.", InputSchema: object(map[string]any{"code": stringProp, "message": stringProp}, "code", "message")},
 		{Name: "team.get", Description: "Read the Team roster, roles, instructions, and policy for this task. Delegate to members[].agentId; members[].id is only the membership record id.", InputSchema: object(map[string]any{})},
 		{Name: "approval.request", Description: "Request human approval for this Issue, task, or its ExecutionAttempt.", InputSchema: object(map[string]any{"targetType": stringProp, "targetRef": stringProp, "approverRef": stringProp, "reason": stringProp}, "targetType", "targetRef", "approverRef")},
@@ -344,7 +344,7 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"task": envelope.Task, "issue": envelope.Issue, "inputs": envelope.Inputs,
+		return map[string]any{"node": envelope.Node, "executionBrief": envelope.ExecutionBrief, "task": envelope.Task, "issue": envelope.Issue, "inputs": envelope.Inputs,
 			"currentRequest": envelope.CurrentRequest, "replyToOwnDelegation": envelope.ReplyToOwnDelegation, "initiatingRequest": envelope.InitiatingRequest, "requestContext": envelope.RequestContext,
 			"coordinatorIssue": envelope.CoordinatorIssue, "coordinatorChildren": envelope.CoordinatorChildren, "reviewResults": envelope.ReviewResults}, nil
 	case "task.start":
@@ -407,6 +407,11 @@ func (s *Server) callCollaborationMCPTool(c *gin.Context, task *controlmodel.Age
 		}
 		if stringArg(args, "summary") == "" {
 			args["summary"] = stringArg(args, "message")
+		}
+		// Older clients put the deliverable in message alongside a short summary.
+		// Preserve it for downstream workflow nodes instead of silently keeping only the summary.
+		if args["result"] == nil && stringArg(args, "message") != "" {
+			args["result"] = stringArg(args, "message")
 		}
 		result, _ := json.Marshal(args["result"])
 		usage, _ := json.Marshal(args["usage"])

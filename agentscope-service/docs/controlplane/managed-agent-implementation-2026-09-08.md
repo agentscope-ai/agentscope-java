@@ -99,7 +99,7 @@ Session 的 `memoryStoreIds` 是授权范围；Environment 的 `config.memoryAcc
 
 ## 尚未完成的生产能力
 
-1. OAuth 浏览器授权、回调、断开/重新授权的完整产品流程，以及单轮长任务中的 token 热更新。当前静态客户端不会在本轮内替换过期 token；下一轮解析生效。
+1. 单轮长任务中的 token 热更新。当前静态客户端不会在本轮内替换过期 token；下一轮解析生效。OAuth 浏览器授权、回调、断开/重新授权和 Agent Vault 自动关联已在后续实现，操作说明见 [MCP OAuth 账号连接](mcp-oauth-account-connection.md)；自动 metadata 发现及客户端注册仍未实现。
 2. 独立可复用 Connector 资源、共享权限与版本、连接测试/实时工具发现页、持续健康检查、完整审计与配额。当前实现是 Agent/Workspace 中的 MCP connection 契约，不是独立 Connector registry。
 3. MCP 私网接入/代理、组织级 egress 控制，以及凭证只驻留代理的更强隔离。当前 Brain 必须能访问 MCP endpoint，也会持有短期 access token。
 4. Workspace 多文件原子发布及跨 Workspace/Agent 事务、自动重试与失败可见性；关联 Agent 的独立 system 覆盖与 AGENTS.md 更新还需要明确的来源模型。文件快照已固定，但不是完整发布流水线。

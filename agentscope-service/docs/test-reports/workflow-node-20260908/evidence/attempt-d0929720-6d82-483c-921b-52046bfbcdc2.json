@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T13:37:46.292854+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/5d3393c9-3c7e-409f-9ae5-3d53d5744f95?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "5d3393c9-3c7e-409f-9ae5-3d53d5744f95",
+      "agentTaskId": "d0929720-6d82-483c-921b-52046bfbcdc2",
+      "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+      "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+      "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+      "nodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+          "bindingId": "57cd8866-bfcb-5593-a32e-09a85d7f5a84",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186"
+        },
+        "sessionId": "sess_f7f3e1110de4",
+        "resolvedAt": "2026-09-08T13:36:34.295611Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "a9625d2b-0bfc-4f8f-8a71-5f10525a0186",
+      "sessionId": "sess_f7f3e1110de4",
+      "sessionRef": "42a5d277-b68d-4f72-8d3c-98d8de73121c",
+      "turnId": "7d6c740f-c23f-4d61-9ebc-be1f3fd69377",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:36:48.453011+08:00",
+      "failureCode": "managed_turn_incomplete",
+      "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步优化。由于这是首次尝试，我将直接提供一个初步版本的诗歌，以便您提出反馈进行进一步优化。\n\n以下是我为您准备的第一稿：\n\n秋风起兮白云飞，\n落叶飘零水自流。\n山川静默待霜雪，\n岁月如歌梦中游。\n\n请您审阅这首诗，并告诉我您的想法和希望改进的地方。我们将根据您的反馈进行下一步的优化。",
+      "version": 15,
+      "createdAt": "2026-09-08T21:36:34.295289+08:00",
+      "updatedAt": "2026-09-08T21:36:48.45932+08:00",
+      "startedAt": "2026-09-08T21:36:34.365452+08:00",
+      "completedAt": "2026-09-08T21:36:48.45932+08:00"
+    }
+  }
+}

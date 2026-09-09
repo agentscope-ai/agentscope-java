@@ -1,5 +1,5 @@
 import { WorkflowExecution } from "./WorkflowExecution";
-import { getRoles } from "@/api/auth";
+import { namespaceCan } from "@/lib/namespaceScope";
 import { allowedRunControls } from "./model";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -124,9 +124,7 @@ function RunDetail({ id }: { id: string }) {
   const scope = useControlPlaneScope();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const canEdit = getRoles().some((role) =>
-    ["admin", "agent_developer"].includes(role.toLowerCase()),
-  );
+  const canEdit = namespaceCan(scope.roles, "write");
   const [signal, setSignal] = useState("");
   const graph = useQuery({
     queryKey: ["run-graph", id],

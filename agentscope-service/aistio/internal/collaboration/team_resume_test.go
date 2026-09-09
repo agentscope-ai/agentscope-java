@@ -178,6 +178,9 @@ func testFailedTeamContinuation(t *testing.T, st store.Store) {
 	if err != nil || envelope.CoordinatorIssue.ID != old.RootIssueID || !strings.Contains(envelope.CurrentRequest, "actual research") {
 		t.Fatalf("bad continuation context: %+v %v", envelope, err)
 	}
+	if envelope.ExecutionBrief == nil || len(envelope.ExecutionBrief.HumanRevisions) == 0 || envelope.ExecutionBrief.HumanRevisions[0].Content != "continue" {
+		t.Fatalf("leader lost current-child human revision: %+v", envelope.ExecutionBrief)
+	}
 	foundHumanUpdate := false
 	for _, branch := range envelope.CoordinatorChildren {
 		if branch.Issue.ID == child.ID {

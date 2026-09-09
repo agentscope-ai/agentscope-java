@@ -126,8 +126,8 @@ func TestNamespaceScopeCannotBeForgedAndViewerCannotCreate(t *testing.T) {
 		}
 	}
 	w := accessRequest(s, "bob", "GET", "/api/v1/me/scope", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), personalNamespace("bob")) {
-		t.Fatalf("personal scope: %s", w.Body.String())
+	if w.Code != 200 || !strings.Contains(w.Body.String(), personalNamespace("bob")) || !strings.Contains(w.Body.String(), `"namespace":"default"`) {
+		t.Fatalf("global default and personal scope: %s", w.Body.String())
 	}
 }
 

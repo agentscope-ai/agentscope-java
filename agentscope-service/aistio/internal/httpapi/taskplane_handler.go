@@ -535,7 +535,12 @@ func (s *Server) claimExecutionAttempt(c *gin.Context) {
 		return
 	}
 	var definition map[string]any
-	if s.product != nil {
+	if len(snapshot.Definition) > 0 {
+		if err := json.Unmarshal(snapshot.Definition, &definition); err != nil {
+			c.JSON(500, ErrorResponse{Error: "invalid frozen Agent definition"})
+			return
+		}
+	} else if s.product != nil {
 		if agentID, parseErr := uuid.Parse(task.AgentRef); parseErr == nil {
 			if agent, agentErr := s.store.AgentCatalog().GetAgent(c.Request.Context(), agentID); agentErr == nil {
 				loaded, definitionErr := s.product.RuntimeDefinition(

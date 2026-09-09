@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -80,6 +81,9 @@ type ManagedRuntimeFenceValidator func(ctx context.Context, sessionID string,
 type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
 
 type Server struct {
+	accountDisableGuard     func(context.Context, string) error
+	oauthHTTPClient         *http.Client // Optional transport override for in-process provider tests.
+	channelWork             *ChannelWorkRuntime
 	cfg                     Config
 	db                      *DB
 	vaultKey                []byte
@@ -190,6 +194,7 @@ func (s *Server) Register(r gin.IRouter) {
 	s.registerSessions(r)
 	s.registerMemory(r)
 	s.registerVaults(r)
+	s.registerOAuth(r)
 	s.registerDeployments(r)
 	s.registerFiles(r)
 	s.registerInternal(r)
@@ -212,13 +217,31 @@ func (s *Server) VerifyAccountToken(ctx context.Context, token string) (*Claims,
 		return nil, fmt.Errorf("account store unavailable")
 	}
 	var username, roles string
-	err = s.db.Pool.QueryRow(ctx, `SELECT username,roles_csv FROM users WHERE user_id=$1`, claims.Subject).Scan(&username, &roles)
-	if err != nil {
+	var disabled bool
+	var authVersion int64
+	err = s.db.Pool.QueryRow(ctx, `SELECT username,roles_csv,disabled,auth_version FROM users WHERE user_id=$1`, claims.Subject).Scan(&username, &roles, &disabled, &authVersion)
+	if err != nil || disabled || claims.AccountVersion != authVersion || claims.ExpiresAt == nil || claims.IssuedAt == nil {
 		return nil, fmt.Errorf("account unavailable")
+	}
+	id := sessionFingerprint(token)
+	_, err = s.db.Pool.Exec(ctx, `INSERT INTO account_login_sessions(id,user_id,created_at,expires_at) SELECT $1,$2,$3,$4 FROM users WHERE user_id=$2 AND legacy_sessions_closed=false AND disabled=false AND auth_version=$5 ON CONFLICT DO NOTHING`, id, claims.Subject, claims.IssuedAt.Time, claims.ExpiresAt.Time, claims.AccountVersion)
+	if err != nil {
+		return nil, err
+	}
+	var revoked bool
+	if err = s.db.Pool.QueryRow(ctx, `SELECT revoked_at IS NOT NULL FROM account_login_sessions WHERE id=$1 AND user_id=$2`, id, claims.Subject).Scan(&revoked); err != nil || revoked {
+		return nil, fmt.Errorf("login session revoked")
+	}
+	if _, err = s.db.Pool.Exec(ctx, `UPDATE account_login_sessions SET last_seen_at=now() WHERE id=$1 AND last_seen_at<now()-interval '1 minute'`, id); err != nil {
+		return nil, err
 	}
 	claims.Username = username
 	claims.Roles = splitRoles(roles)
 	return claims, nil
+}
+
+func (s *Server) SetAccountDisableGuard(fn func(context.Context, string) error) {
+	s.accountDisableGuard = fn
 }
 
 // Close releases the database pool.

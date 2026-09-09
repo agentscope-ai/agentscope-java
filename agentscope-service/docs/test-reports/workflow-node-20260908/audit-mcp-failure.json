@@ -1,0 +1,35 @@
+{
+  "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+  "issueStatus": "blocked",
+  "runState": "failed",
+  "nodes": [
+    {
+      "nodeKey": "node2",
+      "state": "cancelled",
+      "failureCode": "fail_fast",
+      "output": null
+    },
+    {
+      "nodeKey": "node3",
+      "state": "cancelled",
+      "failureCode": "fail_fast",
+      "output": null
+    },
+    {
+      "nodeKey": "work",
+      "state": "failed",
+      "failureCode": "mcp_connection_failed_error",
+      "output": {}
+    }
+  ],
+  "tasks": [
+    {
+      "id": "53faf844-09cb-4f92-9527-4bcd449f39de",
+      "status": "failed",
+      "errorCode": "mcp_connection_failed_error",
+      "runNodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+      "attemptState": "failed",
+      "tools": []
+    }
+  ]
+}

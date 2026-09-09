@@ -58,6 +58,11 @@ func (s *Server) scopeMiddleware() gin.HandlerFunc {
 func (s *Server) getCurrentScope(c *gin.Context) {
 	if c.GetString("userId") != "" && s.store != nil {
 		user := c.GetString("userId")
+		global, err := s.ensureGlobalDefaultNamespace(c.Request.Context())
+		if err != nil {
+			s.accessFailure(c, err)
+			return
+		}
 		personal, err := s.ensurePersonalNamespace(c.Request.Context(), user)
 		if err != nil {
 			s.accessFailure(c, err)
@@ -68,7 +73,18 @@ func (s *Server) getCurrentScope(c *gin.Context) {
 			s.accessFailure(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"mode": "multi", "tenant": personal.Tenant, "namespace": personal.Name, "selectorVisible": true, "namespaces": namespaceSummaries(items, user)})
+		selected := global.Name
+		if s.product != nil {
+			if preferences, e := s.product.GetAccountPreferences(c.Request.Context(), user); e == nil {
+				for _, n := range items {
+					if n.Name == preferences["defaultNamespace"] {
+						selected = n.Name
+						break
+					}
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"mode": "multi", "tenant": personal.Tenant, "namespace": selected, "selectorVisible": true, "namespaces": namespaceSummaries(items, user)})
 		return
 	}
 

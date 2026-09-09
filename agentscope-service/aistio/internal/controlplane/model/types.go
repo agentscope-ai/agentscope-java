@@ -126,6 +126,7 @@ type RuntimeBinding struct {
 // RuntimeDispatchSnapshot freezes the selected backend for one AgentTask
 // dispatch. Registry or Team configuration changes never mutate this record.
 type RuntimeDispatchSnapshot struct {
+	Definition                    json.RawMessage           `json:"definition,omitempty"`
 	Binding                       RuntimeBinding            `json:"binding"`
 	RuntimeProfile                *RuntimeProfile           `json:"runtimeProfile,omitempty"`
 	RuntimePool                   *RuntimePool              `json:"runtimePool,omitempty"`

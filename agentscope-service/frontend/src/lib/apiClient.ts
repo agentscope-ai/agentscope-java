@@ -1,3 +1,4 @@
+import { clearAccountIdentity } from "./accountIdentity";
 import { namespaceHeaders } from "./namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
@@ -38,6 +39,7 @@ export function saveToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  clearAccountIdentity();
 }
 
 function authHeaders(): Record<string, string> {

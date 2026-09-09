@@ -110,6 +110,9 @@ func refreshOAuthSecret(ctx context.Context, secret string, now time.Time, clien
 		return "", false, fmt.Errorf("OAuth refresh configuration is incomplete")
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}}
+	if resource, ok := refresh["resource"].(string); ok && resource != "" {
+		form.Set("resource", resource)
+	}
 	if scope, ok := refresh["scope"].(string); ok && scope != "" {
 		form.Set("scope", scope)
 	}
@@ -135,6 +138,7 @@ func refreshOAuthSecret(ctx context.Context, secret string, now time.Time, clien
 		return "", false, fmt.Errorf("invalid OAuth refresh request")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 	if authType == "client_secret_basic" {
 		req.SetBasicAuth(url.QueryEscape(clientID), url.QueryEscape(clientSecret))
 	}

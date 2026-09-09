@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-08T03:09:23.069645+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/18a5b956-4015-4526-934d-a5d460f34ea4?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "18a5b956-4015-4526-934d-a5d460f34ea4",
+      "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+      "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+      "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+      "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+          "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "sessionId": "sess_9fc00f457514",
+        "resolvedAt": "2026-09-08T03:08:40.046531Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "sessionId": "sess_9fc00f457514",
+      "sessionRef": "78d8f781-06c0-4015-a126-85bef31ef5ed",
+      "turnId": "befed6ff-1cee-4bbc-9f80-6ce7bdc08dbc",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:09:06.500365+08:00",
+      "result": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+      "version": 15,
+      "createdAt": "2026-09-08T11:08:40.045658+08:00",
+      "updatedAt": "2026-09-08T11:09:06.53935+08:00",
+      "startedAt": "2026-09-08T11:08:41.12455+08:00",
+      "completedAt": "2026-09-08T11:09:06.53935+08:00"
+    }
+  }
+}

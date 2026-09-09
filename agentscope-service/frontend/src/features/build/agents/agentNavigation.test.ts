@@ -16,7 +16,7 @@ describe("Unified Agent navigation", () => {
       );
     },
   );
-  it("adds definition management only for Managed Agents", () => {
+  it("exposes portable definitions for every runtime", () => {
     expect(agentDetailTabs("managed").map((tab) => tab.id)).toEqual([
       "overview",
       "activity",
@@ -29,6 +29,7 @@ describe("Unified Agent navigation", () => {
       expect(agentDetailTabs(type).map((tab) => tab.id)).toEqual([
         "overview",
         "activity",
+        "definition",
         "runtime",
         "connections",
         "settings",
@@ -55,9 +56,9 @@ describe("Unified Agent navigation", () => {
       "/agent-center/agents/a?tab=activity&view=sessions",
     );
   });
-  it("does not expose unsupported definition views or unknown tabs", () => {
+  it("accepts portable definitions and rejects unknown tabs", () => {
     expect(resolveAgentDetailTab("definition", "external-application")).toBe(
-      "overview",
+      "definition",
     );
     expect(resolveAgentDetailTab("missing", "managed")).toBe("overview");
     expect(agentServicePath("a/b")).toBe("/agent-center/agents/a%2Fb");

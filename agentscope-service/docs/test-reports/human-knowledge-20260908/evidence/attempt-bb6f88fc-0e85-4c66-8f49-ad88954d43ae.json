@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-08T03:09:22.938528+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/8e30488f-229a-4f8c-a066-723d4b6ff310?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "8e30488f-229a-4f8c-a066-723d4b6ff310",
+      "agentTaskId": "bb6f88fc-0e85-4c66-8f49-ad88954d43ae",
+      "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+      "runId": "4c3c18dc-e92f-4670-887e-b4d9bd162d42",
+      "nodeId": "ccb35664-3b26-4794-9078-4659919e9f93",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+          "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "sessionId": "sess_dd02fa7aca50",
+        "resolvedAt": "2026-09-08T03:03:37.977974Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "sessionId": "sess_dd02fa7aca50",
+      "sessionRef": "61f1bfd1-4ac3-4f8c-93ef-c141230fd7be",
+      "turnId": "2d0467cf-e0c5-4b88-97b8-35e1e74c4a5c",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:04:16.119919+08:00",
+      "result": {
+        "sections": [
+          {
+            "title": "折叠屏技术的发展",
+            "trend": "折叠屏手机正在变得越来越流行，随着材料科学的进步，屏幕耐用性得到了显著提升。",
+            "freshnessLimitation": "此信息基于截至2023年的公开报道和技术评论；最新的进展可能需要进一步确认。"
+          },
+          {
+            "title": "5G与6G通信技术",
+            "trend": "5G网络已经在全球范围内广泛部署，而6G的研究也在加速进行中。预计6G将提供更高速的数据传输、更低的延迟以及更高的连接密度。",
+            "freshnessLimitation": "5G部分基于已有的商用案例；6G则主要参考了行业预测及学术研究（截至2024年）。"
+          },
+          {
+            "title": "AI驱动的用户体验优化",
+            "trend": "通过人工智能算法优化用户界面和个人化服务成为主流趋势之一。这包括但不限于智能助手功能增强、个性化内容推荐等。",
+            "freshnessLimitation": "该领域持续快速发展，当前描述反映了2024年初的技术状态。"
+          },
+          {
+            "title": "环保与可持续设计",
+            "trend": "制造商们越来越重视产品的环境影响，采用可回收材料制造手机并减少碳足迹成为了重要方向。",
+            "freshnessLimitation": "这一趋势得到了多家知名厂商的支持声明支持（2023-2024年间）。"
+          }
+        ],
+        "reportTitle": "智能手机技术最新发展趋势研究报告"
+      },
+      "version": 16,
+      "createdAt": "2026-09-08T11:03:37.913879+08:00",
+      "updatedAt": "2026-09-08T11:04:17.83412+08:00",
+      "startedAt": "2026-09-08T11:03:38.105699+08:00",
+      "completedAt": "2026-09-08T11:04:17.83412+08:00"
+    }
+  }
+}

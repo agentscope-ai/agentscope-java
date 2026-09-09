@@ -1,7 +1,7 @@
 // Copyright 2024-2026 the original author or authors.
 // Licensed under the Apache License, Version 2.0.
 
-export type NamespaceSummary = { tenant: string; name: string; displayName: string; kind: 'personal' | 'shared'; roles: string[] };
+export type NamespaceSummary = { tenant: string; name: string; displayName: string; kind: 'personal' | 'shared' | 'global'; roles: string[] };
 
 let selected: { tenant: string; namespace: string; token: string | null } | undefined;
 export function setRequestNamespace(tenant: string, namespace: string, token: string | null) { selected = { tenant, namespace, token }; }

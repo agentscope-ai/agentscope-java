@@ -34,6 +34,7 @@ var channelSecretKeys = map[string]bool{
 const secretMask = "********"
 
 func (s *Server) registerChannels(r gin.IRouter) {
+	s.registerChannelWork(r)
 	r.GET("/api/channels", s.listChannels)
 	r.GET("/api/channels/types", s.listChannelTypes)
 	r.GET("/api/channels/:channelId", s.getChannel)
@@ -188,7 +189,21 @@ func (s *Server) listChannels(c *gin.Context) {
 			writeErr(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-		list = append(list, ch.infoJSON())
+		info := ch.infoJSON()
+		cfg, configErr := s.loadChannelWorkSettings(c.Request.Context(), ch.ChannelID)
+		if configErr != nil {
+			writeErr(c, 500, "cannot read channel work settings")
+			return
+		}
+		targets := []ChannelTarget{}
+		if cfg.DefaultTarget.TargetRef != "" {
+			targets = append(targets, cfg.DefaultTarget)
+		}
+		for _, route := range cfg.Routes {
+			targets = append(targets, route.ChannelTarget)
+		}
+		info["workEnabled"], info["workTargets"] = cfg.Enabled, targets
+		list = append(list, info)
 	}
 	c.JSON(http.StatusOK, list)
 }

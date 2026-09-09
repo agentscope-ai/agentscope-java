@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-08T13:37:46.276478+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/b293d5d3-3cde-4b53-9f0d-3b5a04d125f2?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "b293d5d3-3cde-4b53-9f0d-3b5a04d125f2",
+      "agentTaskId": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+      "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+      "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+      "nodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+          "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "sessionId": "sess_56920755f567",
+        "resolvedAt": "2026-09-08T13:36:15.304944Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "sessionId": "sess_56920755f567",
+      "sessionRef": "91926df3-5255-42f5-ba11-77bc0893ecf4",
+      "turnId": "cab47ca7-e370-482b-8930-fa4f7a9b8a72",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:36:32.899216+08:00",
+      "result": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。",
+      "version": 15,
+      "createdAt": "2026-09-08T21:36:15.304322+08:00",
+      "updatedAt": "2026-09-08T21:36:32.926321+08:00",
+      "startedAt": "2026-09-08T21:36:15.62051+08:00",
+      "completedAt": "2026-09-08T21:36:32.926321+08:00"
+    }
+  }
+}

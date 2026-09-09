@@ -1,3 +1,6 @@
+import RuntimeWorkspacesPanel from "@/components/RuntimeWorkspacesPanel";
+import WorkspaceBindingPanel from "@/components/WorkspaceBindingPanel";
+import ChannelAssociations from "@/components/ChannelAssociations";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
@@ -262,7 +265,6 @@ export default function AgentCatalogDetailPage() {
     );
   if (
     params.get("tab") === "definition" &&
-    runtimeKind === "managed" &&
     !definition
   )
     return (
@@ -279,7 +281,7 @@ export default function AgentCatalogDetailPage() {
   const value = agent.data;
   const currentOverview = overview.data;
   const editableDefinition = canEdit;
-  if ((definition || channels) && runtimeKind !== "managed")
+  if (channels && runtimeKind !== "managed")
     return <Navigate replace to={scope.scopedPath(base)} />;
   const busy = activity.records.filter((item) =>
     ["running", "dispatched", "compressing"].includes(item.status),
@@ -562,13 +564,7 @@ export default function AgentCatalogDetailPage() {
                 Read-only definition. Editing requires access to this Agent.
               </p>
             )}
-            {section === "workspace" && (
-              <AgentSettingsForm
-                section="workspace"
-                agent={value}
-                onSaved={refreshAgent}
-              />
-            )}
+            {(section === "workspace" || value.version == null) && <WorkspaceBindingPanel agent={value} canEdit={editableDefinition} onSaved={refreshAgent} />}
             <div
               className={
                 ["workspace", "skills", "tools", "subagents"].includes(section)
@@ -576,7 +572,7 @@ export default function AgentCatalogDetailPage() {
                   : ""
               }
             >
-              <Outlet context={context} />
+              {value.version != null && <Outlet context={context} />}
             </div>
           </div>
         </div>
@@ -585,6 +581,7 @@ export default function AgentCatalogDetailPage() {
         <section className="grid gap-5 border-t pt-5">
           <div>
             <h2 className="text-lg font-semibold">Runtime configuration</h2>
+            <RuntimeWorkspacesPanel agent={value} />
             <p className="mt-1 text-sm text-muted-foreground">
               Execution environment, availability and runtime connections.
             </p>
@@ -769,6 +766,9 @@ export default function AgentCatalogDetailPage() {
                 Channels
               </Button>
             </div>
+          )}
+          {(channels || runtimeKind !== "managed") && (
+            <ChannelAssociations targetType="agent" targetRef={agentId} />
           )}
           {channels ? (
             <Outlet context={context} />

@@ -53,7 +53,7 @@ export default function LinkedWorkspaceBanner({
     >
       <span>
         Linked to workspace <strong>{label}</strong>. This page shows the agent snapshot
-        (read-only). Edit shared {resource} in the Workspace so all linked agents stay consistent.
+        (read-only). Edit shared {resource} in the Workspace, publish a revision, then update this Agent’s binding.
       </span>
       <Link
         to={href}

@@ -24,6 +24,9 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 		fail := func() bool { s.accessFailure(c, store.ErrNotFound); return false }
 		for _, key := range []string{"agentId", "agentRef", "leaderAgentId", "leaderAgentRef"} {
 			if ref := value(key); ref != "" {
+				if !a.Namespace.Decide(a.User, "agent:"+ref, "use").Allowed {
+					return fail()
+				}
 				if _, e := s.activeAgentInScope(ctx, a.Namespace.Tenant, a.Namespace.Name, ref); e != nil {
 					return fail()
 				}
@@ -34,6 +37,9 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 			teamRef = value("assigneeRef")
 		}
 		if teamRef != "" {
+			if !a.Namespace.Decide(a.User, "team:"+teamRef, "use").Allowed {
+				return fail()
+			}
 			id, e := uuid.Parse(teamRef)
 			if e != nil {
 				return fail()
@@ -44,6 +50,9 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 			}
 		}
 		if value("assigneeType") == "agent" && value("assigneeRef") != "" {
+			if !a.Namespace.Decide(a.User, "agent:"+value("assigneeRef"), "use").Allowed {
+				return fail()
+			}
 			if _, e := s.activeAgentInScope(ctx, a.Namespace.Tenant, a.Namespace.Name, value("assigneeRef")); e != nil {
 				return fail()
 			}
@@ -66,6 +75,9 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 					return fail()
 				}
 				if key == "definitionId" {
+					if !a.Namespace.Decide(a.User, "workflow:"+raw, "use").Allowed {
+						return fail()
+					}
 					d, e := s.store.Orchestration().GetDefinition(ctx, id)
 					if e != nil || d.Tenant != a.Namespace.Tenant || d.Namespace != a.Namespace.Name {
 						return fail()

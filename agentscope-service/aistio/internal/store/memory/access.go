@@ -11,6 +11,7 @@ import (
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"slices"
 	"sort"
+	"time"
 )
 
 type accessRepo struct{ s *Store }
@@ -131,5 +132,53 @@ func (r *accessRepo) PutNamespace(_ context.Context, n *controlmodel.Namespace, 
 	copy := cloneNamespace(n)
 	copy.Version = version + 1
 	r.s.accessNamespaces[key] = copy
+	r.recordAuditLocked(copy, actor)
 	return cloneNamespace(copy), nil
+}
+
+func (r *accessRepo) recordAuditLocked(n *controlmodel.Namespace, actor string) {
+	r.s.accessNamespaceAudit = append(r.s.accessNamespaceAudit, &controlmodel.NamespaceAudit{ID: int64(len(r.s.accessNamespaceAudit) + 1), Tenant: n.Tenant, Name: n.Name, Actor: actor, Namespace: *cloneNamespace(n), Version: n.Version, CreatedAt: time.Now().UTC()})
+}
+
+func (r *accessRepo) TransferNamespace(_ context.Context, tenant, name, owner string, version int64, actor string) (*controlmodel.Namespace, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	n := r.s.accessNamespaces[tenant+"/"+name]
+	if n == nil {
+		return nil, store.ErrNotFound
+	}
+	if n.Version != version || n.Kind != "shared" || n.Archived || owner == "" {
+		return nil, store.ErrConflict
+	}
+	copy := cloneNamespace(n)
+	if copy.Members == nil {
+		copy.Members = map[string][]string{}
+	}
+	if !slices.Contains(copy.Members[n.Owner], "admin") {
+		copy.Members[n.Owner] = append(copy.Members[n.Owner], "admin")
+	}
+	copy.Owner = owner
+	copy.Version++
+	r.s.accessNamespaces[tenant+"/"+name] = copy
+	r.recordAuditLocked(copy, actor)
+	return cloneNamespace(copy), nil
+}
+
+func (r *accessRepo) ListNamespaceAudit(_ context.Context, tenant, name string, limit, offset int) ([]*controlmodel.NamespaceAudit, error) {
+	r.s.mu.RLock()
+	defer r.s.mu.RUnlock()
+	items := []*controlmodel.NamespaceAudit{}
+	for i := len(r.s.accessNamespaceAudit) - 1; i >= 0; i-- {
+		a := r.s.accessNamespaceAudit[i]
+		if a.Tenant != tenant || name != "" && a.Name != name {
+			continue
+		}
+		copy := *a
+		copy.Namespace = *cloneNamespace(&a.Namespace)
+		items = append(items, &copy)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return page(items, offset, limit), nil
 }

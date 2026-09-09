@@ -56,6 +56,9 @@ func (s *Server) registerWorkspaces(r gin.IRouter) {
 	r.DELETE("/api/workspaces/:id", s.deleteWorkspace)
 
 	base := "/api/workspaces/:id"
+	r.POST(base+"/publish", s.wsPublish)
+	r.GET(base+"/revisions", s.wsRevisions)
+	r.GET(base+"/agents", s.wsLinkedAgents)
 	r.GET(base+"/files", s.wsFiles)
 	r.GET(base+"/file", s.wsReadFile)
 	r.PUT(base+"/file", s.wsWriteFile)
@@ -139,90 +142,9 @@ func (s *Server) materializeFromWorkspace(ctx context.Context, owner, workspaceI
 	}, nil
 }
 
-// rematerializeLinkedAgents refreshes tools/mcp/skills (and empty system prompts)
-// on every Agent that currently links this Workspace. Each refresh bumps agent head_version.
-func (s *Server) rematerializeLinkedAgents(ctx context.Context, owner, workspaceID string) {
-	mat, err := s.materializeFromWorkspace(ctx, owner, workspaceID)
-	if err != nil {
-		return
-	}
-	rows, err := s.db.Pool.Query(ctx,
-		agentSelect+` WHERE owner_id=$1 AND workspace_id=$2 AND archived_at IS NULL`,
-		owner, workspaceID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	now := nowMillis()
-	for rows.Next() {
-		a, err := s.scanAgent(rows)
-		if err != nil {
-			continue
-		}
-		sys := ""
-		if a.SysPrompt != nil {
-			sys = strings.TrimSpace(*a.SysPrompt)
-		}
-		if sys == "" {
-			sys = mat.System
-		}
-		maxIters := 20
-		if a.MaxIters != nil {
-			maxIters = *a.MaxIters
-		}
-		ws := mat.DiskPath
-		newVer := a.HeadVersion + 1
-		desc := ""
-		if a.Description != nil {
-			desc = *a.Description
-		}
-		model := ""
-		if a.Model != nil {
-			model = *a.Model
-		}
-		multi := mustJSON(nil)
-		if a.MultiagentJSON != nil {
-			multi = *a.MultiagentJSON
-		}
-		tools := mustJSON(mat.Tools)
-		mcp := mustJSON(mat.McpServers)
-		skills := mustJSON(mat.Skills)
-		tx, err := s.db.Pool.Begin(ctx)
-		if err != nil {
-			continue
-		}
-		snap, err := s.agentSnapshot(ctx, owner, a.AgentID, a.Name, desc, sys, model, maxIters,
-			mat.Tools, mat.McpServers, mat.Skills, parseJSONRaw(multi), ws, workspaceID,
-			deref(a.DefaultEnvironmentID),
-			parseStringSlice(deref(a.DefaultVaultIDsJSON)),
-			parseStringSlice(deref(a.DefaultMemoryStoreIDsJSON)),
-			newVer, a.CreatedAt, now)
-		if err != nil {
-			tx.Rollback(ctx)
-			continue
-		}
-		tag, err := tx.Exec(ctx,
-			`UPDATE agents SET sys_prompt=$1, tools_json=$2, mcp_servers_json=$3, skills_json=$4,
-			 workspace_path=$5, head_version=$6, updated_at=$7
-			 WHERE owner_id=$8 AND agent_id=$9 AND head_version=$10`,
-			nullStr(sys), tools, mcp, skills, nullStr(ws), newVer, now, owner, a.AgentID, a.HeadVersion)
-		if err != nil || tag.RowsAffected() == 0 {
-			tx.Rollback(ctx)
-			continue
-		}
-
-		_, err = tx.Exec(ctx,
-			`INSERT INTO agent_versions (owner_id, agent_id, version, snapshot_json, created_at) VALUES ($1,$2,$3,$4,$5)`,
-			owner, a.AgentID, newVer, mustJSON(snap), now)
-		if err != nil {
-			tx.Rollback(ctx)
-			continue
-		}
-		if err = tx.Commit(ctx); err != nil {
-			continue
-		}
-	}
-}
+// rematerializeLinkedAgents intentionally leaves existing Agent versions unchanged.
+// Workspace edits only change drafts; adopting a revision requires an explicit binding update.
+func (s *Server) rematerializeLinkedAgents(ctx context.Context, owner, workspaceID string) {}
 
 func (s *Server) bumpWorkspaceVersion(ctx context.Context, owner, id string) error {
 	_, err := s.db.Pool.Exec(ctx,

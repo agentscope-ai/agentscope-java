@@ -18,6 +18,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -84,11 +86,12 @@ type InventoryProvider interface {
 
 // ServerOptions configures the REST API server.
 type ServerOptions struct {
-	Client       client.Client
-	Store        store.Store
-	Prober       prober.DataPlaneProber
-	Addr         string
-	Experimental bool
+	AccountDirectory AccountDirectory
+	Client           client.Client
+	Store            store.Store
+	Prober           prober.DataPlaneProber
+	Addr             string
+	Experimental     bool
 	// ASDPCommands, when non-nil, delivers session commands over live ASDP
 	// streams before falling back to the HTTP data-plane contract.
 	ASDPCommands SessionCommandSender
@@ -144,6 +147,7 @@ type ServerOptions struct {
 
 // Server is the REST API server for the control plane.
 type Server struct {
+	accounts              AccountDirectory
 	client                client.Client
 	store                 store.Store
 	prober                prober.DataPlaneProber
@@ -185,7 +189,10 @@ func NewServer(opts ServerOptions) *Server {
 	router := gin.New()
 	router.ContextWithFallback = true
 	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
+	// OAuth callbacks carry authorization codes; omit them from request access logs.
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{Skip: func(c *gin.Context) bool {
+		return strings.HasPrefix(c.Request.URL.Path, "/api/oauth/mcp/callback/")
+	}}))
 
 	scopeMode := strings.ToLower(strings.TrimSpace(opts.ScopeMode))
 	if scopeMode != ScopeModeSingle {
@@ -200,6 +207,7 @@ func NewServer(opts ServerOptions) *Server {
 		configuredNamespace = defaultNamespace
 	}
 	s := &Server{
+		accounts:             opts.AccountDirectory,
 		client:               opts.Client,
 		store:                opts.Store,
 		prober:               opts.Prober,
@@ -231,6 +239,28 @@ func NewServer(opts ServerOptions) *Server {
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 30 * time.Second,
 		},
+	}
+	if s.accounts == nil && s.product != nil {
+		s.accounts = s.product
+	}
+	if s.store != nil && s.scopeMode == ScopeModeMulti {
+		if _, err := s.ensureGlobalDefaultNamespace(context.Background()); err != nil {
+			ctrl.Log.WithName("httpapi").Error(err, "unable to provision global default namespace")
+		}
+	}
+	if s.product != nil && s.store != nil {
+		s.product.SetAccountDisableGuard(func(ctx context.Context, user string) error {
+			items, err := s.allManagedNamespaces(ctx)
+			if err != nil {
+				return fmt.Errorf("Unable to check namespace ownership")
+			}
+			for _, n := range items {
+				if n.Kind == "shared" && n.Owner == user {
+					return fmt.Errorf("Transfer ownership of namespace %s before disabling this account", n.Name)
+				}
+			}
+			return nil
+		})
 	}
 	if s.managedConfirmations == nil && opts.Product != nil {
 		s.managedConfirmations = opts.Product
@@ -293,6 +323,21 @@ func NewServer(opts ServerOptions) *Server {
 			Managed: opts.Product, External: external, Tokens: &s.taskTokens}
 		s.taskPlane.CancelBackend = s.runtimeBindings.CancelAttempt
 		if s.product != nil {
+			s.configureChannelWork()
+			s.taskPlane.ResolveDefinition = func(ctx context.Context, agentID uuid.UUID) (json.RawMessage, error) {
+				agent, err := s.store.AgentCatalog().GetAgent(ctx, agentID)
+				if err != nil {
+					return nil, err
+				}
+				definition, err := s.product.RuntimeDefinition(ctx, agent.OwnerRef, agent.ID.String())
+				if errors.Is(err, product.ErrManagedDefinitionNotFound) {
+					return nil, nil
+				}
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(definition)
+			}
 			s.product.SetManagedExecutionContextLookup(s.managedExecutionContextForSession)
 			s.product.SetManagedRuntimeFenceValidator(s.validateManagedSessionRuntimeFence)
 		}
@@ -377,6 +422,7 @@ func (s *Server) registerRoutes() {
 		v1.GET("/me/navigation", s.navigationAccess)
 		v1.GET("/me/scope", s.getCurrentScope)
 		if s.store != nil {
+			s.registerAccessManagement(v1)
 			v1.GET("/me/namespaces", s.listMyNamespaces)
 			v1.POST("/namespaces", s.createNamespace)
 			v1.GET("/namespaces/:namespaceName", s.getNamespaceAccess)
@@ -448,7 +494,9 @@ func (s *Server) registerRoutes() {
 			agents.GET("/:agentId", s.getCatalogAgent)
 			agents.PATCH("/:agentId", s.patchCatalogAgent)
 			agents.GET("/:agentId/definition", s.getManagedAgentDefinition)
+			agents.GET("/:agentId/workspace-capabilities", s.agentWorkspaceCapabilities)
 			agents.PATCH("/:agentId/definition", s.patchManagedAgentDefinition)
+			agents.POST("/:agentId/definition", s.initializePortableDefinition)
 			agents.GET("/:agentId/versions", s.listManagedAgentVersions)
 			agents.GET("/:agentId/versions/:version", s.getManagedAgentVersion)
 			agents.GET("/:agentId/bindings", s.listAgentBindings)
@@ -644,6 +692,7 @@ func (s *Server) registerRoutes() {
 			tasks.GET("", s.listAgentTasks)
 			tasks.GET("/:taskId", s.getAgentTask)
 			tasks.GET("/:taskId/context", s.taskTokenMiddleware(), s.getAgentTaskContext)
+			tasks.POST("/:taskId/workspace-application", s.taskTokenMiddleware(), s.reportWorkspaceApplication)
 			tasks.POST("/:taskId/dispatch", s.dispatchAgentTask)
 			tasks.POST("/:taskId/ack", s.taskTokenMiddleware(), s.acknowledgeAgentTask)
 			tasks.POST("/:taskId/inputs/delivery-failed", s.taskTokenMiddleware(), s.failAgentTaskInputDelivery)
@@ -995,7 +1044,7 @@ func (s *Server) collaborationTaskScopeMiddleware() gin.HandlerFunc {
 		}
 		allowed := false
 		switch c.FullPath() {
-		case "/api/v1/agent-tasks/:taskId", "/api/v1/agent-tasks/:taskId/context",
+		case "/api/v1/agent-tasks/:taskId/workspace-application", "/api/v1/agent-tasks/:taskId", "/api/v1/agent-tasks/:taskId/context",
 			"/api/v1/agent-tasks/:taskId/claim", "/api/v1/agent-tasks/:taskId/ack",
 			"/api/v1/agent-tasks/:taskId/inputs/delivery-failed", "/api/v1/agent-tasks/:taskId/start",
 			"/api/v1/agent-tasks/:taskId/progress", "/api/v1/agent-tasks/:taskId/respond",
@@ -1053,6 +1102,9 @@ func (s *Server) kubeAuth(c *gin.Context) {
 
 // Start begins serving HTTP (or HTTPS when TLS cert/key are configured).
 func (s *Server) Start(ctx context.Context) error {
+	if s.product != nil {
+		go s.product.RunChannelWork(ctx)
+	}
 	if s.workSources != nil {
 		go func() {
 			ticker := time.NewTicker(5 * time.Second)

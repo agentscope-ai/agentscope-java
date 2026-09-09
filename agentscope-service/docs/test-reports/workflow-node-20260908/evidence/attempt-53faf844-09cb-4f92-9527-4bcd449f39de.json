@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T13:25:19.819387+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/22d892d1-a7e4-4439-8384-f1609fd00673?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "22d892d1-a7e4-4439-8384-f1609fd00673",
+      "agentTaskId": "53faf844-09cb-4f92-9527-4bcd449f39de",
+      "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+      "runId": "49ea86f1-fde4-4ca4-8405-05a770f17881",
+      "nodeId": "4d987cec-64c3-5297-8535-45c90ffd06dc",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+          "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "sessionId": "sess_c9e24214998e",
+        "resolvedAt": "2026-09-08T13:24:42.265342Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "sessionId": "sess_c9e24214998e",
+      "sessionRef": "b21d9cef-3ee0-4290-8994-cadfd2b9c9a4",
+      "turnId": "c2c2ebda-bde8-41bd-950b-e7a8075c61da",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:24:43.606556+08:00",
+      "failureCode": "mcp_connection_failed_error",
+      "failureMessage": "MCP connection failed: github",
+      "version": 7,
+      "createdAt": "2026-09-08T21:24:42.264856+08:00",
+      "updatedAt": "2026-09-08T21:24:43.608724+08:00",
+      "startedAt": "2026-09-08T21:24:42.580086+08:00",
+      "completedAt": "2026-09-08T21:24:43.608724+08:00"
+    }
+  }
+}

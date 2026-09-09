@@ -168,12 +168,20 @@ func (s *Server) listCatalogAgents(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+	if a := accessFrom(c); a != nil {
+		filtered := agents[:0]
 		for _, agent := range agents {
-			agent.Metadata = nil
-			agent.Capabilities = nil
-			agent.Labels = nil
+			if !a.Namespace.Decide(a.User, "agent:"+agent.ID.String(), "discover").Allowed {
+				continue
+			}
+			if !a.Namespace.Decide(a.User, "agent:"+agent.ID.String(), "inspect").Allowed {
+				agent.Metadata = nil
+				agent.Capabilities = nil
+				agent.Labels = nil
+			}
+			filtered = append(filtered, agent)
 		}
+		agents = filtered
 	}
 	c.JSON(http.StatusOK, gin.H{"items": agents})
 }

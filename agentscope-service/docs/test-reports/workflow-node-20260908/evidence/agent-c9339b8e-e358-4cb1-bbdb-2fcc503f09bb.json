@@ -1,0 +1,53 @@
+{
+  "at": "2026-09-08T13:26:23.788294+00:00",
+  "method": "GET",
+  "path": "/api/v1/agents/c9339b8e-e358-4cb1-bbdb-2fcc503f09bb/definition?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+    "definition": {
+      "archivedAt": null,
+      "createdAt": 1788870717247,
+      "defaultEnvironmentId": "env_4e914465d2fc",
+      "defaultMemoryStoreIds": [],
+      "defaultVaultIds": [],
+      "description": "",
+      "id": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "maxIters": 20,
+      "mcpServers": [
+        {
+          "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "[REDACTED]"
+          },
+          "name": "github",
+          "transport": "streamable-http",
+          "type": "url",
+          "url": "https://api.githubcopilot.com/mcp/"
+        }
+      ],
+      "model": "",
+      "name": "MA1",
+      "ownerId": "namespace:default:demo",
+      "scope": "user",
+      "skills": null,
+      "system": "一个助手",
+      "tools": [
+        {
+          "defaultConfig": {
+            "enabled": true,
+            "permissionPolicy": {
+              "type": "always_ask"
+            }
+          },
+          "mcpServerName": "github",
+          "type": "mcp_toolset"
+        }
+      ],
+      "updatedAt": 1788873611293,
+      "version": 2,
+      "workspaceId": null,
+      "workspacePath": "/Users/ken/agentscope-2/agentscope-java/agentscope-service/.dev-stack/workspaces/namespace:default:demo/c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+    }
+  }
+}

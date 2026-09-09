@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-08T03:09:22.740049+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/0b07c158-997a-4ad7-a809-702e4ed1d694?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "0b07c158-997a-4ad7-a809-702e4ed1d694",
+      "agentTaskId": "751d14d3-6868-4836-9add-ed33ea90d72a",
+      "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+      "runId": "4c3c18dc-e92f-4670-887e-b4d9bd162d42",
+      "nodeId": "f87e7522-d5a5-457b-b6c9-96bf94776bde",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+          "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "58e66260-8472-445b-8fb3-1bd438bb9abf"
+        },
+        "sessionId": "sess_37f2f2378a8c",
+        "resolvedAt": "2026-09-08T03:02:55.529702Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "sessionId": "sess_37f2f2378a8c",
+      "sessionRef": "bb17be12-fbef-447a-81be-57b8135c4fc1",
+      "turnId": "ea7c9c19-1a96-4fcd-9120-408aeb36ca4f",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:03:47.105941+08:00",
+      "result": {
+        "outcome": "waiting",
+        "summary": "已成功创建两个子任务：\n1. 新能源技术最新发展趋势研究报告，分配给团队成员 678ae47f-0848-43d9-95e5-a79f5ed9fa72\n2. 智能手机技术最新发展趋势研究报告，同样分配给了团队成员 678ae47f-0848-43d9-95e5-a79f5ed9fa72\n现在等待这些子任务的完成。",
+        "waitingForTaskIds": [
+          "04778918-cdca-482a-89fd-57059dc33060",
+          "bb6f88fc-0e85-4c66-8f49-ad88954d43ae"
+        ]
+      },
+      "version": 29,
+      "createdAt": "2026-09-08T11:02:55.532036+08:00",
+      "updatedAt": "2026-09-08T11:03:47.204498+08:00",
+      "startedAt": "2026-09-08T11:03:02.130542+08:00",
+      "completedAt": "2026-09-08T11:03:47.204498+08:00"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T13:18:57.414134+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/1974a8c6-5313-45ee-8da9-5a052367fe7d?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "1974a8c6-5313-45ee-8da9-5a052367fe7d",
+      "agentTaskId": "9b3d5a9b-cb63-4abb-9e1c-355a77d0cc91",
+      "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+      "runId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+      "nodeId": "25b5781d-4bc5-5a95-8cce-c95b3e762387",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+          "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "sessionId": "sess_2057f95ef1d5",
+        "resolvedAt": "2026-09-08T13:15:47.693207Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "sessionId": "sess_2057f95ef1d5",
+      "sessionRef": "883a4033-eb46-4613-850e-d02c6af84c6a",
+      "turnId": "cf5296d8-c74e-4749-bcf7-87c5f34843e8",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:16:02.588535+08:00",
+      "failureCode": "managed_turn_incomplete",
+      "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 当前的任务是根据您的要求创作一首诗，并逐步进行优化。由于没有额外的修订指令，我将直接开始创作这首诗。请问您对诗歌的主题、风格或特定元素有什么偏好吗？如果没有特别的要求，我将基于一般性的美好主题来创作。\n\n如果已经有了初步的想法或者草稿需要我来进行优化，请提供给我，这样我可以在此基础上进行改进。\n请告知我是否需要加入某些特定的内容或遵循某种风格，以便我能更好地满足您的期望。如果没有具体要求，我将立即着手创作。",
+      "version": 15,
+      "createdAt": "2026-09-08T21:15:47.690235+08:00",
+      "updatedAt": "2026-09-08T21:16:02.59683+08:00",
+      "startedAt": "2026-09-08T21:15:48.034372+08:00",
+      "completedAt": "2026-09-08T21:16:02.59683+08:00"
+    }
+  }
+}

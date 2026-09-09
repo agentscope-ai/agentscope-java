@@ -1,0 +1,69 @@
+{
+  "at": "2026-09-08T03:05:05.649150+00:00",
+  "method": "POST",
+  "path": "/api/v1/issues?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": {
+    "tenant": "default",
+    "namespace": "personal-8c6976e5b5410415bde9",
+    "title": "IT 保留实时来源要求",
+    "description": "请联网查询今天发布的智能手机行业新闻，必须给出可核验的原始链接与发布日期。不能仅使用模型知识替代实时检索。",
+    "assigneeType": "agent",
+    "assigneeRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+    "creator": {
+      "type": "human",
+      "ref": "admin"
+    }
+  },
+  "status": 201,
+  "response": {
+    "agentTask": {
+      "id": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "orchestrationRunId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+      "runNodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+      "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "status": "queued",
+      "priority": 0,
+      "triggerType": "assignment",
+      "originator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "accountableHumanRef": "admin",
+      "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "hopCount": 0,
+      "teamDepth": 0,
+      "version": 1,
+      "createdAt": "2026-09-08T11:05:05.651304+08:00"
+    },
+    "issue": {
+      "access": {
+        "mode": "private"
+      },
+      "id": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "title": "IT 保留实时来源要求",
+      "description": "请联网查询今天发布的智能手机行业新闻，必须给出可核验的原始链接与发布日期。不能仅使用模型知识替代实时检索。",
+      "status": "backlog",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 1,
+      "createdAt": "2026-09-08T11:05:05.651304+08:00",
+      "updatedAt": "2026-09-08T11:05:05.651304+08:00"
+    }
+  }
+}

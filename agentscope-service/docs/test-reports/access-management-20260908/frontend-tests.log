@@ -1,0 +1,13 @@
+
+> agentscope-service-frontend@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/ken/agentscope-2/agentscope-java/agentscope-service/frontend
+
+
+ Test Files  29 passed (29)
+      Tests  126 passed (126)
+   Start at  12:28:02
+   Duration  646ms (transform 1.64s, setup 0ms, import 2.58s, tests 139ms, environment 1ms)
+

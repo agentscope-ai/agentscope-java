@@ -1,0 +1,1474 @@
+{
+  "at": "2026-09-08T03:09:22.984959+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/d52f4ccc-4af1-4636-b144-2f91c5cb60d5/export?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "activity": [
+      {
+        "id": "fbf08e15-e721-4289-80f5-1573ddb158af",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "issue.created",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "createdAt": "2026-09-08T11:05:05.662619+08:00"
+      },
+      {
+        "id": "c12fd8c8-a599-405d-bd20-bef6c0290bac",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "causationId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "in_progress",
+          "from": "backlog",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T11:05:06.068814+08:00"
+      },
+      {
+        "id": "f3bf3e35-0e28-4f4e-b3ef-8a09a3f4a54e",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "AgentTask failed: MISSING_API_KEY"
+        },
+        "createdAt": "2026-09-08T11:05:42.907353+08:00"
+      },
+      {
+        "id": "b83226f7-4405-41c0-ad83-7c07d6defb61",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "c5a0b209-e1ef-463e-a77a-21de35cb5ff1",
+        "createdAt": "2026-09-08T11:05:42.924289+08:00"
+      },
+      {
+        "id": "4a3faa84-fdda-4492-9e3d-7d27ed006def",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "createdAt": "2026-09-08T11:06:51.489982+08:00"
+      },
+      {
+        "id": "73d60d5f-4a56-45e3-982d-8df5330887d6",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "causationId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T11:06:52.05304+08:00"
+      },
+      {
+        "id": "96459451-aab9-4c27-bfe8-880f68723ce9",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "blocked",
+          "from": "in_progress",
+          "reason": "AgentTask failed: MISSING_CREDENTIAL"
+        },
+        "createdAt": "2026-09-08T11:07:21.948101+08:00"
+      },
+      {
+        "id": "81a17153-f210-440e-bdd8-7b358ac648f3",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "28ffcaef-43cb-4914-8093-b277f71d1399",
+        "createdAt": "2026-09-08T11:07:21.976877+08:00"
+      },
+      {
+        "id": "de0d3205-1ca4-43e7-82de-bf3b6b0bf9e3",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "action": "comment.created",
+        "objectType": "comment",
+        "objectRef": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "createdAt": "2026-09-08T11:08:39.510452+08:00"
+      },
+      {
+        "id": "1027d6d5-2f15-48ee-b137-5b9601c74049",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "causationId": "8a5715df-f960-4736-ae39-84eca834017d",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "in_progress",
+          "from": "blocked",
+          "reason": "agent task started"
+        },
+        "createdAt": "2026-09-08T11:08:41.177627+08:00"
+      },
+      {
+        "id": "517610ac-ba89-4e4f-b70a-c3feb3fd8171",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "issue.status_changed",
+        "objectType": "issue",
+        "objectRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "details": {
+          "to": "in_review",
+          "from": "in_progress",
+          "reason": "execution completed; awaiting acceptance"
+        },
+        "createdAt": "2026-09-08T11:09:06.567907+08:00"
+      },
+      {
+        "id": "ebcd2fa9-0ab9-4cfd-b483-1a2a9a9648ea",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "actor": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "action": "agent_task.completed",
+        "objectType": "agent_task",
+        "objectRef": "8a5715df-f960-4736-ae39-84eca834017d",
+        "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "createdAt": "2026-09-08T11:09:06.575469+08:00"
+      }
+    ],
+    "artifacts": [],
+    "children": [],
+    "comments": [
+      {
+        "id": "c5a0b209-e1ef-463e-a77a-21de35cb5ff1",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "threadRootId": "c5a0b209-e1ef-463e-a77a-21de35cb5ff1",
+        "author": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "content": "Agent could not complete this Issue.\nFailure code: MISSING_API_KEY\nFailure: 缺少 TAVILY_API_KEY，无法执行网络搜索。\nIssue status: blocked.",
+        "type": "status",
+        "sourceTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+        "sourceAttemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+        "version": 1,
+        "createdAt": "2026-09-08T11:05:42.87575+08:00",
+        "updatedAt": "2026-09-08T11:05:42.87575+08:00"
+      },
+      {
+        "id": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "threadRootId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "仍然需要今天的实时来源和可核验链接，不接受基于自身知识的替代报告；缺少搜索能力时请明确说明阻塞。",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-08T11:06:51.475241+08:00",
+        "updatedAt": "2026-09-08T11:06:51.475241+08:00",
+        "routes": [
+          {
+            "id": "4c00c9d1-f55b-4046-bb1c-87a680528c62",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "commentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+            "routeType": "assignee",
+            "outcome": "queued",
+            "taskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "createdAt": "2026-09-08T11:06:51.475241+08:00"
+          }
+        ]
+      },
+      {
+        "id": "28ffcaef-43cb-4914-8093-b277f71d1399",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "threadRootId": "28ffcaef-43cb-4914-8093-b277f71d1399",
+        "author": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "content": "Agent could not complete this Issue.\nFailure code: MISSING_CREDENTIAL\nFailure: 缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。\nIssue status: blocked.",
+        "type": "status",
+        "sourceTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+        "sourceAttemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+        "version": 1,
+        "createdAt": "2026-09-08T11:07:21.971534+08:00",
+        "updatedAt": "2026-09-08T11:07:21.971534+08:00"
+      },
+      {
+        "id": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "threadRootId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "author": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "content": "你直接根据自己的认知回答就好了",
+        "type": "comment",
+        "version": 1,
+        "createdAt": "2026-09-08T11:08:39.354356+08:00",
+        "updatedAt": "2026-09-08T11:08:39.354356+08:00",
+        "routes": [
+          {
+            "id": "e414eec8-a9cc-4066-879b-835a37e27676",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "commentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "commentVersion": 1,
+            "targetType": "agent",
+            "targetRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+            "routeType": "assignee",
+            "outcome": "queued",
+            "taskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "createdAt": "2026-09-08T11:08:39.354356+08:00"
+          }
+        ]
+      },
+      {
+        "id": "2b8b0820-20e2-4a45-ba7b-295dce03cbd3",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "parentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "threadRootId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "author": {
+          "type": "agent",
+          "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+        },
+        "content": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+        "type": "result",
+        "sourceTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+        "sourceAttemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+        "version": 1,
+        "createdAt": "2026-09-08T11:09:06.53935+08:00",
+        "updatedAt": "2026-09-08T11:09:06.53935+08:00"
+      }
+    ],
+    "exportedAt": "2026-09-08T03:09:23.015067Z",
+    "issue": {
+      "access": {
+        "mode": "private"
+      },
+      "id": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "title": "IT 保留实时来源要求",
+      "description": "请联网查询今天发布的智能手机行业新闻，必须给出可核验的原始链接与发布日期。不能仅使用模型知识替代实时检索。",
+      "status": "in_review",
+      "priority": "none",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 12,
+      "createdAt": "2026-09-08T11:05:05.651304+08:00",
+      "updatedAt": "2026-09-08T11:09:06.53935+08:00"
+    },
+    "runDiagnostics": [
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "8b38fb39-cd39-4a3b-a850-83114acbe569",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 1,
+            "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-task-queued:8a5715df-f960-4736-ae39-84eca834017d",
+            "occurredAt": "2026-09-08T11:08:39.354356+08:00"
+          },
+          {
+            "id": "ad076b99-15c7-485a-b479-7de041e20c72",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 2,
+            "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "attemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-queued:18a5b956-4015-4526-934d-a5d460f34ea4",
+            "occurredAt": "2026-09-08T11:08:40.045658+08:00"
+          },
+          {
+            "id": "0dd549f0-b9d9-43d8-93d6-0f4a6e51500c",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 3,
+            "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "attemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "idempotencyKey": "attempt-running:18a5b956-4015-4526-934d-a5d460f34ea4",
+            "occurredAt": "2026-09-08T11:08:41.12455+08:00"
+          },
+          {
+            "id": "4b611a6b-8261-4821-8a6d-d188fc364566",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 4,
+            "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "attemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+            "type": "attempt.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-succeeded:18a5b956-4015-4526-934d-a5d460f34ea4",
+            "occurredAt": "2026-09-08T11:09:06.53935+08:00"
+          },
+          {
+            "id": "31e528c2-b9a3-45d8-995b-db1c284c888d",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 5,
+            "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "type": "node.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "output": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。"
+            },
+            "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "node-succeeded:e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+            "occurredAt": "2026-09-08T11:09:06.53935+08:00"
+          },
+          {
+            "id": "3d598c68-625f-450d-8e79-dc402881b6b0",
+            "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 6,
+            "type": "run.succeeded",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "run-succeeded:57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "occurredAt": "2026-09-08T11:09:06.53935+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "mode": "direct",
+            "triggerType": "comment",
+            "triggerRef": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "output": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+            "state": "succeeded",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T11:08:39.354356+08:00",
+            "updatedAt": "2026-09-08T11:09:06.53935+08:00",
+            "startedAt": "2026-09-08T11:08:39.354356+08:00",
+            "completedAt": "2026-09-08T11:09:06.53935+08:00"
+          },
+          "nodes": [
+            {
+              "id": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+              "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "nodeKey": "task:8a5715df-f960-4736-ae39-84eca834017d",
+              "type": "agent",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "state": "succeeded",
+              "output": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+              "iteration": 1,
+              "version": 3,
+              "createdAt": "2026-09-08T11:08:39.354356+08:00",
+              "updatedAt": "2026-09-08T11:09:06.53935+08:00",
+              "startedAt": "2026-09-08T11:08:40.001966+08:00",
+              "completedAt": "2026-09-08T11:09:06.53935+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "8a5715df-f960-4736-ae39-84eca834017d",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "orchestrationRunId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+              "runNodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+              "currentAttemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "status": "completed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+              "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_9fc00f457514",
+                "resolvedAt": "2026-09-08T03:08:40.046531Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_9fc00f457514",
+              "result": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+              "version": 4,
+              "createdAt": "2026-09-08T11:08:39.354356+08:00",
+              "dispatchedAt": "2026-09-08T11:08:40.045658+08:00",
+              "startedAt": "2026-09-08T11:08:41.12455+08:00",
+              "completedAt": "2026-09-08T11:09:06.53935+08:00",
+              "inputs": [
+                {
+                  "id": "412831c1-bb9f-4d4c-bf4d-e2e51a06ae1e",
+                  "tenant": "default",
+                  "namespace": "personal-8c6976e5b5410415bde9",
+                  "taskId": "8a5715df-f960-4736-ae39-84eca834017d",
+                  "commentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "processed",
+                  "deliveredAt": "2026-09-08T11:08:40.045658+08:00",
+                  "processedAt": "2026-09-08T11:09:06.53935+08:00",
+                  "responseCommentId": "2b8b0820-20e2-4a45-ba7b-295dce03cbd3",
+                  "attempts": 0,
+                  "createdAt": "2026-09-08T11:08:39.354356+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "18a5b956-4015-4526-934d-a5d460f34ea4",
+              "agentTaskId": "8a5715df-f960-4736-ae39-84eca834017d",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+              "runId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+              "nodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_9fc00f457514",
+                "resolvedAt": "2026-09-08T03:08:40.046531Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "sessionId": "sess_9fc00f457514",
+              "sessionRef": "78d8f781-06c0-4015-a126-85bef31ef5ed",
+              "turnId": "befed6ff-1cee-4bbc-9f80-6ce7bdc08dbc",
+              "state": "succeeded",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T11:09:06.500365+08:00",
+              "result": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+              "version": 15,
+              "createdAt": "2026-09-08T11:08:40.045658+08:00",
+              "updatedAt": "2026-09-08T11:09:06.53935+08:00",
+              "startedAt": "2026-09-08T11:08:41.12455+08:00",
+              "completedAt": "2026-09-08T11:09:06.53935+08:00"
+            }
+          ]
+        },
+        "toolFailures": []
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "b1483b22-967f-483c-9122-37006633d36a",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 1,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-task-queued:11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "occurredAt": "2026-09-08T11:06:51.475241+08:00"
+          },
+          {
+            "id": "a8ba8ecd-1ff8-4840-aea7-3b78238fe9f4",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 2,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "attemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-queued:065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "occurredAt": "2026-09-08T11:06:51.918094+08:00"
+          },
+          {
+            "id": "84e77403-e35a-4a48-ae38-3ad7cc412c30",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 3,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "attemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "idempotencyKey": "attempt-running:065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "occurredAt": "2026-09-08T11:06:52.043149+08:00"
+          },
+          {
+            "id": "f0114a45-e9b7-4357-9690-0dcc1cb1ba85",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 4,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "attemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_bc8cd60a34c4",
+              "sessionRef": "cecb1ea6-0971-4267-baf8-73e5b53b86d5",
+              "toolCallId": "call_63e8318b30be44f0bd23a1",
+              "managedEventId": "evt_89ef0b630cac4c7bb29bc0950836be94"
+            },
+            "causationId": "call_63e8318b30be44f0bd23a1",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-tool-failed:11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342:call_63e8318b30be44f0bd23a1",
+            "occurredAt": "2026-09-08T11:07:05.242858+08:00"
+          },
+          {
+            "id": "dff745bc-d913-4798-8594-4f0deff5fd9a",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 5,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "attemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "code": "MISSING_CREDENTIAL",
+              "message": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。"
+            },
+            "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-failed:065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "occurredAt": "2026-09-08T11:07:21.286756+08:00"
+          },
+          {
+            "id": "c2413ab8-2235-42f8-a33a-4468718d6c62",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "MISSING_CREDENTIAL",
+              "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。"
+            },
+            "idempotencyKey": "run-failed:b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "occurredAt": "2026-09-08T11:07:21.98327+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "mode": "direct",
+            "triggerType": "comment",
+            "triggerRef": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "state": "failed",
+            "failureCode": "MISSING_CREDENTIAL",
+            "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T11:06:51.475241+08:00",
+            "updatedAt": "2026-09-08T11:07:21.98327+08:00",
+            "startedAt": "2026-09-08T11:06:51.475241+08:00",
+            "completedAt": "2026-09-08T11:07:21.98327+08:00"
+          },
+          "nodes": [
+            {
+              "id": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+              "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "nodeKey": "task:11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+              "type": "agent",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "MISSING_CREDENTIAL",
+              "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+              "version": 3,
+              "createdAt": "2026-09-08T11:06:51.475241+08:00",
+              "updatedAt": "2026-09-08T11:07:21.980621+08:00",
+              "startedAt": "2026-09-08T11:06:51.915654+08:00",
+              "completedAt": "2026-09-08T11:07:21.980621+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "orchestrationRunId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+              "runNodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+              "currentAttemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "comment",
+              "triggerCommentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+              "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_bc8cd60a34c4",
+                "resolvedAt": "2026-09-08T03:06:51.919121Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_bc8cd60a34c4",
+              "errorCode": "MISSING_CREDENTIAL",
+              "errorMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+              "version": 4,
+              "createdAt": "2026-09-08T11:06:51.475241+08:00",
+              "dispatchedAt": "2026-09-08T11:06:51.918094+08:00",
+              "startedAt": "2026-09-08T11:06:52.043149+08:00",
+              "completedAt": "2026-09-08T11:07:21.286756+08:00",
+              "inputs": [
+                {
+                  "id": "5e185c5d-8b64-41cb-be36-be14e21e57d4",
+                  "tenant": "default",
+                  "namespace": "personal-8c6976e5b5410415bde9",
+                  "taskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+                  "commentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+                  "commentVersion": 1,
+                  "sequence": 1,
+                  "state": "blocked",
+                  "deliveredAt": "2026-09-08T11:06:51.918094+08:00",
+                  "attempts": 0,
+                  "lastError": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+                  "createdAt": "2026-09-08T11:06:51.475241+08:00"
+                }
+              ]
+            }
+          ],
+          "attempts": [
+            {
+              "id": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+              "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+              "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+              "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_bc8cd60a34c4",
+                "resolvedAt": "2026-09-08T03:06:51.919121Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "sessionId": "sess_bc8cd60a34c4",
+              "sessionRef": "cecb1ea6-0971-4267-baf8-73e5b53b86d5",
+              "turnId": "682f07b7-c836-4294-82f8-fbfadfca539b",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T11:07:19.922897+08:00",
+              "failureCode": "MISSING_CREDENTIAL",
+              "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+              "version": 19,
+              "createdAt": "2026-09-08T11:06:51.918094+08:00",
+              "updatedAt": "2026-09-08T11:07:21.286756+08:00",
+              "startedAt": "2026-09-08T11:06:52.043149+08:00",
+              "completedAt": "2026-09-08T11:07:21.286756+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "f0114a45-e9b7-4357-9690-0dcc1cb1ba85",
+            "runId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 4,
+            "nodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+            "agentTaskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "attemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_bc8cd60a34c4",
+              "sessionRef": "cecb1ea6-0971-4267-baf8-73e5b53b86d5",
+              "toolCallId": "call_63e8318b30be44f0bd23a1",
+              "managedEventId": "evt_89ef0b630cac4c7bb29bc0950836be94"
+            },
+            "causationId": "call_63e8318b30be44f0bd23a1",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-tool-failed:11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342:call_63e8318b30be44f0bd23a1",
+            "occurredAt": "2026-09-08T11:07:05.242858+08:00"
+          }
+        ]
+      },
+      {
+        "dispatchDeferrals": [],
+        "dispatchRecoveries": [],
+        "events": [
+          {
+            "id": "27d7b55c-ef63-4b12-9b4e-5539955d51b5",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 1,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "type": "agent-task.queued",
+            "actor": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-task-queued:1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "occurredAt": "2026-09-08T11:05:05.651304+08:00"
+          },
+          {
+            "id": "46c4fd09-5a6e-4bd2-a36a-feef68ee3dd3",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 2,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "attemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "type": "attempt.queued",
+            "actor": {
+              "type": "system"
+            },
+            "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-queued:14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "occurredAt": "2026-09-08T11:05:05.940675+08:00"
+          },
+          {
+            "id": "31acfc46-f154-410c-b56f-98948938935b",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 3,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "attemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "type": "attempt.running",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "idempotencyKey": "attempt-running:14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "occurredAt": "2026-09-08T11:05:06.050943+08:00"
+          },
+          {
+            "id": "d7d7aef6-04c4-4dde-8380-c0b487ff23c8",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 4,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "attemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_088b5383cf04",
+              "sessionRef": "193ea62e-1f9d-4335-b711-b44f62a3e71d",
+              "toolCallId": "call_3d86e5c643fc4732afbcdd",
+              "managedEventId": "evt_ddf962e8de6845d5849dda09ef5a0723"
+            },
+            "causationId": "call_3d86e5c643fc4732afbcdd",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-tool-failed:1cdf474a-2a07-458a-91ff-a1ed9c11063e:call_3d86e5c643fc4732afbcdd",
+            "occurredAt": "2026-09-08T11:05:31.492493+08:00"
+          },
+          {
+            "id": "a41c2de2-2c51-4c42-926c-ac00739a5f7f",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 5,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "attemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "type": "attempt.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "code": "MISSING_API_KEY",
+              "message": "缺少 TAVILY_API_KEY，无法执行网络搜索。"
+            },
+            "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "attempt-failed:14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "occurredAt": "2026-09-08T11:05:42.831962+08:00"
+          },
+          {
+            "id": "e510e535-87d4-4ba7-908b-81f85ecfed60",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 6,
+            "type": "run.failed",
+            "actor": {
+              "type": "system",
+              "ref": "orchestration"
+            },
+            "payload": {
+              "output": null,
+              "failureCode": "MISSING_API_KEY",
+              "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。"
+            },
+            "idempotencyKey": "run-failed:a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "occurredAt": "2026-09-08T11:05:42.8843+08:00"
+          }
+        ],
+        "graph": {
+          "run": {
+            "id": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "mode": "direct",
+            "triggerType": "assignment",
+            "triggerRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "state": "failed",
+            "failureCode": "MISSING_API_KEY",
+            "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+            "version": 5,
+            "createdBy": {
+              "type": "human",
+              "ref": "admin"
+            },
+            "createdAt": "2026-09-08T11:05:05.651304+08:00",
+            "updatedAt": "2026-09-08T11:05:42.8843+08:00",
+            "startedAt": "2026-09-08T11:05:05.651304+08:00",
+            "completedAt": "2026-09-08T11:05:42.8843+08:00"
+          },
+          "nodes": [
+            {
+              "id": "c6decb93-6333-4975-85e8-f8cf8f105556",
+              "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "nodeKey": "task:1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+              "type": "agent",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "state": "failed",
+              "iteration": 1,
+              "failureCode": "MISSING_API_KEY",
+              "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+              "version": 3,
+              "createdAt": "2026-09-08T11:05:05.651304+08:00",
+              "updatedAt": "2026-09-08T11:05:42.882062+08:00",
+              "startedAt": "2026-09-08T11:05:05.915918+08:00",
+              "completedAt": "2026-09-08T11:05:42.882062+08:00"
+            }
+          ],
+          "edges": [],
+          "tasks": [
+            {
+              "id": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "orchestrationRunId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+              "runNodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+              "currentAttemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "status": "failed",
+              "priority": 0,
+              "triggerType": "assignment",
+              "originator": {
+                "type": "human",
+                "ref": "admin"
+              },
+              "accountableHumanRef": "admin",
+              "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+              "hopCount": 0,
+              "teamDepth": 0,
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_088b5383cf04",
+                "resolvedAt": "2026-09-08T03:05:05.945573Z",
+                "selectionSource": "policy"
+              },
+              "sessionId": "sess_088b5383cf04",
+              "errorCode": "MISSING_API_KEY",
+              "errorMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+              "version": 4,
+              "createdAt": "2026-09-08T11:05:05.651304+08:00",
+              "dispatchedAt": "2026-09-08T11:05:05.940675+08:00",
+              "startedAt": "2026-09-08T11:05:06.050943+08:00",
+              "completedAt": "2026-09-08T11:05:42.831962+08:00"
+            }
+          ],
+          "attempts": [
+            {
+              "id": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+              "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+              "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+              "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+              "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+              "tenant": "default",
+              "namespace": "personal-8c6976e5b5410415bde9",
+              "attempt": 1,
+              "dispatchGeneration": 1,
+              "backendKind": "managed",
+              "runtimeBinding": {
+                "binding": {
+                  "kind": "managed",
+                  "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+                  "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+                  "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+                  "managedOwnerRef": "admin",
+                  "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+                  "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+                },
+                "sessionId": "sess_088b5383cf04",
+                "resolvedAt": "2026-09-08T03:05:05.945573Z",
+                "selectionSource": "policy"
+              },
+              "managedOwnerRef": "admin",
+              "managedAgentRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+              "sessionId": "sess_088b5383cf04",
+              "sessionRef": "193ea62e-1f9d-4335-b711-b44f62a3e71d",
+              "turnId": "1cdcba0b-5f85-4790-9814-deae76238326",
+              "state": "failed",
+              "fencingToken": "[REDACTED]",
+              "heartbeatAt": "2026-09-08T11:05:42.81117+08:00",
+              "failureCode": "MISSING_API_KEY",
+              "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+              "version": 20,
+              "createdAt": "2026-09-08T11:05:05.940675+08:00",
+              "updatedAt": "2026-09-08T11:05:42.831962+08:00",
+              "startedAt": "2026-09-08T11:05:06.050943+08:00",
+              "completedAt": "2026-09-08T11:05:42.831962+08:00"
+            }
+          ]
+        },
+        "toolFailures": [
+          {
+            "id": "d7d7aef6-04c4-4dde-8380-c0b487ff23c8",
+            "runId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "sequence": 4,
+            "nodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+            "agentTaskId": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+            "attemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+            "type": "agent_tool.failed",
+            "actor": {
+              "type": "agent",
+              "ref": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+            },
+            "payload": {
+              "state": "error",
+              "source": "managed_session",
+              "message": "Error: Tool execution failed: TAVILY_API_KEY is not set. Configure the key via Environment vault credentials or process env to enable web_search.",
+              "toolName": "web_search",
+              "sessionId": "sess_088b5383cf04",
+              "sessionRef": "193ea62e-1f9d-4335-b711-b44f62a3e71d",
+              "toolCallId": "call_3d86e5c643fc4732afbcdd",
+              "managedEventId": "evt_ddf962e8de6845d5849dda09ef5a0723"
+            },
+            "causationId": "call_3d86e5c643fc4732afbcdd",
+            "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+            "idempotencyKey": "agent-tool-failed:1cdf474a-2a07-458a-91ff-a1ed9c11063e:call_3d86e5c643fc4732afbcdd",
+            "occurredAt": "2026-09-08T11:05:31.492493+08:00"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "id": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "mode": "direct",
+        "triggerType": "comment",
+        "triggerRef": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "output": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+        "state": "succeeded",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T11:08:39.354356+08:00",
+        "updatedAt": "2026-09-08T11:09:06.53935+08:00",
+        "startedAt": "2026-09-08T11:08:39.354356+08:00",
+        "completedAt": "2026-09-08T11:09:06.53935+08:00"
+      },
+      {
+        "id": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "mode": "direct",
+        "triggerType": "comment",
+        "triggerRef": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "state": "failed",
+        "failureCode": "MISSING_CREDENTIAL",
+        "failureMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T11:06:51.475241+08:00",
+        "updatedAt": "2026-09-08T11:07:21.98327+08:00",
+        "startedAt": "2026-09-08T11:06:51.475241+08:00",
+        "completedAt": "2026-09-08T11:07:21.98327+08:00"
+      },
+      {
+        "id": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "rootIssueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "mode": "direct",
+        "triggerType": "assignment",
+        "triggerRef": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "state": "failed",
+        "failureCode": "MISSING_API_KEY",
+        "failureMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+        "version": 5,
+        "createdBy": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "createdAt": "2026-09-08T11:05:05.651304+08:00",
+        "updatedAt": "2026-09-08T11:05:42.8843+08:00",
+        "startedAt": "2026-09-08T11:05:05.651304+08:00",
+        "completedAt": "2026-09-08T11:05:42.8843+08:00"
+      }
+    ],
+    "schemaVersion": 2,
+    "subscribers": [],
+    "tasks": [
+      {
+        "id": "1cdf474a-2a07-458a-91ff-a1ed9c11063e",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "orchestrationRunId": "a40e0201-ae88-4e78-9795-4ce1fd3a5796",
+        "runNodeId": "c6decb93-6333-4975-85e8-f8cf8f105556",
+        "currentAttemptId": "14206c8f-59e3-4592-8ef1-296ebd900fc2",
+        "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "assignment",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+            "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+          },
+          "sessionId": "sess_088b5383cf04",
+          "resolvedAt": "2026-09-08T03:05:05.945573Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_088b5383cf04",
+        "errorCode": "MISSING_API_KEY",
+        "errorMessage": "缺少 TAVILY_API_KEY，无法执行网络搜索。",
+        "version": 4,
+        "createdAt": "2026-09-08T11:05:05.651304+08:00",
+        "dispatchedAt": "2026-09-08T11:05:05.940675+08:00",
+        "startedAt": "2026-09-08T11:05:06.050943+08:00",
+        "completedAt": "2026-09-08T11:05:42.831962+08:00"
+      },
+      {
+        "id": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "orchestrationRunId": "b0399541-8cc5-4e07-bc1d-b895db44471d",
+        "runNodeId": "40382c04-d17a-4bf3-9c5c-8a2a11977a50",
+        "currentAttemptId": "065c4d71-e9b6-42b4-b754-84ab01c4d2d5",
+        "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+        "status": "failed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "675ab427-0c9a-443b-8b83-060619dba89a",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+            "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+          },
+          "sessionId": "sess_bc8cd60a34c4",
+          "resolvedAt": "2026-09-08T03:06:51.919121Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_bc8cd60a34c4",
+        "errorCode": "MISSING_CREDENTIAL",
+        "errorMessage": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+        "version": 4,
+        "createdAt": "2026-09-08T11:06:51.475241+08:00",
+        "dispatchedAt": "2026-09-08T11:06:51.918094+08:00",
+        "startedAt": "2026-09-08T11:06:52.043149+08:00",
+        "completedAt": "2026-09-08T11:07:21.286756+08:00",
+        "inputs": [
+          {
+            "id": "5e185c5d-8b64-41cb-be36-be14e21e57d4",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "taskId": "11c0ce2f-cdb8-4734-9fa5-63a4bd7b2342",
+            "commentId": "675ab427-0c9a-443b-8b83-060619dba89a",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "blocked",
+            "deliveredAt": "2026-09-08T11:06:51.918094+08:00",
+            "attempts": 0,
+            "lastError": "缺少 TAVILY_API_KEY 以执行网络搜索，无法完成实时新闻查询的要求。",
+            "createdAt": "2026-09-08T11:06:51.475241+08:00"
+          }
+        ]
+      },
+      {
+        "id": "8a5715df-f960-4736-ae39-84eca834017d",
+        "tenant": "default",
+        "namespace": "personal-8c6976e5b5410415bde9",
+        "issueId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "orchestrationRunId": "57d55f6e-4ed7-4075-ab13-9b3e1ab8cf01",
+        "runNodeId": "e8e6a635-7d81-45d6-b793-e26cd739bbe2",
+        "currentAttemptId": "18a5b956-4015-4526-934d-a5d460f34ea4",
+        "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+        "status": "completed",
+        "priority": 0,
+        "triggerType": "comment",
+        "triggerCommentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "originator": {
+          "type": "human",
+          "ref": "admin"
+        },
+        "accountableHumanRef": "admin",
+        "causationId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+        "correlationId": "d52f4ccc-4af1-4636-b144-2f91c5cb60d5",
+        "hopCount": 0,
+        "teamDepth": 0,
+        "runtimeBinding": {
+          "binding": {
+            "kind": "managed",
+            "agentId": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+            "bindingId": "3ecf490e-b253-5eee-93d7-36c14201a0f3",
+            "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+            "managedOwnerRef": "admin",
+            "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+            "managedDefinitionRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72"
+          },
+          "sessionId": "sess_9fc00f457514",
+          "resolvedAt": "2026-09-08T03:08:40.046531Z",
+          "selectionSource": "policy"
+        },
+        "sessionId": "sess_9fc00f457514",
+        "result": "按照指示，基于已有知识回答了问题，强调了信息的时效性和验证限制。",
+        "version": 4,
+        "createdAt": "2026-09-08T11:08:39.354356+08:00",
+        "dispatchedAt": "2026-09-08T11:08:40.045658+08:00",
+        "startedAt": "2026-09-08T11:08:41.12455+08:00",
+        "completedAt": "2026-09-08T11:09:06.53935+08:00",
+        "inputs": [
+          {
+            "id": "412831c1-bb9f-4d4c-bf4d-e2e51a06ae1e",
+            "tenant": "default",
+            "namespace": "personal-8c6976e5b5410415bde9",
+            "taskId": "8a5715df-f960-4736-ae39-84eca834017d",
+            "commentId": "2389311f-285f-4114-ba8f-7874c0eeb5e3",
+            "commentVersion": 1,
+            "sequence": 1,
+            "state": "processed",
+            "deliveredAt": "2026-09-08T11:08:40.045658+08:00",
+            "processedAt": "2026-09-08T11:09:06.53935+08:00",
+            "responseCommentId": "2b8b0820-20e2-4a45-ba7b-295dce03cbd3",
+            "attempts": 0,
+            "createdAt": "2026-09-08T11:08:39.354356+08:00"
+          }
+        ]
+      }
+    ]
+  }
+}

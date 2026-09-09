@@ -99,6 +99,7 @@ type Descriptor struct {
 	Instructions Capability `json:"instructions"`
 	Workspace    Capability `json:"workspace"`
 	Skills       Capability `json:"skills"`
+	Subagents    Capability `json:"subagents"`
 	Tools        Capability `json:"tools"`
 	Shell        Capability `json:"shell"`
 	MCP          Capability `json:"mcp"`

@@ -3,10 +3,11 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/apiClient';
-import { getToken } from '@/lib/auth';
+import { getToken, me } from '@/lib/auth';
+import { useAccountIdentity } from '@/lib/accountIdentity';
 import { resolveAuthorizedNamespace, setRequestNamespace, type NamespaceSummary } from '@/lib/namespaceScope';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -43,11 +44,14 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [refresh, setRefresh] = useState(0);
   const token = getToken();
+  useAccountIdentity();
   const [resolution, setResolution] = useState<ScopeResolution | null>(() => token ? null : ({
     token: null,
     descriptor: { tenant: 'default', namespace: 'default', mode: 'single', selectorVisible: false },
   }));
   const [scopeError, setScopeError] = useState('');
+  const authority = useRef('');
+  const [authorityVersion, setAuthorityVersion] = useState(0);
 
   useEffect(() => {
     if (!token) {
@@ -60,8 +64,15 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     setScopeError('');
-    api.get<ScopeDescriptor>('/api/v1/me/scope').then((scope) => {
+    Promise.all([api.get<ScopeDescriptor>('/api/v1/me/scope'), me()]).then(([scope, account]) => {
       if (cancelled) return;
+      const nextAuthority = JSON.stringify({ token, roles: [...account.roles].sort(), namespaces: scope.namespaces?.map(n => [n.tenant, n.name, [...n.roles].sort()]) });
+      if (authority.current && authority.current !== nextAuthority) {
+        void qc.cancelQueries();
+        qc.clear();
+        setAuthorityVersion(value => value + 1);
+      }
+      authority.current = nextAuthority;
       const normalized: ScopeDescriptor = {
         namespaces: scope.namespaces,
         tenant: scope.tenant || 'default',
@@ -87,6 +98,14 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     // changes force a fresh server-owned scope resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, refresh]);
+
+  useEffect(() => {
+    if (!token) return;
+    const refreshAccess = () => setRefresh(value => value + 1);
+    const timer = window.setInterval(refreshAccess, 30000);
+    window.addEventListener('focus', refreshAccess);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshAccess); };
+  }, [token]);
 
   const descriptor = resolution?.token === token ? resolution.descriptor : null;
 
@@ -170,7 +189,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   if (!descriptor) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading console…</div>;
   }
-  return <ScopeContext.Provider key={`${token}:${tenant}:${namespace}`} value={value}>{children}</ScopeContext.Provider>;
+  return <ScopeContext.Provider key={`${token}:${tenant}:${namespace}:${authorityVersion}`} value={value}>{children}</ScopeContext.Provider>;
 }
 
 export function useControlPlaneScope(): ControlPlaneScope {

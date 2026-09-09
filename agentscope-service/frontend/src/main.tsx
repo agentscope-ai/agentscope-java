@@ -52,6 +52,11 @@ const AgentSkillsPage = React.lazy(() => import('./pages/AgentSkillsPage'));
 const AgentToolsPage = React.lazy(() => import('./pages/AgentToolsPage'));
 const AgentSubagentsPage = React.lazy(() => import('./pages/AgentSubagentsPage'));
 const PermissionsPage = React.lazy(() => import('./features/work/PermissionsPage'));
+const ManagementLayout = React.lazy(() => import('./features/settings/ManagementLayout'));
+const IntegrationsPage = React.lazy(() => import('./features/settings/IntegrationsPage'));
+const NamespacesPage = React.lazy(() => import('./features/settings/NamespacesPage'));
+const NamespaceDetailPage = React.lazy(() => import('./features/settings/NamespaceDetailPage'));
+const AccessLogPage = React.lazy(() => import('./features/settings/AccessLogPage'));
 const AdminUsersPage = React.lazy(() => import('./pages/AdminUsersPage'));
 const ChannelsHubPage = React.lazy(() => import('./pages/ChannelsHubPage'));
 const ChannelDetailPage = React.lazy(() => import('./pages/ChannelDetailPage'));
@@ -289,8 +294,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/managed/sessions/:sessionId" element={<SessionDetailPage />} />
             <Route path="/managed/workspaces" element={<WorkspacesHubPage />} />
             <Route path="/managed/workspaces/:id" element={<WorkspaceDetailPage />} />
-            <Route path="/managed/profile" element={<ProfilePage />} />
-            <Route path="/managed/admin/users" element={<AdminUsersPage />} />
+            <Route path="/settings/profile" element={<ProfilePage />} />
+            <Route path="/settings" element={<ManagementLayout />}>
+              <Route index element={<Navigate to="/settings/namespaces" replace />} />
+              <Route path="namespaces" element={<NamespacesPage />} />
+              <Route path="namespaces/:namespaceName" element={<NamespaceDetailPage />} />
+              <Route path="users" element={<AdminUsersPage />} />
+              <Route path="access-log" element={<AccessLogPage />} />
+              <Route path="integrations" element={<IntegrationsPage />} />
+            </Route>
+            <Route path="/managed/profile" element={<RedirectWithSearch to="/settings/profile" />} />
+            <Route path="/managed/admin/users" element={<RedirectWithSearch to="/settings/users" />} />
             <Route path="/work/permissions" element={<PermissionsPage />} />
             <Route path="/managed/environments" element={<EnvironmentsHubPage />} />
             <Route path="/managed/memory" element={<MemoryStoresPage />} />

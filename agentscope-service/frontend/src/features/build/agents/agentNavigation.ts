@@ -25,9 +25,7 @@ export function agentDetailTabs(runtimeKind?: string): AgentDetailTab[] {
   return [
     { id: "overview", label: "Overview" },
     { id: "activity", label: "Activity" },
-    ...(runtimeKind === "managed"
-      ? [{ id: "definition" as const, label: "Definition" }]
-      : []),
+    { id: "definition", label: "Definition" },
     { id: "runtime", label: "Runtime configuration" },
     { id: "connections", label: "Connections" },
     { id: "settings", label: "Settings" },

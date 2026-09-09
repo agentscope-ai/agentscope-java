@@ -57,6 +57,7 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		return
 	}
 	report.SessionID = sessionID
+	normalizeManagedConnectionWarning(&report)
 	sessions, err := s.store.Sessions().List(c.Request.Context(), store.SessionFilter{SessionID: sessionID, Limit: 2})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -101,6 +102,19 @@ func (s *Server) reportManagedSessionEvent(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// Optional connection callbacks use the MCP-specific error type. Fatal bootstrap
+// failures use api_error, also with retry_status=next_turn: retryability alone does
+// not mean the current turn can continue. Preserve fatal errors and unknown forms.
+func normalizeManagedConnectionWarning(report *managedSessionEventReport) {
+	if report.Type != "session.error" {
+		return
+	}
+	detail, _ := report.Payload["error"].(map[string]any)
+	if detail["type"] == "mcp_connection_failed_error" && detail["code"] == "mcp_connection_failed_error" && detail["retry_status"] == "next_turn" {
+		report.Type = "session.warning"
+	}
 }
 
 func (s *Server) sessionEventSourceExists(ctx context.Context, sessionFK uuid.UUID, sourceKey string) (bool, error) {
@@ -402,6 +416,19 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 	}
 	if code == "" {
 		return nil
+	}
+	// Give a declared agent step one chance to correct a missing completion call.
+	// Requeue the same task/node with a fresh attempt fence; never treat prose as success.
+	if code == "managed_turn_incomplete" && report.DispatchGen == 1 && task.TeamID == nil {
+		run, err := s.store.Orchestration().GetRun(ctx, task.OrchestrationRunID)
+		if err != nil {
+			return err
+		}
+		if run.Mode == controlmodel.RunModeDeclared || run.Mode == controlmodel.RunModeSubrun {
+			_, _, err := s.store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
+				ExpectedVersion: task.Version, AttemptID: *task.CurrentAttemptID, DispatchGeneration: report.DispatchGen, Code: code, Message: message})
+			return err
+		}
 	}
 	failed, err := (&collaboration.Service{Store: s.store}).FailTask(ctx, task.ID, task.Version, code, message)
 	if err != nil {

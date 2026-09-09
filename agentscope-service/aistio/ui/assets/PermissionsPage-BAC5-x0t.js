@@ -1,0 +1,1 @@
+import{aY as n,ag as a,c as o}from"./index-DxrfDAQN.js";function s(){const e=n();return a.jsx(o,{to:`/settings/namespaces/${encodeURIComponent(e.namespace)}?tenant=${encodeURIComponent(e.tenant)}&namespace=${encodeURIComponent(e.namespace)}`,replace:!0})}export{s as default};

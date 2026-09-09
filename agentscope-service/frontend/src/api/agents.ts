@@ -78,7 +78,12 @@ export interface SkillRef {
   version?: string;
 }
 
+export interface WorkspaceBinding { version: number; digest?: string; overrides: string[]; instructions?: string }
+
 export interface AgentDefinition {
+ workspaceBinding?: WorkspaceBinding | null;
+ workspaceVersion?: number;
+ definitionDigest?: string;
   id: string;
   name: string;
   description?: string;
@@ -126,6 +131,7 @@ export interface AgentVersionEntry {
 
 
 export interface AgentCreateRequest {
+ workspaceBinding?: WorkspaceBinding | null;
   id?: string;
   tenant?: string;
   namespace?: string;
@@ -245,6 +251,11 @@ export async function updateAgent(
     skills: req.skills ?? current.skills,
     workspacePath: req.workspacePath ?? current.workspacePath,
     workspaceId: req.workspaceId ?? current.workspaceId,
+    workspaceBinding: req.workspaceBinding !== undefined ? req.workspaceBinding : req.workspaceId !== undefined && req.workspaceId !== current.workspaceId ? (req.workspaceId ? { version: 0, overrides: [], instructions: current.workspaceBinding?.instructions ?? current.system ?? '' } : null) : current.workspaceBinding ? {
+      ...current.workspaceBinding,
+      instructions: req.system !== undefined ? req.system : current.workspaceBinding.instructions,
+      overrides: [...new Set([...current.workspaceBinding.overrides, ...(req.tools !== undefined ? ['tools'] : []), ...(req.mcpServers !== undefined ? ['mcpServers'] : []), ...(req.skills !== undefined ? ['skills'] : [])])],
+    } : undefined,
     defaultEnvironmentId: req.defaultEnvironmentId ?? current.defaultEnvironmentId,
     defaultVaultIds: req.defaultVaultIds ?? current.defaultVaultIds,
     defaultMemoryStoreIds: req.defaultMemoryStoreIds ?? current.defaultMemoryStoreIds,

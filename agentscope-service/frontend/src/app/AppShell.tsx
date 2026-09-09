@@ -1,3 +1,5 @@
+import { useAccountIdentity } from '@/lib/accountIdentity';
+import { logoutAccount } from '@/api/auth';
 /*
  * Copyright 2024-2026 the original author or authors.
  * Licensed under the Apache License, Version 2.0.
@@ -27,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { clearToken, getRoles, getUsername, isAdmin } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { useControlPlaneScope } from './ScopeContext';
+import { NamespaceSwitcher } from './NamespaceSwitcher';
 import { CommandPalette, useCommandPaletteShortcut } from './CommandPalette';
 import { useCollaborationEvents } from './useCollaborationEvents';
 import { getInboxSummary } from '@/api/collaboration';
@@ -72,7 +75,6 @@ const navigation: NavGroup[] = [
       { to: '/agent-center/environments', configure: true, label: 'Environments', icon: Settings2, agentCenter: true },
       { to: '/agent-center/memory', configure: true, label: 'Memory', icon: Database, agentCenter: true },
       { to: '/agent-center/vaults', configure: true, label: 'Vault', icon: ShieldCheck, agentCenter: true },
-      { to: '/work/permissions', label: 'Permissions', icon: ShieldCheck },
     ],
   },
 ];
@@ -97,6 +99,10 @@ const routeLabels: Array<[string, string]> = [
   ['/agent-center/vaults', 'Vault'],
   ['/managed/profile', 'Profile'],
   ['/managed/admin/users', 'Users'],
+  ['/settings/namespaces', 'Namespaces'],
+  ['/settings/users', 'Users'],
+  ['/settings/access-log', 'Access log'],
+  ['/settings/profile', 'Profile'],
 ];
 
 function matches(pathname: string, to: string, end?: boolean): boolean {
@@ -134,21 +140,8 @@ function SidebarLink({ item, attention }: { item: NavItem; attention?: ApprovalA
   );
 }
 
-function ScopeSelector({ title }: { title?: string }) {
-  const { tenant, namespace, namespaces, selectorVisible, setScope } = useControlPlaneScope();
-  if (!selectorVisible) return null;
-  return <div className="border-b border-border px-3 py-3">
-    {title && <div className="mb-2 text-xs text-muted-foreground">{title}</div>}
-    <label className="grid gap-1 text-xs text-muted-foreground">Namespace
-      <select aria-label="Namespace" className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground" value={`${tenant}/${namespace}`} onChange={e => {
-        const next = namespaces.find(n => `${n.tenant}/${n.name}` === e.target.value);
-        if (next) setScope(next.tenant, next.name);
-      }}>{namespaces.map(n => <option key={`${n.tenant}/${n.name}`} value={`${n.tenant}/${n.name}`}>{n.displayName}{n.kind === 'personal' ? ' (personal)' : ''}</option>)}</select>
-    </label>
-  </div>;
-}
-
 export default function AppShell() {
+  useAccountIdentity();
   const location = useLocation();
   const navigate = useNavigate();
   const username = getUsername();
@@ -196,7 +189,7 @@ export default function AppShell() {
           </Link>
         </div>
 
-        <ScopeSelector />
+        <NamespaceSwitcher />
 
         <nav aria-label="Primary navigation" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
           {visibleNavigation.map((group, index) => <div key={group.label || `primary-${index}`} className="space-y-1">
@@ -208,14 +201,14 @@ export default function AppShell() {
         <div className="border-t border-border p-3">
           <div className="mb-2 truncate px-2 text-xs text-muted-foreground">Signed in as {username || 'guest'}</div>
           <div className="flex gap-1">
-            {admin && <Button variant="ghost" size="sm" className="flex-1" onClick={() => navigate('/managed/admin/users')}>Users</Button>}
-            <Button variant="ghost" size="sm" className="flex-1" onClick={() => navigate('/managed/profile')}>Profile</Button>
+            <Button variant="ghost" size="sm" className="flex-1 px-2" onClick={() => navigate('/settings/namespaces')}>Access settings</Button>
+            <Button variant="ghost" size="sm" className="flex-1 px-2" onClick={() => navigate('/settings/profile')}>Profile</Button>
             <Button
               variant="ghost"
               size="icon"
               aria-label="Sign out"
               title="Sign out"
-              onClick={() => { clearToken(); navigate('/login'); }}
+              onClick={async () => { try { await logoutAccount(); } finally { clearToken(); navigate('/login'); } }}
             >
               <LogOut className="h-4 w-4" />
             </Button>

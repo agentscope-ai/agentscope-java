@@ -257,3 +257,14 @@ export async function fetchMcpCatalog(): Promise<Record<string, unknown>[]> {
   if (!res.ok) throw await readError(res, 'Failed to load MCP catalog');
   return res.json();
 }
+
+export interface WorkspaceRevision { skills?: Array<{name?: string; id?: string}>; version: number; draftVersion: number; digest: string; createdAt: number; files: Record<string,string> }
+export async function workspaceRevisions(id: string): Promise<WorkspaceRevision[]> {
+ const res=await fetch(`/api/workspaces/${encodeURIComponent(id)}/revisions`,{headers:authHeaders()});
+ if(!res.ok) throw await readError(res,'Failed to load Workspace revisions');
+ return (await res.json()).items;
+}
+export async function publishWorkspace(id: string): Promise<WorkspaceRevision> {
+ const res=await fetch(`/api/workspaces/${encodeURIComponent(id)}/publish`,{method:'POST',headers:jsonHeaders()});
+ if(!res.ok) throw await readError(res,'Failed to publish Workspace');return res.json();
+}

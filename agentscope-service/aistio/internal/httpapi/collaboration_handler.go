@@ -461,7 +461,29 @@ func (s *Server) reviewIssue(c *gin.Context, status controlmodel.IssueStatus, de
 		ExpectedVersion int64  `json:"expectedVersion"`
 		Reason          string `json:"reason,omitempty"`
 	}
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil && defaultReason != "reopened" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid review request"})
+		return
+	}
+	if defaultReason != "reopened" {
+		if req.ExpectedVersion <= 0 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "expectedVersion is required for review"})
+			return
+		}
+		if defaultReason == "rejected" && strings.TrimSpace(req.Reason) == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "describe the changes needed before returning this work"})
+			return
+		}
+		current, err := s.store.Collaboration().GetIssue(c.Request.Context(), id)
+		if err != nil {
+			s.writeCollaborationError(c, err)
+			return
+		}
+		if current.Status != controlmodel.IssueInReview || current.ArchivedAt != nil {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "this issue is no longer awaiting review"})
+			return
+		}
+	}
 	if strings.TrimSpace(req.Reason) == "" {
 		req.Reason = defaultReason
 	}
@@ -1574,6 +1596,15 @@ func (s *Server) listCollaborationTeams(c *gin.Context) {
 	if err != nil {
 		s.writeCollaborationError(c, err)
 		return
+	}
+	if a := accessFrom(c); a != nil {
+		filtered := items[:0]
+		for _, team := range items {
+			if a.Namespace.Decide(a.User, "team:"+team.ID.String(), "discover").Allowed {
+				filtered = append(filtered, team)
+			}
+		}
+		items = filtered
 	}
 	for _, team := range items {
 		redactTeamForDiscovery(c, team)

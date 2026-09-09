@@ -8,18 +8,33 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Namespace is a product authorization boundary, independent of runtime files.
 // Members are keyed by stable account IDs, never display names.
 type Namespace struct {
-	Tenant      string              `json:"tenant"`
-	Name        string              `json:"name"`
-	DisplayName string              `json:"displayName"`
-	Kind        string              `json:"kind"`
-	Owner       string              `json:"owner"`
-	Members     map[string][]string `json:"members"`
-	Version     int64               `json:"version"`
+	Groups      map[string]AccessGroup    `json:"groups,omitempty"`
+	Resources   map[string]ResourcePolicy `json:"resources,omitempty"`
+	Requests    []AccessRequest           `json:"requests,omitempty"`
+	Tenant      string                    `json:"tenant"`
+	Name        string                    `json:"name"`
+	DisplayName string                    `json:"displayName"`
+	Kind        string                    `json:"kind"`
+	Owner       string                    `json:"owner"`
+	Members     map[string][]string       `json:"members"`
+	Version     int64                     `json:"version"`
+	Archived    bool                      `json:"archived"`
+}
+
+type NamespaceAudit struct {
+	ID        int64     `json:"id"`
+	Tenant    string    `json:"tenant"`
+	Name      string    `json:"name"`
+	Actor     string    `json:"actor"`
+	Namespace Namespace `json:"namespace"`
+	Version   int64     `json:"version"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 var namespaceName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -28,11 +43,14 @@ func (n Namespace) Validate() error {
 	if !namespaceName.MatchString(n.Tenant) || !namespaceName.MatchString(n.Name) || strings.TrimSpace(n.DisplayName) == "" || len(n.DisplayName) > 200 || n.Owner == "" {
 		return fmt.Errorf("valid tenant, namespace name, display name and owner are required")
 	}
-	if n.Kind != "personal" && n.Kind != "shared" {
-		return fmt.Errorf("namespace kind must be personal or shared")
+	if n.Kind != "personal" && n.Kind != "shared" && n.Kind != "global" {
+		return fmt.Errorf("namespace kind must be personal, shared or global")
 	}
-	if n.Kind == "personal" && len(n.Members) > 0 {
+	if n.Kind == "personal" && (len(n.Members) > 0 || n.Archived) {
 		return fmt.Errorf("personal namespace membership cannot be changed")
+	}
+	if n.Kind == "global" && (len(n.Members) > 0 || n.Archived) {
+		return fmt.Errorf("global namespace membership and lifecycle are platform managed")
 	}
 	if len(n.Members) > 1000 {
 		return fmt.Errorf("namespace supports at most 1000 members")
@@ -47,10 +65,16 @@ func (n Namespace) Validate() error {
 			}
 		}
 	}
-	return nil
+	return n.validateResourceAccess()
 }
 
 func (n Namespace) Roles(user string) []string {
+	if n.Archived || user == "" {
+		return nil
+	}
+	if n.Kind == "global" {
+		return []string{"member", "developer", "operator"}
+	}
 	if n.Owner == user {
 		roles := []string{"admin", "member", "developer", "operator"}
 		if slices.Contains(n.Members[user], "auditor") {
@@ -58,7 +82,15 @@ func (n Namespace) Roles(user string) []string {
 		}
 		return roles
 	}
-	return n.Members[user]
+	roles := slices.Clone(n.Members[user])
+	for _, id := range n.GroupIDs(user) {
+		for _, role := range n.Groups[id].Roles {
+			if !slices.Contains(roles, role) {
+				roles = append(roles, role)
+			}
+		}
+	}
+	return roles
 }
 
 // NamespaceAllows separates invocation, definition management and private data.

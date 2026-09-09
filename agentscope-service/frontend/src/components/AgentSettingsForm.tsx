@@ -100,7 +100,7 @@ export default function AgentSettingsForm({
   const isGlobal = agent.scope === 'global';
   const tier = agent.tierForCurrentUser;
   // The backend never populates tierForCurrentUser, so treat the owner as EDIT-capable.
-  const canEdit = canEditAgentDefinition(agent, getUsername());
+  const canEdit = scope.roles.some(role => ['admin', 'developer'].includes(role)) && (agent.scope !== 'global');
   const canShare = canEdit; // sharing requires EDIT
   const readOnly = !canEdit;
   const [shareOpen, setShareOpen] = useState(false);
@@ -108,7 +108,7 @@ export default function AgentSettingsForm({
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? '');
   const [model, setModel] = useState(agent.model ?? '');
-  const [system, setSystem] = useState(agent.system ?? '');
+  const [system, setSystem] = useState(agent.workspaceBinding?.instructions ?? agent.system ?? '');
   const [maxIters, setMaxIters] = useState<string>(String(agent.maxIters ?? 12));
   const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -131,7 +131,7 @@ export default function AgentSettingsForm({
     setName(agent.name);
     setDescription(agent.description ?? '');
     setModel(agent.model ?? '');
-    setSystem(agent.system ?? '');
+    setSystem(agent.workspaceBinding?.instructions ?? agent.system ?? '');
     setMaxIters(String(agent.maxIters ?? 12));
     setWorkspaceId(agent.workspaceId ?? '');
     setDefaultEnvironmentId(agent.defaultEnvironmentId ?? '');
@@ -314,7 +314,7 @@ export default function AgentSettingsForm({
             ))}
           </select>
           <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
-            Linking rematerializes tools/skills/AGENTS.md into this agent version. Edit shared content under Resources → Workspaces.
+            Changing the link publishes and binds the selected Workspace draft. Use Definition → Workspace to select an existing revision and configure inheritance.
           </div>
         </div>
         {linkedSummary && (

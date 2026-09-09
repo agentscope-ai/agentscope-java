@@ -537,6 +537,7 @@ func main() {
 			AllowLocalEnvironment: allowLocalEnvironment,
 			DataURL:               os.Getenv("BUILDER_DATA_URL"),
 			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),
+			OAuthPublicURL:        os.Getenv("BUILDER_OAUTH_PUBLIC_URL"),
 		})
 		if err != nil {
 			logger.Error(err, "unable to open the Managed Agents control plane")

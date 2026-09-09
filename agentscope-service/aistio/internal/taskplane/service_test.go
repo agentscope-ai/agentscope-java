@@ -35,7 +35,8 @@ func TestHostedAgentTaskLifecycleWritesResultComment(t *testing.T) {
 	if err != nil || issue.AssigneeRef != agentID.String() {
 		t.Fatalf("assign: issue=%+v task=%+v err=%v", issue, task, err)
 	}
-	svc := &Service{Store: st}
+	definition := json.RawMessage(`{"version":1,"definitionDigest":"original","files":{"AGENTS.md":"original"}}`)
+	svc := &Service{Store: st, ResolveDefinition: func(context.Context, uuid.UUID) (json.RawMessage, error) { return definition, nil }}
 	overrides := &controlmodel.HostedExecutionOverrides{ReasoningEffort: "high",
 		ProviderConfiguration: json.RawMessage(`{"sandbox":"workspace-write"}`), CustomArgs: []string{"--profile", "work"}}
 	dispatched, execution, err := svc.DispatchHosted(ctx, task.ID, controlmodel.RuntimeBinding{AgentID: agentID, BindingID: bindingID, Kind: controlmodel.DataPlaneHostedRuntime, RuntimeProfileID: profile.ID, RuntimePoolID: pool.ID, ExecutionOverrides: overrides}, nil)
@@ -51,6 +52,10 @@ func TestHostedAgentTaskLifecycleWritesResultComment(t *testing.T) {
 		resolved["sandbox"] != "workspace-write" || resolved["reasoningEffort"] != "high" ||
 		snapshot.ExecutionOverrides == nil || len(snapshot.ExecutionOverrides.CustomArgs) != 2 {
 		t.Fatalf("hosted overrides were not frozen: snapshot=%+v resolved=%v err=%v", snapshot, resolved, err)
+	}
+	definition = json.RawMessage(`{"version":2,"definitionDigest":"changed"}`)
+	if string(snapshot.Definition) != `{"version":1,"definitionDigest":"original","files":{"AGENTS.md":"original"}}` {
+		t.Fatalf("definition was not frozen: %s", snapshot.Definition)
 	}
 	profile.Configuration = json.RawMessage(`{"model":"changed-after-dispatch"}`)
 	if _, err = st.RuntimeRegistry().UpsertRuntimeProfile(ctx, profile); err != nil {

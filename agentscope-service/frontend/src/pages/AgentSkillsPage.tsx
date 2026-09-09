@@ -1,3 +1,4 @@
+import ResolvedDefinitionFiles from '../components/ResolvedDefinitionFiles';
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -32,6 +33,8 @@ export default function AgentSkillsPage() {
   const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const linked = agent?.workspaceId;
+
+  if (agent?.workspaceBinding) return <ResolvedDefinitionFiles agent={agent} prefix="skills/" />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

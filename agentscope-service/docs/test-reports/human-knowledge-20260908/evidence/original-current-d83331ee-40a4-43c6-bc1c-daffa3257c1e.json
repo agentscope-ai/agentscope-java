@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-08T03:09:38.502559+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/d83331ee-40a4-43c6-bc1c-daffa3257c1e?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "access": {
+        "mode": "private"
+      },
+      "id": "d83331ee-40a4-43c6-bc1c-daffa3257c1e",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "title": "调研智能手机技术的最新发展",
+      "description": "请收集关于智能手机技术的最新发展趋势的信息，并提供一份详细的报告。",
+      "status": "blocked",
+      "priority": "normal",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "agent",
+      "assigneeRef": "678ae47f-0848-43d9-95e5-a79f5ed9fa72",
+      "creator": {
+        "type": "agent",
+        "ref": "58e66260-8472-445b-8fb3-1bd438bb9abf"
+      },
+      "parentIssueId": "12d535ba-5faa-48ed-b479-4cf5ba8f7a24",
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "sourceType": "agent-task",
+      "sourceRef": "7ff568e8-52dc-4b9d-b636-e87a9f190e1a",
+      "version": 13,
+      "createdAt": "2026-09-08T10:38:11.374441+08:00",
+      "updatedAt": "2026-09-08T10:41:39.384513+08:00"
+    }
+  }
+}

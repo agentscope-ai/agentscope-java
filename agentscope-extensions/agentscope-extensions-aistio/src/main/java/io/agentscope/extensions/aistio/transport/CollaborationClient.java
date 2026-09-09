@@ -133,6 +133,16 @@ public final class CollaborationClient {
     public record RuntimeApprovalDecision(
             String approvalId, long decisionVersion, boolean allow, String denyMessage) {}
 
+    public JsonNode workspaceApplied(String taskId, String token, String digest) {
+        return taskSend(
+                "POST",
+                taskId,
+                "workspace-application",
+                token,
+                Map.of("digest", digest),
+                "workspace.applied");
+    }
+
     public JsonNode taskContext(String taskId, String token) {
         return taskSend("GET", taskId, "context", token, null, "task.context");
     }

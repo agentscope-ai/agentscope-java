@@ -35,6 +35,17 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
 
     private final Supplier<HarnessAgent> agent;
     private final CollaborationClient collaboration;
+    private WorkspaceAgentFactory workspaceFactory;
+
+    public HarnessAgentTaskStarter withWorkspaceFactory(WorkspaceAgentFactory factory) {
+        this.workspaceFactory = Objects.requireNonNull(factory);
+        return this;
+    }
+
+    public boolean consumesWorkspaceDefinition() {
+        return workspaceFactory != null;
+    }
+
     private final Set<String> acceptedEvents = ConcurrentHashMap.newKeySet();
 
     public HarnessAgentTaskStarter(
@@ -59,6 +70,7 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
         }
 
         long version = 0;
+        HarnessAgent ownedAgent = null;
         try {
             JsonNode envelope =
                     collaboration.taskContext(assignment.agentTaskId(), assignment.taskToken());
@@ -72,7 +84,22 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             version = running.path("task").path("version").asLong(version);
             envelope = running;
 
-            HarnessAgent runtimeAgent = agent.get();
+            HarnessAgent runtimeAgent;
+            if (workspaceFactory != null) {
+                JsonNode definition =
+                        envelope.path("task").path("runtimeBinding").path("definition");
+                if (!definition.isObject()
+                        || definition.path("definitionDigest").asText().isBlank())
+                    throw new IllegalStateException(
+                            "Dispatch has no immutable Workspace definition");
+                ownedAgent = workspaceFactory.create(definition.deepCopy(), assignment);
+                runtimeAgent =
+                        Objects.requireNonNull(ownedAgent, "Workspace factory returned no agent");
+                collaboration.workspaceApplied(
+                        assignment.agentTaskId(),
+                        assignment.taskToken(),
+                        definition.path("definitionDigest").asText());
+            } else runtimeAgent = agent.get();
             registerCollaborationTools(runtimeAgent, assignment, availableActions(envelope));
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
@@ -172,6 +199,8 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             }
             acceptedEvents.remove(eventKey);
             throw e;
+        } finally {
+            if (ownedAgent != null) ownedAgent.close();
         }
     }
 

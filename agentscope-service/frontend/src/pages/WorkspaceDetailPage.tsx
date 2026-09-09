@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import WorkspacePublications from '../components/WorkspacePublications';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useControlPlaneScope } from '../app/ScopeContext';
@@ -246,6 +247,7 @@ export default function WorkspaceDetailPage() {
         {ws?.subagentCount ?? subagents.length}
         {ws?.agentsMdExists ? ' · AGENTS.md' : ''}
       </div>
+      <WorkspacePublications id={id} />
       {err && <div style={{ color: '#dc2626', marginBottom: 12 }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -262,7 +264,7 @@ export default function WorkspaceDetailPage() {
             key={k}
             onClick={() => {
               setTab(k);
-              setSearchParams({ tab: k }, { replace: true });
+              setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('tab', k); return next; }, { replace: true });
             }}
             style={{
               padding: '8px 14px',

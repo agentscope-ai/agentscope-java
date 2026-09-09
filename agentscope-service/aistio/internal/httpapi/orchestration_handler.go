@@ -57,10 +57,18 @@ func (s *Server) listOrchestrationDefinitions(c *gin.Context) {
 		s.writeOrchestrationError(c, err)
 		return
 	}
-	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+	if a := accessFrom(c); a != nil {
+		filtered := items[:0]
 		for _, item := range items {
-			item.DraftSpec = nil
+			if !a.Namespace.Decide(a.User, "workflow:"+item.ID.String(), "discover").Allowed {
+				continue
+			}
+			if !a.Namespace.Decide(a.User, "workflow:"+item.ID.String(), "inspect").Allowed {
+				item.DraftSpec = nil
+			}
+			filtered = append(filtered, item)
 		}
+		items = filtered
 	}
 	c.JSON(http.StatusOK, gin.H{"definitions": items})
 }

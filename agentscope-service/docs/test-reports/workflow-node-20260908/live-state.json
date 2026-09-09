@@ -1,0 +1,27 @@
+{
+  "run": {
+    "id": "88e41f16-8d65-4a95-afab-c2201e97f335",
+    "tenant": "default",
+    "namespace": "demo",
+    "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+    "mode": "declared",
+    "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+    "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+    "triggerType": "rerun",
+    "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+    "idempotencyKey": "workflow-node-fix-20260908-5",
+    "input": {},
+    "variables": {},
+    "policySnapshot": {},
+    "state": "waiting",
+    "waitReason": "node_wait",
+    "version": 3,
+    "createdBy": {
+      "type": "human",
+      "ref": "admin"
+    },
+    "createdAt": "2026-09-08T21:46:51.529846+08:00",
+    "updatedAt": "2026-09-08T21:46:51.557796+08:00",
+    "startedAt": "2026-09-08T21:46:51.5447+08:00"
+  }
+}

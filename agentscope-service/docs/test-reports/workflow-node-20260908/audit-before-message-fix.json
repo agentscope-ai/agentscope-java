@@ -1,0 +1,68 @@
+{
+  "runId": "8d63f95d-afd0-4f7c-b08c-05eded088056",
+  "issueStatus": "blocked",
+  "runState": "failed",
+  "nodes": [
+    {
+      "nodeKey": "node2",
+      "state": "failed",
+      "failureCode": "managed_turn_incomplete",
+      "output": {}
+    },
+    {
+      "nodeKey": "node3",
+      "state": "cancelled",
+      "failureCode": "fail_fast",
+      "output": null
+    },
+    {
+      "nodeKey": "work",
+      "state": "succeeded",
+      "failureCode": null,
+      "output": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "fa7a0f1f-d1c2-4a11-820d-6c781ce89431",
+      "status": "completed",
+      "errorCode": null,
+      "runNodeId": "7c8b1263-564a-59a5-bf6b-ce1540e28727",
+      "attemptState": "succeeded",
+      "tools": [
+        "task.get",
+        "task.complete"
+      ],
+      "workflow": {
+        "nodeKey": "work",
+        "runInput": {},
+        "nodeInput": {},
+        "predecessors": []
+      },
+      "nodeReturned": true
+    },
+    {
+      "id": "d0929720-6d82-483c-921b-52046bfbcdc2",
+      "status": "failed",
+      "errorCode": "managed_turn_incomplete",
+      "runNodeId": "0705d6cb-9658-5513-9aac-f460ef176ca5",
+      "attemptState": "failed",
+      "tools": [
+        "task.get"
+      ],
+      "workflow": {
+        "nodeKey": "node2",
+        "runInput": {},
+        "nodeInput": {},
+        "predecessors": [
+          {
+            "nodeKey": "work",
+            "state": "succeeded",
+            "output": "提交了一首原创诗歌的第一稿，并请求用户的反馈以进行进一步优化。"
+          }
+        ]
+      },
+      "nodeReturned": true
+    }
+  ]
+}

@@ -316,7 +316,7 @@ func nullStr(s string) any {
 
 func (s *Server) agentSnapshot(ctx context.Context, owner, id, name, desc, system, model string, maxIters int,
 	tools, mcp, skills, multi any, ws, workspaceID, defaultEnv string, defaultVault, defaultMem []string,
-	version int, created, updated int64) (gin.H, error) {
+	version int, created, updated int64, bindings ...*WorkspaceBinding) (gin.H, error) {
 	if err := validateManagedTools(tools, mcp); err != nil {
 		return nil, err
 	}
@@ -326,23 +326,44 @@ func (s *Server) agentSnapshot(ctx context.Context, owner, id, name, desc, syste
 	if defaultMem == nil {
 		defaultMem = []string{}
 	}
-	scopeType, scopeID := scopeTypeAgent, id
-	if workspaceID != "" {
-		scopeType, scopeID = scopeTypeWorkspace, workspaceID
+	var binding *WorkspaceBinding
+	if len(bindings) > 0 {
+		binding = bindings[0]
 	}
-	files, err := s.listWorkspaceFileContents(ctx, owner, scopeType, scopeID, "")
-	if err != nil {
-		return nil, err
-	}
+	var files map[string]string
 	workspaceVersion := 0
-	if workspaceID != "" {
-		workspace, err := s.loadWorkspace(ctx, owner, workspaceID)
+	if workspaceID != "" && binding != nil {
+		revision, err := s.workspaceRevision(ctx, owner, workspaceID, binding.Version)
 		if err != nil {
 			return nil, err
 		}
-		workspaceVersion = workspace.HeadVersion
+		files = revision.Files
+		workspaceVersion = revision.Version
+	} else {
+		scopeType, scopeID := scopeTypeAgent, id
+		if workspaceID != "" {
+			scopeType, scopeID = scopeTypeWorkspace, workspaceID
+		}
+		var err error
+		files, err = s.listWorkspaceFileContents(ctx, owner, scopeType, scopeID, "")
+		if err != nil {
+			return nil, err
+		}
+		if workspaceID != "" {
+			w, e := s.loadWorkspace(ctx, owner, workspaceID)
+			if e != nil {
+				return nil, e
+			}
+			workspaceVersion = w.HeadVersion
+		}
 	}
-	return gin.H{
+	for path := range files {
+		if !definitionFile(path) {
+			delete(files, path)
+		}
+	}
+
+	out := gin.H{
 		"id": id, "name": name, "description": desc, "system": system, "model": model,
 		"maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills,
 		"multiagent": multi, "scope": "user", "ownerId": owner, "workspacePath": ws,
@@ -353,7 +374,12 @@ func (s *Server) agentSnapshot(ctx context.Context, owner, id, name, desc, syste
 		"defaultVaultIds":       defaultVault,
 		"defaultMemoryStoreIds": defaultMem,
 		"version":               version, "createdAt": created, "updatedAt": updated,
-	}, nil
+	}
+	if binding != nil {
+		out["workspaceBinding"] = binding
+	}
+	out["definitionDigest"] = contentDigest(map[string]any{"system": system, "model": model, "maxIters": maxIters, "tools": tools, "mcpServers": mcp, "skills": skills, "multiagent": multi, "files": files, "workspaceId": workspaceID, "workspaceVersion": workspaceVersion, "defaultEnvironmentId": defaultEnv, "defaultVaultIds": defaultVault, "defaultMemoryStoreIds": defaultMem})
+	return out, nil
 }
 
 func (s *Server) loadAgent(ctx context.Context, owner, agentID string) (agentRow, error) {

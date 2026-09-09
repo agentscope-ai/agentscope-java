@@ -31,6 +31,7 @@ func (s *Server) jwtMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if path == "/api/auth/login" ||
+			(c.Request.Method == http.MethodGet && strings.HasPrefix(path, oauthCallbackPrefix)) ||
 			path == "/actuator/health" ||
 			path == "/healthz" ||
 			strings.HasPrefix(path, "/api/deployments/webhook/") ||

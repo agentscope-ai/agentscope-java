@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-08T13:40:17.750095+00:00",
+  "method": "POST",
+  "path": "/api/v1/orchestration-runs/02d63988-c67d-4e2a-940f-ec39c58e30dc/rerun?tenant=default&namespace=demo",
+  "request": {
+    "idempotencyKey": "workflow-node-fix-20260908-4"
+  },
+  "status": 201,
+  "response": {
+    "run": {
+      "id": "4491d633-62cb-413c-96bf-b069a2ca984b",
+      "tenant": "default",
+      "namespace": "demo",
+      "rootIssueId": "0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f",
+      "mode": "declared",
+      "definitionRevisionId": "53278907-3d93-4dea-b29c-11c28ede6429",
+      "rerunOfRunId": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+      "triggerType": "rerun",
+      "triggerRef": "02d63988-c67d-4e2a-940f-ec39c58e30dc",
+      "idempotencyKey": "workflow-node-fix-20260908-4",
+      "input": {},
+      "variables": {},
+      "policySnapshot": {},
+      "state": "waiting",
+      "waitReason": "node_wait",
+      "version": 3,
+      "createdBy": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "createdAt": "2026-09-08T21:40:17.767275+08:00",
+      "updatedAt": "2026-09-08T21:40:17.793579+08:00",
+      "startedAt": "2026-09-08T21:40:17.782267+08:00"
+    }
+  }
+}

@@ -458,6 +458,8 @@ func (s *Service) listAllComments(ctx context.Context, issueID uuid.UUID) ([]*co
 }
 
 type CreateIssueRequest struct {
+	// ID is an optional durable intake identity; callers must authorize before reuse.
+	ID                  uuid.UUID
 	Access              controlmodel.IssueAccess
 	Tenant              string
 	Namespace           string
@@ -514,6 +516,7 @@ func (s *Service) CreateIssue(ctx context.Context, req CreateIssueRequest) (*con
 		}
 	}
 	issue, err := s.Store.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
+		ID:     req.ID,
 		Tenant: req.Tenant, Namespace: req.Namespace, Title: strings.TrimSpace(req.Title),
 		Description: req.Description, Status: controlmodel.IssueBacklog,
 		Priority: req.Priority, Kind: req.Kind, Visibility: req.Visibility,
@@ -1215,6 +1218,7 @@ type CoordinatorWorkerOutcome struct {
 }
 
 type ContextEnvelope struct {
+	ExecutionBrief       *ExecutionBrief                 `json:"executionBrief"`
 	Node                 *controlmodel.RunNode           `json:"node,omitempty"`
 	ReviewResults        []*controlmodel.Comment         `json:"reviewResults,omitempty"`
 	Task                 *controlmodel.AgentTask         `json:"task"`
@@ -1357,6 +1361,10 @@ func (s *Service) BuildContext(ctx context.Context, taskID uuid.UUID) (*ContextE
 		envelope.CoordinatorIssue = &copy
 	}
 
+	envelope.ExecutionBrief, err = s.buildExecutionBrief(ctx, envelope)
+	if err != nil {
+		return nil, err
+	}
 	return envelope, nil
 }
 

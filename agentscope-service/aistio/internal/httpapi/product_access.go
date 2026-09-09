@@ -68,6 +68,19 @@ func (s *Server) productNamespaceMiddleware() gin.HandlerFunc {
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			action = "resource.write"
 		}
+		if resource == "channels" {
+			tail := strings.TrimPrefix(c.Request.URL.Path, "/api/channels")
+			read := c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead
+			if read && (tail == "" || tail == "/types" || strings.HasSuffix(tail, "/activity") || strings.HasSuffix(tail, "/collaboration")) {
+				action = "read"
+			}
+			if strings.HasSuffix(tail, "/pairing") || strings.Contains(tail, "/deliveries/") || strings.Contains(tail, "/messages/") {
+				action = "work.write"
+			}
+			if strings.HasSuffix(tail, "/identity") || strings.Contains(tail, "/links/") {
+				action = "read"
+			}
+		}
 		if !controlmodel.NamespaceAllows(roles, action) {
 			c.AbortWithStatusJSON(403, ErrorResponse{Error: "namespace role does not allow resource configuration"})
 			return

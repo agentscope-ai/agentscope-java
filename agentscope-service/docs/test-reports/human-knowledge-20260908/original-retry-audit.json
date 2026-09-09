@@ -1,0 +1,33 @@
+[
+  {
+    "taskId": "ba82a6a6-a35e-482a-bc36-2aeedca005c1",
+    "status": "completed",
+    "attemptState": "succeeded",
+    "tools": [
+      "task.get",
+      "task.complete"
+    ]
+  },
+  {
+    "taskId": "a6cf5e6c-c67f-4e8a-8cfc-7965f5af6bbf",
+    "status": "completed",
+    "attemptState": "succeeded",
+    "tools": [
+      "task.get",
+      "run.node.complete",
+      "task.complete",
+      "wait_async_results",
+      "task_list",
+      "run.node.complete"
+    ]
+  },
+  {
+    "taskId": "d57e5368-a650-4afa-8d72-1e603c507e99",
+    "status": "completed",
+    "attemptState": "succeeded",
+    "tools": [
+      "task.get",
+      "task.complete"
+    ]
+  }
+]

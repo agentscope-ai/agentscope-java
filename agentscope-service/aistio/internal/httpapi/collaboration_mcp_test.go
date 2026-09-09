@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1040,5 +1041,45 @@ func TestReviewFeedbackCanFinishButCannotDelegateOrChangeWork(t *testing.T) {
 		if _, err := server.callCollaborationMCPTool(c, task, name, map[string]any{"mentions": []any{map[string]any{"type": "agent", "ref": "worker"}}}); err == nil {
 			t.Fatalf("%s delegated through mentions", name)
 		}
+	}
+}
+
+func TestCompletionPreservesMessageDeliverableAlongsideSummary(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprint(explicit), func(t *testing.T) {
+			st, srv, _, attempt, token := startHostedMCPConversation(t, "write a poem")
+			args := map[string]any{"outcome": "succeeded", "summary": "draft produced", "message": "the complete poem"}
+			want := "the complete poem"
+			if explicit {
+				args["result"] = "explicit final poem"
+				want = "explicit final poem"
+			}
+			response := callMCPTool(t, srv, token, "task.complete", args)
+			raw, _ := json.Marshal(response.Result)
+			if bytes.Contains(raw, []byte(`"isError":true`)) {
+				t.Fatalf("completion failed: %s", raw)
+			}
+			task, err := st.Collaboration().GetAgentTask(t.Context(), attempt.AgentTaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result string
+			if err := json.Unmarshal(task.Result, &result); err != nil || result != want {
+				t.Fatalf("lost actual deliverable: result=%s err=%v", task.Result, err)
+			}
+			comments, err := st.Collaboration().ListComments(t.Context(), task.IssueID, store.CommentListOptions{Limit: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, comment := range comments {
+				if strings.Contains(comment.Content, want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("visible result comment lost deliverable")
+			}
+		})
 	}
 }

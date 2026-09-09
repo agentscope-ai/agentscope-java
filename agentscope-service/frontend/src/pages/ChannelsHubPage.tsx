@@ -15,8 +15,8 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { isAdmin } from '../api/auth';
+import { useNavigate } from 'react-router-dom';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 import {
   ChannelInfo,
   ChannelTypeSpec,
@@ -85,7 +85,8 @@ function typeBadge(type: string): { bg: string; fg: string; bd: string } {
 }
 
 export default function ChannelsHubPage() {
-  const admin = isAdmin();
+  const scope = useControlPlaneScope();
+  const admin = scope.roles.some(r => ['developer', 'admin'].includes(r));
   const navigate = useNavigate();
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
@@ -134,15 +135,13 @@ export default function ChannelsHubPage() {
     [channels],
   );
 
-  if (!admin) {
-    return <Navigate to="/agent-center/agents" replace />;
-  }
+
 
   return (
     <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Channels</h1>
-        <button style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New channel</button>
+        {admin && <button style={S.primaryBtn} onClick={() => setCreating(true)}>＋ New channel</button>}
       </div>
 
       <p style={S.blurb}>
@@ -198,7 +197,7 @@ export default function ChannelsHubPage() {
                   </span>
                 )}
               </div>
-              <div
+              {admin && <div
                 style={{ display: 'flex', gap: 8, marginTop: 6 }}
                 onClick={e => e.stopPropagation()}
               >
@@ -211,7 +210,7 @@ export default function ChannelsHubPage() {
                 >
                   Delete
                 </button>
-              </div>
+              </div>}
             </div>
           );
         })}

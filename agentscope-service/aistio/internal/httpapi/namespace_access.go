@@ -23,6 +23,8 @@ import (
 
 const ctxNamespaceAccess = "namespaceAccess"
 
+const globalNamespaceOwner = "system"
+
 type namespaceAccess struct {
 	User      string
 	Refs      []string
@@ -38,6 +40,34 @@ func accessFrom(c *gin.Context) *namespaceAccess {
 func personalNamespace(user string) string {
 	sum := sha256.Sum256([]byte(user))
 	return "personal-" + hex.EncodeToString(sum[:10])
+}
+
+func (s *Server) ensureGlobalDefaultNamespace(ctx context.Context) (*controlmodel.Namespace, error) {
+	n, err := s.store.Access().GetNamespace(ctx, s.defaultTenant, s.defaultNamespace)
+	if err == nil {
+		if n.Kind != "global" {
+			return nil, errors.New("configured default namespace already exists but is not global")
+		}
+		return n, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	n, err = s.store.Access().PutNamespace(ctx, &controlmodel.Namespace{
+		Tenant:      s.defaultTenant,
+		Name:        s.defaultNamespace,
+		DisplayName: "Default",
+		Kind:        "global",
+		Owner:       globalNamespaceOwner,
+		Members:     map[string][]string{},
+	}, 0, globalNamespaceOwner)
+	if errors.Is(err, store.ErrConflict) {
+		n, err = s.store.Access().GetNamespace(ctx, s.defaultTenant, s.defaultNamespace)
+		if err == nil && n.Kind != "global" {
+			return nil, errors.New("configured default namespace already exists but is not global")
+		}
+	}
+	return n, err
 }
 
 func (s *Server) ensurePersonalNamespace(ctx context.Context, user string) (*controlmodel.Namespace, error) {
@@ -133,7 +163,7 @@ func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 		path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/")
-		if path == "me/scope" || path == "me/namespaces" || path == "me/navigation" || path == "namespaces" || strings.HasPrefix(path, "namespaces/") {
+		if path == "me/preferences" || strings.HasPrefix(path, "access/") || path == "me/scope" || path == "me/namespaces" || path == "me/navigation" || path == "namespaces" || strings.HasPrefix(path, "namespaces/") {
 			c.Next()
 			return
 		}
@@ -201,7 +231,12 @@ func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 			a.Refs = append(a.Refs, name)
 		}
 		c.Set(ctxNamespaceAccess, a)
-		if !controlmodel.NamespaceAllows(roles, namespaceAction(c)) {
+		kind, resourceID, resourceAction := resourceRoute(c)
+		allowed := controlmodel.NamespaceAllows(roles, namespaceAction(c))
+		if kind != "" && resourceID != "" {
+			allowed = n.Decide(user, kind+":"+resourceID, resourceAction).Allowed
+		}
+		if !allowed {
 			c.AbortWithStatusJSON(403, ErrorResponse{Error: "namespace role does not allow this action"})
 			return
 		}
@@ -344,7 +379,7 @@ func (s *Server) listMyNamespaces(c *gin.Context) {
 func namespaceSummaries(items []*controlmodel.Namespace, user string) []gin.H {
 	out := []gin.H{}
 	for _, n := range items {
-		out = append(out, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "roles": n.Roles(user)})
+		out = append(out, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "roles": n.Roles(user), "owner": n.Owner})
 	}
 	return out
 }
@@ -355,15 +390,31 @@ func (s *Server) createNamespace(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Name        string `json:"name"`
-		DisplayName string `json:"displayName"`
+		Name        string              `json:"name"`
+		DisplayName string              `json:"displayName"`
+		Owner       string              `json:"owner"`
+		Members     map[string][]string `json:"members"`
 	}
 	if c.ShouldBindJSON(&in) != nil || strings.HasPrefix(in.Name, "personal-") {
 		c.JSON(400, ErrorResponse{Error: "valid shared namespace name required"})
 		return
 	}
-	n := &controlmodel.Namespace{Tenant: s.defaultTenant, Name: in.Name, DisplayName: in.DisplayName, Kind: "shared", Owner: user, Members: map[string][]string{}}
+	owner := in.Owner
+	if owner == "" {
+		owner = user
+	}
+	n := &controlmodel.Namespace{Tenant: s.defaultTenant, Name: in.Name, DisplayName: in.DisplayName, Kind: "shared", Owner: owner, Members: in.Members}
+	if n.Members == nil {
+		n.Members = map[string][]string{}
+	}
+	if owner != user && !n.Manages(user) {
+		n.Members[user] = append(n.Members[user], "admin")
+	}
 	if err := n.Validate(); err != nil {
+		c.JSON(400, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if err := s.validateNamespaceAccounts(c.Request.Context(), n, nil); err != nil {
 		c.JSON(400, ErrorResponse{Error: err.Error()})
 		return
 	}
@@ -385,7 +436,7 @@ func (s *Server) namespaceForManagement(c *gin.Context) (*controlmodel.Namespace
 		s.accessFailure(c, err)
 		return nil, false
 	}
-	if !controlmodel.NamespaceAllows(n.Roles(user), "members.manage") && !roleSet(c)["admin"] {
+	if n.Owner != user && !n.Manages(user) && !roleSet(c)["admin"] {
 		s.accessFailure(c, store.ErrNotFound)
 		return nil, false
 	}
@@ -402,20 +453,43 @@ func (s *Server) updateNamespaceAccess(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var in struct {
-		Members     map[string][]string `json:"members"`
-		DisplayName string              `json:"displayName"`
-		Version     int64               `json:"version"`
-	}
-	if c.ShouldBindJSON(&in) != nil || in.Version <= 0 {
-		c.JSON(400, ErrorResponse{Error: "membership and expected version required"})
+	if n.Kind == "global" {
+		c.JSON(http.StatusConflict, ErrorResponse{Error: "global default namespace is managed by the platform"})
 		return
 	}
-	n.Members = in.Members
-	if in.DisplayName != "" {
-		n.DisplayName = in.DisplayName
+	var in struct {
+		Members     *map[string][]string `json:"members"`
+		DisplayName *string              `json:"displayName"`
+		Archived    *bool                `json:"archived"`
+		Version     int64                `json:"version"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.Version <= 0 {
+		c.JSON(400, ErrorResponse{Error: "Expected version required"})
+		return
+	}
+	old := *n
+	if in.Members != nil {
+		n.Members = *in.Members
+	}
+	if in.DisplayName != nil {
+		n.DisplayName = *in.DisplayName
+	}
+	if in.Archived != nil {
+		if n.Owner != c.GetString("userId") && !roleSet(c)["admin"] {
+			c.JSON(403, ErrorResponse{Error: "Only the owner or a platform administrator can archive or restore a namespace"})
+			return
+		}
+		n.Archived = *in.Archived
+	}
+	if sensitiveGrantChanged(&old, n) && n.Owner != c.GetString("userId") && !roleSet(c)["admin"] {
+		c.JSON(403, ErrorResponse{Error: "Only the owner or platform administrator can change auditor grants"})
+		return
 	}
 	if err := n.Validate(); err != nil {
+		c.JSON(400, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if err := s.validateNamespaceAccounts(c.Request.Context(), n, &old); err != nil {
 		c.JSON(400, ErrorResponse{Error: err.Error()})
 		return
 	}

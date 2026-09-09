@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-08T03:09:22.865081+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/fb8bea41-2a06-4273-b775-ad17cae743e7?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "fb8bea41-2a06-4273-b775-ad17cae743e7",
+      "agentTaskId": "327106f7-11d8-4c50-a65f-d07b9767bb31",
+      "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+      "runId": "4c3c18dc-e92f-4670-887e-b4d9bd162d42",
+      "nodeId": "f87e7522-d5a5-457b-b6c9-96bf94776bde",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+          "bindingId": "a14203da-5488-5b50-ad4f-a6847cbd2963",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "admin",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "58e66260-8472-445b-8fb3-1bd438bb9abf"
+        },
+        "sessionId": "sess_127c12bfc4ff",
+        "resolvedAt": "2026-09-08T03:06:19.95719Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "admin",
+      "managedAgentRef": "58e66260-8472-445b-8fb3-1bd438bb9abf",
+      "sessionId": "sess_127c12bfc4ff",
+      "sessionRef": "6eab46a1-f199-41ad-81d0-4636a12b57ed",
+      "turnId": "38e75473-6ec1-4b01-bebb-b7b833821681",
+      "state": "succeeded",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T11:07:30.268944+08:00",
+      "result": "### IT 执行摘要回归：新能源与智能手机\n\n#### 新能源技术最新发展趋势报告\n\n- **太阳能技术**：高效光伏材料、建筑一体化光伏（BIPV）、储能解决方案。\n- **风力发电**：海上风电场扩张、更大容量的风机、浮动式风力发电机。\n- **氢能经济**：绿色制氢、储运技术改进、燃料电池应用拓展。\n- **其他前沿方向**：地热能开采、海洋能转换、生物质能源。\n\n#### 智能手机技术最新发展趋势报告\n\n- **折叠屏技术的发展**：屏幕耐用性提升。\n- **5G与6G通信技术**：5G广泛部署，6G研究加速。\n- **AI驱动的用户体验优化**：智能助手功能增强、个性化内容推荐。\n- **环保与可持续设计**：采用可回收材料制造手机并减少碳足迹。",
+      "version": 24,
+      "createdAt": "2026-09-08T11:06:19.933087+08:00",
+      "updatedAt": "2026-09-08T11:07:30.373161+08:00",
+      "startedAt": "2026-09-08T11:06:20.210333+08:00",
+      "completedAt": "2026-09-08T11:07:30.373161+08:00"
+    }
+  }
+}

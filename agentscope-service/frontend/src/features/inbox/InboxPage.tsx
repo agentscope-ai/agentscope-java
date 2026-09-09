@@ -13,6 +13,7 @@ import { IssueDetailContent } from "@/features/issues/IssueDetailPage";
 import { WorkEmpty, WorkLoadingRows } from "@/features/work/WorkSurface";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import IssueReviewPanel from "./IssueReviewPanel";
 import { INBOX_TYPES, inboxTypeLabel, retainInboxSelection } from "./inboxModel";
 
 export default function InboxPage() {
@@ -30,6 +31,7 @@ function InboxWorkspace() {
   const archived = params.get("archived") === "true";
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectionIndex, setSelectionIndex] = useState(0);
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [approvalNotes, setApprovalNotes] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ itemId: string; issueId: string }>();
   const previewIssueId = preview?.itemId === selectedId ? preview.issueId : "";
@@ -111,6 +113,7 @@ function InboxWorkspace() {
             </div>
             {item && readErrors.has(item.id) && <div role="alert" className="flex items-center justify-between bg-amber-50 px-4 py-2 text-xs text-amber-800">Could not mark this message as read.<Button size="sm" variant="ghost" disabled={mark.isPending} onClick={() => mark.mutate(item.id)}>Retry</Button></div>}
             {archive.isError && <p role="alert" className="bg-red-50 px-4 py-2 text-xs text-red-700">This message could not be archived. Pending actions must be completed first.</p>}
+            {item?.type === "review_request" && item.issueId && !item.approvalId && activeIssueId === item.issueId && !selected.isError && <IssueReviewPanel key={item.id} item={item} note={reviewNotes[item.id] || ""} onNoteChange={note => setReviewNotes(current => ({ ...current, [item.id]: note }))} />}
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-detail">
               {selected.isPending ? <WorkLoadingRows /> : selected.isError || !item ? <WorkEmpty title="Message unavailable" description="The message could not be loaded, or is not visible in this workspace." action={<Button variant="outline" onClick={() => void selected.refetch()}>Retry</Button>} /> : item.approvalId ? <ApprovalDetail key={item.id} approvalId={item.approvalId} note={approvalNotes[item.approvalId] || ""} onNoteChange={note => setApprovalNotes(current => ({ ...current, [item.approvalId!]: note }))} onReady={markViewed} /> : activeIssueId ? <>
                 <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-3"><p className="text-xs font-medium text-slate-600">{item.title} · {formatRelative(item.createdAt)}</p>{item.body && <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-500">{item.body}</p>}{previewIssueId && previewIssueId !== item.issueId && <Button variant="link" size="sm" className="mt-1 h-auto p-0" onClick={() => setPreviewIssueId("")}>Back to notified issue</Button>}</div>
@@ -133,6 +136,7 @@ function InboxRow({ item, selected, actor, onSelect }: { item: InboxItem; select
       <span className="flex items-center gap-2"><span className={cn("truncate text-sm text-slate-900", !item.read ? "font-semibold" : "font-medium")}>{item.title}</span>{!item.read && <span aria-label="Unread" className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />}</span>
       <span className="mt-1.5 flex"><Badge tone={approval ? "warning" : alert ? "danger" : "info"}>{inboxTypeLabel(item)}</Badge></span>
       <span className="mt-2 line-clamp-2 break-words text-xs leading-5 text-slate-500">{item.body || "Open to view details"}</span>
+      {item.type === "review_request" && item.needsAction && <span className="mt-2 block text-xs font-medium text-indigo-700">Review result →</span>}
       <span className="mt-2 block truncate text-[11px] text-slate-400">{actor} · {formatRelative(item.createdAt)}</span>
     </span>
   </button>;

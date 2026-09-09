@@ -19,6 +19,7 @@ import (
 
 	"github.com/spring-ai-alibaba/aistio/internal/collaboration"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
@@ -132,6 +133,28 @@ func TestManagedRunningEventStartsAssignedAttempt(t *testing.T) {
 	}
 	if startedAttempt.LeaseExpiresAt == nil || !startedAttempt.LeaseExpiresAt.After(time.Now()) {
 		t.Fatalf("fenced managed event did not renew execution lease: %+v", startedAttempt)
+	}
+
+	// An optional MCP connector failure must not close the task's live fence.
+	optionalBody, _ := json.Marshal(managedSessionEventReport{ID: "evt-optional-mcp", SessionID: session.SessionID,
+		Seq: 2, Type: "session.error", Payload: map[string]any{"error": map[string]any{"type": "mcp_connection_failed_error", "code": "mcp_connection_failed_error", "retry_status": "next_turn", "message": "MCP connection failed: github"}},
+		CreatedAt: time.Now().UnixMilli(), AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(), DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID})
+	optionalReq := httptest.NewRequest(http.MethodPost, "/api/internal/runtime-sessions/"+session.SessionID+"/events", bytes.NewReader(optionalBody))
+	optionalReq.Header.Set("Content-Type", "application/json")
+	optionalReq.Header.Set("X-Builder-Internal-Token", "internal-secret")
+	optionalResponse := httptest.NewRecorder()
+	srv.router.ServeHTTP(optionalResponse, optionalReq)
+	if optionalResponse.Code != http.StatusNoContent {
+		t.Fatalf("optional MCP report: %d %s", optionalResponse.Code, optionalResponse.Body.String())
+	}
+	liveTask, _ := st.Collaboration().GetAgentTask(ctx, claimed.ID)
+	liveAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+	if liveTask.Status != controlmodel.AgentTaskRunning || liveAttempt.State != controlmodel.ExecutionRunning {
+		t.Fatalf("optional MCP failure terminated task/attempt: %+v %+v", liveTask, liveAttempt)
+	}
+	events, _ := st.Events().List(ctx, session.ID)
+	if events[len(events)-1].EventType != "session.warning" || events[len(events)-1].Content != "MCP connection failed: github" {
+		t.Fatalf("lost optional connection diagnostic: %+v", events)
 	}
 
 	// Local schema validation never reaches the MCP endpoint. Its fenced tool
@@ -700,5 +723,103 @@ func TestManagedErrorProjectsReadableFailure(t *testing.T) {
 	})
 	if event.Content != "Tool could not read the file" || !bytes.Contains(event.FrameworkMeta, []byte(`"code":"tool_failed"`)) {
 		t.Fatalf("error detail lost: %+v", event)
+	}
+}
+
+func TestManagedConnectionWarningKeepsRequiredMCPFailuresFatal(t *testing.T) {
+	for _, tc := range []struct{ name, kind, retry, want string }{
+		{"optional", "mcp_connection_failed_error", "next_turn", "session.warning"},
+		{"required bootstrap", "api_error", "next_turn", "session.error"},
+		{"unknown severity", "", "next_turn", "session.error"},
+		{"not recoverable", "mcp_connection_failed_error", "not_retrying", "session.error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := managedSessionEventReport{Type: "session.error", Payload: map[string]any{"error": map[string]any{"type": tc.kind, "code": "mcp_connection_failed_error", "retry_status": tc.retry}}}
+			normalizeManagedConnectionWarning(&report)
+			if report.Type != tc.want {
+				t.Fatalf("got %s want %s", report.Type, tc.want)
+			}
+		})
+	}
+}
+
+func TestWorkflowIncompleteTurnGetsOnlyOneFencedCorrection(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	actor := controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}
+	agentID := uuid.New()
+	osvc := &orchestration.Service{Store: st}
+	def, err := st.Orchestration().CreateDefinition(ctx, &controlmodel.OrchestrationDefinition{Tenant: "t", Namespace: "n", Name: "poem", CreatedBy: actor, DraftSpec: json.RawMessage(fmt.Sprintf(`{"nodes":[{"key":"draft","type":"agent","agentId":%q}]}`, agentID.String()))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = osvc.Publish(ctx, def.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+	run, err := osvc.Start(ctx, def.ID, orchestration.StartRequest{IdempotencyKey: "one", Issue: &controlmodel.Issue{Title: "write a poem", Creator: actor}, Actor: actor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(ctx, store.AgentTaskFilter{RunID: run.ID, Limit: 10})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("tasks=%v %v", tasks, err)
+	}
+	task := tasks[0]
+	srv := NewServer(ServerOptions{Store: st})
+	for generation := 1; generation <= 2; generation++ {
+		claimed, attempt, err := st.Collaboration().ClaimAgentTaskWithAttempt(ctx, store.TaskClaim{TaskID: task.ID, ExpectedVersion: task.Version, SessionID: "workflow-correction"}, &controlmodel.ExecutionAttempt{BackendKind: controlmodel.DataPlaneManaged, State: controlmodel.ExecutionAssigned, SessionID: "workflow-correction", TurnID: fmt.Sprint(generation)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed, err = st.Collaboration().StartAgentTask(ctx, claimed.ID, claimed.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := st.Sessions().Upsert(ctx, &store.Session{Tenant: "t", Namespace: "n", SessionID: "workflow-correction", AgentID: agentID, Framework: "managed", Phase: store.SessionPhaseActive, AgentTaskID: &claimed.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		meta, _ := json.Marshal(map[string]any{"attemptId": attempt.ID.String()})
+		if err = st.Events().Append(ctx, &store.SessionEvent{SessionFK: session.ID, Seq: generation, EventType: "agent.message", Content: "unsubmitted poem", FrameworkMeta: meta, OccurredAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		err = srv.applyManagedSessionStatus(ctx, session, &managedSessionEventReport{SessionID: session.SessionID, Type: "session.status_idle", AgentTaskID: claimed.ID.String(), AttemptID: attempt.ID.String(), DispatchGen: attempt.DispatchGeneration, TurnID: attempt.TurnID}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		task, err = st.Collaboration().GetAgentTask(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		currentAttempt, _ := st.ExecutionAttempts().Get(ctx, attempt.ID)
+		if currentAttempt.State != controlmodel.ExecutionFailed {
+			t.Fatalf("missing failed attempt: %+v", currentAttempt)
+		}
+		if generation == 1 {
+			if task.Status != controlmodel.AgentTaskQueued || task.OrchestrationRunID != run.ID {
+				t.Fatalf("correction broke task lineage: %+v", task)
+			}
+			brief, err := (&collaboration.Service{Store: st}).BuildContext(ctx, task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(brief.ExecutionBrief.Workflow.ProtocolCorrection, "unsubmitted poem") {
+				t.Fatalf("missing previous response: %+v", brief.ExecutionBrief)
+			}
+			wake := brief.ExecutionBrief.Workflow.ProtocolCorrection
+			if !strings.Contains(wake, "task.complete") {
+				t.Fatal("missing correction instruction")
+			}
+		} else if task.Status != controlmodel.AgentTaskFailed {
+			t.Fatalf("unbounded correction: %+v", task)
+		}
+	}
+	finalRun, _ := st.Orchestration().GetRun(ctx, run.ID)
+	if finalRun.State != controlmodel.RunFailed {
+		t.Fatalf("retry exhaustion did not converge: %+v", finalRun)
 	}
 }

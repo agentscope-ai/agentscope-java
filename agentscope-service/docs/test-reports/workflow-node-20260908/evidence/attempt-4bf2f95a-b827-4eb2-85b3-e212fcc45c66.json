@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-08T13:40:41.374003+00:00",
+  "method": "GET",
+  "path": "/api/v1/execution-attempts/0a283418-189b-4fe4-98b6-1a1f9d142dc4?tenant=default&namespace=demo",
+  "request": null,
+  "status": 200,
+  "response": {
+    "attempt": {
+      "id": "0a283418-189b-4fe4-98b6-1a1f9d142dc4",
+      "agentTaskId": "4bf2f95a-b827-4eb2-85b3-e212fcc45c66",
+      "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+      "runId": "4491d633-62cb-413c-96bf-b069a2ca984b",
+      "nodeId": "8fd83a74-a0d9-51d8-9cc9-200b4b149c1c",
+      "tenant": "default",
+      "namespace": "demo",
+      "attempt": 1,
+      "dispatchGeneration": 1,
+      "backendKind": "managed",
+      "runtimeBinding": {
+        "binding": {
+          "kind": "managed",
+          "agentId": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+          "bindingId": "919cbd35-6d8a-59be-a530-c3d124d05b2b",
+          "runtimePoolId": "00000000-0000-0000-0000-000000000000",
+          "managedOwnerRef": "namespace:default:demo",
+          "runtimeProfileId": "00000000-0000-0000-0000-000000000000",
+          "managedDefinitionRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb"
+        },
+        "sessionId": "sess_ea3d95ab176d",
+        "resolvedAt": "2026-09-08T13:40:18.537954Z",
+        "selectionSource": "policy"
+      },
+      "managedOwnerRef": "namespace:default:demo",
+      "managedAgentRef": "c9339b8e-e358-4cb1-bbdb-2fcc503f09bb",
+      "sessionId": "sess_ea3d95ab176d",
+      "sessionRef": "5dd8ecaf-1eb2-4927-a920-8c532c1b1b3b",
+      "turnId": "7c312b72-82c5-4929-b179-e53d365ed532",
+      "state": "failed",
+      "fencingToken": "[REDACTED]",
+      "heartbeatAt": "2026-09-08T21:40:32.201798+08:00",
+      "failureCode": "managed_turn_incomplete",
+      "failureMessage": "managed Agent turn ended without task.complete or task.fail\nLast response: 根据当前的任务要求，我将为您创作一首诗，并逐步进行优化。首先，我会提供一个初始版本的诗，然后我们可以根据您的反馈进行调整和改进。\n\n### 初始版本\n\n秋风轻拂落叶黄，\n寒露凝霜夜渐长。\n月光洒落静湖畔，\n思绪如波荡漾香。\n\n请告诉我您对这首诗的看法，或者如果您有任何特别的想法或主题偏好，请随时告诉我，以便我们进一步优化。",
+      "version": 16,
+      "createdAt": "2026-09-08T21:40:18.537708+08:00",
+      "updatedAt": "2026-09-08T21:40:32.207992+08:00",
+      "startedAt": "2026-09-08T21:40:18.81164+08:00",
+      "completedAt": "2026-09-08T21:40:32.207992+08:00"
+    }
+  }
+}

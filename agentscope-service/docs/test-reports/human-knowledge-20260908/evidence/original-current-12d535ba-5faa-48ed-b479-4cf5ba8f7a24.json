@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-08T03:09:38.519856+00:00",
+  "method": "GET",
+  "path": "/api/v1/issues/12d535ba-5faa-48ed-b479-4cf5ba8f7a24?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 200,
+  "response": {
+    "issue": {
+      "access": {
+        "mode": "private"
+      },
+      "id": "12d535ba-5faa-48ed-b479-4cf5ba8f7a24",
+      "tenant": "default",
+      "namespace": "personal-8c6976e5b5410415bde9",
+      "title": "帮我调研新能源与手机发展趋势",
+      "description": "帮我调研新能源与手机发展趋势",
+      "status": "blocked",
+      "priority": "normal",
+      "kind": "user_work",
+      "visibility": "work_hub",
+      "completionPolicy": "review",
+      "assigneeType": "team",
+      "assigneeRef": "77fb26b6-23c8-4ff8-898b-96bcafa30ae5",
+      "creator": {
+        "type": "human",
+        "ref": "admin"
+      },
+      "acceptanceCriteria": [],
+      "contextRefs": [],
+      "version": 5,
+      "createdAt": "2026-09-08T10:37:49.080863+08:00",
+      "updatedAt": "2026-09-08T10:43:36.687919+08:00"
+    }
+  }
+}

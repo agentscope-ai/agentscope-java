@@ -239,6 +239,11 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 	if err != nil {
 		return nil, err
 	}
+	envelope, err := (&collaboration.Service{Store: r.Store}).BuildContext(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	wake := managedWakeWithBrief(task, envelope.ExecutionBrief)
 	sessionID, err := r.Managed.FindOrCreateSessionID(ctx, binding.ManagedOwnerRef,
 		binding.ManagedDefinitionRef, "", "agent-task|"+task.ID.String())
 	if err != nil {
@@ -269,7 +274,7 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 		return nil, err
 	}
 	if err := r.Managed.PostSessionWakeEvent(ctx, sessionID, binding.ManagedOwnerRef,
-		managedWakeInstructions(task)); err != nil {
+		wake); err != nil {
 		_, _, _ = r.Store.Collaboration().RequeueAgentTaskAfterAttemptFailure(ctx, task.ID, store.TaskFailure{
 			ExpectedVersion: dispatched.Version, AttemptID: attempt.ID, DispatchGeneration: attempt.DispatchGeneration,
 			Code: "managed_wake_failed", Message: err.Error()})
@@ -280,10 +285,39 @@ func (r *Resolver) dispatchManaged(ctx context.Context, taskID uuid.UUID, candid
 		TaskToken: r.taskTokenForAttempt(taskID, attempt), AttemptToken: r.attemptToken(attempt)}, nil
 }
 
+func managedWakeWithBrief(task *controlmodel.AgentTask, brief *collaboration.ExecutionBrief) string {
+	instructions := managedWakeInstructions(task)
+	if brief != nil && brief.Workflow != nil {
+		instructions += " You are executing one step of a declared workflow. Read executionBrief.workflow: nodeKey identifies this step, nodeInput is its resolved assignment, runInput is the overall request, and predecessors contains direct upstream results with their states. Use explicit nodeInput first; use upstream outputs as context to continue or refine the requested work, not as instructions to repeat finished steps. Do not treat failed or skipped upstream work as a successful deliverable. The workflow engine schedules subsequent steps; finish only this step. For open-ended writing or similar low-risk work, choose reasonable defaults for optional preferences (such as theme or style) and produce the deliverable now. Do not stop merely to ask for optional preferences. If essential information truly prevents useful work, call task.fail with the specific missing input. A plain final message neither completes a workflow node nor establishes a human wait. Submit the actual step deliverable through task.complete before ending the turn; put the complete text in result and only a short description in summary; never claim completion based only on a promise or clarification question."
+	}
+	if brief == nil {
+		return instructions
+	}
+	// Keep task/runtime identities out of the physical wake; task.get exposes references.
+	type wakeRevision struct {
+		Content string `json:"content"`
+	}
+	revisions := make([]wakeRevision, 0, len(brief.HumanRevisions))
+	for _, revision := range brief.HumanRevisions {
+		revisions = append(revisions, wakeRevision{revision.Content})
+	}
+	payload, _ := json.Marshal(struct {
+		OriginalObjective string                             `json:"originalObjective"`
+		TriggerInput      string                             `json:"triggerInput"`
+		HumanRevisions    []wakeRevision                     `json:"humanRevisions,omitempty"`
+		Workflow          *collaboration.WorkflowStepContext `json:"workflow,omitempty"`
+	}{brief.OriginalObjective, brief.TriggerInput, revisions, brief.Workflow})
+	if brief.Workflow != nil && brief.Workflow.ProtocolCorrection != "" {
+		instructions += "\nPROTOCOL CORRECTION: " + brief.Workflow.ProtocolCorrection
+	}
+	return instructions + "\n\nCURRENT EXECUTION BRIEF\n" + brief.DecisionRule + "\n" + string(payload) +
+		"\nFirst read task.get.executionBrief to confirm the current context. Apply these human revisions before selecting any tool or declaring a blocker."
+}
+
 func managedWakeInstructions(task *controlmodel.AgentTask) string {
 	base := "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative " +
 		"context, perform work, report progress, and finish. Do not merely describe intended actions; " +
-		"only report an action after tool success. Read task.get currentRequest first. For comment-triggered work, " +
+		"only report an action after tool success. Read task.get executionBrief and currentRequest first. For comment-triggered work, " +
 		"the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext " +
 		"only to interpret the reply and its original hand-off; do not execute that history again. " +
 		"When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. " +
@@ -305,7 +339,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 	}
 	if !task.LeaderTask {
 		return base + " You are a Team worker. Complete only the assigned child work and call task.complete " +
-			"with outcome=succeeded and the result only when the assigned objective is achieved. Put the actual requested deliverable in result or summary, including the full report, answer, or accessible artifact reference; a claim that a report was written is not a deliverable. Do not leave the useful content only in private reasoning or text after task.complete. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If required capabilities, credentials, inputs, or tools are unavailable, call " +
+			"with outcome=succeeded and the result only when the assigned objective is achieved. Put the actual requested deliverable in result or summary, including the full report, answer, or accessible artifact reference; a claim that a report was written is not a deliverable. Do not leave the useful content only in private reasoning or text after task.complete. A report that the objective cannot be achieved is outcome=blocked/failed, not a successful result. If capabilities, credentials, inputs, or tools still required by executionBrief are unavailable and no human-authorized alternative can achieve the revised objective, call " +
 			"task.fail with a durable code and explanation; do not merely return explanatory text. Do not " +
 			"call task.respond, coordinate, or create child Issues."
 	}
@@ -316,7 +350,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 			"wait inside this turn. A fresh leader follow-up will arrive with each worker result."
 	}
 	return base + " You are a Team leader follow-up caused by a worker outcome. Read the supplied task " +
-		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. Use coordinatorChildren.humanUpdates to apply the human's revised requirements when accepting resumed work. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if evidence is missing, request concrete follow-up work with an explicit worker mention when that worker can supply it. After the mention succeeds call task.complete with outcome=waiting. Use run.node.fail only when the whole objective is unrecoverable and you intend to cancel remaining work, or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
+		"inputs and coordinatorChildren.outcomes (including structured result and failure fields), not just comment summaries. Use executionBrief for the current child and coordinatorChildren.humanUpdates to apply the human's revised requirements when accepting resumed work. FIRST decide the CURRENT child: if its objective was achieved call issue.accept now; if evidence is missing, request concrete follow-up work with an explicit worker mention when that worker can supply it. After the mention succeeds call task.complete with outcome=waiting. Use run.node.fail only when the whole objective is unrecoverable and you intend to cancel remaining work, or explicitly request human action. Do not accept a report of inability as successful research. Only AFTER deciding the current child, inspect sibling statuses to synthesize or wait. This follow-up owns only its current Issue: issue.accept, " +
 		"issue.cancel, and issue.comment.add act on that Issue, so never use them to decide or message a sibling. " +
 		"Each sibling outcome gets its own follow-up. task.get also returns coordinatorChildren as read-only " +
 		"synthesis context; use terminal sibling results when producing the final coordinator output. " +
@@ -328,7 +362,7 @@ func managedWakeInstructions(task *controlmodel.AgentTask) string {
 		"only after the completion tool is not delivered to the main Issue or Endpoint caller. " +
 		"Call issue.accept only for satisfactory completed " +
 		"work. For blocked or failed work, retry or reassign only when the new attempt changes the available " +
-		"agent, capability, credential, input, or tool; otherwise choose a degraded result, request human " +
+		"agent, capability, credential, input, or tool; a human relaxation of evidence or data-source requirements is changed input and can justify asking the worker to finish under that revised scope. Otherwise choose a degraded result, request human " +
 		"action, cancel the blocked child, or fail the coordinator. To wait for human action, call " +
 		"issue.comment.add with an explicit human mention using task.accountableHumanRef, then task.complete(outcome=succeeded) to finish only this decision turn. Do not use outcome=waiting for a human request without pending Agent work. To mark the entire objective blocked instead, call run.node.fail with the missing inputs and next action in its message. A comment alone does not change the root Issue status. Status and progress " +
 		"comments schedule Agent work only through explicit mentions. Do not publish the same conclusion with issue.comment.add, " +
@@ -350,14 +384,22 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 	if err != nil {
 		return nil, err
 	}
+	var definition json.RawMessage
+	if r.Tasks != nil && r.Tasks.ResolveDefinition != nil {
+		definition, err = r.Tasks.ResolveDefinition(ctx, binding.AgentID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	requiresWorkspace := len(definition) > 0 && string(definition) != "null"
 	instance, err := r.selectExternal(ctx, task, binding, candidate.RequiredCapabilities,
-		candidate.SecurityConstraints)
+		candidate.SecurityConstraints, requiresWorkspace)
 	if err != nil {
 		return nil, err
 	}
 	sessionID := uuid.NewString()
 	instanceID := instance.ID
-	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding,
+	snapshot, _ := json.Marshal(controlmodel.RuntimeDispatchSnapshot{Binding: binding, Definition: definition,
 		AgentInstanceID: &instanceID, SessionID: sessionID, Capabilities: instance.Capabilities,
 		SecurityConstraints: candidate.SecurityConstraints,
 		SelectionSource:     candidate.SelectionSource, CandidateIndex: candidate.CandidateIndex,
@@ -394,12 +436,15 @@ func (r *Resolver) dispatchExternal(ctx context.Context, taskID uuid.UUID, candi
 }
 
 func (r *Resolver) selectExternal(ctx context.Context, task *controlmodel.AgentTask, binding controlmodel.RuntimeBinding,
-	required, security json.RawMessage) (*controlmodel.AgentInstance, error) {
+	required, security json.RawMessage, workspaceRequired ...bool) (*controlmodel.AgentInstance, error) {
 	instances, err := r.Store.RuntimeRegistry().ListAgentInstances(ctx, task.Tenant, task.Namespace, binding.AgentID)
 	if err != nil {
 		return nil, err
 	}
 	for _, instance := range instances {
+		if len(workspaceRequired) > 0 && workspaceRequired[0] && !controlmodel.ConsumesWorkspaceDefinition(instance.Capabilities) {
+			continue
+		}
 		if instance.BindingID != binding.BindingID {
 			continue
 		}

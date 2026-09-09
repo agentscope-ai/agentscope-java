@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-08T02:46:34.974187+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/1ded3391-2b22-4b7f-86e7-87fdf1bf0e07/context?tenant=default&namespace=personal-8c6976e5b5410415bde9",
+  "request": null,
+  "status": 503,
+  "response": {
+    "error": "agent lookup requires a Kubernetes connection or a registered data plane"
+  }
+}

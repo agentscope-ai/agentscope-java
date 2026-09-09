@@ -1,0 +1,340 @@
+{
+  "at": "2026-09-08T13:48:31.520281+00:00",
+  "method": "GET",
+  "path": "/api/v1/sessions/636ada31-98b8-40b0-9533-764eeec9b89f/events?tenant=default&namespace=demo&limit=1000",
+  "request": null,
+  "status": 200,
+  "response": {
+    "events": [
+      {
+        "id": 189,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 1,
+        "eventType": "user.message",
+        "role": "user",
+        "content": "A durable AgentTask is ready. Use the aistio-collaboration tools to read authoritative context, perform work, report progress, and finish. Do not merely describe intended actions; only report an action after tool success. Read task.get executionBrief and currentRequest first. For comment-triggered work, the routed comments are the CURRENT assignment and override older Issue requirements. Use requestContext only to interpret the reply and its original hand-off; do not execute that history again. When replyToOwnDelegation is true, evaluate the returned result according to initiatingRequest and complete the current task. Do not mention the responding Agent just to acknowledge their answer; that creates another task. An explicit mention is only for new actionable work required by the current requester. Use math.evaluate to verify arithmetic before submitting or accepting numeric results. Verify other objective claims as well; a worker success flag alone is not acceptance evidence. You are handling standalone or explicitly mentioned work. Call task.complete only when you have a usable result. If a required capability, credential, input, or tool is unavailable, or a required tool call fails without a real fallback, call task.fail with a durable code and explanation; do not complete with a description of the failure. task.complete publishes the one authoritative visible reply, so do not repeat the same conclusion with issue.comment.add or task.progress. A human explicit mention is a direct request: answer it and finish without notifying the Issue assignee unless that Agent genuinely needs new work, in which case use an explicit mention. You are executing one step of a declared workflow. Read executionBrief.workflow: nodeKey identifies this step, nodeInput is its resolved assignment, runInput is the overall request, and predecessors contains direct upstream results with their states. Use explicit nodeInput first; use upstream outputs as context to continue or refine the requested work, not as instructions to repeat finished steps. Do not treat failed or skipped upstream work as a successful deliverable. The workflow engine schedules subsequent steps; finish only this step. For open-ended writing or similar low-risk work, choose reasonable defaults for optional preferences (such as theme or style) and produce the deliverable now. Do not stop merely to ask for optional preferences. If essential information truly prevents useful work, call task.fail with the specific missing input. A plain final message neither completes a workflow node nor establishes a human wait. Submit the actual step deliverable through task.complete before ending the turn; put the complete text in result and only a short description in summary; never claim completion based only on a promise or clarification question.\n\nCURRENT EXECUTION BRIEF\nApply the human revisions in chronological order to the original objective; the newest instruction wins where they conflict. Acknowledgements or praise alone do not authorize new work; preserve review-feedback handling. The trigger input may be a worker failure notification, not a requirement to repeat that failure. Decide the deliverable and required evidence BEFORE choosing tools. If the human permits an answer from existing knowledge, answer directly without web search or credentials and state the freshness/verification limits. If fresh sources or external verification remain required, do not substitute an unverified answer. A tool error blocks the task only when that tool is still necessary for the revised objective and no authorized alternative can produce the deliverable. Before task.fail or asking the human for a key, re-evaluate that necessity; leaders must make the same check before repeating a worker's blocker.\n{\"originalObjective\":\"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\",\"triggerInput\":\"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\",\"workflow\":{\"nodeKey\":\"work\",\"runInput\":{},\"nodeInput\":{},\"predecessors\":[]}}\nFirst read task.get.executionBrief to confirm the current context. Apply these human revisions before selecting any tool or declaring a blocker.",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_f54f5cbede3547758ce4b8c79b50013e",
+          "managedSeq": 1,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_f54f5cbede3547758ce4b8c79b50013e",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:51.957+08:00"
+      },
+      {
+        "id": 190,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 2,
+        "eventType": "session.status_running",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "running",
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_be96f9b3a7c548eaadabd35ebd23d3de",
+          "managedSeq": 2,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_be96f9b3a7c548eaadabd35ebd23d3de",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:52.001+08:00"
+      },
+      {
+        "id": 191,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 3,
+        "eventType": "session.warning",
+        "role": "system",
+        "content": "MCP connection failed: github",
+        "frameworkMeta": {
+          "error": {
+            "code": "mcp_connection_failed_error",
+            "type": "mcp_connection_failed_error",
+            "message": "MCP connection failed: github",
+            "retry_status": "next_turn",
+            "mcp_server_name": "github"
+          },
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_80fb839b5d36481c8de5966a37b050bc",
+          "managedSeq": 3,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_80fb839b5d36481c8de5966a37b050bc",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:53.052+08:00"
+      },
+      {
+        "id": 192,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 4,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_5c020b9e8ac14c0db389211a0f5dd07c",
+          "managedSeq": 4,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_5c020b9e8ac14c0db389211a0f5dd07c",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:53.153+08:00"
+      },
+      {
+        "id": 193,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 5,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.get",
+        "toolInput": {},
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_1916b40e700a4a53acb69b8c6e6d47cb",
+          "managedSeq": 5,
+          "toolCallId": "call_44f663bfe5c34a3da0f76e",
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_1916b40e700a4a53acb69b8c6e6d47cb",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:57.682+08:00"
+      },
+      {
+        "id": 194,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 6,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "usage": {
+            "time": 4.536,
+            "inputTokens": "[REDACTED]",
+            "totalTokens": "[REDACTED]",
+            "cachedTokens": "[REDACTED]",
+            "outputTokens": "[REDACTED]"
+          },
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_aba1f10098594c8ebaf0f1131e009d41",
+          "managedSeq": 6,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_aba1f10098594c8ebaf0f1131e009d41",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:57.701+08:00"
+      },
+      {
+        "id": 195,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 7,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"executionBrief\": {\"workflow\": {\"nodeKey\": \"work\", \"runInput\": {}, \"nodeInput\": {}, \"predecessors\": []}, \"originalObjective\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"triggerInput\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"decisionRule\": \"Apply the human revisions in chronological order to the original objective; the newest instruction wins where they conflict. Acknowledgements or praise alone do not authorize new work; preserve review-feedback handling. The trigger input may be a worker failure notification, not a requirement to repeat that failure. Decide the deliverable and required evidence BEFORE choosing tools. If the human permits an answer from existing knowledge, answer directly without web search or credentials and state the freshness/verification limits. If fresh sources or external verification remain required, do not substitute an unverified answer. A tool error blocks the task only when that tool is still necessary for the revised objective and no authorized alternative can produce the deliverable. Before task.fail or asking the human for a key, re-evaluate that necessity; leaders must make the same check before repeating a worker's blocker.\"}, \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"access\": {\"mode\": \"private\"}, \"id\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"tenant\": \"default\", \"namespace\": \"demo\", \"title\": \"帮我写一首诗，逐步优化\", \"description\": \"Started from Workflow workflow1\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 13, \"createdAt\": \"2026-09-08T21:15:47.221577+08:00\", \"updatedAt\": \"2026-09-08T21:46:52.011057+08:00\"}, \"node\": {\"id\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"runId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"tenant\": \"default\", \"namespace\": \"demo\", \"nodeKey\": \"work\", \"definitionNodeKey\": \"work\", \"type\": \"agent\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"state\": \"waiting\", \"config\": {\"key\": \"work\", \"join\": {}, \"type\": \"agent\", \"retry\": {}, \"timer\": {}, \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"approval\": {}, \"issueMode\": \"inherit\", \"failurePolicy\": \"fail_fast\"}, \"input\": {}, \"output\": {}, \"iteration\": 1, \"waitReason\": \"agent_task\", \"version\": 2, \"createdAt\": \"2026-09-08T21:46:51.53627+08:00\", \"updatedAt\": \"2026-09-08T21:46:51.554559+08:00\", \"startedAt\": \"2026-09-08T21:46:51.554559+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"reviewResults\": null, \"task\": {\"id\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"orchestrationRunId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"runNodeId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"currentAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"correlationId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"bindingId\": \"919cbd35-6d8a-59be-a530-c3d124d05b2b\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"namespace:default:demo\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"sessionId\": \"sess_5eb87c484f12\", \"resolvedAt\": \"2026-09-08T13:46:51.751519Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_5eb87c484f12\", \"version\": 3, \"createdAt\": \"2026-09-08T21:46:51.548149+08:00\", \"dispatchedAt\": \"2026-09-08T21:46:51.750915+08:00\", \"startedAt\": \"2026-09-08T21:46:52.011057+08:00\"}}",
+        "toolName": "task.get",
+        "toolOutput": "{\"coordinatorChildren\": null, \"coordinatorIssue\": null, \"currentRequest\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"executionBrief\": {\"workflow\": {\"nodeKey\": \"work\", \"runInput\": {}, \"nodeInput\": {}, \"predecessors\": []}, \"originalObjective\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"triggerInput\": \"帮我写一首诗，逐步优化\\n\\nStarted from Workflow workflow1\", \"decisionRule\": \"Apply the human revisions in chronological order to the original objective; the newest instruction wins where they conflict. Acknowledgements or praise alone do not authorize new work; preserve review-feedback handling. The trigger input may be a worker failure notification, not a requirement to repeat that failure. Decide the deliverable and required evidence BEFORE choosing tools. If the human permits an answer from existing knowledge, answer directly without web search or credentials and state the freshness/verification limits. If fresh sources or external verification remain required, do not substitute an unverified answer. A tool error blocks the task only when that tool is still necessary for the revised objective and no authorized alternative can produce the deliverable. Before task.fail or asking the human for a key, re-evaluate that necessity; leaders must make the same check before repeating a worker's blocker.\"}, \"initiatingRequest\": \"\", \"inputs\": null, \"issue\": {\"access\": {\"mode\": \"private\"}, \"id\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"tenant\": \"default\", \"namespace\": \"demo\", \"title\": \"帮我写一首诗，逐步优化\", \"description\": \"Started from Workflow workflow1\", \"status\": \"in_progress\", \"priority\": \"none\", \"kind\": \"user_work\", \"visibility\": \"work_hub\", \"completionPolicy\": \"review\", \"creator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"acceptanceCriteria\": [], \"contextRefs\": [], \"version\": 13, \"createdAt\": \"2026-09-08T21:15:47.221577+08:00\", \"updatedAt\": \"2026-09-08T21:46:52.011057+08:00\"}, \"node\": {\"id\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"runId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"tenant\": \"default\", \"namespace\": \"demo\", \"nodeKey\": \"work\", \"definitionNodeKey\": \"work\", \"type\": \"agent\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"state\": \"waiting\", \"config\": {\"key\": \"work\", \"join\": {}, \"type\": \"agent\", \"retry\": {}, \"timer\": {}, \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"approval\": {}, \"issueMode\": \"inherit\", \"failurePolicy\": \"fail_fast\"}, \"input\": {}, \"output\": {}, \"iteration\": 1, \"waitReason\": \"agent_task\", \"version\": 2, \"createdAt\": \"2026-09-08T21:46:51.53627+08:00\", \"updatedAt\": \"2026-09-08T21:46:51.554559+08:00\", \"startedAt\": \"2026-09-08T21:46:51.554559+08:00\"}, \"replyToOwnDelegation\": false, \"requestContext\": null, \"reviewResults\": null, \"task\": {\"id\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"orchestrationRunId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"runNodeId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"currentAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"status\": \"running\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"correlationId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"bindingId\": \"919cbd35-6d8a-59be-a530-c3d124d05b2b\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"namespace:default:demo\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"sessionId\": \"sess_5eb87c484f12\", \"resolvedAt\": \"2026-09-08T13:46:51.751519Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_5eb87c484f12\", \"version\": 3, \"createdAt\": \"2026-09-08T21:46:51.548149+08:00\", \"dispatchedAt\": \"2026-09-08T21:46:51.750915+08:00\", \"startedAt\": \"2026-09-08T21:46:52.011057+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_0ee79f75692e44dca1000e2aa5eb07b2",
+          "managedSeq": 7,
+          "toolCallId": "call_44f663bfe5c34a3da0f76e",
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "tool_use_id": "call_44f663bfe5c34a3da0f76e",
+          "managedEventId": "evt_0ee79f75692e44dca1000e2aa5eb07b2",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:57.776+08:00"
+      },
+      {
+        "id": 196,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 8,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_30180d7ef2a041da8aac98667cba10af",
+          "managedSeq": 8,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_30180d7ef2a041da8aac98667cba10af",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:46:57.795+08:00"
+      },
+      {
+        "id": 197,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 9,
+        "eventType": "agent.tool_use",
+        "role": "assistant",
+        "toolName": "task.complete",
+        "toolInput": {
+          "result": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+          "outcome": "succeeded"
+        },
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_19ef092f20534965ab49dad3f377dfa2",
+          "managedSeq": 9,
+          "toolCallId": "call_b8c8eb0e337143219327bb",
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_19ef092f20534965ab49dad3f377dfa2",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:14.765+08:00"
+      },
+      {
+        "id": 198,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 10,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "usage": {
+            "time": 16.97,
+            "inputTokens": "[REDACTED]",
+            "totalTokens": "[REDACTED]",
+            "cachedTokens": "[REDACTED]",
+            "outputTokens": "[REDACTED]"
+          },
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_6b6f8471d7a4414eaeb6c793d3feb75e",
+          "managedSeq": 10,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_6b6f8471d7a4414eaeb6c793d3feb75e",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:14.792+08:00"
+      },
+      {
+        "id": 199,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 11,
+        "eventType": "assistant.message",
+        "role": "assistant",
+        "content": "秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "assistant:2223c0d9-a871-4f3d-97b1-710c4ee2df88"
+        },
+        "occurredAt": "2026-09-08T21:47:14.866732+08:00"
+      },
+      {
+        "id": 200,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 12,
+        "eventType": "turn.completed",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "turn-completed:2223c0d9-a871-4f3d-97b1-710c4ee2df88"
+        },
+        "occurredAt": "2026-09-08T21:47:14.870484+08:00"
+      },
+      {
+        "id": 201,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 13,
+        "eventType": "agent.tool_result",
+        "role": "tool",
+        "content": "{\"comment\": {\"id\": \"f340285d-809d-4f26-b219-cae23d2c5edd\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"threadRootId\": \"f340285d-809d-4f26-b219-cae23d2c5edd\", \"author\": {\"type\": \"agent\", \"ref\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"content\": \"秋风起落叶，\\n寒露润草尖。\\n山川换新装，\\n岁月静如烟。\\n\\n日落西山外，\\n月升东海边。\\n星辰伴夜长，\\n梦回旧时年。\", \"type\": \"result\", \"sourceTaskId\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"sourceAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"version\": 1, \"createdAt\": \"2026-09-08T21:47:14.84858+08:00\", \"updatedAt\": \"2026-09-08T21:47:14.84858+08:00\"}, \"task\": {\"id\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"orchestrationRunId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"runNodeId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"currentAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"correlationId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"bindingId\": \"919cbd35-6d8a-59be-a530-c3d124d05b2b\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"namespace:default:demo\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"sessionId\": \"sess_5eb87c484f12\", \"resolvedAt\": \"2026-09-08T13:46:51.751519Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_5eb87c484f12\", \"result\": \"秋风起落叶，\\n寒露润草尖。\\n山川换新装，\\n岁月静如烟。\\n\\n日落西山外，\\n月升东海边。\\n星辰伴夜长，\\n梦回旧时年。\", \"version\": 4, \"createdAt\": \"2026-09-08T21:46:51.548149+08:00\", \"dispatchedAt\": \"2026-09-08T21:46:51.750915+08:00\", \"startedAt\": \"2026-09-08T21:46:52.011057+08:00\", \"completedAt\": \"2026-09-08T21:47:14.84858+08:00\"}}",
+        "toolName": "task.complete",
+        "toolOutput": "{\"comment\": {\"id\": \"f340285d-809d-4f26-b219-cae23d2c5edd\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"threadRootId\": \"f340285d-809d-4f26-b219-cae23d2c5edd\", \"author\": {\"type\": \"agent\", \"ref\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"content\": \"秋风起落叶，\\n寒露润草尖。\\n山川换新装，\\n岁月静如烟。\\n\\n日落西山外，\\n月升东海边。\\n星辰伴夜长，\\n梦回旧时年。\", \"type\": \"result\", \"sourceTaskId\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"sourceAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"version\": 1, \"createdAt\": \"2026-09-08T21:47:14.84858+08:00\", \"updatedAt\": \"2026-09-08T21:47:14.84858+08:00\"}, \"task\": {\"id\": \"adcdeaaf-52ca-422f-8cca-95e19ac2e0ef\", \"tenant\": \"default\", \"namespace\": \"demo\", \"issueId\": \"0ad981e4-11cd-5ee9-ac16-821d3a5f1a4f\", \"orchestrationRunId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"runNodeId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"currentAttemptId\": \"2223c0d9-a871-4f3d-97b1-710c4ee2df88\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"status\": \"completed\", \"priority\": 0, \"triggerType\": \"orchestration_node\", \"originator\": {\"type\": \"human\", \"ref\": \"admin\"}, \"accountableHumanRef\": \"admin\", \"causationId\": \"7367c2f5-8c36-577f-92be-dedf389fe400\", \"correlationId\": \"88e41f16-8d65-4a95-afab-c2201e97f335\", \"hopCount\": 0, \"teamDepth\": 0, \"runtimeBinding\": {\"binding\": {\"kind\": \"managed\", \"agentId\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\", \"bindingId\": \"919cbd35-6d8a-59be-a530-c3d124d05b2b\", \"runtimePoolId\": \"00000000-0000-0000-0000-000000000000\", \"managedOwnerRef\": \"namespace:default:demo\", \"runtimeProfileId\": \"00000000-0000-0000-0000-000000000000\", \"managedDefinitionRef\": \"c9339b8e-e358-4cb1-bbdb-2fcc503f09bb\"}, \"sessionId\": \"sess_5eb87c484f12\", \"resolvedAt\": \"2026-09-08T13:46:51.751519Z\", \"selectionSource\": \"policy\"}, \"sessionId\": \"sess_5eb87c484f12\", \"result\": \"秋风起落叶，\\n寒露润草尖。\\n山川换新装，\\n岁月静如烟。\\n\\n日落西山外，\\n月升东海边。\\n星辰伴夜长，\\n梦回旧时年。\", \"version\": 4, \"createdAt\": \"2026-09-08T21:46:51.548149+08:00\", \"dispatchedAt\": \"2026-09-08T21:46:51.750915+08:00\", \"startedAt\": \"2026-09-08T21:46:52.011057+08:00\", \"completedAt\": \"2026-09-08T21:47:14.84858+08:00\"}}",
+        "frameworkMeta": {
+          "state": "SUCCESS",
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_561ad0ce6d61414d841b10a2618cf3f7",
+          "managedSeq": 11,
+          "toolCallId": "call_b8c8eb0e337143219327bb",
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "tool_use_id": "call_b8c8eb0e337143219327bb",
+          "managedEventId": "evt_561ad0ce6d61414d841b10a2618cf3f7",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:14.879+08:00"
+      },
+      {
+        "id": 202,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 14,
+        "eventType": "span.model_request_start",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_d8d707b100c7438c9f67382466c13687",
+          "managedSeq": 12,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_d8d707b100c7438c9f67382466c13687",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:14.892+08:00"
+      },
+      {
+        "id": 210,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 15,
+        "eventType": "span.model_request_end",
+        "frameworkMeta": {
+          "usage": {
+            "time": 5.706,
+            "inputTokens": "[REDACTED]",
+            "totalTokens": "[REDACTED]",
+            "cachedTokens": "[REDACTED]",
+            "outputTokens": "[REDACTED]"
+          },
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_afdde7fc59c04274a5ecdc79af545872",
+          "managedSeq": 13,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_afdde7fc59c04274a5ecdc79af545872",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:20.598+08:00"
+      },
+      {
+        "id": 211,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 16,
+        "eventType": "agent.message",
+        "role": "assistant",
+        "content": "我已经为您创作了一首诗，并将其发布为任务的结果。如果您有任何修改意见或需要进一步的优化，请随时告诉我！\n\n这首诗的内容如下：\n\n秋风起落叶，\n寒露润草尖。\n山川换新装，\n岁月静如烟。\n\n日落西山外，\n月升东海边。\n星辰伴夜长，\n梦回旧时年。\n\n期待您的反馈！",
+        "frameworkMeta": {
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_5098733b3a734d039213e4d45d896537",
+          "managedSeq": 14,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_5098733b3a734d039213e4d45d896537",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:20.649+08:00"
+      },
+      {
+        "id": 212,
+        "sessionFk": "636ada31-98b8-40b0-9533-764eeec9b89f",
+        "seq": 17,
+        "eventType": "session.status_idle",
+        "role": "system",
+        "frameworkMeta": {
+          "status": "idle",
+          "turnId": "d66a2fff-29c5-4eaf-b78b-a3780319fb9f",
+          "attemptId": "2223c0d9-a871-4f3d-97b1-710c4ee2df88",
+          "sourceKey": "managed:evt_6c9fcdb08bc742eaa5c9b44bd89f785f",
+          "managedSeq": 15,
+          "agentTaskId": "adcdeaaf-52ca-422f-8cca-95e19ac2e0ef",
+          "managedEventId": "evt_6c9fcdb08bc742eaa5c9b44bd89f785f",
+          "dispatchGeneration": 1
+        },
+        "occurredAt": "2026-09-08T21:47:24.381+08:00"
+      }
+    ]
+  }
+}
