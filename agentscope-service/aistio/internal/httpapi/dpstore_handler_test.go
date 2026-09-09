@@ -86,11 +86,11 @@ func TestDPStore_KVTenantIsolation(t *testing.T) {
 	put := func(agent string) {
 		w := httptest.NewRecorder()
 		s.router.ServeHTTP(w, dpReq(http.MethodPut, "/api/v1/dp/kv/item", map[string]any{
-			"agentName":          agent,
-			"namespace":          "default",
-			"namespaceSegments":  []string{"ws"},
-			"key":                "k1",
-			"value":              map[string]any{"v": agent},
+			"agentName":         agent,
+			"namespace":         "default",
+			"namespaceSegments": []string{"ws"},
+			"key":               "k1",
+			"value":             map[string]any{"v": agent},
 		}, "test"))
 		if w.Code != http.StatusOK {
 			t.Fatalf("put %s: status=%d body=%s", agent, w.Code, w.Body.String())

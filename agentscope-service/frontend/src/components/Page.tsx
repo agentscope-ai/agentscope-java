@@ -22,8 +22,16 @@ export function Page({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('mx-auto max-w-6xl space-y-8 px-8 py-8', className)} {...props}>
-      {children}
+    <div className="min-h-full bg-white">
+      <div
+        className={cn(
+          'mx-auto max-w-[1440px] space-y-7 px-5 py-7 sm:px-8 sm:py-9 lg:px-10',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -40,14 +48,14 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={cn('flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between', className)}>
-      <div className="min-w-0 space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+    <header className={cn('flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between', className)}>
+      <div className="min-w-0">
+        <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-slate-950 sm:text-[32px]">{title}</h1>
         {description && (
-          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground">{description}</p>
+          <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-slate-500">{description}</p>
         )}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
-    </div>
+    </header>
   );
 }

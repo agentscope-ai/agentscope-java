@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Server) registerMemory(r gin.IRouter) {
@@ -61,7 +62,8 @@ func memoryPath(c *gin.Context) string {
 }
 
 func (s *Server) listMemoryStores(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -69,14 +71,14 @@ func (s *Server) listMemoryStores(c *gin.Context) {
 	}
 	var total int64
 	if err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*) FROM memory_stores WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM memory_stores WHERE owner_id=$1 AND (NOT $2::boolean OR store_id=ANY($3::text[])) AND archived_at IS NULL`, owner, restricted, allowedIDs).Scan(&total); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeTotalCount(c, total)
 	q := `SELECT store_id, owner_id, name, description, created_at, updated_at
-		 FROM memory_stores WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
-	args := []any{owner}
+		 FROM memory_stores WHERE owner_id=$1 AND (NOT $2::boolean OR store_id=ANY($3::text[])) AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner, restricted, allowedIDs}
 	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
@@ -113,7 +115,7 @@ func (s *Server) createMemoryStore(c *gin.Context) {
 	}
 	id := shortID("ms_")
 	now := nowMillis()
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	_, err := s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO memory_stores (store_id, owner_id, name, description, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$5)`, id, owner, req.Name, nullStr(req.Description), now)
@@ -128,7 +130,7 @@ func (s *Server) createMemoryStore(c *gin.Context) {
 }
 
 func (s *Server) getMemoryStore(c *gin.Context) {
-	out, err := s.loadMemoryStore(c.Request.Context(), c.Param("id"), currentUserID(c))
+	out, err := s.loadMemoryStore(c.Request.Context(), c.Param("id"), currentResourceOwner(c))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "memory store not found")
 		return
@@ -157,7 +159,7 @@ func (s *Server) loadMemoryStore(ctx context.Context, id, owner string) (gin.H, 
 }
 
 func (s *Server) archiveMemoryStore(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
@@ -220,7 +222,7 @@ func (s *Server) redactMemory(c *gin.Context) {
 }
 
 func (s *Server) deleteMemoryStore(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM memory_stores WHERE store_id=$1 AND owner_id=$2`, id, owner)
@@ -240,7 +242,7 @@ func (s *Server) ownStore(c *gin.Context, storeID string) bool {
 	var owner string
 	err := s.db.Pool.QueryRow(c.Request.Context(),
 		`SELECT owner_id FROM memory_stores WHERE store_id=$1`, storeID).Scan(&owner)
-	return err == nil && owner == currentUserID(c)
+	return err == nil && owner == currentResourceOwner(c)
 }
 
 func (s *Server) listMemories(c *gin.Context) {
@@ -306,7 +308,8 @@ func (s *Server) loadMemory(ctx context.Context, storeID, path string) (gin.H, e
 }
 
 type putMemoryReq struct {
-	Content string `json:"content"`
+	Content         string `json:"content"`
+	ExpectedVersion *int   `json:"expectedVersion"`
 }
 
 func (s *Server) putMemory(c *gin.Context) {
@@ -321,38 +324,58 @@ func (s *Server) putMemory(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "content required")
 		return
 	}
-	now := nowMillis()
+	if path == "" || strings.Contains(path, "\x00") || (req.ExpectedVersion != nil && *req.ExpectedVersion < 0) {
+		writeErr(c, http.StatusBadRequest, "invalid memory path or expected version")
+		return
+	}
+	tx, err := s.db.Pool.Begin(c.Request.Context())
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory transaction failed")
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	// Serialize a document's create/update and its history, including the absent-document case.
+	_, err = tx.Exec(c.Request.Context(), `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, storeID+"/"+path)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory lock failed")
+		return
+	}
 	var mid string
 	var hv int
-	err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT memory_id, head_version FROM memories WHERE store_id=$1 AND path=$2`, storeID, path).Scan(&mid, &hv)
-	if err != nil {
-		mid = shortID("mem_")
-		hv = 1
-		_, err = s.db.Pool.Exec(c.Request.Context(),
-			`INSERT INTO memories (memory_id, store_id, path, content, head_version, created_at, updated_at)
-			 VALUES ($1,$2,$3,$4,1,$5,$5)`, mid, storeID, path, req.Content, now)
-		if err != nil {
-			writeErr(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		_, _ = s.db.Pool.Exec(c.Request.Context(),
-			`INSERT INTO memory_versions (memory_id, version, content, created_at) VALUES ($1,1,$2,$3)`,
-			mid, req.Content, now)
-	} else {
-		hv++
-		_, err = s.db.Pool.Exec(c.Request.Context(),
-			`UPDATE memories SET content=$1, head_version=$2, updated_at=$3 WHERE memory_id=$4`,
-			req.Content, hv, now, mid)
-		if err != nil {
-			writeErr(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		_, _ = s.db.Pool.Exec(c.Request.Context(),
-			`INSERT INTO memory_versions (memory_id, version, content, created_at) VALUES ($1,$2,$3,$4)`,
-			mid, hv, req.Content, now)
+	err = tx.QueryRow(c.Request.Context(), `SELECT memory_id, head_version FROM memories WHERE store_id=$1 AND path=$2`, storeID, path).Scan(&mid, &hv)
+	if err != nil && err != pgx.ErrNoRows {
+		writeErr(c, http.StatusInternalServerError, "memory lookup failed")
+		return
 	}
-	out, _ := s.loadMemory(c.Request.Context(), storeID, path)
+	if req.ExpectedVersion != nil && *req.ExpectedVersion != hv {
+		writeErr(c, http.StatusConflict, "memory changed; read the latest version before writing")
+		return
+	}
+	now := nowMillis()
+	if hv == 0 {
+		mid = shortID("mem_")
+		_, err = tx.Exec(c.Request.Context(), `INSERT INTO memories (memory_id, store_id, path, content, head_version, created_at, updated_at) VALUES ($1,$2,$3,$4,1,$5,$5)`, mid, storeID, path, req.Content, now)
+	} else {
+		_, err = tx.Exec(c.Request.Context(), `UPDATE memories SET content=$1, head_version=$2, updated_at=$3 WHERE memory_id=$4`, req.Content, hv+1, now, mid)
+	}
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory write failed")
+		return
+	}
+	_, err = tx.Exec(c.Request.Context(), `INSERT INTO memory_versions (memory_id, version, content, created_at) VALUES ($1,$2,$3,$4)`, mid, hv+1, req.Content, now)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory history write failed")
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory commit failed")
+		return
+	}
+	out, err := s.loadMemory(c.Request.Context(), storeID, path)
+	if err != nil {
+		writeErr(c, http.StatusInternalServerError, "memory read failed")
+		return
+	}
 	c.JSON(http.StatusOK, out)
 }
 
