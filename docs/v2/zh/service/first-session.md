@@ -1,10 +1,12 @@
-# 第一个 Session
+---
+title: 第一个 Session
+---
 
 完成本页后，你应能在控制台发送消息、看到 Agent 回复，并在刷新页面后找回会话历史。
 
 ## 1. 准备模型与环境
 
-确认服务已按[快速上手](quickstart.md)启动。配置一个可用模型及其凭据。可信本地体验可启用 Local；其他安装先建立 Sandbox 或 Self-hosted Environment，确认其连接状态。
+确认服务已按[快速上手](/v2/zh/service/quickstart)启动。配置一个可用模型及其凭据。可信本地体验可启用 Local；其他安装先建立 Sandbox 或 Self-hosted Environment，确认其连接状态。
 
 ## 2. 创建 Agent
 
@@ -38,4 +40,4 @@
 
 发送消息的请求体形如 `{"events":[{"type":"user.message","payload":{"text":"你好"}}]}`。登录后使用用户 Bearer token；内部令牌不用于浏览器调用。
 
-没有回复时按[排障指南](troubleshooting.md)逐层检查模型、Environment 与 Dataplane。
+没有回复时按[排障指南](/v2/zh/service/troubleshooting)逐层检查模型、Environment 与 Dataplane。

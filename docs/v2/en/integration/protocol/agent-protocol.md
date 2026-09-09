@@ -1,13 +1,15 @@
-# Agent Protocol
+---
+title: Agent Protocol
+---
 
-`agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](../../docs/harness/architecture.md) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
+`agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](/v2/en/docs/harness/architecture) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
 
 ## When to use
 
 - You want the Agent to be remotely scheduled like a cloud function.
 - An existing team uses an Agent Protocol client and you'd like to plug in directly.
 - You're embedding a Harness Agent in a Spring Boot service and want auto-exposed `/tasks` REST endpoints.
-- You're hosting a [remote subagent](../../docs/harness/subagent.md#remote-subagent) that another Harness parent calls over HTTP.
+- You're hosting a [remote subagent](/v2/en/docs/harness/subagent#remote-subagent) that another Harness parent calls over HTTP.
 
 ## Protocol layering
 
@@ -272,7 +274,7 @@ Both are additive: a client that ignores them keeps reading the flat fields (`te
 
 `tool_call_id` is also accepted as an alias for `toolCallId`. Requires `agentscope.agent-protocol.hitl-enabled=true` (default). On success returns `{ "task_id", "status": "running" }`.
 
-How remote HITL interacts with a calling parent harness is documented under [Remote authorization](../../docs/harness/subagent.md#remote-authorization).
+How remote HITL interacts with a calling parent harness is documented under [Remote authorization](/v2/en/docs/harness/subagent#remote-authorization).
 
 ## Configuration
 

@@ -1,4 +1,6 @@
-# Helm 部署
+---
+title: Helm 部署
+---
 
 完整 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL 与存储提供程序由部署者管理。
 
@@ -38,7 +40,7 @@ kubectl -n agentscope get pods,pvc,svc
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-登录后按[第一个 Session](first-session.md)验证业务流程。检查 PVC 为 Bound，组件为 Ready，重启后历史和文件仍可读取。
+登录后按[第一个 Session](/v2/zh/service/first-session)验证业务流程。检查 PVC 为 Bound，组件为 Ready，重启后历史和文件仍可读取。
 
 ## 运行边界
 
