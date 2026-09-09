@@ -40,7 +40,7 @@ as_studio
 ```
 Studio will run at http://localhost:5173 (frontend dev server)
 
-![Studio Server Page](../../imgs/studioServer.png)
+![Studio Server Page](/imgs/studioServer.png)
 
 
 #### 2. Java Application Integration
@@ -74,7 +74,7 @@ StudioManager.shutdown();
 
 #### 3. View Trace Information in AgentScope Studio
 
-![Trace Information](../../imgs/studioServer-trace.png)
+![Trace Information](/imgs/studioServer-trace.png)
 
 
 
@@ -97,7 +97,7 @@ Msg userInput = user.call(null).block();
 ```
 You can find the Project in Studio's Projects and debug through the WebUI
 
-![Studio Server Web UI Input Interface](../../imgs/studioServer-webUI.png)
+![Studio Server Web UI Input Interface](/imgs/studioServer-webUI.png)
 
 #### Conversation Loop
 

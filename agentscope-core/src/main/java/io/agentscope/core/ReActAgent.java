@@ -4232,6 +4232,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public void clearStateCache() {
         stateCache.clear();
         permissionEngineCache.clear();
+        slotVersions.clear();
     }
 
     /**
@@ -4262,6 +4263,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String slot = slotKey(userId, sid);
         stateCache.remove(slot);
         permissionEngineCache.remove(slot);
+        slotVersions.remove(slot);
     }
 
     /**

@@ -549,6 +549,18 @@ public class Toolkit {
         return mcpClientManager.removeMcpClient(mcpClientName);
     }
 
+    /** Releases clients registered by this toolkit. Copies do not own the source's clients. */
+    public void closeMcpClients() {
+        for (String name : mcpClientManager.getMcpClientNames()) {
+            try {
+                removeMcpClient(name).block();
+            } catch (RuntimeException e) {
+                logger.warn(
+                        "MCP client '{}' cleanup failed ({})", name, e.getClass().getSimpleName());
+            }
+        }
+    }
+
     // ==================== Tool Group Management (Delegated) ====================
 
     /**
@@ -830,6 +842,7 @@ public class Toolkit {
         private Map<String, Map<String, Object>> presetParameters;
         private ExtendedModel extendedModel;
         private List<String> enableTools;
+        private String mcpToolNamePrefix = "";
         private List<String> disableTools;
 
         private ToolRegistration(Toolkit toolkit) {
@@ -939,14 +952,13 @@ public class Toolkit {
             return this;
         }
 
-        /**
-         * Set the list of tools to enable from the MCP client.
-         *
-         * <p>Only applicable when using mcpClient(). If not specified, all tools are enabled.
-         *
-         * @param enableTools List of tool names to enable
-         * @return This builder for chaining
-         */
+        /** Optional namespace for model-facing MCP tool names; wire names remain unchanged. */
+        public ToolRegistration mcpToolNamePrefix(String prefix) {
+            this.mcpToolNamePrefix = java.util.Objects.requireNonNull(prefix);
+            return this;
+        }
+
+        /** Selects remote tool names; an absent or empty list enables all tools. */
         public ToolRegistration enableTools(List<String> enableTools) {
             this.enableTools = enableTools;
             return this;
@@ -1049,7 +1061,8 @@ public class Toolkit {
                                 enableTools,
                                 disableTools,
                                 groupName,
-                                presetParameters)
+                                presetParameters,
+                                mcpToolNamePrefix)
                         .block();
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);

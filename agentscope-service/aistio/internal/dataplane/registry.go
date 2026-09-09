@@ -29,6 +29,7 @@ const (
 
 // Entry is one registered data-plane instance.
 type Entry struct {
+	Tenant        string                 `json:"tenant"`
 	AgentName     string                 `json:"agentName"`
 	Namespace     string                 `json:"namespace"`
 	InstanceID    string                 `json:"instanceId"`
@@ -61,6 +62,9 @@ func (r *Registry) Upsert(e Entry) time.Duration {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now().UTC()
+	if e.Tenant == "" {
+		e.Tenant = "default"
+	}
 	if e.Namespace == "" {
 		e.Namespace = "default"
 	}
@@ -126,8 +130,11 @@ func (r *Registry) List() []*Entry {
 	return out
 }
 
-// ListByAgent returns entries for an agent name/namespace.
-func (r *Registry) ListByAgent(agentName, namespace string) []*Entry {
+// ListByAgent returns entries for an agent identity in one tenant/namespace.
+func (r *Registry) ListByAgent(tenant, agentName, namespace string) []*Entry {
+	if tenant == "" {
+		tenant = "default"
+	}
 	if namespace == "" {
 		namespace = "default"
 	}
@@ -135,7 +142,7 @@ func (r *Registry) ListByAgent(agentName, namespace string) []*Entry {
 	defer r.mu.RUnlock()
 	var out []*Entry
 	for _, e := range r.byID {
-		if e.AgentName == agentName && e.Namespace == namespace {
+		if e.Tenant == tenant && e.AgentName == agentName && e.Namespace == namespace {
 			out = append(out, clone(e))
 		}
 	}
@@ -159,16 +166,17 @@ func (r *Registry) MarkStale(now time.Time) []string {
 
 // AgentSummaries aggregates registry entries into one row per agent.
 type AgentSummary struct {
-	Name           string   `json:"name"`
-	Namespace      string   `json:"namespace"`
-	Runtime        string   `json:"runtime,omitempty"`
-	Framework      string   `json:"framework,omitempty"`
-	ContractLevel  int32    `json:"contractLevel"`
-	Capabilities   []string `json:"capabilities,omitempty"`
-	Replicas       string   `json:"replicas"` // "ready/desired"
-	HealthyCount   int      `json:"healthyCount"`
-	InstanceCount  int      `json:"instanceCount"`
-	Instances      []string `json:"instances,omitempty"`
+	Tenant        string   `json:"tenant"`
+	Name          string   `json:"name"`
+	Namespace     string   `json:"namespace"`
+	Runtime       string   `json:"runtime,omitempty"`
+	Framework     string   `json:"framework,omitempty"`
+	ContractLevel int32    `json:"contractLevel"`
+	Capabilities  []string `json:"capabilities,omitempty"`
+	Replicas      string   `json:"replicas"` // "ready/desired"
+	HealthyCount  int      `json:"healthyCount"`
+	InstanceCount int      `json:"instanceCount"`
+	Instances     []string `json:"instances,omitempty"`
 }
 
 // Presence classification for Operate fleet views.
@@ -216,17 +224,18 @@ func FilterAgentsByPresence(summaries []AgentSummary, presence string) []AgentSu
 	return out
 }
 
-// AggregateAgents returns one summary per agentName/namespace.
+// AggregateAgents returns one summary per tenant/agentName/namespace.
 func (r *Registry) AggregateAgents() []AgentSummary {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	type key struct{ ns, name string }
+	type key struct{ tenant, ns, name string }
 	m := map[key]*AgentSummary{}
 	for _, e := range r.byID {
-		k := key{e.Namespace, e.AgentName}
+		k := key{e.Tenant, e.Namespace, e.AgentName}
 		s, ok := m[k]
 		if !ok {
 			s = &AgentSummary{
+				Tenant:        e.Tenant,
 				Name:          e.AgentName,
 				Namespace:     e.Namespace,
 				Runtime:       e.Runtime,
