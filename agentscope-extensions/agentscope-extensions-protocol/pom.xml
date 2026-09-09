@@ -35,6 +35,7 @@
         <module>agentscope-extensions-a2a</module>
         <module>agentscope-extensions-agui</module>
         <module>agentscope-extensions-chat-completions-web</module>
+        <module>agentscope-extensions-responses-web</module>
         <module>agentscope-extensions-agent-protocol</module>
     </modules>
 

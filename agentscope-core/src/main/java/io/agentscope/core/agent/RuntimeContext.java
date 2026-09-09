@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.Toolkit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,6 +46,9 @@ public class RuntimeContext {
      */
     private volatile AgentState agentState;
 
+    /** Toolkit used by the active agent invocation. {@code null} outside of a call. */
+    private volatile Toolkit toolkit;
+
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
 
@@ -63,6 +67,7 @@ public class RuntimeContext {
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
+        this.toolkit = builder.toolkit;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -115,6 +120,16 @@ public class RuntimeContext {
         this.agentState = agentState;
     }
 
+    /** Returns the Toolkit used by this call, or {@code null} outside an active call. */
+    public Toolkit getToolkit() {
+        return toolkit;
+    }
+
+    /** Installs the Toolkit used by this call. Called by the agent at call entry. */
+    public void setToolkit(Toolkit toolkit) {
+        this.toolkit = toolkit;
+    }
+
     /**
      * Resolves the live {@link AgentState} for the current call, preferring the call-scoped state
      * carried on {@code ctx} (concurrency-safe) and falling back to {@code fallbackAgent}'s state
@@ -131,6 +146,18 @@ public class RuntimeContext {
             return s;
         }
         return fallbackAgent != null ? fallbackAgent.getAgentState() : null;
+    }
+
+    /**
+     * Resolves the Toolkit for the current call, falling back to the agent's configured Toolkit
+     * when no invocation is active.
+     */
+    public static Toolkit resolveToolkit(RuntimeContext ctx, Agent fallbackAgent) {
+        Toolkit callToolkit = ctx != null ? ctx.getToolkit() : null;
+        if (callToolkit != null) {
+            return callToolkit;
+        }
+        return fallbackAgent != null ? fallbackAgent.getToolkit() : null;
     }
 
     /**
@@ -329,6 +356,7 @@ public class RuntimeContext {
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
+        private Toolkit toolkit;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -383,6 +411,7 @@ public class RuntimeContext {
             this.sessionId = source.sessionId;
             this.userId = source.userId;
             this.agentState = source.agentState;
+            this.toolkit = source.toolkit;
             this.toolExecutionContext = source.toolExecutionContext;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
