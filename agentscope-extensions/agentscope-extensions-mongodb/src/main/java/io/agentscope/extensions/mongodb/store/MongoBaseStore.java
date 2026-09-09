@@ -277,12 +277,12 @@ public class MongoBaseStore implements BaseStore {
     private Document toDocument(Map<String, Object> value) {
         Map<String, Object> map =
                 objectMapper.convertValue(value == null ? Map.of() : value, MAP_TYPE);
-        return new Document(map);
+        return new Document(escapeKeys(map));
     }
 
     private Map<String, Object> parseValue(Object raw) {
         if (raw instanceof Document doc) {
-            return new LinkedHashMap<>(doc);
+            return unescapeKeys(new LinkedHashMap<>(doc));
         }
         if (raw instanceof String s) {
             try {
@@ -295,6 +295,115 @@ public class MongoBaseStore implements BaseStore {
         throw new IllegalStateException(
                 "Unexpected store value type: "
                         + (raw == null ? "null" : raw.getClass().getName()));
+    }
+
+    // ────────────────── Key escaping for MongoDB field names ──────────────────
+    // MongoDB rejects '.' and '$' in field names. We escape them to fullwidth equivalents
+    // on write and restore on read, so callers are not restricted by MongoDB naming rules.
+
+    private static final char DOT_ESCAPE = '\uFF0E'; // fullwidth full stop
+    private static final char DOLLAR_ESCAPE = '\uFF04'; // fullwidth dollar sign
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> escapeKeys(Map<String, Object> map) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            String escaped = escapeKey(key);
+            if (value instanceof Map<?, ?> nested) {
+                result.put(escaped, escapeKeys((Map<String, Object>) nested));
+            } else if (value instanceof List<?> list) {
+                result.put(escaped, escapeListItems(list));
+            } else {
+                result.put(escaped, value);
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> escapeListItems(List<?> list) {
+        List<Object> result = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> nested) {
+                result.add(escapeKeys((Map<String, Object>) nested));
+            } else if (item instanceof List<?> nestedList) {
+                result.add(escapeListItems(nestedList));
+            } else {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> unescapeKeys(Map<String, Object> map) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            String unescaped = unescapeKey(key);
+            if (value instanceof Map<?, ?> nested) {
+                result.put(unescaped, unescapeKeys((Map<String, Object>) nested));
+            } else if (value instanceof List<?> list) {
+                result.put(unescaped, unescapeListItems(list));
+            } else {
+                result.put(unescaped, value);
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> unescapeListItems(List<?> list) {
+        List<Object> result = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> nested) {
+                result.add(unescapeKeys((Map<String, Object>) nested));
+            } else if (item instanceof List<?> nestedList) {
+                result.add(unescapeListItems(nestedList));
+            } else {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    private static String escapeKey(String key) {
+        if (key.indexOf('.') < 0 && key.indexOf('$') < 0) {
+            return key;
+        }
+        StringBuilder sb = new StringBuilder(key.length());
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c == '.') {
+                sb.append(DOT_ESCAPE);
+            } else if (c == '$') {
+                sb.append(DOLLAR_ESCAPE);
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String unescapeKey(String key) {
+        if (key.indexOf(DOT_ESCAPE) < 0 && key.indexOf(DOLLAR_ESCAPE) < 0) {
+            return key;
+        }
+        StringBuilder sb = new StringBuilder(key.length());
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c == DOT_ESCAPE) {
+                sb.append('.');
+            } else if (c == DOLLAR_ESCAPE) {
+                sb.append('$');
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private static UpdateOptions upsert() {

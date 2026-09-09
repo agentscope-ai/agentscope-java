@@ -15,7 +15,7 @@
  */
 package io.agentscope.extensions.mongodb.snapshot;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,30 +23,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.mongodb.MongoClientSettings;
-import com.mongodb.MongoCommandException;
 import com.mongodb.client.FindIterable;
-import com.mongodb.client.ListIndexesIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.gridfs.GridFSBucket;
+import com.mongodb.client.gridfs.GridFSDownloadStream;
+import com.mongodb.client.gridfs.GridFSFindIterable;
+import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.result.DeleteResult;
-import com.mongodb.client.result.UpdateResult;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.util.List;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.Binary;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,13 +52,16 @@ import org.mockito.MockitoAnnotations;
 
 class MongoRemoteSnapshotClientTest {
 
-    @Mock private MongoClient mongoClient;
-    @Mock private MongoDatabase mongoDatabase;
-    @Mock private MongoCollection<Document> collection;
+    @Mock private GridFSBucket gridFSBucket;
+    @Mock private MongoCollection<Document> legacyCollection;
 
     @SuppressWarnings("rawtypes")
     @Mock
-    private FindIterable findIterable;
+    private GridFSFindIterable gridFSFindIterable;
+
+    @SuppressWarnings("rawtypes")
+    @Mock
+    private FindIterable legacyFindIterable;
 
     private AutoCloseable mocks;
     private MongoRemoteSnapshotClient client;
@@ -70,18 +70,20 @@ class MongoRemoteSnapshotClientTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         mocks = MockitoAnnotations.openMocks(this);
-        when(mongoClient.getDatabase(anyString())).thenReturn(mongoDatabase);
-        when(mongoDatabase.getCollection(anyString())).thenReturn(collection);
 
-        when(collection.find(any(Bson.class))).thenReturn(findIterable);
-        when(findIterable.projection(any())).thenReturn(findIterable);
+        when(gridFSBucket.find(any(Bson.class))).thenReturn(gridFSFindIterable);
+        when(gridFSFindIterable.first()).thenReturn(null);
 
-        UpdateResult replaceResult = org.mockito.Mockito.mock(UpdateResult.class);
-        when(replaceResult.wasAcknowledged()).thenReturn(true);
-        when(collection.replaceOne(any(Bson.class), any(Document.class), any()))
-                .thenReturn(replaceResult);
+        when(legacyCollection.find(any(Bson.class))).thenReturn(legacyFindIterable);
+        when(legacyFindIterable.projection(any())).thenReturn(legacyFindIterable);
+        when(legacyFindIterable.first()).thenReturn(null);
 
-        client = new MongoRemoteSnapshotClient(mongoClient, "testdb", null, false);
+        // Mock legacy deleteOne for deleteLegacy()
+        DeleteResult legacyDeleteResult = mock(DeleteResult.class);
+        when(legacyDeleteResult.getDeletedCount()).thenReturn(0L);
+        when(legacyCollection.deleteOne(any(Bson.class))).thenReturn(legacyDeleteResult);
+
+        client = new MongoRemoteSnapshotClient(gridFSBucket, legacyCollection);
     }
 
     @AfterEach
@@ -92,18 +94,23 @@ class MongoRemoteSnapshotClientTest {
     }
 
     @Test
-    void constructorWithDefaultsCreatesClient() {
-        MongoRemoteSnapshotClient defaultClient =
-                new MongoRemoteSnapshotClient(mongoClient, null, null, false);
-        assertNotNull(defaultClient);
-    }
+    void constructorWithPublicApiCreatesClient() {
+        MongoClient mongoClient = mock(MongoClient.class);
+        MongoDatabase mongoDatabase = mock(MongoDatabase.class);
+        when(mongoClient.getDatabase(anyString())).thenReturn(mongoDatabase);
+        @SuppressWarnings("unchecked")
+        MongoCollection<Document> filesColl = mock(MongoCollection.class);
+        @SuppressWarnings("unchecked")
+        MongoCollection<Document> chunksColl = mock(MongoCollection.class);
+        when(mongoDatabase.getCollection(anyString())).thenReturn(filesColl);
+        when(mongoDatabase.getCollection(anyString(), any(Class.class)))
+                .thenReturn(filesColl, chunksColl);
+        when(filesColl.withCodecRegistry(any())).thenReturn(filesColl);
+        when(chunksColl.withCodecRegistry(any())).thenReturn(chunksColl);
 
-    @Test
-    void constructorWithInitializeSchemaCreatesIndexes() {
-        MongoRemoteSnapshotClient schemaClient =
-                new MongoRemoteSnapshotClient(mongoClient, "testdb", "custom_snapshots", true);
-        assertNotNull(schemaClient);
-        verify(mongoDatabase).getCollection("custom_snapshots");
+        MongoRemoteSnapshotClient publicClient =
+                new MongoRemoteSnapshotClient(mongoClient, "testdb", null, false);
+        assertNotNull(publicClient);
     }
 
     @Test
@@ -120,7 +127,7 @@ class MongoRemoteSnapshotClientTest {
 
         client.upload("snap-1", in);
 
-        verify(collection).replaceOne(any(Bson.class), any(Document.class), any());
+        verify(gridFSBucket).uploadFromStream(eq("snap-1"), any(InputStream.class), any());
     }
 
     @Test
@@ -136,95 +143,37 @@ class MongoRemoteSnapshotClientTest {
     }
 
     @Test
-    void uploadRejectsOversizedData() {
-        // Create a stream that exceeds MAX_SNAPSHOT_BYTES (15 MB)
-        InputStream oversized =
-                new InputStream() {
-                    private int totalRead = 0;
-                    private final int maxBytes = 15 * 1024 * 1024 + 1;
-
-                    @Override
-                    public int read() {
-                        if (totalRead >= maxBytes) {
-                            return -1;
-                        }
-                        totalRead++;
-                        return 'x';
-                    }
-
-                    @Override
-                    public int read(byte[] b, int off, int len) {
-                        if (totalRead >= maxBytes) {
-                            return -1;
-                        }
-                        int toRead = Math.min(len, maxBytes - totalRead);
-                        totalRead += toRead;
-                        Arrays.fill(b, off, off + toRead, (byte) 'x');
-                        return toRead;
-                    }
-                };
-
-        assertThrows(IOException.class, () -> client.upload("snap-1", oversized));
-    }
-
-    @Test
-    void downloadReturnsSnapshotData() throws Exception {
-        byte[] expected = "hello-snapshot".getBytes(StandardCharsets.UTF_8);
-        Document doc = new Document("data", new Binary(expected));
-        when(findIterable.first()).thenReturn(doc);
+    void downloadReturnsGridFSStream() throws Exception {
+        GridFSDownloadStream downloadStream = mock(GridFSDownloadStream.class);
+        when(downloadStream.read(any(byte[].class), any(int.class), any(int.class)))
+                .thenReturn(5)
+                .thenReturn(-1);
+        when(gridFSBucket.openDownloadStream("snap-1")).thenReturn(downloadStream);
 
         InputStream result = client.download("snap-1");
-
         assertNotNull(result);
-        byte[] actual = result.readAllBytes();
-        assertArrayEquals(expected, actual);
     }
 
     @Test
-    void downloadThrowsWhenSnapshotNotFound() {
-        when(findIterable.first()).thenReturn(null);
+    void downloadFallsBackToLegacy() throws Exception {
+        when(gridFSBucket.openDownloadStream("snap-1"))
+                .thenThrow(new com.mongodb.MongoGridFSException("File not found"));
 
-        assertThrows(FileNotFoundException.class, () -> client.download("missing-snap"));
+        byte[] expected = "legacy-data".getBytes(StandardCharsets.UTF_8);
+        Document legacyDoc = new Document("data", new Binary(expected));
+        when(legacyFindIterable.first()).thenReturn(legacyDoc);
+
+        InputStream result = client.download("snap-1");
+        assertNotNull(result);
+        assertEquals(expected.length, result.readAllBytes().length);
     }
 
     @Test
-    void downloadThrowsFileNotFoundWhenDataFieldMissing() {
-        // Document exists but carries no data field — must surface as FileNotFoundException
-        // (same as a missing snapshot), not as an NPE.
-        Document docWithoutData = new Document("_id", "snap-1");
-        when(findIterable.first()).thenReturn(docWithoutData);
+    void downloadThrowsWhenNotFoundAnywhere() {
+        when(gridFSBucket.openDownloadStream("missing"))
+                .thenThrow(new com.mongodb.MongoGridFSException("File not found"));
 
-        assertThrows(FileNotFoundException.class, () -> client.download("snap-1"));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void initSchemaMigratesConflictingTtlIndex() {
-        // Simulate an existing collection whose createdAt TTL index still has the old 7-day
-        // expireAfterSeconds: createIndex then fails with IndexOptionsConflict (error 85) and
-        // must trigger drop + recreate instead of silently keeping the stale TTL.
-        MongoCommandException conflict = mock(MongoCommandException.class);
-        when(conflict.getErrorCode()).thenReturn(85);
-        when(collection.createIndex(any(Bson.class), any(IndexOptions.class)))
-                .thenThrow(conflict)
-                .thenReturn("createdAt_1");
-
-        // listIndexes must return the conflicting index so it can be found and dropped by name
-        ListIndexesIterable<Document> listIndexesIterable = mock(ListIndexesIterable.class);
-        MongoCursor<Document> cursor = mock(MongoCursor.class);
-        Document existingIndex =
-                new Document("key", new Document("createdAt", 1)).append("name", "createdAt_1");
-        when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn(existingIndex);
-        when(listIndexesIterable.iterator()).thenReturn(cursor);
-        when(collection.listIndexes()).thenReturn(listIndexesIterable);
-        when(collection.getCodecRegistry())
-                .thenReturn(MongoClientSettings.getDefaultCodecRegistry());
-
-        new MongoRemoteSnapshotClient(mongoClient, "testdb", "snap_migrate", true);
-
-        verify(collection).dropIndex("createdAt_1");
-        verify(collection, times(2)).createIndex(any(Bson.class), any(IndexOptions.class));
+        assertThrows(FileNotFoundException.class, () -> client.download("missing"));
     }
 
     @Test
@@ -233,15 +182,25 @@ class MongoRemoteSnapshotClientTest {
     }
 
     @Test
-    void existsReturnsTrueWhenSnapshotFound() throws Exception {
-        when(findIterable.first()).thenReturn(new Document("_id", "snap-1"));
+    void existsReturnsTrueWhenInGridFS() throws Exception {
+        GridFSFile mockFile = mock(GridFSFile.class);
+        when(gridFSFindIterable.first()).thenReturn(mockFile);
 
         assertTrue(client.exists("snap-1"));
     }
 
     @Test
-    void existsReturnsFalseWhenSnapshotNotFound() throws Exception {
-        when(findIterable.first()).thenReturn(null);
+    void existsReturnsTrueWhenInLegacy() throws Exception {
+        when(gridFSFindIterable.first()).thenReturn(null);
+        when(legacyFindIterable.first()).thenReturn(new Document("_id", "snap-1"));
+
+        assertTrue(client.exists("snap-1"));
+    }
+
+    @Test
+    void existsReturnsFalseWhenNotFoundAnywhere() throws Exception {
+        when(gridFSFindIterable.first()).thenReturn(null);
+        when(legacyFindIterable.first()).thenReturn(null);
 
         assertFalse(client.exists("snap-1"));
     }
@@ -252,20 +211,22 @@ class MongoRemoteSnapshotClientTest {
     }
 
     @Test
-    void deleteReturnsTrueWhenSnapshotDeleted() throws Exception {
-        DeleteResult deleteResult = mock(DeleteResult.class);
-        when(deleteResult.getDeletedCount()).thenReturn(1L);
-        when(collection.deleteOne(any(Bson.class))).thenReturn(deleteResult);
+    void deleteReturnsTrueWhenDeletedFromGridFS() throws Exception {
+        ObjectId fileId = new ObjectId();
+        GridFSFile mockFile = mock(GridFSFile.class);
+        when(mockFile.getId()).thenReturn(new org.bson.BsonObjectId(fileId));
+        when(gridFSFindIterable.first()).thenReturn(mockFile);
 
         assertTrue(client.delete("snap-1"));
-        verify(collection).deleteOne(any(Bson.class));
+        verify(gridFSBucket).delete((org.bson.BsonValue) any());
     }
 
     @Test
-    void deleteReturnsFalseWhenSnapshotNotFound() throws Exception {
+    void deleteReturnsFalseWhenNotFoundAnywhere() throws Exception {
+        when(gridFSFindIterable.first()).thenReturn(null);
         DeleteResult deleteResult = mock(DeleteResult.class);
         when(deleteResult.getDeletedCount()).thenReturn(0L);
-        when(collection.deleteOne(any(Bson.class))).thenReturn(deleteResult);
+        when(legacyCollection.deleteOne(any(Bson.class))).thenReturn(deleteResult);
 
         assertFalse(client.delete("missing-snap"));
     }
@@ -273,5 +234,35 @@ class MongoRemoteSnapshotClientTest {
     @Test
     void deleteRejectsNullSnapshotId() {
         assertThrows(NullPointerException.class, () -> client.delete(null));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deleteBySessionIdDeletesFromGridFS() {
+        ObjectId fileId = new ObjectId();
+        GridFSFile mockFile = mock(GridFSFile.class);
+        when(mockFile.getId()).thenReturn(new org.bson.BsonObjectId(fileId));
+        when(mockFile.getFilename()).thenReturn("snap-1");
+
+        GridFSFindIterable findIterable = mock(GridFSFindIterable.class);
+        when(gridFSBucket.find(any(Bson.class))).thenReturn(findIterable);
+        when(findIterable.into(any())).thenReturn(List.of(mockFile));
+
+        DeleteResult legacyResult = mock(DeleteResult.class);
+        when(legacyResult.getDeletedCount()).thenReturn(0L);
+        when(legacyCollection.deleteMany(any(Bson.class))).thenReturn(legacyResult);
+
+        long deleted = client.deleteBySessionId("session-1");
+        assertEquals(1L, deleted);
+        verify(gridFSBucket).delete((org.bson.BsonValue) any());
+    }
+
+    @Test
+    void deleteBySessionIdRejectsNullSessionId() {
+        assertThrows(NullPointerException.class, () -> client.deleteBySessionId(null));
+    }
+
+    private static <T> T eq(T value) {
+        return org.mockito.ArgumentMatchers.eq(value);
     }
 }

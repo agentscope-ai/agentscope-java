@@ -91,6 +91,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     private final MongoClient mongoClient;
     private final boolean ownsClient;
     private final MongoCollection<Document> collection;
+    private final java.util.function.BiConsumer<String, String> onDeleteCallback;
 
     private MongoAgentStateStore(Builder builder) {
         if (builder.mongoClient != null) {
@@ -124,8 +125,9 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 
         MongoDatabase db = this.mongoClient.getDatabase(dbName);
         this.collection = db.getCollection(collName);
+        this.onDeleteCallback = builder.onDeleteCallback;
 
-        ensureIndexes();
+        ensureIndexes(builder.ttlDays);
     }
 
     public static Builder builder() {
@@ -139,18 +141,21 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 
     // ────────────────── Index Management ──────────────────
 
-    private void ensureIndexes() {
+    private void ensureIndexes(Integer ttlDays) {
         MongoIndexUtils.createIndexWithMigration(
                 collection,
                 Indexes.compoundIndex(
                         Indexes.ascending(FIELD_USER_ID), Indexes.ascending(FIELD_SESSION_ID)),
                 new IndexOptions());
 
-        long ttlSeconds = 30L * 24 * 3600;
-        MongoIndexUtils.createIndexWithMigration(
-                collection,
-                Indexes.ascending(FIELD_UPDATED_AT),
-                new IndexOptions().expireAfter(ttlSeconds, TimeUnit.SECONDS).sparse(true));
+        // Session TTL is opt-in, aligned with Postgres/JDBC/Redis (no forced expiry by default).
+        if (ttlDays != null && ttlDays > 0) {
+            long ttlSeconds = (long) ttlDays * 24 * 3600;
+            MongoIndexUtils.createIndexWithMigration(
+                    collection,
+                    Indexes.ascending(FIELD_UPDATED_AT),
+                    new IndexOptions().expireAfter(ttlSeconds, TimeUnit.SECONDS).sparse(true));
+        }
     }
 
     // ────────────────── Single Value CRUD ──────────────────
@@ -462,6 +467,9 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     @Override
     public void delete(String userId, String sessionId) {
         Document slotId = slotId(userId, sessionId);
+        if (onDeleteCallback != null) {
+            onDeleteCallback.accept(userId, sessionId);
+        }
         collection.deleteOne(Filters.eq(slotId));
     }
 
@@ -573,6 +581,8 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         private String connectionString;
         private String databaseName;
         private String collectionName;
+        private Integer ttlDays;
+        private java.util.function.BiConsumer<String, String> onDeleteCallback;
 
         /**
          * Use an existing {@link MongoClient}. The caller owns its lifecycle; {@link
@@ -621,6 +631,37 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
          */
         public Builder collectionName(String collectionName) {
             this.collectionName = collectionName;
+            return this;
+        }
+
+        /**
+         * Optional session TTL in days. When set to a positive value, a TTL index is created on
+         * {@code _updated_at} so MongoDB automatically removes documents that have not been updated
+         * within the specified number of days.
+         *
+         * <p>Defaults to {@code null} (no TTL), aligned with Postgres/JDBC/Redis which retain
+         * sessions indefinitely by default.
+         *
+         * @param ttlDays number of days, or {@code null} to disable automatic expiry
+         * @return this builder
+         */
+        public Builder ttlDays(Integer ttlDays) {
+            this.ttlDays = ttlDays;
+            return this;
+        }
+
+        /**
+         * Optional callback invoked before a session document is deleted via {@link
+         * MongoAgentStateStore#delete(String, String)}. Receives the userId and sessionId.
+         * Used by {@link io.agentscope.extensions.mongodb.MongoDistributedStore} to
+         * cascade-delete associated snapshots.
+         *
+         * @param onDeleteCallback the callback (userId, sessionId) to run before session deletion
+         * @return this builder
+         */
+        public Builder onDeleteCallback(
+                java.util.function.BiConsumer<String, String> onDeleteCallback) {
+            this.onDeleteCallback = onDeleteCallback;
             return this;
         }
 

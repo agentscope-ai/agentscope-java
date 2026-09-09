@@ -45,9 +45,14 @@ public final class MongoIndexUtils {
      * <ol>
      *   <li>Calls {@code listIndexes()} to find the existing index whose key pattern matches
      *       {@code indexKeys}.</li>
-     *   <li>Drops that index by its actual name (not a guessed default).</li>
+     *   <li>Drops that index by its actual name (not a guessed default), tolerating "index not
+     *       found" if another node already dropped it.</li>
      *   <li>Re-creates the index with the new definition.</li>
      * </ol>
+     *
+     * <p>The drop + recreate path is fault-tolerant for multi-node startup: if another node
+     * concurrently drops or recreates the same index, the operation degrades to a harmless
+     * no-op rather than failing the application bootstrap.
      *
      * @param collection  the MongoDB collection
      * @param indexKeys   the index key specification (e.g. {@code Indexes.ascending("field")})
@@ -61,16 +66,56 @@ public final class MongoIndexUtils {
             if (e.getErrorCode() != 85) {
                 throw e;
             }
-            String conflictingName = findIndexNameByKeyPattern(collection, indexKeys);
-            if (conflictingName == null) {
+            migrateConflictingIndex(collection, indexKeys, options);
+        }
+    }
+
+    /**
+     * Handles error 85 by dropping the conflicting index and recreating with new options.
+     * Both the drop and the recreate are fault-tolerant: if another node concurrently drops
+     * or recreates the same index, the operation succeeds idempotently.
+     */
+    private static void migrateConflictingIndex(
+            MongoCollection<Document> collection, Bson indexKeys, IndexOptions options) {
+        String conflictingName = findIndexNameByKeyPattern(collection, indexKeys);
+        if (conflictingName == null) {
+            // Index was already dropped by another node — try creating directly.
+            collection.createIndex(indexKeys, options);
+            return;
+        }
+        log.info(
+                "[mongo-index] Index conflict (error 85), dropping '{}' and recreating"
+                        + " with new options",
+                conflictingName);
+        dropIndexTolerant(collection, conflictingName);
+        try {
+            collection.createIndex(indexKeys, options);
+        } catch (MongoCommandException retryEx) {
+            if (retryEx.getErrorCode() == 85) {
+                // Another node created a different conflicting index in the meantime.
+                // Log and propagate — a third attempt at next startup will succeed.
+                log.warn(
+                        "[mongo-index] Second conflict (error 85) after drop — index"
+                                + " recreation race with another node; propagating",
+                        retryEx);
+            }
+            throw retryEx;
+        }
+    }
+
+    /**
+     * Drops an index by name, tolerating "index not found" (code 27) and "ns not found"
+     * errors that occur when another node concurrently dropped the same index.
+     */
+    private static void dropIndexTolerant(MongoCollection<Document> collection, String name) {
+        try {
+            collection.dropIndex(name);
+        } catch (MongoCommandException e) {
+            if (e.getErrorCode() == 27 || e.getMessage().contains("ns not found")) {
+                log.debug("[mongo-index] Index '{}' already dropped by another node", name);
+            } else {
                 throw e;
             }
-            log.info(
-                    "[mongo-index] Index conflict (error 85), dropping '{}' and recreating"
-                            + " with new options",
-                    conflictingName);
-            collection.dropIndex(conflictingName);
-            collection.createIndex(indexKeys, options);
         }
     }
 

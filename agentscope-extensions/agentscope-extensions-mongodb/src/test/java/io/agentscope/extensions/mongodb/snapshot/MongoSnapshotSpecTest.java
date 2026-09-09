@@ -16,6 +16,7 @@
 package io.agentscope.extensions.mongodb.snapshot;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -38,10 +39,14 @@ class MongoSnapshotSpecTest {
     private AutoCloseable mocks;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         mocks = MockitoAnnotations.openMocks(this);
         when(mongoClient.getDatabase(anyString())).thenReturn(mongoDatabase);
         when(mongoDatabase.getCollection(anyString())).thenReturn(collection);
+        // GridFSBuckets.create() needs getCollection(name, Class) + withCodecRegistry
+        when(mongoDatabase.getCollection(anyString(), any(Class.class))).thenReturn(collection);
+        when(collection.withCodecRegistry(any())).thenReturn(collection);
     }
 
     @AfterEach

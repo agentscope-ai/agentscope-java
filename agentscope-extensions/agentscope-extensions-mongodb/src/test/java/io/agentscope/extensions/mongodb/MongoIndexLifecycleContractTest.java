@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
 import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
 import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
 import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
@@ -59,7 +58,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class MongoIndexLifecycleContractTest {
 
     private static final long THIRTY_DAYS_SECONDS = 30L * 24 * 3600;
-    private static final long SEVEN_DAYS_SECONDS = 7L * 24 * 3600;
 
     @Container static final MongoDBContainer mongoContainer = new MongoDBContainer("mongo:7");
 
@@ -111,54 +109,43 @@ class MongoIndexLifecycleContractTest {
 
     @Test
     @Order(2)
-    @DisplayName("AgentStateStore: TTL index on _updated_at with 30-day expiry and sparse")
-    void agentStateStore_ttlIndex_30days() {
+    @DisplayName("AgentStateStore: no TTL index by default (aligned with Postgres/JDBC/Redis)")
+    void agentStateStore_noTtlByDefault() {
         Map<String, Document> indexes = indexMap(dbName, "idx_sessions");
 
         Document ttlIndex = indexes.get("_updated_at_1");
-        assertNotNull(ttlIndex, "TTL index '_updated_at_1' must exist");
         assertEquals(
-                THIRTY_DAYS_SECONDS,
-                ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
-                "TTL must be 30 days (2592000s), not 0");
-        assertEquals(true, ttlIndex.getBoolean("sparse"), "TTL index must be sparse");
+                null,
+                ttlIndex,
+                "TTL index must NOT exist by default — sessions are retained indefinitely,"
+                        + " aligned with Postgres/JDBC/Redis");
     }
 
     @Test
     @Order(3)
-    @DisplayName("AgentStateStore: upgrade from old TTL=0 index does not throw")
-    void agentStateStore_ttlUpgrade_fromZero() {
-        String upgradeDb = "test_idx_upgrade_" + System.currentTimeMillis();
-        String collName = "upgrade_sessions";
+    @DisplayName("AgentStateStore: opt-in TTL creates index with specified days")
+    void agentStateStore_optInTtl() {
+        String ttlDb = "test_idx_ttl_optin_" + System.currentTimeMillis();
+        String collName = "ttl_sessions";
 
-        // Phase 1: simulate old code — create TTL index with expireAfterSeconds=0
-        MongoDatabase upgradeDbRef = client.getDatabase(upgradeDb);
-        upgradeDbRef
-                .getCollection(collName)
-                .createIndex(
-                        new org.bson.Document("_updated_at", 1),
-                        new com.mongodb.client.model.IndexOptions()
-                                .expireAfter(0L, java.util.concurrent.TimeUnit.SECONDS)
-                                .sparse(true));
-
-        // Phase 2: new code constructor runs ensureIndexes() — must not throw error 85
         MongoAgentStateStore.builder()
                 .mongoClient(client)
-                .databaseName(upgradeDb)
+                .databaseName(ttlDb)
                 .collectionName(collName)
+                .ttlDays(30)
                 .build();
 
-        // Phase 3: verify index was upgraded to 30 days
-        Map<String, Document> indexes = indexMap(upgradeDb, collName);
+        Map<String, Document> indexes = indexMap(ttlDb, collName);
         Document ttlIndex = indexes.get("_updated_at_1");
-        assertNotNull(ttlIndex);
+        assertNotNull(ttlIndex, "TTL index must exist when ttlDays=30");
         assertEquals(
                 THIRTY_DAYS_SECONDS,
                 ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
-                "After upgrade, TTL must be 30 days");
+                "TTL must be 30 days (2592000s)");
+        assertEquals(true, ttlIndex.getBoolean("sparse"), "TTL index must be sparse");
 
         // Cleanup
-        upgradeDbRef.drop();
+        client.getDatabase(ttlDb).drop();
     }
 
     // ────────────────── BaseStore indexes ──────────────────
@@ -221,69 +208,20 @@ class MongoIndexLifecycleContractTest {
 
     @Test
     @Order(6)
-    @DisplayName("RemoteSnapshotClient: TTL index on createdAt with 30-day expiry")
-    void snapshotClient_ttlIndex_30days() {
+    @DisplayName("RemoteSnapshotClient: no TTL index on snapshots (aligned with siblings)")
+    void snapshotClient_noTtlIndex() {
         new MongoRemoteSnapshotClient(client, dbName, "idx_snapshots", true);
 
         Map<String, Document> indexes = indexMap(dbName, "idx_snapshots");
 
-        Document ttlIndex =
-                indexes.values().stream()
-                        .filter(
-                                i -> {
-                                    Object key = i.get("key");
-                                    return key instanceof Document d && d.containsKey("createdAt");
-                                })
-                        .findFirst()
-                        .orElse(null);
-
-        assertNotNull(ttlIndex, "TTL index on 'createdAt' must exist");
+        boolean hasTtl =
+                indexes.values().stream().anyMatch(i -> i.containsKey("expireAfterSeconds"));
         assertEquals(
-                THIRTY_DAYS_SECONDS,
-                ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
-                "Snapshot TTL must be 30 days (2592000s), aligned with the session TTL —"
-                        + " a snapshot must not be reclaimed while its session is still alive");
-    }
-
-    @Test
-    @Order(7)
-    @DisplayName("RemoteSnapshotClient: upgrade from old 7-day TTL index does not throw")
-    void snapshotClient_ttlUpgrade_fromSevenDays() {
-        String upgradeDb = "test_idx_snap_upgrade_" + System.currentTimeMillis();
-        String collName = "upgrade_snapshots";
-
-        // Phase 1: simulate old code — create TTL index with the previous 7-day expiry
-        MongoDatabase upgradeDbRef = client.getDatabase(upgradeDb);
-        upgradeDbRef
-                .getCollection(collName)
-                .createIndex(
-                        new org.bson.Document("createdAt", 1),
-                        new com.mongodb.client.model.IndexOptions()
-                                .expireAfter(
-                                        SEVEN_DAYS_SECONDS, java.util.concurrent.TimeUnit.SECONDS));
-
-        // Phase 2: new code constructor runs initSchema() — must not throw error 85
-        new MongoRemoteSnapshotClient(client, upgradeDb, collName, true);
-
-        // Phase 3: verify index was upgraded to 30 days
-        Map<String, Document> indexes = indexMap(upgradeDb, collName);
-        Document ttlIndex =
-                indexes.values().stream()
-                        .filter(
-                                i -> {
-                                    Object key = i.get("key");
-                                    return key instanceof Document d && d.containsKey("createdAt");
-                                })
-                        .findFirst()
-                        .orElse(null);
-        assertNotNull(ttlIndex);
-        assertEquals(
-                THIRTY_DAYS_SECONDS,
-                ((Number) ttlIndex.get("expireAfterSeconds")).longValue(),
-                "After upgrade, snapshot TTL must be 30 days");
-
-        // Cleanup
-        upgradeDbRef.drop();
+                false,
+                hasTtl,
+                "Snapshot collection must NOT have any TTL index — aligned with Postgres/JDBC/Redis"
+                    + " which have no independent snapshot expiry. Snapshots are cleaned up only"
+                    + " via cascade delete when the session is removed.");
     }
 
     // ────────────────── Helpers ──────────────────

@@ -15,55 +15,59 @@
  */
 package io.agentscope.extensions.mongodb.snapshot;
 
+import com.mongodb.MongoGridFSException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.gridfs.GridFSBucket;
+import com.mongodb.client.gridfs.GridFSBuckets;
+import com.mongodb.client.gridfs.model.GridFSFile;
+import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.IndexOptions;
-import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
-import com.mongodb.client.model.ReplaceOptions;
 import io.agentscope.extensions.mongodb.MongoConstants;
-import io.agentscope.extensions.mongodb.MongoIndexUtils;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.Date;
+import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import org.bson.Document;
 import org.bson.types.Binary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link RemoteSnapshotClient} backed by a MongoDB collection.
+ * {@link RemoteSnapshotClient} backed by MongoDB GridFS.
  *
- * <p>Stores sandbox workspace tar archives as BSON Binary in a collection with documents of the
- * form {@code {_id: snapshotId, data: Binary, createdAt: Date}}.
+ * <p>Stores sandbox workspace tar archives in GridFS, which transparently chunks data into
+ * 255 KB segments and supports files up to 16 GB — removing the 16 MB BSON document limit
+ * that constrains single-document Binary storage.
  *
- * <p>The collection carries a TTL index on {@code createdAt} with a 30-day expiry, aligned with
- * the 30-day session TTL of {@code MongoAgentStateStore}. The snapshot of a session must not be
- * reclaimed while the session itself is still alive; otherwise resuming the sandbox would fail
- * with {@link FileNotFoundException} and appear as lost workspace data.
+ * <p>Snapshots have no independent TTL — aligned with Postgres/JDBC/Redis which retain
+ * snapshots indefinitely. Snapshots are cleaned up only via {@link #deleteBySessionId(String)}
+ * when the owning session is explicitly deleted (cascade cleanup).
+ *
+ * <p>For backward compatibility, {@link #download} and {@link #exists} fall back to reading
+ * from the legacy single-document collection if the file is not found in GridFS.
  */
 public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static final Logger log = LoggerFactory.getLogger(MongoRemoteSnapshotClient.class);
 
-    private static final String FIELD_DATA = "data";
-    private static final String FIELD_CREATED_AT = "createdAt";
-    // Aligned with the session TTL in MongoAgentStateStore (30 days on _updated_at): a snapshot
-    // must live at least as long as the session that can resume it.
-    private static final long SNAPSHOT_TTL_SECONDS = 30L * 24 * 3600;
-    // MongoDB BSON document size limit is 16 MB; cap at 15 MB to leave headroom for
-    // metadata. For larger snapshots, use GridFS (not yet implemented).
-    private static final int MAX_SNAPSHOT_BYTES = 15 * 1024 * 1024; // 15 MB
+    private static final String META_SESSION_ID = "sessionId";
+    private static final String META_CREATED_AT = "createdAt";
+    private static final String LEGACY_FIELD_DATA = "data";
+    private static final String LEGACY_FIELD_SESSION_ID = "sessionId";
+    private static final String GRIDFS_FIELD_FILENAME = "filename";
 
-    private final MongoCollection<Document> collection;
+    private final GridFSBucket gridFSBucket;
+    // Legacy collection stores snapshots as single BSON documents {_id, data: Binary}.
+    // GridFS uses <bucketName>.files and <bucketName>.chunks — the original collection
+    // is distinct and must be checked for backward compatibility.
+    private final MongoCollection<Document> legacyCollection;
+    private final String legacyCollectionName;
 
     public MongoRemoteSnapshotClient(
             MongoClient mongoClient,
@@ -71,89 +75,171 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
             String collectionName,
             boolean initializeSchema) {
         Objects.requireNonNull(mongoClient, "mongoClient");
-        String coll = collectionName != null ? collectionName : MongoConstants.SNAPSHOTS_COLLECTION;
+        this.legacyCollectionName =
+                collectionName != null ? collectionName : MongoConstants.SNAPSHOTS_COLLECTION;
         MongoDatabase db =
                 mongoClient.getDatabase(
                         databaseName != null ? databaseName : MongoConstants.DEFAULT_DATABASE);
-        this.collection = db.getCollection(coll);
-        if (initializeSchema) {
-            initSchema();
-        }
+        this.gridFSBucket = GridFSBuckets.create(db, legacyCollectionName);
+        this.legacyCollection = db.getCollection(legacyCollectionName);
     }
 
-    private void initSchema() {
-        MongoIndexUtils.createIndexWithMigration(
-                collection,
-                Indexes.ascending(FIELD_CREATED_AT),
-                new IndexOptions().expireAfter(SNAPSHOT_TTL_SECONDS, TimeUnit.SECONDS));
+    /**
+     * Package-private constructor for unit testing with pre-built dependencies.
+     */
+    MongoRemoteSnapshotClient(
+            GridFSBucket gridFSBucket, MongoCollection<Document> legacyCollection) {
+        this.gridFSBucket = gridFSBucket;
+        this.legacyCollection = legacyCollection;
+        this.legacyCollectionName = null;
     }
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
+        upload(snapshotId, data, null);
+    }
+
+    /**
+     * Uploads a snapshot to GridFS with an optional session association. When {@code sessionId}
+     * is non-null, it is stored as GridFS metadata so that {@link #deleteBySessionId(String)}
+     * can cascade-delete all snapshots for a given session.
+     *
+     * @param snapshotId the snapshot identifier (used as GridFS filename)
+     * @param data the snapshot data stream
+     * @param sessionId optional session identifier for cascade cleanup
+     */
+    public void upload(String snapshotId, InputStream data, String sessionId) throws Exception {
         Objects.requireNonNull(snapshotId, "snapshotId");
         Objects.requireNonNull(data, "data");
-        byte[] bytes = readAllBounded(data, MAX_SNAPSHOT_BYTES);
-        Document doc =
-                new Document(FIELD_DATA, new Binary(bytes)).append(FIELD_CREATED_AT, new Date());
-        collection.replaceOne(Filters.eq(snapshotId), doc, new ReplaceOptions().upsert(true));
+
+        // Delete any existing file with the same id (upsert semantics).
+        deleteIfExists(snapshotId);
+
+        Document metadata = new Document(META_CREATED_AT, new Date());
+        if (sessionId != null) {
+            metadata.append(META_SESSION_ID, sessionId);
+        }
+        GridFSUploadOptions options = new GridFSUploadOptions().metadata(metadata);
+        gridFSBucket.uploadFromStream(snapshotId, data, options);
     }
 
     @Override
     public InputStream download(String snapshotId) throws Exception {
         Objects.requireNonNull(snapshotId, "snapshotId");
+        try {
+            return gridFSBucket.openDownloadStream(snapshotId);
+        } catch (MongoGridFSException e) {
+            // Fall back to legacy single-document storage for backward compatibility.
+            return downloadLegacy(snapshotId);
+        }
+    }
+
+    @Override
+    public boolean exists(String snapshotId) throws Exception {
+        Objects.requireNonNull(snapshotId, "snapshotId");
+        // GridFS _id is auto-generated ObjectId; search by filename instead.
+        GridFSFile file = gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+        if (file != null) {
+            return true;
+        }
+        // Fall back to legacy single-document check.
+        return existsLegacy(snapshotId);
+    }
+
+    /**
+     * Deletes a snapshot from GridFS.
+     *
+     * @param snapshotId the snapshot identifier (stored as GridFS filename)
+     * @return {@code true} if a file was deleted, {@code false} if no matching snapshot existed
+     * @throws Exception if a MongoDB error occurs
+     */
+    public boolean delete(String snapshotId) throws Exception {
+        Objects.requireNonNull(snapshotId, "snapshotId");
+        GridFSFile file = gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+        if (file == null) {
+            return deleteLegacy(snapshotId);
+        }
+        gridFSBucket.delete(file.getId());
+        // Also clean up legacy document if it exists (migration scenario).
+        deleteLegacy(snapshotId);
+        return true;
+    }
+
+    /**
+     * Deletes all snapshots associated with the given session. Used for cascade cleanup when
+     * a session is deleted. Searches both GridFS metadata and legacy documents.
+     *
+     * @param sessionId the session identifier
+     * @return the number of snapshots deleted
+     */
+    public long deleteBySessionId(String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        long count = 0;
+        // Delete from GridFS by metadata.
+        List<GridFSFile> files =
+                gridFSBucket
+                        .find(Filters.eq("metadata." + META_SESSION_ID, sessionId))
+                        .into(new java.util.ArrayList<>());
+        for (GridFSFile file : files) {
+            try {
+                gridFSBucket.delete(file.getId());
+                count++;
+            } catch (Exception e) {
+                log.warn(
+                        "[mongo-snapshot] Failed to delete GridFS file '{}' for session {}",
+                        file.getFilename(),
+                        sessionId,
+                        e);
+            }
+        }
+        // Also clean up legacy documents.
+        count +=
+                legacyCollection
+                        .deleteMany(Filters.eq(LEGACY_FIELD_SESSION_ID, sessionId))
+                        .getDeletedCount();
+        return count;
+    }
+
+    private void deleteIfExists(String snapshotId) {
+        try {
+            GridFSFile existing =
+                    gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+            if (existing != null) {
+                gridFSBucket.delete(existing.getId());
+            }
+        } catch (MongoGridFSException ignored) {
+            // File does not exist — safe to proceed.
+        }
+    }
+
+    // ────────────────── Legacy single-document fallback ──────────────────
+
+    private InputStream downloadLegacy(String snapshotId) throws FileNotFoundException {
         Document doc =
-                collection
-                        .find(Filters.eq(snapshotId))
-                        .projection(Projections.include(FIELD_DATA))
+                legacyCollection
+                        .find(Filters.eq("_id", snapshotId))
+                        .projection(Projections.include(LEGACY_FIELD_DATA))
                         .first();
         if (doc == null) {
             throw new FileNotFoundException("Snapshot not found in MongoDB: " + snapshotId);
         }
-        Binary binary = doc.get(FIELD_DATA, Binary.class);
+        Binary binary = doc.get(LEGACY_FIELD_DATA, Binary.class);
         if (binary == null) {
-            // Document exists but carries no data (e.g. corrupted or manually edited). Treat
-            // it the same as a missing snapshot instead of failing with an NPE.
             throw new FileNotFoundException(
                     "Snapshot document has no data field in MongoDB: " + snapshotId);
         }
         return new ByteArrayInputStream(binary.getData());
     }
 
-    @Override
-    public boolean exists(String snapshotId) throws Exception {
-        Objects.requireNonNull(snapshotId, "snapshotId");
-        return collection
-                        .find(Filters.eq(snapshotId))
+    private boolean existsLegacy(String snapshotId) {
+        return legacyCollection
+                        .find(Filters.eq("_id", snapshotId))
                         .projection(Projections.include("_id"))
                         .first()
                 != null;
     }
 
-    /**
-     * Deletes a snapshot from MongoDB.
-     *
-     * @param snapshotId the snapshot identifier
-     * @return {@code true} if a document was deleted, {@code false} if no matching snapshot existed
-     * @throws Exception if a MongoDB error occurs
-     */
-    public boolean delete(String snapshotId) throws Exception {
-        Objects.requireNonNull(snapshotId, "snapshotId");
-        return collection.deleteOne(Filters.eq(snapshotId)).getDeletedCount() > 0;
-    }
-
-    private static byte[] readAllBounded(InputStream in, int maxBytes) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
-        byte[] buf = new byte[8192];
-        int total = 0;
-        int n;
-        while ((n = in.read(buf)) != -1) {
-            total += n;
-            if (total > maxBytes) {
-                throw new IOException(
-                        "Snapshot size exceeds maximum allowed (" + maxBytes + " bytes)");
-            }
-            out.write(buf, 0, n);
-        }
-        return out.toByteArray();
+    private boolean deleteLegacy(String snapshotId) {
+        return legacyCollection.deleteOne(Filters.eq("_id", snapshotId)).getDeletedCount() > 0;
     }
 }

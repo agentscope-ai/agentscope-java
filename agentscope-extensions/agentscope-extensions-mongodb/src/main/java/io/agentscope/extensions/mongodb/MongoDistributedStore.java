@@ -22,6 +22,7 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
+import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
 import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
 import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
 import io.agentscope.extensions.mongodb.store.MongoBaseStore;
@@ -137,12 +138,38 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
                                     .mongoClient(mongoClient)
                                     .databaseName(databaseName)
                                     .collectionName(MongoConstants.SESSIONS_COLLECTION)
+                                    .onDeleteCallback(this::cascadeDeleteSnapshots)
                                     .build();
                     cachedAgentStateStore = result;
                 }
             }
         }
         return result;
+    }
+
+    /**
+     * Cascade-deletes snapshots associated with the session being deleted. This ensures
+     * snapshots are only reclaimed when their owning session is explicitly removed, aligned
+     * with Postgres/JDBC/Redis which have no independent snapshot expiry.
+     */
+    private void cascadeDeleteSnapshots(String userId, String sessionId) {
+        try {
+            MongoRemoteSnapshotClient snapshotClient =
+                    new MongoRemoteSnapshotClient(
+                            mongoClient, databaseName, MongoConstants.SNAPSHOTS_COLLECTION, false);
+            long deleted = snapshotClient.deleteBySessionId(sessionId);
+            if (deleted > 0) {
+                log.info(
+                        "[mongo-cascade] Deleted {} snapshot(s) for session {}",
+                        deleted,
+                        sessionId);
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[mongo-cascade] Failed to cascade-delete snapshots for session {}",
+                    sessionId,
+                    e);
+        }
     }
 
     @Override
