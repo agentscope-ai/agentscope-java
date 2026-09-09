@@ -119,9 +119,24 @@ public class JedisAgentStateStore implements AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersionOnly(userId, sessionId, key);
         }
         return evalSave(userId, sessionId, key, value, Long.toString(expectedVersion));
+    }
+
+    private long readVersionOnly(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+        try (Jedis jedis = jedisPool.getResource()) {
+            String json = jedis.get(redisKey);
+            if (json == null) {
+                return 0L;
+            }
+            return RedisStateVersionSupport.parseVersion(json, jedis.get(versionKey));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version for state: " + key, e);
+        }
     }
 
     private long evalSave(

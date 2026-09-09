@@ -125,9 +125,26 @@ public class RedissonAgentStateStore implements AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersionOnly(userId, sessionId, key);
         }
         return evalSave(userId, sessionId, key, value, Long.toString(expectedVersion));
+    }
+
+    private long readVersionOnly(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+        try {
+            RBucket<String> bucket = redissonClient.getBucket(redisKey, StringCodec.INSTANCE);
+            String json = bucket.get();
+            if (json == null) {
+                return 0L;
+            }
+            RBucket<String> versionBucket = redissonClient.getBucket(versionKey, StringCodec.INSTANCE);
+            return RedisStateVersionSupport.parseVersion(json, versionBucket.get());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version for state: " + key, e);
+        }
     }
 
     private long evalSave(
