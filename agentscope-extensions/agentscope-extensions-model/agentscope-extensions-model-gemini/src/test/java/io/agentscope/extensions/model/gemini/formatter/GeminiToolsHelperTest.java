@@ -175,10 +175,20 @@ class GeminiToolsHelperTest {
         Schema valueSchema =
                 helper.convertParametersToSchema(parameters).properties().get().get("value");
 
-        assertTrue(valueSchema.nullable().get());
+        assertTrue(valueSchema.nullable().orElse(false));
         assertEquals(2, valueSchema.anyOf().get().size());
         assertEquals(Type.Known.STRING, valueSchema.anyOf().get().get(0).type().get().knownEnum());
         assertEquals(Type.Known.INTEGER, valueSchema.anyOf().get().get(1).type().get().knownEnum());
+    }
+
+    @Test
+    void testTypeArrayNullabilityCannotBeOverriddenByFalseMetadata() {
+        Map<String, Object> parameters =
+                Map.of("type", List.of("string", "null"), "nullable", false);
+
+        Schema schema = helper.convertParametersToSchema(parameters);
+
+        assertTrue(schema.nullable().orElse(false));
     }
 
     @Test
@@ -226,6 +236,7 @@ class GeminiToolsHelperTest {
 
         assertTrue(valueSchema.type().isEmpty());
         assertEquals(2, valueSchema.anyOf().get().size());
+        assertTrue(valueSchema.nullable().orElse(false));
         assertEquals(Type.Known.STRING, valueSchema.anyOf().get().get(0).type().get().knownEnum());
         assertEquals(Type.Known.INTEGER, valueSchema.anyOf().get().get(1).type().get().knownEnum());
     }
@@ -243,6 +254,7 @@ class GeminiToolsHelperTest {
 
         assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
         assertTrue(schema.anyOf().isEmpty());
+        assertTrue(schema.nullable().orElse(false));
     }
 
     @Test
@@ -271,6 +283,7 @@ class GeminiToolsHelperTest {
 
         assertEquals(Type.Known.STRING, valueSchema.type().get().knownEnum());
         assertTrue(valueSchema.anyOf().isEmpty());
+        assertTrue(valueSchema.nullable().orElse(false));
         assertEquals("Optional value", valueSchema.description().get());
     }
 

@@ -130,6 +130,10 @@ public class GeminiToolsHelper {
             schemaBuilder.type(new Type(Type.Known.OBJECT));
         }
 
+        if (Boolean.TRUE.equals(parameters.get("nullable"))) {
+            schemaBuilder.nullable(true);
+        }
+
         // Set description
         if (parameters.containsKey("description")) {
             schemaBuilder.description((String) parameters.get("description"));
@@ -232,6 +236,7 @@ public class GeminiToolsHelper {
         } else {
             normalized.put("anyOf", nonNullSchemas);
         }
+        normalized.put("nullable", true);
         return normalized;
     }
 
