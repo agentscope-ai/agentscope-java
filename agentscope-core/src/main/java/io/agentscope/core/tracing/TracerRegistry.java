@@ -37,6 +37,11 @@ import reactor.util.context.Context;
  * propagation for all
  * Reactor pipelines.
  *
+ * <p><b>Migration:</b> New applications should configure an OpenTelemetry SDK through
+ * {@code OpenTelemetrySdk.builder().setTracerProvider(...).buildAndRegisterGlobal()}, then attach
+ * {@link OtelTracingMiddleware} to each agent. The middleware reads the globally registered
+ * OpenTelemetry instance directly, so new code should not call {@link #register(Tracer)}.
+ *
  * @deprecated since 2.0.0. Use {@link OtelTracingMiddleware} instead.
  */
 @Deprecated(forRemoval = true, since = "2.0.0")
@@ -142,6 +147,12 @@ public class TracerRegistry {
 
     private static volatile Tracer tracer = new NoopTracer();
 
+    /**
+     * Registers a tracer for the legacy global tracing path.
+     *
+     * <p>New code should register an OpenTelemetry SDK globally and attach {@link
+     * OtelTracingMiddleware} to the agent instead.
+     */
     public static void register(Tracer tracer) {
         TracerRegistry.tracer = tracer;
         if (tracer instanceof NoopTracer) {

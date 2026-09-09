@@ -70,6 +70,14 @@ public class ObjectStoreTranscriptStore implements TranscriptStore {
         return new ObjectStoreTranscriptStore(filesystem, rc, rootPrefix);
     }
 
+    /**
+     * Returns a store that writes through {@code filesystem} while preserving this store's runtime
+     * context and root prefix. Used when session mirrors pin a sandbox reference for async upload.
+     */
+    public ObjectStoreTranscriptStore withFilesystem(AbstractFilesystem filesystem) {
+        return new ObjectStoreTranscriptStore(filesystem, rc, rootPrefix);
+    }
+
     @Override
     public String appendSegment(
             TranscriptRef ref, long seqStart, long seqEnd, String writerId, byte[] jsonl) {

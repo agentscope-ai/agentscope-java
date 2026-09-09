@@ -360,10 +360,16 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          * @param output output event from agent stream execute.
          */
         void doOnNext(AgentEvent output) {
-            LoggerUtil.debug(log, "[{}] Handle Agent execute outputs: ", context.getTaskId());
-            LoggerUtil.debug(log, "[{}] Agent event: {}", context.getTaskId(), output);
-            appendToAccumulatedOutput(output);
-            handleEvent(output);
+            LoggerUtil.debug(
+                    log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
+            Msg responseMessage =
+                    output instanceof LegacyAgentEvent
+                            ? (isNoResponseEvent(output) ? null : convertToMsg(output))
+                            : convertToResponseMessage(output);
+            if (responseMessage != null) {
+                accumulatedOutput.add(responseMessage);
+            }
+            handleEvent(output, responseMessage);
             if (output instanceof LegacyAgentEvent legacyEvent) {
                 lastLegacyEventMsgId = legacyEvent.legacyEvent.getMessageId();
             }
@@ -387,27 +393,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             errorMessage, context.getContextId(), context.getTaskId()));
         }
 
-        private void appendToAccumulatedOutput(AgentEvent output) {
-            if (isNoResponseEvent(output)) {
-                return;
-            }
-            Msg outputMessage = convertToMsg(output);
-            if (outputMessage != null) {
-                accumulatedOutput.add(outputMessage);
-            }
-        }
-
         /**
          * Determines whether the given event should not be sent as a response to the A2A client,
-         * for example, tool-call-related events or duplicate result messages.
-         *
-         * <p>These events will be ignored and no response will be sent to the A2A client when this
-         * method returns {@code true}:
-         *
-         * <ul>
-         *     <li>The event type is not in the required event set that is generated from properties.</li>
-         *     <li>The event is not one of the response-bearing fine-grained event types.</li>
-         * </ul>
+         * for example, lifecycle events, tool-call-related events, or duplicate result messages.
          *
          * @param output agent output event
          * @return {@code true} if the event should not be responded to, otherwise {@code false}.
@@ -423,12 +411,90 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             return Objects.equals(lastLegacyEventMsgId, legacyEvent.legacyEvent.getMessageId());
         }
 
+        private Msg convertToResponseMessage(AgentEvent output) {
+            if (isNoResponseEvent(output)) {
+                return null;
+            }
+            if (output instanceof TextBlockDeltaEvent event) {
+                return assistantMessage(
+                        event,
+                        event.getReplyId(),
+                        TextBlock.builder().text(event.getDelta()).build());
+            }
+            if (output instanceof ThinkingBlockDeltaEvent event) {
+                return assistantMessage(
+                        event,
+                        event.getReplyId(),
+                        ThinkingBlock.builder().thinking(event.getDelta()).build());
+            }
+            if (output instanceof ToolResultTextDeltaEvent event) {
+                return toolResultMessage(
+                        event,
+                        event.getReplyId(),
+                        ToolResultBlock.builder()
+                                .id(event.getToolCallId())
+                                .name(event.getToolCallName())
+                                .output(TextBlock.builder().text(event.getDelta()).build())
+                                .metadata(event.getMetadata())
+                                .build());
+            }
+            if (output instanceof ToolResultDataDeltaEvent event) {
+                ContentBlock data = event.getData();
+                if (data == null) {
+                    return null;
+                }
+                return toolResultMessage(
+                        event,
+                        event.getReplyId(),
+                        ToolResultBlock.builder()
+                                .id(event.getToolCallId())
+                                .name(event.getToolCallName())
+                                .output(data)
+                                .metadata(event.getMetadata())
+                                .build());
+            }
+            if (output instanceof HintBlockEvent event) {
+                return assistantMessage(
+                        event,
+                        event.getReplyId(),
+                        new HintBlock(event.getBlockId(), event.getHint(), event.getHintSource()));
+            }
+            LoggerUtil.warn(
+                    log,
+                    "[{}] Event passed required check but matched no conversion branch: {} ({})",
+                    context.getTaskId(),
+                    output.getType(),
+                    output.getClass().getName());
+            return null;
+        }
+
+        private Msg assistantMessage(AgentEvent event, String replyId, ContentBlock contentBlock) {
+            return Msg.builder()
+                    .id(replyId)
+                    .role(MsgRole.ASSISTANT)
+                    .content(contentBlock)
+                    .metadata(event.getMetadata())
+                    .build();
+        }
+
+        private Msg toolResultMessage(
+                AgentEvent event, String replyId, ToolResultBlock toolResultBlock) {
+            return Msg.builder()
+                    .id(replyId)
+                    .role(MsgRole.TOOL)
+                    .content(toolResultBlock)
+                    .metadata(event.getMetadata())
+                    .build();
+        }
+
         /**
          * Handle the event.
          *
          * @param output output event from agent stream execute.
+         * @param responseMessage converted response message, or {@code null} if the event should
+         *     not be sent to the A2A client.
          */
-        protected abstract void handleEvent(AgentEvent output);
+        protected abstract void handleEvent(AgentEvent output, Msg responseMessage);
 
         /**
          * Send error message to A2A Client.
@@ -469,13 +535,19 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(AgentEvent output) {
-            if (!AgentEventType.AGENT_RESULT.equals(output.getType())) {
+        protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (!(output instanceof AgentResultEvent) && !(output instanceof LegacyAgentEvent)) {
                 // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
                 // according to properties.
                 return;
             }
-            Msg outputMessage = convertToMsg(output);
+            if (!AgentEventType.AGENT_RESULT.equals(output.getType())) {
+                return;
+            }
+            Msg outputMessage =
+                    output instanceof AgentResultEvent resultEvent
+                            ? resultEvent.getResult()
+                            : convertToMsg(output);
             if (outputMessage == null) {
                 return;
             }
@@ -525,24 +597,24 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
-        protected void handleEvent(AgentEvent output) {
-            if (isNoResponseEvent(output)) {
-                return;
-            }
-            Msg outputMessage = convertToMsg(output);
-            if (outputMessage == null) {
+        protected void handleEvent(AgentEvent output, Msg responseMessage) {
+            if (responseMessage == null) {
                 return;
             }
             List<Part<?>> responseParts =
                     MessageConvertUtil.convertFromContentBlocks(
-                            outputMessage, isStreamingChunk(output));
+                    responseMessage, isStreamingChunk(output));
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,
                     "agent-response",
-                    outputMessage.getMetadata(),
+                    responseMessage.getMetadata(),
                     !isFirstArtifact.getAndSet(false),
                     false);
+        }
+
+        private boolean isStreamingChunk(AgentEvent output) {
+            return AgentScopeAgentExecutor.isStreamingChunk(output);
         }
 
         @Override

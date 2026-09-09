@@ -46,6 +46,7 @@ import io.a2a.spec.TaskArtifactUpdateEvent;
 import io.a2a.spec.TaskState;
 import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.TextPart;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -53,11 +54,13 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolResultBlock;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
@@ -134,8 +137,8 @@ class AgentScopeAgentExecutorTest {
         @DisplayName("Should execute agent and process blocking request")
         void testExecuteAgentWithBlockingRequest() throws JSONRPCError {
             doMockForContext(false, false, true);
-            Flux<Event> mockFlux = mockFlux(false, true, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<Message> messageRef = new AtomicReference<>();
@@ -198,8 +201,8 @@ class AgentScopeAgentExecutorTest {
         @DisplayName("Should execute agent and process blocking request without agent result event")
         void testExecuteAgentWithBlockingRequestWithoutAgentResultEvent() throws JSONRPCError {
             doMockForContext(false, true, false);
-            Flux<Event> mockFlux = mockFlux(false, false, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<Message> messageRef = new AtomicReference<>();
@@ -229,8 +232,8 @@ class AgentScopeAgentExecutorTest {
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
             doMockForContext(false, true, false);
-            Flux<Event> mockFlux = mockFlux(true, false, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<Message> messageRef = new AtomicReference<>();
             doAnswer(
@@ -255,12 +258,55 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should preserve hint semantics in blocking fallback")
+        void testExecuteAgentWithBlockingRequestPreservesHint() throws JSONRPCError {
+            AgentExecuteProperties agentExecuteProperties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
+            doMockForContext(false, true, false);
+            Flux<AgentEvent> mockFlux =
+                    Flux.just(
+                            new HintBlockEvent(
+                                    "reply-id", "hint-block-id", "alice", "Check the inbox"),
+                            new TextBlockDeltaEvent("reply-id", "text-block-id", "Final answer"));
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockFlux);
+
+            AtomicReference<Message> messageRef = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        messageRef.set(invocationOnMock.getArgument(0));
+                                        return null;
+                                    })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any(Message.class));
+            executor.execute(mockContext, mockEventQueue);
+
+            Message message = messageRef.get();
+            assertNotNull(message);
+            assertEquals(2, message.getParts().size());
+            TextPart hintPart = assertInstanceOf(TextPart.class, message.getParts().get(0));
+            assertEquals("Check the inbox", hintPart.getText());
+            assertEquals(
+                    MessageConstants.BlockContent.TYPE_HINT,
+                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+            assertEquals(
+                    "hint-block-id",
+                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+            assertEquals(
+                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+            TextPart answerPart = assertInstanceOf(TextPart.class, message.getParts().get(1));
+            assertEquals("Final answer", answerPart.getText());
+        }
+
+        @Test
         @DisplayName(
                 "Should execute agent and process blocking request with inner event but disabled")
         void testExecuteAgentWithBlockingRequestDisabledInnerEvent() throws JSONRPCError {
             doMockForContext(false, true, false);
-            Flux<Event> mockFlux = mockFlux(true, false, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<Message> messageRef = new AtomicReference<>();
             doAnswer(
@@ -286,8 +332,8 @@ class AgentScopeAgentExecutorTest {
         @DisplayName("Should execute error agent and process blocking request")
         void testExecuteAgentWithError() throws JSONRPCError {
             doMockForContext(false, false, false);
-            Flux<Event> mockFlux = mockFlux(false, true, true);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, true, true);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<Message> messageRef = new AtomicReference<>();
             doAnswer(
@@ -330,8 +376,8 @@ class AgentScopeAgentExecutorTest {
         @DisplayName("Should execute agent and process streaming request")
         void testExecuteAgentWithStreamingRequest() throws JSONRPCError {
             doMockForContext(true, false, false);
-            Flux<Event> mockFlux = mockFlux(false, true, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
@@ -405,8 +451,8 @@ class AgentScopeAgentExecutorTest {
                     AgentExecuteProperties.builder().requireInnerMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
             doMockForContext(true, false, false);
-            Flux<Event> mockFlux = mockFlux(true, true, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(true, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
@@ -422,12 +468,65 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
+        @DisplayName("Should preserve hint and tool metadata in streaming artifacts")
+        void testExecuteAgentWithStreamingRequestPreservesEventMetadata() throws JSONRPCError {
+            AgentExecuteProperties agentExecuteProperties =
+                    AgentExecuteProperties.builder().requireInnerMessage(true).build();
+            executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
+            doMockForContext(true, false, false);
+            Map<String, Object> hintMetadata = Map.of("channel", "inbox");
+            Map<String, Object> toolMetadata = Map.of("traceId", "trace-1");
+            HintBlockEvent hintEvent =
+                    new HintBlockEvent("reply-id", "hint-block-id", "alice", "Check the inbox");
+            hintEvent.withMetadata(hintMetadata);
+            ToolResultTextDeltaEvent toolEvent =
+                    new ToolResultTextDeltaEvent(
+                            "reply-id", "tool-call-id", "search", "tool result");
+            toolEvent.withMetadata(toolMetadata);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.just(hintEvent, toolEvent));
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<Artifact> artifacts =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .map(TaskArtifactUpdateEvent::getArtifact)
+                            .toList();
+            assertEquals(2, artifacts.size());
+
+            Artifact hintArtifact = artifacts.get(0);
+            assertEquals(hintMetadata, hintArtifact.metadata());
+            TextPart hintPart = assertInstanceOf(TextPart.class, hintArtifact.parts().get(0));
+            assertEquals(
+                    MessageConstants.BlockContent.TYPE_HINT,
+                    hintPart.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+            assertEquals(
+                    "hint-block-id",
+                    hintPart.getMetadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+            assertEquals(
+                    "alice", hintPart.getMetadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+            assertFalse(
+                    hintPart.getMetadata().containsKey(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+
+            Artifact toolArtifact = artifacts.get(1);
+            assertEquals(toolMetadata, toolArtifact.metadata());
+            DataPart toolPart = assertInstanceOf(DataPart.class, toolArtifact.parts().get(0));
+            assertEquals(
+                    Boolean.TRUE,
+                    toolPart.getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+            assertEquals("trace-1", toolPart.getMetadata().get("traceId"));
+        }
+
+        @Test
         @DisplayName(
                 "Should execute agent and process streaming request with inner event but disabled")
         void testExecuteAgentWithStreamingRequestDisabledInnerEvent() throws JSONRPCError {
             doMockForContext(true, false, false);
-            Flux<Event> mockFlux = mockFlux(true, true, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(true, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
@@ -449,8 +548,8 @@ class AgentScopeAgentExecutorTest {
                     AgentExecuteProperties.builder().completeWithMessage(true).build();
             executor = new AgentScopeAgentExecutor(mockAgentRunner, agentExecuteProperties);
             doMockForContext(true, false, false);
-            Flux<Event> mockFlux = mockFlux(false, true, false);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, true, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
@@ -469,8 +568,8 @@ class AgentScopeAgentExecutorTest {
         @DisplayName("Should execute fail agent and process streaming request")
         void testExecuteAgentWithStreamingRequestFailure() throws JSONRPCError {
             doMockForContext(true, false, false);
-            Flux<Event> mockFlux = mockFlux(false, false, true);
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            Flux<AgentEvent> mockFlux = mockFlux(false, false, true);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
@@ -482,6 +581,35 @@ class AgentScopeAgentExecutorTest {
                             .filter(event -> event instanceof TaskStatusUpdateEvent)
                             .map(event -> (TaskStatusUpdateEvent) event)
                             .anyMatch(event -> TaskState.FAILED.equals(event.getStatus().state())));
+        }
+
+        @Test
+        @DisplayName("Should ignore lifecycle events for streaming artifacts")
+        void testExecuteAgentWithStreamingRequestIgnoresLifecycleEvents() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            Flux<AgentEvent> mockFlux =
+                    Flux.just(
+                            new AgentStartEvent("session-id", "reply-id", "agent"),
+                            new TextBlockDeltaEvent("reply-id", "block-id", "streaming result"),
+                            new AgentResultEvent(
+                                    Msg.builder().textContent("streaming result").build()),
+                            new AgentEndEvent("reply-id"));
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockFlux);
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            List<TaskArtifactUpdateEvent> artifactEvents =
+                    messageRef.get().stream()
+                            .filter(TaskArtifactUpdateEvent.class::isInstance)
+                            .map(TaskArtifactUpdateEvent.class::cast)
+                            .toList();
+            assertEquals(1, artifactEvents.size());
+            assertInstanceOf(TextPart.class, artifactEvents.get(0).getArtifact().parts().get(0));
+            assertEquals(
+                    "streaming result",
+                    ((TextPart) artifactEvents.get(0).getArtifact().parts().get(0)).getText());
         }
 
         private AtomicReference<List<StreamingEventKind>> mockStreamingEventQueueRef() {
@@ -570,17 +698,12 @@ class AgentScopeAgentExecutorTest {
             String taskId = doMockForContext(false, true, false);
 
             AtomicBoolean isCancelled = new AtomicBoolean(false);
-            Flux<Event> mockFlux =
+            Flux<AgentEvent> mockFlux =
                     Flux.fromIterable(
                                     List.of(
-                                            new Event(
-                                                    EventType.REASONING,
-                                                    Msg.builder().textContent("test").build(),
-                                                    true),
-                                            new Event(
-                                                    EventType.AGENT_RESULT,
-                                                    Msg.builder().textContent("test").build(),
-                                                    true)))
+                                            new TextBlockDeltaEvent("reply-id", "block-id", "test"),
+                                            new AgentResultEvent(
+                                                    Msg.builder().textContent("test").build())))
                             .zipWith(Flux.range(0, 2))
                             .delayUntil(
                                     tuple -> {
@@ -593,7 +716,7 @@ class AgentScopeAgentExecutorTest {
                                     })
                             .map(Tuple2::getT1)
                             .doOnCancel(() -> isCancelled.set(true));
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockFlux);
 
             Thread taskThread = new Thread(() -> executor.execute(mockContext, mockEventQueue));
@@ -659,42 +782,24 @@ class AgentScopeAgentExecutorTest {
         verify(mockEventQueue).enqueueEvent(any(Message.class));
     }
 
-    private Flux<Event> mockFlux(
+    private Flux<AgentEvent> mockFlux(
             boolean withToolResult, boolean withResultEvent, boolean withError) {
-        List<Event> mockEvents = new LinkedList<>();
+        List<AgentEvent> mockEvents = new LinkedList<>();
         if (withError) {
             return Flux.error(new RuntimeException("mock test"));
         }
         String resultMsgId = UUID.randomUUID().toString();
         if (withToolResult) {
-            ContentBlock mockToolResultBlock = ToolResultBlock.text("mock tool result");
             mockEvents.add(
-                    new Event(
-                            EventType.TOOL_RESULT,
-                            Msg.builder().role(MsgRole.TOOL).content(mockToolResultBlock).build(),
-                            true));
+                    new ToolResultTextDeltaEvent(
+                            resultMsgId, "tool-call-id", "mock-tool", "mock tool result"));
         }
-        mockEvents.add(
-                new Event(
-                        EventType.REASONING,
-                        Msg.builder().textContent("streaming result 1").id(resultMsgId).build(),
-                        false));
-        mockEvents.add(
-                new Event(
-                        EventType.REASONING,
-                        Msg.builder().textContent(" 2").id(resultMsgId).build(),
-                        false));
-        mockEvents.add(
-                new Event(
-                        EventType.REASONING,
-                        Msg.builder().textContent("streaming result 1 2").id(resultMsgId).build(),
-                        true));
+        mockEvents.add(new TextBlockDeltaEvent(resultMsgId, "block-id", "streaming result 1"));
+        mockEvents.add(new TextBlockDeltaEvent(resultMsgId, "block-id", " 2"));
         if (withResultEvent) {
             mockEvents.add(
-                    new Event(
-                            EventType.AGENT_RESULT,
-                            Msg.builder().textContent("streaming result 1 2").build(),
-                            true));
+                    new AgentResultEvent(
+                            Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
     }
