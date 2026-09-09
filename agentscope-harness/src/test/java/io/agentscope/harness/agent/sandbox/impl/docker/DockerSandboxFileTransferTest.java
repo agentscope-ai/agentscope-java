@@ -244,8 +244,7 @@ class DockerSandboxFileTransferTest {
         }
 
         @Override
-        protected void runDockerCliBlocking(int timeoutSeconds, String... command)
-                throws Exception {
+        void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
             commands.add(List.of(command));
             if (command.length >= 4 && "cp".equals(command[1])) {
                 String src = command[2];

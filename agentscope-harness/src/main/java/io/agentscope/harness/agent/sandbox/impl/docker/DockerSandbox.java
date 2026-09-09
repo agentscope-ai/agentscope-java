@@ -32,6 +32,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,11 @@ import org.slf4j.LoggerFactory;
  *   <li>Exec: {@code docker exec -w <root> <containerId> sh -c <command>}</li>
  *   <li>PersistWorkspace: {@code docker exec <containerId> tar -cf - -C <root> .}</li>
  *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
+ *   <li>UploadFile / DownloadFile ({@link SandboxFileTransfer}): a host temp file round-tripped
+ *       through {@code docker cp}, so file bytes never pass through exec argv or the stdout
+ *       capture cap. Scoped to the workspace subtree by lexical validation; uploads land with
+ *       mode 0644, matching the archive-hydrate fallback. Symlinks inside the sandbox are not
+ *       resolved — the isolation boundary is the container, not the subtree.</li>
  * </ul>
  */
 public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTransfer {
@@ -357,15 +363,9 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
 
     @Override
     public boolean supportsFileTransfer(String path) {
-        if (dockerState.getContainerId() == null || dockerState.getContainerId().isBlank()) {
-            return false;
-        }
         try {
-            String resolved = resolveContainerPath(path);
-            String root = normalizeAbsolutePath(dockerState.getWorkspaceRoot());
-            return root != null
-                    && !resolved.equals(root)
-                    && resolved.startsWith("/".equals(root) ? "/" : root + "/");
+            requireTransferPath(path);
+            return true;
         } catch (IllegalArgumentException e) {
             return false;
         }
@@ -378,6 +378,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         }
         String containerPath = requireTransferPath(path);
         Path temp = Files.createTempFile("agentscope-docker-upload-", ".bin");
+        applyUploadFileMode(temp);
         try {
             Files.write(temp, content);
             int slash = containerPath.lastIndexOf('/');
@@ -437,7 +438,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         String[] parts = normalized.split("/", -1);
         for (int i = 0; i < parts.length; i++) {
             String part = parts[i];
-            if ((i > 0 || !normalized.startsWith("/")) && part.isEmpty()
+            if (((i > 0 || !normalized.startsWith("/")) && part.isEmpty())
                     || ".".equals(part)
                     || "..".equals(part)) {
                 throw new IllegalArgumentException("Path contains traversal segments: " + path);
@@ -462,6 +463,20 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
+    }
+
+    /**
+     * Gives the upload temp file mode 0644 so {@code docker cp}, which preserves the source
+     * mode, matches the archive fallback's tar default instead of {@code createTempFile}'s
+     * 0600 — uploads must stay readable when the container runs as a non-root user. Skipped on
+     * filesystems without POSIX permissions (e.g. Windows), which carry no mode to preserve.
+     */
+    private static void applyUploadFileMode(Path temp) throws IOException {
+        try {
+            Files.setPosixFilePermissions(temp, PosixFilePermissions.fromString("rw-r--r--"));
+        } catch (UnsupportedOperationException e) {
+            // No POSIX permissions on this filesystem — nothing to align.
+        }
     }
 
     // -----------------------------------------------------------------
@@ -695,7 +710,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      */
     // Visible for testing so unit tests can intercept the docker CLI round trip
     // (upload/download temp-file plumbing) without a live Docker daemon.
-    protected void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
+    void runDockerCliBlocking(int timeoutSeconds, String... command) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process process = pb.start();
 
