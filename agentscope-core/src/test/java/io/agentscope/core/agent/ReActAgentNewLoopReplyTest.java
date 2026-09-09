@@ -29,8 +29,10 @@ import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -515,6 +517,122 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(
                 indexOf(events, TextBlockEndEvent.class)
                         < indexOf(events, ModelCallEndEvent.class));
+    }
+
+    @Test
+    void textSeparatedByToolCallUsesDistinctBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        TextBlock.builder().text("before").build()),
+                                                chatResponse(
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("echo")
+                                                                .input(Map.of("query", "ping"))
+                                                                .build()),
+                                                chatResponse(
+                                                        TextBlock.builder().text("after").build())),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int firstModelEnd = indexOf(events, ModelCallEndEvent.class);
+        List<TextBlockStartEvent> starts =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockStartEvent.class::isInstance)
+                        .map(TextBlockStartEvent.class::cast)
+                        .toList();
+        List<TextBlockEndEvent> ends =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockEndEvent.class::isInstance)
+                        .map(TextBlockEndEvent.class::cast)
+                        .toList();
+        List<TextBlockDeltaEvent> deltas =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .toList();
+
+        assertEquals(
+                List.of("text", "text-2"),
+                starts.stream().map(TextBlockStartEvent::getBlockId).toList());
+        assertEquals(
+                List.of("text", "text-2"),
+                deltas.stream().map(TextBlockDeltaEvent::getBlockId).toList());
+        assertEquals(
+                List.of("text", "text-2"),
+                ends.stream().map(TextBlockEndEvent::getBlockId).toList());
+    }
+
+    @Test
+    void thinkingSeparatedByToolCallUsesDistinctBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("before")
+                                                                .build()),
+                                                chatResponse(
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("echo")
+                                                                .input(Map.of("query", "ping"))
+                                                                .build()),
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("after")
+                                                                .build())),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int firstModelEnd = indexOf(events, ModelCallEndEvent.class);
+        List<ThinkingBlockStartEvent> starts =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockStartEvent.class::isInstance)
+                        .map(ThinkingBlockStartEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockEndEvent> ends =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockEndEvent.class::isInstance)
+                        .map(ThinkingBlockEndEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockDeltaEvent> deltas =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockDeltaEvent.class::isInstance)
+                        .map(ThinkingBlockDeltaEvent.class::cast)
+                        .toList();
+
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                starts.stream().map(ThinkingBlockStartEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                deltas.stream().map(ThinkingBlockDeltaEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                ends.stream().map(ThinkingBlockEndEvent::getBlockId).toList());
     }
 
     @Test

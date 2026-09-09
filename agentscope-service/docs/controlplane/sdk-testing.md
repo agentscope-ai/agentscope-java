@@ -211,7 +211,7 @@ bridge = SessionBridge(
     agent_name="smoke-agent",
     namespace="default",
     instance_id="smoke-1",
-    enable_events=True,          # 打开 Level 2
+    enable_events=True,          # Level 2 默认已开启；此处显式写出便于 smoke test
     contract_http_port=18080,    # 避开 aistiod :8080
     start_http=True,
     start_grpc=True,
@@ -307,7 +307,7 @@ BYO 发现仍可按 getting-started：给 Deployment 打 `agentscope.io/managed=
 |------|--------|------|
 | ASDP 握手 | `test_handshake_*` 或 aistiod 日志 | `ConnectRequest` 带 runtime / capabilities |
 | Level 1 摘要 | fake CP / REST `GET /sessions` | 有 `framework`、`context_hash`、`isCompacted` 等 |
-| Level 2 事件 | `enable_events=True` + REST `.../events` | seq 单调；默认关闭时不上报 |
+| Level 2 事件 | REST `.../events` + ASDP ACK | seq 单调；未 ACK 会重传；控制面按 `(session, seq)` 幂等落库 |
 | Level 4 Context | compaction 后 REST `.../context` | Store `PutIfChanged`；同 hash 不重复插 |
 | Level 3 全文 | `GET .../messages`（数据面合约） | 分页；摘要与全文分离 |
 | compress / terminate | 合约 POST 或 `aistioctl session compress` | 适配器收到命令；控制面经 prober 可达时生效 |
@@ -322,7 +322,7 @@ BYO 发现仍可按 getting-started：给 Deployment 打 `agentscope.io/managed=
 |------|------|
 | SDK 连不上 gRPC | 确认 `--enable-asdp=true`、端口 `15010`、本机/port-forward 通；防火墙 |
 | `:8080` 被占用 | aistiod 与合约 HTTP 错开：`contract_http_port=18080` |
-| REST 有 session、无 events | 未开 `enable_events`；或未到 flush 周期；查 sink 日志 |
+| REST 有 session、无 events | 检查是否显式设置了 `enable_events=False`、是否尚未到 flush 周期，以及 SDK journal / sink 日志 |
 | REST 无 context | 需至少一次 compaction / hash 变更推送，或主动打合约 `GET .../context` 并由控制面拉取落库（视当前 poller 是否已接） |
 | `make test` 里 envtest 失败 | 跑 `make test-integration` 会装 assets；纯 `go test ./...` 中部分包会 skip |
 | Helm 装不上 | 用 `helm/aistio`；旧文档里的 `agentscope-controlplane` / `install/install.sh` Chart 路径可能未同步，以 Makefile 为准 |

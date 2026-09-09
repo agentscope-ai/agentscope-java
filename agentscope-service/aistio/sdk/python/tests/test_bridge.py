@@ -20,9 +20,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import threading
 import time
+import tempfile
 import urllib.error
 import urllib.request
 from concurrent import futures
@@ -47,6 +49,8 @@ class FakeASDPServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
         self.connects = []
         self.sessions = []
         self.events = []
+        self.event_reports = 0
+        self.ack_events = True
         self.contexts = []
         self.inventories = []
         self.config_acks = []
@@ -62,6 +66,7 @@ class FakeASDPServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
                 elif kind == "session_report":
                     self.sessions.extend(up.session_report.sessions)
                 elif kind == "event_report":
+                    self.event_reports += 1
                     self.events.extend(up.event_report.events)
                 elif kind == "context_report":
                     self.contexts.append(up.context_report)
@@ -73,6 +78,23 @@ class FakeASDPServicer(asdp_pb2_grpc.AgentDataPlaneServiceServicer):
                 yield asdp_pb2.Downstream(
                     connect_ack=asdp_pb2.ConnectResponse(
                         accepted=True, control_plane_version="test-cp"
+                    )
+                )
+            elif kind == "event_report" and self.ack_events:
+                watermarks = {}
+                for event in up.event_report.events:
+                    watermarks[event.session_id] = max(
+                        watermarks.get(event.session_id, 0), event.seq
+                    )
+                yield asdp_pb2.Downstream(
+                    event_ack=asdp_pb2.EventReportAck(
+                        report_id=up.event_report.report_id,
+                        committed=[
+                            asdp_pb2.SessionEventCursor(
+                                session_id=session_id, committed_seq=seq
+                            )
+                            for session_id, seq in watermarks.items()
+                        ],
                     )
                 )
             with self._lock:
@@ -160,9 +182,17 @@ def _wait_for(predicate, timeout=5.0, interval=0.05):
 def _make_bridge(fake_cp, claude, **kwargs):
     addr, _ = fake_cp[1], None
     kwargs.setdefault("control_plane", fake_cp[1])
-    kwargs.setdefault("agent_name", "test-agent")
-    kwargs.setdefault("instance_id", "inst-test")
+    kwargs.setdefault("agent_key", "test-agent")
+    kwargs.setdefault("agent_id", "00000000-0000-0000-0000-000000000001")
+    kwargs.setdefault("binding_id", "00000000-0000-0000-0000-000000000002")
+    kwargs.setdefault("instance_key", "inst-test")
+    kwargs.setdefault("generation", 1)
     kwargs.setdefault("contract_http_port", 0)
+    # Most tests exercise other reporting levels and explicitly opt out to avoid
+    # sharing a process-global persistent journal. Event tests opt in below.
+    kwargs.setdefault("enable_events", False)
+    if kwargs.get("enable_events"):
+        kwargs.setdefault("event_journal_dir", tempfile.mkdtemp(prefix="aistio-events-"))
     return aistio.instrument(claude, **kwargs)
 
 
@@ -170,6 +200,11 @@ def _http(port, path, method="GET"):
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method)
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read())
+
+
+def test_event_reporting_is_enabled_by_default():
+    assert inspect.signature(aistio.instrument).parameters["enable_events"].default is True
+    assert inspect.signature(SessionBridge).parameters["enable_events"].default is True
 
 
 # ─── 端到端 ───
@@ -230,9 +265,31 @@ def test_level2_events_have_monotonic_seq_per_session(fake_cp, claude, fast_peri
         bridge.stop()
 
 
-def test_level2_disabled_by_default(fake_cp, claude, fast_periods):
+def test_level2_retries_unacknowledged_batch_without_losing_it(
+    fake_cp, claude, fast_periods, monkeypatch
+):
     servicer, _ = fake_cp
-    bridge = _make_bridge(fake_cp, claude)  # enable_events=False
+    monkeypatch.setattr(bridge_mod, "EVENT_ACK_TIMEOUT", 0.15)
+    servicer.ack_events = False
+    bridge = _make_bridge(fake_cp, claude, enable_events=True)
+    try:
+        assert bridge.grpc_transport.wait_connected(5)
+        _append(claude, "s-retry", [{"type": "user", "content": "keep me"}])
+        assert _wait_for(lambda: servicer.event_reports >= 1)
+        assert len(bridge._event_journal) == 1
+
+        servicer.ack_events = True
+        assert _wait_for(lambda: servicer.event_reports >= 2)
+        assert _wait_for(lambda: len(bridge._event_journal) == 0)
+        assert len(servicer.events) >= 2
+        assert {event.seq for event in servicer.events} == {1}
+    finally:
+        bridge.stop()
+
+
+def test_level2_can_be_disabled(fake_cp, claude, fast_periods):
+    servicer, _ = fake_cp
+    bridge = _make_bridge(fake_cp, claude, enable_events=False)
     try:
         _append(claude, "s1", [{"type": "user", "content": "a"}])
         assert _wait_for(lambda: len(servicer.sessions) > 0)
@@ -422,28 +479,35 @@ def test_http_session_state_includes_frozen_fields(fake_cp, claude, fast_periods
 # ─── 降级语义 ───
 
 
-def test_event_buffer_bounded_drops_oldest(fake_cp, claude, fast_periods, monkeypatch):
-    # 关闭满批 flush，让 buffer 涨过上限以验证丢最旧。
-    monkeypatch.setattr(bridge_mod, "EVENT_BATCH_SIZE", bridge_mod.EVENT_BUFFER_MAX * 10)
-    bridge = _make_bridge(fake_cp, claude, enable_events=True)
+def test_event_journal_does_not_drop_unacknowledged_events(fake_cp, claude, fast_periods, monkeypatch):
+    # 禁止发送，验证断线期间所有事件都留在持久化 outbox。
+    monkeypatch.setattr(bridge_mod, "EVENT_BATCH_SIZE", 10_000)
+    monkeypatch.setattr(bridge_mod, "EVENT_FLUSH_INTERVAL", 60.0)
+    bridge = _make_bridge(fake_cp, claude, enable_events=True, start_grpc=False)
     try:
-        total = bridge_mod.EVENT_BUFFER_MAX + 100
+        total = 1_100
         for i in range(total):
             bridge.on_event(
                 SessionEvent(session_id="s-bulk", seq=0, event_type=EVENT_MESSAGE, content=f"m{i}")
             )
         with bridge._lock:
-            assert len(bridge._event_buffer) == bridge_mod.EVENT_BUFFER_MAX
-            # 最旧的 100 条已被丢弃，buffer 里是最后 EVENT_BUFFER_MAX 条
-            assert bridge._event_buffer[0].content == "m100"
-            assert bridge._event_buffer[-1].content == f"m{total - 1}"
+            assert len(bridge._event_journal) == total
+            assert bridge._event_journal.first(1)[0].content == "m0"
+            assert bridge._event_journal.first(total)[-1].content == f"m{total - 1}"
     finally:
         bridge.stop()
 
 
 def test_grpc_send_queue_full_counts_dropped():
-    transport = GrpcTransport("127.0.0.1:1", agent_name="x")  # 未启动，队列只会堆积
-    for _ in range(GrpcTransport("127.0.0.1:1", agent_name="x")._send_q.maxsize):
+    params = dict(
+        agent_id="00000000-0000-0000-0000-000000000001",
+        agent_key="x",
+        binding_id="00000000-0000-0000-0000-000000000002",
+        instance_key="inst-test",
+        generation=1,
+    )
+    transport = GrpcTransport("127.0.0.1:1", **params)  # 未启动，队列只会堆积
+    for _ in range(GrpcTransport("127.0.0.1:1", **params)._send_q.maxsize):
         assert transport.report_sessions([]) is True
     assert transport.report_sessions([]) is False
     assert transport.dropped == 1
@@ -454,8 +518,11 @@ def test_bypass_failure_never_raises(fake_cp, claude, fast_periods):
     bridge = aistio.instrument(
         claude,
         control_plane="127.0.0.1:1",  # 无监听
-        agent_name="test-agent",
-        instance_id="inst-test",
+        agent_key="test-agent",
+        agent_id="00000000-0000-0000-0000-000000000001",
+        binding_id="00000000-0000-0000-0000-000000000002",
+        instance_key="inst-test",
+        generation=1,
         contract_http_port=0,
     )
     try:

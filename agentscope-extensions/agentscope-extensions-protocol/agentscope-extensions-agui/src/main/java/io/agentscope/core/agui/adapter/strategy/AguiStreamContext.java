@@ -38,10 +38,6 @@ import org.slf4j.LoggerFactory;
 
 public class AguiStreamContext {
 
-    // CopilotKit will merge reasoning and text with the same messageId, adding suffixes to the
-    // reasoning to distinguish them
-    public static final String REASONING_MESSAGE_ID_SUFFIX = "-reasoning";
-
     private static final Logger logger = LoggerFactory.getLogger(AguiStreamContext.class);
 
     private final String threadId;
@@ -169,21 +165,16 @@ public class AguiStreamContext {
     }
 
     public void startReasoningMessage(String messageId) {
-        String reasoningMessageId = reasoningMessageId(messageId);
-        if (startedReasoningMessages.add(reasoningMessageId)) {
-            emit(
-                    new AguiEvent.ReasoningMessageStart(
-                            threadId, runId, reasoningMessageId, "reasoning"));
+        if (startedReasoningMessages.add(messageId)) {
+            emit(new AguiEvent.ReasoningMessageStart(threadId, runId, messageId, "reasoning"));
         }
-        currentReasoningMessageId = reasoningMessageId;
+        currentReasoningMessageId = messageId;
     }
 
     public void appendReasoningDelta(String messageId, String delta) {
         if (delta != null && !delta.isEmpty()) {
             startReasoningMessage(messageId);
-            emit(
-                    new AguiEvent.ReasoningMessageContent(
-                            threadId, runId, reasoningMessageId(messageId), delta));
+            emit(new AguiEvent.ReasoningMessageContent(threadId, runId, messageId, delta));
         }
     }
 
@@ -195,17 +186,16 @@ public class AguiStreamContext {
     }
 
     public void closeReasoningMessage(String messageId) {
-        String reasoningMessageId = reasoningMessageId(messageId);
-        if (reasoningMessageId == null
-                || !startedReasoningMessages.contains(reasoningMessageId)
-                || endedReasoningMessages.contains(reasoningMessageId)) {
+        if (messageId == null
+                || !startedReasoningMessages.contains(messageId)
+                || endedReasoningMessages.contains(messageId)) {
             return;
         }
-        endedReasoningMessages.add(reasoningMessageId);
-        if (Objects.equals(reasoningMessageId, currentReasoningMessageId)) {
+        endedReasoningMessages.add(messageId);
+        if (Objects.equals(messageId, currentReasoningMessageId)) {
             currentReasoningMessageId = null;
         }
-        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, reasoningMessageId));
+        emit(new AguiEvent.ReasoningMessageEnd(threadId, runId, messageId));
     }
 
     public void startToolCall(String toolCallId, String toolCallName) {
@@ -279,7 +269,6 @@ public class AguiStreamContext {
         if (endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
-
         StringBuilder content = toolResultContent.remove(toolCallId);
         emit(
                 new AguiEvent.ToolCallResult(
@@ -333,13 +322,6 @@ public class AguiStreamContext {
 
     private static String normalizeToolCallName(String toolCallName) {
         return toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
-    }
-
-    private static String reasoningMessageId(String messageId) {
-        if (messageId.endsWith(REASONING_MESSAGE_ID_SUFFIX)) {
-            return messageId;
-        }
-        return messageId + REASONING_MESSAGE_ID_SUFFIX;
     }
 
     private static String serialize(ContentBlock data) {
@@ -398,7 +380,6 @@ public class AguiStreamContext {
     }
 
     static final class TokenUsageAccumulator {
-
         private long cumulativeInputTokens;
         private long cumulativeOutputTokens;
         private long cumulativeCachedTokens;
@@ -426,7 +407,6 @@ public class AguiStreamContext {
     record TokenUsageSnapshot(TokenUsage delta, TokenUsage cumulative) {}
 
     record TokenUsage(long inputTokens, long outputTokens, long cachedTokens, double time) {
-
         long totalTokens() {
             return inputTokens + outputTokens;
         }
