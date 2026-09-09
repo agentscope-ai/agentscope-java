@@ -1,6 +1,11 @@
 name: Deploy Docs to GitHub Pages
 
 on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -26,6 +31,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -q -e ".[dev]"
 
+      - name: Check documentation sources
+        run: |
+          python -m unittest discover -s docs/scripts/tests
+          python docs/scripts/check_service_docs.py --source-only
+
       - name: Build Docs
         run: |
           cd docs
@@ -35,6 +45,9 @@ jobs:
           # whose URL hash hasn't changed even after the file was edited.
           jupyter-book clean --all .
           jupyter-book build .
+
+      - name: Check Service documentation links
+        run: python docs/scripts/check_service_docs.py
 
       - name: Generate v1 redirect stubs
         # Backfills HTML meta-refresh stubs at the legacy 1.x URL paths
@@ -47,6 +60,7 @@ jobs:
           python scripts/generate_v1_redirects.py _build/html
 
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -120,3 +120,7 @@ Confirm tool arguments, approve sensitive actions, or hand off mid-run to an ext
 ---
 
 If you are still evaluating whether to migrate, the [V1 Migration Guide](./change-log.md) breaks down every change with a Migration Guide (must-do vs. recommended) and a What's New section — enough to plan an upgrade end-to-end. For per-version changes, see [Release Notes](others/release-notes.md).
+
+## AgentScope Service
+
+[AgentScope Service: deployment and usage](../service/index.md)

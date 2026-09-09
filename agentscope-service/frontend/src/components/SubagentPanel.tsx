@@ -393,11 +393,12 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
                 <input
                   type="radio"
                   checked={form.workspaceMode === 'shared'}
-                  onChange={() => setForm({ ...form, workspaceMode: 'shared' })}
+                  onChange={() => setForm({ ...form, workspaceMode: 'shared', workspacePath: '' })}
                 /> Shared (with parent)
               </label>
             </div>
           </div>
+          <p style={{ fontSize: 12, color: '#64748b' }}>Hosted Codex and Qoder require Shared workspace mode. Codex inherits the parent permissions and does not accept per-subagent tool or iteration limits. Qoder supports native tool names and maps max iterations to max turns. Managed runtimes also support isolated workspaces.</p>
           {form.workspaceMode === 'isolated' && (
             <div style={S.row}>
               <label style={S.fieldLabel}>Workspace path (optional)</label>
@@ -405,12 +406,12 @@ export default function SubagentPanel({ agentId, onChanged, readOnly = false }: 
                 style={S.input}
                 value={form.workspacePath}
                 onChange={e => setForm({ ...form, workspacePath: e.target.value })}
-                placeholder="~/.agentscope/builder/users/<userId>/agents/<parent>/agents/<name>/workspace (auto-created if blank)"
+                placeholder="Leave blank to create a separate workspace automatically"
               />
             </div>
           )}
           <div style={S.row}>
-            <label style={S.fieldLabel}>System prompt (inline body)</label>
+            <label style={S.fieldLabel}>Subagent instructions</label>
             <textarea
               style={S.textarea}
               value={form.inlineBody}
