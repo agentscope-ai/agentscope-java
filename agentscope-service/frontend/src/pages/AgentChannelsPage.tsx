@@ -90,27 +90,27 @@ export default function AgentChannelsPage() {
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [agentId]);
 
   return (
-    <div style={S.root}>
-      <h1 style={S.title}>Connect IM</h1>
+    <div className="console-page-legacy" style={S.root}>
+      <h1 style={S.title}>Channels</h1>
       <p style={S.subtle}>
-        Give this agent an identity on DingTalk / Feishu / WeCom / GitHub / GitLab.
-        Each identity is one bot account; conversations default to per-person isolation.
+        Connect chat platforms or webhook providers whose default target is this logical Agent.
+        Channel routing never binds to an individual runtime instance.
       </p>
 
       {err && <div style={S.err}>{err}</div>}
 
       <div style={S.section}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>IM identities</h2>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Default channels</h2>
           <span style={{ flex: 1 }} />
           <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => setShowCreate(true)}>
-            + Connect platform
+            + Connect channel
           </button>
         </div>
 
         {presences.length === 0 ? (
           <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-            No IM identity yet. Connect a platform so people can chat with this agent.
+            No channel targets this Agent by default. Connect one here or add a routing rule from the Channels catalog.
           </div>
         ) : (
           presences.map((p) => {
@@ -132,7 +132,7 @@ export default function AgentChannelsPage() {
                 }}>
                   {p.enabled ? (p.started ? 'connected' : 'stopped') : 'disabled'}
                 </span>
-                <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/channels/${encodeURIComponent(p.channelId)}`}>
+                <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/agent-center/entrypoints/${encodeURIComponent(p.channelId)}`}>
                   Advanced
                 </Link>
                 <button style={S.btn} onClick={() => setEdit(p)}>Edit</button>
@@ -180,7 +180,7 @@ export default function AgentChannelsPage() {
 
       <div style={{ marginTop: 28 }}>
         <h2 style={{ fontSize: '1.05rem', marginBottom: 8 }}>Transfer rules (advanced)</h2>
-        <p style={S.subtle}>Route specific peers or groups to another agent while keeping this identity.</p>
+        <p style={S.subtle}>Inspect rules that route selected peers, groups, or events to this logical Agent.</p>
         <ChannelBindingTable agentId={agentId} />
       </div>
     </div>
@@ -263,7 +263,7 @@ function PresenceDialog({
   return (
     <div style={scrim} onClick={onClose}>
       <div style={modal} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>{isEdit ? 'Edit IM identity' : 'Connect platform'}</h3>
+        <h3 style={{ marginTop: 0 }}>{isEdit ? 'Edit channel' : 'Connect channel'}</h3>
         <div style={S.grid2}>
           <div>
             <label style={S.field}>Platform</label>

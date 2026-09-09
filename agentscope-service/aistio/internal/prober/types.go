@@ -75,16 +75,17 @@ func (c *ProbeAgentConfig) ToolNames() []string {
 
 // SessionSnapshot represents a session as reported by the data plane.
 type SessionSnapshot struct {
-	ID              string       `json:"id"`
-	Phase           string       `json:"phase"`
-	Busy            *bool        `json:"busy,omitempty"`
-	Model           string       `json:"model,omitempty"`
-	StartedAt       string       `json:"startedAt,omitempty"`
-	LastActiveAt    string       `json:"lastActiveAt,omitempty"`
-	MessageCount    int32        `json:"messageCount,omitempty"`
-	TokenUsage      *TokenUsage  `json:"tokenUsage,omitempty"`
-	ContextPressure float64      `json:"contextPressure,omitempty"`
-	TaskSummary     *TaskSummary `json:"taskSummary,omitempty"`
+	ContextPressureReported bool         `json:"-"`
+	ID                      string       `json:"id"`
+	Phase                   string       `json:"phase"`
+	Busy                    *bool        `json:"busy,omitempty"`
+	Model                   string       `json:"model,omitempty"`
+	StartedAt               string       `json:"startedAt,omitempty"`
+	LastActiveAt            string       `json:"lastActiveAt,omitempty"`
+	MessageCount            int32        `json:"messageCount,omitempty"`
+	TokenUsage              *TokenUsage  `json:"tokenUsage,omitempty"`
+	ContextPressure         float64      `json:"contextPressure,omitempty"`
+	TaskSummary             *TaskSummary `json:"taskSummary,omitempty"`
 
 	// Level-1 extensions (see sdk-design.md §3.1).
 	Framework             string `json:"framework,omitempty"`
@@ -92,6 +93,26 @@ type SessionSnapshot struct {
 	ContextHash           string `json:"contextHash,omitempty"`
 	IsCompacted           bool   `json:"isCompacted,omitempty"`
 	EffectiveMessageCount int32  `json:"effectiveMessageCount,omitempty"`
+}
+
+// Retain field presence: a measured empty context is different from a runtime
+// that does not expose context pressure. Legacy protobuf scalar zero remains
+// unknown because that transport did not encode presence.
+func (s *SessionSnapshot) UnmarshalJSON(data []byte) error {
+	type snapshotAlias SessionSnapshot
+	var decoded snapshotAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*s = SessionSnapshot(decoded)
+	if raw, present := fields["contextPressure"]; present && string(raw) != "null" {
+		s.ContextPressureReported = true
+	}
+	return nil
 }
 
 // TokenUsage tracks token counts.
@@ -174,21 +195,21 @@ type ToolInfo struct {
 // ContextSnapshot is the Level-4 effective context returned by
 // GET /agentscope/sessions/{id}/context (mirrors the ASDP ContextReport).
 type ContextSnapshot struct {
-	SessionID            string          `json:"sessionId"`
-	CapturedAt           string          `json:"capturedAt,omitempty"`
-	ContextHash          string          `json:"contextHash"`
-	SystemPrompt         string          `json:"systemPrompt,omitempty"`
+	SessionID            string           `json:"sessionId"`
+	CapturedAt           string           `json:"capturedAt,omitempty"`
+	ContextHash          string           `json:"contextHash"`
+	SystemPrompt         string           `json:"systemPrompt,omitempty"`
 	Messages             []ContextMessage `json:"messages"`
-	Tools                []ToolInfo      `json:"tools,omitempty"`
-	IsCompacted          bool            `json:"isCompacted,omitempty"`
-	CompactionSummary    string          `json:"compactionSummary,omitempty"`
-	OriginalMessageCount int32           `json:"originalMessageCount,omitempty"`
-	CompactedAt          string          `json:"compactedAt,omitempty"`
-	TotalTokens          int32           `json:"totalTokens,omitempty"`
-	MaxTokens            int32           `json:"maxTokens,omitempty"`
-	Framework            string          `json:"framework,omitempty"`
-	Model                string          `json:"model,omitempty"`
-	FrameworkState       json.RawMessage `json:"frameworkState,omitempty"`
+	Tools                []ToolInfo       `json:"tools,omitempty"`
+	IsCompacted          bool             `json:"isCompacted,omitempty"`
+	CompactionSummary    string           `json:"compactionSummary,omitempty"`
+	OriginalMessageCount int32            `json:"originalMessageCount,omitempty"`
+	CompactedAt          string           `json:"compactedAt,omitempty"`
+	TotalTokens          int32            `json:"totalTokens,omitempty"`
+	MaxTokens            int32            `json:"maxTokens,omitempty"`
+	Framework            string           `json:"framework,omitempty"`
+	Model                string           `json:"model,omitempty"`
+	FrameworkState       json.RawMessage  `json:"frameworkState,omitempty"`
 }
 
 // MessageItem is one full-content history entry (Level 3).
@@ -213,8 +234,8 @@ type MessagePage struct {
 	Limit     int           `json:"limit"`
 	Total     int           `json:"total"`
 	Messages  []MessageItem `json:"messages"`
-	// Source is "transcript" when served from CP transcript storage, or
-	// "dataplane" when proxied to a live instance.
+	// Source is "transcript" for CP transcript storage, "events" for a
+	// projection of durable CP events, or "dataplane" for a live instance.
 	Source string `json:"source,omitempty"`
 }
 

@@ -106,9 +106,11 @@ flag.StringVar(&storageDriver, "storage-driver", store.DriverMemory,
 
 [storage-followups.md §6](./storage-followups.md) 已记录「memory 默认的生产误用防护」这一条（建议多副本时 fail-fast 或 Helm 强制要求 postgres）。此处仅作交叉引用，需确认生产配置是否已显式设为 postgres。
 
-### 3.2 事件表保留策略两侧不一致
+### 3.2 事件表保留策略
 
-runtime store 侧有 `RetentionWorker`（`session_events` 默认 7 天）；数据面的 `builder_session_event` **没有任何按时间的保留机制**。详见 [session-event-completeness.md §3](./session-event-completeness.md)。
+runtime store 当前默认 `--retention-session-events=0`，即不自动清理会话事件；这保证历史回放与
+SDK 连续 ACK 水位不会因默认保留窗口产生缺口。数据面的 `builder_session_event` 同样没有按时间
+清理。后续若启用归档或显式保留窗口，两侧仍需统一策略并保留可续传游标。
 
 ---
 

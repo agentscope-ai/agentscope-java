@@ -26,8 +26,8 @@ import (
 func ExampleConnector() {
 	c := connector.New(connector.Config{
 		ControlPlaneAddr: "localhost:15010",
-		AgentName:        "my-agent",
-		InstanceID:       "pod-0",
+		AgentKey:         "my-agent",
+		InstanceKey:      "pod-0",
 		Namespace:        "default",
 		Runtime:          "agentscope-go",
 		SDKVersion:       "0.3.0",
@@ -47,8 +47,8 @@ func ExampleConnector() {
 func TestConnectorCreation(t *testing.T) {
 	c := connector.New(connector.Config{
 		ControlPlaneAddr: "localhost:15010",
-		AgentName:        "test-agent",
-		InstanceID:       "test-pod",
+		AgentKey:         "test-agent",
+		InstanceKey:      "test-pod",
 		Namespace:        "default",
 	})
 	if c == nil {
@@ -59,8 +59,8 @@ func TestConnectorCreation(t *testing.T) {
 func TestConnectorStop(t *testing.T) {
 	c := connector.New(connector.Config{
 		ControlPlaneAddr: "localhost:15010",
-		AgentName:        "test-agent",
-		InstanceID:       "test-pod",
+		AgentKey:         "test-agent",
+		InstanceKey:      "test-pod",
 		Namespace:        "default",
 	})
 	// Stop before Start should not panic.
@@ -70,8 +70,8 @@ func TestConnectorStop(t *testing.T) {
 func TestConnectorStartCancelled(t *testing.T) {
 	c := connector.New(connector.Config{
 		ControlPlaneAddr: "localhost:15010",
-		AgentName:        "test-agent",
-		InstanceID:       "test-pod",
+		AgentKey:         "test-agent",
+		InstanceKey:      "test-pod",
 		Namespace:        "default",
 	})
 
@@ -87,8 +87,8 @@ func TestConnectorStartCancelled(t *testing.T) {
 func TestUpdateSessions(t *testing.T) {
 	c := connector.New(connector.Config{
 		ControlPlaneAddr: "localhost:15010",
-		AgentName:        "test-agent",
-		InstanceID:       "test-pod",
+		AgentKey:         "test-agent",
+		InstanceKey:      "test-pod",
 		Namespace:        "default",
 	})
 
