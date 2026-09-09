@@ -120,3 +120,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 ---
 
 正在评估升级时间表的开发者，可以查阅 [V1 迁移指南](./change-log.md) —— 拆成"必须迁移 / 推荐迁移"两层的迁移指南，加上新功能罗列，足以端到端规划一次升级。各版本具体变更请见 [Release Notes](others/release-notes.md)。
+
+## AgentScope Service
+
+[AgentScope Service：部署与使用](../service/index.md)

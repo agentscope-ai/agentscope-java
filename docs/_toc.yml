@@ -671,3 +671,57 @@ parts:
   chapters:
   - file: v2/zh/community/contributors
     title: 核心贡献者
+
+- caption: v2 · Service — Getting started
+  chapters:
+  - file: v2/en/service/index
+  - file: v2/en/service/quickstart
+  - file: v2/en/service/concepts
+  - file: v2/en/service/first-session
+
+- caption: v2 · Service — Working with Agents
+  chapters:
+  - file: v2/en/service/agents
+  - file: v2/en/service/workspaces
+  - file: v2/en/service/sessions
+  - file: v2/en/service/teams
+  - file: v2/en/service/access
+  - file: v2/en/service/automation
+  - file: v2/en/service/runtime-host
+  - file: v2/en/service/integrations
+
+- caption: v2 · Service — Deploy and operate
+  chapters:
+  - file: v2/en/service/docker
+  - file: v2/en/service/kubernetes
+  - file: v2/en/service/configuration
+  - file: v2/en/service/operations
+  - file: v2/en/service/troubleshooting
+  - file: v2/en/service/releasing
+
+- caption: v2 · Service — 开始使用
+  chapters:
+  - file: v2/zh/service/index
+  - file: v2/zh/service/quickstart
+  - file: v2/zh/service/concepts
+  - file: v2/zh/service/first-session
+
+- caption: v2 · Service — 使用与协作
+  chapters:
+  - file: v2/zh/service/agents
+  - file: v2/zh/service/workspaces
+  - file: v2/zh/service/sessions
+  - file: v2/zh/service/teams
+  - file: v2/zh/service/access
+  - file: v2/zh/service/automation
+  - file: v2/zh/service/runtime-host
+  - file: v2/zh/service/integrations
+
+- caption: v2 · Service — 部署运维
+  chapters:
+  - file: v2/zh/service/docker
+  - file: v2/zh/service/kubernetes
+  - file: v2/zh/service/configuration
+  - file: v2/zh/service/operations
+  - file: v2/zh/service/troubleshooting
+  - file: v2/zh/service/releasing

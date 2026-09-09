@@ -46,7 +46,7 @@ Github地址：https://github.com/agentscope-ai/Trinity-RFT
 版本要求：v0.4.0及以上
 
 在线训练模式将 Agent 运行 (Agent Runner)、推理服务 (Explorer) 、训练服务 (Trainer) 三个部分解耦开来:
-![Online-Trining架构图](../../imgs/training.svg)
+![Online-Trining架构图](/imgs/training.svg)
 - Agent Runner 负责运行用户的 Agent 应用，处理用户请求，并通过 restful API 与 Explorer 进行交互。该部分由用户自行实现、部署和管理，Trinity-RFT 不对该部分做任何约束。
 - Explorer 作为推理服务，处理来自 Agent Runner 的请求，记录可训练数据（Experience），并将数据存储在数据库中。 Explorer 提供以下 Restful 接口供 Agent Runner 调用：
   - chat: 兼容标准的 openai chat completions 接口，处理用户的对话请求。
@@ -264,5 +264,3 @@ Msg response = agent.call(Msg.builder().textContent("搜索 Python 教程").buil
 // 3. 训练完成后停止
 runner.stop();
 ```
-
----

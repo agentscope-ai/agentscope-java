@@ -21,8 +21,8 @@ resources:
 leaderElection:
   enabled: true
 
-# Runtime data storage for sessions, events, context snapshots, metrics, and
-# team messages/tasks. "memory" is the default and is NOT durable — all data
+# Runtime data storage for Issue collaboration, AgentTasks, sessions, events,
+# context snapshots, and metrics. "memory" is the default and is NOT durable — all data
 # is lost on every restart and is NOT shared across replicas. Use "postgres"
 # for any deployment that needs durability or runs more than one replica.
 storage:
@@ -49,6 +49,19 @@ storage:
     contextSnapshots: 72h
     metrics: 720h
 
+# Shared Artifact bytes. Metadata and links remain in PostgreSQL; this volume
+# is the default object-provider implementation. For replicaCount > 1, enable
+# persistence with a ReadWriteMany StorageClass or provide an existing RWX PVC.
+artifact:
+  root: /data/artifacts
+  persistence:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteMany
+    size: 10Gi
+
 serviceAccount:
   create: true
   name: aistio-controller
@@ -69,6 +82,9 @@ product:
   existingSecret: ""
   staticDir: /ui
   workspaceRoot: /data/workspaces
+  # Local environments expose the data-plane host/container filesystem and
+  # shell. Keep disabled in production; opt in only for trusted development.
+  allowLocalEnvironment: false
 
 metrics:
   enabled: true
@@ -87,8 +103,8 @@ metrics:
 healthCheck:
   port: 8182
 
-# Experimental features: distributed AgentTeam orchestration and sandbox
-# provisioning. Off by default. NOTE: the ASDP gRPC server and config hot-reload
+# Experimental features: Runtime Host and sandbox provisioning. Off by default.
+# NOTE: the ASDP gRPC server and config hot-reload
 # delivery are GA and enabled independently (see image args --enable-asdp), so
 # turning this off does NOT disable config push to the data plane.
 experimental:
