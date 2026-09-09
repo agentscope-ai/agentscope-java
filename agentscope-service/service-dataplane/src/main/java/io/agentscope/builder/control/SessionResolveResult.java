@@ -36,4 +36,5 @@ public record SessionResolveResult(
         EnvironmentDto environment,
         List<Map<String, Object>> vaultCredentials,
         List<Map<String, Object>> memoryMounts,
-        Map<String, Object> teamContext) {}
+        Map<String, Object> teamContext,
+        Map<String, Object> executionContext) {}

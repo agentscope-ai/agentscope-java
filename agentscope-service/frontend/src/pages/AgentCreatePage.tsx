@@ -14,54 +14,119 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
+/*
+ * Copyright 2024-2026 the original author or authors.
+ * Licensed under the Apache License, Version 2.0.
+ */
+
+import { ArrowLeft, Bot, Cpu, FolderKanban, Sparkles, Wrench } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AgentCreateRequest, createAgent } from '../api/agents';
+import {
+  AgentCreateRequest,
+  DiscoveredRuntimeOption,
+  RuntimeCapabilityDescriptor,
+  createAgent,
+  listHostedRuntimeOptions,
+} from '../api/agents';
 import { listEnvironments } from '../api/environments';
 import { getWorkspace, listWorkspaces, WorkspaceSummary } from '../api/workspaces';
+import { useControlPlaneScope } from '../app/ScopeContext';
 
 const S: Record<string, React.CSSProperties> = {
-  page: { padding: '36px 40px', maxWidth: 880 },
-  title: { margin: '0 0 24px', fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' },
-  card: {
-    background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14,
-    padding: '28px 30px',
-    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+  page: { minHeight: '100%', background: '#fbfbfc', color: '#18181b', paddingBottom: 96 },
+  header: {
+    position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', gap: 20, padding: '18px 28px', background: 'rgba(251,251,252,.94)',
+    backdropFilter: 'blur(12px)', borderBottom: '1px solid #e4e4e7',
   },
-  fieldLabel: { display: 'block', fontSize: '0.88rem', color: '#475569', marginBottom: 8, fontWeight: 500 },
+  headerMain: { display: 'flex', gap: 14, alignItems: 'center' },
+  back: { border: 0, background: 'transparent', padding: 6, cursor: 'pointer', color: '#3f3f46' },
+  title: { margin: 0, fontSize: 22, lineHeight: 1.2, fontWeight: 650, letterSpacing: '-.02em' },
+  subtitle: { margin: '3px 0 0', color: '#71717a', fontSize: 14 },
+  headerPill: { borderRadius: 999, padding: '7px 12px', background: '#f4f4f5', color: '#52525b', fontSize: 13 },
+  content: { width: 'min(920px, calc(100% - 48px))', margin: '0 auto', padding: '38px 0' },
+  section: { marginBottom: 38 },
+  sectionTitle: { display: 'flex', alignItems: 'center', gap: 9, margin: 0, fontSize: 17, fontWeight: 650 },
+  sectionHint: { margin: '7px 0 15px', color: '#71717a', fontSize: 14, lineHeight: 1.5 },
+  card: { border: '1px solid #e4e4e7', background: '#fff', borderRadius: 16, overflow: 'hidden' },
+  row: {
+    display: 'grid', gridTemplateColumns: '210px minmax(0, 1fr)', gap: 24,
+    padding: '22px 24px', borderBottom: '1px solid #eeeeef', alignItems: 'start',
+  },
+  lastRow: { borderBottom: 0 },
+  label: { paddingTop: 10, fontSize: 14, fontWeight: 600, color: '#27272a' },
   input: {
-    width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-    background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 9,
-    color: '#0f172a', fontSize: '0.95rem',
+    width: '100%', boxSizing: 'border-box', border: '1px solid #d4d4d8', borderRadius: 10,
+    background: '#fff', padding: '11px 13px', fontSize: 15, color: '#18181b', outline: 'none',
   },
   textarea: {
-    width: '100%', boxSizing: 'border-box', padding: '12px 14px',
-    background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 9,
-    color: '#0f172a', fontSize: '0.95rem',
-    minHeight: 130, resize: 'vertical', lineHeight: 1.55,
+    width: '100%', boxSizing: 'border-box', minHeight: 190, resize: 'vertical',
+    border: '1px solid #d4d4d8', borderRadius: 10, background: '#fff', padding: '13px 14px',
+    fontSize: 14, lineHeight: 1.6, color: '#18181b', outline: 'none', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   },
-  row: { marginBottom: 20 },
-  actions: { marginTop: 24, display: 'flex', gap: 12, alignItems: 'center' },
-  btn: {
-    padding: '11px 24px',
-    background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-    color: '#ffffff',
-    border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
+  hint: { marginTop: 7, color: '#71717a', fontSize: 12.5, lineHeight: 1.5 },
+  capabilityList: { display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 12 },
+  capability: { border: '1px solid #e4e4e7', background: '#fafafa', borderRadius: 999, padding: '5px 9px', fontSize: 12, color: '#52525b' },
+  preview: { marginTop: 11, padding: '12px 13px', borderRadius: 10, background: '#fafafa', border: '1px solid #eeeeef', fontSize: 13, color: '#52525b', lineHeight: 1.55 },
+  details: { border: '1px solid #e4e4e7', background: '#fff', borderRadius: 14, padding: '4px 20px' },
+  summary: { cursor: 'pointer', padding: '15px 0', fontWeight: 600, fontSize: 14 },
+  footer: {
+    position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 12, display: 'flex', justifyContent: 'flex-end',
+    gap: 10, padding: '14px 28px', background: 'rgba(255,255,255,.94)', backdropFilter: 'blur(12px)', borderTop: '1px solid #e4e4e7',
   },
-  btnDisabled: { background: '#e2e8f0', color: '#94a3b8', cursor: 'not-allowed', boxShadow: 'none' },
-  cancel: {
-    padding: '11px 20px', background: '#ffffff', color: '#475569',
-    border: '1px solid #cbd5e1', borderRadius: 9, cursor: 'pointer', fontSize: '0.92rem', fontWeight: 500,
-  },
-  err: { color: '#dc2626', fontSize: '0.88rem' },
-  hint: { fontSize: '0.8rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.5 },
-  tip: { fontSize: '0.88rem', color: '#64748b', marginBottom: 20, lineHeight: 1.55 },
+  primary: { border: 0, borderRadius: 10, background: '#18181b', color: '#fff', padding: '10px 18px', fontWeight: 600, cursor: 'pointer' },
+  disabled: { background: '#d4d4d8', cursor: 'not-allowed' },
+  secondary: { border: '1px solid #d4d4d8', borderRadius: 10, background: '#fff', color: '#3f3f46', padding: '10px 16px', fontWeight: 600, cursor: 'pointer' },
+  error: { alignSelf: 'center', marginRight: 'auto', color: '#b91c1c', fontSize: 13 },
 };
+
+const managedRuntime: DiscoveredRuntimeOption = {
+  id: 'managed', name: 'AgentScope Managed', provider: 'agentscope', runtimeProfileId: '', runtimePoolId: '', hostCount: 1,
+  capabilities: {
+    displayName: 'AgentScope Managed', instructions: { supported: true, mode: 'native' },
+    workspace: { supported: true, mode: 'native' }, skills: { supported: true, mode: 'native' },
+    tools: { supported: true, mode: 'native' }, mcp: { supported: true, mode: 'native' },
+    model: { supported: true, mode: 'registry' }, resume: true,
+  },
+};
+
+function capabilityLabels(capabilities?: RuntimeCapabilityDescriptor): string[] {
+  if (!capabilities) return [];
+  const labels: string[] = [];
+  if (capabilities.workspace?.supported) labels.push('Workspace');
+  if (capabilities.skills?.supported) labels.push('Skills');
+  if (capabilities.tools?.supported) labels.push('Tools');
+  if (capabilities.mcp?.supported) labels.push('MCP');
+  if (capabilities.resume) labels.push('Resume');
+  return labels;
+}
+
+function capabilityDetails(capabilities?: RuntimeCapabilityDescriptor): string {
+  if (!capabilities) return '';
+  const describe = (label: string, capability?: { supported: boolean; mode?: string; target?: string }) => {
+    if (!capability?.supported) return `${label}: unavailable`;
+    if (capability.target) return `${label} → ${capability.target}`;
+    return `${label}: ${(capability.mode || 'native').replace(/-/g, ' ')}`;
+  };
+  return [
+    describe('Instructions', capabilities.instructions),
+    describe('Skills', capabilities.skills),
+    describe('Tools', capabilities.tools),
+    describe('MCP', capabilities.mcp),
+    `Session resume: ${capabilities.resume ? 'supported' : 'one-shot'}`,
+  ].join(' · ');
+}
 
 export default function AgentCreatePage() {
   const navigate = useNavigate();
+  const scope = useControlPlaneScope();
   const [name, setName] = useState('');
+  const [agentKey, setAgentKey] = useState('');
+  const [agentKeyCustomized, setAgentKeyCustomized] = useState(false);
+  const [executionId, setExecutionId] = useState('managed');
+  const [executionCustomized, setExecutionCustomized] = useState(false);
+  const [runtimes, setRuntimes] = useState<DiscoveredRuntimeOption[]>([]);
   const [description, setDescription] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
@@ -77,167 +142,161 @@ export default function AgentCreatePage() {
   useEffect(() => {
     listWorkspaces().then(setWorkspaces).catch(() => undefined);
     listEnvironments().then(setEnvironments).catch(() => undefined);
-  }, []);
+    listHostedRuntimeOptions(scope.tenant, scope.namespace).then(result => {
+      const discovered = result.runtimes ?? [];
+      setRuntimes(discovered);
+      if (!executionCustomized && discovered.length > 0) {
+        setExecutionId((discovered.find(runtime => runtime.provider === 'codex') ?? discovered[0]).id);
+      }
+    }).catch(() => undefined);
+  }, [executionCustomized, scope.tenant, scope.namespace]);
 
   useEffect(() => {
-    if (!workspaceId) {
-      setPreview(null);
-      return;
-    }
+    if (!workspaceId) { setPreview(null); return; }
     let cancelled = false;
-    getWorkspace(workspaceId)
-      .then(w => { if (!cancelled) setPreview(w); })
-      .catch(() => { if (!cancelled) setPreview(null); });
+    getWorkspace(workspaceId).then(w => { if (!cancelled) setPreview(w); }).catch(() => { if (!cancelled) setPreview(null); });
     return () => { cancelled = true; };
   }, [workspaceId]);
 
-  const canSubmit = !submitting && !!name.trim();
+  const execution = useMemo(
+    () => executionId === 'managed' ? managedRuntime : runtimes.find(runtime => runtime.id === executionId),
+    [executionId, runtimes],
+  );
+  const runtimeKind = executionId === 'managed' ? 'managed' : 'hosted-runtime';
+  const labels = capabilityLabels(execution?.capabilities);
+  const capabilityDetail = capabilityDetails(execution?.capabilities);
+  const canSubmit = !submitting && !!name.trim() && !!agentKey.trim() && !!execution;
 
   async function handleSubmit() {
+    if (!execution) return;
     setErr(null);
     setSubmitting(true);
     try {
       const req: AgentCreateRequest = {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        model: model.trim() || undefined,
+        name: name.trim(), agentKey: agentKey.trim(), tenant: scope.tenant, namespace: scope.namespace,
+        runtimeKind,
+        runtimeProfileId: runtimeKind === 'hosted-runtime' ? execution.runtimeProfileId : undefined,
+        runtimePoolId: runtimeKind === 'hosted-runtime' ? execution.runtimePoolId : undefined,
+        description: description.trim() || undefined, model: model.trim() || undefined,
         system: sysPrompt.trim() || undefined,
-        workspacePath: workspacePath.trim() || undefined,
-        workspaceId: workspaceId || undefined,
-        defaultEnvironmentId: defaultEnvironmentId || undefined,
+        workspacePath: runtimeKind === 'managed' ? workspacePath.trim() || undefined : undefined,
+        workspaceId: workspaceId || undefined, defaultEnvironmentId: defaultEnvironmentId || undefined,
       };
       const created = await createAgent(req);
-      navigate(`/agents/${encodeURIComponent(created.id)}/settings`, { replace: true });
+      navigate(scope.scopedPath(`/agent-center/agents/${encodeURIComponent(created.id)}`), { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to create');
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   }
 
   return (
-    <div style={S.page}>
-      <h1 style={S.title}>New agent</h1>
-      <div style={S.card}>
-        <div style={S.tip}>
-          Prefer linking a Workspace so AGENTS.md / skills / tools / subagents are authored once and
-          rematerialized into this agent. Or leave Workspace empty for an agent-private definition.
+    <div className="console-page-legacy" style={S.page}>
+      <header style={S.header}>
+        <div style={S.headerMain}>
+          <button type="button" aria-label="Back to previous page" title="Back to previous page" style={S.back} onClick={() => navigate(-1)}><ArrowLeft size={20} /></button>
+          <div><h1 style={S.title}>Create an agent</h1><p style={S.subtitle}>Review and configure</p></div>
         </div>
+        <span style={S.headerPill}>{execution?.name ?? 'Detecting runtime…'}</span>
+      </header>
 
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Name *</label>
-          <input
-            style={S.input}
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="e.g. Research Assistant"
-          />
-        </div>
-
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Description</label>
-          <input
-            style={S.input}
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="Short summary shown on cards and tabs"
-          />
-        </div>
-
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Workspace</label>
-          <select
-            style={S.input}
-            value={workspaceId}
-            onChange={e => setWorkspaceId(e.target.value)}
-          >
-            <option value="">None (agent-private files)</option>
-            {workspaces.map(w => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          <div style={S.hint}>
-            Link a Workspace to inherit AGENTS.md, skills, tools and subagents. Manage workspaces from the Workspaces nav.
-          </div>
-          {preview && (
-            <div style={{
-              marginTop: 10, padding: '12px 14px', borderRadius: 10,
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              fontSize: '0.85rem', color: '#475569', lineHeight: 1.5,
-            }}>
-              Will inherit from <strong>{preview.name}</strong> (v{preview.version}):
-              {' '}{preview.agentsMdExists ? 'AGENTS.md · ' : ''}
-              skills {preview.skillCount ?? 0} · subagents {preview.subagentCount ?? 0}.
-              Leave system prompt blank to use the workspace AGENTS.md.
+      <div style={S.content}>
+        <section style={S.section}>
+          <h2 style={S.sectionTitle}><Bot size={19} /> Identity</h2>
+          <p style={S.sectionHint}>Give the agent a recognizable name and a concise purpose.</p>
+          <div style={S.card}>
+            <div style={S.row}>
+              <label htmlFor="agent-name" style={S.label}>Name</label>
+              <input id="agent-name" style={S.input} value={name} onChange={e => {
+                setName(e.target.value);
+                if (!agentKeyCustomized) setAgentKey(e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''));
+              }} placeholder="e.g. Repository reviewer" autoFocus />
             </div>
-          )}
-        </div>
-
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Default environment (optional)</label>
-          <select
-            style={S.input}
-            value={defaultEnvironmentId}
-            onChange={e => setDefaultEnvironmentId(e.target.value)}
-          >
-            <option value="">None — Chat will ensure a local default</option>
-            {environments.map(env => (
-              <option key={env.id} value={env.id}>{env.name} ({env.type})</option>
-            ))}
-          </select>
-          <div style={S.hint}>
-            Used when opening Chat / Channel sessions. Vaults and memory stores can be attached later in Settings.
+            <div style={{ ...S.row, ...S.lastRow }}>
+              <label htmlFor="agent-description" style={S.label}>Description</label>
+              <div>
+                <textarea id="agent-description" style={{ ...S.textarea, minHeight: 90, fontFamily: 'inherit' }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this agent do?" maxLength={255} />
+                <div style={{ ...S.hint, textAlign: 'right' }}>{description.length} / 255</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Workspace path (optional override)</label>
-          <input
-            style={S.input}
-            value={workspacePath}
-            onChange={e => setWorkspacePath(e.target.value)}
-            placeholder="leave blank for default under aistiod workspace root"
-          />
-          <div style={S.hint}>
-            Leave blank to use the control-plane default path. Absolute paths are used as-is.
+        <section style={S.section}>
+          <h2 style={S.sectionTitle}><Sparkles size={19} /> Behavior &amp; capabilities</h2>
+          <p style={S.sectionHint}>Define how it should work and attach workspace capabilities it can rely on.</p>
+          <div style={S.card}>
+            <div style={S.row}>
+              <label htmlFor="agent-instructions" style={S.label}>Instructions</label>
+              <div>
+                <textarea id="agent-instructions" style={S.textarea} value={sysPrompt} onChange={e => setSysPrompt(e.target.value)} placeholder="Write what this agent should do, what to focus on, and what to avoid…" />
+                <div style={S.hint}>The selected runtime adapter maps these instructions to its native prompt or configuration.</div>
+              </div>
+            </div>
+            <div style={{ ...S.row, ...S.lastRow }}>
+              <label htmlFor="agent-workspace" style={S.label}>Workspace</label>
+              <div>
+                <select id="agent-workspace" style={S.input} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>
+                  <option value="">No linked workspace</option>
+                  {workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+                </select>
+                <div style={S.hint}>A workspace is the portable source for repository guidance, skills, tools, and subagents.</div>
+                {preview && <div style={S.preview}><strong>{preview.name}</strong> · {preview.agentsMdExists ? 'AGENTS.md · ' : ''}{preview.skillCount ?? 0} skills · {preview.subagentCount ?? 0} subagents</div>}
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div style={S.row}>
-          <label style={S.fieldLabel}>Model</label>
-          <input
-            style={S.input}
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            placeholder="e.g. dashscope:qwen-max, deepseek:deepseek-chat, openai:gpt-4o"
-          />
-          <div style={S.hint}>
-            Provider-qualified model id resolved via ModelRegistry; empty falls back to the data-plane default model.
+        <section style={S.section}>
+          <h2 style={S.sectionTitle}><Cpu size={19} /> Execution</h2>
+          <p style={S.sectionHint}>Choose where the agent runs. Hosts, pools, profiles, and CLI commands are resolved behind this selection.</p>
+          <div style={S.card}>
+            <div style={S.row}>
+              <label htmlFor="agent-runtime" style={S.label}>Runtime</label>
+              <div>
+                <select id="agent-runtime" style={S.input} value={executionId} onChange={e => { setExecutionCustomized(true); setExecutionId(e.target.value); }}>
+                  {runtimes.map(runtime => <option key={runtime.id} value={runtime.id}>{runtime.name}</option>)}
+                  <option value="managed">{managedRuntime.name}</option>
+                </select>
+                {runtimes.length === 0 && <div style={S.hint}>No local agent runtime is online, so AgentScope Managed is selected.</div>}
+                {labels.length > 0 && <div style={S.capabilityList}>{labels.map(label => <span key={label} style={S.capability}>{label}</span>)}</div>}
+                {capabilityDetail && <div style={S.hint}>{capabilityDetail}</div>}
+              </div>
+            </div>
+            <div style={{ ...S.row, ...S.lastRow }}>
+              <label htmlFor="agent-model" style={S.label}>Model</label>
+              <div>
+                <input id="agent-model" style={S.input} value={model} onChange={e => setModel(e.target.value)} placeholder="Default (provider)" />
+                <div style={S.hint}>Optional override. Leave blank to use the runtime provider's default model.</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div style={S.row}>
-          <label style={S.fieldLabel}>System prompt</label>
-          <textarea
-            style={S.textarea}
-            value={sysPrompt}
-            onChange={e => setSysPrompt(e.target.value)}
-            placeholder="High-level behavior. You can also edit AGENTS.md after creation."
-          />
-        </div>
-
-        <div style={S.actions}>
-          <button
-            style={{ ...S.btn, ...(canSubmit ? {} : S.btnDisabled) }}
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {submitting ? 'Creating…' : 'Create agent'}
-          </button>
-          <button style={S.cancel} onClick={() => navigate('/agents')}>Cancel</button>
-          {err && <span style={S.err}>{err}</span>}
-        </div>
+        <details style={S.details}>
+          <summary style={S.summary}>Advanced settings</summary>
+          <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
+            <label htmlFor="agent-key" style={S.label}>Agent key</label>
+            <div><input id="agent-key" style={S.input} value={agentKey} onChange={e => { setAgentKeyCustomized(true); setAgentKey(e.target.value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')); }} placeholder="repository-reviewer" /><div style={S.hint}>{scope.selectorVisible ? 'Stable identity inside the current tenant and namespace.' : 'Stable identity for this agent.'}</div></div>
+          </div>
+          {runtimeKind === 'managed' && <div style={{ ...S.row, paddingLeft: 0, paddingRight: 0 }}>
+            <label htmlFor="agent-environment" style={S.label}><FolderKanban size={16} /> Environment</label>
+            <select id="agent-environment" style={S.input} value={defaultEnvironmentId} onChange={e => setDefaultEnvironmentId(e.target.value)}>
+              <option value="">Automatic local default</option>
+              {environments.map(environment => <option key={environment.id} value={environment.id}>{environment.name} ({environment.type})</option>)}
+            </select>
+          </div>}
+          {runtimeKind === 'managed' && <div style={{ ...S.row, ...S.lastRow, paddingLeft: 0, paddingRight: 0 }}>
+            <label htmlFor="agent-workspace-path" style={S.label}><Wrench size={16} /> Workspace path</label>
+            <input id="agent-workspace-path" style={S.input} value={workspacePath} onChange={e => setWorkspacePath(e.target.value)} placeholder="Automatic" />
+          </div>}
+        </details>
       </div>
+
+      <footer style={S.footer}>
+        {err && <span style={S.error}>{err}</span>}
+        <button style={S.secondary} onClick={() => navigate(scope.scopedPath('/agent-center/agents'))}>Cancel</button>
+        <button style={{ ...S.primary, ...(canSubmit ? {} : S.disabled) }} onClick={handleSubmit} disabled={!canSubmit}>{submitting ? 'Creating…' : 'Create & open agent'}</button>
+      </footer>
     </div>
   );
 }

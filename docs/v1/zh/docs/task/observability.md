@@ -39,7 +39,7 @@ npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
 Studio 将运行在 http://localhost:5173（前端开发服务器）
-![Studio Server 页面](../../imgs/studioServer.png)
+![Studio Server 页面](/imgs/studioServer.png)
 
 
 #### 2. Java 应用集成
@@ -73,7 +73,7 @@ StudioManager.shutdown();
 
 #### 3. 在AgentScope Studio 查看Trace信息
 
-![Trace信息](../../imgs/studioServer-trace.png)
+![Trace信息](/imgs/studioServer-trace.png)
 
 
 
@@ -95,7 +95,7 @@ StudioUserAgent user = StudioUserAgent.builder()
 Msg userInput = user.call(null).block();
 ```
 您可以在Studio中的Projects中找到该Project，通过WebUI的方式进行调试
-![Studio Server Web UI 输入界面](../../imgs/studioServer-webUI.png)
+![Studio Server Web UI 输入界面](/imgs/studioServer-webUI.png)
 
 #### 对话循环
 
