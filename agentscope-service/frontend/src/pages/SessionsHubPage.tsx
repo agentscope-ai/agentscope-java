@@ -20,12 +20,12 @@ import {
   ManagedSession,
   ManagedSessionListStatus,
   archiveManagedSession,
+  agentTaskDetailPath,
   deleteManagedSession,
-  isTeamOriginatedSession,
+  isAgentTaskSession,
   listManagedSessions,
-  parseTeamExternalKey,
+  parseAgentTaskExternalKey,
   restoreManagedSession,
-  teamDetailPath,
 } from '../api/managedSessions';
 import { AgentDefinition, listAgents } from '../api/agents';
 import { Environment, listEnvironments } from '../api/environments';
@@ -158,8 +158,8 @@ export default function SessionsHubPage() {
   );
 
   const newSessionHref = agentFilter
-    ? `/sessions/new?agentId=${encodeURIComponent(agentFilter)}`
-    : '/sessions/new';
+    ? `/managed/sessions/new?agentId=${encodeURIComponent(agentFilter)}`
+    : '/managed/sessions/new';
 
   const reload = useCallback(async () => {
     setErr(null);
@@ -195,7 +195,7 @@ export default function SessionsHubPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h2 style={S.title}>Sessions</h2>
         <select
@@ -251,20 +251,20 @@ export default function SessionsHubPage() {
         const reason = stopReasonSummary(s.stopReason);
         const archived = !!s.archivedAt;
         const agentLabel = agentNameById.get(s.agentId) || s.agentId;
-        const teamRef = parseTeamExternalKey(s.externalKey);
-        const fromTeam = isTeamOriginatedSession(s);
+        const taskRef = parseAgentTaskExternalKey(s.externalKey);
+        const fromTask = isAgentTaskSession(s);
         return (
           <div key={s.id} style={S.card}>
             <div style={S.cardHeader}>
               <span style={S.label}>{s.id}</span>
-              {fromTeam && <span style={S.teamTag} title={s.externalKey || undefined}>Team</span>}
+              {fromTask && <span style={S.teamTag} title={s.externalKey || undefined}>AgentTask</span>}
               <span style={statusStyle(s.status)}>{s.status}</span>
               <span style={S.time}>{relTime(s.updatedAt)}</span>
             </div>
             <div style={S.agent}>{agentLabel}</div>
-            {teamRef && (
+            {taskRef && (
               <div style={S.teamMeta}>
-                from team {teamRef.namespace}/{teamRef.teamName} · member {teamRef.memberName}
+                from AgentTask {taskRef.agentTaskId}
               </div>
             )}
             {reason && <div style={S.stopReason}>stop: {reason}</div>}
@@ -275,24 +275,24 @@ export default function SessionsHubPage() {
                   type="button"
                   style={S.action}
                   disabled={busyId === s.id}
-                  onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}`)}
+                  onClick={() => navigate(`/managed/sessions/${encodeURIComponent(s.id)}`)}
                 >
-                  {fromTeam ? 'View transcript' : 'Open chat'}
+                  {fromTask ? 'View transcript' : 'Open chat'}
                 </button>
               )}
-              {teamRef && (
+              {taskRef && (
                 <button
                   type="button"
                   style={S.action}
-                  onClick={() => navigate(teamDetailPath(teamRef))}
+                  onClick={() => navigate(agentTaskDetailPath(taskRef))}
                 >
-                  Open team
+                  Open AgentTask
                 </button>
               )}
               <button
                 type="button"
                 style={S.action}
-                onClick={() => navigate(`/sessions/${encodeURIComponent(s.id)}?tab=details`)}
+                onClick={() => navigate(`/managed/sessions/${encodeURIComponent(s.id)}?tab=details`)}
               >
                 Details
               </button>

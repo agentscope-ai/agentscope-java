@@ -1,0 +1,22 @@
+-- +migrate Down
+DROP TABLE IF EXISTS team_proposals;
+DROP TABLE IF EXISTS webhook_deliveries;
+DROP TABLE IF EXISTS external_links;
+DROP TABLE IF EXISTS comment_external_refs;
+DROP TABLE IF EXISTS issue_external_refs;
+DROP TABLE IF EXISTS work_sources;
+DROP TABLE IF EXISTS activity_log;
+DROP TABLE IF EXISTS inbox_items;
+DROP TABLE IF EXISTS approvals;
+DROP TABLE IF EXISTS issue_subscribers;
+DROP TABLE IF EXISTS artifact_links;
+DROP TABLE IF EXISTS artifacts;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS agent_task_inputs;
+DROP TABLE IF EXISTS execution_attempts;
+DROP TABLE IF EXISTS agent_tasks;
+DROP TABLE IF EXISTS comment_routes;
+DROP TABLE IF EXISTS comment_mentions;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS issues;
