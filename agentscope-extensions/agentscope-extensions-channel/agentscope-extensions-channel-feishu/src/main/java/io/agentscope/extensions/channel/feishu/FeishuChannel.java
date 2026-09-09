@@ -169,6 +169,12 @@ public final class FeishuChannel implements Channel {
     }
 
     @Override
+    public Mono<String> deliverWithReceipt(
+            OutboundAddress address, Msg message, String deliveryId) {
+        return outboundClient.sendWithReceipt(address, message, deliveryId);
+    }
+
+    @Override
     public void deliver(OutboundAddress address, List<Msg> messages) {
         if (messages == null || messages.isEmpty()) {
             return;

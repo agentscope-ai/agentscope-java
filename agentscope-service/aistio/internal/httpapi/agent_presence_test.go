@@ -68,7 +68,7 @@ func TestRegistryAgentBuckets(t *testing.T) {
 	r.MarkStale(time.Now().UTC().Add(2 * dataplane.StaleAfter))
 	_ = r.Heartbeat("1")
 
-	live, offline, keys, _ := registryAgentBuckets(r)
+	live, offline, keys, _ := registryAgentBuckets(r, "default")
 	if len(live) != 1 {
 		t.Fatalf("live=%v", live)
 	}

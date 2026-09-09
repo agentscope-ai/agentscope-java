@@ -23,6 +23,7 @@ export function PressureGauge({
   value?: number | null;
   className?: string;
 }) {
+  if (value == null || !Number.isFinite(value)) return <span className="text-xs text-muted-foreground" title="Context pressure has not been reported">Not reported</span>;
   const ratio = Math.max(0, Math.min(1, value ?? 0));
   const pct = Math.round(ratio * 100);
   const tone =
