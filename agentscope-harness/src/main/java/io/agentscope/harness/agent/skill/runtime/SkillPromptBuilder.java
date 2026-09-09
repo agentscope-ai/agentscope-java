@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.skill.runtime;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import java.util.Collection;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -79,7 +80,7 @@ public final class SkillPromptBuilder {
             ## Code Execution
 
             <code_execution>
-            You have access to the execute_shell_command tool. Each skill in <available_skills>
+            You have access to the %s tool. Each skill in <available_skills>
             includes a <files-root> element giving the absolute path to that skill's files.
 
             Workflow:
@@ -89,7 +90,8 @@ public final class SkillPromptBuilder {
             4. Always use absolute paths derived from <files-root>; never invent paths
             5. If a script exists for the task, run it directly — do not rewrite its logic inline
             </code_execution>
-            """;
+            """
+                    .formatted(ShellExecuteTool.NAME);
 
     private final String header;
     private final String codeExecutionInstruction;

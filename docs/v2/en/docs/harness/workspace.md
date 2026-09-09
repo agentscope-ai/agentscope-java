@@ -386,7 +386,7 @@ A skill is a packaged capability — a directory containing `SKILL.md` (descript
 skills/code-reviewer/
 ├── SKILL.md               ← YAML frontmatter (name + description) + instructions
 ├── references/style-guide.md   ← optional, agent reads on demand
-└── scripts/run-checks.sh       ← optional, agent invokes via execute_shell_command
+└── scripts/run-checks.sh       ← optional, agent invokes via execute
 ```
 
 There are four registration layers (low → high priority):
