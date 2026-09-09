@@ -13,6 +13,3 @@ CREATE TABLE IF NOT EXISTS data_planes (
     source          TEXT NOT NULL DEFAULT 'self-register',
     registered_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS idx_data_planes_agent ON data_planes(agent_name, namespace);
-CREATE INDEX IF NOT EXISTS idx_data_planes_seen ON data_planes(last_seen_at DESC);

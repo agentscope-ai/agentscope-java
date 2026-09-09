@@ -213,6 +213,27 @@ sphinx:
           languages:
             - en
             - zh
+        - id: service
+          label_en: Service
+          label_zh: Service
+          href_v2_en: v2/en/service/index
+          href_v2_zh: v2/zh/service/index
+          mirror_paths: true
+          prefixes_v2_en:
+            - v2/en/service/
+          prefixes_v2_zh:
+            - v2/zh/service/
+          sections_v2_en:
+            - v2 · Service — Getting started
+            - v2 · Service — Working with Agents
+            - v2 · Service — Deploy and operate
+          sections_v2_zh:
+            - v2 · Service — 开始使用
+            - v2 · Service — 使用与协作
+            - v2 · Service — 部署运维
+          languages:
+            - en
+            - zh
         - id: integration
           label_en: Integration
           label_zh: 集成

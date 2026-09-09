@@ -1465,7 +1465,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -1503,12 +1503,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================

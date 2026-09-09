@@ -66,6 +66,9 @@ func (r *turnRepo) SyncOnPhase(_ context.Context, sessionFK uuid.UUID, phase str
 		return nil
 	}
 	status := store.TurnStatusCompleted
+	if phase == store.TurnStatusFailed {
+		status = store.TurnStatusFailed
+	}
 	if phase == store.SessionPhaseTerminated {
 		status = store.TurnStatusAborted
 	}
