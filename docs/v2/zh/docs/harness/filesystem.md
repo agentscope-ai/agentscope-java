@@ -151,6 +151,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 Kubernetes 后端完全基于 [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)：沙箱 pod 由集群里的 agent-sandbox 控制器管理，镜像、资源、PVC 都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里（不在 Java 侧配置），Java 侧通过 `SandboxClaim` 从预热池领取实例。使用前需要先安装 agent-sandbox 控制器并创建好模板和预热池。
 
+生命周期配置需要 agent-sandbox controller 及 `v1beta1` CRD 已提供 `SandboxClaim.spec.lifecycle` 字段。
+
 ```java
 HarnessAgent agent = HarnessAgent.builder()
     .name("k8s-agent")
@@ -175,7 +177,16 @@ HarnessAgent agent = HarnessAgent.builder()
 | `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | 经 Gateway API 访问沙箱 | 无 |
 | `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
 | `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
+| `claimOwned(boolean)` | 每次 call 释放时是否删除 claim；置 `false` 可保留供后续 resume | `true`（配置 `shutdownAfterSeconds` 时为 `false`） |
+| `shutdownAfterSeconds(long)` | 从 claim 创建起经过指定秒数后删除 | 未配置 |
+| `ttlSecondsAfterFinished(int)` | claim 进入 Finished 后保留的秒数（`0` = 立即删除） | 未配置 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
+
+配置 `shutdownAfterSeconds` 后，claim 删除默认交给 agent-sandbox controller，每次 call 释放时只断开
+连接，后续 call 可 resume 同一 claim。`ttlSecondsAfterFinished` 仅在镜像过来的 `Finished` condition
+变为 true 后开始计时；常驻 runtime 不会因客户端断开而自动 Finished。因此，仅配置 Finished TTL
+不会默认保留 claim；只有在 runtime 确保会结束时才应同时配置 `claimOwned(false)`，否则应使用
+`shutdownAfterSeconds` 作为硬性过期时间。显式配置 `claimOwned(true)` 始终恢复每次 release 立即删除的行为。
 
 `apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](./sandbox.md#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](./sandbox.md#kubernetes-后端的状态保存pvc-是第一层)。
 

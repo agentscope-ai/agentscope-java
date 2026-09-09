@@ -34,6 +34,10 @@ public class KubernetesSandboxState extends SandboxState {
      */
     private String fileApiBaseDir = "/workspace";
 
+    /**
+     * Whether per-call release deletes this claim. False means release only disconnects and claim
+     * cleanup belongs to an explicitly configured caller or controller lifecycle.
+     */
     private boolean claimOwned = true;
 
     public String getNamespace() {

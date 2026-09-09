@@ -94,11 +94,20 @@ public class SandboxClaimSpec {
         @JsonProperty("shutdownPolicy")
         private String shutdownPolicy;
 
+        @JsonProperty("ttlSecondsAfterFinished")
+        private Integer ttlSecondsAfterFinished;
+
         public Lifecycle() {}
 
         public Lifecycle(String shutdownTime, String shutdownPolicy) {
+            this(shutdownTime, shutdownPolicy, null);
+        }
+
+        public Lifecycle(
+                String shutdownTime, String shutdownPolicy, Integer ttlSecondsAfterFinished) {
             this.shutdownTime = shutdownTime;
             this.shutdownPolicy = shutdownPolicy;
+            this.ttlSecondsAfterFinished = ttlSecondsAfterFinished;
         }
 
         public String getShutdownTime() {
@@ -115,6 +124,14 @@ public class SandboxClaimSpec {
 
         public void setShutdownPolicy(String shutdownPolicy) {
             this.shutdownPolicy = shutdownPolicy;
+        }
+
+        public Integer getTtlSecondsAfterFinished() {
+            return ttlSecondsAfterFinished;
+        }
+
+        public void setTtlSecondsAfterFinished(Integer ttlSecondsAfterFinished) {
+            this.ttlSecondsAfterFinished = ttlSecondsAfterFinished;
         }
     }
 

@@ -151,6 +151,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 The Kubernetes store is fully based on [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox): sandbox pods are managed by the agent-sandbox controller in your cluster, and image, resources, and PVCs are all declared cluster-side in a `SandboxTemplate` / `SandboxWarmPool` (not configured from Java). The Java side claims instances from the warm pool via `SandboxClaim`. Install the agent-sandbox controller and create the template and warm pool before use.
 
+Lifecycle options require an agent-sandbox controller and `v1beta1` CRDs that expose the `SandboxClaim.spec.lifecycle` fields.
+
 ```java
 HarnessAgent agent = HarnessAgent.builder()
     .name("k8s-agent")
@@ -175,7 +177,19 @@ Main `KubernetesFilesystemSpec` options:
 | `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | reach the sandbox through the Gateway API | none |
 | `serverPort(int)` | runtime HTTP API port | `8888` |
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
+| `claimOwned(boolean)` | whether per-call release deletes the claim; set `false` to keep it resumable | `true` (`false` with `shutdownAfterSeconds`) |
+| `shutdownAfterSeconds(long)` | delete the claim after this many seconds from creation | unset |
+| `ttlSecondsAfterFinished(int)` | retain a finished claim for this many seconds (`0` = delete immediately) | unset |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
+
+Configuring `shutdownAfterSeconds` delegates claim deletion to the agent-sandbox controller, so
+per-call release only disconnects by default and later calls can resume the same claim.
+`ttlSecondsAfterFinished` starts only after the mirrored `Finished` condition becomes true; a
+long-running runtime does not become finished merely because the client disconnects. For that
+reason a finished-only TTL does not implicitly retain a claim: combine it with
+`claimOwned(false)` only when the runtime is guaranteed to finish, or use
+`shutdownAfterSeconds` as a hard expiry. An explicit `claimOwned(true)` always restores
+delete-on-release behaviour.
 
 When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
 
