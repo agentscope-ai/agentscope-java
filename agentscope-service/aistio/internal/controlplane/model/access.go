@@ -77,7 +77,11 @@ func (n Namespace) Roles(user string) []string {
 	}
 	if n.Owner == user {
 		roles := []string{"admin", "member", "developer", "operator"}
-		if slices.Contains(n.Members[user], "auditor") {
+		auditor := slices.Contains(n.Members[user], "auditor")
+		for _, id := range n.GroupIDs(user) {
+			auditor = auditor || slices.Contains(n.Groups[id].Roles, "auditor")
+		}
+		if auditor {
 			roles = append(roles, "auditor")
 		}
 		return roles

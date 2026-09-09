@@ -7,6 +7,7 @@ import { logoutAccount } from '@/api/auth';
 
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { resourceURL } from '@/api/resourceAccess';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bot,
@@ -167,6 +168,8 @@ export default function AppShell() {
   const openCommand = useCallback(() => setCommandOpen(true), []);
   useCommandPaletteShortcut(openCommand);
   useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  const resourceMatch = location.pathname.match(/^\/agent-center\/(agents|teams|workflows|entrypoints|workspaces)\/([^/]+)/);
+  const accessLink = resourceMatch && resourceMatch[2] !== 'new' && !location.pathname.includes('/manage') ? resourceURL(scope.namespace, ({ agents: 'agent', teams: 'team', workflows: 'workflow', entrypoints: 'channel', workspaces: 'workspace' } as Record<string, string>)[resourceMatch[1]], decodeURIComponent(resourceMatch[2])) : undefined;
   const context = routeLabels.find(([prefix]) => matches(location.pathname, prefix));
 
   return (
@@ -223,6 +226,7 @@ export default function AppShell() {
             <div className="hidden min-w-0 text-sm font-medium text-foreground xl:block">{context?.[1] || 'AgentScope'}</div>
           </div>
           <div className="flex items-center gap-3">
+            {accessLink && <Link className="text-xs font-medium text-indigo-600" to={accessLink}>Access & dependencies</Link>}
             <button type="button" onClick={openCommand} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2 text-xs text-muted-foreground hover:bg-slate-100 sm:min-w-52 sm:px-3" aria-label="Search"><Search className="h-3.5 w-3.5" /><span className="hidden flex-1 text-left sm:block">Search</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] sm:block">⌘K</kbd></button>
             {scope.selectorVisible && <div className="hidden font-mono text-xs text-muted-foreground md:block">{scope.tenant} / {scope.namespace}</div>}
           </div>

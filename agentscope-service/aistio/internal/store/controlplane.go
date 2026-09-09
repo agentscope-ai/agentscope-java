@@ -25,6 +25,8 @@ import (
 )
 
 type AgentFilter struct {
+	ExcludedIDs       []uuid.UUID
+	Offset            int
 	Tenant, Namespace string
 	Status            controlmodel.AgentStatus
 	IncludeArchived   bool

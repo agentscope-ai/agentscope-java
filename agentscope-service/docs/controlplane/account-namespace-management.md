@@ -1,5 +1,7 @@
 # 账号、Namespace 与个人设置改造
 
+> 2026-09-09：在账号持续可用的前提下，已扩展用户组、资源权限、依赖授权、申请审批与跨空间模板导入。后续实现与管理入口见 [Namespace 权限与配套资源管理](resource-permissions-management.md)。
+
 日期：2026-09-08。代码位于主目录 `/Users/ken/agentscope-2/agentscope-java`，分支 `agentscope-service-v5`。
 
 ## 定位与入口

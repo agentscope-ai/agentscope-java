@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -18,9 +19,10 @@ import (
 // ChannelWorkRuntime uses the same authorization and collaboration store as the console.
 // Provider callbacks never supply an internal account, namespace or execution identity.
 type ChannelWorkRuntime struct {
-	Store     store.Store
-	Namespace func(context.Context, string) (*model.Namespace, error)
-	Target    func(context.Context, *model.Namespace, string, string) error
+	AuthorizeTarget func(context.Context, *model.Namespace, string, string, string) error
+	Store           store.Store
+	Namespace       func(context.Context, string) (*model.Namespace, error)
+	Target          func(context.Context, *model.Namespace, string, string) error
 }
 
 func (s *Server) SetChannelWorkRuntime(runtime *ChannelWorkRuntime) { s.channelWork = runtime }
@@ -30,6 +32,8 @@ type ChannelTarget struct {
 	TargetRef  string `json:"targetRef"`
 }
 type ChannelWorkRoute struct {
+	RestrictGroups bool     `json:"restrictGroups,omitempty"`
+	AllowedGroups  []string `json:"allowedGroups,omitempty"`
 	ChannelTarget
 	AccountID string `json:"accountId"`
 	PeerKind  string `json:"peerKind"`
@@ -140,3 +144,31 @@ CREATE TABLE IF NOT EXISTS channel_deliveries (
 CREATE INDEX IF NOT EXISTS channel_deliveries_pending ON channel_deliveries(next_attempt) WHERE state IN ('pending','submitted');
 CREATE INDEX IF NOT EXISTS channel_delivery_replies ON channel_deliveries(channel_id,address_key,provider_message_id) WHERE provider_message_id<>'';
 `
+
+// Only the most specific matched window rule contributes permissions. Falling
+// back to a broader rule must never bypass a restrictive thread rule.
+func (v ChannelWorkSettings) allowsWindow(n *model.Namespace, user string, in ChannelInbound) bool {
+	var chosen *ChannelWorkRoute
+	for i := range v.Routes {
+		r := &v.Routes[i]
+		if r.AccountID != in.AccountID || r.PeerKind != in.PeerKind || r.PeerID != in.PeerID {
+			continue
+		}
+		if r.ThreadID != "" && r.ThreadID == in.ThreadID {
+			chosen = r
+			break
+		}
+		if r.ThreadID == "" && chosen == nil {
+			chosen = r
+		}
+	}
+	if chosen == nil || !chosen.RestrictGroups {
+		return true
+	}
+	for _, id := range chosen.AllowedGroups {
+		if slices.Contains(n.GroupIDs(user), id) {
+			return true
+		}
+	}
+	return false
+}

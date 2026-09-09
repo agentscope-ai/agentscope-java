@@ -112,6 +112,12 @@ func (s *Server) putChannelWorkConfig(c *gin.Context) {
 			writeErr(c, 400, "routes require unique organization and conversation addresses")
 			return
 		}
+		for _, id := range r.AllowedGroups {
+			if _, ok := n.Groups[id]; !ok {
+				writeErr(c, 400, "window rule references an unknown user group")
+				return
+			}
+		}
 		seen[key] = true
 		targets = append(targets, r.ChannelTarget)
 	}
@@ -169,6 +175,13 @@ func (s *Server) channelActor(ctx context.Context, ch channelRow, user string, w
 	action := "read"
 	if write {
 		action = "work.write"
+	}
+	resourceAction := "discover"
+	if write {
+		resourceAction = "use"
+	}
+	if !n.Decide(user, "channel:"+ch.ChannelID, resourceAction).Allowed {
+		return nil, ctx, store.ErrNotFound
 	}
 	if !model.NamespaceAllows(n.Roles(user), action) {
 		return nil, ctx, store.ErrNotFound

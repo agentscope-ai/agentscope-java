@@ -31,6 +31,11 @@ func (s *Server) productNamespaceMiddleware() gin.HandlerFunc {
 		}
 		resource, _, _ := strings.Cut(strings.TrimPrefix(c.Request.URL.Path, "/api/"), "/")
 		switch resource {
+		case "sessions":
+			if s.authorizePersonalSessionMutation(c) {
+				c.Next()
+			}
+			return
 		case "agents", "workspaces", "toolsets", "environments", "memory-stores", "vaults", "channels", "deployments", "files", "marketplaces":
 		default:
 			c.Next()
@@ -81,8 +86,56 @@ func (s *Server) productNamespaceMiddleware() gin.HandlerFunc {
 				action = "read"
 			}
 		}
-		if !controlmodel.NamespaceAllows(roles, action) {
+		kind := map[string]string{"agents": "managed-agent", "workspaces": "workspace", "environments": "environment", "vaults": "vault", "memory-stores": "memory", "channels": "channel"}[resource]
+		id := c.Param("id")
+		if resource == "channels" {
+			id = c.Param("channelId")
+		}
+		resourceAction := "edit"
+		if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
+			resourceAction = "inspect"
+		}
+		if action == "read" {
+			resourceAction = "discover"
+		}
+		if action == "work.write" {
+			resourceAction = "use"
+		}
+		if strings.HasSuffix(c.Request.URL.Path, "/publish") {
+			resourceAction = "publish"
+		}
+		allowed := controlmodel.NamespaceAllows(roles, action)
+		if kind != "" && id != "" {
+			allowed = n.Decide(user, kind+":"+id, resourceAction).Allowed
+			if kind == "managed-agent" {
+				items, e := s.resourceInventory(c.Request.Context(), n)
+				if e != nil {
+					c.AbortWithStatusJSON(503, ErrorResponse{Error: "Unable to resolve resource access"})
+					return
+				}
+				allowed = productResourceAllowed(n, items, user, kind+":"+id, resourceAction)
+			}
+		}
+		if kind != "" && id == "" && c.Request.Method == "GET" {
+			inventory, e := s.resourceInventory(c.Request.Context(), n)
+			if e != nil {
+				c.AbortWithStatusJSON(503, ErrorResponse{Error: "Unable to resolve resource access"})
+				return
+			}
+			ids := []string{}
+			for _, r := range inventory {
+				if r.Kind == kind && productResourceAllowed(n, inventory, user, r.Key(), resourceAction) {
+					ids = append(ids, r.ID)
+				}
+			}
+			product.SetResourceFilter(c, ids)
+			allowed = allowed || len(ids) > 0
+		}
+		if !allowed {
 			c.AbortWithStatusJSON(403, ErrorResponse{Error: "namespace role does not allow resource configuration"})
+			return
+		}
+		if !s.authorizeProductDependencies(c, n, kind, id) {
 			return
 		}
 		// Product memory content is shared namespace knowledge, not an implicit

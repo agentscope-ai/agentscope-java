@@ -163,6 +163,9 @@ func (s *Server) applyChannelInbound(ctx context.Context, ch channelRow, in Chan
 	if err != nil {
 		return channelOutcome{}, err
 	}
+	if !cfg.allowsWindow(n, user, in) {
+		return channelOutcome{Reply: "当前聊天窗口仅对指定用户组开放，请联系空间管理员。"}, nil
+	}
 	if !cfg.Enabled {
 		return channelOutcome{Reply: "此 Channel 的工作接待已停用。"}, nil
 	}
@@ -336,6 +339,11 @@ func (s *Server) applyChannelInbound(ctx context.Context, ch channelRow, in Chan
 		return channelOutcome{Reply: "群组创建工作需要启用群接待，并使用 /new-shared 工作内容。该工作将对当前 namespace 成员可见，并在此群回传结果。"}, nil
 	}
 	target := cfg.route(in)
+	if s.channelWork.AuthorizeTarget != nil {
+		if e := s.channelWork.AuthorizeTarget(ctx, n, user, target.TargetType, target.TargetRef); e != nil {
+			return channelOutcome{Reply: "当前账号没有接待资源或其依赖的使用权限，请向空间管理员申请。"}, nil
+		}
+	}
 	if err = s.channelWork.Target(ctx, n, target.TargetType, target.TargetRef); err != nil {
 		return channelOutcome{Reply: "接待对象不可用，请检查同一空间内的 Agent／Team 配置。"}, nil
 	}

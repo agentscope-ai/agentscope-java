@@ -79,6 +79,13 @@ func (s *Server) claimChannelDelivery(c *gin.Context) {
 	}
 	allowed = allowed && err == nil && cfg.Enabled
 	if allowed && issueID != nil {
+		n, e := s.channelWork.Namespace(ctx, ch.OwnerID)
+		if transient(e) {
+			return
+		}
+		allowed = e == nil && cfg.allowsWindow(n, user, in)
+	}
+	if allowed && issueID != nil {
 		issue, issueErr := s.channelIssue(ctx, ch, user, *issueID, in.PeerKind == "GROUP", false)
 		if transient(issueErr) {
 			return

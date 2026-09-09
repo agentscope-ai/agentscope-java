@@ -52,6 +52,7 @@ const AgentSkillsPage = React.lazy(() => import('./pages/AgentSkillsPage'));
 const AgentToolsPage = React.lazy(() => import('./pages/AgentToolsPage'));
 const AgentSubagentsPage = React.lazy(() => import('./pages/AgentSubagentsPage'));
 const PermissionsPage = React.lazy(() => import('./features/work/PermissionsPage'));
+const ResourceAccessPage = React.lazy(() => import('./features/settings/ResourceAccessPage'));
 const ManagementLayout = React.lazy(() => import('./features/settings/ManagementLayout'));
 const IntegrationsPage = React.lazy(() => import('./features/settings/IntegrationsPage'));
 const NamespacesPage = React.lazy(() => import('./features/settings/NamespacesPage'));
@@ -299,6 +300,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route index element={<Navigate to="/settings/namespaces" replace />} />
               <Route path="namespaces" element={<NamespacesPage />} />
               <Route path="namespaces/:namespaceName" element={<NamespaceDetailPage />} />
+              <Route path="namespaces/:namespaceName/resources/:kind/:resourceId" element={<ResourceAccessPage />} />
               <Route path="users" element={<AdminUsersPage />} />
               <Route path="access-log" element={<AccessLogPage />} />
               <Route path="integrations" element={<IntegrationsPage />} />

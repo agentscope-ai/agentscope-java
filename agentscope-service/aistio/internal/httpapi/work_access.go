@@ -208,6 +208,9 @@ func (s *Server) authorizeWorkObject(c *gin.Context, body map[string]json.RawMes
 		s.accessFailure(c, store.ErrNotFound)
 		return false
 	}
+	if !s.authorizeExecutionResources(c, body) {
+		return false
+	}
 	if !s.authorizeNestedWorkReferences(c, body) {
 		return false
 	}

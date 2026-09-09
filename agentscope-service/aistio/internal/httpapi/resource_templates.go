@@ -62,7 +62,7 @@ func (s *Server) sharedWorkflowTemplates(c *gin.Context) {
 			items = append(items, gin.H{"sourceNamespace": source.Name, "id": id, "name": d.Name, "description": d.Description, "revisionId": latest.ID, "revision": latest.Revision, "sourceVersion": source.Version, "dependencies": definitionDependencies(latest.Spec)})
 		}
 	}
-	c.JSON(200, gin.H{"items": items})
+	c.JSON(200, gin.H{"items": items, "canImport": model.NamespaceAllows(target.Roles(c.GetString("userId")), "configure")})
 }
 func (s *Server) importWorkflowTemplate(c *gin.Context) {
 	target, ok := s.resourceNamespace(c)

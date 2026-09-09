@@ -66,7 +66,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     setScopeError('');
     Promise.all([api.get<ScopeDescriptor>('/api/v1/me/scope'), me()]).then(([scope, account]) => {
       if (cancelled) return;
-      const nextAuthority = JSON.stringify({ token, roles: [...account.roles].sort(), namespaces: scope.namespaces?.map(n => [n.tenant, n.name, [...n.roles].sort()]) });
+      const nextAuthority = JSON.stringify({ token, roles: [...account.roles].sort(), namespaces: scope.namespaces?.map(n => [n.tenant, n.name, [...n.roles].sort(), n.accessVersion]) });
       if (authority.current && authority.current !== nextAuthority) {
         void qc.cancelQueries();
         qc.clear();

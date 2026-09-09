@@ -87,8 +87,8 @@ func (r *agentCatalogRepo) ListAgents(ctx context.Context, filter store.AgentFil
 	}
 	rows, err := r.pool.Query(ctx, `SELECT `+agentColumns+` FROM agents WHERE
 		($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR status=$3)
-		AND ($4 OR archived_at IS NULL) ORDER BY agent_key LIMIT $5`, filter.Tenant, filter.Namespace,
-		string(filter.Status), filter.IncludeArchived, limit)
+		AND ($4 OR archived_at IS NULL) AND NOT (id=ANY($6::uuid[])) ORDER BY agent_key LIMIT $5 OFFSET $7`, filter.Tenant, filter.Namespace,
+		string(filter.Status), filter.IncludeArchived, limit, nonNilResourceIDs(filter.ExcludedIDs), max(0, filter.Offset))
 	if err != nil {
 		return nil, err
 	}
@@ -393,4 +393,11 @@ func (r *agentCatalogRepo) ValidateInstanceClaim(ctx context.Context, claim stor
 		return nil, store.ErrForbidden
 	}
 	return instance, nil
+}
+
+func nonNilResourceIDs(ids []uuid.UUID) []uuid.UUID {
+	if ids == nil {
+		return []uuid.UUID{}
+	}
+	return ids
 }

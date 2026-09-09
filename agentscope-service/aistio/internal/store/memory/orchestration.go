@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"time"
 
@@ -100,6 +101,9 @@ func (r *orchestrationRepo) ListDefinitions(_ context.Context, f store.Orchestra
 	out := []*controlmodel.OrchestrationDefinition{}
 	for _, v := range r.s.definitions {
 		if (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.Name == "" || v.Name == f.Name) && (f.IncludeArchived || v.ArchivedAt == nil) {
+			if slices.Contains(f.ExcludedIDs, v.ID) {
+				continue
+			}
 			out = append(out, cloneDefinition(v))
 		}
 	}

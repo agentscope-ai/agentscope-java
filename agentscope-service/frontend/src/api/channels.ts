@@ -342,7 +342,7 @@ export function resolveCallbackUrl(
 }
 
 export interface ChannelWorkTarget { targetType: 'agent' | 'team'; targetRef: string }
-export interface ChannelWorkRoute extends ChannelWorkTarget { accountId: string; peerKind: 'DIRECT' | 'GROUP'; peerId: string; threadId?: string }
+export interface ChannelWorkRoute extends ChannelWorkTarget { restrictGroups?: boolean; allowedGroups?: string[]; accountId: string; peerKind: 'DIRECT' | 'GROUP'; peerId: string; threadId?: string }
 export interface ChannelWorkSettings {
   enabled: boolean; defaultTarget: ChannelWorkTarget; routes: ChannelWorkRoute[];
   allowGroupWork: boolean; notifyEvents: string[]; version: number;

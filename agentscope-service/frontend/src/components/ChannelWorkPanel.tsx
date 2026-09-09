@@ -1,5 +1,7 @@
 /* Copyright 2024-2026 the original author or authors. Licensed under Apache-2.0. */
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getGroups } from '@/api/resourceAccess';
 import { Link } from 'react-router-dom';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import { listTeams, type Team } from '@/api/collaboration';
@@ -17,6 +19,7 @@ const states: Record<string, string> = { pending: '等待发送', submitted: '�
 
 export default function ChannelWorkPanel({ channelId, canConfigure }: { channelId: string; canConfigure: boolean }) {
   const scope = useControlPlaneScope();
+  const groups = useQuery({ queryKey: ['namespace-groups', scope.namespace], queryFn: () => getGroups(scope.namespace), enabled: canConfigure });
   const [config, setConfig] = useState<ChannelWorkSettings>();
   const [activity, setActivity] = useState<ChannelWorkActivity>();
   const [teams, setTeams] = useState<Team[]>([]);
@@ -78,6 +81,7 @@ export default function ChannelWorkPanel({ channelId, canConfigure }: { channelI
           <select className={field} aria-label={`路由 ${i + 1} 会话类型`} value={r.peerKind} disabled={!canConfigure} onChange={e => setConfig({ ...config, routes: config.routes.map((x, j) => i === j ? { ...x, peerKind: e.target.value as 'DIRECT' | 'GROUP' } : x) })}><option value="DIRECT">私聊</option><option value="GROUP">群聊</option></select>
         </div>
         {target(r, t => setConfig({ ...config, routes: config.routes.map((x, j) => i === j ? { ...x, ...t } : x) }), `路由 ${i + 1} 接待对象`)}
+        {canConfigure && <div className="space-y-2 border-t pt-3"><label className="flex gap-2 text-sm"><input aria-label={`路由 ${i + 1} 限制用户组`} type="checkbox" checked={r.restrictGroups || false} onChange={e => setConfig({ ...config, routes: config.routes.map((x, j) => i === j ? { ...x, restrictGroups: e.target.checked } : x) })} />仅允许指定用户组通过此窗口提交任务和接收工作事件</label>{r.restrictGroups && <div className="flex flex-wrap gap-3">{Object.entries(groups.data?.groups || {}).map(([id, g]) => <label key={id} className="flex gap-2 text-sm"><input aria-label={`路由 ${i + 1} 用户组 ${g.name}`} type="checkbox" checked={r.allowedGroups?.includes(id) || false} onChange={e => setConfig({ ...config, routes: config.routes.map((x, j) => i === j ? { ...x, allowedGroups: e.target.checked ? [...x.allowedGroups || [], id] : x.allowedGroups?.filter(v => v !== id) } : x) })} />{g.name}</label>)}{!r.allowedGroups?.length && <span className="text-xs text-amber-700">未选择用户组时，此窗口不接收工作请求。</span>}</div>}</div>}
         {canConfigure && <button className={button} onClick={() => setConfig({ ...config, routes: config.routes.filter((_, j) => i !== j) })}>移除路由</button>}
       </div>)}
       {canConfigure && <button className={button} onClick={() => setConfig({ ...config, routes: [...config.routes, { accountId: '', peerId: '', peerKind: 'DIRECT', targetType: 'agent', targetRef: '' }] })}>添加会话路由</button>}

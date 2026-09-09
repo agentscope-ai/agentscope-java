@@ -777,6 +777,12 @@ func (s *Server) postSessionUserMessage(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if a := accessFrom(c); a != nil && len(a.Namespace.Resources) > 0 {
+		if err := s.checkResourceUse(c.Request.Context(), a.Namespace, a.User, "agent:"+sess.AgentID.String()); err != nil {
+			c.JSON(403, ErrorResponse{Error: err.Error()})
+			return
+		}
+	}
 	var body struct {
 		Content string `json:"content"`
 	}

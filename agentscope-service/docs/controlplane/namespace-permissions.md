@@ -1,5 +1,7 @@
 # Namespace and work authorization
 
+> 2026-09-09：在账号持续可用的前提下，已扩展用户组、资源权限、依赖授权、申请审批与跨空间模板导入。后续实现与管理入口见 [Namespace 权限与配套资源管理](resource-permissions-management.md)。
+
 Implementation baseline: `b5dd9dc2f` on `codex/service-permissions`. This includes a
 separate snapshot of the main checkout's existing workflow changes. Only commits
 after that baseline belong to the permissions change.

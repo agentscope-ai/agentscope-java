@@ -2223,7 +2223,7 @@ func (s *Server) writeCollaborationError(c *gin.Context, err error) {
 }
 
 func redactTeamForDiscovery(c *gin.Context, team *controlmodel.CollaborationTeam) {
-	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+	if a := accessFrom(c); a != nil && !a.Namespace.Decide(a.User, "team:"+team.ID.String(), "inspect").Allowed {
 		team.Instructions = ""
 		team.Policy = controlmodel.TeamPolicy{}
 		for i := range team.Members {

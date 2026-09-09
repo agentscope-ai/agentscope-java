@@ -319,7 +319,7 @@ func NewServer(opts ServerOptions) *Server {
 		if commander, ok := opts.ASDPCommands.(runtimebinding.ExternalCommander); ok {
 			external = commander
 		}
-		s.runtimeBindings = &runtimebinding.Resolver{Store: opts.Store, Tasks: s.taskPlane,
+		s.runtimeBindings = &runtimebinding.Resolver{Store: opts.Store, Tasks: s.taskPlane, AuthorizeTask: s.authorizeTaskResources,
 			Managed: opts.Product, External: external, Tokens: &s.taskTokens}
 		s.taskPlane.CancelBackend = s.runtimeBindings.CancelAttempt
 		if s.product != nil {

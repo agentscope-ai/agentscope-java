@@ -8,6 +8,7 @@ package runtimebinding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -72,11 +73,12 @@ type ExternalCommander interface {
 }
 
 type Resolver struct {
-	Store    store.Store
-	Tasks    *taskplane.Service
-	Managed  ManagedSessionAPI
-	External ExternalCommander
-	Tokens   *taskauth.Manager
+	AuthorizeTask func(context.Context, *controlmodel.AgentTask, controlmodel.RuntimeBindingCandidate) error
+	Store         store.Store
+	Tasks         *taskplane.Service
+	Managed       ManagedSessionAPI
+	External      ExternalCommander
+	Tokens        *taskauth.Manager
 }
 
 type DispatchResult struct {
@@ -186,6 +188,19 @@ func (r *Resolver) DispatchCandidate(ctx context.Context, taskID uuid.UUID, requ
 	task, err := r.Store.Collaboration().GetAgentTask(ctx, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if r.AuthorizeTask != nil {
+		if err := r.AuthorizeTask(ctx, task, candidate); err != nil {
+			return nil, err
+		}
+	} else {
+		n, accessErr := r.Store.Access().GetNamespace(ctx, task.Tenant, task.Namespace)
+		if accessErr != nil && !errors.Is(accessErr, store.ErrNotFound) {
+			return nil, accessErr
+		}
+		if n != nil && len(n.Resources) > 0 {
+			return nil, fmt.Errorf("resource authorization is required before dispatch")
+		}
 	}
 	if err := r.validateCatalogBinding(ctx, task, binding); err != nil {
 		return nil, err

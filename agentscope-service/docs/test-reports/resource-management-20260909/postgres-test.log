@@ -1,0 +1,3 @@
+ok  	github.com/spring-ai-alibaba/aistio/internal/httpapi	2.911s
+ok  	github.com/spring-ai-alibaba/aistio/internal/product	2.772s
+ok  	github.com/spring-ai-alibaba/aistio/internal/store/postgres	1.348s

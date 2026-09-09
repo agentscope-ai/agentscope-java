@@ -175,8 +175,9 @@ func maskChannelProperties(v any) any {
 
 func (s *Server) listChannels(c *gin.Context) {
 	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
-		channelSelect+` WHERE owner_id=$1 ORDER BY channel_id`, owner)
+		channelSelect+` WHERE owner_id=$1 AND (NOT $2::boolean OR channel_id=ANY($3::text[])) ORDER BY channel_id`, owner, restricted, allowedIDs)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return

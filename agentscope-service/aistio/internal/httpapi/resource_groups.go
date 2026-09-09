@@ -29,14 +29,14 @@ func (s *Server) listAccessGroups(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// User group membership is shown to managers; ordinary members get their own
+	// User group membership is shown to managers; ordinary members get
 	// group names/roles, not a directory of everyone in the namespace.
 	manager := n.Manages(c.GetString("userId")) || roleSet(c)["admin"]
 	groups := map[string]model.AccessGroup{}
 	for id, g := range n.Groups {
 		if manager {
 			groups[id] = g
-		} else if slices.Contains(g.Members, c.GetString("userId")) {
+		} else {
 			g.Members = nil
 			groups[id] = g
 		}
@@ -84,8 +84,16 @@ func (s *Server) updateAccessGroups(c *gin.Context) {
 		c.JSON(400, ErrorResponse{Error: "Groups and expected version required"})
 		return
 	}
-	old := *n
+	old := *namespaceCopy(n)
 	n.Groups = in.Groups
+	for key, p := range n.Resources {
+		for id := range p.Groups {
+			if _, ok := n.Groups[id]; !ok {
+				delete(p.Groups, id)
+			}
+		}
+		n.Resources[key] = p
+	}
 	if sensitiveGrantChanged(&old, n) && n.Owner != c.GetString("userId") && !roleSet(c)["admin"] {
 		c.JSON(403, ErrorResponse{Error: "Only the owner or platform administrator can change auditor grants"})
 		return
@@ -202,6 +210,15 @@ func (s *Server) reviewAccessRequest(c *gin.Context) {
 		if *in.Approve {
 			if len(n.Roles(r.User)) == 0 {
 				c.JSON(409, ErrorResponse{Error: "Requester is no longer a namespace member"})
+				return
+			}
+			inventory, err := s.resourceInventory(c.Request.Context(), n)
+			if err != nil {
+				c.JSON(503, ErrorResponse{Error: "Unable to resolve requested resource"})
+				return
+			}
+			if _, exists := resourceMap(inventory)[r.Resource]; !exists {
+				c.JSON(409, ErrorResponse{Error: "Requested resource no longer exists"})
 				return
 			}
 			r.Status = "approved"

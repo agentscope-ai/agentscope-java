@@ -65,7 +65,7 @@ func (r *orchestrationRepo) ListDefinitions(ctx context.Context, f store.Orchest
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+definitionCols+` FROM orchestration_definitions WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR name=$3) AND ($4 OR archived_at IS NULL) ORDER BY updated_at DESC,id LIMIT $5 OFFSET $6`, f.Tenant, f.Namespace, f.Name, f.IncludeArchived, limit, max(0, f.Offset))
+	rows, err := r.pool.Query(ctx, `SELECT `+definitionCols+` FROM orchestration_definitions WHERE ($1='' OR tenant=$1) AND ($2='' OR namespace=$2) AND ($3='' OR name=$3) AND ($4 OR archived_at IS NULL) AND NOT (id=ANY($7::uuid[])) ORDER BY updated_at DESC,id LIMIT $5 OFFSET $6`, f.Tenant, f.Namespace, f.Name, f.IncludeArchived, limit, max(0, f.Offset), nonNilResourceIDs(f.ExcludedIDs))
 	if err != nil {
 		return nil, err
 	}

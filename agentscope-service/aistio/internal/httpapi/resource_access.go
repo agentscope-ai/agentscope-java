@@ -14,34 +14,40 @@ import (
 	"github.com/google/uuid"
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (s *Server) resourceInventory(ctx context.Context, n *model.Namespace) ([]model.ResourceDescriptor, error) {
 	out := []model.ResourceDescriptor{}
-	agents, err := s.store.AgentCatalog().ListAgents(ctx, store.AgentFilter{Tenant: n.Tenant, Namespace: n.Name, Limit: 10000})
-	if err != nil {
-		return nil, err
-	}
-	for _, a := range agents {
-		r := model.ResourceDescriptor{Kind: "agent", ID: a.ID.String(), Name: a.DisplayName, Dependencies: []string{}}
-		bs, e := s.store.AgentCatalog().ListBindings(ctx, a.ID, false)
-		if e != nil {
-			return nil, e
+	for offset := 0; ; offset += 500 {
+		agents, err := s.store.AgentCatalog().ListAgents(ctx, store.AgentFilter{Tenant: n.Tenant, Namespace: n.Name, Limit: 500, Offset: offset})
+		if err != nil {
+			return nil, err
 		}
-		for _, b := range bs {
-			if b.Enabled && b.Kind == model.DataPlaneManaged {
-				var cfg model.ManagedBindingConfiguration
-				if json.Unmarshal(b.Configuration, &cfg) == nil {
-					if cfg.OwnerRef != namespaceResourceOwner(n) {
-						return nil, fmt.Errorf("Agent %s has a foreign managed binding", a.DisplayName)
+		for _, a := range agents {
+			r := model.ResourceDescriptor{Kind: "agent", ID: a.ID.String(), Name: a.DisplayName, Dependencies: []string{}}
+			bs, e := s.store.AgentCatalog().ListBindings(ctx, a.ID, false)
+			if e != nil {
+				return nil, e
+			}
+			for _, b := range bs {
+				if b.Enabled && b.Kind == model.DataPlaneManaged {
+					var cfg model.ManagedBindingConfiguration
+					if json.Unmarshal(b.Configuration, &cfg) == nil {
+						if cfg.OwnerRef != namespaceResourceOwner(n) {
+							return nil, fmt.Errorf("Agent %s has a foreign managed binding", a.DisplayName)
+						}
+						r.Dependencies = append(r.Dependencies, "managed-agent:"+cfg.ManagedDefinitionRef)
 					}
-					r.Dependencies = append(r.Dependencies, "managed-agent:"+cfg.ManagedDefinitionRef)
 				}
 			}
+			out = append(out, r)
 		}
-		out = append(out, r)
+		if len(agents) < 500 {
+			break
+		}
 	}
 	teams, err := s.store.Collaboration().ListTeams(ctx, n.Tenant, n.Name)
 	if err != nil {
@@ -62,7 +68,11 @@ func (s *Server) resourceInventory(ctx context.Context, n *model.Namespace) ([]m
 			return nil, e
 		}
 		for _, d := range definitions {
-			out = append(out, model.ResourceDescriptor{Kind: "workflow", ID: d.ID.String(), Name: d.Name, Dependencies: definitionDependencies(d.DraftSpec)})
+			deps, err := s.workflowResourceDependencies(ctx, n, d.DraftSpec)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, model.ResourceDescriptor{Kind: "workflow", ID: d.ID.String(), Name: d.Name, Dependencies: deps})
 		}
 		if len(definitions) < 500 {
 			break
@@ -109,7 +119,7 @@ func definitionDependencies(raw json.RawMessage) []string {
 			for k, v := range x {
 				if id, ok := v.(string); ok && id != "" {
 					switch k {
-					case "agentId", "agentRef", "leaderAgentId":
+					case "agentId", "agentRef", "leaderAgentId", "leaderAgentRef":
 						deps = append(deps, "agent:"+id)
 					case "teamRef", "teamId":
 						deps = append(deps, "team:"+id)
@@ -144,6 +154,9 @@ func resourceMap(items []model.ResourceDescriptor) map[string]model.ResourceDesc
 }
 
 func checkResourceGraph(n *model.Namespace, items map[string]model.ResourceDescriptor, user, key string) error {
+	return checkResourceGraphAction(n, items, user, key, "use")
+}
+func checkResourceGraphAction(n *model.Namespace, items map[string]model.ResourceDescriptor, user, key, rootAction string) error {
 	visiting := map[string]bool{}
 	checked := map[string]bool{}
 	var visit func(string, string) error
@@ -153,8 +166,12 @@ func checkResourceGraph(n *model.Namespace, items map[string]model.ResourceDescr
 			return fmt.Errorf("Dependency %s is unavailable", key)
 		}
 		delegated := parent != "" && slices.Contains(n.Resources[key].Consumers, parent)
-		if !delegated && !n.Decide(user, key, "use").Allowed {
-			return fmt.Errorf("Use permission required for %s", key)
+		action := "use"
+		if parent == "" {
+			action = rootAction
+		}
+		if !delegated && !n.Decide(user, key, action).Allowed {
+			return fmt.Errorf("%s permission required for %s", action, key)
 		}
 		if visiting[key] {
 			return fmt.Errorf("Dependency cycle at %s", key)
@@ -342,23 +359,12 @@ func (s *Server) updateResourceAccess(c *gin.Context) {
 	c.JSON(200, gin.H{"version": updated.Version, "policy": in.Policy})
 }
 
-func (s *Server) authorizeResourceAction(c *gin.Context, n *model.Namespace, kind, id, action string) bool {
-	if id == "" {
-		return true
-	}
-	if !n.Decide(c.GetString("userId"), kind+":"+id, action).Allowed {
-		c.AbortWithStatusJSON(403, ErrorResponse{Error: "Resource permission required: " + action})
-		return false
-	}
-	return true
-}
-
 // resourceRoute identifies resource operations, independently of work ACLs.
 func resourceRoute(c *gin.Context) (kind, id, action string) {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/")
 	prefix, _, _ := strings.Cut(path, "/")
 	switch prefix {
-	case "agents":
+	case "agents", "agent-runtime-policies":
 		kind = "agent"
 		id = c.Param("agentId")
 	case "teams":
@@ -377,7 +383,7 @@ func resourceRoute(c *gin.Context) (kind, id, action string) {
 	action = "edit"
 	if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
 		action = "inspect"
-		if kind == "agent" && !strings.Contains(strings.TrimPrefix(path, "agents/"), "/") {
+		if (kind == "agent" || kind == "team") && !strings.Contains(strings.TrimPrefix(path, prefix+"/"), "/") {
 			action = "discover"
 		}
 	}
@@ -390,5 +396,81 @@ func resourceRoute(c *gin.Context) (kind, id, action string) {
 	return
 }
 
-// Keep uuid imported for the publication/import implementation sharing this file.
-var _ = uuid.Nil
+// Nested definitions retain their namespace boundary and are real dependencies.
+func (s *Server) workflowResourceDependencies(ctx context.Context, n *model.Namespace, raw json.RawMessage) ([]string, error) {
+	deps := definitionDependencies(raw)
+	var spec orchestration.DefinitionSpec
+	if json.Unmarshal(raw, &spec) != nil {
+		return deps, nil
+	}
+	for _, node := range spec.Nodes {
+		if node.DefinitionRevID == "" {
+			continue
+		}
+		id, err := uuid.Parse(node.DefinitionRevID)
+		if err != nil {
+			return nil, err
+		}
+		revision, err := s.store.Orchestration().GetRevision(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if revision.Tenant != n.Tenant || revision.Namespace != n.Name {
+			return nil, fmt.Errorf("nested Workflow is outside the namespace")
+		}
+		deps = append(deps, "workflow:"+revision.DefinitionID.String())
+	}
+	return deps, nil
+}
+func (s *Server) applyPublishedResourceDependencies(ctx context.Context, n *model.Namespace, items map[string]model.ResourceDescriptor, revision *model.OrchestrationRevision, seen map[uuid.UUID]bool) error {
+	if seen[revision.ID] {
+		return nil
+	}
+	alreadyResolved := false
+	for id := range seen {
+		prior, err := s.store.Orchestration().GetRevision(ctx, id)
+		if err != nil {
+			return err
+		}
+		if prior.DefinitionID == revision.DefinitionID {
+			alreadyResolved = true
+			break
+		}
+	}
+	seen[revision.ID] = true
+	key := "workflow:" + revision.DefinitionID.String()
+	item, exists := items[key]
+	if !exists {
+		return fmt.Errorf("Workflow is unavailable")
+	}
+	deps, err := s.workflowResourceDependencies(ctx, n, revision.Spec)
+	if err != nil {
+		return err
+	}
+	if alreadyResolved {
+		deps = append(item.Dependencies, deps...)
+	}
+	item.Dependencies = deps
+	items[key] = item
+	var spec orchestration.DefinitionSpec
+	if err := json.Unmarshal(revision.Spec, &spec); err != nil {
+		return err
+	}
+	for _, node := range spec.Nodes {
+		if node.DefinitionRevID == "" {
+			continue
+		}
+		id, err := uuid.Parse(node.DefinitionRevID)
+		if err != nil {
+			return err
+		}
+		child, err := s.store.Orchestration().GetRevision(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := s.applyPublishedResourceDependencies(ctx, n, items, child, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}

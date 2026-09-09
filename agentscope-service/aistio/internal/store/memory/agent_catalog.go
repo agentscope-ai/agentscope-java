@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -104,9 +105,18 @@ func (r *agentCatalogRepo) ListAgents(_ context.Context, filter store.AgentFilte
 		if filter.Tenant != "" && in.Tenant != filter.Tenant || filter.Namespace != "" && in.Namespace != filter.Namespace || filter.Status != "" && in.Status != filter.Status || !filter.IncludeArchived && in.ArchivedAt != nil {
 			continue
 		}
+		if slices.Contains(filter.ExcludedIDs, in.ID) {
+			continue
+		}
 		out = append(out, cloneAgent(in))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].AgentKey < out[j].AgentKey })
+	if filter.Offset > 0 {
+		if filter.Offset >= len(out) {
+			return []*controlmodel.Agent{}, nil
+		}
+		out = out[filter.Offset:]
+	}
 	if filter.Limit > 0 && len(out) > filter.Limit {
 		out = out[:filter.Limit]
 	}

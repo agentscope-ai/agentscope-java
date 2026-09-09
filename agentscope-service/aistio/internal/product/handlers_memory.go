@@ -63,6 +63,7 @@ func memoryPath(c *gin.Context) string {
 
 func (s *Server) listMemoryStores(c *gin.Context) {
 	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -70,14 +71,14 @@ func (s *Server) listMemoryStores(c *gin.Context) {
 	}
 	var total int64
 	if err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*) FROM memory_stores WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM memory_stores WHERE owner_id=$1 AND (NOT $2::boolean OR store_id=ANY($3::text[])) AND archived_at IS NULL`, owner, restricted, allowedIDs).Scan(&total); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeTotalCount(c, total)
 	q := `SELECT store_id, owner_id, name, description, created_at, updated_at
-		 FROM memory_stores WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
-	args := []any{owner}
+		 FROM memory_stores WHERE owner_id=$1 AND (NOT $2::boolean OR store_id=ANY($3::text[])) AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner, restricted, allowedIDs}
 	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {

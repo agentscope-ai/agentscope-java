@@ -156,8 +156,9 @@ func (s *Server) bumpWorkspaceVersion(ctx context.Context, owner, id string) err
 
 func (s *Server) listWorkspaces(c *gin.Context) {
 	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
-		workspaceSelect+` WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`, owner)
+		workspaceSelect+` WHERE owner_id=$1 AND (NOT $2::boolean OR workspace_id=ANY($3::text[])) AND archived_at IS NULL ORDER BY updated_at DESC`, owner, restricted, allowedIDs)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return

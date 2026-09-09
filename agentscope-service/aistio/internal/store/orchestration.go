@@ -13,6 +13,7 @@ import (
 )
 
 type OrchestrationDefinitionFilter struct {
+	ExcludedIDs             []uuid.UUID
 	Tenant, Namespace, Name string
 	IncludeArchived         bool
 	Offset                  int

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
 )
 
 type AccountDirectory interface {
@@ -61,11 +62,16 @@ func (s *Server) listManagedNamespaces(c *gin.Context) {
 	c.JSON(200, gin.H{"items": views})
 }
 func namespaceMemberCount(n *model.Namespace) int {
-	count := len(n.Members)
-	if _, ok := n.Members[n.Owner]; !ok {
-		count++
+	members := map[string]bool{n.Owner: true}
+	for id := range n.Members {
+		members[id] = true
 	}
-	return count
+	for _, group := range n.Groups {
+		for _, id := range group.Members {
+			members[id] = true
+		}
+	}
+	return len(members)
 }
 
 func (s *Server) directory(c *gin.Context) {
@@ -103,9 +109,21 @@ func (s *Server) platformAccountDirectory(c *gin.Context) {
 	}
 }
 func (s *Server) namespaceAccountDirectory(c *gin.Context) {
-	if _, ok := s.namespaceForManagement(c); ok {
-		s.directory(c)
+	n, err := s.store.Access().GetNamespace(c.Request.Context(), s.defaultTenant, c.Param("namespaceName"))
+	if err != nil {
+		s.accessFailure(c, err)
+		return
 	}
+	user := c.GetString("userId")
+	allowed := n.Manages(user) || roleSet(c)["admin"]
+	for key := range n.Resources {
+		allowed = allowed || n.Decide(user, key, "manage").Allowed
+	}
+	if !allowed {
+		s.accessFailure(c, store.ErrNotFound)
+		return
+	}
+	s.directory(c)
 }
 
 // Validate changed grants against real, active accounts. Unchanged grants may
@@ -164,7 +182,7 @@ func (s *Server) accountNamespaces(c *gin.Context) {
 	user := c.Param("accountId")
 	for _, n := range items {
 		if n.Kind == "global" || n.Owner == user || len(n.Members[user]) > 0 {
-			views = append(views, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "owner": n.Owner, "archived": n.Archived, "version": n.Version, "roles": n.Roles(user), "assignedRoles": n.Members[user]})
+			views = append(views, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "owner": n.Owner, "archived": n.Archived, "version": n.Version, "roles": n.Roles(user), "assignedRoles": n.Members[user], "groups": n.GroupIDs(user)})
 		}
 	}
 	c.JSON(200, gin.H{"items": views})

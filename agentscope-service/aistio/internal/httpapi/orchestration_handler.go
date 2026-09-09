@@ -52,7 +52,7 @@ func (s *Server) listOrchestrationDefinitions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := s.store.Orchestration().ListDefinitions(c.Request.Context(), store.OrchestrationDefinitionFilter{Tenant: tenant, Namespace: namespace, Name: c.Query("name"), IncludeArchived: c.Query("archived") == "true", Offset: max(0, queryInt(c, "offset", 0)), Limit: queryInt(c, "limit", 100)})
+	items, err := s.store.Orchestration().ListDefinitions(c.Request.Context(), store.OrchestrationDefinitionFilter{ExcludedIDs: excludedResourceIDs(c, "workflow"), Tenant: tenant, Namespace: namespace, Name: c.Query("name"), IncludeArchived: c.Query("archived") == "true", Offset: max(0, queryInt(c, "offset", 0)), Limit: queryInt(c, "limit", 100)})
 	if err != nil {
 		s.writeOrchestrationError(c, err)
 		return
@@ -210,6 +210,38 @@ func (s *Server) startOrchestrationRun(c *gin.Context) {
 		return
 	}
 	req.Actor = collaborationActor(c, s)
+	if a := accessFrom(c); a != nil && len(a.Namespace.Resources) > 0 {
+		var revision *controlmodel.OrchestrationRevision
+		var err error
+		if req.RevisionID != nil {
+			revision, err = s.store.Orchestration().GetRevision(c.Request.Context(), *req.RevisionID)
+		} else {
+			revisions, e := s.store.Orchestration().ListRevisions(c.Request.Context(), id)
+			err = e
+			if len(revisions) > 0 {
+				revision = revisions[0]
+			}
+		}
+		if err != nil || revision == nil || revision.DefinitionID != id {
+			s.accessFailure(c, store.ErrNotFound)
+			return
+		}
+		items, err := s.resourceInventory(c.Request.Context(), a.Namespace)
+		if err != nil {
+			c.JSON(503, ErrorResponse{Error: "Unable to resolve Workflow dependencies"})
+			return
+		}
+		graph := resourceMap(items)
+		err = s.applyPublishedResourceDependencies(c.Request.Context(), a.Namespace, graph, revision, map[uuid.UUID]bool{})
+		if err == nil {
+			err = checkResourceGraph(a.Namespace, graph, a.User, "workflow:"+id.String())
+		}
+		if err != nil {
+			c.JSON(403, ErrorResponse{Error: err.Error()})
+			return
+		}
+		req.RevisionID = &revision.ID
+	}
 	run, err := s.orchestrationService().Start(c.Request.Context(), id, req)
 	if err != nil {
 		s.writeOrchestrationError(c, err)

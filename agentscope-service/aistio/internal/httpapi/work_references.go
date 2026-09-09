@@ -7,7 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
+	"github.com/spring-ai-alibaba/aistio/internal/product"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
+	"slices"
 )
 
 // Check structural references before any handler writes them. User content,
@@ -18,13 +20,50 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 		return true
 	}
 	ctx := c.Request.Context()
+	parentKind, parentID, _ := resourceRoute(c)
+	mayUse := func(key string) bool {
+		return a.Namespace.Decide(a.User, key, "use").Allowed || parentID != "" && slices.Contains(a.Namespace.Resources[key].Consumers, parentKind+":"+parentID)
+	}
 	var visit func(map[string]json.RawMessage) bool
 	visit = func(object map[string]json.RawMessage) bool {
+		deps := []string{}
+		for field, kind := range map[string]string{"workspaceId": "workspace", "defaultEnvironmentId": "environment"} {
+			var id string
+			_ = json.Unmarshal(object[field], &id)
+			if id != "" {
+				deps = append(deps, kind+":"+id)
+			}
+		}
+		for field, kind := range map[string]string{"defaultVaultIds": "vault", "defaultMemoryStoreIds": "memory"} {
+			var ids []string
+			_ = json.Unmarshal(object[field], &ids)
+			for _, id := range ids {
+				deps = append(deps, kind+":"+id)
+			}
+		}
+		var mcp any
+		if json.Unmarshal(object["mcpServers"], &mcp) == nil {
+			deps = append(deps, product.ResourceVaultRefs(mcp)...)
+		}
+		if len(deps) > 0 {
+			inventory, err := s.resourceInventory(ctx, a.Namespace)
+			if err != nil {
+				c.JSON(503, ErrorResponse{Error: "Unable to resolve dependencies"})
+				return false
+			}
+			items := resourceMap(inventory)
+			for _, dep := range deps {
+				if _, exists := items[dep]; !exists || !mayUse(dep) {
+					s.accessFailure(c, store.ErrNotFound)
+					return false
+				}
+			}
+		}
 		value := func(key string) string { var v string; _ = json.Unmarshal(object[key], &v); return v }
 		fail := func() bool { s.accessFailure(c, store.ErrNotFound); return false }
 		for _, key := range []string{"agentId", "agentRef", "leaderAgentId", "leaderAgentRef"} {
 			if ref := value(key); ref != "" {
-				if !a.Namespace.Decide(a.User, "agent:"+ref, "use").Allowed {
+				if !mayUse("agent:" + ref) {
 					return fail()
 				}
 				if _, e := s.activeAgentInScope(ctx, a.Namespace.Tenant, a.Namespace.Name, ref); e != nil {
@@ -37,7 +76,7 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 			teamRef = value("assigneeRef")
 		}
 		if teamRef != "" {
-			if !a.Namespace.Decide(a.User, "team:"+teamRef, "use").Allowed {
+			if !mayUse("team:" + teamRef) {
 				return fail()
 			}
 			id, e := uuid.Parse(teamRef)
@@ -50,7 +89,7 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 			}
 		}
 		if value("assigneeType") == "agent" && value("assigneeRef") != "" {
-			if !a.Namespace.Decide(a.User, "agent:"+value("assigneeRef"), "use").Allowed {
+			if !mayUse("agent:" + value("assigneeRef")) {
 				return fail()
 			}
 			if _, e := s.activeAgentInScope(ctx, a.Namespace.Tenant, a.Namespace.Name, value("assigneeRef")); e != nil {
@@ -75,7 +114,7 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 					return fail()
 				}
 				if key == "definitionId" {
-					if !a.Namespace.Decide(a.User, "workflow:"+raw, "use").Allowed {
+					if !mayUse("workflow:" + raw) {
 						return fail()
 					}
 					d, e := s.store.Orchestration().GetDefinition(ctx, id)
@@ -84,7 +123,7 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 					}
 				} else {
 					r, e := s.store.Orchestration().GetRevision(ctx, id)
-					if e != nil || r.Tenant != a.Namespace.Tenant || r.Namespace != a.Namespace.Name {
+					if e != nil || r.Tenant != a.Namespace.Tenant || r.Namespace != a.Namespace.Name || !mayUse("workflow:"+r.DefinitionID.String()) {
 						return fail()
 					}
 				}
@@ -96,7 +135,7 @@ func (s *Server) authorizeNestedWorkReferences(c *gin.Context, body map[string]j
 				return fail()
 			}
 		}
-		for _, key := range []string{"draftSpec", "spec", "execution", "actionConfig", "issue", "contextRefs", "runtimeCandidate"} {
+		for _, key := range []string{"draftSpec", "spec", "definition", "execution", "actionConfig", "issue", "contextRefs", "runtimeCandidate"} {
 			if raw := object[key]; len(raw) > 0 {
 				var nested map[string]json.RawMessage
 				if json.Unmarshal(raw, &nested) == nil && nested != nil {

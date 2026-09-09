@@ -1,0 +1,13 @@
+[WebServer] (node:51851) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:51857) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/permissions.e2e.ts:52:1 › namespace creation, searchable membership, legacy redirect and draft isolation (2.6s)
+  ✓  2 e2e/permissions.e2e.ts:82:1 › user-centric grants update the same namespace and role revocation refreshes navigation (1.6s)
+  ✓  3 e2e/permissions.e2e.ts:100:1 › profile defaults, effective access and login session revocation (1.7s)
+  ✓  4 e2e/permissions.e2e.ts:121:1 › namespace menu supports keyboard, outside dismissal and member access on mobile (1.7s)
+
+  4 passed (8.9s)

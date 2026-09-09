@@ -13,6 +13,12 @@ import (
 
 func (s *Server) configureChannelWork() {
 	s.product.SetChannelWorkRuntime(&product.ChannelWorkRuntime{Store: s.store,
+		AuthorizeTarget: func(ctx context.Context, n *model.Namespace, user, kind, id string) error {
+			if len(n.Resources) == 0 {
+				return nil
+			}
+			return s.checkResourceUse(ctx, n, user, kind+":"+id)
+		},
 		Namespace: func(ctx context.Context, owner string) (*model.Namespace, error) {
 			if strings.HasPrefix(owner, "namespace:") {
 				p := strings.Split(owner, ":")

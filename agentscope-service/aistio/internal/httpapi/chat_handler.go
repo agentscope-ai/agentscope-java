@@ -67,7 +67,7 @@ func (s *Server) listChats(c *gin.Context) {
 func (s *Server) listChatAgents(c *gin.Context) {
 	tenant, namespace := c.DefaultQuery("tenant", "default"), c.DefaultQuery("namespace", "default")
 	agents, err := s.store.AgentCatalog().ListAgents(c, store.AgentFilter{
-		Tenant: tenant, Namespace: namespace, Status: controlmodel.AgentActive, Limit: parseLimit(c, 200),
+		Tenant: tenant, Namespace: namespace, ExcludedIDs: excludedResourceIDs(c, "agent"), Status: controlmodel.AgentActive, Limit: parseLimit(c, 200),
 	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
@@ -176,6 +176,12 @@ func (s *Server) sendChatTurn(c *gin.Context) {
 	value, ok := s.ownedChat(c)
 	if !ok {
 		return
+	}
+	if a := accessFrom(c); a != nil && len(a.Namespace.Resources) > 0 {
+		if err := s.checkResourceUse(c.Request.Context(), a.Namespace, a.User, "agent:"+value.AgentID.String()); err != nil {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: err.Error()})
+			return
+		}
 	}
 	if value.Status != controlmodel.ChatActive {
 		c.JSON(http.StatusConflict, ErrorResponse{Error: "Archived Chat is read-only"})

@@ -1,6 +1,7 @@
+import type { AccessGroup, ResourcePolicy, AccessRequest } from './resourceAccess';
 import { api } from '@/lib/apiClient';
 import type { NamespaceSummary } from '@/lib/namespaceScope';
-export type Namespace = { tenant: string; name: string; displayName: string; kind: 'personal' | 'shared' | 'global'; owner: string; members: Record<string, string[]>; version: number; archived: boolean };
+export type Namespace = { tenant: string; name: string; displayName: string; kind: 'personal' | 'shared' | 'global'; owner: string; members: Record<string, string[]>; version: number; archived: boolean; groups?: Record<string, AccessGroup>; resources?: Record<string, ResourcePolicy>; requests?: AccessRequest[] };
 export type ManagedNamespace = NamespaceSummary & { owner: string; archived: boolean; version: number; memberCount: number; canManage: boolean };
 export type DirectoryAccount = { userId: string; username: string; displayName: string; disabled: boolean };
 export type NamespaceAudit = { id: number; name: string; tenant: string; actor: string; namespace: Namespace; version: number; createdAt: string };

@@ -5,7 +5,6 @@ package product
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	model "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 	"strings"
 )
@@ -45,6 +44,35 @@ func (s *Server) ResourceInventory(ctx context.Context, owner string) ([]model.R
 	}
 	for i := range out {
 		r := &out[i]
+		if r.Kind == "channel" {
+			cfg, e := s.loadChannelWorkSettings(ctx, r.ID)
+			if e != nil {
+				return nil, e
+			}
+			if cfg.Enabled {
+				for _, t := range append([]ChannelTarget{cfg.DefaultTarget}, func() []ChannelTarget {
+					v := []ChannelTarget{}
+					for _, route := range cfg.Routes {
+						v = append(v, route.ChannelTarget)
+					}
+					return v
+				}()...) {
+					if t.TargetRef != "" {
+						r.Dependencies = append(r.Dependencies, t.TargetType+":"+t.TargetRef)
+					}
+				}
+			}
+		}
+		if r.Kind == "workspace" {
+			w, err := s.loadWorkspace(ctx, owner, r.ID)
+			if err != nil {
+				return nil, err
+			}
+			var raw any
+			if json.Unmarshal([]byte(deref(w.McpServersJSON)), &raw) == nil {
+				r.Dependencies = append(r.Dependencies, ResourceVaultRefs(raw)...)
+			}
+		}
 		if r.Kind == "managed-agent" {
 			a, err := s.loadAgent(ctx, owner, r.ID)
 			if err != nil {
@@ -67,13 +95,13 @@ func (s *Server) ResourceInventory(ctx context.Context, owner string) ([]model.R
 			// dependency even when no explicit session-default vault was selected.
 			var raw any
 			if json.Unmarshal([]byte(deref(a.McpServersJSON)), &raw) == nil {
-				r.Dependencies = append(r.Dependencies, resourceVaultRefs(raw)...)
+				r.Dependencies = append(r.Dependencies, ResourceVaultRefs(raw)...)
 			}
 		}
 	}
 	return out, nil
 }
-func resourceVaultRefs(v any) []string {
+func ResourceVaultRefs(v any) []string {
 	refs := []string{}
 	switch x := v.(type) {
 	case map[string]any:
@@ -83,26 +111,12 @@ func resourceVaultRefs(v any) []string {
 					refs = append(refs, "vault:"+id)
 				}
 			}
-			refs = append(refs, resourceVaultRefs(v)...)
+			refs = append(refs, ResourceVaultRefs(v)...)
 		}
 	case []any:
 		for _, v := range x {
-			refs = append(refs, resourceVaultRefs(v)...)
+			refs = append(refs, ResourceVaultRefs(v)...)
 		}
 	}
 	return refs
-}
-
-// ResolveProductResourceOwner is intentionally not exposed over HTTP.
-func (s *Server) ResolveProductResourceOwner(ctx context.Context, kind, id, owner string) (model.ResourceDescriptor, error) {
-	items, e := s.ResourceInventory(ctx, owner)
-	if e != nil {
-		return model.ResourceDescriptor{}, e
-	}
-	for _, v := range items {
-		if v.Kind == kind && v.ID == id {
-			return v, nil
-		}
-	}
-	return model.ResourceDescriptor{}, fmt.Errorf("resource not found")
 }

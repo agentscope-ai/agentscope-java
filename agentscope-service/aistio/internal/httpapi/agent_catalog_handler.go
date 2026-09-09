@@ -162,7 +162,7 @@ func (s *Server) listCatalogAgents(c *gin.Context) {
 	}
 	agents, err := s.store.AgentCatalog().ListAgents(c.Request.Context(), store.AgentFilter{
 		Tenant: tenant, Namespace: namespace, Status: controlmodel.AgentStatus(c.Query("status")),
-		IncludeArchived: c.Query("includeArchived") == "true", Limit: limit,
+		IncludeArchived: c.Query("includeArchived") == "true", Limit: limit, ExcludedIDs: excludedResourceIDs(c, "agent"),
 	})
 	if err != nil {
 		s.writeControlPlaneError(c, err)
@@ -695,7 +695,7 @@ func (s *Server) getCatalogAgent(c *gin.Context) {
 		s.writeControlPlaneError(c, err)
 		return
 	}
-	if a := accessFrom(c); a != nil && !controlmodel.NamespaceAllows(a.Roles, "configure") {
+	if a := accessFrom(c); a != nil && !a.Namespace.Decide(a.User, "agent:"+agent.ID.String(), "inspect").Allowed {
 		agent.Metadata = nil
 		agent.Capabilities = nil
 		agent.Labels = nil

@@ -379,7 +379,7 @@ func (s *Server) listMyNamespaces(c *gin.Context) {
 func namespaceSummaries(items []*controlmodel.Namespace, user string) []gin.H {
 	out := []gin.H{}
 	for _, n := range items {
-		out = append(out, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "roles": n.Roles(user), "owner": n.Owner})
+		out = append(out, gin.H{"tenant": n.Tenant, "name": n.Name, "displayName": n.DisplayName, "kind": n.Kind, "roles": n.Roles(user), "owner": n.Owner, "accessVersion": n.Version, "groups": n.GroupIDs(user)})
 	}
 	return out
 }
