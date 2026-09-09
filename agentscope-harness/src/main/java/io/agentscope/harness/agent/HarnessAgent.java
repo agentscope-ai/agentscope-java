@@ -1239,6 +1239,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
+        boolean disableWebTools = false;
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
         boolean disableTranscript = false;
@@ -2044,6 +2045,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        public Builder disableWebTools() {
+            this.disableWebTools = true;
+            return this;
+        }
+
         /**
          * Registers schema-only external tools on the builder toolkit (merged into the final
          * agent toolkit at {@link #build()}). Used by {@code self_hosted} environments to expose
@@ -2677,8 +2684,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
-            agentToolkit.registerTool(new WebTools.WebFetchTool());
-            agentToolkit.registerTool(new WebTools.WebSearchTool());
+            if (!disableWebTools) {
+                agentToolkit.registerTool(new WebTools.WebFetchTool());
+                agentToolkit.registerTool(new WebTools.WebSearchTool());
+            }
 
             // ---- Plan mode (read-only design phase) ----
             PlanModeManager planModeManager = null;
