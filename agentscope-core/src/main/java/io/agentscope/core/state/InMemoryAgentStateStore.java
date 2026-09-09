@@ -89,12 +89,6 @@ public class InMemoryAgentStateStore implements AgentStateStore {
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            SessionData data = lookup(userId, sessionId);
-            VersionedEntry entry = data != null ? data.getVersionedSingleState(key) : null;
-            return entry != null ? entry.version() : UNVERSIONED;
-        }
         SessionData data = lookupOrCreate(userId, sessionId);
         return data.casSingleState(key, value, expectedVersion);
     }
@@ -224,10 +218,10 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         synchronized long casSingleState(String key, State value, long expectedVersion) {
             VersionedEntry prev = singleStates.get(key);
             long current = prev == null ? 0L : prev.version();
-            if (current != expectedVersion) {
+            if (expectedVersion != UNVERSIONED && current != expectedVersion) {
                 return UNVERSIONED;
             }
-            long next = expectedVersion + 1L;
+            long next = current + 1L;
             singleStates.put(key, new VersionedEntry(value, next));
             return next;
         }
