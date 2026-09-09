@@ -28,9 +28,11 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.tool.WebTools;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class HarnessAgentBuildServiceCacheKeyTest {
 
@@ -119,12 +121,10 @@ class HarnessAgentBuildServiceCacheKeyTest {
     }
 
     @Test
-    void sessionDirectoriesAreIsolatedEvenForPathLikeIdentifiers() {
-        var paths =
-                new io.agentscope.builder.web.workspace.SharedWorkspacePaths(
-                        java.nio.file.Path.of("/tmp/access-test"));
+    void sessionDirectoriesAreIsolatedEvenForPathLikeIdentifiers(@TempDir Path workspaceRoot) {
+        var paths = new io.agentscope.builder.web.workspace.SharedWorkspacePaths(workspaceRoot);
         var first = paths.resolveSessionDataPath("owner", "../other");
-        assertThat(first.startsWith(java.nio.file.Path.of("/tmp/access-test/sessions"))).isTrue();
+        assertThat(first.startsWith(workspaceRoot.resolve("sessions"))).isTrue();
         assertThat(first).isEqualTo(paths.resolveSessionDataPath("owner", "../other"));
         assertThat(first).isNotEqualTo(paths.resolveSessionDataPath("owner", "session-b"));
         assertThat(first).isNotEqualTo(paths.resolveSessionDataPath("another-owner", "../other"));
