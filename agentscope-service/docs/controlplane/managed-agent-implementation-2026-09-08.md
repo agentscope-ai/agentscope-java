@@ -119,10 +119,10 @@ mvn -pl agentscope-service/service-dataplane -am verify \
 ```
 
 - Go：`internal/product`、`internal/httpapi` 测试通过，其中资源授权、Memory 版本冲突、文件快照及 Vault revision 测试使用独立 PostgreSQL 17；OAuth 使用本地模拟 TLS 服务。`go build ./cmd/aistiod` 通过。
-- 前端：`npm run build` 通过；Playwright `e2e/managed-mcp.e2e.ts` 通过，覆盖 Workspace 中新增连接、工具策略保存、刷新回显和删除关联。已检查 [页面截图](../test-reports/managed-agent-20260908/mcp-editor.png)。
+- 前端：`npm run build` 通过；Playwright `e2e/managed-mcp.e2e.ts` 通过，覆盖 Workspace 中新增连接、工具策略保存、刷新回显和删除关联。已检查 页面截图（历史本地验收记录，保存在发布前备份中）。
 - 格式：本轮相关文件 `git diff --check` 无错误。
 - 测试数据库容器已停止并自动删除，没有使用生产凭证。浏览器使用独立 API fixture，没有写用户已有资源。
 
 **完整验证尚不能标为通过。** 较大范围 Java 验证曾在 Javadoc 的 stale-data/options 文件生成阶段失败，因此专项打包跳过 Javadoc。更新权限契约后，Core/Harness 的其余已执行测试通过，但 `WaitAsyncResultsToolTest.timeoutClampedToMax` 的计时断言一次通过、另一次实际等待约 303 秒而失败；扩大测试选择后，`GracefulShutdownTest.StateAndConfigTests.defaultConfig` 又出现共享 shutdown 配置未恢复为默认值的失败。这些既有测试的失败没有被删除，也没有通过放宽断言隐藏。专项成功不等于整个多模块全量测试全绿。
 
-精简验证日志见 [测试记录目录](../test-reports/managed-agent-20260908/README.md)。当前改动在主目录工作区，未自动提交，未重启或部署现有服务。
+精简验证日志见 测试记录目录（历史本地验收记录，保存在发布前备份中）。当前改动在主目录工作区，未自动提交，未重启或部署现有服务。

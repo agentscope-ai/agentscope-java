@@ -1,1 +1,0 @@
-import{b8 as n,ak as a,c as o}from"./index-D9OFsJoL.js";function s(){const e=n();return a.jsx(o,{to:`/settings/namespaces/${encodeURIComponent(e.namespace)}?tenant=${encodeURIComponent(e.tenant)}&namespace=${encodeURIComponent(e.namespace)}`,replace:!0})}export{s as default};

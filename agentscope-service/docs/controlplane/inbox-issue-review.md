@@ -25,4 +25,4 @@ Inbox 的 `review_request` 消息显示 **Review result →** 提示。打开消
 - Go `internal/httpapi`、`internal/collaboration`、`internal/store/memory` 测试通过。新增接口测试验证必要字段、版本冲突、验收条件、重复决定、提醒关闭、反馈留痕，以及操作不会自动分派 Agent 任务。
 - 测试使用模拟 API、内存 Store，不修改用户提供的实际 Issue 或 Inbox 状态。
 
-证据见 [测试记录](../test-reports/inbox-review-20260908/)。
+证据见 测试记录（历史本地验收记录，保存在发布前备份中）。

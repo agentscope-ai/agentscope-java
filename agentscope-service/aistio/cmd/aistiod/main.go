@@ -534,6 +534,8 @@ func main() {
 			InternalToken:         productToken,
 			WorkspaceRoot:         workspaceRoot,
 			SeedUsers:             seedUsers,
+			BootstrapAdmin:        os.Getenv("AISTIO_BOOTSTRAP_ADMIN"),
+			BootstrapPassword:     os.Getenv("AISTIO_BOOTSTRAP_PASSWORD"),
 			AllowLocalEnvironment: allowLocalEnvironment,
 			DataURL:               os.Getenv("BUILDER_DATA_URL"),
 			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),

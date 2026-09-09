@@ -1,5 +1,10 @@
 # AgentScope Service
 
+## Release deployment and documentation
+
+For published-image Docker and Helm installation, see the [deployment guide](deploy/README.md) and [release runbook](release/README.md). The complete [Service documentation](../docs/v2/en/service/index.md) covers usage and operations. The local startup instructions below are for development and include demo users and optional database resets.
+
+
 > **An Agent control and orchestration platform built on AgentScope Harness — a unified control plane for the enterprise.**
 
 [中文说明](README_zh.md)
@@ -94,7 +99,7 @@ Currently supports Agent Framework, Coding Agent,
 - Go 1.26+
 - A model API key; the example below uses DashScope
 
-Node.js is only required when rebuilding the web console.
+Node.js 22 is required for a fresh local source checkout or a console rebuild. Published-image deployments do not require Node.js.
 
 ### 1. Start the local stack
 

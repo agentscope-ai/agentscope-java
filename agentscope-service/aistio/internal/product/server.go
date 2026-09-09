@@ -148,6 +148,9 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 	if len(cfg.JWTSecret) < 32 {
 		return nil, fmt.Errorf("jwt secret must be at least 32 characters")
 	}
+	if err := validateBootstrap(cfg); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("workspace root: %w", err)
 	}
@@ -160,7 +163,12 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
-	if cfg.SeedUsers {
+	if cfg.BootstrapAdmin != "" {
+		if err := bootstrapAdmin(ctx, db, cfg); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("bootstrap admin: %w", err)
+		}
+	} else if cfg.SeedUsers {
 		if err := seedUsers(ctx, db); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("seed users: %w", err)

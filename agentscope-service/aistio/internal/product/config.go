@@ -24,6 +24,8 @@ type Config struct {
 	InternalToken         string
 	WorkspaceRoot         string
 	SeedUsers             bool
+	BootstrapAdmin        string // AISTIO_BOOTSTRAP_ADMIN: initial username
+	BootstrapPassword     string // AISTIO_BOOTSTRAP_PASSWORD: used only on an empty database
 	AllowLocalEnvironment bool   // BUILDER_ALLOW_LOCAL_ENVIRONMENT
 	DataURL               string // BUILDER_DATA_URL
 	VaultMasterKey        string // BUILDER_VAULT_MASTER_KEY (optional)

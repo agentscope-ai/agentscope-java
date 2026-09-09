@@ -2,9 +2,8 @@
 #
 #   docker compose up --build
 #
-# Prerequisites:
-#   mvn -pl agentscope-service -am install -DskipTests
-#   (cd frontend && npm run build)   # emits aistio/ui, baked into the image
+# Development: builds the Java, Go and frontend sources in containers.
+# Published-image deployment: deploy/compose.yaml.
 #
 # Services:
 #   gateway    :18080 (host) -> :8080 (container)
@@ -52,8 +51,8 @@ services:
 
   control:
     build:
-      context: ./aistio
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.control
     command:
       - --storage-driver=postgres
       - --storage-dsn=postgres://builder:builder@db:5432/builder?sslmode=disable&search_path=rt
@@ -82,10 +81,10 @@ services:
 
   data:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-dataplane/target/service-dataplane-2.0.1-SNAPSHOT.jar
+        MODULE: service-dataplane
     environment:
       << : *builder-env
       SERVER_PORT: 8082
@@ -100,10 +99,10 @@ services:
 
   scheduler:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-scheduler/target/service-scheduler-2.0.1-SNAPSHOT.jar
+        MODULE: service-scheduler
     environment:
       << : *builder-env
       SERVER_PORT: 8083
@@ -118,10 +117,10 @@ services:
 
   gateway:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-gateway/target/service-gateway-2.0.1-SNAPSHOT.jar
+        MODULE: service-gateway
     environment:
       SERVER_PORT: 8080
       BUILDER_CONTROL_URL: http://control:8081

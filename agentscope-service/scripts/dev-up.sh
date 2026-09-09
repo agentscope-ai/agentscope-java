@@ -179,6 +179,13 @@ if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true
     (cd "$MONOREPO_ROOT" && mvn install -DskipTests -q)
 fi
 
+# ---------------------------------------------------------------- build console
+# Generated UI assets are no longer tracked; a fresh clone must build the SPA.
+if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$ROOT/aistio/ui/index.html" ]; then
+    echo "==> Building console from frontend sources"
+    (cd "$ROOT/frontend" && npm ci && npm run build)
+fi
+
 # ---------------------------------------------------------------- build aistiod
 AISTIO_BIN="$ROOT/aistio/bin/aistiod"
 if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -x "$AISTIO_BIN" ]; then

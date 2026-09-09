@@ -1,2 +1,0 @@
-Issue sidebar attachment round-trip verification.
-UTF-8: 验收附件。

@@ -1,6 +1,6 @@
 # AgentScope Service Inbox 改造方案
 
-日期：2026-09-07。状态：四项核心改造已实施，验证结果见 [实施与验证报告](test-reports/inbox-redesign-20260907/REPORT.md)。
+日期：2026-09-07。状态：四项核心改造已实施，验证结果见 实施与验证报告（历史本地验收记录，保存在发布前备份中）。
 
 分析与实施基于 `/Users/ken/agentscope-2/agentscope-java` 主目录、`agentscope-service-v5` 分支的当前工作区，保留已有及并行修改。下文保留原始设计依据；已实现范围、技术取舍、后续增强和实际构建状态以实施报告为准。未部署或重启用户服务。
 

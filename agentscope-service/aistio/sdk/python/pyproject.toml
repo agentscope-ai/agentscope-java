@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "aistio-sdk"
 version = "0.1.0"
 description = "aistio data-plane SDK: bypass-observe heterogeneous agent frameworks and report to the aistio control plane"
-readme = { text = "aistio Python SDK — see docs/zh/controlplane/sdk-design.md", content-type = "text/plain" }
+readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = { file = "LICENSE" }
 dependencies = [
     "grpcio>=1.80",
     "protobuf>=6.31.1,<7",

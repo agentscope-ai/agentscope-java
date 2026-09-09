@@ -1,8 +1,0 @@
-join-all PASS succeeded
-join-any PASS succeeded
-join-quorum PASS succeeded
-failure-fail_fast PASS failed
-failure-continue PASS failed
-failure-partial_success PASS partial_succeeded
-timeout-subrun PASS failed
-timeout-approval PASS failed

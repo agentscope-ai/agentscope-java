@@ -95,10 +95,10 @@ proto-verify: proto
 	git diff --exit-code -- internal/asdp/*.pb.go
 
 docker-build:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMG) .
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) ../..
 
 docker-push:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMG) --push .
+	docker buildx build --platform linux/amd64,linux/arm64 -f ../docker/Dockerfile.control -t $(IMG) --push ../..
 
 install-yaml: manifests sync-helm
 	@echo "Generating install/install.yaml from Helm chart..."

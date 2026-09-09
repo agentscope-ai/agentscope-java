@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spring-ai-alibaba/aistio/internal/version"
 )
 
 var (
@@ -83,7 +84,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("%s version 0.3.0\n", cmd.Root().Name())
+			fmt.Printf("%s version %s\n", cmd.Root().Name(), version.Version)
 		},
 	}
 }

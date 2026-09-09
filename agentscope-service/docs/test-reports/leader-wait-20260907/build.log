@@ -1,5 +1,0 @@
-go build -o bin/aistio-runtime-host ./cmd/aistio-runtime-host
-go build -o bin/agentscope ./cmd/aistioctl
-mkdir -p /Users/ken/.local/bin
-install -m 0755 bin/agentscope /Users/ken/.local/bin/agentscope
-install -m 0755 bin/aistio-runtime-host /Users/ken/.local/bin/aistio-runtime-host

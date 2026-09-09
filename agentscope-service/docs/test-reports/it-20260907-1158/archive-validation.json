@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-07T12:09:30.151025+08:00",
-  "parsedFiles": 1723,
-  "credentialLeaks": 0,
-  "jwtLeaks": 0,
-  "reportLinksChecked": 6,
-  "gitHeadUnchanged": true,
-  "gitStatusUnchanged": true
-}

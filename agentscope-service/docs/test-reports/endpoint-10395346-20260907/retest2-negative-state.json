@@ -1,8 +1,0 @@
-{
-  "eventsUrl": "/invoke/v1/jobs/c38dbcb2-8c1b-4f09-ba05-34cd519cdb93/events",
-  "invocationId": "c38dbcb2-8c1b-4f09-ba05-34cd519cdb93",
-  "issueId": "e53898ac-4554-5aa0-bd5a-ea2a099b72a5",
-  "runId": "8035ee1d-f20c-50d6-a482-ffc41efc8d53",
-  "status": "running",
-  "statusUrl": "/invoke/v1/jobs/c38dbcb2-8c1b-4f09-ba05-34cd519cdb93"
-}
