@@ -77,7 +77,9 @@ In many workloads this single step delays the summarization trigger considerably
 
 `CompactionConfig.flushBeforeCompact` (default `true`) decides **whether to extract facts from the conversation prefix into long-term memory before summarizing** — handled by `MemoryFlushMiddleware` + `MemoryFlushManager`, which read `<workspace>/MEMORY.md` and `memory/*.md` and incrementally append new facts. Once summarization drops the prefix messages, the information persists: the agent can pull it back via `memory_search` / `memory_get`.
 
-Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them.
+`HarnessAgent.Builder.disableMemoryHooks()` overrides `flushBeforeCompact` to `false` for both normal and emergency compaction. Compaction summarization still runs.
+
+Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them. Offload is independent of memory hooks; set `offloadBeforeCompact(false)` explicitly to disable it.
 
 > The full Memory subsystem — two-tier structure, background maintenance (archive, merge), memory tools — is in [Memory](./memory.md). Compaction and memory are commonly used together but have independent switches.
 

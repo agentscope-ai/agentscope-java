@@ -208,12 +208,18 @@ public class CompactionConfig {
         return summaryPrompt;
     }
 
-    /** Whether to flush long-term memories from the prefix before compaction. */
+    /**
+     * Whether to flush long-term memories from the prefix before compaction. When used through
+     * {@code HarnessAgent}, {@code disableMemoryHooks()} overrides this setting to {@code false}.
+     */
     public boolean isFlushBeforeCompact() {
         return flushBeforeCompact;
     }
 
-    /** Whether to offload raw messages to the session JSONL before compaction. */
+    /**
+     * Whether to offload raw messages to the session JSONL before compaction. This setting is
+     * independent of long-term memory hooks.
+     */
     public boolean isOffloadBeforeCompact() {
         return offloadBeforeCompact;
     }
@@ -246,12 +252,31 @@ public class CompactionConfig {
      * context window. Used by {@code CompactionMiddleware} to resolve dynamic defaults.
      */
     public CompactionConfig withEffective(int effectiveTriggerTokens, int effectiveKeepTokens) {
+        Builder b = copyBuilder();
+        b.triggerTokens = effectiveTriggerTokens;
+        b.keepTokens = effectiveKeepTokens;
+        return new CompactionConfig(b);
+    }
+
+    /**
+     * Creates a copy with the pre-compaction long-term memory flush enabled or disabled.
+     *
+     * @param flushBeforeCompact whether to flush long-term memories before compaction
+     * @return a new configuration with the requested flush setting
+     */
+    public CompactionConfig withFlushBeforeCompact(boolean flushBeforeCompact) {
+        Builder b = copyBuilder();
+        b.flushBeforeCompact = flushBeforeCompact;
+        return new CompactionConfig(b);
+    }
+
+    private Builder copyBuilder() {
         Builder b = new Builder();
         b.triggerMessages = this.triggerMessages;
-        b.triggerTokens = effectiveTriggerTokens;
+        b.triggerTokens = this.triggerTokens;
         b.reserved = this.reserved;
         b.keepMessages = this.keepMessages;
-        b.keepTokens = effectiveKeepTokens;
+        b.keepTokens = this.keepTokens;
         b.keepTokensMin = this.keepTokensMin;
         b.keepTokensMax = this.keepTokensMax;
         b.keepTokensRatio = this.keepTokensRatio;
@@ -261,7 +286,7 @@ public class CompactionConfig {
         b.truncateArgsConfig = this.truncateArgsConfig;
         b.pruneConfig = this.pruneConfig;
         b.model = this.model;
-        return new CompactionConfig(b);
+        return b;
     }
 
     public static Builder builder() {
@@ -346,13 +371,20 @@ public class CompactionConfig {
             return this;
         }
 
-        /** Whether to flush long-term memories before compaction (default true). */
+        /**
+         * Whether to flush long-term memories before compaction (default true). When used through
+         * {@code HarnessAgent}, {@code disableMemoryHooks()} overrides this setting to {@code
+         * false}.
+         */
         public Builder flushBeforeCompact(boolean flushBeforeCompact) {
             this.flushBeforeCompact = flushBeforeCompact;
             return this;
         }
 
-        /** Whether to offload raw messages to session JSONL before compaction (default true). */
+        /**
+         * Whether to offload raw messages to session JSONL before compaction (default true).
+         * Independent of long-term memory hooks.
+         */
         public Builder offloadBeforeCompact(boolean offloadBeforeCompact) {
             this.offloadBeforeCompact = offloadBeforeCompact;
             return this;

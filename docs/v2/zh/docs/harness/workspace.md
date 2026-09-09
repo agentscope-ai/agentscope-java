@@ -158,7 +158,7 @@ env:
 | 方法 | 关掉的是 |
 |------|---------|
 | `disableWorkspaceContext()` | system prompt 注入（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
-| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `<memory_context>`（`MEMORY.md`） |
+| `disableMemoryHooks()` | 所有记忆 flush 路径（含压缩）+ 后台维护；不关闭压缩摘要或 session offload。同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `<memory_context>`（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
