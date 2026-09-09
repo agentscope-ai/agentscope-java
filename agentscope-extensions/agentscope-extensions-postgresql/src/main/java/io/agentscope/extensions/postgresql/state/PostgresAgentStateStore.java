@@ -330,7 +330,7 @@ public class PostgresAgentStateStore implements AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersionOnly(userId, sessionId, key);
         }
 
         String slotId = slotId(userId, sessionId);
@@ -351,6 +351,29 @@ public class PostgresAgentStateStore implements AgentStateStore {
             return result[0];
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private long readVersionOnly(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        String sql = "SELECT version FROM " + getFullTableName()
+                + " WHERE session_id = ? AND state_key = ? AND item_index = 0";
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return 0L;
+                }
+                return rs.getLong("version");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version for state: " + key, e);
         }
     }
 

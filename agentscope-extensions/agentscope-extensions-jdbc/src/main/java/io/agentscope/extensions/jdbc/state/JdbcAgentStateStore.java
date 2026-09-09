@@ -233,7 +233,7 @@ public class JdbcAgentStateStore implements AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersionOnly(userId, sessionId, key);
         }
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
@@ -273,6 +273,26 @@ public class JdbcAgentStateStore implements AgentStateStore {
             return result[0];
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private long readVersionOnly(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        validateSlotId(slotId);
+        validateStateKey(key);
+
+        BoundSql boundSql = dialect.sessionStateSelectVersioned(slotId, key, SINGLE_STATE_INDEX);
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return 0L;
+                }
+                return rs.getLong("version");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version for state: " + key, e);
         }
     }
 

@@ -270,8 +270,7 @@ public class RedisAgentStateStore implements AgentStateStore {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            VersionedState<State> after = getVersioned(userId, sessionId, key, State.class);
-            return after.version();
+            return readVersionOnly(userId, sessionId, key);
         }
         String slotId = slotId(userId, sessionId);
         String redisKey = getStateKey(slotId, key);
@@ -287,6 +286,25 @@ public class RedisAgentStateStore implements AgentStateStore {
             return result == -1L ? UNVERSIONED : result;
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    /**
+     * Read only the version number without deserializing the payload.
+     * This avoids Jackson's inability to deserialize the State marker interface.
+     */
+    private long readVersionOnly(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        String redisKey = getStateKey(slotId, key);
+        String versionKey = RedisStateVersionSupport.versionKey(redisKey);
+        try {
+            String json = client.get(redisKey);
+            if (json == null) {
+                return 0L;
+            }
+            return RedisStateVersionSupport.parseVersion(json, client.get(versionKey));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version for state: " + key, e);
         }
     }
 
