@@ -31,7 +31,10 @@ final class ToolCallEventConverter implements AgentEventConverter {
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
         if (event instanceof ToolCallDeltaEvent delta) {
-            if (context.getConfig().isEmitToolCallArgs()) {
+            // External tools always need args so the client can invoke them; streaming deltas
+            // often use a placeholder name, so resolution happens by toolCallId in the context.
+            if (context.getConfig().isEmitToolCallArgs()
+                    || context.isExternalToolCall(delta.getToolCallId())) {
                 context.appendToolCallArgs(delta.getToolCallId(), delta.getDelta());
             }
         } else if (event instanceof ToolCallStartEvent start) {

@@ -791,11 +791,12 @@ public class AgentSpawnTool {
                     if (emitterOpt.isPresent()) {
                         AgentEventEmitter parentEmitter = emitterOpt.get();
                         String sourcePath = buildSourcePath(spawned, parentCtx);
+                        String replyId = UUID.randomUUID().toString().replace("-", "");
                         AgentEventEmitter taggedEmitter =
                                 event -> parentEmitter.emit(event.withSource(sourcePath));
 
                         parentEmitter.emit(
-                                new AgentStartEvent(spawned.sessionId(), null, spawned.agentId())
+                                new AgentStartEvent(spawned.sessionId(), replyId, spawned.agentId())
                                         .withSource(sourcePath));
 
                         AtomicBoolean endEmitted = new AtomicBoolean();
@@ -803,7 +804,7 @@ public class AgentSpawnTool {
                                 () -> {
                                     if (endEmitted.compareAndSet(false, true)) {
                                         parentEmitter.emit(
-                                                new AgentEndEvent(null).withSource(sourcePath));
+                                                new AgentEndEvent(replyId).withSource(sourcePath));
                                     }
                                 };
 

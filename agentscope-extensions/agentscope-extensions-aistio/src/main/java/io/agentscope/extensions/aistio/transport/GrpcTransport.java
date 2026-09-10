@@ -18,8 +18,13 @@ package io.agentscope.extensions.aistio.transport;
 import io.agentscope.aistio.proto.AgentDataPlaneServiceGrpc;
 import io.agentscope.aistio.proto.ConnectRequest;
 import io.agentscope.aistio.proto.ContextReport;
+import io.agentscope.aistio.proto.ConversationTurnCommand;
+import io.agentscope.aistio.proto.ConversationTurnReport;
 import io.agentscope.aistio.proto.Downstream;
 import io.agentscope.aistio.proto.EventReport;
+import io.agentscope.aistio.proto.EventReportAck;
+import io.agentscope.aistio.proto.ExecutionAttemptCommand;
+import io.agentscope.aistio.proto.ExecutionAttemptReport;
 import io.agentscope.aistio.proto.Heartbeat;
 import io.agentscope.aistio.proto.InventoryReport;
 import io.agentscope.aistio.proto.SessionEventMsg;
@@ -29,6 +34,8 @@ import io.agentscope.aistio.proto.Upstream;
 import io.agentscope.aistio.proto.UpstreamMeta;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 import java.util.Collection;
 import java.util.List;
@@ -45,8 +52,8 @@ import java.util.logging.Logger;
  * ASDP upstream channel: a single bidirectional gRPC stream multiplexing every report type, the
  * same shape the Go control plane and the Python SDK use.
  *
- * <p>Reconnects with capped exponential backoff. While disconnected, sends are dropped rather than
- * buffered here — the bridge owns buffering, because only it knows which levels are safe to drop.
+ * <p>Reconnects with capped exponential backoff. The bridge owns the durable event outbox and only
+ * advances it after receiving {@link EventReportAck}; non-event telemetry remains best effort.
  */
 public final class GrpcTransport implements AutoCloseable {
 
@@ -62,17 +69,33 @@ public final class GrpcTransport implements AutoCloseable {
         void onCommand(String sessionId, String command, byte[] params);
     }
 
-    /** Receives downstream {@code TeamEvent} notifications from the control plane. */
+    /** Receives a fenced execution-attempt command from the control plane. */
     @FunctionalInterface
-    public interface TeamEventHandler {
-        void onTeamEvent(
-                String teamId, String eventType, String memberName, String taskId, byte[] payload);
+    public interface ExecutionAttemptCommandHandler {
+        void onExecutionAttempt(ExecutionAttemptCommand command);
+    }
+
+    /** Receives a fenced online conversation turn from the control plane. */
+    @FunctionalInterface
+    public interface ConversationTurnCommandHandler {
+        void onConversationTurn(ConversationTurnCommand command);
+    }
+
+    /** Receives a durable commit acknowledgement for a Level-2 event report. */
+    @FunctionalInterface
+    public interface EventAckHandler {
+        void onAck(EventReportAck ack);
     }
 
     private final String target;
-    private final String agentName;
+    private volatile String credential;
+    private volatile String agentId;
+    private final String agentKey;
+    private volatile String bindingId;
+    private final String tenant;
     private final String namespace;
-    private final String instanceId;
+    private volatile String instanceKey;
+    private volatile long generation;
     private final String runtime;
     private final String sdkVersion;
     private final List<String> capabilities;
@@ -93,21 +116,33 @@ public final class GrpcTransport implements AutoCloseable {
 
     private volatile ManagedChannel channel;
     private volatile SessionCommandHandler commandHandler;
-    private volatile TeamEventHandler teamEventHandler;
+    private volatile ExecutionAttemptCommandHandler executionAttemptHandler;
+    private volatile ConversationTurnCommandHandler conversationTurnHandler;
+    private volatile EventAckHandler eventAckHandler;
 
     public GrpcTransport(
             String target,
-            String agentName,
+            String credential,
+            String agentId,
+            String agentKey,
+            String bindingId,
+            String tenant,
             String namespace,
-            String instanceId,
+            String instanceKey,
+            long generation,
             String runtime,
             String sdkVersion,
             Collection<String> capabilities,
             String sessionAffinity) {
         this.target = target;
-        this.agentName = agentName;
+        this.credential = credential == null ? "" : credential;
+        this.agentId = agentId;
+        this.agentKey = agentKey;
+        this.bindingId = bindingId;
+        this.tenant = tenant;
         this.namespace = namespace;
-        this.instanceId = instanceId;
+        this.instanceKey = instanceKey;
+        this.generation = generation;
         this.runtime = runtime;
         this.sdkVersion = sdkVersion;
         this.capabilities = List.copyOf(capabilities);
@@ -118,12 +153,48 @@ public final class GrpcTransport implements AutoCloseable {
         this.commandHandler = handler;
     }
 
-    public void setTeamEventHandler(TeamEventHandler handler) {
-        this.teamEventHandler = handler;
+    public void setExecutionAttemptHandler(ExecutionAttemptCommandHandler handler) {
+        this.executionAttemptHandler = handler;
+    }
+
+    public void setConversationTurnHandler(ConversationTurnCommandHandler handler) {
+        this.conversationTurnHandler = handler;
+    }
+
+    public void setEventAckHandler(EventAckHandler handler) {
+        this.eventAckHandler = handler;
     }
 
     public boolean isConnected() {
         return connected.get();
+    }
+
+    /**
+     * Refreshes the fenced Catalog identity used by the next connection attempt. HTTP
+     * self-registration can advance an instance generation while this transport is reconnecting
+     * after a control-plane outage; keeping these values immutable would make every later
+     * handshake stale until the whole Agent process restarted.
+     */
+    public void updateIdentity(
+            String credential,
+            String agentId,
+            String bindingId,
+            String instanceKey,
+            long generation) {
+        if (agentId == null
+                || agentId.isBlank()
+                || bindingId == null
+                || bindingId.isBlank()
+                || instanceKey == null
+                || instanceKey.isBlank()
+                || generation <= 0) {
+            return;
+        }
+        this.credential = credential == null ? "" : credential;
+        this.agentId = agentId;
+        this.bindingId = bindingId;
+        this.instanceKey = instanceKey;
+        this.generation = generation;
     }
 
     public void start() {
@@ -146,6 +217,13 @@ public final class GrpcTransport implements AutoCloseable {
         try {
             AgentDataPlaneServiceGrpc.AgentDataPlaneServiceStub stub =
                     AgentDataPlaneServiceGrpc.newStub(channel);
+            if (!credential.isBlank()) {
+                Metadata metadata = new Metadata();
+                metadata.put(
+                        Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+                        "Bearer " + credential);
+                stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
+            }
             StreamObserver<Upstream> requests = stub.connect(new DownstreamObserver());
             stream.set(requests);
             requests.onNext(
@@ -180,8 +258,12 @@ public final class GrpcTransport implements AutoCloseable {
 
     private UpstreamMeta meta() {
         return UpstreamMeta.newBuilder()
-                .setAgentName(agentName)
-                .setInstanceId(instanceId)
+                .setAgentId(agentId)
+                .setAgentKey(agentKey)
+                .setBindingId(bindingId)
+                .setTenant(tenant)
+                .setInstanceKey(instanceKey)
+                .setGeneration(generation)
                 .setNamespace(namespace)
                 .setTimestamp(System.currentTimeMillis())
                 .build();
@@ -201,14 +283,18 @@ public final class GrpcTransport implements AutoCloseable {
                         .build());
     }
 
-    public void reportEvents(List<SessionEventMsg> events) {
+    public boolean reportEvents(String reportId, List<SessionEventMsg> events) {
         if (events.isEmpty()) {
-            return;
+            return true;
         }
-        send(
+        return send(
                 Upstream.newBuilder()
                         .setMeta(meta())
-                        .setEventReport(EventReport.newBuilder().addAllEvents(events).build())
+                        .setEventReport(
+                                EventReport.newBuilder()
+                                        .setReportId(reportId)
+                                        .addAllEvents(events)
+                                        .build())
                         .build());
     }
 
@@ -218,6 +304,14 @@ public final class GrpcTransport implements AutoCloseable {
 
     public void reportInventory(InventoryReport report) {
         send(Upstream.newBuilder().setMeta(meta()).setInventory(report).build());
+    }
+
+    public void reportExecutionAttempt(ExecutionAttemptReport report) {
+        send(Upstream.newBuilder().setMeta(meta()).setExecutionAttempt(report).build());
+    }
+
+    public void reportConversationTurn(ConversationTurnReport report) {
+        send(Upstream.newBuilder().setMeta(meta()).setConversationTurn(report).build());
     }
 
     private void sendHeartbeat() {
@@ -234,19 +328,21 @@ public final class GrpcTransport implements AutoCloseable {
                         .build());
     }
 
-    private void send(Upstream message) {
+    private boolean send(Upstream message) {
         StreamObserver<Upstream> observer = stream.get();
         if (observer == null || !connected.get()) {
-            return;
+            return false;
         }
         try {
             synchronized (this) {
                 observer.onNext(message);
             }
+            return true;
         } catch (RuntimeException e) {
-            // The stream broke mid-send; drop this report and let the reconnect path recover.
+            // The bridge retains acknowledged event reports and retries them after reconnect.
             LOG.log(Level.FINE, "aistio: ASDP send failed", e);
             scheduleReconnect();
+            return false;
         }
     }
 
@@ -293,21 +389,35 @@ public final class GrpcTransport implements AutoCloseable {
                 } catch (RuntimeException e) {
                     LOG.log(Level.FINE, "aistio: session command handler failed", e);
                 }
-            } else if (message.hasTeamEvent()) {
-                TeamEventHandler handler = teamEventHandler;
+            } else if (message.hasExecutionAttempt()) {
+                ExecutionAttemptCommandHandler handler = executionAttemptHandler;
                 if (handler == null) {
                     return;
                 }
                 try {
-                    var ev = message.getTeamEvent();
-                    handler.onTeamEvent(
-                            ev.getTeamId(),
-                            ev.getEventType(),
-                            ev.getMemberName(),
-                            ev.getTaskId(),
-                            ev.getPayload().toByteArray());
+                    handler.onExecutionAttempt(message.getExecutionAttempt());
                 } catch (RuntimeException e) {
-                    LOG.log(Level.FINE, "aistio: team event handler failed", e);
+                    LOG.log(Level.FINE, "aistio: ExecutionAttempt command handler failed", e);
+                }
+            } else if (message.hasConversationTurn()) {
+                ConversationTurnCommandHandler handler = conversationTurnHandler;
+                if (handler == null) {
+                    return;
+                }
+                try {
+                    handler.onConversationTurn(message.getConversationTurn());
+                } catch (RuntimeException e) {
+                    LOG.log(Level.FINE, "aistio: conversation turn handler failed", e);
+                }
+            } else if (message.hasEventAck()) {
+                EventAckHandler handler = eventAckHandler;
+                if (handler == null) {
+                    return;
+                }
+                try {
+                    handler.onAck(message.getEventAck());
+                } catch (RuntimeException e) {
+                    LOG.log(Level.FINE, "aistio: event acknowledgement handler failed", e);
                 }
             } else if (message.hasConnectAck() && !message.getConnectAck().getAccepted()) {
                 LOG.log(

@@ -43,7 +43,7 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
-        <!-- ControlPlaneTeamClient for Managed AgentTeams -->
+        <!-- Aistio transport and distributed-store adapters. -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-aistio</artifactId>

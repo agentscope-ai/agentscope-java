@@ -70,12 +70,18 @@ public final class WebTools {
                                 .build();
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() >= 400) {
+                    throw new IllegalStateException("HTTP " + response.statusCode());
+                }
                 String body = response.body() == null ? "" : response.body();
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
                 return ToolResultBlock.success("status=" + response.statusCode() + "\n\n" + body);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 return ToolResultBlock.error("web_fetch failed: " + e.getMessage());
             }
         }
@@ -149,6 +155,9 @@ public final class WebTools {
                 }
                 return ToolResultBlock.success(sb.toString().strip());
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 return ToolResultBlock.error("web_search failed: " + e.getMessage());
             }
         }

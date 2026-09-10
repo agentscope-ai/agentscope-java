@@ -1,4 +1,6 @@
-# Git 技能仓库
+---
+title: Git 技能仓库
+---
 
 `agentscope-extensions-skill-git-repository` 把一个远程 Git 仓库当作技能仓库：每次读取时做轻量的 remote ref 检查，只在远端 HEAD 变化时才真正 pull，平时几乎零开销。
 

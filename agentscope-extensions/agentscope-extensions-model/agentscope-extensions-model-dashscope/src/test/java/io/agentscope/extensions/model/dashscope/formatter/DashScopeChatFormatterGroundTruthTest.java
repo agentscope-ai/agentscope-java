@@ -247,7 +247,7 @@ class DashScopeChatFormatterGroundTruthTest {
     private static void buildGroundTruth() {
         groundTruthChat = new ArrayList<>();
         File imageFile = new File(imagePath);
-        String absoluteImagePath = "file://" + imageFile.getAbsolutePath();
+        String absoluteImagePath = "data:image/png;base64,ZmFrZSBpbWFnZSBjb250ZW50";
 
         // Message 1: System message
         groundTruthChat.add(
@@ -340,7 +340,7 @@ class DashScopeChatFormatterGroundTruthTest {
 
         // Message 8: Tool result
         File imageFile2 = new File(imagePath);
-        String absoluteImagePath2 = "file://" + imageFile2.getAbsolutePath();
+        String absoluteImagePath2 = "data:image/png;base64,ZmFrZSBpbWFnZSBjb250ZW50";
         groundTruthChat.add(
                 DashScopeMessage.builder()
                         .role("tool")

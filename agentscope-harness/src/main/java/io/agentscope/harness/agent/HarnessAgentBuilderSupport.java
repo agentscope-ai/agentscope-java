@@ -55,6 +55,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -284,12 +285,41 @@ final class HarnessAgentBuilderSupport {
         return entries;
     }
 
+    private static io.agentscope.harness.agent.tools.ToolsConfig childToolsConfig(
+            io.agentscope.harness.agent.tools.ToolsConfig parent, List<String> allow) {
+        if (allow == null || allow.isEmpty()) return parent;
+        var child = new io.agentscope.harness.agent.tools.ToolsConfig();
+        child.setStrictAllow(true);
+        child.setDefaultToolsEnabled(false);
+        child.setAllow(
+                allow.stream()
+                        .filter(
+                                name ->
+                                        io.agentscope.harness.agent.tools.ToolFilter.isAllowed(
+                                                name, parent))
+                        .toList());
+        if (parent != null) {
+            child.setDeny(parent.getDeny());
+            child.setMcpServers(parent.getMcpServers());
+        }
+        return child;
+    }
+
     /**
      * Builds a factory for the built-in general-purpose subagent.
      */
     static SubagentFactory buildGeneralPurposeFactory(
             HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
+        final var capturedToolsConfig = b.toolsConfigOverride;
+        final var capturedSkillFilter = b.skillFilter;
+        final var capturedPermissions = b.permissionContextOverride;
+        final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
+        final var capturedSandboxSpec = b.sandboxFilesystemSpec;
+        final var capturedRemoteSpec = b.remoteFilesystemSpec;
+        final var capturedRoutes = Map.copyOf(b.filesystemRoutes);
+
+        final boolean capturedPendingToolRecovery = b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final AbstractFilesystem capturedBackend =
@@ -335,6 +365,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name("general-purpose-subagent")
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description("General-purpose subagent for isolated task execution")
                             .sysPrompt(buildSubagentSysPrompt(null))
                             .model(capturedModel)
@@ -348,7 +379,16 @@ final class HarnessAgentBuilderSupport {
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
 
+            if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
+            if (capturedDisableDefaultSkills) sub.disableDefaultWorkspaceSkills();
+            if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
+            if (capturedToolsConfig != null) sub.toolsConfig(capturedToolsConfig);
+            capturedRoutes.forEach(sub::filesystemRoute);
+            if (capturedBackend == null && capturedRemoteSpec != null)
+                sub.filesystem(capturedRemoteSpec);
+            if (capturedBackend == null && capturedSandboxSpec != null)
+                sub.filesystem(capturedSandboxSpec);
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
@@ -395,6 +435,18 @@ final class HarnessAgentBuilderSupport {
             Path mainWorkspace,
             SandboxBackedFilesystem sandboxFs) {
         final Model capturedModel = b.model;
+        final var capturedToolsConfig = b.toolsConfigOverride;
+        final var capturedSkillFilter = b.skillFilter;
+        final var capturedPermissions = b.permissionContextOverride;
+        final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
+        final var capturedSandboxSpec = b.sandboxFilesystemSpec;
+        final var capturedRemoteSpec = b.remoteFilesystemSpec;
+        final var capturedRoutes = Map.copyOf(b.filesystemRoutes);
+
+        final boolean capturedPendingToolRecovery =
+                decl.getEnablePendingToolRecovery() != null
+                        ? decl.getEnablePendingToolRecovery()
+                        : b.enablePendingToolRecovery;
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
@@ -454,6 +506,7 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder sub =
                     HarnessAgent.builder()
                             .name(decl.getName())
+                            .enablePendingToolRecovery(capturedPendingToolRecovery)
                             .description(decl.getDescription())
                             .model(effectiveModel)
                             .toolkit(
@@ -484,8 +537,15 @@ final class HarnessAgentBuilderSupport {
                 sub.generateOptions(capturedGenOpts);
             }
 
+            var childTools = childToolsConfig(capturedToolsConfig, decl.getTools());
+            if (childTools != null) sub.toolsConfig(childTools);
+            capturedRoutes.forEach(sub::filesystemRoute);
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {
                 sub.abstractFilesystem(capturedSharedBackend);
+            } else if (capturedSandboxSpec != null) {
+                sub.filesystem(capturedSandboxSpec);
+            } else if (capturedRemoteSpec != null) {
+                sub.filesystem(capturedRemoteSpec);
             } else if (decl.getWorkspaceMode() != WorkspaceMode.SHARED
                     && capturedLocalFilesystemSpec != null) {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
@@ -511,9 +571,20 @@ final class HarnessAgentBuilderSupport {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
 
+            if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
+            if (capturedDisableDefaultSkills) sub.disableDefaultWorkspaceSkills();
+            if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             List<String> skillAllowlist = decl.getSkills();
             if (!skillAllowlist.isEmpty()) {
-                sub.skillFilter(SkillFilter.only(skillAllowlist.toArray(new String[0])));
+                sub.skillFilter(
+                        SkillFilter.only(
+                                skillAllowlist.stream()
+                                        .filter(
+                                                name ->
+                                                        capturedSkillFilter == null
+                                                                || capturedSkillFilter.isAllowed(
+                                                                        name))
+                                        .toArray(String[]::new)));
             }
 
             sub.middlewares(capturedMiddlewares);

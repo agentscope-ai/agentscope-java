@@ -16,11 +16,13 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,6 +39,7 @@ import org.junit.jupiter.api.Test;
 class OpenAICacheControlTest {
 
     private static final Map<String, String> EPHEMERAL = Map.of("type", "ephemeral");
+    private static final Map<String, String> NO_CACHE = Map.of();
 
     private OpenAIChatFormatter formatter;
 
@@ -201,7 +204,7 @@ class OpenAICacheControlTest {
         }
 
         @Test
-        @DisplayName("should not set cache_control when metadata flag is false")
+        @DisplayName("should mark explicit no-cache when metadata flag is false")
         void metadataFalse() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
@@ -215,7 +218,47 @@ class OpenAICacheControlTest {
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
             assertEquals(1, result.size());
-            assertNull(result.get(0).getCacheControl());
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not auto-cache a system message explicitly marked false")
+        void systemMessageExplicitNoCache() {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg systemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("System prompt")
+                            .metadata(metadata)
+                            .build();
+            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("User msg").build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(systemMsg, userMsg));
+            formatter.applyCacheControl(result);
+
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertEquals(EPHEMERAL, result.get(1).getCacheControl());
+        }
+
+        @Test
+        @DisplayName("should not serialize the no-cache marker into the API payload")
+        void noCacheNotSerialized() throws Exception {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.CACHE_CONTROL, false);
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("Hello")
+                            .metadata(metadata)
+                            .build();
+
+            List<OpenAIMessage> result = formatter.format(List.of(msg));
+            String json = JsonUtils.getJsonCodec().toJson(result.get(0));
+
+            assertEquals(NO_CACHE, result.get(0).getCacheControl());
+            assertFalse(json.contains("no_cache"));
+            assertFalse(json.contains("cache_control"));
         }
 
         @Test
