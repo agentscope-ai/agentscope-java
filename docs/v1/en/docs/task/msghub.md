@@ -1,4 +1,6 @@
-# MsgHub
+---
+title: MsgHub
+---
 
 MsgHub is a message broadcasting center for multi-agent conversations in AgentScope. It manages message distribution among a group of agents, eliminating the need for manual message passing code.
 
@@ -305,5 +307,5 @@ hub.enter()
 
 ## Related Documentation
 
-- [Pipeline](../multi-agent/pipeline.md) - Sequential and parallel agent execution
-- [Multi-Agent Debate](../multi-agent/multiagent-debate.md) - Debate workflow pattern
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate) - Debate workflow pattern

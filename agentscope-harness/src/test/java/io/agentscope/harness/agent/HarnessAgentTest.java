@@ -243,6 +243,26 @@ class HarnessAgentTest {
     }
 
     @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
     void artifactDeliveryTarget_registersDeliverTool() throws Exception {
         Files.createDirectories(workspace);
         Model model = stubModel("ok");
@@ -1094,7 +1114,9 @@ class HarnessAgentTest {
         try (HarnessAgent child = (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
             assertSame(
                     deny ? null : platformTool, child.getDelegate().getToolkit().getTool("team"));
-            assertNotNull(child.getDelegate().getToolkit().getTool("read_file"));
+            assertNull(
+                    child.getDelegate().getToolkit().getTool("read_file"),
+                    "child-local tools must also respect the strict declaration allowlist");
             assertEquals(
                     !deny,
                     child.getDelegate().getToolkit().getToolSchemas().stream()
@@ -1176,21 +1198,28 @@ class HarnessAgentTest {
             boolean hookToolAllowed = "allowlisted".equals(policy) || "unrestricted".equals(policy);
             if (hookToolAllowed) {
                 assertSame(parentReadFile, toolkit.getTool("read_file"));
-            } else {
+            } else if (policy.endsWith("deletion-disabled")) {
                 assertNotNull(toolkit.getTool("read_file"));
                 assertNotSame(parentReadFile, toolkit.getTool("read_file"));
+            } else {
+                assertNull(
+                        toolkit.getTool("read_file"),
+                        "the strict declaration also removes the child-local tool");
             }
-            assertTrue(
-                    results.get(0).getOutput().stream()
-                            .filter(TextBlock.class::isInstance)
-                            .map(TextBlock.class::cast)
-                            .anyMatch(
-                                    text ->
-                                            text.getText()
-                                                    .contains(
-                                                            hookToolAllowed
-                                                                    ? "parent hook read_file"
-                                                                    : "child workspace content")));
+            if (hookToolAllowed || policy.endsWith("deletion-disabled")) {
+                assertTrue(
+                        results.get(0).getOutput().stream()
+                                .filter(TextBlock.class::isInstance)
+                                .map(TextBlock.class::cast)
+                                .anyMatch(
+                                        text ->
+                                                text.getText()
+                                                        .contains(
+                                                                hookToolAllowed
+                                                                        ? "parent hook read_file"
+                                                                        : "child workspace"
+                                                                                + " content")));
+            }
             verify(parentReadFile, times(hookToolAllowed ? 1 : 0)).callAsync(any());
         }
     }
@@ -1215,7 +1244,7 @@ class HarnessAgentTest {
         ReActAgent child =
                 (ReActAgent) runHookSubagent(source, List.of(toolBearingHook)).getAgent();
         assertEquals(1, child.getHooks().stream().filter(hook -> hook == toolBearingHook).count());
-        assertNotNull(child.getToolkit().getTool("read_file"));
+        assertNull(child.getToolkit().getTool("read_file"));
     }
 
     @ParameterizedTest
@@ -1304,8 +1333,11 @@ class HarnessAgentTest {
             assertEquals(1, child.getDelegate().getHooks().stream().filter(h -> h == hook).count());
             assertEquals(1, events.stream().filter(PreCallEvent.class::isInstance).count());
             assertTrue(events.stream().allMatch(event -> event.getAgent() == child.getDelegate()));
-            assertNotNull(child.getDelegate().getToolkit().getTool("read_file"));
-            assertNotNull(child.getDelegate().getToolkit().getTool("memory_search"));
+            assertEquals(
+                    !allowlisted, child.getDelegate().getToolkit().getTool("read_file") != null);
+            assertEquals(
+                    !allowlisted,
+                    child.getDelegate().getToolkit().getTool("memory_search") != null);
             @SuppressWarnings("unchecked")
             ArgumentCaptor<List<ToolSchema>> schemas = ArgumentCaptor.forClass(List.class);
             verify(model, times(2)).stream(anyList(), schemas.capture(), any());
@@ -2187,7 +2219,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -2225,12 +2257,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================
@@ -2279,6 +2311,67 @@ class HarnessAgentTest {
                         .build();
 
         assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
+    // interrupt — per-session delegation
+    // =========================================================================
+
+    @Test
+    void interruptWithUserIdAndSessionIdTargetsOnlyThatSession() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        String userId = "alice";
+        String sessionId = "session-abc";
+        agent.getDelegate().getAgentState(userId, sessionId);
+        agent.getDelegate().getAgentState(userId, "other-session");
+
+        agent.interrupt(userId, sessionId);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(userId, sessionId)
+                        .interruptControl()
+                        .isInterrupted(),
+                "target session should be interrupted");
+        assertFalse(
+                agent.getDelegate()
+                        .getAgentState(userId, "other-session")
+                        .interruptControl()
+                        .isInterrupted(),
+                "other session should remain unaffected");
+    }
+
+    @Test
+    void interruptWithRuntimeContextDelegatesToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("bob").sessionId("session-ctx").build();
+        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
+
+        agent.interrupt(ctx);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
+                        .interruptControl()
+                        .isInterrupted(),
+                "session identified by RuntimeContext should be interrupted");
     }
 
     // =========================================================================

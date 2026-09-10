@@ -183,6 +183,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final Toolkit ownedMcpToolkit;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -216,8 +217,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             MemoryConfig memoryConfig,
             Object subagentMiddleware,
             DistributedStore distributedStore,
-            WorkspacePathNormalizer pathNormalizer) {
+            WorkspacePathNormalizer pathNormalizer,
+            Toolkit ownedMcpToolkit) {
         this.delegate = delegate;
+        this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
@@ -471,6 +474,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     ownedWorkspaceIndex.close();
                 }
             } finally {
+                ownedMcpToolkit.closeMcpClients();
                 delegate.close();
             }
         }
@@ -588,6 +592,44 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void interrupt(Msg msg) {
         delegate.interrupt(msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for the session identified by {@code ctx}.
+     *
+     * @param ctx runtime context identifying the session to interrupt
+     */
+    public void interrupt(RuntimeContext ctx) {
+        delegate.interrupt(ctx);
+    }
+
+    /**
+     * Interrupts the in-flight call for the session identified by {@code ctx} with an associated
+     * user message.
+     *
+     * @param ctx runtime context identifying the session to interrupt
+     * @param msg optional user message to attach to the interrupt signal
+     */
+    public void interrupt(RuntimeContext ctx, Msg msg) {
+        delegate.interrupt(ctx, msg);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session.
+     *
+     * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
+     * @param sessionId session identity; {@code null} or blank uses the default session id
+     */
+    public void interrupt(String userId, String sessionId) {
+        delegate.interrupt(userId, sessionId);
+    }
+
+    /**
+     * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
+     * associated user message.
+     */
+    public void interrupt(String userId, String sessionId, Msg msg) {
+        delegate.interrupt(userId, sessionId, msg);
     }
 
     // -----------------------------------------------------------------
@@ -1161,6 +1203,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         String description;
         String sysPrompt;
         boolean checkRunning = true;
+        boolean enablePendingToolRecovery = false;
         Model model;
         Toolkit toolkit = newDefaultToolkit();
         int maxIters = 10;
@@ -1200,6 +1243,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
+        boolean disableWebTools = false;
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
         boolean disableTranscript = false;
@@ -1222,6 +1266,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean skillCuratorEnabled = false;
         SkillCuratorConfig skillCuratorConfig;
         io.agentscope.core.skill.SkillFilter skillFilter;
+        PermissionContextState permissionContextOverride;
 
         boolean planModeEnabled = false;
         boolean planModeAllowShell = false;
@@ -1637,7 +1682,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Enables recovery of orphaned tool calls when a new message arrives. Automatically
+         * constructed local subagents inherit this setting unless their declaration overrides it.
+         * Pending permission confirmations still require an explicit confirmation result.
+         *
+         * @param enable whether to synthesize error results for orphaned tool calls
+         * @return this builder
+         */
         public Builder enablePendingToolRecovery(boolean enable) {
+            this.enablePendingToolRecovery = enable;
             inner.enablePendingToolRecovery(enable);
             return this;
         }
@@ -1673,6 +1727,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder permissionContext(PermissionContextState permissionContext) {
+            this.permissionContextOverride = permissionContext;
             inner.permissionContext(permissionContext);
             return this;
         }
@@ -2017,6 +2072,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Skips registration of {@link ShellExecuteTool}. */
         public Builder disableShellTool() {
             this.disableShellTool = true;
+            return this;
+        }
+
+        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        public Builder disableWebTools() {
+            this.disableWebTools = true;
             return this;
         }
 
@@ -2662,8 +2723,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
-            agentToolkit.registerTool(new WebTools.WebFetchTool());
-            agentToolkit.registerTool(new WebTools.WebSearchTool());
+            if (!disableWebTools) {
+                agentToolkit.registerTool(new WebTools.WebFetchTool());
+                agentToolkit.registerTool(new WebTools.WebSearchTool());
+            }
 
             // ---- Plan mode (read-only design phase) ----
             PlanModeManager planModeManager = null;
@@ -2695,6 +2758,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else if (wsManager != null) {
                     resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
                 }
+            }
+            if (inheritedHookToolAllowlist != null) {
+                resolvedToolsConfig =
+                        HarnessAgentBuilderSupport.childToolsConfig(
+                                resolvedToolsConfig, inheritedHookToolAllowlist);
             }
             if (resolvedToolsConfig != null) {
                 McpServerRegistrar.register(
@@ -2814,7 +2882,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 : null;
 
                 io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
-                if (disableShellTool) {
+                boolean shellToolAvailable =
+                        !disableShellTool
+                                && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
+                if (!shellToolAvailable) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 } else if (filesystem instanceof LocalFilesystemWithShell) {
@@ -2927,7 +2998,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     memoryConfig,
                     capturedSubagentMw,
                     distributedStore,
-                    pathNormalizer);
+                    pathNormalizer,
+                    agentToolkit);
         }
     }
 }

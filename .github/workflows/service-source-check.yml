@@ -1,0 +1,25 @@
+name: AgentScope Service source checks
+on:
+  pull_request:
+    paths:
+      - 'agentscope-service/**'
+      - '.gitignore'
+      - '.dockerignore'
+      - '.github/workflows/service-*.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - run: pip install 'PyYAML>=6,<7'
+      - run: python agentscope-service/release/release.py hygiene
+      - run: python -m unittest discover -s agentscope-service/release/tests

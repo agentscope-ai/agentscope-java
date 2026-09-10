@@ -17,33 +17,60 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spring-ai-alibaba/aistio/internal/version"
 )
 
 var (
 	apiEndpoint string
 	apiToken    string
+	tenant      string
 	namespace   string
 )
 
+func defaultAPIEndpoint() string {
+	for _, key := range []string{"AGENTSCOPE_CONTROL_PLANE", "AISTIO_CONTROL_PLANE"} {
+		if value := os.Getenv(key); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return "http://localhost:8080"
+}
+
 func main() {
+	commandName := filepath.Base(os.Args[0])
+	if commandName != "agentscope" {
+		commandName = "aistioctl"
+	}
 	rootCmd := &cobra.Command{
-		Use:   "aistioctl",
-		Short: "CLI for Aistio",
-		Long:  "aistioctl manages Aistio installations and agents.",
+		Use:   commandName,
+		Short: "CLI for AgentScope",
+		Long:  commandName + " manages AgentScope agents, collaboration resources, and local runtimes.",
 	}
 
-	rootCmd.PersistentFlags().StringVar(&apiEndpoint, "api-endpoint", "http://localhost:8080", "Control plane REST API endpoint")
+	rootCmd.PersistentFlags().StringVar(&apiEndpoint, "api-endpoint", defaultAPIEndpoint(), "Control plane REST API endpoint")
 	rootCmd.PersistentFlags().StringVar(&apiToken, "api-token", os.Getenv("AGENTSCOPE_API_TOKEN"), "Bearer token for API authentication")
+	rootCmd.PersistentFlags().StringVar(&tenant, "tenant", "default", "Collaboration tenant")
 	rootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "default", "Kubernetes namespace")
 
 	rootCmd.AddCommand(initCmd())
+	rootCmd.AddCommand(connectCmd())
 	rootCmd.AddCommand(installCmd())
 	rootCmd.AddCommand(verifyCmd())
 	rootCmd.AddCommand(agentCmd())
 	rootCmd.AddCommand(sessionCmd())
 	rootCmd.AddCommand(teamCmd())
+	rootCmd.AddCommand(issueCmd())
+	rootCmd.AddCommand(taskCmd())
+	rootCmd.AddCommand(artifactCmd())
+	rootCmd.AddCommand(automationCmd())
+	rootCmd.AddCommand(runtimeCmd())
+	rootCmd.AddCommand(orchestrationCmd())
+	rootCmd.AddCommand(approvalCmd())
+	rootCmd.AddCommand(inboxCmd())
 	rootCmd.AddCommand(proxyStatusCmd())
 	rootCmd.AddCommand(versionCmd())
 
@@ -57,7 +84,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("aistioctl version 0.2.0")
+			fmt.Printf("%s version %s\n", cmd.Root().Name(), version.Version)
 		},
 	}
 }

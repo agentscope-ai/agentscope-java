@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.tools;
 
 import io.agentscope.core.tool.Toolkit;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,24 +48,35 @@ public final class ToolFilter {
     private ToolFilter() {}
 
     /**
-     * Tests a registered tool name against the workspace allow/deny policy without modifying a
-     * toolkit. Platform tools survive an allowlist, but explicit deny entries always win.
+     * Returns whether a tool with {@code name} survives {@code cfg}'s allow/deny rules.
      *
-     * @param toolName the registered tool name
-     * @param cfg workspace configuration; {@code null} retains all tools
-     * @return {@code true} to retain the tool, {@code false} to exclude it
+     * <p>This is useful when prompt construction depends on a tool being available after filtering.
      */
-    public static boolean isAllowed(String toolName, ToolsConfig cfg) {
-        return cfg == null || isAllowed(toolName, cfg.getAllow(), cfg.getDeny());
-    }
-
-    private static boolean isAllowed(
-            String toolName, Collection<String> allow, Collection<String> deny) {
-        return (deny == null || !deny.contains(toolName))
-                && (allow == null
-                        || allow.isEmpty()
-                        || allow.contains(toolName)
-                        || HarnessPlatformTools.isPlatformTool(toolName));
+    public static boolean isAllowed(String name, ToolsConfig cfg) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        if (cfg == null) {
+            return true;
+        }
+        List<String> deny = cfg.getDeny();
+        if (deny != null && deny.contains(name)) {
+            return false;
+        }
+        List<String> allow = cfg.getAllow();
+        // MCP tools have their own per-server selection, independent of built-in defaults.
+        if (!cfg.isStrictAllow()
+                && cfg.getMcpServers() != null
+                && cfg.getMcpServers().entrySet().stream()
+                        .anyMatch(
+                                e ->
+                                        e.getValue().isPrefixToolNames()
+                                                && name.startsWith(e.getKey() + "__"))) {
+            return true;
+        }
+        return (!cfg.isStrictAllow() && HarnessPlatformTools.isPlatformTool(name))
+                || (allow != null && allow.contains(name))
+                || (cfg.isDefaultToolsEnabled() && (allow == null || allow.isEmpty()));
     }
 
     /**
@@ -81,7 +91,7 @@ public final class ToolFilter {
         List<String> deny = cfg.getDeny();
         boolean allowSet = allow != null && !allow.isEmpty();
         boolean denySet = deny != null && !deny.isEmpty();
-        if (!allowSet && !denySet) {
+        if (!allowSet && !denySet && cfg.isDefaultToolsEnabled()) {
             return;
         }
 
@@ -99,7 +109,7 @@ public final class ToolFilter {
         Set<String> toRemove = new LinkedHashSet<>();
         Set<String> protectedKept = new LinkedHashSet<>();
         for (String name : registered) {
-            if (!isAllowed(name, allowSetView, denySetView)) {
+            if (!isAllowed(name, cfg)) {
                 toRemove.add(name);
             } else if (allowSetView != null
                     && !allowSetView.contains(name)

@@ -20,6 +20,10 @@ import "github.com/gin-gonic/gin"
 // Product ids follow Claude Managed Agents naming where useful; harnessName is
 // the registered Harness tool id used at runtime.
 var builtinToolCatalog = []gin.H{
+	{"id": "memory_store_list", "harnessName": "memory_store_list", "description": "List documents in a bound persistent memory store", "group": "memory", "available": true},
+	{"id": "memory_store_read", "harnessName": "memory_store_read", "description": "Read a bound persistent memory document", "group": "memory", "available": true},
+	{"id": "memory_store_write", "harnessName": "memory_store_write", "description": "Create a persistent memory document", "group": "memory", "available": true},
+	{"id": "memory_store_edit", "harnessName": "memory_store_edit", "description": "Edit persistent memory with conflict detection", "group": "memory", "available": true},
 	{"id": "bash", "harnessName": "execute", "description": "Execute a shell command", "group": "filesystem", "available": true},
 	{"id": "read", "harnessName": "read_file", "description": "Read a file from the workspace", "group": "filesystem", "available": true},
 	{"id": "write", "harnessName": "write_file", "description": "Write a file in the workspace", "group": "filesystem", "available": true},

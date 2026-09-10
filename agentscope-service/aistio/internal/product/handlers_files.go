@@ -68,7 +68,7 @@ func validFilename(name string) bool {
 }
 
 func (s *Server) listFiles(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		`SELECT file_id, owner_id, filename, content_type, size_bytes, created_at
 		 FROM files WHERE owner_id=$1 ORDER BY created_at DESC`, owner)
@@ -113,7 +113,7 @@ func (s *Server) createFile(c *gin.Context) {
 	}
 	id := shortID("file_")
 	now := nowMillis()
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	size := int64(len(req.Content))
 	if _, err := s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO files (file_id, owner_id, filename, content_type, size_bytes, content, created_at)
@@ -138,7 +138,7 @@ func (s *Server) loadFile(ctx context.Context, owner, id string) (fileRow, error
 }
 
 func (s *Server) getFile(c *gin.Context) {
-	f, err := s.loadFile(c.Request.Context(), currentUserID(c), c.Param("id"))
+	f, err := s.loadFile(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "file not found")
 		return
@@ -147,7 +147,7 @@ func (s *Server) getFile(c *gin.Context) {
 }
 
 func (s *Server) getFileContent(c *gin.Context) {
-	f, err := s.loadFile(c.Request.Context(), currentUserID(c), c.Param("id"))
+	f, err := s.loadFile(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "file not found")
 		return
@@ -159,7 +159,7 @@ func (s *Server) getFileContent(c *gin.Context) {
 
 func (s *Server) deleteFile(c *gin.Context) {
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
-		`DELETE FROM files WHERE file_id=$1 AND owner_id=$2`, c.Param("id"), currentUserID(c))
+		`DELETE FROM files WHERE file_id=$1 AND owner_id=$2`, c.Param("id"), currentResourceOwner(c))
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return

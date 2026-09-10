@@ -1,4 +1,6 @@
-# Routing
+---
+title: Routing
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
@@ -116,6 +118,6 @@ The AgentScope example provides two variants: **Simple** (single routing agent +
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent composition
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Registering an agent as a tool

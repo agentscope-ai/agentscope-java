@@ -1,6 +1,8 @@
-# Harness Architecture
+---
+title: Architecture
+---
 
-[Overview](./overview.md) introduces Harness capabilities through the lens of "what problem they solve". This page takes a different angle: **explaining the architecture itself** — why it is designed this way, what each layer is responsible for, what happens during a `call()`, and how state flows through the system.
+[Overview](/v1/en/docs/harness/overview) introduces Harness capabilities through the lens of "what problem they solve". This page takes a different angle: **explaining the architecture itself** — why it is designed this way, what each layer is responsible for, what happens during a `call()`, and how state flows through the system.
 
 ---
 
@@ -41,7 +43,7 @@ All hooks collaborate through the same "common language":
 
 ## 2. Top-Level Architecture Diagram
 
-```{mermaid}
+```mermaid
 graph TD
     USER(["Caller\nagent.call(msg, ctx)"])
 
@@ -86,7 +88,7 @@ graph TD
 
 Capability injection happens once, during the **build phase**. After `build()` completes, the hook chain and toolkit composition are fixed for the lifetime of the agent:
 
-```{mermaid}
+```mermaid
 graph LR
     B["HarnessAgent.Builder.build()"]
 
@@ -133,7 +135,7 @@ The priority arrangement reflects design intent:
 
 ## 5. `call()` Lifecycle Sequence
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     actor User
@@ -184,7 +186,7 @@ sequenceDiagram
 
 State in Harness has three layers, from shortest to longest lived:
 
-```{mermaid}
+```mermaid
 graph LR
     subgraph INCALL["In-call\nalive for one call()"]
         IM["Memory\n(InMemoryMemory)\nmessage sequence for this turn"]
@@ -226,7 +228,7 @@ graph LR
 
 ### Scenario A — How Workspace Files Become the Model's System Prompt
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant RA as ReActAgent
     participant Hook as WorkspaceContextHook(900)
@@ -252,7 +254,7 @@ sequenceDiagram
 
 ### Scenario B — How Facts Settle into `MEMORY.md` Over a Long Session
 
-```{mermaid}
+```mermaid
 graph TD
     A["conversation accumulates → CompactionHook threshold hit"] --> B["ConversationCompactor.compactIfNeeded"]
     B --> C["MemoryFlushManager.flushMemories(prefix)\n→ LLM extracts new facts"]
@@ -271,7 +273,7 @@ graph TD
 
 ### Scenario C — How the Same `sessionId` Remembers Across Calls
 
-```{mermaid}
+```mermaid
 graph LR
     subgraph T1["Turn 1: call(msg1, ctx{sess=A})"]
         A1["bindRuntimeContext\nloadIfExists → Memory empty (first time)"] --> B1["ReAct loop"]
@@ -288,7 +290,7 @@ graph LR
 
 ### Scenario D — Parent Agent Delegates to Subagent: Sync and Background Paths
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant Parent as Parent Agent
     participant Hook as SubagentsHook
@@ -323,9 +325,9 @@ sequenceDiagram
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — workspace directory structure, `WorkspaceManager` two-layer read/write details
-- [Memory](./memory.md) — two-layer memory model, compaction configuration, FTS5 retrieval
-- [Filesystem](./filesystem.md) — `AbstractFilesystem` three modes and extension patterns
-- [Subagent](./subagent.md) — subagent declaration format, `TaskRepository`, five-row decision table
-- [Session](./session.md) — `WorkspaceSession` / `JsonSession` serialization protocol
-- [Tool](./tool.md) — built-in tool reference and registration
+- [Workspace](/v1/en/docs/harness/workspace) — workspace directory structure, `WorkspaceManager` two-layer read/write details
+- [Memory](/v1/en/docs/harness/memory) — two-layer memory model, compaction configuration, FTS5 retrieval
+- [Filesystem](/v1/en/docs/harness/filesystem) — `AbstractFilesystem` three modes and extension patterns
+- [Subagent](/v1/en/docs/harness/subagent) — subagent declaration format, `TaskRepository`, five-row decision table
+- [Session](/v1/en/docs/harness/session) — `WorkspaceSession` / `JsonSession` serialization protocol
+- [Tool](/v1/en/docs/harness/tool) — built-in tool reference and registration

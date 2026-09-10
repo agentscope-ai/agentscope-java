@@ -1,4 +1,6 @@
-# 记忆 (Memory)
+---
+title: 记忆管理
+---
 
 ## 概述
 
@@ -315,5 +317,5 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExa
 
 ## 相关文档
 
-- [Session 管理](./session.md)
-- [Agent 配置](./agent-config.md)
+- [Session 管理](/v1/zh/docs/task/session)
+- [Agent 配置](/v1/zh/docs/task/agent-config)
