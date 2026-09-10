@@ -95,8 +95,8 @@ func (w *ConfigPushWatcher) onAgent(ctx context.Context, obj interface{}) {
 	logger := log.FromContext(ctx)
 
 	// Push the complete agent runtime config (systemMessage/model/tools/
-	// subagents/teamTemplates) so hot-reload matches the startup ConfigMap.
-	if err := w.Dist.PushConfig(agent.Namespace, agent.Name, DistConfigAgent,
+	// subagents) so hot-reload matches the startup ConfigMap.
+	if err := w.Dist.PushConfig("default", agent.Namespace, agent.Name, DistConfigAgent,
 		adapter.RenderAgentConfig(agent, nil)); err != nil {
 		logger.Error(err, "push agent config failed", "agent", agent.Name)
 	}
@@ -104,7 +104,7 @@ func (w *ConfigPushWatcher) onAgent(ctx context.Context, obj interface{}) {
 	// Skills are delivered as a dedicated config type so the data plane can
 	// (re)load skill bundles independently of the core agent config.
 	if skills := adapter.RenderSkills(agent); len(skills) > 0 {
-		if err := w.Dist.PushConfig(agent.Namespace, agent.Name, DistConfigSkill, skills); err != nil {
+		if err := w.Dist.PushConfig("default", agent.Namespace, agent.Name, DistConfigSkill, skills); err != nil {
 			logger.Error(err, "push skill config failed", "agent", agent.Name)
 		}
 	}
@@ -137,7 +137,7 @@ func (w *ConfigPushWatcher) onModelConfig(ctx context.Context, obj interface{}) 
 	for i := range agents.Items {
 		a := &agents.Items[i]
 		if a.Spec.Declarative != nil && a.Spec.Declarative.AgentConfig.ModelConfigRef == mc.Name {
-			if err := w.Dist.PushConfig(a.Namespace, a.Name, DistConfigModel, mc.Spec); err != nil {
+			if err := w.Dist.PushConfig("default", a.Namespace, a.Name, DistConfigModel, mc.Spec); err != nil {
 				log.FromContext(ctx).Error(err, "push model config failed", "agent", a.Name)
 			}
 		}
@@ -156,7 +156,7 @@ func (w *ConfigPushWatcher) onMCPServer(ctx context.Context, obj interface{}) {
 	for i := range agents.Items {
 		a := &agents.Items[i]
 		if referencesServer(*a, mcp.Name) {
-			if err := w.Dist.PushConfig(a.Namespace, a.Name, DistConfigTool, mcp.Spec); err != nil {
+			if err := w.Dist.PushConfig("default", a.Namespace, a.Name, DistConfigTool, mcp.Spec); err != nil {
 				log.FromContext(ctx).Error(err, "push tool config failed", "agent", a.Name)
 			}
 		}

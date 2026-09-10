@@ -230,6 +230,26 @@ class HarnessAgentTest {
     }
 
     @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
     void artifactDeliveryTarget_registersDeliverTool() throws Exception {
         Files.createDirectories(workspace);
         Model model = stubModel("ok");
@@ -1465,7 +1485,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -1503,12 +1523,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================

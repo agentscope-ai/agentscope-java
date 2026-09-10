@@ -91,7 +91,7 @@ func (r *BYOWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	agent.Status.ObservedGeneration = agent.Generation
 	agent.Status.ManagementMode = v1alpha1.ManagementModeAdopted
 	if r.Store != nil {
-		agent.Status.ActiveSessions, _ = r.Store.Sessions().CountActive(ctx, agent.Name, agent.Namespace)
+		agent.Status.ActiveSessions, _ = r.Store.Sessions().CountActive(ctx, "default", agent.Name, agent.Namespace)
 	}
 	metrics.RecordAgent(agent.Namespace, agent.Name, string(agent.Spec.Type), agent.Spec.Runtime,
 		string(v1alpha1.ManagementModeAdopted), agent.Status.Replicas.Desired, agent.Status.Replicas.Ready, agent.Status.Replicas.Available)

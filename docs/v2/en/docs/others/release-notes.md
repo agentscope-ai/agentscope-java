@@ -1,9 +1,9 @@
 ---
-title: "Release Notes"
-description: "Per-version change records for AgentScope Java"
+title: Release Notes
+description: Per-version change records for AgentScope Java
 ---
 
-This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the [V1 Migration Guide](../change-log.md).
+This page tracks per-version changes for AgentScope Java 2.0. For the overall migration guide from 1.x, see the [V1 Migration Guide](/v2/en/docs/change-log).
 
 ---
 
@@ -13,7 +13,7 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 AgentScope Java 2.0.1 is the first maintenance release after 2.0.0 GA. It expands the model-provider ecosystem, hardens Harness subagent / HITL / permission behavior, and fixes a set of production-critical issues.
 
-**Quick links:** [Quickstart](../quickstart.md) | [V1 Migration Guide](../change-log.md) | [Going to Production](going-to-production.md)
+**Quick links:** [Quickstart](/v2/en/docs/quickstart) | [V1 Migration Guide](/v2/en/docs/change-log) | [Going to Production](/v2/en/docs/others/going-to-production)
 
 ### Added
 
@@ -135,7 +135,7 @@ AgentScope Java 2.0.1 is the first maintenance release after 2.0.0 GA. It expand
 
 AgentScope Java 2.0.0 is now Generally Available. This is the first production-ready release of the 2.0 line, marking a milestone in AgentScope Java's evolution from "transparent development" to "system engineering."
 
-**Quick links:** [Quickstart](../quickstart.md) | [V1 Migration Guide](../change-log.md) | [Going to Production](going-to-production.md)
+**Quick links:** [Quickstart](/v2/en/docs/quickstart) | [V1 Migration Guide](/v2/en/docs/change-log) | [Going to Production](/v2/en/docs/others/going-to-production)
 
 ### 2.0 Core Design Overview
 
@@ -396,7 +396,7 @@ The following are incremental changes between 2.0.0-RC5 (2026-07-07) and the GA 
 
 ### Added
 
-- **`projectWritable` mode** (`LocalFilesystemSpec`) — when enabled, the agent's file writes are routed by path: workspace metadata (`MEMORY.md`, `agents/`, `skills/`, etc.) goes to workspace; everything else (code, configs) lands in the project directory. Designed for code-generation agents. See [Filesystem · Project-writable mode](../harness/filesystem.md#project-writable-mode-projectwritable)
+- **`projectWritable` mode** (`LocalFilesystemSpec`) — when enabled, the agent's file writes are routed by path: workspace metadata (`MEMORY.md`, `agents/`, `skills/`, etc.) goes to workspace; everything else (code, configs) lands in the project directory. Designed for code-generation agents. See [Filesystem · Project-writable mode](/v2/en/docs/harness/filesystem#project-writable-mode-projectwritable)
 - **Runtime permission mode switching** — new `HarnessAgent.setPermissionMode()` / `getPermissionMode()` for dynamically adjusting the permission mode per session at runtime
 - **Subagent event stream forwarding** — `streamEvents()` now forwards child agent intermediate events (`TextBlockDelta`, `ToolCallStart`, etc.) in real time, each carrying a `source` path identifying the originating agent
 - **`AgentEvent.source` field** — all `AgentEvent` instances now carry a `source` field to distinguish main agent events (`source = null`) from sub agent events (`source = "main/researcher"` path format) within the same event stream, enabling consumer-side demuxing without extra state
@@ -436,4 +436,4 @@ First 2.0 Release Candidate. Contains the full architectural upgrade from 1.x:
 - Enterprise-grade distributed deployment (multi-tenant isolation, sandbox execution, permission system, session recovery)
 - Core framework redesign (event stream, message model, Middleware, HITL)
 
-For the complete 1.x → 2.0 change list, see the [V1 Migration Guide](../change-log.md).
+For the complete 1.x → 2.0 change list, see the [V1 Migration Guide](/v2/en/docs/change-log).

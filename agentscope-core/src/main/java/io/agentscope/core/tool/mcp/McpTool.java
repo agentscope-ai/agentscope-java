@@ -53,12 +53,36 @@ public class McpTool extends ToolBase {
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
 
     private final Map<String, Object> outputSchema;
+    private final String remoteToolName;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
     /** Preferred constructor used by {@link io.agentscope.core.tool.McpClientManager}. */
     public McpTool(
             String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly) {
+        this(
+                name,
+                name,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly);
+    }
+
+    /** Registers a namespaced model-facing name while calling the original MCP tool name. */
+    public McpTool(
+            String name,
+            String remoteToolName,
             String description,
             Map<String, Object> parameters,
             Map<String, Object> outputSchema,
@@ -74,6 +98,7 @@ public class McpTool extends ToolBase {
                         .readOnly(readOnly)
                         .concurrencySafe(false)
                         .mcp(Objects.requireNonNull(mcpName, "mcpName cannot be null")));
+        this.remoteToolName = Objects.requireNonNull(remoteToolName);
         this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
         this.clientWrapper = Objects.requireNonNull(clientWrapper, "clientWrapper cannot be null");
         this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
@@ -184,10 +209,14 @@ public class McpTool extends ToolBase {
         Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
         // Extract MCP meta from ContextStore by McpMeta type namespace
-        Map<String, Object> metaMap = extractMcpMeta(param);
+        Map<String, Object> metaMap = new HashMap<>(extractMcpMeta(param));
+        if (param.getToolUseBlock() != null && param.getToolUseBlock().getId() != null) {
+            // Transport metadata is not model input and must not alter the tool schema.
+            metaMap.put("io.agentscope/toolCallId", param.getToolUseBlock().getId());
+        }
 
         return clientWrapper
-                .callTool(getName(), mergedArgs, metaMap)
+                .callTool(remoteToolName, mergedArgs, metaMap)
                 .map(McpContentConverter::convertCallToolResult)
                 .doOnSuccess(
                         result -> logger.debug("MCP tool '{}' completed successfully", getName()))

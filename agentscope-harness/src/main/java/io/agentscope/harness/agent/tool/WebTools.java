@@ -52,11 +52,11 @@ public final class WebTools {
                                 required = false)
                         Integer maxChars) {
             if (url == null || url.isBlank()) {
-                return "Error: url is required";
+                throw new IllegalArgumentException("url is required");
             }
             String trimmed = url.strip();
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-                return "Error: only http/https URLs are allowed";
+                throw new IllegalArgumentException("only http/https URLs are allowed");
             }
             int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
             try {
@@ -69,13 +69,19 @@ public final class WebTools {
                                 .build();
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() >= 400) {
+                    throw new IllegalStateException("HTTP " + response.statusCode());
+                }
                 String body = response.body() == null ? "" : response.body();
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
                 return "status=" + response.statusCode() + "\n\n" + body;
             } catch (Exception e) {
-                return "Error: web_fetch failed: " + e.getMessage();
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new IllegalStateException("web_fetch failed: " + e.getMessage(), e);
             }
         }
     }
@@ -100,12 +106,13 @@ public final class WebTools {
                                 required = false)
                         Integer maxResults) {
             if (query == null || query.isBlank()) {
-                return "Error: query is required";
+                throw new IllegalArgumentException("query is required");
             }
             String apiKey = System.getenv("TAVILY_API_KEY");
             if (apiKey == null || apiKey.isBlank()) {
-                return "Error: TAVILY_API_KEY is not set. Configure the key via Environment vault"
-                        + " credentials or process env to enable web_search.";
+                throw new IllegalStateException(
+                        "TAVILY_API_KEY is not set. Configure the key via Environment vault"
+                                + " credentials or process env to enable web_search.");
             }
             int limit = maxResults != null && maxResults > 0 ? Math.min(maxResults, 10) : 5;
             String body =
@@ -126,7 +133,7 @@ public final class WebTools {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    return "Error: Tavily API returned " + response.statusCode();
+                    throw new IllegalStateException("Tavily API returned " + response.statusCode());
                 }
                 JsonNode root = mapper.readTree(response.body());
                 JsonNode results = root.path("results");
@@ -147,7 +154,10 @@ public final class WebTools {
                 }
                 return sb.toString().strip();
             } catch (Exception e) {
-                return "Error: web_search failed: " + e.getMessage();
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new IllegalStateException("web_search failed: " + e.getMessage(), e);
             }
         }
     }
