@@ -404,6 +404,20 @@ class GracefulShutdownTest {
         }
 
         @Test
+        @DisplayName("checkAndClearShutdownInterruptedForState clears only the supplied state")
+        void checkInterruptedForState() {
+            AgentState state = AgentState.builder().build();
+
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(null));
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state));
+
+            state.setShutdownInterrupted(true);
+            assertTrue(manager.checkAndClearShutdownInterruptedForState(state));
+            assertFalse(state.isShutdownInterrupted());
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state));
+        }
+
+        @Test
         @DisplayName("saveOnInterruptObserved with no context is no-op")
         void saveOnInterruptNoContext() {
             createTestAgent("agent-1");

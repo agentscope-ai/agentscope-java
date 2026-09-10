@@ -1,0 +1,3210 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "AgentScope Java",
+  "theme": "mint",
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ],
+    "display": "header"
+  },
+  "colors": {
+    "primary": "#0064FD",
+    "light": "#3B87FF",
+    "dark": "#0050CC"
+  },
+  "favicon": "/logo.svg",
+  "logo": {
+    "light": "/logo.svg",
+    "dark": "/logo.svg"
+  },
+  "navigation": {
+    "languages": [
+      {
+        "language": "en",
+        "default": true,
+        "versions": [
+          {
+            "version": "v2",
+            "tabs": [
+              {
+                "tab": "Home",
+                "pages": [
+                  "v2/en/intro"
+                ]
+              },
+              {
+                "tab": "SDK",
+                "groups": [
+                  {
+                    "group": "Quick Start",
+                    "pages": [
+                      "v2/en/docs/index",
+                      "v2/en/docs/quickstart"
+                    ]
+                  },
+                  {
+                    "group": "Building Blocks",
+                    "pages": [
+                      "v2/en/docs/building-blocks/agent",
+                      "v2/en/docs/building-blocks/message-and-event",
+                      "v2/en/docs/building-blocks/middleware",
+                      "v2/en/docs/building-blocks/model",
+                      "v2/en/docs/building-blocks/permission-system",
+                      "v2/en/docs/building-blocks/tool",
+                      "v2/en/docs/building-blocks/context"
+                    ]
+                  },
+                  {
+                    "group": "Harness",
+                    "pages": [
+                      "v2/en/docs/harness/architecture",
+                      "v2/en/docs/harness/compaction",
+                      "v2/en/docs/harness/workspace",
+                      "v2/en/docs/harness/memory",
+                      "v2/en/docs/harness/filesystem",
+                      "v2/en/docs/harness/sandbox",
+                      "v2/en/docs/harness/subagent",
+                      "v2/en/docs/harness/skill",
+                      "v2/en/docs/harness/plan-mode",
+                      "v2/en/docs/harness/channel"
+                    ]
+                  },
+                  {
+                    "group": "Reference",
+                    "pages": [
+                      "v2/en/docs/change-log",
+                      "v2/en/docs/others/release-notes",
+                      "v2/en/docs/others/going-to-production",
+                      "v2/en/docs/others/faq"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Service",
+                "groups": [
+                  {
+                    "group": "Getting started",
+                    "pages": [
+                      "v2/en/service/index",
+                      "v2/en/service/concepts",
+                      "v2/en/service/first-session"
+                    ]
+                  },
+                  {
+                    "group": "WORK",
+                    "pages": [
+                      "v2/en/service/chat",
+                      "v2/en/service/issues",
+                      "v2/en/service/inbox",
+                      "v2/en/service/automation"
+                    ]
+                  },
+                  {
+                    "group": "DESIGN",
+                    "pages": [
+                      "v2/en/service/agents",
+                      "v2/en/service/teams",
+                      "v2/en/service/workflows",
+                      "v2/en/service/channels",
+                      {
+                        "group": "Resources",
+                        "pages": [
+                          "v2/en/service/workspaces",
+                          "v2/en/service/environments",
+                          "v2/en/service/memory",
+                          "v2/en/service/vault"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Installation",
+                    "pages": [
+                      "v2/en/service/quickstart",
+                      "v2/en/service/docker",
+                      "v2/en/service/kubernetes",
+                      "v2/en/service/operations"
+                    ]
+                  },
+                  {
+                    "group": "Integration guides",
+                    "pages": [
+                      "v2/en/service/managed-agent",
+                      "v2/en/service/hosted-agent",
+                      "v2/en/service/external-agent",
+                      "v2/en/service/team-collaboration",
+                      "v2/en/service/endpoints",
+                      "v2/en/service/runtime-host",
+                      "v2/en/service/integrations"
+                    ]
+                  },
+                  {
+                    "group": "Use cases",
+                    "pages": [
+                      "v2/en/service/usecases"
+                    ]
+                  },
+                  {
+                    "group": "Reference",
+                    "pages": [
+                      "v2/en/service/api-reference",
+                      "v2/en/service/configuration",
+                      "v2/en/service/access",
+                      "v2/en/service/sessions",
+                      "v2/en/service/managed-harness-task-outcomes",
+                      "v2/en/service/troubleshooting"
+                    ]
+                  },
+                  {
+                    "group": "Release maintainers",
+                    "pages": [
+                      "v2/en/service/releasing"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Integration",
+                "groups": [
+                  {
+                    "group": "Integration",
+                    "pages": [
+                      "v2/en/integration/overview",
+                      {
+                        "group": "Model Providers",
+                        "pages": [
+                          "v2/en/integration/model/index",
+                          "v2/en/integration/model/openai",
+                          "v2/en/integration/model/deepseek",
+                          "v2/en/integration/model/glm",
+                          "v2/en/integration/model/kimi",
+                          "v2/en/integration/model/minimax",
+                          "v2/en/integration/model/dashscope",
+                          "v2/en/integration/model/gemini",
+                          "v2/en/integration/model/anthropic",
+                          "v2/en/integration/model/ollama"
+                        ]
+                      },
+                      {
+                        "group": "Memory",
+                        "pages": [
+                          "v2/en/integration/memory/index",
+                          "v2/en/integration/memory/overview",
+                          "v2/en/integration/memory/mem0",
+                          "v2/en/integration/memory/bailian",
+                          "v2/en/integration/memory/reme"
+                        ]
+                      },
+                      {
+                        "group": "Agent State Store",
+                        "pages": [
+                          "v2/en/integration/session/index",
+                          "v2/en/integration/session/overview",
+                          "v2/en/integration/session/mysql",
+                          "v2/en/integration/session/redis",
+                          "v2/en/integration/session/oss"
+                        ]
+                      },
+                      {
+                        "group": "RAG Knowledge Base",
+                        "pages": [
+                          "v2/en/integration/rag/index",
+                          "v2/en/integration/rag/overview",
+                          "v2/en/integration/rag/simple",
+                          "v2/en/integration/rag/bailian",
+                          "v2/en/integration/rag/dify",
+                          "v2/en/integration/rag/haystack",
+                          "v2/en/integration/rag/ragflow"
+                        ]
+                      },
+                      {
+                        "group": "Skill Repository",
+                        "pages": [
+                          "v2/en/integration/skill/index",
+                          "v2/en/integration/skill/overview",
+                          "v2/en/integration/skill/git-repository",
+                          "v2/en/integration/skill/mysql-repository",
+                          "v2/en/integration/skill/postgresql-repository"
+                        ]
+                      },
+                      {
+                        "group": "Agent Protocols",
+                        "pages": [
+                          "v2/en/integration/protocol/index",
+                          "v2/en/integration/protocol/overview",
+                          "v2/en/integration/protocol/a2a",
+                          "v2/en/integration/protocol/agui",
+                          "v2/en/integration/protocol/agent-protocol"
+                        ]
+                      },
+                      {
+                        "group": "Infrastructure",
+                        "pages": [
+                          "v2/en/integration/infrastructure/index",
+                          "v2/en/integration/infrastructure/overview",
+                          "v2/en/integration/infrastructure/higress",
+                          "v2/en/integration/infrastructure/nacos",
+                          "v2/en/integration/infrastructure/scheduler"
+                        ]
+                      },
+                      {
+                        "group": "Ecosystem",
+                        "pages": [
+                          "v2/en/integration/ecosystem/index",
+                          "v2/en/integration/ecosystem/overview",
+                          "v2/en/integration/ecosystem/chat-completions-web",
+                          "v2/en/integration/ecosystem/studio",
+                          "v2/en/integration/ecosystem/training"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Channels",
+                    "pages": [
+                      "v2/en/integration/channel/index",
+                      "v2/en/integration/channel/dingtalk",
+                      "v2/en/integration/channel/feishu",
+                      "v2/en/integration/channel/github",
+                      "v2/en/integration/channel/gitlab",
+                      "v2/en/integration/channel/wecom"
+                    ]
+                  },
+                  {
+                    "group": "Distributed storage",
+                    "pages": [
+                      "v2/en/integration/distributed/index",
+                      "v2/en/integration/distributed/mysql",
+                      "v2/en/integration/distributed/oss",
+                      "v2/en/integration/distributed/redis"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Blog",
+                "groups": [
+                  {
+                    "group": "Blogs",
+                    "pages": [
+                      "v2/en/blogs/agentscope-v2-release",
+                      "v2/en/blogs/agentscope-v2-explained",
+                      "v2/en/blogs/agentscope-v1-harness",
+                      "v2/en/blogs/agentscope-v1-builder",
+                      "v2/en/blogs/agentscope-v2-coding-agent",
+                      "v2/en/blogs/managed-agents-agentscope-rumtime",
+                      "v2/en/blogs/agentscope-service-release",
+                      "v2/en/blogs/agentscope-service-release-tech",
+                      {
+                        "group": "Customer Use Cases",
+                        "pages": [
+                          "v2/en/blogs/usecases/index",
+                          "v2/en/blogs/usecases/finxscope",
+                          "v2/en/blogs/usecases/logistics",
+                          "v2/en/blogs/usecases/aidc-logistics"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Community",
+                "groups": [
+                  {
+                    "group": "Community",
+                    "pages": [
+                      "v2/en/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "version": "v1",
+            "tabs": [
+              {
+                "tab": "Home",
+                "pages": [
+                  "v1/en/intro"
+                ]
+              },
+              {
+                "tab": "SDK",
+                "groups": [
+                  {
+                    "group": "Quick Start",
+                    "pages": [
+                      "v1/en/docs/quickstart/installation",
+                      "v1/en/docs/quickstart/key-concepts",
+                      "v1/en/docs/quickstart/agent"
+                    ]
+                  },
+                  {
+                    "group": "Features",
+                    "pages": [
+                      "v1/en/docs/task/model",
+                      "v1/en/docs/task/tool",
+                      "v1/en/docs/task/mcp",
+                      "v1/en/docs/task/agent-as-tool",
+                      "v1/en/docs/task/agent-skill",
+                      "v1/en/docs/task/rag",
+                      "v1/en/docs/task/streaming",
+                      "v1/en/docs/task/hook",
+                      "v1/en/docs/task/hitl",
+                      "v1/en/docs/task/memory",
+                      "v1/en/docs/task/plan",
+                      "v1/en/docs/task/state",
+                      "v1/en/docs/task/session",
+                      "v1/en/docs/task/multimodal",
+                      "v1/en/docs/task/structured-output",
+                      "v1/en/docs/task/observability",
+                      "v1/en/docs/task/agui",
+                      "v1/en/docs/task/a2a",
+                      "v1/en/docs/task/msghub",
+                      "v1/en/docs/task/ai-coding",
+                      "v1/en/docs/task/online-training",
+                      "v1/en/docs/task/agent-config",
+                      "v1/en/docs/task/tts"
+                    ]
+                  },
+                  {
+                    "group": "Multi Agent",
+                    "pages": [
+                      "v1/en/docs/multi-agent/overview",
+                      "v1/en/docs/multi-agent/pipeline",
+                      "v1/en/docs/multi-agent/workflow",
+                      "v1/en/docs/multi-agent/routing",
+                      "v1/en/docs/multi-agent/skills",
+                      "v1/en/docs/multi-agent/subagent",
+                      "v1/en/docs/multi-agent/supervisor",
+                      "v1/en/docs/multi-agent/handoffs",
+                      "v1/en/docs/multi-agent/multiagent-debate"
+                    ]
+                  },
+                  {
+                    "group": "Harness",
+                    "pages": [
+                      "v1/en/docs/harness/overview",
+                      "v1/en/docs/harness/architecture",
+                      "v1/en/docs/harness/workspace",
+                      "v1/en/docs/harness/filesystem",
+                      "v1/en/docs/harness/session",
+                      "v1/en/docs/harness/memory",
+                      "v1/en/docs/harness/tool",
+                      "v1/en/docs/harness/subagent",
+                      "v1/en/docs/harness/streaming",
+                      "v1/en/docs/harness/quickstart/index",
+                      "v1/en/docs/harness/sandbox/index",
+                      "v1/en/docs/harness/example/index"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Integration",
+                "groups": [
+                  {
+                    "group": "Integration",
+                    "pages": [
+                      "v1/en/integration/overview"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Blog",
+                "groups": [
+                  {
+                    "group": "Blogs",
+                    "pages": [
+                      "v1/en/blogs/index",
+                      "v1/en/blogs/agentscope-v1-harness"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "Community",
+                "groups": [
+                  {
+                    "group": "Community",
+                    "pages": [
+                      "v1/en/community/overview",
+                      "v1/en/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "language": "zh",
+        "versions": [
+          {
+            "version": "v2",
+            "tabs": [
+              {
+                "tab": "首页",
+                "pages": [
+                  "v2/zh/intro"
+                ]
+              },
+              {
+                "tab": "SDK",
+                "groups": [
+                  {
+                    "group": "快速开始",
+                    "pages": [
+                      "v2/zh/docs/index",
+                      "v2/zh/docs/quickstart"
+                    ]
+                  },
+                  {
+                    "group": "核心组件",
+                    "pages": [
+                      "v2/zh/docs/building-blocks/agent",
+                      "v2/zh/docs/building-blocks/message-and-event",
+                      "v2/zh/docs/building-blocks/middleware",
+                      "v2/zh/docs/building-blocks/model",
+                      "v2/zh/docs/building-blocks/permission-system",
+                      "v2/zh/docs/building-blocks/tool",
+                      "v2/zh/docs/building-blocks/context"
+                    ]
+                  },
+                  {
+                    "group": "Harness",
+                    "pages": [
+                      "v2/zh/docs/harness/architecture",
+                      "v2/zh/docs/harness/compaction",
+                      "v2/zh/docs/harness/workspace",
+                      "v2/zh/docs/harness/memory",
+                      "v2/zh/docs/harness/filesystem",
+                      "v2/zh/docs/harness/sandbox",
+                      "v2/zh/docs/harness/subagent",
+                      "v2/zh/docs/harness/skill",
+                      "v2/zh/docs/harness/plan-mode",
+                      "v2/zh/docs/harness/channel"
+                    ]
+                  },
+                  {
+                    "group": "参考",
+                    "pages": [
+                      "v2/zh/docs/change-log",
+                      "v2/zh/docs/others/release-notes",
+                      "v2/zh/docs/others/going-to-production",
+                      "v2/zh/docs/others/faq"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "服务",
+                "groups": [
+                  {
+                    "group": "开始使用",
+                    "pages": [
+                      "v2/zh/service/index",
+                      "v2/zh/service/concepts",
+                      "v2/zh/service/first-session"
+                    ]
+                  },
+                  {
+                    "group": "WORK",
+                    "pages": [
+                      "v2/zh/service/chat",
+                      "v2/zh/service/issues",
+                      "v2/zh/service/inbox",
+                      "v2/zh/service/automation"
+                    ]
+                  },
+                  {
+                    "group": "DESIGN",
+                    "pages": [
+                      "v2/zh/service/agents",
+                      "v2/zh/service/teams",
+                      "v2/zh/service/workflows",
+                      "v2/zh/service/channels",
+                      {
+                        "group": "Resources · 资源",
+                        "pages": [
+                          "v2/zh/service/workspaces",
+                          "v2/zh/service/environments",
+                          "v2/zh/service/memory",
+                          "v2/zh/service/vault"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "安装与部署",
+                    "pages": [
+                      "v2/zh/service/quickstart",
+                      "v2/zh/service/docker",
+                      "v2/zh/service/kubernetes",
+                      "v2/zh/service/operations"
+                    ]
+                  },
+                  {
+                    "group": "接入与能力扩展",
+                    "pages": [
+                      "v2/zh/service/managed-agent",
+                      "v2/zh/service/hosted-agent",
+                      "v2/zh/service/external-agent",
+                      "v2/zh/service/team-collaboration",
+                      "v2/zh/service/endpoints",
+                      "v2/zh/service/runtime-host",
+                      "v2/zh/service/integrations"
+                    ]
+                  },
+                  {
+                    "group": "场景案例",
+                    "pages": [
+                      "v2/zh/service/usecases"
+                    ]
+                  },
+                  {
+                    "group": "参考手册",
+                    "pages": [
+                      "v2/zh/service/api-reference",
+                      "v2/zh/service/configuration",
+                      "v2/zh/service/access",
+                      "v2/zh/service/sessions",
+                      "v2/zh/service/managed-harness-task-outcomes",
+                      "v2/zh/service/troubleshooting"
+                    ]
+                  },
+                  {
+                    "group": "发布维护者",
+                    "pages": [
+                      "v2/zh/service/releasing"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "集成",
+                "groups": [
+                  {
+                    "group": "集成",
+                    "pages": [
+                      "v2/zh/integration/overview",
+                      {
+                        "group": "模型提供商",
+                        "pages": [
+                          "v2/zh/integration/model/index",
+                          "v2/zh/integration/model/openai",
+                          "v2/zh/integration/model/deepseek",
+                          "v2/zh/integration/model/glm",
+                          "v2/zh/integration/model/kimi",
+                          "v2/zh/integration/model/minimax",
+                          "v2/zh/integration/model/dashscope",
+                          "v2/zh/integration/model/gemini",
+                          "v2/zh/integration/model/anthropic",
+                          "v2/zh/integration/model/ollama"
+                        ]
+                      },
+                      {
+                        "group": "记忆",
+                        "pages": [
+                          "v2/zh/integration/memory/index",
+                          "v2/zh/integration/memory/overview",
+                          "v2/zh/integration/memory/mem0",
+                          "v2/zh/integration/memory/bailian",
+                          "v2/zh/integration/memory/reme"
+                        ]
+                      },
+                      {
+                        "group": "Agent 状态存储",
+                        "pages": [
+                          "v2/zh/integration/session/index",
+                          "v2/zh/integration/session/overview",
+                          "v2/zh/integration/session/mysql",
+                          "v2/zh/integration/session/redis",
+                          "v2/zh/integration/session/oss"
+                        ]
+                      },
+                      {
+                        "group": "RAG 知识库",
+                        "pages": [
+                          "v2/zh/integration/rag/index",
+                          "v2/zh/integration/rag/overview",
+                          "v2/zh/integration/rag/simple",
+                          "v2/zh/integration/rag/bailian",
+                          "v2/zh/integration/rag/dify",
+                          "v2/zh/integration/rag/haystack",
+                          "v2/zh/integration/rag/ragflow"
+                        ]
+                      },
+                      {
+                        "group": "技能仓库",
+                        "pages": [
+                          "v2/zh/integration/skill/index",
+                          "v2/zh/integration/skill/overview",
+                          "v2/zh/integration/skill/git-repository",
+                          "v2/zh/integration/skill/mysql-repository",
+                          "v2/zh/integration/skill/postgresql-repository"
+                        ]
+                      },
+                      {
+                        "group": "智能体协议",
+                        "pages": [
+                          "v2/zh/integration/protocol/index",
+                          "v2/zh/integration/protocol/overview",
+                          "v2/zh/integration/protocol/a2a",
+                          "v2/zh/integration/protocol/agui",
+                          "v2/zh/integration/protocol/agent-protocol"
+                        ]
+                      },
+                      {
+                        "group": "基础设施",
+                        "pages": [
+                          "v2/zh/integration/infrastructure/index",
+                          "v2/zh/integration/infrastructure/overview",
+                          "v2/zh/integration/infrastructure/higress",
+                          "v2/zh/integration/infrastructure/nacos",
+                          "v2/zh/integration/infrastructure/scheduler"
+                        ]
+                      },
+                      {
+                        "group": "生态扩展",
+                        "pages": [
+                          "v2/zh/integration/ecosystem/index",
+                          "v2/zh/integration/ecosystem/overview",
+                          "v2/zh/integration/ecosystem/chat-completions-web",
+                          "v2/zh/integration/ecosystem/studio",
+                          "v2/zh/integration/ecosystem/training"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "渠道接入",
+                    "pages": [
+                      "v2/zh/integration/channel/index",
+                      "v2/zh/integration/channel/dingtalk",
+                      "v2/zh/integration/channel/feishu",
+                      "v2/zh/integration/channel/github",
+                      "v2/zh/integration/channel/gitlab",
+                      "v2/zh/integration/channel/wecom"
+                    ]
+                  },
+                  {
+                    "group": "分布式存储",
+                    "pages": [
+                      "v2/zh/integration/distributed/index",
+                      "v2/zh/integration/distributed/mysql",
+                      "v2/zh/integration/distributed/oss",
+                      "v2/zh/integration/distributed/redis"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "博客",
+                "groups": [
+                  {
+                    "group": "博客",
+                    "pages": [
+                      "v2/zh/blogs/agentscope-v2-release",
+                      "v2/zh/blogs/agentscope-v2-explained",
+                      "v2/zh/blogs/agentscope-v1-harness",
+                      "v2/zh/blogs/agentscope-v1-builder",
+                      "v2/zh/blogs/agentscope-v2-coding-agent",
+                      "v2/zh/blogs/managed-agents-agentscope-rumtime",
+                      "v2/zh/blogs/agentscope-service-release",
+                      "v2/zh/blogs/agentscope-service-release-tech",
+                      {
+                        "group": "客户实践案例",
+                        "pages": [
+                          "v2/zh/blogs/usecases/index",
+                          "v2/zh/blogs/usecases/finxscope",
+                          "v2/zh/blogs/usecases/logistics",
+                          "v2/zh/blogs/usecases/aidc-logistics"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "社区",
+                "groups": [
+                  {
+                    "group": "社区",
+                    "pages": [
+                      "v2/zh/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "version": "v1",
+            "tabs": [
+              {
+                "tab": "首页",
+                "pages": [
+                  "v1/zh/intro"
+                ]
+              },
+              {
+                "tab": "SDK",
+                "groups": [
+                  {
+                    "group": "快速开始",
+                    "pages": [
+                      "v1/zh/docs/quickstart/installation",
+                      "v1/zh/docs/quickstart/key-concepts",
+                      "v1/zh/docs/quickstart/agent"
+                    ]
+                  },
+                  {
+                    "group": "功能指南",
+                    "pages": [
+                      "v1/zh/docs/task/model",
+                      "v1/zh/docs/task/tool",
+                      "v1/zh/docs/task/mcp",
+                      "v1/zh/docs/task/agent-as-tool",
+                      "v1/zh/docs/task/agent-skill",
+                      "v1/zh/docs/task/rag",
+                      "v1/zh/docs/task/streaming",
+                      "v1/zh/docs/task/hook",
+                      "v1/zh/docs/task/hitl",
+                      "v1/zh/docs/task/memory",
+                      "v1/zh/docs/task/plan",
+                      "v1/zh/docs/task/state",
+                      "v1/zh/docs/task/session",
+                      "v1/zh/docs/task/multimodal",
+                      "v1/zh/docs/task/structured-output",
+                      "v1/zh/docs/task/observability",
+                      "v1/zh/docs/task/agui",
+                      "v1/zh/docs/task/a2a",
+                      "v1/zh/docs/task/msghub",
+                      "v1/zh/docs/task/ai-coding",
+                      "v1/zh/docs/task/online-training",
+                      "v1/zh/docs/task/agent-config",
+                      "v1/zh/docs/task/tts"
+                    ]
+                  },
+                  {
+                    "group": "多智能体",
+                    "pages": [
+                      "v1/zh/docs/multi-agent/overview",
+                      "v1/zh/docs/multi-agent/pipeline",
+                      "v1/zh/docs/multi-agent/workflow",
+                      "v1/zh/docs/multi-agent/routing",
+                      "v1/zh/docs/multi-agent/skills",
+                      "v1/zh/docs/multi-agent/subagent",
+                      "v1/zh/docs/multi-agent/supervisor",
+                      "v1/zh/docs/multi-agent/handoffs",
+                      "v1/zh/docs/multi-agent/multiagent-debate"
+                    ]
+                  },
+                  {
+                    "group": "Harness",
+                    "pages": [
+                      "v1/zh/docs/harness/overview",
+                      "v1/zh/docs/harness/architecture",
+                      "v1/zh/docs/harness/workspace",
+                      "v1/zh/docs/harness/filesystem",
+                      "v1/zh/docs/harness/session",
+                      "v1/zh/docs/harness/memory",
+                      "v1/zh/docs/harness/tool",
+                      "v1/zh/docs/harness/skill",
+                      "v1/zh/docs/harness/subagent",
+                      "v1/zh/docs/harness/streaming",
+                      "v1/zh/docs/harness/quickstart/index",
+                      "v1/zh/docs/harness/sandbox/index",
+                      "v1/zh/docs/harness/sandbox/agentrun",
+                      "v1/zh/docs/harness/example/index"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "集成",
+                "groups": [
+                  {
+                    "group": "集成",
+                    "pages": [
+                      "v1/zh/integration/overview"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "博客",
+                "groups": [
+                  {
+                    "group": "博客",
+                    "pages": [
+                      "v1/zh/blogs/index",
+                      "v1/zh/blogs/agentscope-v1-harness",
+                      "v1/zh/blogs/agentscope-v1-builder"
+                    ]
+                  }
+                ]
+              },
+              {
+                "tab": "社区",
+                "groups": [
+                  {
+                    "group": "社区",
+                    "pages": [
+                      "v1/zh/community/overview",
+                      "v1/zh/community/contributors"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/agentscope-ai/agentscope-java"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/agentscope-ai/agentscope-java"
+    }
+  },
+  "redirects": [
+    {
+      "source": "/v1/en/blogs/agentscope-v1-harness.html",
+      "destination": "/v1/en/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/en/blogs/agentscope-v1-harness.html",
+      "destination": "/v1/en/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/blogs/index.html",
+      "destination": "/v1/en/blogs/index",
+      "permanent": true
+    },
+    {
+      "source": "/en/blogs/index.html",
+      "destination": "/v1/en/blogs/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/community/contributors.html",
+      "destination": "/v1/en/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/en/community/contributors.html",
+      "destination": "/v1/en/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/community/overview.html",
+      "destination": "/v1/en/community/overview",
+      "permanent": true
+    },
+    {
+      "source": "/en/community/overview.html",
+      "destination": "/v1/en/community/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/architecture.html",
+      "destination": "/v1/en/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/architecture.html",
+      "destination": "/v1/en/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/example/index.html",
+      "destination": "/v1/en/docs/harness/example/index",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/example/index.html",
+      "destination": "/v1/en/docs/harness/example/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/filesystem.html",
+      "destination": "/v1/en/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/filesystem.html",
+      "destination": "/v1/en/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/memory.html",
+      "destination": "/v1/en/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/memory.html",
+      "destination": "/v1/en/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/overview.html",
+      "destination": "/v1/en/docs/harness/overview",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/overview.html",
+      "destination": "/v1/en/docs/harness/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/quickstart/index.html",
+      "destination": "/v1/en/docs/harness/quickstart/index",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/quickstart/index.html",
+      "destination": "/v1/en/docs/harness/quickstart/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/sandbox/index.html",
+      "destination": "/v1/en/docs/harness/sandbox/index",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/sandbox/index.html",
+      "destination": "/v1/en/docs/harness/sandbox/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/session.html",
+      "destination": "/v1/en/docs/harness/session",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/session.html",
+      "destination": "/v1/en/docs/harness/session",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/streaming.html",
+      "destination": "/v1/en/docs/harness/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/streaming.html",
+      "destination": "/v1/en/docs/harness/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/subagent.html",
+      "destination": "/v1/en/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/subagent.html",
+      "destination": "/v1/en/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/tool.html",
+      "destination": "/v1/en/docs/harness/tool",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/tool.html",
+      "destination": "/v1/en/docs/harness/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/harness/workspace.html",
+      "destination": "/v1/en/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/workspace.html",
+      "destination": "/v1/en/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/handoffs.html",
+      "destination": "/v1/en/docs/multi-agent/handoffs",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/handoffs.html",
+      "destination": "/v1/en/docs/multi-agent/handoffs",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/multiagent-debate.html",
+      "destination": "/v1/en/docs/multi-agent/multiagent-debate",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/multiagent-debate.html",
+      "destination": "/v1/en/docs/multi-agent/multiagent-debate",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/overview.html",
+      "destination": "/v1/en/docs/multi-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/overview.html",
+      "destination": "/v1/en/docs/multi-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/pipeline.html",
+      "destination": "/v1/en/docs/multi-agent/pipeline",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/pipeline.html",
+      "destination": "/v1/en/docs/multi-agent/pipeline",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/routing.html",
+      "destination": "/v1/en/docs/multi-agent/routing",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/routing.html",
+      "destination": "/v1/en/docs/multi-agent/routing",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/skills.html",
+      "destination": "/v1/en/docs/multi-agent/skills",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/skills.html",
+      "destination": "/v1/en/docs/multi-agent/skills",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/subagent.html",
+      "destination": "/v1/en/docs/multi-agent/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/subagent.html",
+      "destination": "/v1/en/docs/multi-agent/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/supervisor.html",
+      "destination": "/v1/en/docs/multi-agent/supervisor",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/supervisor.html",
+      "destination": "/v1/en/docs/multi-agent/supervisor",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/multi-agent/workflow.html",
+      "destination": "/v1/en/docs/multi-agent/workflow",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/workflow.html",
+      "destination": "/v1/en/docs/multi-agent/workflow",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/quickstart/agent.html",
+      "destination": "/v1/en/docs/quickstart/agent",
+      "permanent": true
+    },
+    {
+      "source": "/en/quickstart/agent.html",
+      "destination": "/v1/en/docs/quickstart/agent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/quickstart/installation.html",
+      "destination": "/v1/en/docs/quickstart/installation",
+      "permanent": true
+    },
+    {
+      "source": "/en/quickstart/installation.html",
+      "destination": "/v1/en/docs/quickstart/installation",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/quickstart/key-concepts.html",
+      "destination": "/v1/en/docs/quickstart/key-concepts",
+      "permanent": true
+    },
+    {
+      "source": "/en/quickstart/key-concepts.html",
+      "destination": "/v1/en/docs/quickstart/key-concepts",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/a2a.html",
+      "destination": "/v1/en/docs/task/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/a2a.html",
+      "destination": "/v1/en/docs/task/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/agent-as-tool.html",
+      "destination": "/v1/en/docs/task/agent-as-tool",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/agent-as-tool.html",
+      "destination": "/v1/en/docs/task/agent-as-tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/agent-config.html",
+      "destination": "/v1/en/docs/task/agent-config",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/agent-config.html",
+      "destination": "/v1/en/docs/task/agent-config",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/agent-skill.html",
+      "destination": "/v1/en/docs/task/agent-skill",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/agent-skill.html",
+      "destination": "/v1/en/docs/task/agent-skill",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/agui.html",
+      "destination": "/v1/en/docs/task/agui",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/agui.html",
+      "destination": "/v1/en/docs/task/agui",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/ai-coding.html",
+      "destination": "/v1/en/docs/task/ai-coding",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/ai-coding.html",
+      "destination": "/v1/en/docs/task/ai-coding",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/hitl.html",
+      "destination": "/v1/en/docs/task/hitl",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/hitl.html",
+      "destination": "/v1/en/docs/task/hitl",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/hook.html",
+      "destination": "/v1/en/docs/task/hook",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/hook.html",
+      "destination": "/v1/en/docs/task/hook",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/mcp.html",
+      "destination": "/v1/en/docs/task/mcp",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/mcp.html",
+      "destination": "/v1/en/docs/task/mcp",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/memory.html",
+      "destination": "/v1/en/docs/task/memory",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/memory.html",
+      "destination": "/v1/en/docs/task/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/model.html",
+      "destination": "/v1/en/docs/task/model",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/model.html",
+      "destination": "/v1/en/docs/task/model",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/msghub.html",
+      "destination": "/v1/en/docs/task/msghub",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/msghub.html",
+      "destination": "/v1/en/docs/task/msghub",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/multimodal.html",
+      "destination": "/v1/en/docs/task/multimodal",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/multimodal.html",
+      "destination": "/v1/en/docs/task/multimodal",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/observability.html",
+      "destination": "/v1/en/docs/task/observability",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/observability.html",
+      "destination": "/v1/en/docs/task/observability",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/online-training.html",
+      "destination": "/v1/en/docs/task/online-training",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/online-training.html",
+      "destination": "/v1/en/docs/task/online-training",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/plan.html",
+      "destination": "/v1/en/docs/task/plan",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/plan.html",
+      "destination": "/v1/en/docs/task/plan",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/rag.html",
+      "destination": "/v1/en/docs/task/rag",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/rag.html",
+      "destination": "/v1/en/docs/task/rag",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/session.html",
+      "destination": "/v1/en/docs/task/session",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/session.html",
+      "destination": "/v1/en/docs/task/session",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/state.html",
+      "destination": "/v1/en/docs/task/state",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/state.html",
+      "destination": "/v1/en/docs/task/state",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/streaming.html",
+      "destination": "/v1/en/docs/task/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/streaming.html",
+      "destination": "/v1/en/docs/task/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/structured-output.html",
+      "destination": "/v1/en/docs/task/structured-output",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/structured-output.html",
+      "destination": "/v1/en/docs/task/structured-output",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/tool.html",
+      "destination": "/v1/en/docs/task/tool",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/tool.html",
+      "destination": "/v1/en/docs/task/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/docs/task/tts.html",
+      "destination": "/v1/en/docs/task/tts",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/tts.html",
+      "destination": "/v1/en/docs/task/tts",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/integration/overview.html",
+      "destination": "/v1/en/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/en/integration/overview.html",
+      "destination": "/v1/en/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en/intro.html",
+      "destination": "/v1/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/en/intro.html",
+      "destination": "/v1/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/blogs/agentscope-v1-builder.html",
+      "destination": "/v1/zh/blogs/agentscope-v1-builder",
+      "permanent": true
+    },
+    {
+      "source": "/zh/blogs/agentscope-v1-builder.html",
+      "destination": "/v1/zh/blogs/agentscope-v1-builder",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/blogs/agentscope-v1-harness.html",
+      "destination": "/v1/zh/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/zh/blogs/agentscope-v1-harness.html",
+      "destination": "/v1/zh/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/blogs/index.html",
+      "destination": "/v1/zh/blogs/index",
+      "permanent": true
+    },
+    {
+      "source": "/zh/blogs/index.html",
+      "destination": "/v1/zh/blogs/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/community/contributors.html",
+      "destination": "/v1/zh/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/zh/community/contributors.html",
+      "destination": "/v1/zh/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/community/overview.html",
+      "destination": "/v1/zh/community/overview",
+      "permanent": true
+    },
+    {
+      "source": "/zh/community/overview.html",
+      "destination": "/v1/zh/community/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/architecture.html",
+      "destination": "/v1/zh/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/architecture.html",
+      "destination": "/v1/zh/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/example/index.html",
+      "destination": "/v1/zh/docs/harness/example/index",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/example/index.html",
+      "destination": "/v1/zh/docs/harness/example/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/filesystem.html",
+      "destination": "/v1/zh/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/filesystem.html",
+      "destination": "/v1/zh/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/memory.html",
+      "destination": "/v1/zh/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/memory.html",
+      "destination": "/v1/zh/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/overview.html",
+      "destination": "/v1/zh/docs/harness/overview",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/overview.html",
+      "destination": "/v1/zh/docs/harness/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/quickstart/index.html",
+      "destination": "/v1/zh/docs/harness/quickstart/index",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/quickstart/index.html",
+      "destination": "/v1/zh/docs/harness/quickstart/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/sandbox/agentrun.html",
+      "destination": "/v1/zh/docs/harness/sandbox/agentrun",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/sandbox/agentrun.html",
+      "destination": "/v1/zh/docs/harness/sandbox/agentrun",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/sandbox/index.html",
+      "destination": "/v1/zh/docs/harness/sandbox/index",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/sandbox/index.html",
+      "destination": "/v1/zh/docs/harness/sandbox/index",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/session.html",
+      "destination": "/v1/zh/docs/harness/session",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/session.html",
+      "destination": "/v1/zh/docs/harness/session",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/skill.html",
+      "destination": "/v1/zh/docs/harness/skill",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/skill.html",
+      "destination": "/v1/zh/docs/harness/skill",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/streaming.html",
+      "destination": "/v1/zh/docs/harness/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/streaming.html",
+      "destination": "/v1/zh/docs/harness/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/subagent.html",
+      "destination": "/v1/zh/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/subagent.html",
+      "destination": "/v1/zh/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/tool.html",
+      "destination": "/v1/zh/docs/harness/tool",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/tool.html",
+      "destination": "/v1/zh/docs/harness/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/harness/workspace.html",
+      "destination": "/v1/zh/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/workspace.html",
+      "destination": "/v1/zh/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/handoffs.html",
+      "destination": "/v1/zh/docs/multi-agent/handoffs",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/handoffs.html",
+      "destination": "/v1/zh/docs/multi-agent/handoffs",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/multiagent-debate.html",
+      "destination": "/v1/zh/docs/multi-agent/multiagent-debate",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/multiagent-debate.html",
+      "destination": "/v1/zh/docs/multi-agent/multiagent-debate",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/overview.html",
+      "destination": "/v1/zh/docs/multi-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/overview.html",
+      "destination": "/v1/zh/docs/multi-agent/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/pipeline.html",
+      "destination": "/v1/zh/docs/multi-agent/pipeline",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/pipeline.html",
+      "destination": "/v1/zh/docs/multi-agent/pipeline",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/routing.html",
+      "destination": "/v1/zh/docs/multi-agent/routing",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/routing.html",
+      "destination": "/v1/zh/docs/multi-agent/routing",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/skills.html",
+      "destination": "/v1/zh/docs/multi-agent/skills",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/skills.html",
+      "destination": "/v1/zh/docs/multi-agent/skills",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/subagent.html",
+      "destination": "/v1/zh/docs/multi-agent/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/subagent.html",
+      "destination": "/v1/zh/docs/multi-agent/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/supervisor.html",
+      "destination": "/v1/zh/docs/multi-agent/supervisor",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/supervisor.html",
+      "destination": "/v1/zh/docs/multi-agent/supervisor",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/multi-agent/workflow.html",
+      "destination": "/v1/zh/docs/multi-agent/workflow",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/workflow.html",
+      "destination": "/v1/zh/docs/multi-agent/workflow",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/quickstart/agent.html",
+      "destination": "/v1/zh/docs/quickstart/agent",
+      "permanent": true
+    },
+    {
+      "source": "/zh/quickstart/agent.html",
+      "destination": "/v1/zh/docs/quickstart/agent",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/quickstart/installation.html",
+      "destination": "/v1/zh/docs/quickstart/installation",
+      "permanent": true
+    },
+    {
+      "source": "/zh/quickstart/installation.html",
+      "destination": "/v1/zh/docs/quickstart/installation",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/quickstart/key-concepts.html",
+      "destination": "/v1/zh/docs/quickstart/key-concepts",
+      "permanent": true
+    },
+    {
+      "source": "/zh/quickstart/key-concepts.html",
+      "destination": "/v1/zh/docs/quickstart/key-concepts",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/a2a.html",
+      "destination": "/v1/zh/docs/task/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/a2a.html",
+      "destination": "/v1/zh/docs/task/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/agent-as-tool.html",
+      "destination": "/v1/zh/docs/task/agent-as-tool",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/agent-as-tool.html",
+      "destination": "/v1/zh/docs/task/agent-as-tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/agent-config.html",
+      "destination": "/v1/zh/docs/task/agent-config",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/agent-config.html",
+      "destination": "/v1/zh/docs/task/agent-config",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/agent-skill.html",
+      "destination": "/v1/zh/docs/task/agent-skill",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/agent-skill.html",
+      "destination": "/v1/zh/docs/task/agent-skill",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/agui.html",
+      "destination": "/v1/zh/docs/task/agui",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/agui.html",
+      "destination": "/v1/zh/docs/task/agui",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/ai-coding.html",
+      "destination": "/v1/zh/docs/task/ai-coding",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/ai-coding.html",
+      "destination": "/v1/zh/docs/task/ai-coding",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/hitl.html",
+      "destination": "/v1/zh/docs/task/hitl",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/hitl.html",
+      "destination": "/v1/zh/docs/task/hitl",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/hook.html",
+      "destination": "/v1/zh/docs/task/hook",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/hook.html",
+      "destination": "/v1/zh/docs/task/hook",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/mcp.html",
+      "destination": "/v1/zh/docs/task/mcp",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/mcp.html",
+      "destination": "/v1/zh/docs/task/mcp",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/memory.html",
+      "destination": "/v1/zh/docs/task/memory",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/memory.html",
+      "destination": "/v1/zh/docs/task/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/model.html",
+      "destination": "/v1/zh/docs/task/model",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/model.html",
+      "destination": "/v1/zh/docs/task/model",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/msghub.html",
+      "destination": "/v1/zh/docs/task/msghub",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/msghub.html",
+      "destination": "/v1/zh/docs/task/msghub",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/multimodal.html",
+      "destination": "/v1/zh/docs/task/multimodal",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/multimodal.html",
+      "destination": "/v1/zh/docs/task/multimodal",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/observability.html",
+      "destination": "/v1/zh/docs/task/observability",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/observability.html",
+      "destination": "/v1/zh/docs/task/observability",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/online-training.html",
+      "destination": "/v1/zh/docs/task/online-training",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/online-training.html",
+      "destination": "/v1/zh/docs/task/online-training",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/plan.html",
+      "destination": "/v1/zh/docs/task/plan",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/plan.html",
+      "destination": "/v1/zh/docs/task/plan",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/rag.html",
+      "destination": "/v1/zh/docs/task/rag",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/rag.html",
+      "destination": "/v1/zh/docs/task/rag",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/session.html",
+      "destination": "/v1/zh/docs/task/session",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/session.html",
+      "destination": "/v1/zh/docs/task/session",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/state.html",
+      "destination": "/v1/zh/docs/task/state",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/state.html",
+      "destination": "/v1/zh/docs/task/state",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/streaming.html",
+      "destination": "/v1/zh/docs/task/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/streaming.html",
+      "destination": "/v1/zh/docs/task/streaming",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/structured-output.html",
+      "destination": "/v1/zh/docs/task/structured-output",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/structured-output.html",
+      "destination": "/v1/zh/docs/task/structured-output",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/tool.html",
+      "destination": "/v1/zh/docs/task/tool",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/tool.html",
+      "destination": "/v1/zh/docs/task/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/docs/task/tts.html",
+      "destination": "/v1/zh/docs/task/tts",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/tts.html",
+      "destination": "/v1/zh/docs/task/tts",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/integration/overview.html",
+      "destination": "/v1/zh/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/zh/integration/overview.html",
+      "destination": "/v1/zh/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh/intro.html",
+      "destination": "/v1/zh/intro",
+      "permanent": true
+    },
+    {
+      "source": "/zh/intro.html",
+      "destination": "/v1/zh/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-service-release-tech.html",
+      "destination": "/v2/en/blogs/agentscope-service-release-tech",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-service-release.html",
+      "destination": "/v2/en/blogs/agentscope-service-release",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-v1-builder.html",
+      "destination": "/v2/en/blogs/agentscope-v1-builder",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-v1-harness.html",
+      "destination": "/v2/en/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-v2-coding-agent.html",
+      "destination": "/v2/en/blogs/agentscope-v2-coding-agent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-v2-explained.html",
+      "destination": "/v2/en/blogs/agentscope-v2-explained",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/agentscope-v2-release.html",
+      "destination": "/v2/en/blogs/agentscope-v2-release",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/managed-agents-agentscope-rumtime.html",
+      "destination": "/v2/en/blogs/managed-agents-agentscope-rumtime",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/usecases/aidc-logistics.html",
+      "destination": "/v2/en/blogs/usecases/aidc-logistics",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/usecases/finxscope.html",
+      "destination": "/v2/en/blogs/usecases/finxscope",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/usecases/index.html",
+      "destination": "/v2/en/blogs/usecases/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/usecases/logistics.html",
+      "destination": "/v2/en/blogs/usecases/logistics",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/community/contributors.html",
+      "destination": "/v2/en/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/agent.html",
+      "destination": "/v2/en/docs/building-blocks/agent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/context.html",
+      "destination": "/v2/en/docs/building-blocks/context",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/message-and-event.html",
+      "destination": "/v2/en/docs/building-blocks/message-and-event",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/middleware.html",
+      "destination": "/v2/en/docs/building-blocks/middleware",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/model.html",
+      "destination": "/v2/en/docs/building-blocks/model",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/permission-system.html",
+      "destination": "/v2/en/docs/building-blocks/permission-system",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/tool.html",
+      "destination": "/v2/en/docs/building-blocks/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/change-log.html",
+      "destination": "/v2/en/docs/change-log",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/architecture.html",
+      "destination": "/v2/en/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/channel.html",
+      "destination": "/v2/en/docs/harness/channel",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/compaction.html",
+      "destination": "/v2/en/docs/harness/compaction",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/filesystem.html",
+      "destination": "/v2/en/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/memory.html",
+      "destination": "/v2/en/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/plan-mode.html",
+      "destination": "/v2/en/docs/harness/plan-mode",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/sandbox.html",
+      "destination": "/v2/en/docs/harness/sandbox",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/skill.html",
+      "destination": "/v2/en/docs/harness/skill",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/subagent.html",
+      "destination": "/v2/en/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/harness/workspace.html",
+      "destination": "/v2/en/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/index.html",
+      "destination": "/v2/en/docs/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/others/faq.html",
+      "destination": "/v2/en/docs/others/faq",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/others/going-to-production.html",
+      "destination": "/v2/en/docs/others/going-to-production",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/others/release-notes.html",
+      "destination": "/v2/en/docs/others/release-notes",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/quickstart.html",
+      "destination": "/v2/en/docs/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/dingtalk.html",
+      "destination": "/v2/en/integration/channel/dingtalk",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/feishu.html",
+      "destination": "/v2/en/integration/channel/feishu",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/github.html",
+      "destination": "/v2/en/integration/channel/github",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/gitlab.html",
+      "destination": "/v2/en/integration/channel/gitlab",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/index.html",
+      "destination": "/v2/en/integration/channel/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/channel/wecom.html",
+      "destination": "/v2/en/integration/channel/wecom",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/distributed/index.html",
+      "destination": "/v2/en/integration/distributed/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/distributed/mysql.html",
+      "destination": "/v2/en/integration/distributed/mysql",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/distributed/oss.html",
+      "destination": "/v2/en/integration/distributed/oss",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/distributed/redis.html",
+      "destination": "/v2/en/integration/distributed/redis",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/chat-completions-web.html",
+      "destination": "/v2/en/integration/ecosystem/chat-completions-web",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/index.html",
+      "destination": "/v2/en/integration/ecosystem/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/overview.html",
+      "destination": "/v2/en/integration/ecosystem/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/studio.html",
+      "destination": "/v2/en/integration/ecosystem/studio",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/ecosystem/training.html",
+      "destination": "/v2/en/integration/ecosystem/training",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/infrastructure/higress.html",
+      "destination": "/v2/en/integration/infrastructure/higress",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/infrastructure/index.html",
+      "destination": "/v2/en/integration/infrastructure/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/infrastructure/nacos.html",
+      "destination": "/v2/en/integration/infrastructure/nacos",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/infrastructure/overview.html",
+      "destination": "/v2/en/integration/infrastructure/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/infrastructure/scheduler.html",
+      "destination": "/v2/en/integration/infrastructure/scheduler",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/memory/bailian.html",
+      "destination": "/v2/en/integration/memory/bailian",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/memory/index.html",
+      "destination": "/v2/en/integration/memory/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/memory/mem0.html",
+      "destination": "/v2/en/integration/memory/mem0",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/memory/overview.html",
+      "destination": "/v2/en/integration/memory/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/memory/reme.html",
+      "destination": "/v2/en/integration/memory/reme",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/anthropic.html",
+      "destination": "/v2/en/integration/model/anthropic",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/dashscope.html",
+      "destination": "/v2/en/integration/model/dashscope",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/deepseek.html",
+      "destination": "/v2/en/integration/model/deepseek",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/gemini.html",
+      "destination": "/v2/en/integration/model/gemini",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/glm.html",
+      "destination": "/v2/en/integration/model/glm",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/index.html",
+      "destination": "/v2/en/integration/model/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/kimi.html",
+      "destination": "/v2/en/integration/model/kimi",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/minimax.html",
+      "destination": "/v2/en/integration/model/minimax",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/ollama.html",
+      "destination": "/v2/en/integration/model/ollama",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/model/openai.html",
+      "destination": "/v2/en/integration/model/openai",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/overview.html",
+      "destination": "/v2/en/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/protocol/a2a.html",
+      "destination": "/v2/en/integration/protocol/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/protocol/agent-protocol.html",
+      "destination": "/v2/en/integration/protocol/agent-protocol",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/protocol/agui.html",
+      "destination": "/v2/en/integration/protocol/agui",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/protocol/index.html",
+      "destination": "/v2/en/integration/protocol/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/protocol/overview.html",
+      "destination": "/v2/en/integration/protocol/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/bailian.html",
+      "destination": "/v2/en/integration/rag/bailian",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/dify.html",
+      "destination": "/v2/en/integration/rag/dify",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/haystack.html",
+      "destination": "/v2/en/integration/rag/haystack",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/index.html",
+      "destination": "/v2/en/integration/rag/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/overview.html",
+      "destination": "/v2/en/integration/rag/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/ragflow.html",
+      "destination": "/v2/en/integration/rag/ragflow",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/rag/simple.html",
+      "destination": "/v2/en/integration/rag/simple",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/session/index.html",
+      "destination": "/v2/en/integration/session/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/session/mysql.html",
+      "destination": "/v2/en/integration/session/mysql",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/session/oss.html",
+      "destination": "/v2/en/integration/session/oss",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/session/overview.html",
+      "destination": "/v2/en/integration/session/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/session/redis.html",
+      "destination": "/v2/en/integration/session/redis",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/skill/git-repository.html",
+      "destination": "/v2/en/integration/skill/git-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/skill/index.html",
+      "destination": "/v2/en/integration/skill/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/skill/mysql-repository.html",
+      "destination": "/v2/en/integration/skill/mysql-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/skill/overview.html",
+      "destination": "/v2/en/integration/skill/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/skill/postgresql-repository.html",
+      "destination": "/v2/en/integration/skill/postgresql-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/intro.html",
+      "destination": "/v2/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/access.html",
+      "destination": "/v2/en/service/access",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/agents.html",
+      "destination": "/v2/en/service/agents",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/automation.html",
+      "destination": "/v2/en/service/automation",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/concepts.html",
+      "destination": "/v2/en/service/concepts",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/configuration.html",
+      "destination": "/v2/en/service/configuration",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/docker.html",
+      "destination": "/v2/en/service/docker",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/first-session.html",
+      "destination": "/v2/en/service/first-session",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/index.html",
+      "destination": "/v2/en/service/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/integrations.html",
+      "destination": "/v2/en/service/integrations",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/kubernetes.html",
+      "destination": "/v2/en/service/kubernetes",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/operations.html",
+      "destination": "/v2/en/service/operations",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/quickstart.html",
+      "destination": "/v2/en/service/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/releasing.html",
+      "destination": "/v2/en/service/releasing",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/runtime-host.html",
+      "destination": "/v2/en/service/runtime-host",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/sessions.html",
+      "destination": "/v2/en/service/sessions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/teams.html",
+      "destination": "/v2/en/service/teams",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/troubleshooting.html",
+      "destination": "/v2/en/service/troubleshooting",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/workspaces.html",
+      "destination": "/v2/en/service/workspaces",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-service-release-tech.html",
+      "destination": "/v2/zh/blogs/agentscope-service-release-tech",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-service-release.html",
+      "destination": "/v2/zh/blogs/agentscope-service-release",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-v1-builder.html",
+      "destination": "/v2/zh/blogs/agentscope-v1-builder",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-v1-harness.html",
+      "destination": "/v2/zh/blogs/agentscope-v1-harness",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-v2-coding-agent.html",
+      "destination": "/v2/zh/blogs/agentscope-v2-coding-agent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-v2-explained.html",
+      "destination": "/v2/zh/blogs/agentscope-v2-explained",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/agentscope-v2-release.html",
+      "destination": "/v2/zh/blogs/agentscope-v2-release",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/managed-agents-agentscope-rumtime.html",
+      "destination": "/v2/zh/blogs/managed-agents-agentscope-rumtime",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/usecases/aidc-logistics.html",
+      "destination": "/v2/zh/blogs/usecases/aidc-logistics",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/usecases/finxscope.html",
+      "destination": "/v2/zh/blogs/usecases/finxscope",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/usecases/index.html",
+      "destination": "/v2/zh/blogs/usecases/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/usecases/logistics.html",
+      "destination": "/v2/zh/blogs/usecases/logistics",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/community/contributors.html",
+      "destination": "/v2/zh/community/contributors",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/agent.html",
+      "destination": "/v2/zh/docs/building-blocks/agent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/context.html",
+      "destination": "/v2/zh/docs/building-blocks/context",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/message-and-event.html",
+      "destination": "/v2/zh/docs/building-blocks/message-and-event",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/middleware.html",
+      "destination": "/v2/zh/docs/building-blocks/middleware",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/model.html",
+      "destination": "/v2/zh/docs/building-blocks/model",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/permission-system.html",
+      "destination": "/v2/zh/docs/building-blocks/permission-system",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/tool.html",
+      "destination": "/v2/zh/docs/building-blocks/tool",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/change-log.html",
+      "destination": "/v2/zh/docs/change-log",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/architecture.html",
+      "destination": "/v2/zh/docs/harness/architecture",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/channel.html",
+      "destination": "/v2/zh/docs/harness/channel",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/compaction.html",
+      "destination": "/v2/zh/docs/harness/compaction",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/filesystem.html",
+      "destination": "/v2/zh/docs/harness/filesystem",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/memory.html",
+      "destination": "/v2/zh/docs/harness/memory",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/plan-mode.html",
+      "destination": "/v2/zh/docs/harness/plan-mode",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/sandbox.html",
+      "destination": "/v2/zh/docs/harness/sandbox",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/skill.html",
+      "destination": "/v2/zh/docs/harness/skill",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/subagent.html",
+      "destination": "/v2/zh/docs/harness/subagent",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/harness/workspace.html",
+      "destination": "/v2/zh/docs/harness/workspace",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/index.html",
+      "destination": "/v2/zh/docs/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/others/faq.html",
+      "destination": "/v2/zh/docs/others/faq",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/others/going-to-production.html",
+      "destination": "/v2/zh/docs/others/going-to-production",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/others/release-notes.html",
+      "destination": "/v2/zh/docs/others/release-notes",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/quickstart.html",
+      "destination": "/v2/zh/docs/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/dingtalk.html",
+      "destination": "/v2/zh/integration/channel/dingtalk",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/feishu.html",
+      "destination": "/v2/zh/integration/channel/feishu",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/github.html",
+      "destination": "/v2/zh/integration/channel/github",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/gitlab.html",
+      "destination": "/v2/zh/integration/channel/gitlab",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/index.html",
+      "destination": "/v2/zh/integration/channel/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/channel/wecom.html",
+      "destination": "/v2/zh/integration/channel/wecom",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/distributed/index.html",
+      "destination": "/v2/zh/integration/distributed/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/distributed/mysql.html",
+      "destination": "/v2/zh/integration/distributed/mysql",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/distributed/oss.html",
+      "destination": "/v2/zh/integration/distributed/oss",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/distributed/redis.html",
+      "destination": "/v2/zh/integration/distributed/redis",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/chat-completions-web.html",
+      "destination": "/v2/zh/integration/ecosystem/chat-completions-web",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/index.html",
+      "destination": "/v2/zh/integration/ecosystem/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/overview.html",
+      "destination": "/v2/zh/integration/ecosystem/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/studio.html",
+      "destination": "/v2/zh/integration/ecosystem/studio",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/training.html",
+      "destination": "/v2/zh/integration/ecosystem/training",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/infrastructure/higress.html",
+      "destination": "/v2/zh/integration/infrastructure/higress",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/infrastructure/index.html",
+      "destination": "/v2/zh/integration/infrastructure/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/infrastructure/nacos.html",
+      "destination": "/v2/zh/integration/infrastructure/nacos",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/infrastructure/overview.html",
+      "destination": "/v2/zh/integration/infrastructure/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/infrastructure/scheduler.html",
+      "destination": "/v2/zh/integration/infrastructure/scheduler",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/memory/bailian.html",
+      "destination": "/v2/zh/integration/memory/bailian",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/memory/index.html",
+      "destination": "/v2/zh/integration/memory/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/memory/mem0.html",
+      "destination": "/v2/zh/integration/memory/mem0",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/memory/overview.html",
+      "destination": "/v2/zh/integration/memory/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/memory/reme.html",
+      "destination": "/v2/zh/integration/memory/reme",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/anthropic.html",
+      "destination": "/v2/zh/integration/model/anthropic",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/dashscope.html",
+      "destination": "/v2/zh/integration/model/dashscope",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/deepseek.html",
+      "destination": "/v2/zh/integration/model/deepseek",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/gemini.html",
+      "destination": "/v2/zh/integration/model/gemini",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/glm.html",
+      "destination": "/v2/zh/integration/model/glm",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/index.html",
+      "destination": "/v2/zh/integration/model/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/kimi.html",
+      "destination": "/v2/zh/integration/model/kimi",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/minimax.html",
+      "destination": "/v2/zh/integration/model/minimax",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/ollama.html",
+      "destination": "/v2/zh/integration/model/ollama",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/model/openai.html",
+      "destination": "/v2/zh/integration/model/openai",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/overview.html",
+      "destination": "/v2/zh/integration/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/protocol/a2a.html",
+      "destination": "/v2/zh/integration/protocol/a2a",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/protocol/agent-protocol.html",
+      "destination": "/v2/zh/integration/protocol/agent-protocol",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/protocol/agui.html",
+      "destination": "/v2/zh/integration/protocol/agui",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/protocol/index.html",
+      "destination": "/v2/zh/integration/protocol/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/protocol/overview.html",
+      "destination": "/v2/zh/integration/protocol/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/bailian.html",
+      "destination": "/v2/zh/integration/rag/bailian",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/dify.html",
+      "destination": "/v2/zh/integration/rag/dify",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/haystack.html",
+      "destination": "/v2/zh/integration/rag/haystack",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/index.html",
+      "destination": "/v2/zh/integration/rag/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/overview.html",
+      "destination": "/v2/zh/integration/rag/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/ragflow.html",
+      "destination": "/v2/zh/integration/rag/ragflow",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/rag/simple.html",
+      "destination": "/v2/zh/integration/rag/simple",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/session/index.html",
+      "destination": "/v2/zh/integration/session/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/session/mysql.html",
+      "destination": "/v2/zh/integration/session/mysql",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/session/oss.html",
+      "destination": "/v2/zh/integration/session/oss",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/session/overview.html",
+      "destination": "/v2/zh/integration/session/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/session/redis.html",
+      "destination": "/v2/zh/integration/session/redis",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/skill/git-repository.html",
+      "destination": "/v2/zh/integration/skill/git-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/skill/index.html",
+      "destination": "/v2/zh/integration/skill/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/skill/mysql-repository.html",
+      "destination": "/v2/zh/integration/skill/mysql-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/skill/overview.html",
+      "destination": "/v2/zh/integration/skill/overview",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/skill/postgresql-repository.html",
+      "destination": "/v2/zh/integration/skill/postgresql-repository",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/intro.html",
+      "destination": "/v2/zh/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/access.html",
+      "destination": "/v2/zh/service/access",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/agents.html",
+      "destination": "/v2/zh/service/agents",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/automation.html",
+      "destination": "/v2/zh/service/automation",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/concepts.html",
+      "destination": "/v2/zh/service/concepts",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/configuration.html",
+      "destination": "/v2/zh/service/configuration",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/docker.html",
+      "destination": "/v2/zh/service/docker",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/first-session.html",
+      "destination": "/v2/zh/service/first-session",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/index.html",
+      "destination": "/v2/zh/service/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/integrations.html",
+      "destination": "/v2/zh/service/integrations",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/kubernetes.html",
+      "destination": "/v2/zh/service/kubernetes",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/managed-harness-task-outcomes.html",
+      "destination": "/v2/zh/service/managed-harness-task-outcomes",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/operations.html",
+      "destination": "/v2/zh/service/operations",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/quickstart.html",
+      "destination": "/v2/zh/service/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/releasing.html",
+      "destination": "/v2/zh/service/releasing",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/runtime-host.html",
+      "destination": "/v2/zh/service/runtime-host",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/sessions.html",
+      "destination": "/v2/zh/service/sessions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/teams.html",
+      "destination": "/v2/zh/service/teams",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/troubleshooting.html",
+      "destination": "/v2/zh/service/troubleshooting",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/workspaces.html",
+      "destination": "/v2/zh/service/workspaces",
+      "permanent": true
+    },
+    {
+      "source": "/v1",
+      "destination": "/v1/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v1/en",
+      "destination": "/v1/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v1/zh",
+      "destination": "/v1/zh/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2",
+      "destination": "/v2/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en",
+      "destination": "/v2/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh",
+      "destination": "/v2/zh/intro",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "destination": "/v2/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/",
+      "destination": "/v2/en/intro",
+      "permanent": true
+    },
+    {
+      "source": "/en/harness/:slug*",
+      "destination": "/v1/en/docs/harness/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/en/multi-agent/:slug*",
+      "destination": "/v1/en/docs/multi-agent/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/en/quickstart/:slug*",
+      "destination": "/v1/en/docs/quickstart/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/en/task/:slug*",
+      "destination": "/v1/en/docs/task/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/en/:slug*",
+      "destination": "/v1/en/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/zh/harness/:slug*",
+      "destination": "/v1/zh/docs/harness/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/zh/multi-agent/:slug*",
+      "destination": "/v1/zh/docs/multi-agent/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/zh/quickstart/:slug*",
+      "destination": "/v1/zh/docs/quickstart/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/zh/task/:slug*",
+      "destination": "/v1/zh/docs/task/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/zh/:slug*",
+      "destination": "/v1/zh/:slug*",
+      "permanent": true
+    }
+  ]
+}

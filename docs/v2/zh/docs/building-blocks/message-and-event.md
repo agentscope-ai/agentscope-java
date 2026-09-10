@@ -1,6 +1,6 @@
 ---
-title: "消息与事件"
-description: "智能体通信，与前端流式数据传输"
+title: 消息与事件
+description: 智能体通信，与前端流式数据传输
 ---
 
 消息（Message）与事件（Event）是 AgentScope 中两种基础数据结构。
@@ -14,9 +14,13 @@ description: "智能体通信，与前端流式数据传输"
 
 `Msg`（位于 `io.agentscope.core.message`）代表对话中的一个轮次——用户输入、智能体回复或系统指令，内容以有序的类型化块（`ContentBlock`）列表表示。
 
-:::{tip}
+
+<Tip>
+
 一条 assistant 消息对应智能体一次完整的 `call` 周期（反复推理和执行，直到产出最终回复）。
-:::
+
+</Tip>
+
 
 ### 结构
 
@@ -47,9 +51,13 @@ description: "智能体通信，与前端流式数据传输"
 | `ToolResultBlock` | 工具执行结果，包含 `state`（`ToolResultState`） | ASSISTANT |
 | `HintBlock` | 以用户上下文形式注入循环的指令 | ASSISTANT |
 
-:::{note}
+
+<Note>
+
 角色约束在构造时强制执行：`USER` 消息只能包含 text/data/image/audio/video 块；`SYSTEM` 消息只能包含 `TextBlock`；`ASSISTANT` 消息可包含所有块类型。
-:::
+
+</Note>
+
 
 ### 创建消息
 
@@ -130,7 +138,7 @@ if (msg.hasContentBlocks(ToolResultBlock.class)) {
 
 每个事件都携带 `getReplyId()`，将其关联到正在构建的消息。在一次回复中，`getBlockId()` 或 `getToolCallId()` 用作事件关联键，表示事件属于同一个内容块生命周期。事件遵循 **start → delta → end** 模式：
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant Client
     participant Agent
@@ -191,7 +199,9 @@ sequenceDiagram
 
 事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。
 
-  :::{dropdown} 生命周期事件
+
+<Accordion title="生命周期事件">
+
 **AgentStartEvent** — 智能体开始新的回复。
 
     | 方法 | 类型 | 说明 |
@@ -214,9 +224,13 @@ sequenceDiagram
     | `getReplyId()` | `String` | 回复消息 ID |
 
     **RequestStopEvent** — 中间件或工具发起的提前停止请求。
-:::
 
-  :::{dropdown} 文本流式事件
+</Accordion>
+
+
+
+<Accordion title="文本流式事件">
+
 **TextBlockStartEvent** — 新的文本块开始。
 
     | 方法 | 类型 | 说明 |
@@ -238,20 +252,32 @@ sequenceDiagram
     |------|------|------|
     | `getReplyId()` | `String` | 回复消息 ID |
     | `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
-:::
 
-  :::{dropdown} 思考流式事件
+</Accordion>
+
+
+
+<Accordion title="思考流式事件">
+
 **ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** —— 与文本流式事件结构对应，仅用于模型的思维链内容；`blockId` 同样表示当前回复中的关联键。
-:::
 
-  :::{dropdown} 数据流式事件
+</Accordion>
+
+
+
+<Accordion title="数据流式事件">
+
 **DataBlockStartEvent / DataBlockDeltaEvent / DataBlockEndEvent** —— 与文本流式事件结构对应，承载图片 / 音频 / 视频等二进制数据：
 
     - `DataBlockStartEvent`：`getMediaType()` 返回 MIME 类型（如 `"image/png"`）。
     - `DataBlockDeltaEvent`：`getData()` 返回增量 base64 编码数据。
-:::
 
-  :::{dropdown} 工具调用流式事件
+</Accordion>
+
+
+
+<Accordion title="工具调用流式事件">
+
 **ToolCallStartEvent** — 智能体开始一次工具调用。
 
     | 方法 | 类型 | 说明 |
@@ -263,9 +289,13 @@ sequenceDiagram
     **ToolCallDeltaEvent** — 增量工具调用参数到达；`getDelta()` 返回 JSON 参数片段。
 
     **ToolCallEndEvent** — 工具调用参数完成。
-:::
 
-  :::{dropdown} 工具结果流式事件
+</Accordion>
+
+
+
+<Accordion title="工具结果流式事件">
+
 **ToolResultStartEvent** — 工具开始执行（带 `toolCallId`、`toolCallName`）。
 
     **ToolResultTextDeltaEvent** — 工具的增量文本输出；`getDelta()` 返回文本片段。
@@ -279,15 +309,23 @@ sequenceDiagram
     | `getReplyId()` | `String` | 回复消息 ID |
     | `getToolCallId()` | `String` | 对应工具调用的 ID |
     | `getState()` | `ToolResultState` | 最终状态：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING` |
-:::
 
-  :::{dropdown} 模型调用事件
+</Accordion>
+
+
+
+<Accordion title="模型调用事件">
+
 **ModelCallStartEvent** — 模型 API 调用开始（带 `modelName`）。
 
     **ModelCallEndEvent** — 模型 API 调用完成（带 `inputTokens` / `outputTokens`）。
-:::
 
-  :::{dropdown} 人工介入事件
+</Accordion>
+
+
+
+<Accordion title="人工介入事件">
+
 **RequireUserConfirmEvent** — 智能体暂停等待用户确认。
 
     | 方法 | 类型 | 说明 |
@@ -323,9 +361,13 @@ sequenceDiagram
     | 方法 | 类型 | 说明 |
     |------|------|------|
     | `getDeniedToolCalls()` | `List<ToolUseBlock>` | 被拒绝的工具调用列表 |
-:::
 
-  :::{dropdown} 子 Agent 事件
+</Accordion>
+
+
+
+<Accordion title="子 Agent 事件">
+
 **SubagentExposedEvent** — 通过 `agent_spawn(expose_to_user=true)` 生成的子 Agent 被暴露为用户可寻址的入口点。SSE / 流式消费端可据此在 UI 上渲染新的会话入口。
 
 | 方法 | 类型 | 说明 |
@@ -334,7 +376,9 @@ sequenceDiagram
 | `getAgentId()` | `String` | 子 Agent 的 agent 类型 ID |
 | `getSessionId()` | `String` | 子 Agent 的会话 ID |
 | `getLabel()` | `String` | 用户可见的标签名（可选） |
-:::
+
+</Accordion>
+
 
 ## 从事件流重建消息
 
@@ -369,9 +413,13 @@ agent.streamEvents(userMsg)
         .blockLast();
 ```
 
-:::{tip}
+
+<Tip>
+
 这种设计让部署更加灵活：后端可以通过 SSE 把事件流推给前端，前端在客户端侧重建消息。即使连接中断，从任意检查点重放事件序列也能精确恢复消息状态。
-:::
+
+</Tip>
+
 
 ### 示例：流式界面
 
@@ -404,17 +452,26 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
 
 ## 延伸阅读
 
-::::{grid} 2
 
-:::{grid-item-card} 智能体
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="智能体" href="/v2/zh/docs/building-blocks/agent">
+
 
 智能体如何在 ReAct 循环中产出事件和消息
-:::
-  :::{grid-item-card} 上下文
-:link: context.html
+
+</Card>
+
+
+<Card title="上下文" href="/v2/zh/docs/building-blocks/context">
+
 
 消息如何存储与持久化
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

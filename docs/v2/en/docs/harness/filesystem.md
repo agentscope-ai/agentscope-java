@@ -1,6 +1,7 @@
 ---
-title: "Filesystem"
-description: "Three deployment modes: local + shell / shared store / sandbox; IsolationScope dimensions; multi-user isolation; how skills and tools behave in each mode"
+title: Filesystem
+description: 'Three deployment modes: local + shell / shared store / sandbox; IsolationScope
+  dimensions; multi-user isolation; how skills and tools behave in each mode'
 ---
 
 ## Role
@@ -177,7 +178,7 @@ Main `KubernetesFilesystemSpec` options:
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
 
-When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
+When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](/v2/en/docs/harness/sandbox#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](/v2/en/docs/harness/sandbox#kubernetes-state-persistence-pvc-is-the-first-layer).
 
 #### E2B sandbox
 
@@ -523,9 +524,9 @@ Usually not needed — the three modes cover ~95% of use cases.
 
 ## Related Pages
 
-- [Sandbox](./sandbox.md) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
-- [Workspace](./workspace.md) — directory layout, loading mechanics, the "lower layer" of two-layer reads
-- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
-- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Tools](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` parameters
-- [Architecture](./architecture.md) — how filesystem and runtime context cooperate
+- [Sandbox](/v2/en/docs/harness/sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, loading mechanics, the "lower layer" of two-layer reads
+- [Context](/v2/en/docs/building-blocks/context) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
+- [Skills](/v2/en/docs/harness/skill) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Tools](/v2/en/docs/building-blocks/tool) — `read_file` / `write_file` / `execute` parameters
+- [Architecture](/v2/en/docs/harness/architecture) — how filesystem and runtime context cooperate

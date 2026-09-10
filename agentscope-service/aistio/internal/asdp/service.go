@@ -17,7 +17,9 @@ package asdp
 import (
 	"context"
 	"io"
+	"strings"
 
+	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/internal/metrics"
@@ -61,6 +63,19 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 			},
 		})
 	}
+	credential := streamCredential(stream.Context())
+	trustedWorkloadIdentity := s.server.authToken != "" && credential == s.server.authToken
+	if s.server.identityValidator != nil {
+		if err := s.server.identityValidator(stream.Context(), meta, credential, trustedWorkloadIdentity); err != nil {
+			return stream.Send(&Downstream{Payload: &Downstream_ConnectAck{ConnectAck: &ConnectResponse{
+				Accepted: false, RejectReason: "identity claim rejected",
+			}}})
+		}
+	} else if !authorizedStream(stream.Context(), s.server.authToken) {
+		return stream.Send(&Downstream{Payload: &Downstream_ConnectAck{ConnectAck: &ConnectResponse{
+			Accepted: false, RejectReason: "unauthorized",
+		}}})
+	}
 
 	resp := s.server.connectHandler.HandleConnect(stream.Context(), meta, connReq)
 	if err := stream.Send(&Downstream{
@@ -75,8 +90,12 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 	// Phase 2: Set up the connection with a writer goroutine.
 	ctx, cancel := context.WithCancel(stream.Context())
 	conn := &Connection{
-		AgentName:       meta.AgentName,
-		InstanceID:      meta.InstanceId,
+		Tenant:          meta.GetTenant(),
+		AgentID:         meta.AgentId,
+		BindingID:       meta.BindingId,
+		AgentName:       meta.AgentKey,
+		InstanceID:      meta.InstanceKey,
+		Generation:      meta.Generation,
 		Namespace:       meta.Namespace,
 		Runtime:         connReq.Runtime,
 		SDKVersion:      connReq.SdkVersion,
@@ -87,7 +106,7 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 	}
 	s.server.RegisterConnection(conn)
 	defer func() {
-		s.server.connectHandler.HandleDisconnect(meta.Namespace, meta.InstanceId)
+		s.server.connectHandler.HandleDisconnect(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey)
 		cancel()
 	}()
 
@@ -101,7 +120,7 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 					return
 				}
 				if err := stream.Send(msg); err != nil {
-					logger.Error(err, "send failed", "instance", meta.InstanceId)
+					logger.Error(err, "send failed", "instance", meta.InstanceKey)
 					metrics.RecordStreamError(meta.Namespace, "downstream")
 					cancel()
 					return
@@ -113,16 +132,16 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 	}()
 
 	// Push full config sync after handshake.
-	s.server.distributor.PushFullSync(meta.Namespace, meta.AgentName, meta.InstanceId)
+	s.server.distributor.PushFullSync(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.AgentKey, meta.InstanceKey)
 
 	// Phase 3: Recv loop — dispatch upstream messages.
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				logger.Info("stream closed by client", "instance", meta.InstanceId)
+				logger.Info("stream closed by client", "instance", meta.InstanceKey)
 			} else {
-				logger.Error(err, "recv error", "instance", meta.InstanceId)
+				logger.Error(err, "recv error", "instance", meta.InstanceKey)
 				metrics.RecordStreamError(meta.Namespace, "upstream")
 			}
 			return nil
@@ -133,78 +152,132 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 			s.handleConfigAck(meta, p.ConfigAck)
 		case *Upstream_SessionReport:
 			s.handleSessionReport(meta, p.SessionReport)
-		case *Upstream_TeamEvent:
-			s.handleTeamEvent(meta, p.TeamEvent)
+		case *Upstream_ExecutionAttempt:
+			s.handleExecutionAttempt(meta, p.ExecutionAttempt)
 		case *Upstream_EventReport:
-			s.handleEventReport(meta, p.EventReport)
+			ack := s.handleEventReport(meta, p.EventReport)
+			if err := conn.Send(&Downstream{Payload: &Downstream_EventAck{EventAck: ack}}); err != nil {
+				logger.V(1).Info("event acknowledgement failed", "instance", meta.InstanceKey, "reportId", ack.GetReportId())
+			}
 		case *Upstream_ContextReport:
 			s.handleContextReport(meta, p.ContextReport)
 		case *Upstream_Inventory:
 			s.handleInventoryReport(meta, p.Inventory)
+		case *Upstream_ConversationTurn:
+			s.handleConversationTurnReport(meta, p.ConversationTurn)
 		case *Upstream_Heartbeat:
 			if err := conn.Send(&Downstream{
 				Payload: &Downstream_Heartbeat{Heartbeat: &Heartbeat{Timestamp: p.Heartbeat.Timestamp}},
 			}); err != nil {
-				logger.V(1).Info("heartbeat response failed", "instance", meta.InstanceId)
+				logger.V(1).Info("heartbeat response failed", "instance", meta.InstanceKey)
 			}
 		default:
-			logger.Info("unknown upstream payload type", "instance", meta.InstanceId)
+			logger.Info("unknown upstream payload type", "instance", meta.InstanceKey)
 		}
 	}
+}
+
+func authorizedStream(ctx context.Context, expected string) bool {
+	if expected == "" {
+		return true
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	for _, value := range append(md.Get("authorization"), md.Get("x-builder-internal-token")...) {
+		if strings.TrimPrefix(value, "Bearer ") == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func streamCredential(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	for _, value := range append(md.Get("authorization"), md.Get("x-builder-internal-token")...) {
+		if credential := strings.TrimSpace(strings.TrimPrefix(value, "Bearer ")); credential != "" {
+			return credential
+		}
+	}
+	return ""
 }
 
 func (s *service) handleConfigAck(meta *UpstreamMeta, ack *ConfigAck) {
 	logger := log.Log.WithName("asdp-service")
 	if ack.Accepted {
 		logger.Info("config ACK received",
-			"instance", meta.InstanceId,
+			"instance", meta.InstanceKey,
 			"configType", ack.ConfigType,
 			"version", ack.Version,
 			"nonce", ack.Nonce,
 		)
-		metrics.RecordConfigPush(meta.Namespace, meta.AgentName, ack.ConfigType.String(), "ack")
+		metrics.RecordConfigPush(meta.Namespace, meta.AgentId, ack.ConfigType.String(), "ack")
 	} else {
 		logger.Info("config NACK received",
-			"instance", meta.InstanceId,
+			"instance", meta.InstanceKey,
 			"configType", ack.ConfigType,
 			"version", ack.Version,
 			"nonce", ack.Nonce,
 			"reason", ack.RejectReason,
 		)
-		metrics.RecordConfigPush(meta.Namespace, meta.AgentName, ack.ConfigType.String(), "nack")
-		metrics.RecordConfigNack(meta.Namespace, meta.AgentName, ack.ConfigType.String())
+		metrics.RecordConfigPush(meta.Namespace, meta.AgentId, ack.ConfigType.String(), "nack")
+		metrics.RecordConfigNack(meta.Namespace, meta.AgentId, ack.ConfigType.String())
 	}
 }
 
 func (s *service) handleSessionReport(meta *UpstreamMeta, report *SessionReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleSessionReport(meta.Namespace, meta.AgentName, meta.InstanceId, report)
+		s.server.eventSink.HandleSessionReport(reportIdentity(meta), report)
 	}
 }
 
-func (s *service) handleTeamEvent(meta *UpstreamMeta, report *TeamEventReport) {
+func (s *service) handleExecutionAttempt(meta *UpstreamMeta, report *ExecutionAttemptReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleTeamEventReport(meta.Namespace, meta.AgentName, report)
+		s.server.eventSink.HandleExecutionAttemptReport(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.BindingId,
+			meta.InstanceKey, meta.Generation, report)
 	}
 }
 
-func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) {
+func (s *service) handleConversationTurnReport(meta *UpstreamMeta, report *ConversationTurnReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleEventReport(meta.Namespace, meta.AgentName, meta.InstanceId, report)
+		s.server.eventSink.HandleConversationTurnReport(reportIdentity(meta), report)
 	}
+}
+
+func (s *service) handleEventReport(meta *UpstreamMeta, report *EventReport) *EventReportAck {
+	if s.server.eventSink != nil {
+		return s.server.eventSink.HandleEventReport(reportIdentity(meta), report)
+	}
+	return &EventReportAck{ReportId: report.GetReportId(), Error: "event sink unavailable"}
 }
 
 func (s *service) handleContextReport(meta *UpstreamMeta, report *ContextReport) {
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleContextReport(meta.Namespace, meta.AgentName, meta.InstanceId, report)
+		s.server.eventSink.HandleContextReport(reportIdentity(meta), report)
 	}
 }
 
 func (s *service) handleInventoryReport(meta *UpstreamMeta, report *InventoryReport) {
 	// The latest inventory is always kept in the connection registry for
 	// REST/CLI queries; the sink gets a copy for logging/metrics.
-	s.server.UpdateInventory(meta.Namespace, meta.InstanceId, report)
+	s.server.UpdateInventory(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey, report)
 	if s.server.eventSink != nil {
-		s.server.eventSink.HandleInventoryReport(meta.Namespace, meta.AgentName, meta.InstanceId, report)
+		s.server.eventSink.HandleInventoryReport(reportIdentity(meta), report)
+	}
+}
+
+func reportIdentity(meta *UpstreamMeta) ReportIdentity {
+	return ReportIdentity{
+		Tenant:             meta.GetTenant(),
+		Namespace:          meta.GetNamespace(),
+		AgentID:            meta.GetAgentId(),
+		BindingID:          meta.GetBindingId(),
+		AgentKey:           meta.GetAgentKey(),
+		InstanceKey:        meta.GetInstanceKey(),
+		InstanceGeneration: meta.GetGeneration(),
 	}
 }
