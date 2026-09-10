@@ -21,6 +21,8 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
 import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
 import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
@@ -30,7 +32,9 @@ import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -148,20 +152,32 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
     }
 
     /**
-     * Cascade-deletes snapshots associated with the session being deleted. This ensures
-     * snapshots are only reclaimed when their owning session is explicitly removed, aligned
-     * with Postgres/JDBC/Redis which have no independent snapshot expiry.
+     * Cascade-deletes the sandbox snapshot associated with the session being deleted. This
+     * ensures snapshots are only reclaimed when their owning session is explicitly removed,
+     * aligned with Postgres/JDBC/Redis which have no independent snapshot expiry.
+     *
+     * <p>Only the SESSION isolation scope is eligible for cascade cleanup, because a
+     * SESSION-scoped sandbox is tied 1:1 to the session. USER/AGENT/GLOBAL scopes share a
+     * sandbox across multiple sessions and must not be reclaimed when one session is removed.
+     *
+     * <p>This is best-effort: if the snapshot lookup or delete fails, the session is still
+     * removed and the failure is logged as a warning. A snapshot orphaned by such a failure
+     * is only reclaimed by a later explicit {@link MongoRemoteSnapshotClient#delete(String)} of
+     * the same snapshot id, since snapshots have no independent TTL.
      */
     private void cascadeDeleteSnapshots(String userId, String sessionId) {
         try {
+            String snapshotId = findSessionSnapshotId(sessionId);
+            if (snapshotId == null) {
+                return;
+            }
             MongoRemoteSnapshotClient snapshotClient =
                     new MongoRemoteSnapshotClient(
-                            mongoClient, databaseName, MongoConstants.SNAPSHOTS_COLLECTION, false);
-            long deleted = snapshotClient.deleteBySessionId(sessionId);
-            if (deleted > 0) {
+                            mongoClient, databaseName, MongoConstants.SNAPSHOTS_COLLECTION);
+            if (snapshotClient.delete(snapshotId)) {
                 log.info(
-                        "[mongo-cascade] Deleted {} snapshot(s) for session {}",
-                        deleted,
+                        "[mongo-cascade] Deleted snapshot '{}' for session {}",
+                        snapshotId,
                         sessionId);
             }
         } catch (Exception e) {
@@ -169,6 +185,65 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
                     "[mongo-cascade] Failed to cascade-delete snapshots for session {}",
                     sessionId,
                     e);
+        }
+    }
+
+    // The sandbox state is persisted by
+    // io.agentscope.harness.agent.sandbox.SessionSandboxStateStore
+    // into the same AgentStateStore, using a SESSION-scoped synthetic sessionId of the form
+    // "sandbox/session/<sessionId>" (userId null, which maps to the anonymous-user slot) and the
+    // "_sandbox_state" state key. The serialized SandboxState JSON carries the snapshot id in its
+    // snapshot.id field (discriminated by "type": "remote"). These names mirror
+    // SessionSandboxStateStore and SandboxSnapshot rather than being re-exported.
+    private static final String SANDBOX_SESSION_PREFIX = "sandbox/session/";
+    private static final String SANDBOX_STATE_KEY = "_sandbox_state";
+
+    private String findSessionSnapshotId(String sessionId) {
+        Optional<SandboxSlotView> slot =
+                agentStateStore()
+                        .get(
+                                null,
+                                SANDBOX_SESSION_PREFIX + sessionId,
+                                SANDBOX_STATE_KEY,
+                                SandboxSlotView.class);
+        if (slot.isEmpty() || slot.get().getJson() == null) {
+            return null;
+        }
+        return extractRemoteSnapshotId(slot.get().getJson());
+    }
+
+    /** State-slot view mirroring {@code SessionSandboxStateStore.SandboxStateSlot}. */
+    private static class SandboxSlotView implements State {
+        private String json;
+
+        @SuppressWarnings("unused")
+        SandboxSlotView() {}
+
+        public String getJson() {
+            return json;
+        }
+
+        public void setJson(String json) {
+            this.json = json;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String extractRemoteSnapshotId(String json) {
+        try {
+            Map<String, Object> root = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+            Object snapshot = root.get("snapshot");
+            if (!(snapshot instanceof Map<?, ?> snapMap)) {
+                return null;
+            }
+            if (!"remote".equals(snapMap.get("type"))) {
+                return null;
+            }
+            Object id = snapMap.get("id");
+            return (id instanceof String s && !s.isBlank()) ? s : null;
+        } catch (Exception e) {
+            log.warn("[mongo-cascade] Failed to parse sandbox state JSON", e);
+            return null;
         }
     }
 

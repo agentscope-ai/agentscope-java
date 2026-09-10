@@ -22,10 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoGridFSException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -39,7 +41,8 @@ import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import org.bson.BsonObjectId;
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.Binary;
@@ -109,7 +112,7 @@ class MongoRemoteSnapshotClientTest {
         when(chunksColl.withCodecRegistry(any())).thenReturn(chunksColl);
 
         MongoRemoteSnapshotClient publicClient =
-                new MongoRemoteSnapshotClient(mongoClient, "testdb", null, false);
+                new MongoRemoteSnapshotClient(mongoClient, "testdb", null);
         assertNotNull(publicClient);
     }
 
@@ -117,7 +120,7 @@ class MongoRemoteSnapshotClientTest {
     void constructorRejectsNullMongoClient() {
         assertThrows(
                 NullPointerException.class,
-                () -> new MongoRemoteSnapshotClient(null, "testdb", null, false));
+                () -> new MongoRemoteSnapshotClient(null, "testdb", null));
     }
 
     @Test
@@ -157,7 +160,7 @@ class MongoRemoteSnapshotClientTest {
     @Test
     void downloadFallsBackToLegacy() throws Exception {
         when(gridFSBucket.openDownloadStream("snap-1"))
-                .thenThrow(new com.mongodb.MongoGridFSException("File not found"));
+                .thenThrow(new MongoGridFSException("File not found"));
 
         byte[] expected = "legacy-data".getBytes(StandardCharsets.UTF_8);
         Document legacyDoc = new Document("data", new Binary(expected));
@@ -171,7 +174,7 @@ class MongoRemoteSnapshotClientTest {
     @Test
     void downloadThrowsWhenNotFoundAnywhere() {
         when(gridFSBucket.openDownloadStream("missing"))
-                .thenThrow(new com.mongodb.MongoGridFSException("File not found"));
+                .thenThrow(new MongoGridFSException("File not found"));
 
         assertThrows(FileNotFoundException.class, () -> client.download("missing"));
     }
@@ -214,11 +217,11 @@ class MongoRemoteSnapshotClientTest {
     void deleteReturnsTrueWhenDeletedFromGridFS() throws Exception {
         ObjectId fileId = new ObjectId();
         GridFSFile mockFile = mock(GridFSFile.class);
-        when(mockFile.getId()).thenReturn(new org.bson.BsonObjectId(fileId));
+        when(mockFile.getId()).thenReturn(new BsonObjectId(fileId));
         when(gridFSFindIterable.first()).thenReturn(mockFile);
 
         assertTrue(client.delete("snap-1"));
-        verify(gridFSBucket).delete((org.bson.BsonValue) any());
+        verify(gridFSBucket).delete((BsonValue) any());
     }
 
     @Test
@@ -234,35 +237,5 @@ class MongoRemoteSnapshotClientTest {
     @Test
     void deleteRejectsNullSnapshotId() {
         assertThrows(NullPointerException.class, () -> client.delete(null));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void deleteBySessionIdDeletesFromGridFS() {
-        ObjectId fileId = new ObjectId();
-        GridFSFile mockFile = mock(GridFSFile.class);
-        when(mockFile.getId()).thenReturn(new org.bson.BsonObjectId(fileId));
-        when(mockFile.getFilename()).thenReturn("snap-1");
-
-        GridFSFindIterable findIterable = mock(GridFSFindIterable.class);
-        when(gridFSBucket.find(any(Bson.class))).thenReturn(findIterable);
-        when(findIterable.into(any())).thenReturn(List.of(mockFile));
-
-        DeleteResult legacyResult = mock(DeleteResult.class);
-        when(legacyResult.getDeletedCount()).thenReturn(0L);
-        when(legacyCollection.deleteMany(any(Bson.class))).thenReturn(legacyResult);
-
-        long deleted = client.deleteBySessionId("session-1");
-        assertEquals(1L, deleted);
-        verify(gridFSBucket).delete((org.bson.BsonValue) any());
-    }
-
-    @Test
-    void deleteBySessionIdRejectsNullSessionId() {
-        assertThrows(NullPointerException.class, () -> client.deleteBySessionId(null));
-    }
-
-    private static <T> T eq(T value) {
-        return org.mockito.ArgumentMatchers.eq(value);
     }
 }

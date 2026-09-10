@@ -16,16 +16,22 @@
 package io.agentscope.extensions.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.State;
 import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
 import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
 import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
 import io.agentscope.extensions.mongodb.store.MongoBaseStore;
 import io.agentscope.extensions.mongodb.testutil.RequireDocker;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -209,19 +215,94 @@ class MongoIndexLifecycleContractTest {
     @Test
     @Order(6)
     @DisplayName("RemoteSnapshotClient: no TTL index on snapshots (aligned with siblings)")
-    void snapshotClient_noTtlIndex() {
-        new MongoRemoteSnapshotClient(client, dbName, "idx_snapshots", true);
+    void snapshotClient_noTtlIndex() throws Exception {
+        MongoRemoteSnapshotClient snapshotClient =
+                new MongoRemoteSnapshotClient(client, dbName, "idx_snapshots");
+        // Materialize the GridFS collections so their indexes can be inspected.
+        snapshotClient.upload(
+                "idx-snap", new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)));
 
-        Map<String, Document> indexes = indexMap(dbName, "idx_snapshots");
+        // GridFS stores snapshot metadata in <bucket>.files — the snapshot payload lives there,
+        // so this is the collection that must stay free of any TTL index.
+        assertFalse(
+                hasTtlIndex(dbName, "idx_snapshots.files"),
+                "GridFS files collection must NOT have any TTL index — aligned with"
+                        + " Postgres/JDBC/Redis which have no independent snapshot expiry.");
+        assertFalse(
+                hasTtlIndex(dbName, "idx_snapshots"),
+                "Legacy snapshot collection must NOT have any TTL index either.");
+    }
 
-        boolean hasTtl =
-                indexes.values().stream().anyMatch(i -> i.containsKey("expireAfterSeconds"));
-        assertEquals(
-                false,
-                hasTtl,
-                "Snapshot collection must NOT have any TTL index — aligned with Postgres/JDBC/Redis"
-                    + " which have no independent snapshot expiry. Snapshots are cleaned up only"
-                    + " via cascade delete when the session is removed.");
+    private static boolean hasTtlIndex(String database, String collection) {
+        return indexMap(database, collection).values().stream()
+                .anyMatch(i -> i.containsKey("expireAfterSeconds"));
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("Cascade: session delete removes the sandbox snapshot")
+    void snapshot_cascadeDeletedWithSession() throws Exception {
+        String cascadeDb = "test_cascade_" + System.currentTimeMillis();
+        String snapshotId = "snap-" + System.currentTimeMillis();
+
+        MongoDistributedStore store = MongoDistributedStore.create(client, cascadeDb);
+        try {
+            AgentStateStore stateStore = store.agentStateStore();
+
+            // Persist the sandbox state under a SESSION-scoped synthetic sessionId, mirroring
+            // how SessionSandboxStateStore stores the serialized SandboxState JSON.
+            String sandboxJson =
+                    "{\"type\":\"docker\",\"sessionId\":\""
+                            + snapshotId
+                            + "\",\"snapshot\":{\"type\":\"remote\",\"id\":\""
+                            + snapshotId
+                            + "\"}}";
+            stateStore.save(
+                    null,
+                    "sandbox/session/sess1",
+                    "_sandbox_state",
+                    new SandboxSlotState(sandboxJson));
+
+            // Upload the workspace snapshot via the 2-arg interface method, as production does.
+            MongoRemoteSnapshotClient snapshotClient =
+                    new MongoRemoteSnapshotClient(
+                            client, cascadeDb, MongoConstants.SNAPSHOTS_COLLECTION);
+            byte[] data = "workspace-tar".getBytes(StandardCharsets.UTF_8);
+            snapshotClient.upload(snapshotId, new ByteArrayInputStream(data));
+
+            assertTrue(snapshotClient.exists(snapshotId), "Snapshot must exist after upload");
+
+            // Delete the session — cascade cleanup must remove the snapshot.
+            stateStore.delete("user1", "sess1");
+
+            assertFalse(
+                    snapshotClient.exists(snapshotId),
+                    "Snapshot must be cascade-deleted when its owning session is removed");
+        } finally {
+            store.close();
+            client.getDatabase(cascadeDb).drop();
+        }
+    }
+
+    /** State slot shape mirroring {@code SessionSandboxStateStore.SandboxStateSlot}. */
+    private static class SandboxSlotState implements State {
+        private String json;
+        private boolean deleted;
+
+        @SuppressWarnings("unused")
+        SandboxSlotState() {}
+
+        SandboxSlotState(String json) {
+            this.json = json;
+        }
+
+        public String getJson() {
+            return json;
+        }
+
+        public boolean getDeleted() {
+            return deleted;
+        }
     }
 
     // ────────────────── Helpers ──────────────────

@@ -28,9 +28,11 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.Map;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -160,5 +162,22 @@ class MongoDistributedStoreTest {
         MongoDistributedStore store =
                 MongoDistributedStore.fromConnectionString("mongodb://localhost:27017");
         store.close();
+    }
+
+    @Test
+    void sandboxSlotViewDeserializesWithSharedCodec() throws Exception {
+        // SandboxSlotView is a private nested class deserialized reflectively by the shared
+        // JsonCodec (via MongoAgentStateStore). Verify Jackson can still instantiate it.
+        Class<?> slotClass =
+                Class.forName(
+                        "io.agentscope.extensions.mongodb.MongoDistributedStore$SandboxSlotView");
+        Object slot =
+                JsonUtils.getJsonCodec()
+                        .convertValue(
+                                Map.of(
+                                        "json",
+                                        "{\"snapshot\":{\"type\":\"remote\",\"id\":\"s1\"}}"),
+                                slotClass);
+        assertNotNull(slot);
     }
 }

@@ -39,6 +39,7 @@ import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.mongodb.MongoConstants;
 import io.agentscope.extensions.mongodb.MongoIndexUtils;
+import io.agentscope.extensions.mongodb.MongoKeyEscaper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -366,8 +367,10 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
             String userId, String sessionId, String key, State value, long expectedVersion) {
         validateStateKey(key);
         if (expectedVersion == UNVERSIONED) {
-            // Atomic upsert: write and read back the new version in a single round-trip,
-            // avoiding a save-then-find race window.
+            // Unconditional overwrite (last-writer-wins). A duplicate-key error (11000) can
+            // only occur on the very first concurrent insert of a brand-new slot — two writers
+            // upserting the same _id — so retry once; on the second attempt the document
+            // already exists and the upsert degrades to a plain update.
             Document slotId = slotId(userId, sessionId);
             String stateField = FIELD_STATES + "." + key;
             String versionField = FIELD_VERSIONS + "." + key;
@@ -381,19 +384,33 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                     Updates.combine(
                             Updates.setOnInsert(FIELD_USER_ID, normalizeUser(userId)),
                             Updates.setOnInsert(FIELD_SESSION_ID, sessionId));
-            Document result =
-                    collection.findOneAndUpdate(
-                            Filters.eq(slotId),
-                            Updates.combine(setFields, setOnInsert),
-                            new FindOneAndUpdateOptions()
-                                    .upsert(true)
-                                    .returnDocument(ReturnDocument.AFTER));
-            if (result == null) {
-                return UNVERSIONED;
+            int attempt = 0;
+            while (true) {
+                try {
+                    Document result =
+                            collection.findOneAndUpdate(
+                                    Filters.eq(slotId),
+                                    Updates.combine(setFields, setOnInsert),
+                                    new FindOneAndUpdateOptions()
+                                            .upsert(true)
+                                            .returnDocument(ReturnDocument.AFTER));
+                    if (result == null) {
+                        return UNVERSIONED;
+                    }
+                    Document versions = result.get(FIELD_VERSIONS, Document.class);
+                    Long v = versions != null ? versions.getLong(key) : null;
+                    return v != null ? v : 0L;
+                } catch (MongoWriteException e) {
+                    if (e.getError().getCode() != 11000 || attempt > 0) {
+                        throw e;
+                    }
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != 11000 || attempt > 0) {
+                        throw e;
+                    }
+                }
+                attempt++;
             }
-            Document versions = result.get(FIELD_VERSIONS, Document.class);
-            Long v = versions != null ? versions.getLong(key) : null;
-            return v != null ? v : 0L;
         }
 
         Document slotId = slotId(userId, sessionId);
@@ -550,7 +567,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     @SuppressWarnings("unchecked")
     private Document toDocument(State value) {
         Map<String, Object> map = JsonUtils.getJsonCodec().convertValue(value, Map.class);
-        return new Document(map);
+        return new Document(MongoKeyEscaper.escape(map == null ? Map.of() : map));
     }
 
     private List<Document> toDocumentList(List<? extends State> values) {
@@ -565,7 +582,11 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         if (fieldValue == null) {
             return null;
         }
-        return JsonUtils.getJsonCodec().convertValue(fieldValue, type);
+        Object unescaped = fieldValue;
+        if (fieldValue instanceof Document doc) {
+            unescaped = MongoKeyEscaper.unescape(doc);
+        }
+        return JsonUtils.getJsonCodec().convertValue(unescaped, type);
     }
 
     private static UpdateOptions upsert() {
@@ -647,6 +668,9 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
          * @return this builder
          */
         public Builder ttlDays(Integer ttlDays) {
+            if (ttlDays != null && ttlDays <= 0) {
+                throw new IllegalArgumentException("ttlDays must be positive or null");
+            }
             this.ttlDays = ttlDays;
             return this;
         }

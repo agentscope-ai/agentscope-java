@@ -27,10 +27,10 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 public class MongoSnapshotSpec extends RemoteSnapshotSpec {
 
     public MongoSnapshotSpec(MongoClient mongoClient, String databaseName) {
-        super(new MongoRemoteSnapshotClient(mongoClient, databaseName, null, true));
+        super(new MongoRemoteSnapshotClient(mongoClient, databaseName, null));
     }
 
     public MongoSnapshotSpec(MongoClient mongoClient, String databaseName, String collectionName) {
-        super(new MongoRemoteSnapshotClient(mongoClient, databaseName, collectionName, true));
+        super(new MongoRemoteSnapshotClient(mongoClient, databaseName, collectionName));
     }
 }

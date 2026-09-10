@@ -15,9 +15,7 @@
  */
 package io.agentscope.extensions.mongodb.store;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -30,11 +28,13 @@ import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.mongodb.MongoIndexUtils;
+import io.agentscope.extensions.mongodb.MongoKeyEscaper;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,7 +51,7 @@ import org.bson.conversions.Bson;
  * compound index — consistent with {@code PostgresBaseStore} and {@code JdbcStore}.
  *
  * <p>Supports optimistic concurrency via a {@code version} field. Value serialization uses
- * {@link ObjectMapper#convertValue} to avoid an intermediate JSON string round-trip.
+ * {@link JsonCodec#convertValue} to avoid an intermediate JSON string round-trip.
  */
 public class MongoBaseStore implements BaseStore {
 
@@ -66,31 +66,30 @@ public class MongoBaseStore implements BaseStore {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final MongoCollection<Document> collection;
-    private final ObjectMapper objectMapper;
+    private final JsonCodec codec;
 
     /**
-     * Creates a new instance.
+     * Creates a new instance using the shared {@link JsonUtils#getJsonCodec()}.
      *
      * @param database       the MongoDB database
      * @param collectionName the collection name
      */
     public MongoBaseStore(MongoDatabase database, String collectionName) {
-        this(database, collectionName, new ObjectMapper());
+        this(database, collectionName, JsonUtils.getJsonCodec());
     }
 
     /**
-     * Creates a new instance with a custom ObjectMapper.
+     * Creates a new instance with a custom {@link JsonCodec}.
      *
      * @param database       the MongoDB database
      * @param collectionName the collection name
-     * @param objectMapper   Jackson mapper for serializing values
+     * @param codec          JSON codec for serializing values
      */
-    public MongoBaseStore(
-            MongoDatabase database, String collectionName, ObjectMapper objectMapper) {
+    public MongoBaseStore(MongoDatabase database, String collectionName, JsonCodec codec) {
         Objects.requireNonNull(database, "database");
         Objects.requireNonNull(collectionName, "collectionName");
         this.collection = database.getCollection(collectionName);
-        this.objectMapper = objectMapper;
+        this.codec = codec;
         ensureIndexes();
     }
 
@@ -273,150 +272,22 @@ public class MongoBaseStore implements BaseStore {
         return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
     private Document toDocument(Map<String, Object> value) {
-        Map<String, Object> map =
-                objectMapper.convertValue(value == null ? Map.of() : value, MAP_TYPE);
-        return new Document(escapeKeys(map));
+        Map<String, Object> map = codec.convertValue(value == null ? Map.of() : value, MAP_TYPE);
+        return new Document(MongoKeyEscaper.escape(map));
     }
 
     private Map<String, Object> parseValue(Object raw) {
         if (raw instanceof Document doc) {
-            return unescapeKeys(new LinkedHashMap<>(doc));
+            return MongoKeyEscaper.unescape(doc);
         }
         if (raw instanceof String s) {
-            try {
-                Map<String, Object> parsed = objectMapper.readValue(s, MAP_TYPE);
-                return parsed != null ? parsed : Map.of();
-            } catch (JsonProcessingException e) {
-                throw new IllegalStateException("Failed to decode store value", e);
-            }
+            Map<String, Object> parsed = codec.fromJson(s, MAP_TYPE);
+            return parsed != null ? parsed : Map.of();
         }
         throw new IllegalStateException(
                 "Unexpected store value type: "
                         + (raw == null ? "null" : raw.getClass().getName()));
-    }
-
-    // ────────────────── Key escaping for MongoDB field names ──────────────────
-    // MongoDB rejects '.' and '$' in field names. We use backslash-prefix encoding on write
-    // and restore on read, so callers are not restricted by MongoDB naming rules.
-    // Backslash itself is also escaped (\\) to guarantee round-trip safety: no original key
-    // can produce a false positive because validateKey() forbids backslash in keys.
-    private static final char ESCAPE_PREFIX = (char) 0x5C; // backslash
-    private static final char DOT_CODE = 'E';
-    private static final char DOLLAR_CODE = '$';
-    private static final char BACKSLASH_CODE = (char) 0x5C;
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> escapeKeys(Map<String, Object> map) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            String escaped = escapeKey(key);
-            if (value instanceof Map<?, ?> nested) {
-                result.put(escaped, escapeKeys((Map<String, Object>) nested));
-            } else if (value instanceof List<?> list) {
-                result.put(escaped, escapeListItems(list));
-            } else {
-                result.put(escaped, value);
-            }
-        }
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Object> escapeListItems(List<?> list) {
-        List<Object> result = new ArrayList<>(list.size());
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> nested) {
-                result.add(escapeKeys((Map<String, Object>) nested));
-            } else if (item instanceof List<?> nestedList) {
-                result.add(escapeListItems(nestedList));
-            } else {
-                result.add(item);
-            }
-        }
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> unescapeKeys(Map<String, Object> map) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            String unescaped = unescapeKey(key);
-            if (value instanceof Map<?, ?> nested) {
-                result.put(unescaped, unescapeKeys((Map<String, Object>) nested));
-            } else if (value instanceof List<?> list) {
-                result.put(unescaped, unescapeListItems(list));
-            } else {
-                result.put(unescaped, value);
-            }
-        }
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Object> unescapeListItems(List<?> list) {
-        List<Object> result = new ArrayList<>(list.size());
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> nested) {
-                result.add(unescapeKeys((Map<String, Object>) nested));
-            } else if (item instanceof List<?> nestedList) {
-                result.add(unescapeListItems(nestedList));
-            } else {
-                result.add(item);
-            }
-        }
-        return result;
-    }
-
-    private static String escapeKey(String key) {
-        if (key.indexOf('.') < 0 && key.indexOf('$') < 0 && key.indexOf(ESCAPE_PREFIX) < 0) {
-            return key;
-        }
-        StringBuilder sb = new StringBuilder(key.length() + 4);
-        for (int i = 0; i < key.length(); i++) {
-            char c = key.charAt(i);
-            if (c == '.') {
-                sb.append(ESCAPE_PREFIX).append(DOT_CODE);
-            } else if (c == '$') {
-                sb.append(ESCAPE_PREFIX).append(DOLLAR_CODE);
-            } else if (c == ESCAPE_PREFIX) {
-                sb.append(ESCAPE_PREFIX).append(BACKSLASH_CODE);
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
-    }
-
-    private static String unescapeKey(String key) {
-        if (key.indexOf(ESCAPE_PREFIX) < 0) {
-            return key;
-        }
-        StringBuilder sb = new StringBuilder(key.length());
-        for (int i = 0; i < key.length(); i++) {
-            char c = key.charAt(i);
-            if (c == ESCAPE_PREFIX && i + 1 < key.length()) {
-                char next = key.charAt(i + 1);
-                if (next == DOT_CODE) {
-                    sb.append('.');
-                } else if (next == DOLLAR_CODE) {
-                    sb.append('$');
-                } else if (next == BACKSLASH_CODE) {
-                    sb.append(ESCAPE_PREFIX);
-                } else {
-                    sb.append(c).append(next);
-                }
-                i++;
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 
     private static UpdateOptions upsert() {

@@ -43,7 +43,9 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.bson.BsonDocument;
@@ -61,6 +63,25 @@ import org.mockito.MockitoAnnotations;
 class MongoAgentStateStoreTest {
 
     record TestState(String value) implements State {}
+
+    static class TestMapState implements State {
+        private Map<String, Object> attributes;
+
+        @SuppressWarnings("unused")
+        TestMapState() {}
+
+        TestMapState(Map<String, Object> attributes) {
+            this.attributes = attributes;
+        }
+
+        public Map<String, Object> getAttributes() {
+            return attributes;
+        }
+
+        public void setAttributes(Map<String, Object> attributes) {
+            this.attributes = attributes;
+        }
+    }
 
     @Mock private MongoClient mongoClient;
     @Mock private MongoDatabase mongoDatabase;
@@ -344,6 +365,28 @@ class MongoAgentStateStoreTest {
     }
 
     @Test
+    void saveIfVersionUnversionedRetriesOnDuplicateKey() {
+        // First upsert hits a concurrent first-insert duplicate key; the retry succeeds as an
+        // update because the document now exists, returning the new version.
+        WriteError writeError =
+                new WriteError(11000, "E11000 duplicate key error", new BsonDocument());
+        Document result = new Document("versions", new Document("key", 42L));
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenThrow(new MongoWriteException(writeError, new ServerAddress()))
+                .thenReturn(result);
+
+        long version =
+                store.saveIfVersion(
+                        "user", "session", "key", new TestState("v"), AgentStateStore.UNVERSIONED);
+
+        assertEquals(42L, version);
+        verify(collection, Mockito.times(2))
+                .findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class));
+    }
+
+    @Test
     void saveIfVersionReturnsNewVersionOnCasSuccess() {
         // findOneAndUpdate returns doc with incremented version
         Document result = new Document("versions", new Document("key", 3L));
@@ -441,6 +484,32 @@ class MongoAgentStateStoreTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> store.save("user", "session", "$bad", new TestState("v")));
+    }
+
+    @Test
+    void saveEscapesDotsInValueMapKeys() {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("a.b", "val");
+        store.save("user", "session", "key", new TestMapState(attributes));
+
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).updateOne(any(Bson.class), updateCaptor.capture(), any());
+
+        String rendered = updateCaptor.getValue().toString();
+        // "a.b" → "a\Eb" (dot replaced by backslash + E)
+        assertTrue(rendered.contains("a\\Eb"), "dot in value key must be escaped: " + rendered);
+        assertFalse(rendered.contains("a.b"), "raw dot must not leak into the document");
+    }
+
+    @Test
+    void getUnescapesValueMapKeys() {
+        Document escapedValue = new Document("attributes", new Document("a\\Eb", "hello"));
+        Document doc = new Document("states", new Document("key", escapedValue));
+        when(findIterable.first()).thenReturn(doc);
+
+        Optional<TestMapState> result = store.get("user", "session", "key", TestMapState.class);
+        assertTrue(result.isPresent());
+        assertEquals("hello", result.get().getAttributes().get("a.b"));
     }
 
     @Test

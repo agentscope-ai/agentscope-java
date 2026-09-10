@@ -30,9 +30,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Objects;
 import org.bson.Document;
 import org.bson.types.Binary;
@@ -47,8 +45,9 @@ import org.slf4j.LoggerFactory;
  * that constrains single-document Binary storage.
  *
  * <p>Snapshots have no independent TTL — aligned with Postgres/JDBC/Redis which retain
- * snapshots indefinitely. Snapshots are cleaned up only via {@link #deleteBySessionId(String)}
- * when the owning session is explicitly deleted (cascade cleanup).
+ * snapshots indefinitely. A snapshot is reclaimed only by {@link #delete(String)} when the
+ * owning session is explicitly deleted (cascade cleanup driven by {@code
+ * MongoDistributedStore}).
  *
  * <p>For backward compatibility, {@link #download} and {@link #exists} fall back to reading
  * from the legacy single-document collection if the file is not found in GridFS.
@@ -57,10 +56,8 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     private static final Logger log = LoggerFactory.getLogger(MongoRemoteSnapshotClient.class);
 
-    private static final String META_SESSION_ID = "sessionId";
     private static final String META_CREATED_AT = "createdAt";
     private static final String LEGACY_FIELD_DATA = "data";
-    private static final String LEGACY_FIELD_SESSION_ID = "sessionId";
     private static final String GRIDFS_FIELD_FILENAME = "filename";
 
     private final GridFSBucket gridFSBucket;
@@ -71,10 +68,7 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     private final String legacyCollectionName;
 
     public MongoRemoteSnapshotClient(
-            MongoClient mongoClient,
-            String databaseName,
-            String collectionName,
-            boolean initializeSchema) {
+            MongoClient mongoClient, String databaseName, String collectionName) {
         Objects.requireNonNull(mongoClient, "mongoClient");
         this.legacyCollectionName =
                 collectionName != null ? collectionName : MongoConstants.SNAPSHOTS_COLLECTION;
@@ -97,19 +91,6 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
 
     @Override
     public void upload(String snapshotId, InputStream data) throws Exception {
-        upload(snapshotId, data, null);
-    }
-
-    /**
-     * Uploads a snapshot to GridFS with an optional session association. When {@code sessionId}
-     * is non-null, it is stored as GridFS metadata so that {@link #deleteBySessionId(String)}
-     * can cascade-delete all snapshots for a given session.
-     *
-     * @param snapshotId the snapshot identifier (used as GridFS filename)
-     * @param data the snapshot data stream
-     * @param sessionId optional session identifier for cascade cleanup
-     */
-    public void upload(String snapshotId, InputStream data, String sessionId) throws Exception {
         Objects.requireNonNull(snapshotId, "snapshotId");
         Objects.requireNonNull(data, "data");
 
@@ -117,9 +98,6 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         deleteIfExists(snapshotId);
 
         Document metadata = new Document(META_CREATED_AT, new Date());
-        if (sessionId != null) {
-            metadata.append(META_SESSION_ID, sessionId);
-        }
         GridFSUploadOptions options = new GridFSUploadOptions().metadata(metadata);
         gridFSBucket.uploadFromStream(snapshotId, data, options);
     }
@@ -166,46 +144,18 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         return true;
     }
 
-    /**
-     * Deletes all snapshots associated with the given session. Used for cascade cleanup when
-     * a session is deleted. Searches both GridFS metadata and legacy documents.
-     *
-     * @param sessionId the session identifier
-     * @return the number of snapshots deleted
-     */
-    public long deleteBySessionId(String sessionId) {
-        Objects.requireNonNull(sessionId, "sessionId");
-        long count = 0;
-        // Delete from GridFS by metadata.
-        List<GridFSFile> files =
-                gridFSBucket
-                        .find(Filters.eq("metadata." + META_SESSION_ID, sessionId))
-                        .into(new ArrayList<>());
-        for (GridFSFile file : files) {
-            try {
-                gridFSBucket.delete(file.getId());
-                count++;
-            } catch (Exception e) {
-                log.warn(
-                        "[mongo-snapshot] Failed to delete GridFS file '{}' for session {}",
-                        file.getFilename(),
-                        sessionId,
-                        e);
-            }
-        }
-        // Also clean up legacy documents.
-        count +=
-                legacyCollection
-                        .deleteMany(Filters.eq(LEGACY_FIELD_SESSION_ID, sessionId))
-                        .getDeletedCount();
-        return count;
-    }
-
     private void deleteIfExists(String snapshotId) {
         GridFSFile existing =
                 gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
-        if (existing != null) {
+        if (existing == null) {
+            return;
+        }
+        try {
             gridFSBucket.delete(existing.getId());
+        } catch (MongoGridFSException e) {
+            // Another concurrent upload may have already deleted this file between our
+            // find() and delete() — safe to ignore; the end state is the same.
+            log.debug("[mongo-snapshot] Concurrent delete of '{}', proceeding", snapshotId);
         }
     }
 
