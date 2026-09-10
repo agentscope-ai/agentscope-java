@@ -268,6 +268,63 @@ class JdbcAgentStateStoreH2Test {
     }
 
     @Test
+    @DisplayName("saveIfVersion with UNVERSIONED unconditionally overwrites and bumps version")
+    void saveIfVersionUnconditionalOverwrite() {
+        store.save("user1", "s1", "agent_state", new TestState("v1"));
+        assertEquals(
+                1L, store.getVersioned("user1", "s1", "agent_state", TestState.class).version());
+
+        long newVersion =
+                store.saveIfVersion(
+                        "user1",
+                        "s1",
+                        "agent_state",
+                        new TestState("v2"),
+                        AgentStateStore.UNVERSIONED);
+        assertEquals(2L, newVersion);
+
+        VersionedState<TestState> loaded =
+                store.getVersioned("user1", "s1", "agent_state", TestState.class);
+        assertEquals("v2", loaded.value().value());
+        assertEquals(2L, loaded.version());
+    }
+
+    @Test
+    @DisplayName("saveIfVersion with UNVERSIONED does not deserialize into the State interface")
+    void saveIfVersionUnconditionalDoesNotDeserializeStateInterface() {
+        // Regression: the UNVERSIONED path must not read state back as State.class, because State
+        // is a marker interface that Jackson cannot instantiate (InvalidDefinitionException).
+        store.save("user1", "s1", "agent_state", new TestState("first"));
+
+        long newVersion =
+                store.saveIfVersion(
+                        "user1",
+                        "s1",
+                        "agent_state",
+                        new TestState("second"),
+                        AgentStateStore.UNVERSIONED);
+        assertEquals(2L, newVersion);
+
+        assertEquals(
+                "second",
+                store.get("user1", "s1", "agent_state", TestState.class).orElseThrow().value());
+    }
+
+    @Test
+    @DisplayName("saveIfVersion with UNVERSIONED on absent key creates row and returns version 1")
+    void saveIfVersionUnconditionalAbsentKeyReturnsOne() {
+        // save() creates the row (version 1), then readVersion returns it.
+        long version =
+                store.saveIfVersion(
+                        "user1",
+                        "s1",
+                        "absent_key",
+                        new TestState("v"),
+                        AgentStateStore.UNVERSIONED);
+        assertEquals(1L, version);
+    }
+
+    @Test
     @DisplayName("saveIfVersion with a stale expectedVersion rejects the write")
     void saveIfVersionStaleVersionRejected() {
         store.save("user1", "s1", "agent_state", new TestState("one"));
