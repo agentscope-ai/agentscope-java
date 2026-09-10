@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: AgentScope Java 1.1 · Harness
 ---
-
-# 首个Harness Framework发布 -- 把OpenClaw的「持续进化」体验，装进企业级的安全边界。
 
 书接上回，我在之前的一篇文章中深入分析了 OpenClaw 及其背后的 Harness Engineering 实践，同时构想了一套 “Harness Framework” 来讲解如何将这套理念应用到企业级智能体开发中。
 
@@ -44,7 +42,7 @@ Harness 为每个 Agent 引入了 **workspace 工作空间**的概念——一�
 
 实际运行中，每次推理开始前，`WorkspaceContextHook` 会把 `AGENTS.md`、`MEMORY.md`、`knowledge/` 等关键文件自动注入到 system prompt 里，确保 Agent 的人格和知识在每一轮都完整呈现。Agent 运行结束后，`MemoryFlushHook` 会提炼本次对话的新事实写入记忆文件，后台的 `MemoryConsolidator` 再周期性地把流水账合并成精炼的长期记忆。工作区在对话中持续演化，每一次运行都比上一次"更了解"用户和任务。
 
-<!-- 这是一张图片，ocr 内容为： -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1777338565508-2d485103-d3b6-4c8f-830b-7ee6e783cda3.png)
 
 ### 核心支柱二：AbstractFilesystem 让工作区可以运行在任何环境
@@ -52,7 +50,7 @@ Harness 为每个 Agent 引入了 **workspace 工作空间**的概念——一�
 
 AgentScope Harness 用 **AbstractFilesystem** 抽象层来解决这个问题。对上层而言，Agent 只需要调用统一的 `read/write/ls/grep` 等接口，不关心"文件"实际落在哪；对下层而言，可以适配到本机磁盘、远端对象存储（OSS）、KV 数据库（Redis）、沙箱文件系统等任意介质，甚至通过 `CompositeFilesystem` 把不同路径路由到不同后端。
 
-<!-- 这是一张图片，ocr 内容为：ABSTRACTFILESYTEM 继承 继承 继承 继承 继承 SANDBOXFILESYSTEM REMOTEFILESYSTEM LOCALFILESYSTEM LOCALFILESYSTEMWITHSHELL COMPOSITEFILESYSTEM -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218615934-eec5c4c7-4a9c-44c2-84cb-56688f64d7f0.png)
 
 如上图所示，基于 AbstractFilesystem 接口，AgentScope 内置提供了三种拓展实现，对应三种使用模式。
@@ -62,7 +60,7 @@ AgentScope Harness 用 **AbstractFilesystem** 抽象层来解决这个问题。�
 
 在 AgentScope 1.1 版本中，workspace 是 agent 的核心抽象，我们 AbstractFilesystem 作为 workspace 的物理实现载体，所有文件操作、命令执行、记忆管理工具都以 AbstractFilesystem 为标准操作入口。
 
-<!-- 这是一张图片，ocr 内容为：FILESYSTEMTOOL SHELLEXECUTETOOL MEMORY 命令 记忆 读写 搜索 执行 管理 WORKSPACE BASED ON ABSTRACTFILESYSTEM -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218989236-658ff65d-94ae-42e6-a004-4fe7b223a52a.png)
 
 
@@ -345,9 +343,8 @@ Skills 是把"可复用的操作流程"结构化的方式。在工作区的 `ski
 ## 总结
 AgentScope Java 1.1 把 Harness Engineering 里大家最想要、却最难自己拼装的一组能力，收敛成了 `HarnessAgent`** + 工作区约定 + 可插拔文件系统 + Hook 管线`**：个人场景下，它是“带记忆、带压缩、带子任务”的加强版 ReAct Agent；企业场景下，它是能把**隔离、多租户、分布式记忆与子 Agent 编排**变成配置项的基础设施。
 
-若你正在评估从个人助手原型演进到可上线的企业智能体，建议从 [Harness 概览](../overview.md) 的快速开始跑通，再按 [Filesystem](../filesystem.md) 选择一种声明式模式，然后按需打开压缩、沙箱与子 Agent——每一步都有对应文档与示例模块可对照，而不必从零发明一套“工作区即真理”的运行时。
+若你正在评估从个人助手原型演进到可上线的企业智能体，建议从 [Harness 概览](/v1/zh/docs/harness/overview) 的快速开始跑通，再按 [Filesystem](/v1/zh/docs/harness/filesystem) 选择一种声明式模式，然后按需打开压缩、沙箱与子 Agent——每一步都有对应文档与示例模块可对照，而不必从零发明一套“工作区即真理”的运行时。
 
 
 
 ![画板](https://intranetproxy.alipay.com/skylark/lark/0/2026/jpeg/54037/1778221664765-d534ffa1-1649-4444-ad8c-046c936e40e7.jpeg)
-

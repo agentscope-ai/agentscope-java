@@ -1,4 +1,6 @@
-# Core concepts
+---
+title: Core concepts
+---
 
 Separate access scope, reusable resources and execution location before interpreting tasks and execution records.
 
@@ -18,7 +20,7 @@ Separate access scope, reusable resources and execution location before interpre
 
 ## How work flows
 
-```{mermaid}
+```mermaid
 flowchart LR
     A[Person or external event] --> B[Issue / Session]
     B --> C[AgentTask / execution request]
@@ -29,4 +31,4 @@ flowchart LR
 
 An idle Session, a successful Attempt and an accepted Issue describe different outcomes. After an Agent responds, inspect its deliverables and the Issue review state.
 
-Choose your path: [Managed Agents](agents.md), [Runtime Host](runtime-host.md) or [Application integration](integrations.md).
+Choose your path: [Managed Agents](/v2/en/service/agents), [Runtime Host](/v2/en/service/runtime-host) or [Application integration](/v2/en/service/integrations).

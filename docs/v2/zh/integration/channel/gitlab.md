@@ -1,4 +1,6 @@
-# GitLab Channel
+---
+title: GitLab Channel
+---
 
 `agentscope-extensions-channel-gitlab` 将你的 Agent 接入 GitLab 评论（Note）hook。当有人在 issue 或 merge request 中评论时，Agent 以新 note 的形式回复。
 

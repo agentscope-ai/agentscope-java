@@ -1,4 +1,6 @@
-# 可观测与调试
+---
+title: 可观测与调试
+---
 
 AgentScope Java 提供了多种机制来观测和调试智能体的执行过程：
 
@@ -38,7 +40,7 @@ npm安装
 npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
-Studio 将运行在 http://localhost:5173（前端开发服务器）
+Studio 将运行在 `http://localhost:5173`（前端开发服务器）
 ![Studio Server 页面](/imgs/studioServer.png)
 
 
@@ -325,4 +327,4 @@ TracerRegistry.register(
 
 - **Studio 完整示例**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio 仓库**: https://github.com/agentscope-ai/agentscope-studio
-- **Hook 文档**: [hook.md](./hook.md)
+- **Hook 文档**: [hook.md](/v1/zh/docs/task/hook)

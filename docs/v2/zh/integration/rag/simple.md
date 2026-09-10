@@ -1,4 +1,6 @@
-# Simple Knowledge
+---
+title: Simple
+---
 
 `agentscope-extensions-rag-simple` 提供一个"自己掌控全部链路"的 RAG 实现：自带文档读取器、分块策略、Embedding 模型适配、以及 5 个开箱即用的向量库适配器。
 

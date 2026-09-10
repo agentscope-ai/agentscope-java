@@ -1,63 +1,9 @@
-/* ================================================================
-   AgentScope Java — Homepage styles
-   Scoped under .agentscope-landing and body.agentscope-home
-   All colors via Furo CSS variables for automatic light/dark mode
-   ================================================================ */
-
-/* ----- Full-width layout on home page ----- */
-body.agentscope-home .sidebar-drawer {
-  display: none !important;
-}
-
-body.agentscope-home .toc-drawer {
-  display: none !important;
-}
-
-body.agentscope-home {
-  --sidebar-width: 0 !important;
-}
-
-/* Furo keeps a multi-column page grid even if drawers are hidden.
-   Force a single-column layout on homepage only. */
-body.agentscope-home .page {
-  display: block !important;
-}
-
-body.agentscope-home .main,
-body.agentscope-home .content {
-  width: 100% !important;
-  max-width: none !important;
-  min-width: 0 !important;
-}
-
-body.agentscope-home .article-container {
-  width: min(100%, 1320px) !important;
-  max-width: 1320px !important;
-  padding-left: clamp(16px, 4vw, 40px) !important;
-  padding-right: clamp(16px, 4vw, 40px) !important;
-  margin: 0 auto !important;
-}
-
-body.agentscope-home #furo-main-content {
-  padding-top: 16px !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-/* Hide per-page action icons on homepage hero */
-body.agentscope-home .content-icon-container {
-  display: none !important;
-}
-
-/* ================================================================
-   Landing wrapper
-   ================================================================ */
 .agentscope-landing {
-  --hs-fg: var(--color-foreground-primary);
-  --hs-muted: var(--color-foreground-secondary);
-  --hs-surface: var(--color-background-secondary);
-  --hs-border: var(--color-background-border);
-  --hs-accent: var(--color-brand-primary);
+  --hs-fg: #172033;
+  --hs-muted: #566178;
+  --hs-surface: #f5f7fb;
+  --hs-border: #dce3ee;
+  --hs-accent: #0064fd;
   --hs-code-bg: #0f172a;
   --hs-code-fg: #e2e8f0;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', ui-monospace, monospace;
@@ -232,64 +178,18 @@ body.agentscope-home .content-icon-container {
 
 .hs-tab.active {
   color: var(--hs-fg);
-  background: var(--color-background-primary);
+  background: var(--hs-background, #ffffff);
   border: 1px solid var(--hs-border);
 }
 
-/* ----- Code panels ----- */
-.hs-code-panel {
-  padding: 20px 22px;
-  font-family: var(--font-mono);
-  font-size: clamp(0.74rem, 0.95vw, 0.85rem);
-  line-height: 1.65;
-  background: var(--hs-code-bg);
-  color: var(--hs-code-fg);
-  overflow-x: auto;
-  /* Force horizontal scrollbar to be visible on macOS/iOS where the OS
-     hides it when not actively scrolling — without this, users on long
-     code lines see clipped text with no visual cue that scroll exists. */
-  scrollbar-width: thin;                  /* Firefox */
-  scrollbar-color: var(--hs-border) transparent;
+/* Native Mintlify code blocks own highlighting, copying and scrolling. */
+.agentscope-landing .hs-code-panel {
+  padding: 0;
+  min-width: 0;
+  text-align: left;
+  background: var(--hs-background, #ffffff);
 }
-.hs-code-panel::-webkit-scrollbar {
-  height: 8px;
-}
-.hs-code-panel::-webkit-scrollbar-thumb {
-  background: var(--hs-border);
-  border-radius: 4px;
-}
-.hs-code-panel::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.hs-code-panel pre {
-  margin: 0 !important;
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  font-family: inherit !important;
-  font-size: inherit !important;
-  line-height: inherit !important;
-  color: inherit !important;
-}
-
-.hs-code-panel pre > code,
-.hs-code-panel code {
-  padding: 0 !important;
-  background: transparent !important;
-  font-size: inherit !important;
-  border-radius: 0 !important;
-}
-
-/* syntax colors */
-.kw { color: #c678dd; }
-.fn { color: #61afef; }
-.str { color: #98c379; }
-.cm { color: #5c6370; font-style: italic; }
-.ty { color: #e5c07b; }
-.num { color: #d19a66; }
+.agentscope-landing .hs-code-panel pre { text-align: left; }
 
 /* ----- Install bar ----- */
 .hs-install {
@@ -305,7 +205,7 @@ body.agentscope-home .content-icon-container {
   font-family: var(--font-mono) !important;
   font-size: 0.78rem !important;
   color: var(--hs-fg) !important;
-  background: var(--color-background-primary) !important;
+  background: var(--hs-background, #ffffff) !important;
   border: 1px solid var(--hs-border) !important;
   border-radius: 5px !important;
   padding: 4px 10px !important;
@@ -554,7 +454,7 @@ body.agentscope-home .content-icon-container {
   border: 1px solid var(--hs-border);
   border-radius: 999px;
   color: var(--hs-fg);
-  background: color-mix(in srgb, var(--color-background-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--hs-background, #ffffff) 70%, transparent);
   white-space: nowrap;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
@@ -996,3 +896,12 @@ body.agentscope-home .content-icon-container {
   max-width: 100%;
   min-width: 0;
 }
+
+.dark .agentscope-landing { --hs-fg: #edf2ff; --hs-muted: #a7b3ca; --hs-surface: #151d2e; --hs-border: #2b3850; --hs-accent: #60a5fa; }
+.agentscope-landing .hs-tab { cursor: pointer; }
+.agentscope-landing pre { white-space: pre; overflow-x: auto; }
+
+.dark .agentscope-landing { --hs-background: #0b1120; }
+
+.agentscope-landing { padding: 0 clamp(16px, 3vw, 40px); }
+.agentscope-landing .hs-window { margin-inline: auto; }

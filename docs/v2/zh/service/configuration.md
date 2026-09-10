@@ -1,4 +1,6 @@
-# 配置参考
+---
+title: 配置参考
+---
 
 Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通过 Chart values 配置入口与存储。
 
@@ -29,4 +31,4 @@ Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通�
 
 ## 版本与迁移
 
-当前 Dataplane/Scheduler 默认使用 Hibernate `update`，Go 在启动时执行迁移。没有完成独立版本化 SQL 迁移前，不应直接把 `BUILDER_JPA_DDL_AUTO` 改成 `validate` 并期待新数据库自动初始化。升级前按[运维指南](operations.md)备份和演练。
+当前 Dataplane/Scheduler 默认使用 Hibernate `update`，Go 在启动时执行迁移。没有完成独立版本化 SQL 迁移前，不应直接把 `BUILDER_JPA_DDL_AUTO` 改成 `validate` 并期待新数据库自动初始化。升级前按[运维指南](/v2/zh/service/operations)备份和演练。

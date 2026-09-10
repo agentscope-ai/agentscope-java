@@ -1,4 +1,6 @@
-# AG-UI Protocol Integration
+---
+title: AG-UI Protocol
+---
 
 AG-UI is a frontend-backend communication protocol for exposing agents to web frontends. With AG-UI, you can quickly integrate AgentScope agents with compatible frontend frameworks.
 
