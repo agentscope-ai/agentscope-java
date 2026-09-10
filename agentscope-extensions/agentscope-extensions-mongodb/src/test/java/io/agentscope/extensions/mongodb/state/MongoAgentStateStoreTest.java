@@ -162,6 +162,19 @@ class MongoAgentStateStoreTest {
     }
 
     @Test
+    void ttlDaysRejectsNonPositive() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MongoAgentStateStore.builder()
+                                .mongoClient(mongoClient)
+                                .databaseName("testdb")
+                                .collectionName("test_sessions")
+                                .ttlDays(0)
+                                .build());
+    }
+
+    @Test
     void builderWithMongoClientCreatesStore() {
         assertNotNull(store);
     }

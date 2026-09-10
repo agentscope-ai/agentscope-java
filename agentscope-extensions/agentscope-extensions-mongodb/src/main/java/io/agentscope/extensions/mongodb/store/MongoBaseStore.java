@@ -123,7 +123,22 @@ public class MongoBaseStore implements BaseStore {
                         Updates.setOnInsert(FIELD_ID, id),
                         Updates.setOnInsert(FIELD_KEY, key),
                         Updates.setOnInsert(FIELD_NAMESPACE, nsKey));
-        collection.updateOne(Filters.eq(id), Updates.combine(setFields, setOnInsert), upsert());
+        // A duplicate-key error (11000) can only occur on the very first concurrent insert of a
+        // brand-new item — two writers upserting the same _id — so retry once; on the second
+        // attempt the document already exists and the upsert degrades to a plain update.
+        int attempt = 0;
+        while (true) {
+            try {
+                collection.updateOne(
+                        Filters.eq(id), Updates.combine(setFields, setOnInsert), upsert());
+                return;
+            } catch (MongoWriteException e) {
+                if (e.getError().getCode() != 11000 || attempt > 0) {
+                    throw e;
+                }
+            }
+            attempt++;
+        }
     }
 
     @Override

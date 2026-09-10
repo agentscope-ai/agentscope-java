@@ -28,6 +28,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -134,6 +135,21 @@ class MongoBaseStoreTest {
     void putStoresItem() {
         store.put(List.of("ns"), "key", Map.of("data", "value"));
         verify(collection).updateOne(any(Bson.class), any(Bson.class), any());
+    }
+
+    @Test
+    void putRetriesOnDuplicateKey() {
+        // First upsert hits a concurrent first-insert duplicate key; retry succeeds as an update.
+        WriteError writeError =
+                new WriteError(11000, "E11000 duplicate key error", new BsonDocument());
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(collection.updateOne(any(Bson.class), any(Bson.class), any()))
+                .thenThrow(new MongoWriteException(writeError, new ServerAddress()))
+                .thenReturn(updateResult);
+
+        store.put(List.of("ns"), "key", Map.of("data", "v"));
+
+        verify(collection, times(2)).updateOne(any(Bson.class), any(Bson.class), any());
     }
 
     @Test
