@@ -105,12 +105,16 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     @Override
     public InputStream download(String snapshotId) throws Exception {
         Objects.requireNonNull(snapshotId, "snapshotId");
-        try {
-            return gridFSBucket.openDownloadStream(snapshotId);
-        } catch (MongoGridFSException e) {
-            // Fall back to legacy single-document storage for backward compatibility.
-            return downloadLegacy(snapshotId);
+        // openDownloadStream(String) is lazy — it returns a stream immediately and only
+        // throws MongoGridFSException on the first read() if the file is missing.  To
+        // preserve the eager FileNotFoundException contract and enable legacy fallback,
+        // check existence first via find() (like exists() and delete() do).
+        GridFSFile file = gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+        if (file != null) {
+            return gridFSBucket.openDownloadStream(file.getId());
         }
+        // Fall back to legacy single-document storage for backward compatibility.
+        return downloadLegacy(snapshotId);
     }
 
     @Override

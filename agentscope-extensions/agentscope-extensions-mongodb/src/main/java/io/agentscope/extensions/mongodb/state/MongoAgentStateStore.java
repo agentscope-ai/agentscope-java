@@ -80,6 +80,22 @@ import org.slf4j.LoggerFactory;
  *     .collectionName("sessions")
  *     .build();
  * }</pre>
+ *
+ * <h2>Key constraints</h2>
+ *
+ * <ul>
+ *   <li><b>State key character set:</b> keys passed to {@link #save} / {@link #get} must match
+ *       {@code ^[a-zA-Z_][a-zA-Z0-9_]*$} — no dots, dollar signs, or Unicode. Values inside
+ *       {@code Map<String, Object>} fields are automatically escaped by {@link
+ *       MongoKeyEscaper} and have no character restrictions.
+ *   <li><b>Snapshots use GridFS:</b> sandbox workspace snapshots are stored in GridFS
+ *       (up to 16 GB per file), not as single BSON documents. The legacy 16 MB BSON limit no
+ *       longer applies.
+ *   <li><b>Session TTL is off by default:</b> sessions are retained indefinitely, aligned with
+ *       Postgres/JDBC/Redis. To enable automatic expiry, pass {@code
+ *       MongoAgentStateStore.builder().ttlDays(n)} with a positive integer. The TTL index is
+ *       sparse — only documents with a non-null {@code _updated_at} field expire.
+ * </ul>
  */
 public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
 

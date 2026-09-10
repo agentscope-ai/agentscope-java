@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.bson.Document;
+import org.bson.types.Binary;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -294,6 +295,43 @@ class MongoIndexLifecycleContractTest {
         } finally {
             store.close();
             client.getDatabase(cascadeDb).drop();
+        }
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("Legacy fallback: download reads old single-document snapshot format")
+    void downloadFallsBackToLegacyFormat() throws Exception {
+        String legacyDb = "test_legacy_" + System.currentTimeMillis();
+        String snapshotId = "legacy-snap-" + System.currentTimeMillis();
+        byte[] payload = "legacy-workspace-tar".getBytes(StandardCharsets.UTF_8);
+
+        try {
+            // Insert a legacy-format snapshot document directly (single BSON document
+            // with {_id, data: Binary}), bypassing the GridFS upload path.
+            MongoCollection<Document> legacyColl =
+                    client.getDatabase(legacyDb).getCollection(MongoConstants.SNAPSHOTS_COLLECTION);
+            legacyColl.insertOne(
+                    new Document("_id", snapshotId).append("data", new Binary(payload)));
+
+            MongoRemoteSnapshotClient snapshotClient =
+                    new MongoRemoteSnapshotClient(
+                            client, legacyDb, MongoConstants.SNAPSHOTS_COLLECTION);
+
+            assertTrue(
+                    snapshotClient.exists(snapshotId),
+                    "exists() must find legacy snapshot via fallback");
+            assertTrue(
+                    snapshotClient.exists("nonexistent-" + System.currentTimeMillis()) == false,
+                    "exists() must return false when snapshot is absent everywhere");
+
+            byte[] downloaded = snapshotClient.download(snapshotId).readAllBytes();
+            assertEquals(
+                    payload.length,
+                    downloaded.length,
+                    "download() must read legacy snapshot via fallback path");
+        } finally {
+            client.getDatabase(legacyDb).drop();
         }
     }
 

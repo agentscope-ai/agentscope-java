@@ -27,7 +27,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.mongodb.MongoGridFSException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -42,6 +41,7 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.bson.BsonObjectId;
+import org.bson.BsonString;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -147,11 +147,15 @@ class MongoRemoteSnapshotClientTest {
 
     @Test
     void downloadReturnsGridFSStream() throws Exception {
+        GridFSFile mockFile = mock(GridFSFile.class);
+        when(mockFile.getId()).thenReturn(new BsonString("fake-id"));
+        when(gridFSFindIterable.first()).thenReturn(mockFile);
+
         GridFSDownloadStream downloadStream = mock(GridFSDownloadStream.class);
         when(downloadStream.read(any(byte[].class), any(int.class), any(int.class)))
                 .thenReturn(5)
                 .thenReturn(-1);
-        when(gridFSBucket.openDownloadStream("snap-1")).thenReturn(downloadStream);
+        when(gridFSBucket.openDownloadStream(any(BsonValue.class))).thenReturn(downloadStream);
 
         InputStream result = client.download("snap-1");
         assertNotNull(result);
@@ -159,8 +163,7 @@ class MongoRemoteSnapshotClientTest {
 
     @Test
     void downloadFallsBackToLegacy() throws Exception {
-        when(gridFSBucket.openDownloadStream("snap-1"))
-                .thenThrow(new MongoGridFSException("File not found"));
+        // gridFSFindIterable.first() defaults to null (not in GridFS) — triggers legacy path
 
         byte[] expected = "legacy-data".getBytes(StandardCharsets.UTF_8);
         Document legacyDoc = new Document("data", new Binary(expected));
@@ -173,8 +176,7 @@ class MongoRemoteSnapshotClientTest {
 
     @Test
     void downloadThrowsWhenNotFoundAnywhere() {
-        when(gridFSBucket.openDownloadStream("missing"))
-                .thenThrow(new MongoGridFSException("File not found"));
+        // Both gridFSFindIterable.first() and legacyFindIterable.first() default to null
 
         assertThrows(FileNotFoundException.class, () -> client.download("missing"));
     }

@@ -188,13 +188,22 @@ public class MongoDistributedStore implements DistributedStore, AutoCloseable {
         }
     }
 
-    // The sandbox state is persisted by
-    // io.agentscope.harness.agent.sandbox.SessionSandboxStateStore
-    // into the same AgentStateStore, using a SESSION-scoped synthetic sessionId of the form
-    // "sandbox/session/<sessionId>" (userId null, which maps to the anonymous-user slot) and the
-    // "_sandbox_state" state key. The serialized SandboxState JSON carries the snapshot id in its
-    // snapshot.id field (discriminated by "type": "remote"). These names mirror
-    // SessionSandboxStateStore and SandboxSnapshot rather than being re-exported.
+    // ── Coupled to SessionSandboxStateStore (harness) internals ──
+    // These names mirror io.agentscope.harness.agent.sandbox.SessionSandboxStateStore
+    // and SandboxSnapshot rather than being re-exported as shared constants. If the
+    // harness-side naming changes, cascade cleanup silently becomes a no-op and
+    // snapshots become orphans.
+    //
+    // NOTE: The contract test in MongoIndexLifecycleContractTest verifies the cascade
+    // mechanism against a real MongoDB instance, but uses the same hardcoded strings
+    // as this class. It cannot detect naming drift if SessionSandboxStateStore changes
+    // its internal field names — that would require an end-to-end test through the
+    // harness module, which is outside this module's scope.
+    //
+    // sandbox/session/<sessionId>  — SESSION-scoped synthetic sessionId
+    // _sandbox_state               — state key for the serialized SandboxState JSON
+    // snapshot.type == "remote"    — discriminator for remote vs local snapshots
+    // snapshot.id                  — the GridFS filename (= sandbox UUID)
     private static final String SANDBOX_SESSION_PREFIX = "sandbox/session/";
     private static final String SANDBOX_STATE_KEY = "_sandbox_state";
 
