@@ -2,6 +2,8 @@
 title: Backup, upgrade and recovery
 ---
 
+[简体中文](/v2/zh/service/operations)
+
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
 
 ## Docker backup
@@ -45,4 +47,8 @@ After restoring into a new database on the same PostgreSQL instance, set `POSTGR
 
 Check administrator login, existing Agents and Session history, workspace files, Vault decryption, runtime connectivity and a new small task. Task and Issue acceptance state should match the backup point.
 
-A backup is qualified only when database, files and keys recover together. This release preparation does not claim multi-replica HA or zero-downtime upgrades.
+A backup is qualified only when database, files and keys recover together. Plan maintenance windows for this single-replica installation.
+
+## Reopen service after recovery
+
+Keep scheduled rules and external traffic controlled while verifying login, history, files and credentials with test work. Confirm Runtime Hosts reconnect before restoring schedules and application traffic. Restoring a snapshot does not undo external messages or writes made after it; reconcile idempotency records and unfinished work before rerunning.

@@ -1,35 +1,32 @@
 ---
-title: SDKs and application integration
+title: "SDK and component selection"
 ---
 
-Existing Agent applications can retain their own process lifecycle while exposing identity, availability, Session information and execution capabilities to the control plane.
+[简体中文](/v2/zh/service/integrations)
 
-## Choose an integration
+Before selecting an SDK, distinguish invoking a capability from connecting a runtime. An application calling an Endpoint needs an HTTP client, not runtime instrumentation.
 
-| Component | Source directory | Distribution |
+| Goal | Component | Continue |
 | --- | --- | --- |
-| Java extension | `agentscope-extensions/agentscope-extensions-aistio` | Maven artifact |
-| Python SDK | `agentscope-service/aistio/sdk/python` | `aistio-sdk` wheel / sdist |
-| DSH plugin | `agentscope-service/aistio/sdk/dsh` | `@agentscope/dsh-aistio` npm package |
-| Coding Agent Host | `agentscope-service/aistio/cmd` | CLI / daemon archive |
+| Invoke an Agent, Team or Workflow | HTTP client | [Endpoints](/v2/en/service/endpoints) |
+| Register a Java application | `io.agentscope:agentscope-extensions-aistio` | [External Agents](/v2/en/service/external-agent) |
+| Connect a Python framework through ASDP | `aistio-sdk` | [External Agents](/v2/en/service/external-agent) |
+| Connect DeepSeek Harness | `@agentscope/dsh-aistio` plugin | Configure the plugin, HTTP contract and ASDP addresses |
+| Connect a local Coding Agent | `agentscope` CLI and Runtime Host | [Hosted Agents](/v2/en/service/hosted-agent) |
 
-SDKs have their own versions. Do not infer package versions from the Service image tag; use the release manifest. Candidate packages not yet available in public registries can be installed from downloaded release artifacts.
+## Packages and versions
+
+Service, Java, Python and DSH packages have independent versions. Use `release-manifest.json` to select matching artifacts rather than copying the image version into every package manager.
 
 ```bash
-python -m pip install ./aistio_sdk-0.1.0-py3-none-any.whl
-npm install ./agentscope-dsh-aistio-0.1.0.tgz
+python -m pip install "aistio-sdk==$AISTIO_SDK_VERSION"
+npm install "@agentscope/dsh-aistio@$DSH_AISTIO_VERSION"
 ```
 
-Use the actual downloaded filenames. Java applications use the matching `io.agentscope:agentscope-extensions-aistio` version and its dependencies.
+Run these in the corresponding application with versions from the manifest. Installing the DSH npm package only supplies plugin files. Add it to your DSH profile and configure control-plane HTTP, ASDP gRPC and a reachable contract address. DSH retains provider login and application lifecycle.
 
-## Network and protocol
+## Verify transport and capabilities
 
-Check the adapter's transport requirements first. The complete Service Compose and Helm deployments use standalone HTTP mode without ASDP gRPC. Adapters requiring ASDP need a Kubernetes-native Aistio deployment and correctly configured gRPC connectivity. An HTTP port is not a gRPC endpoint.
+Complete Service uses standalone HTTP; Java offers HTTP registration and contracts. ASDP integrations additionally need an enabled listener. Python automatic registration depends on ASDP, so disabling gRPC does not replace this prerequisite.
 
-The control plane must reach the application's advertised callback or contract address. `localhost` inside a container refers to that container; cross-host deployments need reachable addresses. Shared internal tokens are for trusted private service calls. External Hosts use dedicated identity credentials.
-
-## Verify integration
-
-Verify registration and heartbeat, create a Session and read its history, then exercise a supported task dispatch and result callback. Restart the application and verify identity continuity and recovery. Model execution, tools and application lifecycle remain the runtime's responsibility.
-
-Use the package's examples and version notes for exact APIs. A healthy Service deployment does not establish that every third-party framework adapter has been qualified.
+Verify catalog identity, then Sessions/history, then supported dispatch, cancellation and reporting. Extend custom frameworks through adapters; changing a framework name alone does not add capabilities. See [External Agents](/v2/en/service/external-agent) for code, credentials and connectivity.
