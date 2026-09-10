@@ -49,8 +49,6 @@ import java.util.logging.Logger;
  *   POST /agentscope/sessions/{id}/compress
  *   POST /agentscope/sessions/{id}/terminate
  *   POST /agentscope/sessions/{id}/abort
- *   POST /agentscope/teams/join
- *   POST /agentscope/teams/leave
  * </pre>
  *
  * <p>Built on the JDK's {@code com.sun.net.httpserver} so that instrumenting an agent never drags
@@ -64,9 +62,17 @@ public final class ContractHttpServer implements AutoCloseable {
 
     private final HttpServer server;
     private final ContractProvider provider;
+    private final String internalToken;
 
     public ContractHttpServer(String host, int port, ContractProvider provider) throws IOException {
+        this(host, port, provider, "");
+    }
+
+    public ContractHttpServer(
+            String host, int port, ContractProvider provider, String internalToken)
+            throws IOException {
         this.provider = provider;
+        this.internalToken = internalToken == null ? "" : internalToken;
         InetSocketAddress address =
                 (host == null || host.isBlank())
                         ? new InetSocketAddress(port)
@@ -101,6 +107,10 @@ public final class ContractHttpServer implements AutoCloseable {
             route(exchange);
         } catch (ContractProvider.NotFoundException e) {
             error(exchange, 404, message(e, "not found"), "not_found", null);
+        } catch (ContractProvider.BusyException e) {
+            error(exchange, 409, message(e, "session is busy"), "busy", "wait_idle");
+        } catch (ContractProvider.UnauthorizedException e) {
+            error(exchange, 401, message(e, "unauthorized"), "unauthorized", null);
         } catch (UnsupportedOperationException e) {
             error(
                     exchange,
@@ -123,6 +133,10 @@ public final class ContractHttpServer implements AutoCloseable {
             error(exchange, 404, "not found", "not_found", null);
             return;
         }
+        if (isWrite(method) && !tokenOk(exchange)) {
+            throw new ContractProvider.UnauthorizedException(
+                    "invalid or missing X-Builder-Internal-Token");
+        }
 
         if (parts.size() == 2 && "GET".equals(method)) {
             switch (parts.get(1)) {
@@ -135,7 +149,15 @@ public final class ContractHttpServer implements AutoCloseable {
                     return;
                 }
                 case "sessions" -> {
-                    json(exchange, 200, Map.of("sessions", orEmpty(provider.sessions())));
+                    List<Map<String, Object>> sessions = orEmpty(provider.sessions());
+                    boolean truncated = sessions.size() > 500;
+                    List<Map<String, Object>> page =
+                            truncated ? sessions.subList(0, 500) : sessions;
+                    Map<String, Object> body = new LinkedHashMap<>();
+                    body.put("sessions", page);
+                    body.put("truncated", truncated);
+                    body.put("hasMore", truncated);
+                    json(exchange, 200, body);
                     return;
                 }
                 case "subagents" -> {
@@ -149,20 +171,6 @@ public final class ContractHttpServer implements AutoCloseable {
                 default -> {
                     // Falls through to the 404 below.
                 }
-            }
-        }
-
-        if (parts.size() == 3 && "teams".equals(parts.get(1)) && "POST".equals(method)) {
-            String action = parts.get(2);
-            if ("join".equals(action) || "leave".equals(action)) {
-                byte[] body = exchange.getRequestBody().readAllBytes();
-                if ("join".equals(action)) {
-                    provider.teamJoin(body);
-                } else {
-                    provider.teamLeave(body);
-                }
-                json(exchange, 200, Map.of("ok", true));
-                return;
             }
         }
 
@@ -194,6 +202,10 @@ public final class ContractHttpServer implements AutoCloseable {
                         json(exchange, 200, provider.subagentTasks(sessionId));
                         return;
                     }
+                    case "export-transcript" -> {
+                        json(exchange, 200, provider.exportTranscript(sessionId));
+                        return;
+                    }
                     default -> {
                         // Falls through to the 404 below.
                     }
@@ -220,6 +232,12 @@ public final class ContractHttpServer implements AutoCloseable {
                     json(exchange, 200, commandAccepted(exchange, sessionId));
                     return;
                 }
+                if ("messages".equals(action)) {
+                    byte[] body = exchange.getRequestBody().readAllBytes();
+                    provider.postMessage(sessionId, body);
+                    json(exchange, 202, commandAccepted(exchange, sessionId));
+                    return;
+                }
             } else if ("DELETE".equals(method) && "subagent-tasks".equals(action)) {
                 error(exchange, 400, "taskId path segment required", "invalid_argument", null);
                 return;
@@ -239,6 +257,21 @@ public final class ContractHttpServer implements AutoCloseable {
         }
 
         error(exchange, 404, "not found", "not_found", null);
+    }
+
+    private boolean tokenOk(HttpExchange exchange) {
+        if (internalToken.isBlank()) {
+            return true;
+        }
+        String header = exchange.getRequestHeaders().getFirst("X-Builder-Internal-Token");
+        return internalToken.equals(header);
+    }
+
+    private static boolean isWrite(String method) {
+        return "POST".equals(method)
+                || "PUT".equals(method)
+                || "PATCH".equals(method)
+                || "DELETE".equals(method);
     }
 
     private Map<String, Object> commandAccepted(HttpExchange exchange, String sessionId) {

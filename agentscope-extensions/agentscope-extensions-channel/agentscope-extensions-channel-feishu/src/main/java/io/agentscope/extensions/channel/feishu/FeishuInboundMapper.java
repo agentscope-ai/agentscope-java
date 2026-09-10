@@ -130,6 +130,10 @@ public final class FeishuInboundMapper {
             return Optional.empty();
         }
         String openId = event.path("sender").path("sender_id").path("open_id").asText(null);
+        if (openId == null
+                || openId.isBlank()
+                || !"user".equals(event.path("sender").path("sender_type").asText())
+                || message.path("message_id").asText("").isBlank()) return Optional.empty();
         String contentJson = message.path("content").asText(null);
         if (contentJson == null || contentJson.isBlank()) {
             return Optional.empty();
@@ -145,6 +149,14 @@ public final class FeishuInboundMapper {
             return Optional.empty();
         }
 
+        // Providers encode mentions as structured keys. Strip leading mention keys
+        // so an addressed bot can receive explicit work commands in group chats.
+        text = text.strip();
+        for (JsonNode mention : message.path("mentions")) {
+            String key = mention.path("key").asText("");
+            if (!key.isBlank() && text.startsWith(key))
+                text = text.substring(key.length()).stripLeading();
+        }
         // Group chats are addressed by chat_id (no per-user routing). For p2p, we still use the
         // chat_id as the conversation key — it's the stable identifier Feishu uses for the
         // 1:1 chat instance, and bot replies must be sent to the chat_id with
@@ -153,7 +165,17 @@ public final class FeishuInboundMapper {
         PeerKind kind = "group".equalsIgnoreCase(chatType) ? PeerKind.GROUP : PeerKind.DIRECT;
         Peer peer = new Peer(kind, chatId);
         String senderName = openId != null ? openId : chatId;
-        Msg msg = Msg.builder().role(MsgRole.USER).name(senderName).textContent(text).build();
+        java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("channelMessageId", message.path("message_id").asText(""));
+        metadata.put("channelReplyToId", message.path("parent_id").asText(""));
+        metadata.put("channelThreadId", message.path("root_id").asText(""));
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name(senderName)
+                        .textContent(text)
+                        .metadata(metadata)
+                        .build();
         String tenant = envelope.path("header").path("tenant_key").asText(null);
         return Optional.of(
                 InboundMessage.builder(channelId, peer, List.of(msg))

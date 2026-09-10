@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,6 +63,7 @@ import reactor.core.publisher.Flux;
  *   <li>Glob/ls/grep return round-trippable paths (no double namespace on read).</li>
  * </ul>
  */
+@HarnessQuiescence
 class LocalFilesystemUserIsolationExampleTest {
 
     @TempDir Path workspace;

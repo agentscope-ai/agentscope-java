@@ -47,7 +47,6 @@ rules:
   - agentscope.io
   resources:
   - agents
-  - agentteams
   - mcpservers
   - modelconfigs
   - sandboxclaims
@@ -63,14 +62,12 @@ rules:
   - agentscope.io
   resources:
   - agents/finalizers
-  - agentteams/finalizers
   verbs:
   - update
 - apiGroups:
   - agentscope.io
   resources:
   - agents/status
-  - agentteams/status
   - mcpservers/status
   - modelconfigs/status
   - sandboxclaims/status

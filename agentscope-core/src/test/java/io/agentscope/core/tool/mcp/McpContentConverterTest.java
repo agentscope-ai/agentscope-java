@@ -26,6 +26,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.URLSource;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -243,6 +244,34 @@ class McpContentConverterTest {
 
         ImageBlock imageBlock = (ImageBlock) block;
         assertNotNull(imageBlock.getSource());
+    }
+
+    @Test
+    void testConvertContent_ImageContent_Url() {
+        String imageUrl = "https://example.com/image.png?token=abc";
+        McpSchema.ImageContent imageContent =
+                new McpSchema.ImageContent(null, imageUrl, "image/png");
+
+        ContentBlock block = McpContentConverter.convertContent(imageContent);
+
+        assertTrue(block instanceof ImageBlock);
+        assertTrue(((ImageBlock) block).getSource() instanceof URLSource);
+        URLSource source = (URLSource) ((ImageBlock) block).getSource();
+        assertEquals(imageUrl, source.getUrl());
+        assertEquals("image/png", source.getMimeType());
+    }
+
+    @Test
+    void testConvertContent_ImageContent_FileUrl() {
+        String imageUrl = "file:///tmp/image.png";
+        McpSchema.ImageContent imageContent =
+                new McpSchema.ImageContent(null, imageUrl, "image/png");
+
+        ContentBlock block = McpContentConverter.convertContent(imageContent);
+
+        assertTrue(block instanceof ImageBlock);
+        assertTrue(((ImageBlock) block).getSource() instanceof URLSource);
+        assertEquals(imageUrl, ((URLSource) ((ImageBlock) block).getSource()).getUrl());
     }
 
     @Test
