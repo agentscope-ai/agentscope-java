@@ -53,20 +53,45 @@ public class AnthropicToolsHelper {
      */
     public static void applyTools(
             MessageCreateParams.Builder builder, List<ToolSchema> tools, GenerateOptions options) {
+        applyTools(builder, tools, options, null);
+    }
+
+    /**
+     * Apply tools to the message create params builder with an optional cache TTL.
+     *
+     * @param builder The message create params builder
+     * @param tools List of tool schemas
+     * @param options Generate options containing tool choice
+     * @param cacheTtl TTL for ephemeral cache control (null/empty for default 5m)
+     */
+    public static void applyTools(
+            MessageCreateParams.Builder builder,
+            List<ToolSchema> tools,
+            GenerateOptions options,
+            String cacheTtl) {
         if (tools == null || tools.isEmpty()) {
             return;
         }
 
-        // Convert and add tools
-        for (ToolSchema schema : tools) {
-            Tool tool =
+        boolean cacheControlEnabled =
+                options != null && Boolean.TRUE.equals(options.getCacheControl());
+
+        // Convert and add tools. When prompt caching is enabled, mark the last tool definition
+        // with cache_control so all tool definitions are cached (Anthropic caches everything up
+        // to and including the marked block).
+        for (int i = 0; i < tools.size(); i++) {
+            ToolSchema schema = tools.get(i);
+            Tool.Builder toolBuilder =
                     Tool.builder()
                             .name(schema.getName())
                             .description(schema.getDescription())
-                            .inputSchema(convertToJsonValue(schema.getParameters()))
-                            .build();
+                            .inputSchema(convertToJsonValue(schema.getParameters()));
 
-            builder.addTool(tool);
+            if (cacheControlEnabled && i == tools.size() - 1) {
+                toolBuilder.cacheControl(AnthropicBaseFormatter.buildCacheControl(cacheTtl));
+            }
+
+            builder.addTool(toolBuilder.build());
         }
 
         // Resolve effective parallelToolCalls and toolChoice

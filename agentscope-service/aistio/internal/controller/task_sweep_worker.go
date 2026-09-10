@@ -29,8 +29,8 @@ const defaultOrphanSweepErrMsg = "executor lost: no heartbeat (hosted store orph
 // Runs only on the leader replica.
 type TaskSweepWorker struct {
 	Store         store.Store
-	Interval      time.Duration // default 1 minute
-	OrphanTimeout time.Duration // default 10 minutes
+	Interval      time.Duration   // default 1 minute
+	OrphanTimeout time.Duration   // default 10 minutes
 	OnSwept       func(count int) // optional metrics hook
 }
 
@@ -56,7 +56,7 @@ func (w *TaskSweepWorker) Start(ctx context.Context) error {
 			if w.Store == nil {
 				continue
 			}
-			swept, err := w.Store.Tasks().SweepOrphaned(ctx, orphanTimeout, defaultOrphanSweepErrMsg)
+			swept, err := w.Store.DPTasks().SweepOrphaned(ctx, orphanTimeout, defaultOrphanSweepErrMsg)
 			if err != nil {
 				logger.Error(err, "task orphan sweep failed")
 				continue

@@ -70,35 +70,24 @@ export interface InboundEvent {
   payload?: Record<string, unknown>;
 }
 
-/** Parsed from product `externalKey` = `team|{namespace}/{teamName}|{memberName}`. */
-export interface TeamSessionRef {
-  namespace: string;
-  teamName: string;
-  memberName: string;
+/** Parsed from product `externalKey` = `agent-task|{agentTaskId}`. */
+export interface AgentTaskSessionRef {
+  agentTaskId: string;
 }
 
-export function parseTeamExternalKey(key?: string | null): TeamSessionRef | null {
-  if (!key || !key.startsWith('team|')) return null;
-  const rest = key.slice('team|'.length);
-  const pipe = rest.lastIndexOf('|');
-  if (pipe <= 0) return null;
-  const nsTeam = rest.slice(0, pipe);
-  const memberName = rest.slice(pipe + 1);
-  const slash = nsTeam.indexOf('/');
-  if (slash <= 0 || !memberName) return null;
-  return {
-    namespace: nsTeam.slice(0, slash),
-    teamName: nsTeam.slice(slash + 1),
-    memberName,
-  };
+export function parseAgentTaskExternalKey(key?: string | null): AgentTaskSessionRef | null {
+  if (!key || !key.startsWith('agent-task|')) return null;
+  const [agentTaskId, ...extra] = key.slice('agent-task|'.length).split('|');
+  if (!agentTaskId || extra.length > 0) return null;
+  return { agentTaskId };
 }
 
-export function isTeamOriginatedSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
-  return parseTeamExternalKey(s.externalKey) != null;
+export function isAgentTaskSession(s: Pick<ManagedSession, 'externalKey'>): boolean {
+  return parseAgentTaskExternalKey(s.externalKey) != null;
 }
 
-export function teamDetailPath(ref: TeamSessionRef): string {
-  return `/teams/${encodeURIComponent(ref.teamName)}?namespace=${encodeURIComponent(ref.namespace)}`;
+export function agentTaskDetailPath(ref: AgentTaskSessionRef): string {
+  return `/control/tasks/${encodeURIComponent(ref.agentTaskId)}`;
 }
 
 
@@ -230,6 +219,7 @@ export function streamEvents(
   let closed = false;
   let backoffMs = Math.max(500, options?.retryMs ?? 2000);
   const maxRetryMs = options?.maxRetryMs ?? 30000;
+  let previewSequence = 0;
 
   async function connect(): Promise<void> {
     const after = options?.getAfter ? options.getAfter() : options?.after;
@@ -244,20 +234,24 @@ export function streamEvents(
     const res = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/events/stream${qs ? `?${qs}` : ''}`,
       {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(after != null && after > 0 ? { 'Last-Event-ID': String(after) } : {}),
+        },
         signal: controller.signal,
       },
     );
     if (!res.ok || !res.body) {
       throw new Error(`Event stream failed: ${res.status}`);
     }
+    backoffMs = Math.max(500, options?.retryMs ?? 2000);
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
     while (!closed) {
       const { value, done } = await reader.read();
       if (done) break;
-      buf += dec.decode(value, { stream: true });
+      buf = (buf + dec.decode(value, { stream: true })).replace(/\r\n/g, '\n');
       let idx;
       while ((idx = buf.indexOf('\n\n')) >= 0) {
         const block = buf.slice(0, idx);
@@ -268,7 +262,15 @@ export function streamEvents(
         }
         if (!data) continue;
         try {
-          onEvent(JSON.parse(data) as SessionEvent);
+          const parsed = JSON.parse(data) as SessionEvent;
+          // Stream-only preview frames deliberately have no durable id. Give
+          // each frame a connection-local presentation id so the Events view
+          // does not collapse every delta into one React row.
+          if (!parsed.id) {
+            previewSequence += 1;
+            parsed.id = `preview:${sessionId}:${parsed.createdAt}:${previewSequence}`;
+          }
+          onEvent(parsed);
           // Any delivered event means the connection is healthy; reset backoff.
           backoffMs = Math.max(500, options?.retryMs ?? 2000);
         } catch {

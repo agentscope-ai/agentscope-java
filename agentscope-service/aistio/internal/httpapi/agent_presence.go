@@ -31,15 +31,19 @@ func agentKey(namespace, name string) string {
 }
 
 // registryAgentBuckets splits AggregateAgents into live vs offline keys.
-func registryAgentBuckets(reg *dataplane.Registry) (live, offline, registryKeys map[string]struct{}, summaries []dataplane.AgentSummary) {
+func registryAgentBuckets(reg *dataplane.Registry, tenant string) (live, offline, registryKeys map[string]struct{}, summaries []dataplane.AgentSummary) {
 	live = map[string]struct{}{}
 	offline = map[string]struct{}{}
 	registryKeys = map[string]struct{}{}
 	if reg == nil {
 		return live, offline, registryKeys, nil
 	}
-	summaries = reg.AggregateAgents()
-	for _, a := range summaries {
+	all := reg.AggregateAgents()
+	for _, a := range all {
+		if a.Tenant != tenant {
+			continue
+		}
+		summaries = append(summaries, a)
 		key := agentKey(a.Namespace, a.Name)
 		registryKeys[key] = struct{}{}
 		switch dataplane.ClassifyPresence(a.HealthyCount, a.InstanceCount) {
@@ -68,11 +72,11 @@ func historicalAgentKeys(sessions []*store.Session, registryKeys map[string]stru
 	return out
 }
 
-func listSessionsForPresence(ctx context.Context, st store.Store) []*store.Session {
+func listSessionsForPresence(ctx context.Context, st store.Store, tenant string) []*store.Session {
 	if st == nil {
 		return nil
 	}
-	sessions, err := st.Sessions().List(ctx, store.SessionFilter{Limit: 5000})
+	sessions, err := st.Sessions().List(ctx, store.SessionFilter{Tenant: tenant, Limit: 5000})
 	if err != nil || sessions == nil {
 		return nil
 	}
