@@ -57,3 +57,32 @@ test('redirect cycles and duplicate sources fail', (t) => {
 test('MyST directives cannot silently become visible prose', () => {
   assert.throws(() => inspectPage(':::{note}\nA warning\n:::'), /Unconverted MyST/);
 });
+
+test('wildcards resolve nested legacy links and preserve anchors', (t) => {
+  const result = checkSite(fixture(t, {
+    body: '[Legacy](/en/intro#setup)',
+    redirects: [{ source: '/en/:slug*', destination: '/v2/en/:slug*' }],
+  }));
+  assert.deepEqual(result.errors, []);
+});
+
+test('exact HTML redirects take precedence over wildcard fallbacks', (t) => {
+  const result = checkSite(fixture(t, {
+    body: '[Legacy](/en/intro.html#setup)',
+    redirects: [
+      { source: '/en/intro.html', destination: '/v2/en/intro' },
+      { source: '/en/:slug*', destination: '/v2/en/:slug*' },
+    ],
+  }));
+  assert.deepEqual(result.errors, []);
+});
+
+test('wildcards reject missing destinations, page shadowing and growing cycles', (t) => {
+  const result = checkSite(fixture(t, { redirects: [
+    { source: '/missing/:slug*', destination: '/absent/:slug*' },
+    { source: '/v2/en/:slug*', destination: '/v2/en/nested/:slug*' },
+  ] }));
+  assert(result.errors.some((e) => e.includes('no destination pages')));
+  assert(result.errors.some((e) => e.includes('shadows page')));
+  assert(result.errors.some((e) => e.includes('redirect cycle')));
+});
