@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,25 +111,57 @@ public final class ModelUtils {
                 if (retryOn == null) {
                     retryOn = error -> true; // retry all errors by default
                 }
+                // Lambda captures below require effectively final variables
+                final int retryCount = maxAttempts - 1;
+                final Duration effectiveInitialBackoff = initialBackoff;
+                final Duration effectiveMaxBackoff = maxBackoff;
+                final Predicate<Throwable> effectiveRetryOn = retryOn;
 
-                Retry retrySpec =
-                        Retry.backoff(maxAttempts - 1, initialBackoff)
-                                .maxBackoff(maxBackoff)
-                                .jitter(0.5)
-                                .filter(retryOn)
-                                .doBeforeRetry(
-                                        signal ->
-                                                LOG.warn(
-                                                        "Retrying model request (attempt {}/{}) due"
-                                                                + " to: {}",
-                                                        signal.totalRetriesInARow() + 1,
-                                                        maxAttempts - 1,
-                                                        signal.failure().getMessage(),
-                                                        signal.failure()));
-
-                responseFlux = responseFlux.retryWhen(retrySpec);
+                // Retrying is only safe before the first response is emitted: resubscribing
+                // after partial output would reissue the request and downstream would observe
+                // the first partial response followed by the retried one, duplicating content.
+                // The emission flag is created inside defer so every subscription (model call)
+                // gets a fresh flag, while it persists across retry attempts of the same call.
+                final Flux<ChatResponse> source = responseFlux;
+                responseFlux =
+                        Flux.defer(
+                                () -> {
+                                    AtomicBoolean emittedAnyResponse = new AtomicBoolean(false);
+                                    return source.doOnNext(response -> emittedAnyResponse.set(true))
+                                            .retryWhen(
+                                                    Retry.backoff(
+                                                                    retryCount,
+                                                                    effectiveInitialBackoff)
+                                                            .maxBackoff(effectiveMaxBackoff)
+                                                            .jitter(0.5)
+                                                            .filter(
+                                                                    error ->
+                                                                            !emittedAnyResponse
+                                                                                            .get()
+                                                                                    && effectiveRetryOn
+                                                                                            .test(
+                                                                                                    error))
+                                                            .doBeforeRetry(
+                                                                    signal ->
+                                                                            LOG.warn(
+                                                                                    "Retrying model"
+                                                                                        + " request"
+                                                                                        + " (attempt"
+                                                                                        + " {}/{})"
+                                                                                        + " due to:"
+                                                                                        + " {}",
+                                                                                    signal
+                                                                                                    .totalRetriesInARow()
+                                                                                            + 1,
+                                                                                    retryCount,
+                                                                                    signal.failure()
+                                                                                            .getMessage(),
+                                                                                    signal
+                                                                                            .failure())));
+                                });
                 LOG.debug(
-                        "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
+                        "Applied retry config: maxAttempts={}, initialBackoff={},"
+                                + " retryBeforeFirstResponse=true for model: {}",
                         maxAttempts,
                         initialBackoff,
                         modelName);
