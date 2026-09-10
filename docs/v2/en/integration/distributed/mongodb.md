@@ -1,3 +1,7 @@
+---
+title: MongoDB
+---
+
 # MongoDB
 
 `agentscope-extensions-mongodb` provides full-stack MongoDB distributed storage — ideal for deployments that already run MongoDB or prefer a document-oriented backend for agent runtime data.

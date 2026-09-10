@@ -1,3 +1,7 @@
+---
+title: MongoDB
+---
+
 # MongoDB
 
 `agentscope-extensions-mongodb` 提供全链路的 MongoDB 分布式存储实现，适合已部署 MongoDB 或偏好文档型后端的场景。
