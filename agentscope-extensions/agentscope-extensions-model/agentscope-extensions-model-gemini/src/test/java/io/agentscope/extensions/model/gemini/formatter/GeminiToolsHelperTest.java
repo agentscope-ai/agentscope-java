@@ -294,6 +294,7 @@ class GeminiToolsHelperTest {
                         () -> helper.convertParametersToSchema(Map.of("type", List.of("null"))));
 
         assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
+        assertTrue(schema.nullable().orElse(false));
     }
 
     @Test

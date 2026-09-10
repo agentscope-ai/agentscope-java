@@ -295,6 +295,9 @@ public class GeminiToolsHelper {
         if (nonNullTypes.isEmpty()) {
             // Preserve the compatibility fallback for a null-only type array.
             schemaBuilder.type(new Type(Type.Known.OBJECT));
+            if (nullable) {
+                schemaBuilder.nullable(true);
+            }
             return false;
         }
 
