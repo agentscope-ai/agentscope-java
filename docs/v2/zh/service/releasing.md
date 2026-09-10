@@ -2,6 +2,8 @@
 title: 组件发布指南
 ---
 
+[English](/v2/en/service/releasing)
+
 本页面向发布维护者。构建和打包脚本位于 `agentscope-service/release/`，用户安装从[快速上手](/v2/zh/service/quickstart)开始。
 
 ## 制品清单
@@ -48,4 +50,4 @@ python agentscope-service/release/release.py publish-chart   --version VERSION -
 
 将制品、校验和、镜像 digest、已验证平台与已知限制写入 Release 草稿。完成本次范围内的 Maven/Python/npm 发布并验证新环境安装，再公开 Release。管理员权限准备、版本选择、Actions 操作、SDK 发布和故障处理的完整中文步骤见仓库中的 `agentscope-service/release/README_zh.md`。
 
-官网文档工作流部署 `main` 的 `/docs`。将对应文档合入该发布入口后，核对中英文 Service 导航、直接链接、图片和搜索。
+官网内容位于 `/docs`，由 Mintlify GitHub App 按站点配置的分支发布；仓库工作流负责文档校验。合入正式发布分支后，核对托管站点的中英文 Service 导航、直接链接、图片和搜索。

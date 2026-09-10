@@ -1,27 +1,48 @@
 ---
-title: Agents, tools and skills
+title: "Agents: reusable capabilities"
 ---
 
-An Agent is a reusable configuration. Choose its execution mode before configuring working material and capabilities.
+[简体中文](/v2/zh/service/agents)
 
-## Choose an execution mode
+**DESIGN → Agents** manages identity, behavior and execution. Reuse an Agent in Chat, Issues, Teams and Endpoints. Saving its definition does not start work.
 
-| Mode | Use case | Prerequisites |
+## Choose an execution type
+
+| Type | Where it runs | Onboarding |
 | --- | --- | --- |
-| Managed | Platform-hosted Harness Sessions | Model, Environment and required resources |
-| External application | An existing Agent process remains independently operated | Application SDK and a reachable contract endpoint |
-| Hosted runtime | A Coding Agent runs on a selected host | Online Runtime Host and installed provider |
+| Managed | Service Harness and Dataplane | Create an Agent using AgentScope Managed |
+| Hosted | A Coding Agent provider on your machine or server | Connect a Runtime Host, then select a discovered Runtime |
+| External | Your independently deployed application | Register through the SDK to enter the Agent catalog |
 
-## Configure and verify
+The work entry points are shared, but models, tools, recovery and configuration projection differ. Catalog visibility does not guarantee every conversation or dispatch capability. See the dedicated [Managed](/v2/en/service/managed-agent), [Hosted](/v2/en/service/hosted-agent) and [External](/v2/en/service/external-agent) guides.
 
-In Agents, configure the name, instructions and model. Attach the required Workspace, Memory, Vault and tools. Keep credentials out of shared instructions. Tool permission policies determine when human confirmation is required.
+## Create an Agent
 
-Skills hold reusable task instructions and supporting files. After changing a skill, verify file visibility, permissions and results in a new Session before using it in a Team.
+1. Start creation and enter its name, purpose and Instructions.
+2. Link a Workspace when it should reuse operating guidance, skills, tools or subagent definitions.
+3. Explicitly choose Runtime under Execution. An online Hosted provider may be selected initially; choose **AgentScope Managed** for a Managed Agent.
+4. Leave Model empty for the runtime default, or enter a model identifier supported by that provider.
+5. For Managed Agents, choose an Environment in Advanced settings. The automatic local default requires administrator permission for Local execution.
+6. Select **Create & open agent**, then review the resulting configuration.
 
-Definitions, running instances and Sessions are separate objects. After updating configuration, check which version a new Session uses; do not assume all active Sessions switch immediately.
+Agent key is a stable identity within the scope. The display name communicates purpose to colleagues.
 
-## Share access
+## Configure the detail pages
 
-Configure resource grants in the relevant Namespace and check access to dependent Workspaces, models and Vaults. Discovering an Agent does not grant access to all of its dependencies or other users' private work.
+| Page | Purpose | First verification |
+| --- | --- | --- |
+| Behavior | Responsibilities, instructions and model | Ask a bounded question |
+| Workspace | Materials and execution resources | Read a known file |
+| Skills | Reusable procedures and supporting files | Run a task matching a skill |
+| Tools | Tools and MCP connections | Make a read-only call and check authentication |
+| Subagents | Delegated specialist capabilities | Inspect a delegated result |
+| Versions | Definition history | Use new work to verify the intended version |
+| Connections → Channels | Messaging bindings | Send a request through the actual channel |
 
-Continue with [Workspaces and Environments](/v2/en/service/workspaces) and [Accounts and permissions](/v2/en/service/access).
+## Add capabilities incrementally
+
+Verify conversation first, then file access, an external tool and a specialist skill. Store credentials in [Vault](/v2/en/service/vault) and shared knowledge in [Memory](/v2/en/service/memory). Configuration does not automatically install executable tools or grant external permissions.
+
+A shared Workspace can affect multiple Agents. Check its consumers before editing and verify with a new Chat or Issue. Do not assume that running work switches definitions immediately.
+
+Next: [Teams](/v2/en/service/teams) · [Workspaces](/v2/en/service/workspaces).
