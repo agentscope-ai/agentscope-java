@@ -23,12 +23,10 @@ import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
-import reactor.util.retry.Retry;
 
 /**
  * Unit tests for Model timeout and retry functionality.
@@ -349,30 +347,11 @@ class ModelTimeoutRetryTest {
                                             "test")));
         }
 
-        // Apply retry if configured
+        // Apply retry if configured (mirrors production behaviour via RetrySpecs, so that
+        // backoffMultiplier and other knobs are honoured here exactly as in real models).
         Integer maxAttempts = executionConfig.getMaxAttempts();
         if (maxAttempts != null && maxAttempts > 1) {
-            Duration initialBackoff = executionConfig.getInitialBackoff();
-            Duration maxBackoff = executionConfig.getMaxBackoff();
-            Predicate<Throwable> retryOn = executionConfig.getRetryOn();
-
-            // Use defaults if not specified
-            if (initialBackoff == null) {
-                initialBackoff = Duration.ofSeconds(1);
-            }
-            if (maxBackoff == null) {
-                maxBackoff = Duration.ofSeconds(10);
-            }
-            if (retryOn == null) {
-                retryOn = error -> true; // retry all errors by default
-            }
-
-            Retry retrySpec =
-                    Retry.backoff(maxAttempts - 1, initialBackoff)
-                            .maxBackoff(maxBackoff)
-                            .jitter(0.5)
-                            .filter(retryOn);
-            responseFlux = responseFlux.retryWhen(retrySpec);
+            responseFlux = responseFlux.retryWhen(RetrySpecs.build(executionConfig));
         }
 
         return responseFlux;

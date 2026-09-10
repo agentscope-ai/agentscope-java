@@ -16,12 +16,12 @@
 package io.agentscope.core.embedding;
 
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.RetrySpecs;
 import java.time.Duration;
 import java.util.List;
-import java.util.function.Predicate;
 import org.slf4j.Logger;
 import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
+import reactor.util.retry.RetryBackoffSpec;
 
 /**
  * Utility class for common EmbeddingModel operations.
@@ -30,9 +30,6 @@ import reactor.util.retry.Retry;
  * including timeout and retry logic for embedding API calls, and conversion utilities.
  */
 public final class EmbeddingUtils {
-
-    private static final Duration DEFAULT_INITIAL_BACKOFF = Duration.ofSeconds(1);
-    private static final Duration DEFAULT_MAX_BACKOFF = Duration.ofSeconds(10);
 
     private EmbeddingUtils() {
         // Utility class - prevent instantiation
@@ -57,7 +54,8 @@ public final class EmbeddingUtils {
      * <ul>
      *   <li>If ExecutionConfig is provided with maxAttempts > 1, failed requests will be retried
      *       with exponential backoff
-     *   <li>Retries respect the maxAttempts, initialBackoff, and maxBackoff settings
+     *   <li>Retries respect the maxAttempts, initialBackoff, maxBackoff and backoffMultiplier
+     *       settings (the retry spec is built by {@link RetrySpecs})
      *   <li>Only errors matching the retryOn predicate will be retried
      *   <li>Each retry is logged with attempt number and failure reason
      * </ul>
@@ -100,26 +98,8 @@ public final class EmbeddingUtils {
         // Apply retry if configured (maxAttempts > 1 means retry is enabled)
         Integer maxAttempts = config.getMaxAttempts();
         if (maxAttempts != null && maxAttempts > 1) {
-            Duration initialBackoff = config.getInitialBackoff();
-            Duration maxBackoff = config.getMaxBackoff();
-            Predicate<Throwable> retryOn = config.getRetryOn();
-
-            // Use defaults if not specified
-            if (initialBackoff == null) {
-                initialBackoff = DEFAULT_INITIAL_BACKOFF;
-            }
-            if (maxBackoff == null) {
-                maxBackoff = DEFAULT_MAX_BACKOFF;
-            }
-            if (retryOn == null) {
-                retryOn = error -> true; // retry all errors by default
-            }
-
-            Retry retrySpec =
-                    Retry.backoff(maxAttempts - 1, initialBackoff)
-                            .maxBackoff(maxBackoff)
-                            .jitter(0.5)
-                            .filter(retryOn)
+            RetryBackoffSpec retrySpec =
+                    RetrySpecs.build(config)
                             .doBeforeRetry(
                                     signal ->
                                             logger.warn(
@@ -132,9 +112,11 @@ public final class EmbeddingUtils {
 
             embeddingMono = embeddingMono.retryWhen(retrySpec);
             logger.debug(
-                    "Applied retry config: maxAttempts={}, initialBackoff={} for {} model: {}",
+                    "Applied retry config: maxAttempts={}, multiplier={}, initialBackoff={} for {}"
+                            + " model: {}",
                     maxAttempts,
-                    initialBackoff,
+                    retrySpec.multiplier,
+                    retrySpec.minBackoff,
                     operationType,
                     modelName);
         }
