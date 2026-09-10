@@ -91,6 +91,20 @@ until its hosting or DNS is changed separately.
 preserves the pre-v1 `/en/...html` and `/zh/...html` aliases from the former redirect
 generator, and supplies version/language landing routes. Keep these redirects when
 adding new navigation so links from releases and external websites continue working.
+Ten wildcard fallbacks follow the exact mappings: `/en/:slug*` and `/zh/:slug*`
+preserve paths under v1, while the `harness`, `multi-agent`, `quickstart`, and `task`
+prefixes insert the v1 `docs` directory. For example, `/zh/harness/memory` redirects
+to `/v1/zh/docs/harness/memory`. Keep specific rules before broader fallbacks.
+These rules use permanent redirects (308); set `permanent: false` for temporary
+redirects (307). Unknown article paths still return 404 instead of going to the homepage.
+The local checker supports prefix wildcards in the `/:slug*` form and checks their
+destination pages, page conflicts, and redirect loops. Do not add a site-wide
+`/:slug*` fallback that would also match the new routes.
+The production domain remains `java.agentscope.io`. All redirects explicitly set
+`permanent: true`. Bind `java.agentscope.io` in the Mintlify dashboard and apply the
+DNS records it provides for these rules to handle incoming links. Keep the same
+hostname; no cross-domain redirect is needed. Deploying on a different domain alone
+does not redirect the old domain.
 Mintlify supplies its own search and AI-readable documentation endpoints.
 
 Official references:
