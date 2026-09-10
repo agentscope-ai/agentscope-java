@@ -1,6 +1,8 @@
-# Publishing components
+---
+title: Publishing components
+---
 
-This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Installation starts with the [quickstart](quickstart.md).
+This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Installation starts with the [quickstart](/v2/en/service/quickstart).
 
 ## Artifacts
 

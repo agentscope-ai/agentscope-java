@@ -1,8 +1,10 @@
-# Supervisor（监督者）
+---
+title: Supervisor
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
-在 **Supervisor** 模式中，一个中心**监督者**（主智能体）通过**工具**调用专职智能体进行协调。监督者接收用户请求，决定调用哪些专家（如日历、邮件），并将结果综合成一条回复。专职智能体从用户视角看是**无状态**的；监督者维护对话，将一次性任务委托给专家。在 AgentScope 中通过 **Agent as Tool**（[agent-as-tool.md](../task/agent-as-tool.md)）实现：`Toolkit.registration().subAgent()`。
+在 **Supervisor** 模式中，一个中心**监督者**（主智能体）通过**工具**调用专职智能体进行协调。监督者接收用户请求，决定调用哪些专家（如日历、邮件），并将结果综合成一条回复。专职智能体从用户视角看是**无状态**的；监督者维护对话，将一次性任务委托给专家。在 AgentScope 中通过 **Agent as Tool**（[agent-as-tool.md](/v1/zh/docs/task/agent-as-tool)）实现：`Toolkit.registration().subAgent()`。
 
 ## 概述
 
@@ -46,6 +48,6 @@
 
 ## 相关文档
 
-- [Agent as Tool](../task/agent-as-tool.md) - 子智能体注册与 SubAgentConfig
-- [Subagents](./subagent.md) - 使用 Task/TaskOutput 与 Markdown/API 子智能体的编排
-- [Pipeline](./pipeline.md) - 顺序与并行智能体组合
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 子智能体注册与 SubAgentConfig
+- [Subagents](/v1/zh/docs/multi-agent/subagent) - 使用 Task/TaskOutput 与 Markdown/API 子智能体的编排
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行智能体组合

@@ -1,10 +1,12 @@
-# Skills（渐进式披露）
+---
+title: Skills
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
 在 **Skills** 模式中，专项能力被打包成可调用的「技能」，用于增强智能体行为。技能主要是**提示驱动**的：智能体先看到技能元数据（如名称、描述），再通过工具（如 `read_skill`）**按需**加载完整技能内容，从而控制初始上下文大小，避免一次性加载所有技能文本。
 
-AgentScope 通过 **SkillBox**、**SkillRepository**（如 `ClasspathSkillRepository`）和技能工具实现该机制。核心能力在 [智能体技能](../task/agent-skill.md) 中说明；本文侧重使用同一机制的 **多智能体示例**（SQL 助手）。
+AgentScope 通过 **SkillBox**、**SkillRepository**（如 `ClasspathSkillRepository`）和技能工具实现该机制。核心能力在 [智能体技能](/v1/zh/docs/task/agent-skill) 中说明；本文侧重使用同一机制的 **多智能体示例**（SQL 助手）。
 
 ## 概述
 
@@ -48,6 +50,6 @@ AgentScope 通过 **SkillBox**、**SkillRepository**（如 `ClasspathSkillReposi
 
 ## 相关文档
 
-- [智能体技能](../task/agent-skill.md) - AgentScope 中的技能格式、SkillBox 与渐进式披露
-- [Pipeline](./pipeline.md) - 顺序与并行智能体组合
-- [Agent as Tool](../task/agent-as-tool.md) - 子智能体即工具
+- [智能体技能](/v1/zh/docs/task/agent-skill) - AgentScope 中的技能格式、SkillBox 与渐进式披露
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行智能体组合
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 子智能体即工具
