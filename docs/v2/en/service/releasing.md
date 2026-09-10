@@ -2,6 +2,8 @@
 title: Publishing components
 ---
 
+[简体中文](/v2/zh/service/releasing)
+
 This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Installation starts with the [quickstart](/v2/en/service/quickstart).
 
 ## Artifacts
@@ -48,4 +50,4 @@ Freeze source and versions, complete tests and candidate installation, create th
 
 Attach artifacts, checksums, digests, tested platforms and limitations to the Release. Publish Maven/Python/npm artifacts and verify installation from a new environment. See `agentscope-service/release/README.md` for package publication commands.
 
-The website workflow deploys `/docs` from `main`. Merge the matching documentation into that publication entry point, then verify both Service navigation trees, direct links, images and search.
+The website workflow validates `/docs`; the Mintlify GitHub App publishes the branch configured for the site. Merge the matching documentation into that publication entry point, then verify both Service navigation trees, direct links, images and search.
