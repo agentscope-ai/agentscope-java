@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -469,6 +470,20 @@ class MongoAgentStateStoreTest {
         assertEquals(2, result.size());
         assertTrue(result.contains("s1"));
         assertTrue(result.contains("s2"));
+    }
+
+    @Test
+    void listSessionIdsForAnonymousUser() {
+        // null userId should be normalized to "__anon__" and queried correctly
+        store.listSessionIds(null);
+        verify(collection).distinct(eq("session_id"), any(Bson.class), eq(String.class));
+    }
+
+    @Test
+    void listSessionIdsForBlankUser() {
+        // blank userId should be normalized to "__anon__" same as null
+        store.listSessionIds("  ");
+        verify(collection).distinct(eq("session_id"), any(Bson.class), eq(String.class));
     }
 
     @Test

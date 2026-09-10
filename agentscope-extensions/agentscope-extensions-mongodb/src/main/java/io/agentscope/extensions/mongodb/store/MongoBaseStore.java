@@ -170,6 +170,11 @@ public class MongoBaseStore implements BaseStore {
                     return false;
                 }
                 throw e;
+            } catch (MongoCommandException e) {
+                if (e.getErrorCode() == 11000) {
+                    return false;
+                }
+                throw e;
             }
         } else {
             Bson filter = Filters.and(Filters.eq(id), Filters.eq(FIELD_VERSION, expectedVersion));

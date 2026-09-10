@@ -53,6 +53,8 @@ import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * MongoDB-backed implementation of {@link AgentStateStore}.
@@ -80,6 +82,8 @@ import org.bson.conversions.Bson;
  * }</pre>
  */
 public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(MongoAgentStateStore.class);
 
     private static final String ANON_USER = "__anon__";
     private static final String FIELD_USER_ID = "user_id";
@@ -486,7 +490,15 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     public void delete(String userId, String sessionId) {
         Document slotId = slotId(userId, sessionId);
         if (onDeleteCallback != null) {
-            onDeleteCallback.accept(userId, sessionId);
+            try {
+                onDeleteCallback.accept(userId, sessionId);
+            } catch (Exception e) {
+                log.warn(
+                        "[mongo-state] onDeleteCallback failed for session {}, proceeding"
+                                + " with deletion",
+                        sessionId,
+                        e);
+            }
         }
         collection.deleteOne(Filters.eq(slotId));
     }
@@ -499,7 +511,8 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
                 Updates.combine(
                         Updates.unset(FIELD_STATES + "." + key),
                         Updates.unset(FIELD_VERSIONS + "." + key),
-                        Updates.unset(FIELD_HASHES + "." + key));
+                        Updates.unset(FIELD_HASHES + "." + key),
+                        Updates.set(FIELD_UPDATED_AT, new Date()));
         collection.updateOne(Filters.eq(slotId), unsetFields);
     }
 

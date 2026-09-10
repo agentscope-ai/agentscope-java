@@ -244,6 +244,8 @@ class MongoIndexLifecycleContractTest {
     void snapshot_cascadeDeletedWithSession() throws Exception {
         String cascadeDb = "test_cascade_" + System.currentTimeMillis();
         String snapshotId = "snap-" + System.currentTimeMillis();
+        // An unrelated snapshot belonging to a different session — must survive cascade.
+        String unrelatedSnapshotId = "snap-other-" + System.currentTimeMillis();
 
         MongoDistributedStore store = MongoDistributedStore.create(client, cascadeDb);
         try {
@@ -270,7 +272,15 @@ class MongoIndexLifecycleContractTest {
             byte[] data = "workspace-tar".getBytes(StandardCharsets.UTF_8);
             snapshotClient.upload(snapshotId, new ByteArrayInputStream(data));
 
+            // Upload an unrelated snapshot (not linked to any session's sandbox state).
+            snapshotClient.upload(
+                    unrelatedSnapshotId,
+                    new ByteArrayInputStream("other".getBytes(StandardCharsets.UTF_8)));
+
             assertTrue(snapshotClient.exists(snapshotId), "Snapshot must exist after upload");
+            assertTrue(
+                    snapshotClient.exists(unrelatedSnapshotId),
+                    "Unrelated snapshot must exist after upload");
 
             // Delete the session — cascade cleanup must remove the snapshot.
             stateStore.delete("user1", "sess1");
@@ -278,6 +288,9 @@ class MongoIndexLifecycleContractTest {
             assertFalse(
                     snapshotClient.exists(snapshotId),
                     "Snapshot must be cascade-deleted when its owning session is removed");
+            assertTrue(
+                    snapshotClient.exists(unrelatedSnapshotId),
+                    "Unrelated snapshot must NOT be affected by cascade delete");
         } finally {
             store.close();
             client.getDatabase(cascadeDb).drop();

@@ -29,6 +29,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteError;
@@ -47,6 +48,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.function.UnaryOperator;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonString;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
@@ -289,6 +292,28 @@ class MongoSandboxExecutionGuardTest {
         when(collection.insertOne(any(Document.class))).thenThrow(unexpected);
 
         assertThrows(RuntimeException.class, () -> guard.tryEnter(key()));
+    }
+
+    @Test
+    void tryEnterReclaimsExpiredLockOnCommandException() throws Exception {
+        MongoSandboxExecutionGuard guard = createGuard(b -> b.lockTimeout(Duration.ofSeconds(10)));
+        // Some MongoDB driver versions throw MongoCommandException for duplicate key
+        BsonDocument response = new BsonDocument();
+        response.append("code", new BsonInt32(11000));
+        response.append("errmsg", new BsonString("E11000 duplicate key error"));
+        when(collection.insertOne(any(Document.class)))
+                .thenThrow(new MongoCommandException(response, new ServerAddress()));
+        Document reclaimed =
+                new Document("_id", "lock:abc")
+                        .append("owner", "old-owner")
+                        .append("expiresAt", new Date(0L));
+        when(collection.findOneAndUpdate(
+                        any(Bson.class), any(Bson.class), any(FindOneAndUpdateOptions.class)))
+                .thenReturn(reclaimed);
+
+        SandboxLease lease = guard.tryEnter(key());
+
+        assertNotNull(lease);
     }
 
     @Test

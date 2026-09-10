@@ -208,6 +208,21 @@ class MongoBaseStoreTest {
     }
 
     @Test
+    void putIfVersionZeroReturnsFalseOnCommandException() {
+        // Some MongoDB driver versions throw MongoCommandException for duplicate key
+        BsonDocument response = new BsonDocument();
+        response.append("code", new BsonInt32(11000));
+        response.append("errmsg", new BsonString("E11000 duplicate key error"));
+        doThrow(new MongoCommandException(response, new ServerAddress()))
+                .when(collection)
+                .insertOne(any(Document.class));
+
+        boolean result = store.putIfVersion(List.of("ns"), "key", Map.of("data", "v"), 0L);
+
+        assertFalse(result);
+    }
+
+    @Test
     void putIfVersionZeroPropagatesNonDuplicateKeyError() {
         // insertOne throws a non-duplicate-key error -> should propagate
         WriteError writeError = new WriteError(12345, "some other error", new BsonDocument());

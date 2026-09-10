@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.mongodb.sandbox;
 
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -152,6 +153,11 @@ public final class MongoSandboxExecutionGuard implements SandboxExecutionGuard, 
                 return new MongoLease(collection, lockId, token, leaseTtlMs, renewalExecutor);
             } catch (MongoWriteException e) {
                 if (e.getError().getCode() != 11000) {
+                    throw new RuntimeException("Failed to acquire MongoDB lock: " + lockId, e);
+                }
+                // Duplicate key — lock document already exists, fall through to step 2
+            } catch (MongoCommandException e) {
+                if (e.getErrorCode() != 11000) {
                     throw new RuntimeException("Failed to acquire MongoDB lock: " + lockId, e);
                 }
                 // Duplicate key — lock document already exists, fall through to step 2
