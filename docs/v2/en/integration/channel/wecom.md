@@ -1,4 +1,6 @@
-# WeCom Channel
+---
+title: WeCom Channel
+---
 
 `agentscope-extensions-channel-wecom` connects your Agent to WeCom (企业微信 / WeChat Work) via the **encrypted callback** mechanism. A Spring `@RestController` receives message callbacks, decrypts them, and dispatches through the Gateway.
 

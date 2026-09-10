@@ -1,4 +1,6 @@
-# 创建 ReAct 智能体
+---
+title: 智能体
+---
 
 AgentScope 提供了开箱即用的 ReAct 智能体 `ReActAgent` 供开发者使用。
 
@@ -27,17 +29,17 @@ AgentScope 提供了开箱即用的 ReAct 智能体 `ReActAgent` 供开发者使
 |------|-----------|------|
 | `name` (必需) | | 智能体的名称 |
 | `sysPrompt` | | 智能体的系统提示（建议设置） |
-| `model` (必需) | [模型集成](../task/model.md) | 智能体用于生成响应的模型 |
-| `toolkit` | [工具系统](../task/tool.md) | 用于注册/调用工具函数的工具模块 |
-| `memory` | [记忆管理](../task/memory.md) | 用于存储对话历史的短期记忆 |
+| `model` (必需) | [模型集成](/v1/zh/docs/task/model) | 智能体用于生成响应的模型 |
+| `toolkit` | [工具系统](/v1/zh/docs/task/tool) | 用于注册/调用工具函数的工具模块 |
+| `memory` | [记忆管理](/v1/zh/docs/task/memory) | 用于存储对话历史的短期记忆 |
 | `description` | | 智能体的描述信息 |
 | `generateOptions` | | LLM 生成参数（temperature、topP、maxTokens 等） |
-| `toolExecutionContext` | [工具系统](../task/tool.md) | 工具执行上下文，用于向工具注入依赖 |
-| `planNotebook` | [计划](../task/plan.md) | 计划管理器 |
-| `longTermMemory` | [记忆管理](../task/memory.md) | 长期记忆 |
-| `longTermMemoryMode` | [记忆管理](../task/memory.md) | 长期记忆的管理模式：`AGENT_CONTROL`（智能体自主控制）、`STATIC_CONTROL`（静态管理）、`BOTH`（两者皆有） |
+| `toolExecutionContext` | [工具系统](/v1/zh/docs/task/tool) | 工具执行上下文，用于向工具注入依赖 |
+| `planNotebook` | [计划](/v1/zh/docs/task/plan) | 计划管理器 |
+| `longTermMemory` | [记忆管理](/v1/zh/docs/task/memory) | 长期记忆 |
+| `longTermMemoryMode` | [记忆管理](/v1/zh/docs/task/memory) | 长期记忆的管理模式：`AGENT_CONTROL`（智能体自主控制）、`STATIC_CONTROL`（静态管理）、`BOTH`（两者皆有） |
 | `maxIters` | | 智能体生成响应的最大迭代次数（默认：10） |
-| `hooks` | [Hook 系统](../task/hook.md) | 用于自定义智能体行为的事件钩子 |
+| `hooks` | [Hook 系统](/v1/zh/docs/task/hook) | 用于自定义智能体行为的事件钩子 |
 | `modelExecutionConfig` | | 模型调用的超时/重试配置 |
 | `toolExecutionConfig` | | 工具调用的超时/重试配置 |
 

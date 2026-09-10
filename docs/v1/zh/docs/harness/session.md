@@ -1,4 +1,6 @@
-# 会话（Session）
+---
+title: 会话
+---
 
 ## 作用
 
@@ -22,7 +24,7 @@
 
 ### 双轨存储布局
 
-```{mermaid}
+```mermaid
 graph LR
     Call[agent.call] --> Hook[SessionPersistenceHook]
     Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule 快照)]
@@ -105,7 +107,7 @@ agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build(
 
 ## 相关文档
 
-- [工具](./tool.md) — `session_search` / `session_list` / `session_history` 的入参
-- [记忆](./memory.md) — `offloadMessages` 什么时候被调，怎么反过来被 `memory_search` 利用
-- [文件系统](./filesystem.md) — `userIdRef` + `NamespaceFactory` 的多租户路径隔离
-- [架构](./architecture.md) — `SessionPersistenceHook` 在 PostCallEvent / ErrorEvent 中的位置
+- [工具](/v1/zh/docs/harness/tool) — `session_search` / `session_list` / `session_history` 的入参
+- [记忆](/v1/zh/docs/harness/memory) — `offloadMessages` 什么时候被调，怎么反过来被 `memory_search` 利用
+- [文件系统](/v1/zh/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` 的多租户路径隔离
+- [架构](/v1/zh/docs/harness/architecture) — `SessionPersistenceHook` 在 PostCallEvent / ErrorEvent 中的位置

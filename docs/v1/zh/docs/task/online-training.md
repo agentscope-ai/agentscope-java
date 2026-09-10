@@ -1,4 +1,6 @@
-# AgentScope Training 训练扩展
+---
+title: 在线训练
+---
 
 ## 概述
 

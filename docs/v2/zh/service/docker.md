@@ -1,4 +1,6 @@
-# Docker 部署
+---
+title: Docker 部署
+---
 
 发布部署使用 `agentscope-service/deploy/compose.yaml` 中的镜像引用。仓库原有 `agentscope-service/docker-compose.yml` 用于从源码构建的开发环境，两者使用不同的初始化配置。
 
@@ -33,4 +35,4 @@ docker compose ps
 
 `init-env.sh` 不覆盖现有文件，也不会重新生成密钥。JWT、内部令牌和 Vault 密钥必须在使用它们的组件间一致。Vault 密钥变更不能当作普通配置刷新处理。
 
-升级版本前先完成[备份](operations.md)。镜像发布方式参见[发布指南](releasing.md)。
+升级版本前先完成[备份](/v2/zh/service/operations)。镜像发布方式参见[发布指南](/v2/zh/service/releasing)。

@@ -1,4 +1,6 @@
-# Connect a Runtime Host
+---
+title: Connect a Runtime Host
+---
 
 A Runtime Host runs on a computer or server with a Coding Agent provider installed. The control plane dispatches and records work; the Host executes it with the local provider.
 
@@ -30,4 +32,4 @@ Configuration and state default to `~/.agentscope/runtime-host/`. Preserve the H
 
 After connecting, verify Host and provider availability in the console, bind a Hosted Agent and dispatch a small task. Diagnose failures with both Task Attempt records and Host logs.
 
-A Runtime Host is distinct from a Managed Agent Hands Worker. See [Workspaces and Environments](workspaces.md).
+A Runtime Host is distinct from a Managed Agent Hands Worker. See [Workspaces and Environments](/v2/en/service/workspaces).

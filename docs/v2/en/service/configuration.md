@@ -1,4 +1,6 @@
-# Configuration reference
+---
+title: Configuration reference
+---
 
 Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Secret and configure ingress and storage through Chart values.
 
@@ -29,4 +31,4 @@ Release deployments share `/data/workspaces`. The control plane uses `AISTIO_WOR
 
 ## Schema management
 
-Dataplane and Scheduler currently default to Hibernate `update`; Go runs migrations on startup. Without separately managed versioned SQL migrations, changing `BUILDER_JPA_DDL_AUTO` to `validate` will not initialize a new database. Back up and rehearse upgrades with the [operations guide](operations.md).
+Dataplane and Scheduler currently default to Hibernate `update`; Go runs migrations on startup. Without separately managed versioned SQL migrations, changing `BUILDER_JPA_DDL_AUTO` to `validate` will not initialize a new database. Back up and rehearse upgrades with the [operations guide](/v2/en/service/operations).

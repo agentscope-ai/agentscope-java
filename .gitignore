@@ -122,3 +122,7 @@ agentscope-service/.dev-stack/
 /agentscope-service/aistio/sdk/dsh/*.tgz
 /agentscope-service/aistio/sdk/python/dist/
 /agentscope-service/aistio/sdk/python/.pytest_cache/
+
+# Mintlify documentation dependencies and local preview
+/docs/node_modules/
+/docs/.mintlify/

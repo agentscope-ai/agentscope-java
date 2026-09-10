@@ -1,4 +1,6 @@
-# Anthropic Model
+---
+title: Anthropic
+---
 
 `agentscope-extensions-model-anthropic` integrates Anthropic Claude models, including Anthropic-specific formatter and request DTO support.
 
@@ -49,4 +51,4 @@ Spring Boot applications can use the Anthropic starter:
 </dependency>
 ```
 
-Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+Full builder options, formatters, credentials, and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).

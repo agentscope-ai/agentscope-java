@@ -1,4 +1,6 @@
-# Agents, tools and skills
+---
+title: Agents, tools and skills
+---
 
 An Agent is a reusable configuration. Choose its execution mode before configuring working material and capabilities.
 
@@ -22,4 +24,4 @@ Definitions, running instances and Sessions are separate objects. After updating
 
 Configure resource grants in the relevant Namespace and check access to dependent Workspaces, models and Vaults. Discovering an Agent does not grant access to all of its dependencies or other users' private work.
 
-Continue with [Workspaces and Environments](workspaces.md) and [Accounts and permissions](access.md).
+Continue with [Workspaces and Environments](/v2/en/service/workspaces) and [Accounts and permissions](/v2/en/service/access).

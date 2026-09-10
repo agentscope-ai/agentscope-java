@@ -1,4 +1,6 @@
-# 连接 Runtime Host
+---
+title: 连接 Runtime Host
+---
 
 Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面负责派发和记录工作，Host 使用本地 provider 执行。
 
@@ -30,4 +32,4 @@ agentscope runtime start
 
 连接成功后，在控制台检查 Host 在线、provider 可用，再绑定 Hosted Agent 并派发一项小任务。失败时同时查看 Task Attempt 和 Host 日志。
 
-Runtime Host 不是托管 Agent 的 Hands Worker；有关执行环境见 [Workspace 与 Environment](workspaces.md)。
+Runtime Host 不是托管 Agent 的 Hands Worker；有关执行环境见 [Workspace 与 Environment](/v2/zh/service/workspaces)。

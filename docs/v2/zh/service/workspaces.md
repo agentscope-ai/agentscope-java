@@ -1,4 +1,6 @@
-# Workspace 与 Environment
+---
+title: Workspace 与 Environment
+---
 
 Workspace 管理工作资料，Environment 决定托管 Agent 在哪里使用工具。Namespace 则决定资源归属和权限。
 
@@ -22,4 +24,4 @@ Local 的容器文件系统不是用户电脑的文件系统。Self-hosted Hands
 
 创建 Environment 后，确认 Agent 绑定到它。创建一个新 Session，执行读取小文件等简单任务，检查实际文件位置和错误信息。再验证持久文件在容器或 Pod 重启后仍存在。
 
-相关说明：[Runtime Host](runtime-host.md)、[备份恢复](operations.md)。
+相关说明：[Runtime Host](/v2/zh/service/runtime-host)、[备份恢复](/v2/zh/service/operations)。
