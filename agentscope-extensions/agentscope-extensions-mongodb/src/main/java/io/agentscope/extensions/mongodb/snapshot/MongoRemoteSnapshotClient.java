@@ -202,14 +202,10 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
     }
 
     private void deleteIfExists(String snapshotId) {
-        try {
-            GridFSFile existing =
-                    gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
-            if (existing != null) {
-                gridFSBucket.delete(existing.getId());
-            }
-        } catch (MongoGridFSException ignored) {
-            // File does not exist — safe to proceed.
+        GridFSFile existing =
+                gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+        if (existing != null) {
+            gridFSBucket.delete(existing.getId());
         }
     }
 

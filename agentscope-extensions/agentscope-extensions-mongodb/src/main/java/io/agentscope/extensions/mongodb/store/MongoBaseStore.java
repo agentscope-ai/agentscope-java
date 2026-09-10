@@ -298,11 +298,14 @@ public class MongoBaseStore implements BaseStore {
     }
 
     // ────────────────── Key escaping for MongoDB field names ──────────────────
-    // MongoDB rejects '.' and '$' in field names. We escape them to fullwidth equivalents
-    // on write and restore on read, so callers are not restricted by MongoDB naming rules.
-
-    private static final char DOT_ESCAPE = '\uFF0E'; // fullwidth full stop
-    private static final char DOLLAR_ESCAPE = '\uFF04'; // fullwidth dollar sign
+    // MongoDB rejects '.' and '$' in field names. We use backslash-prefix encoding on write
+    // and restore on read, so callers are not restricted by MongoDB naming rules.
+    // Backslash itself is also escaped (\\) to guarantee round-trip safety: no original key
+    // can produce a false positive because validateKey() forbids backslash in keys.
+    private static final char ESCAPE_PREFIX = (char) 0x5C; // backslash
+    private static final char DOT_CODE = 'E';
+    private static final char DOLLAR_CODE = '$';
+    private static final char BACKSLASH_CODE = (char) 0x5C;
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> escapeKeys(Map<String, Object> map) {
@@ -371,16 +374,18 @@ public class MongoBaseStore implements BaseStore {
     }
 
     private static String escapeKey(String key) {
-        if (key.indexOf('.') < 0 && key.indexOf('$') < 0) {
+        if (key.indexOf('.') < 0 && key.indexOf('$') < 0 && key.indexOf(ESCAPE_PREFIX) < 0) {
             return key;
         }
-        StringBuilder sb = new StringBuilder(key.length());
+        StringBuilder sb = new StringBuilder(key.length() + 4);
         for (int i = 0; i < key.length(); i++) {
             char c = key.charAt(i);
             if (c == '.') {
-                sb.append(DOT_ESCAPE);
+                sb.append(ESCAPE_PREFIX).append(DOT_CODE);
             } else if (c == '$') {
-                sb.append(DOLLAR_ESCAPE);
+                sb.append(ESCAPE_PREFIX).append(DOLLAR_CODE);
+            } else if (c == ESCAPE_PREFIX) {
+                sb.append(ESCAPE_PREFIX).append(BACKSLASH_CODE);
             } else {
                 sb.append(c);
             }
@@ -389,16 +394,24 @@ public class MongoBaseStore implements BaseStore {
     }
 
     private static String unescapeKey(String key) {
-        if (key.indexOf(DOT_ESCAPE) < 0 && key.indexOf(DOLLAR_ESCAPE) < 0) {
+        if (key.indexOf(ESCAPE_PREFIX) < 0) {
             return key;
         }
         StringBuilder sb = new StringBuilder(key.length());
         for (int i = 0; i < key.length(); i++) {
             char c = key.charAt(i);
-            if (c == DOT_ESCAPE) {
-                sb.append('.');
-            } else if (c == DOLLAR_ESCAPE) {
-                sb.append('$');
+            if (c == ESCAPE_PREFIX && i + 1 < key.length()) {
+                char next = key.charAt(i + 1);
+                if (next == DOT_CODE) {
+                    sb.append('.');
+                } else if (next == DOLLAR_CODE) {
+                    sb.append('$');
+                } else if (next == BACKSLASH_CODE) {
+                    sb.append(ESCAPE_PREFIX);
+                } else {
+                    sb.append(c).append(next);
+                }
+                i++;
             } else {
                 sb.append(c);
             }
