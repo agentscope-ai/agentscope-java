@@ -1,4 +1,6 @@
-# Distributed Storage (Distributed Store)
+---
+title: Distributed Storage (Distributed Store)
+---
 
 AgentScope unifies all components that need distributed persistence under the `DistributedStore` interface. One line of configuration switches agent state, workspace filesystem, sandbox snapshots, and concurrency locks to the same distributed store.
 
@@ -80,9 +82,9 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 
 ## Store Documentation
 
-- [Redis](redis.md) — full capability coverage, recommended for multi-replica production
-- [MySQL / JDBC](mysql.md) — for existing relational database infrastructure
-- [Alibaba Cloud OSS](oss.md) — object storage, best for large-capacity snapshots
+- [Redis](/v2/en/integration/distributed/redis) — full capability coverage, recommended for multi-replica production
+- [MySQL / JDBC](/v2/en/integration/distributed/mysql) — for existing relational database infrastructure
+- [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
 
 ## aistio Hosted Store
 

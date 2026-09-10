@@ -1,11 +1,14 @@
 ---
-title: "V1 Migration Guide"
-description: "Complete migration guide from AgentScope Java 1.x to 2.0"
+title: V1 Migration Guide
+description: Complete migration guide from AgentScope Java 1.x to 2.0
 ---
 
-:::{tip}
-Looking for per-version change records? See [Release Notes](others/release-notes.md).
-:::
+<Tip>
+
+Looking for per-version change records? See [Release Notes](/v2/en/docs/others/release-notes).
+
+</Tip>
+
 
 AgentScope Java 2.0 aims to preserve compatibility with 1.x where possible so that most users can upgrade smoothly. That said, 2.0 does introduce API-level changes. This page splits those changes into two sections:
 
@@ -28,14 +31,14 @@ Items in this section are removed, renamed, or have their semantics tightened. C
 | `.statePersistence(StatePersistence)` | Same — `AgentStateStore` subsumes persistence |
 | `.structuredOutputReminder(StructuredOutputReminder)` | No longer needed — structured output is now handled natively at the model layer (`Model.supportsNativeStructuredOutput()`); the framework automatically selects native JSON schema or falls back to tool-choice |
 
-Detail → [Context](building-blocks/context.md)
+Detail → [Context](/v2/en/docs/building-blocks/context)
 
 #### A.2 Removed packages and classes
 
 | Removed in 2.0 | Replacement |
 |---|---|
 | `io.agentscope.core.session.SessionManager` | Configure `.stateStore(AgentStateStore)` on the agent builder; persistence happens automatically per `(userId, sessionId)` |
-| `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](harness/subagent.md) |
+| `io.agentscope.core.pipeline.*` — `Pipeline`, `Pipelines`, `SequentialPipeline`, `FanoutPipeline`, `MsgHub` | Compose middleware + sub-agents + the event stream for multi-agent orchestration. See the subagent guide → [Subagent](/v2/en/docs/harness/subagent) |
 | `io.agentscope.core.model.tts.*` (14 files, DashScope TTS / Realtime TTS / `AudioPlayer`, etc.) | Core no longer ships TTS. Integrate the upstream provider SDK directly if you need TTS |
 | `io.agentscope.core.model.StructuredOutputReminder` | No longer needed — structured output is handled natively at the model layer |
 | `io.agentscope.core.agent.StructuredOutputCapableAgent` | Removed — structured output capability is inlined into `ReActAgent` with native model-layer support |
@@ -77,7 +80,7 @@ Spring Boot applications should use the provider-specific starters instead of re
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |
 | Ollama | `agentscope-ollama-spring-boot-starter` |
 
-Detail → [Model](building-blocks/model.md), [Model Providers](../integration/overview.md)
+Detail → [Model](/v2/en/docs/building-blocks/model), [Model Providers](/v2/en/integration/overview)
 
 #### A.4 `state` package restructure (compile error)
 
@@ -89,7 +92,7 @@ Detail → [Model](building-blocks/model.md), [Model Providers](../integration/o
 | `ToolkitState` | Moved to `io.agentscope.core.state.legacy.ToolkitState` (kept for compatibility only — do not reference in new code) |
 | (new) | `Task`, `TaskContextState`, `ToolContextState`, `PlanModeContextState`, `ReadCacheEntry` |
 
-Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](building-blocks/context.md)
+Any code that imports `AgentMetaState`, `StateModule`, `StatePersistence`, or `ToolkitState` from `io.agentscope.core.state` will fail to compile. Detail → [Context](/v2/en/docs/building-blocks/context)
 
 #### A.5 `PlanNotebook` removed — use `HarnessAgent.enablePlanMode()`
 
@@ -116,7 +119,7 @@ The entire `io.agentscope.core.plan` package (`PlanNotebook`, `Plan`, `SubTask`,
 - `SYSTEM` — only `TextBlock`
 - `ASSISTANT` — unrestricted
 
-Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](building-blocks/message-and-event.md)
+Combinations that v1 tolerated (for example, a `USER` message carrying a `ToolUseBlock`) now throw at construction. Use the role-pinned subclasses `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage` to make role/content compatibility obvious at the call site. Detail → [Message & Event](/v2/en/docs/building-blocks/message-and-event)
 
 #### A.7 Agent is fully stateless (architecture change)
 
@@ -153,7 +156,7 @@ Configure tracing through standard OpenTelemetry components instead:
 | Framework-global tracer | Add `new OtelTracingMiddleware()` to each agent that should emit spans |
 | `TracerRegistry.resetToNoop()` / tracer shutdown | Close the application-owned `SdkTracerProvider` during shutdown |
 
-The middleware reads `GlobalOpenTelemetry`, so the SDK must be registered before the agent uses the middleware. See [Middleware — OtelTracingMiddleware](building-blocks/middleware.md#oteltracingmiddleware) for the required dependencies and a complete OTLP example with custom authentication headers.
+The middleware reads `GlobalOpenTelemetry`, so the SDK must be registered before the agent uses the middleware. See [Middleware — OtelTracingMiddleware](/v2/en/docs/building-blocks/middleware#oteltracingmiddleware) for the required dependencies and a complete OTLP example with custom authentication headers.
 
 ---
 
@@ -167,7 +170,7 @@ Items in this section compile and run on 2.0, but each has been marked for remov
 - Recommended path: register one or more `AgentSkillRepository` implementations (built-ins: `ClasspathSkillRepository`, `FileSystemSkillRepository`) via `Builder.skillRepository(...)` / `.skillRepositories(...)`. When at least one repository is registered, `DynamicSkillMiddleware` is auto-installed and rebuilds the skill prompt on every `call()`.
 - Fine-grained filtering: `Builder.skillFilter(SkillFilter)`.
 
-Detail → [Skill](harness/skill.md)
+Detail → [Skill](/v2/en/docs/harness/skill)
 
 #### B.2 Hook → Middleware
 
@@ -177,7 +180,7 @@ The entire `io.agentscope.core.hook` package — the `Hook` interface, `HookEven
 - Builder methods: `.middleware(MiddlewareBase)` and `.middlewares(List<? extends MiddlewareBase>)`.
 - Built-in: `TaskReminderMiddleware` (pairs with `TodoTools`, re-injects the task list before each reasoning step).
 
-Detail → [Middleware](building-blocks/middleware.md)
+Detail → [Middleware](/v2/en/docs/building-blocks/middleware)
 
 #### B.3 `Memory` → `AgentStateStore` + `AgentState`
 
@@ -188,7 +191,7 @@ Detail → [Middleware](building-blocks/middleware.md)
   - **Persistence** uses the `AgentStateStore` abstraction (built-in: `InMemoryAgentStateStore`, `JsonFileAgentStateStore`), partitioned by the `(userId, sessionId)` pair.
   - Builder chain: `.stateStore(AgentStateStore)` — `AgentState` is saved/loaded automatically on every `call()`, keyed by the `(userId, sessionId)` carried on the call's `RuntimeContext`.
 
-Detail → [Context](building-blocks/context.md)
+Detail → [Context](/v2/en/docs/building-blocks/context)
 
 #### B.4 Event subscription: hooks + chunk events → `streamEvents()`
 
@@ -201,7 +204,7 @@ Alongside the new event stream, the `Msg` refactor adds:
 - `ToolCallState` / `ToolResultState` on `ToolUseBlock` / `ToolResultBlock` — tool-call lifecycle
 - `id` field on every block — stable references across the stream
 
-Detail → [Message & Event](building-blocks/message-and-event.md)
+Detail → [Message & Event](/v2/en/docs/building-blocks/message-and-event)
 
 ##### `stream()` → `streamEvents()` (alignment with Python 2.0)
 
@@ -261,7 +264,7 @@ ReActAgent agent = ReActAgent.builder()
 
 - For `HarnessAgent` users, the harness module provides its own workspace-aware file and shell tools (`read_file`, `write_file`, `execute`, etc.) with unified local / Docker / cloud-sandbox stores, permission isolation, read/write cache, and HITL approval. It is recommended to use the built-in harness tools for workspace-integrated scenarios.
 
-Detail → [Harness filesystem](harness/filesystem.md)
+Detail → [Harness filesystem](/v2/en/docs/harness/filesystem)
 
 ---
 
@@ -278,7 +281,7 @@ The capabilities below are additive in 2.0 — none of them break 1.x code. The 
 - **Behavior change:** AgentEvents with `source != null` (subagent events) are emitted as AG-UI `CUSTOM` events (`subagent.lifecycle`, `subagent.text`, `subagent.thinking`, `subagent.tool_call`, `subagent.tool_result`, `subagent.require_confirm`) instead of native `TEXT_MESSAGE_*` / `RUN_*`. Set `emitSubagentEventsAsNative(true)` to restore the legacy native mapping.
 - The Spring Boot starter supports `AguiRuntimeContextResolver`, custom `AguiAgentAdapterFactory`, frontend tool injection / merge mode, and HITL interrupt output.
 
-Detail → [AG-UI](../integration/protocol/agui.md)
+Detail → [AG-UI](/v2/en/integration/protocol/agui)
 
 ### Toolkit & Permission
 
@@ -293,7 +296,7 @@ Tool execution is the main extension surface in 2.0, and the permission system s
   - `PermissionEngine`, `PermissionRule`, `PermissionMode` (`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`), `PermissionBehavior`
   - Every tool call goes through `PermissionEngine`: allow / require user confirmation / deny. HITL decisions flow back as `UserConfirmResultEvent`.
 
-Detail → [Tool](building-blocks/tool.md), [Permission System](building-blocks/permission-system.md)
+Detail → [Tool](/v2/en/docs/building-blocks/tool), [Permission System](/v2/en/docs/building-blocks/permission-system)
 
 ### Model fault tolerance and credentials
 
@@ -301,14 +304,14 @@ Detail → [Tool](building-blocks/tool.md), [Permission System](building-blocks/
 - `ModelRegistry` resolves models from `"provider:model"` strings when the matching model extension module is on the classpath (e.g. `dashscope:qwen-max`, `openai:gpt-5`)
 - Builder additions: `.model(String)`, `.maxRetries(int)`, `.fallbackModel(Model)` / `.fallbackModel(String)`, `.stopOnReject(boolean)` — primary-model failure auto-retries and falls back
 
-Detail → [Model](building-blocks/model.md)
+Detail → [Model](/v2/en/docs/building-blocks/model)
 
 ### Workspace (Harness module)
 
 - Workspace abstraction unifies local filesystem, Docker, and E2B cloud sandbox execution behind a single interface
 - Warm-up pool — pre-initialize execution environments in batches; useful for parallel RL rollouts
 
-Detail → [Workspace](harness/workspace.md)
+Detail → [Workspace](/v2/en/docs/harness/workspace)
 
 ### Other new Builder methods
 
@@ -318,7 +321,7 @@ Detail → [Workspace](harness/workspace.md)
 - `HarnessAgent.Builder.fromAgent(ReActAgent)` — ReActAgent → HarnessAgent migration helper. Inherits the same 7 fields as `ReActAgent.Builder.fromAgent` plus **every other observable configuration on ReActAgent**: `stateStore` / `defaultSessionId`, `ModelConfig` (`maxRetries` / `fallbackModel`), `ReactConfig.stopOnReject`, `modelExecutionConfig` / `toolExecutionConfig` / `toolExecutionContext`, `enablePendingToolRecovery`, `checkRunning`, `permissionContext`, `middlewares`, and `hooks`. The only flags not copied are `enableMetaTool` / `enableTaskList` — these are builder-time toolkit-mutation flags, and the toolkit copy already carries the tools they registered. Harness-only config (workspace / filesystem / subagents / skills / plan mode / `disable*` toggles) still has to be set explicitly. See javadoc for the full table.
 - **New getters on ReActAgent / parents to support the above migration**: `getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()` (on `ReActAgent`); `isCheckRunning()` (on `AgentBase`, deprecated, always returns `false`).
 
-Detail → [Agent](building-blocks/agent.md)
+Detail → [Agent](/v2/en/docs/building-blocks/agent)
 
 ### Dedicated model for Memory / Compaction
 
