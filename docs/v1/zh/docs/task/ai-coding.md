@@ -1,4 +1,6 @@
-# 使用 AI 编程
+---
+title: 使用 AI 编程
+---
 
 AgentScope Java 文档支持 [`llms.txt` 标准](https://llmstxt.org/)，让 AI 编程助手能够理解框架文档并生成准确的代码。
 

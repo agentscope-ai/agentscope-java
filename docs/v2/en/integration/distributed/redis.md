@@ -1,4 +1,6 @@
-# Redis
+---
+title: Redis
+---
 
 `agentscope-extensions-redis` provides full-stack Redis distributed storage — the recommended store for multi-replica production deployments.
 

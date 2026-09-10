@@ -1,6 +1,6 @@
 ---
-title: "文件系统（Filesystem）"
-description: "三种部署模式：本机 + shell / 共享存储 / 沙箱；IsolationScope 隔离维度；多用户隔离；技能与工具在各模式下的行为"
+title: 文件系统（Filesystem）
+description: 三种部署模式：本机 + shell / 共享存储 / 沙箱；IsolationScope 隔离维度；多用户隔离；技能与工具在各模式下的行为
 ---
 
 ## 作用
@@ -177,7 +177,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
 
-`apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](./sandbox.md#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](./sandbox.md#kubernetes-后端的状态保存pvc-是第一层)。
+`apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](/v2/zh/docs/harness/sandbox#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](/v2/zh/docs/harness/sandbox#kubernetes-后端的状态保存pvc-是第一层)。
 
 #### E2B 沙箱
 
@@ -523,9 +523,9 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [沙箱](./sandbox.md) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
-- [工作区](./workspace.md) — 目录布局、加载机制、两层读取的"下层"来源
-- [Context](../building-blocks/context.md) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
-- [技能](./skill.md) — 四层合成、自学习闭环、`<available_skills>` 块
-- [工具](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` 等参数
-- [架构](./architecture.md) — 文件系统与运行时上下文如何协作
+- [沙箱](/v2/zh/docs/harness/sandbox) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
+- [工作区](/v2/zh/docs/harness/workspace) — 目录布局、加载机制、两层读取的"下层"来源
+- [Context](/v2/zh/docs/building-blocks/context) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
+- [技能](/v2/zh/docs/harness/skill) — 四层合成、自学习闭环、`<available_skills>` 块
+- [工具](/v2/zh/docs/building-blocks/tool) — `read_file` / `write_file` / `execute` 等参数
+- [架构](/v2/zh/docs/harness/architecture) — 文件系统与运行时上下文如何协作

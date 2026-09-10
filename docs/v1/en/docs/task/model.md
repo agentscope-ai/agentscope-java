@@ -1,4 +1,6 @@
-# Model
+---
+title: Model Integration
+---
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
 

@@ -1,4 +1,6 @@
-# Key Concepts
+---
+title: Key Concepts
+---
 
 This chapter introduces the core concepts in AgentScope from an engineering perspective to help you understand the framework's design philosophy.
 
@@ -186,7 +188,7 @@ ReActAgent agent = ReActAgent.builder()
 Msg response = agent.call(userMsg).block();
 ```
 
-> For detailed configuration, see [Creating a ReAct Agent](agent.md).
+> For detailed configuration, see [Creating a ReAct Agent](/v1/en/docs/quickstart/agent).
 
 ---
 
@@ -230,7 +232,7 @@ Memory manages conversation history. `ReActAgent` automatically:
 - Adds agent responses to memory
 - Reads memory as context during reasoning
 
-Uses `InMemoryMemory` (in-memory storage) by default. For cross-session persistence, see [State Management](../task/state.md).
+Uses `InMemoryMemory` (in-memory storage) by default. For cross-session persistence, see [State Management](/v1/en/docs/task/state).
 
 ---
 
@@ -314,7 +316,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-> For detailed usage, see [Hook System](../task/hook.md).
+> For detailed usage, see [Hook System](/v1/en/docs/task/hook).
 
 ---
 
@@ -370,7 +372,7 @@ responseMono.subscribe(response ->
 
 ## Next Steps
 
-- [Creating a ReAct Agent](agent.md) - Complete agent creation tutorial
-- [Tool System](../task/tool.md) - Learn advanced tool usage
-- [Hook System](../task/hook.md) - Customize agent behavior
-- [Model Integration](../task/model.md) - Integrate different LLM providers
+- [Creating a ReAct Agent](/v1/en/docs/quickstart/agent) - Complete agent creation tutorial
+- [Tool System](/v1/en/docs/task/tool) - Learn advanced tool usage
+- [Hook System](/v1/en/docs/task/hook) - Customize agent behavior
+- [Model Integration](/v1/en/docs/task/model) - Integrate different LLM providers

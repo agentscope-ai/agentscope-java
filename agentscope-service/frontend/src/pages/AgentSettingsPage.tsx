@@ -19,7 +19,7 @@ import { useOutletContext } from 'react-router-dom';
 import { AgentDefinition } from '../api/agents';
 import AgentSettingsForm from '../components/AgentSettingsForm';
 
-export default function AgentSettingsPage() {
+export default function AgentSettingsPage({ section = 'behavior' }: { section?: 'behavior' | 'workspace' | 'versions' }) {
   const { agent, refreshAgent } = useOutletContext<{
     agentId: string;
     agent: AgentDefinition | null;
@@ -28,5 +28,5 @@ export default function AgentSettingsPage() {
   if (!agent) {
     return <div style={{ padding: '24px 28px', color: '#64748b' }}>Loading…</div>;
   }
-  return <AgentSettingsForm agent={agent} onSaved={refreshAgent} />;
+  return <AgentSettingsForm key={section} section={section} agent={agent} onSaved={refreshAgent} />;
 }

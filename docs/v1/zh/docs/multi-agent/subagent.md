@@ -1,4 +1,6 @@
-# Subagents（子智能体）
+---
+title: Subagents
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
@@ -154,6 +156,6 @@ String answer = orchestratorService.run(
 
 ## 相关文档
 
-- [Supervisor](./supervisor.md) - 一个监督者，每个专家一个工具
-- [Agent as Tool](../task/agent-as-tool.md) - 将智能体注册为工具
-- [Pipeline](./pipeline.md) - 顺序与并行组合
+- [Supervisor](/v1/zh/docs/multi-agent/supervisor) - 一个监督者，每个专家一个工具
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 将智能体注册为工具
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行组合
