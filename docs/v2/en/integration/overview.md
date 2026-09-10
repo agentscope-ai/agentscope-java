@@ -13,6 +13,7 @@ All model providers have moved to independent model extension modules, while `ag
 | Provider | Maven artifact | `ModelRegistry` id | Standard environment variable | Docs |
 |----------|----------------|--------------------|-------------------------------|------|
 | OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/en/integration/model/openai">OpenAI</a> |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `openai-official:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/en/integration/model/openai-official">OpenAI Official</a> |
 | DeepSeek | `agentscope-extensions-model-openai` | `deepseek:<model>` | `DEEPSEEK_API_KEY` | <a class="reference internal" href="/v2/en/integration/model/deepseek">DeepSeek</a> |
 | GLM | `agentscope-extensions-model-openai` | `glm:<model>` | `ZAI_API_KEY` / `GLM_API_KEY` / `ZHIPUAI_API_KEY` | <a class="reference internal" href="/v2/en/integration/model/glm">GLM</a> |
 | Kimi | `agentscope-extensions-model-openai` | `kimi:<model>` | `MOONSHOT_API_KEY` / `KIMI_API_KEY` | <a class="reference internal" href="/v2/en/integration/model/kimi">Kimi</a> |
