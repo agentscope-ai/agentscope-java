@@ -1,27 +1,40 @@
 ---
-title: Workspaces and Environments
+title: "Workspaces: shared instructions and capabilities"
 ---
 
-A Workspace holds working material. An Environment determines where a Managed Agent executes tools. A Namespace determines ownership and access.
+[简体中文](/v2/zh/service/workspaces)
 
-## Workspaces
+**Resources → Workspaces** stores reusable Agent material: `AGENTS.md`, skills, tools and subagent definitions. A Workspace is a resource, separate from an account Namespace and an execution's temporary directory.
 
-Create a Workspace, add task files or skills, and bind it to an Agent. A developer's absolute laptop path is not automatically a valid server path.
+## Create and link
 
-Release deployments mount `/data/workspaces` into the control plane, Dataplane and Scheduler. Compose provides a shared volume; Kubernetes requires shared persistent storage. Database backups alone cannot recover these files.
+Select **New workspace**, give it a recognizable name and maintain its guidance and capability files. Link it from an Agent's Workspace page. Several Agents can reuse it.
 
-## Environments
+Start with concise `AGENTS.md` guidance before adding capabilities:
 
-| Type | Tool execution location | Requirement |
-| --- | --- | --- |
-| Local | The Dataplane container or host | Explicit `BUILDER_ALLOW_LOCAL_ENVIRONMENT` opt-in |
-| Sandbox | A configured sandbox service | Credentials, template and network connectivity |
-| Self-hosted | Your Hands Worker | Worker connectivity, Environment credentials and heartbeat |
+```markdown
+# Reporting conventions
 
-A Local container filesystem is not the user's computer filesystem. A Self-hosted Hands Worker and a Coding Agent Runtime Host have different responsibilities and credentials.
+Read task material in inputs first.
+Cite sources for facts and mark hypotheses separately.
+Write the report to outputs and return its location.
+```
 
-## Verify a binding
+Create the referenced directories and files yourself; instructions do not create them. Use a new task to verify visible paths and content.
 
-After creating an Environment, check the Agent binding. In a new Session, perform a simple file read and inspect its location and any errors. Verify that persistent files remain after a container or Pod restart.
+## Choose the right content
 
-See [Runtime Host](/v2/en/service/runtime-host) and [Backup and recovery](/v2/en/service/operations).
+| Content | Purpose |
+| --- | --- |
+| AGENTS.md | Project operating guidance and shared constraints |
+| Skills | Reusable procedures and supporting files |
+| Tools / MCP configuration | External capability connections |
+| Subagents | Specialist delegation definitions |
+
+Use [Memory](/v2/en/service/memory) for shared knowledge and [Vault](/v2/en/service/vault) for secrets. Reference credentials explicitly in tool connections instead of storing plaintext.
+
+## Execution directories
+
+Managed Agents access files through their [Environment](/v2/en/service/environments). A Hosted Runtime Host projects portable definitions into supported provider configuration and uses task-specific working directories. Check the selected Runtime's projection capabilities.
+
+Inspect consumers before editing and verify changes with new work. Resolve dependent references before deleting a shared Workspace. Backups need both database references and Workspace storage.
