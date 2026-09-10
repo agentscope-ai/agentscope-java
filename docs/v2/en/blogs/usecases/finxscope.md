@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: 'FinXScope: A Financial-Grade Agent Foundation'
 ---
-
-# Building a Financial-Grade Agent Foundation with AgentScope: The FinXScope Practice
 
 > Authors: Meng Chen (Bantang), Wen Jun (Siyue), Ling Lezhen (Lezhen), Xu Lei (Chongshu), Lin Yuan (Niren)
 

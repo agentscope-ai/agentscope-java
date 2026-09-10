@@ -1,4 +1,6 @@
-# RAGFlow Knowledge
+---
+title: RAGFlow
+---
 
 `agentscope-extensions-rag-ragflow` 接入 [RAGFlow](https://ragflow.io/)。RAGFlow 在文档解析侧做得比较深（OCR、表格识别、知识图谱增强），适合非结构化文档比例高的场景。
 

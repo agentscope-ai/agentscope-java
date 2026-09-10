@@ -1,6 +1,6 @@
 ---
-title: "Permission System"
-description: "Fine-grained control over which tools your agents can execute and when"
+title: Permission System
+description: Fine-grained control over which tools your agents can execute and when
 ---
 
 ## Overview
@@ -13,7 +13,7 @@ It combines static configuration with dynamic runtime analysis. Three components
 - **Mode** — a global static policy set at configuration time; decides the default behaviour for calls that match no rule (e.g. `EXPLORE` makes the agent read-only, `DONT_ASK` silently denies anything not matching a rule).
 - **Built-in Checks** — runtime analysis performed by the tool itself based on the actual input (implemented in `ToolBase#checkPermissions`). These are runtime checks rather than preconfigured patterns, so they are **non-bypassable** — they are not subject to mode or rules.
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -41,8 +41,10 @@ sequenceDiagram
     end
 ```
 
-:::{dropdown} Detailed decision flow
-```{mermaid}
+
+<Accordion title="Detailed decision flow">
+
+```mermaid
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])
@@ -75,11 +77,17 @@ flowchart TD
     style ASK2 fill:#ffd43b,color:#333
     style ASK3 fill:#ffd43b,color:#333
 ```
-:::
 
-:::{note}
+</Accordion>
+
+
+
+<Note>
+
 Deny rules and dangerous-path checks are **non-bypassable** — they apply even in `BYPASS` mode.
-:::
+
+</Note>
+
 
 ## Permission Mode
 
@@ -95,8 +103,12 @@ The `PermissionMode` enum (`io.agentscope.core.permission.PermissionMode`) suppo
 
 Set the mode on the agent builder via `permissionContext(...)`:
 
-::::{tab-set}
-:::{tab-item} Initial config
+
+<Tabs>
+
+
+<Tab title="Initial config">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.permission.PermissionContextState;
@@ -115,8 +127,12 @@ ReActAgent agent =
                 .permissionContext(permCtx)
                 .build();
 ```
-:::
-:::{tab-item} ACCEPT_EDITS with working dir
+
+</Tab>
+
+
+<Tab title="ACCEPT_EDITS with working dir">
+
 ```java
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionContextState;
@@ -130,8 +146,12 @@ PermissionContextState permCtx =
                         new AdditionalWorkingDirectory("/my/project", "userSettings"))
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 ## Permission Rule
 
@@ -341,7 +361,7 @@ When the user denies **all** tool calls from a reasoning step in the confirmatio
 
 To stop the agent in this scenario, wire up an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`. After stopping, `Msg.getGenerateReason()` returns `ALL_TOOLS_DENIED`.
 
-See [Middleware — Stop agent when all tools are denied](./middleware.md#stop-agent-when-all-tools-are-denied) for the implementation.
+See [Middleware — Stop agent when all tools are denied](/v2/en/docs/building-blocks/middleware#stop-agent-when-all-tools-are-denied) for the implementation.
 ### Streaming mode
 
 When using `streamEvents()`, you don't need to extract `ToolUseBlock`s from the returned `Msg` — the event stream delivers a `RequireUserConfirmEvent` that carries the pending tool calls directly:
@@ -423,8 +443,12 @@ Full runnable example: `agentscope-examples/documentation/.../hitl/PermissionHIT
 
 The examples below show how to configure `permissionContext` for typical deployment scenarios. Each recipe combines a mode with a rule set tuned for one use case.
 
-::::{tab-set}
-:::{tab-item} Read-only exploration
+
+<Tabs>
+
+
+<Tab title="Read-only exploration">
+
 ```java
 // EXPLORE mode: agent freely calls read-only tools; all writes are auto-denied.
 PermissionContextState explore =
@@ -440,8 +464,12 @@ ReActAgent explorer =
                 .permissionContext(explore)
                 .build();
 ```
-:::
-:::{tab-item} Unattended automation
+
+</Tab>
+
+
+<Tab title="Unattended automation">
+
 ```java
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
@@ -468,8 +496,12 @@ ReActAgent ciAgent =
                 .build();
 // Only explicitly allowed commands run; everything else is silently denied.
 ```
-:::
-:::{tab-item} Block dangerous commands
+
+</Tab>
+
+
+<Tab title="Block dangerous commands">
+
 ```java
 PermissionContextState bypassWithDeny =
         PermissionContextState.builder()
@@ -485,5 +517,8 @@ PermissionContextState bypassWithDeny =
                 .build();
 // Everything except the explicitly denied tools runs (deny rules can't be bypassed).
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>

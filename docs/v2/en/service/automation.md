@@ -1,4 +1,6 @@
-# Automation and channels
+---
+title: Automation and channels
+---
 
 Verify a manual workflow before triggering the same work from schedules or external events.
 
@@ -20,4 +22,4 @@ Message formats and capabilities differ by channel. Use its configuration screen
 
 Check Scheduler health, control-plane connectivity, credential validity and third-party reachability of callback paths. After rotating credentials, verify the complete inbound and outbound path again.
 
-See [Configuration](configuration.md) and [Permissions](access.md).
+See [Configuration](/v2/en/service/configuration) and [Permissions](/v2/en/service/access).
