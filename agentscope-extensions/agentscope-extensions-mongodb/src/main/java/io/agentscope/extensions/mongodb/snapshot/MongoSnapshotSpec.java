@@ -22,7 +22,8 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
  * Convenience {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec} for
  * MongoDB-backed snapshot storage.
  *
- * <p>Stores sandbox workspace tar archives as BSON Binary in a MongoDB collection.
+ * <p>Stores sandbox workspace tar archives in MongoDB GridFS, which transparently chunks data
+ * into 255 KB segments and supports files up to 16 GB.
  */
 public class MongoSnapshotSpec extends RemoteSnapshotSpec {
 

@@ -16,6 +16,7 @@
 package io.agentscope.extensions.mongodb.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -134,6 +135,10 @@ public class MongoBaseStore implements BaseStore {
                 return;
             } catch (MongoWriteException e) {
                 if (e.getError().getCode() != 11000 || attempt > 0) {
+                    throw e;
+                }
+            } catch (MongoCommandException e) {
+                if (e.getErrorCode() != 11000 || attempt > 0) {
                     throw e;
                 }
             }

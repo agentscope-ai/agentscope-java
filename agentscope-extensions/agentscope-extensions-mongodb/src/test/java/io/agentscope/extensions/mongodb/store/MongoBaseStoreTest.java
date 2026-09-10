@@ -32,6 +32,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteError;
@@ -48,6 +49,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonString;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
@@ -145,6 +148,23 @@ class MongoBaseStoreTest {
         UpdateResult updateResult = mock(UpdateResult.class);
         when(collection.updateOne(any(Bson.class), any(Bson.class), any()))
                 .thenThrow(new MongoWriteException(writeError, new ServerAddress()))
+                .thenReturn(updateResult);
+
+        store.put(List.of("ns"), "key", Map.of("data", "v"));
+
+        verify(collection, times(2)).updateOne(any(Bson.class), any(Bson.class), any());
+    }
+
+    @Test
+    void putRetriesOnDuplicateKeyCommandException() {
+        // Some MongoDB driver versions throw MongoCommandException instead of MongoWriteException
+        // for duplicate-key errors; verify the retry logic handles both.
+        BsonDocument response = new BsonDocument();
+        response.append("code", new BsonInt32(11000));
+        response.append("errmsg", new BsonString("E11000 duplicate key error"));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(collection.updateOne(any(Bson.class), any(Bson.class), any()))
+                .thenThrow(new MongoCommandException(response, new ServerAddress()))
                 .thenReturn(updateResult);
 
         store.put(List.of("ns"), "key", Map.of("data", "v"));
