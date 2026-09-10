@@ -1,4 +1,6 @@
-# Helm deployment
+---
+title: Helm deployment
+---
 
 The complete Service Chart installs the Gateway, Control Plane, Dataplane and Scheduler. You operate PostgreSQL and the storage provisioner separately.
 
@@ -38,7 +40,7 @@ kubectl -n agentscope get pods,pvc,svc
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-Sign in and follow [Your first Session](first-session.md). Verify Bound PVCs, Ready components, and readable history and files after restarting.
+Sign in and follow [Your first Session](/v2/en/service/first-session). Verify Bound PVCs, Ready components, and readable history and files after restarting.
 
 ## Operational boundaries
 
