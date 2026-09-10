@@ -1,4 +1,6 @@
-# AgentScope Training Extension
+---
+title: Online Training
+---
 
 ## Overview
 

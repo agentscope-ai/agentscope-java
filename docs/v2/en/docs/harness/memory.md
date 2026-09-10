@@ -1,6 +1,7 @@
 ---
-title: "Memory"
-description: "Two-layer long-term memory, conversation compaction, large tool-result offloading; prompts and trigger policy are customizable"
+title: Memory
+description: Two-layer long-term memory, conversation compaction, large tool-result
+  offloading; prompts and trigger policy are customizable
 ---
 
 ## Role
@@ -30,7 +31,7 @@ The first two are "long-term memory settling" and live on `MemoryConfig`; the th
 
 ## How the two layers work
 
-```{mermaid}
+```mermaid
 graph LR
     Conv["conversation messages"]
     Conv -->|each call end / can be throttled| Flush["Flush LLM call"]
@@ -275,6 +276,6 @@ Together these also skip `<memory_context>` (`MEMORY.md`) injection while keepin
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — where `MEMORY.md` / `memory/` live in the workspace
-- [Context](../building-blocks/context.md) — the never-compacted `*.log.jsonl` conversation log
-- [Architecture](./architecture.md) — how facts in long conversations settle into `MEMORY.md`
+- [Workspace](/v2/en/docs/harness/workspace) — where `MEMORY.md` / `memory/` live in the workspace
+- [Context](/v2/en/docs/building-blocks/context) — the never-compacted `*.log.jsonl` conversation log
+- [Architecture](/v2/en/docs/harness/architecture) — how facts in long conversations settle into `MEMORY.md`
