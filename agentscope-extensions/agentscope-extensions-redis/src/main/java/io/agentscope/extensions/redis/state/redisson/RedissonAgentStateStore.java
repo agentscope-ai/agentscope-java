@@ -124,8 +124,10 @@ public class RedissonAgentStateStore implements AgentStateStore {
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            // evalSave with the UNCONDITIONAL sentinel already returns the new version —
+            // no need to read it back (and reading back via State.class is impossible because
+            // `State` is a marker interface Jackson cannot instantiate).
+            return evalSave(userId, sessionId, key, value, RedisStateVersionSupport.UNCONDITIONAL);
         }
         return evalSave(userId, sessionId, key, value, Long.toString(expectedVersion));
     }
