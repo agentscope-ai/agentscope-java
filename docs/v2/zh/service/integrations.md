@@ -1,35 +1,32 @@
 ---
-title: SDK 与应用接入
+title: "SDK 与组件选择"
 ---
 
-已有 Agent 应用可以继续管理自己的进程，通过接入层向控制面提供身份、在线状态、会话信息和执行能力。
+[English](/v2/en/service/integrations)
 
-## 选择接入组件
+选择 SDK 前，先确定你是在“调用能力”还是“接入运行时”。业务应用调用 Endpoint 不需要安装运行时 SDK；已有 Agent 应用才需要注册与适配。
 
-| 组件 | 源码位置 | 发布形式 |
+| 目标 | 使用组件 | 接下来 |
 | --- | --- | --- |
-| Java 扩展 | `agentscope-extensions/agentscope-extensions-aistio` | Maven 制品 |
-| Python SDK | `agentscope-service/aistio/sdk/python` | `aistio-sdk` wheel / sdist |
-| DSH 插件 | `agentscope-service/aistio/sdk/dsh` | `@agentscope/dsh-aistio` npm 包 |
-| Coding Agent Host | `agentscope-service/aistio/cmd` | CLI / daemon 二进制包 |
+| 应用调用 Agent/Team/Workflow | 普通 HTTP 客户端 | [Endpoint](/v2/zh/service/endpoints) |
+| Java 应用加入目录 | `io.agentscope:agentscope-extensions-aistio` | [External Agent](/v2/zh/service/external-agent) |
+| Python 框架接入 ASDP | `aistio-sdk` | [External Agent](/v2/zh/service/external-agent) |
+| DeepSeek Harness 接入 | `@agentscope/dsh-aistio` 插件 | 安装插件并配置 HTTP 合约与 ASDP 地址 |
+| 本机 Coding Agent 接入 | `agentscope` CLI 与 Runtime Host | [Hosted Agent](/v2/zh/service/hosted-agent) |
 
-SDK 各自有版本，不能仅根据 Service 镜像标签推断包版本。按 Release manifest 选择对应制品。尚未发布到公共包仓库的候选包，可以从 Release 下载后安装。
+## 安装包与版本
+
+Service、Java、Python 和 DSH 包独立版本化。按 Release 的 `release-manifest.json` 选择配套版本，不把镜像版本直接填进所有包管理器。
 
 ```bash
-python -m pip install ./aistio_sdk-0.1.0-py3-none-any.whl
-npm install ./agentscope-dsh-aistio-0.1.0.tgz
+python -m pip install "aistio-sdk==$AISTIO_SDK_VERSION"
+npm install "@agentscope/dsh-aistio@$DSH_AISTIO_VERSION"
 ```
 
-文件名中的版本以下载的制品为准。Java 应用按对应版本使用 `io.agentscope:agentscope-extensions-aistio` 及其依赖。
+在对应应用目录执行，变量设为 manifest 中的 SDK 版本。安装 DSH npm 包只是提供插件文件，还需要将插件加入你的 DSH profile，并配置控制面 HTTP、ASDP gRPC 和控制面可达的 contract 地址。provider 登录和应用生命周期仍由 DSH 管理。
 
-## 网络与协议
+## 检查能力与传输
 
-先确认适配器采用的协议。完整 Service 的 Compose / Helm 默认运行独立 HTTP 模式，没有启动 ASDP gRPC。需要 ASDP 的适配器必须使用已配置 Kubernetes-native Aistio 和相应 gRPC 连接的部署，不能把 HTTP 端口填入 gRPC 地址。
+标准完整 Service 使用 standalone HTTP；Java 提供 HTTP 注册与合约能力。ASDP 接入另外需要启用对应 listener 的部署。Python 自动注册依赖其 ASDP 路径，关闭 gRPC 并不能代替这一前提。
 
-控制面需要能够访问应用声明的回调/合约地址。容器里的 `localhost` 指向容器自身；跨主机部署必须填写对方能访问的地址。共享内部令牌只用于受信任私网服务调用，外部 Host 使用专用身份凭据。
-
-## 接入验收
-
-确认注册与心跳、创建一次会话、读取历史，再测试一次支持的任务派发和结果回报。最后重启应用，检查身份连续性与状态恢复。模型执行、工具和应用自身的生命周期仍由所选运行时负责。
-
-具体 API 以对应包的源码示例和版本说明为准；服务端运行成功不代表每一种第三方框架适配路径都已验证。
+先验证目录身份，再验证会话/history，最后验证支持的派发、取消和结果回传。自定义框架通过适配器扩展，不能仅通过修改框架名称宣称新增能力。代码片段、凭据和网络细节见 [External Agent](/v2/zh/service/external-agent)。
