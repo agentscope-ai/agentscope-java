@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SandboxMirrorReleaseCoordinator;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +40,12 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>doFinally</h2>
  * <ol>
- *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
- *   <li>Persist sandbox session state via {@link SandboxManager} and
- *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
- *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
+ *   <li>Clear this call's session binding from the {@link RuntimeContext} (and the filesystem
+ *       proxy fallback) so concurrent calls cannot observe a stale binding</li>
+ *   <li>Request release via {@link SandboxMirrorReleaseCoordinator} (defers stop/shutdown while
+ *       session mirrors still need the connection; otherwise releases immediately). Actual
+ *       teardown order is stop/shutdown → persist state → lease close, so mutations made during
+ *       {@code stop()} (e.g. E2B per-session snapshot records) are captured by persist</li>
  * </ol>
  *
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
@@ -51,7 +54,9 @@ import org.slf4j.LoggerFactory;
  * <p>The sandbox is bound <em>per call</em> on the invocation's {@link RuntimeContext} rather than
  * on a shared agent-level slot: distinct {@code (userId, sessionId)} sessions run in parallel on
  * the same agent bean, so a shared slot would let concurrent calls corrupt each other's binding
- * (issue #2490).
+ * (issue #2490). {@link SandboxMirrorReleaseCoordinator#requestRelease} always closes the acquire
+ * result's lease ({@link io.agentscope.harness.agent.sandbox.SandboxLease#noop()} when no guard
+ * is configured).
  */
 public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
 
@@ -126,14 +131,16 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 ctx.put(SandboxAcquireResult.class, null);
                 filesystemProxy.clearSandboxIfCurrent(sandbox);
                 try {
-                    sandboxManager.release(result);
+                    // No mirrors can be pending before start succeeds; release immediately.
+                    // Persist context omitted: start never completed, so there is no stop-time
+                    // state mutation to capture (same as the historical failure path).
+                    SandboxMirrorReleaseCoordinator.requestRelease(sandboxManager, result);
                 } catch (Exception releaseErr) {
                     log.warn(
                             "[sandbox-mw] Failed to release session after pre-call failure: {}",
                             releaseErr.getMessage(),
                             releaseErr);
                 }
-                result.getLease().close();
                 throw e;
             }
         } catch (Exception e) {
@@ -163,18 +170,14 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         // sibling's binding (issue #2490); it only clears the field when it still points here.
         filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
         SandboxContext sandboxContext = ctx.get(SandboxContext.class);
-        // Release (stop/persist workspace) first so state mutations made during stop — e.g.
-        // workspaceRootReady or per-session snapshot records — are captured by the persist below.
         try {
-            sandboxManager.release(result);
+            // Hand destructive stop/shutdown + post-stop persist + lease close to the coordinator.
+            // Outstanding session mirrors defer stop; otherwise teardown runs immediately.
+            // Persist runs after stop so stop-time mutations (e.g. E2B snapshot ids) are saved.
+            SandboxMirrorReleaseCoordinator.requestRelease(
+                    sandboxManager, result, sandboxContext, ctx);
         } catch (Exception e) {
             log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
         }
-        try {
-            sandboxManager.persistState(result, sandboxContext, ctx);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
-        }
-        result.getLease().close();
     }
 }
