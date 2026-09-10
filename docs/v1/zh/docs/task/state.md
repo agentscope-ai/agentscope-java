@@ -1,4 +1,6 @@
-# State（状态管理）
+---
+title: 状态管理
+---
 
 State 提供组件状态的序列化和反序列化能力，是 Session 持久化的底层基础。
 
@@ -147,5 +149,5 @@ String sessionId = ((SimpleSessionKey) key).sessionId();
 
 ## 相关文档
 
-- [Session](./session.md) - 会话管理 API
-- [Memory](./memory.md) - 记忆管理
+- [Session](/v1/zh/docs/task/session) - 会话管理 API
+- [Memory](/v1/zh/docs/task/memory) - 记忆管理

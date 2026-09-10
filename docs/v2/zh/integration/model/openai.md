@@ -1,4 +1,6 @@
-# OpenAI 模型
+---
+title: OpenAI
+---
 
 `agentscope-extensions-model-openai` 接入 OpenAI Chat Completions 风格的模型。OpenAI 兼容端点也使用这个适配模块，例如 DeepSeek、GLM、Kimi、MiniMax 等遵循 OpenAI API 载荷格式的服务。
 
@@ -49,4 +51,4 @@ Spring Boot 应用可以使用 OpenAI starter：
 </dependency>
 ```
 
-完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。
+完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

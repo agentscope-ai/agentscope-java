@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: AgentScope Builder 发布
 ---
-
-# AgentScope Builder —— 把 OpenClaw 的「自我进化」，做成可被整个团队共用的平台
 
 在 AgentScope 1.1.0 版本中，我们把 OpenClaw、Coding Agent 那套「工作区即真理 + 自我进化」的体验，沉淀成了 `HarnessAgent` + `AbstractFilesystem` + 内置压缩与双层记忆的Harness Engineering 工程基础设施。当时我们留下了一个承诺：**写一套 Agent 逻辑，按需切换形态，从个人本机一路扩到企业分布式部署**。
 
@@ -27,7 +25,7 @@ Claw 在仓库里的位置：
 agentscope-examples/agents/agentscope-claw/
 ```
 
-它不是一段示意代码，而是一个**完整的 Spring Boot 应用**：JDK 17、一条 `mvn package`、一条 `java -jar`，浏览器打开 <http://localhost:8080> 就能用。所有的状态都落到 `~/.agentscope/` 工作区下，可以用 `CLAW_HOME` 环境变量改写；首次启动会自动生成一个内置的 `default` agent，让你不写一行代码就能开始对话。
+它不是一段示意代码，而是一个**完整的 Spring Boot 应用**：JDK 17、一条 `mvn package`、一条 `java -jar`，浏览器打开 [http://localhost:8080](http://localhost:8080) 就能用。所有的状态都落到 `~/.agentscope/` 工作区下，可以用 `CLAW_HOME` 环境变量改写；首次启动会自动生成一个内置的 `default` agent，让你不写一行代码就能开始对话。
 
 ### 三个核心能力
 
@@ -229,7 +227,7 @@ CompositeFilesystem 的解法很直接：**把下层的存储后端从"本机磁
 - Web 层管理用户工作区也走同一份 `BaseStore` —— Web 看到的、Agent 看到的是同一份数据
 - 配合分布式 `Session`（典型实现是 `RedisSession`），Builder 进程本身可以多副本对等部署
 
-整张图里"装命名空间分发的上层"完全没动 —— 命名空间分发是在 CompositeFilesystem 这一层完成的，存储后端无论是本机磁盘、Docker 容器、还是 Redis，都看不到它。**这正是当初 [Harness 那一篇](agentscope-v1-harness.md) 里讲的 `AbstractFilesystem` 真正发挥威力的地方** —— 业务代码一行不用改，部署侧换 Bean 就完成了从单机到分布式的迁移。
+整张图里"装命名空间分发的上层"完全没动 —— 命名空间分发是在 CompositeFilesystem 这一层完成的，存储后端无论是本机磁盘、Docker 容器、还是 Redis，都看不到它。**这正是当初 [Harness 那一篇](/v1/zh/blogs/agentscope-v1-harness) 里讲的 `AbstractFilesystem` 真正发挥威力的地方** —— 业务代码一行不用改，部署侧换 Bean 就完成了从单机到分布式的迁移。
 
 ---
 
@@ -281,7 +279,7 @@ mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
 java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
 ```
 
-打开 <http://localhost:8080>，默认主目录是 `~/.agentscope`。需要接钉钉 / 企微 / 飞书等通道的，编辑 `~/.agentscope/agentscope.json` 添加对应的 channel 条目即可。详见 [Claw README]。
+打开 [http://localhost:8080](http://localhost:8080)，默认主目录是 `~/.agentscope`。需要接钉钉 / 企微 / 飞书等通道的，编辑 `~/.agentscope/agentscope.json` 添加对应的 channel 条目即可。详见 [Claw README]。
 
 ### Builder
 
@@ -317,7 +315,7 @@ java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builde
 
 ## 总结
 
-[Harness 那一篇](agentscope-v1-harness.md) 我们交付了"自进化 Agent 运行时"的能力 —— `HarnessAgent` + 工作区约定 + 可插拔文件系统 + Hook 管线。
+[Harness 那一篇](/v1/zh/blogs/agentscope-v1-harness) 我们交付了"自进化 Agent 运行时"的能力 —— `HarnessAgent` + 工作区约定 + 可插拔文件系统 + Hook 管线。
 
 今天的这一篇把这套运行时**真正做成了两个可以直接跑起来的产品**：
 
