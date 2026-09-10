@@ -264,6 +264,24 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
+
+        @Test
+        void edit_usesBase64PipedScript() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+
+            // edit() constructs the command and calls execute().
+            // FakeSandboxFilesystem.execute() returns empty output, so edit() will
+            // return an error result, but we only care about verifying the command shape.
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            // Verify command uses base64 pipe mode (not python3 -c inline form)
+            assertTrue(
+                    fs.lastCommand.contains("base64 -d | python3 -"),
+                    "edit should use base64 piped to python3, got: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("python3 -c"),
+                    "edit should NOT use python3 -c inline form");
+        }
     }
 
     // ================================================================
