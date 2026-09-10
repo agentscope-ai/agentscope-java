@@ -1,4 +1,6 @@
-# 核心概念
+---
+title: 核心概念
+---
 
 先区分“谁可以操作”“使用什么资源”和“在哪里执行”，再理解任务与执行记录的关系。
 
@@ -18,7 +20,7 @@
 
 ## 一项工作如何流转
 
-```{mermaid}
+```mermaid
 flowchart LR
     A[人或外部事件] --> B[Issue / Session]
     B --> C[AgentTask / 执行请求]
@@ -29,4 +31,4 @@ flowchart LR
 
 Session 空闲、某次 Attempt 成功和 Issue 通过验收分别描述不同层次。看到 Agent 回复后，还应检查交付物和 Issue 的评审状态。
 
-选择自己的使用路径：[托管 Agent](agents.md)、[Runtime Host](runtime-host.md) 或[应用接入](integrations.md)。
+选择自己的使用路径：[托管 Agent](/v2/zh/service/agents)、[Runtime Host](/v2/zh/service/runtime-host) 或[应用接入](/v2/zh/service/integrations)。

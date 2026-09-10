@@ -1,4 +1,6 @@
-# Workspaces and Environments
+---
+title: Workspaces and Environments
+---
 
 A Workspace holds working material. An Environment determines where a Managed Agent executes tools. A Namespace determines ownership and access.
 
@@ -22,4 +24,4 @@ A Local container filesystem is not the user's computer filesystem. A Self-hoste
 
 After creating an Environment, check the Agent binding. In a new Session, perform a simple file read and inspect its location and any errors. Verify that persistent files remain after a container or Pod restart.
 
-See [Runtime Host](runtime-host.md) and [Backup and recovery](operations.md).
+See [Runtime Host](/v2/en/service/runtime-host) and [Backup and recovery](/v2/en/service/operations).

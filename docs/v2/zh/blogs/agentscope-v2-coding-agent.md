@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: Coding Agent 的下半场：从个人提效到组织级研发体系
 ---
-
-# Coding Agent 的下半场：从个人提效到组织级研发体系
 
 当下还在古法手搓代码的开发者都是在奔着非遗传承人的目标去了，绝大多数都已经用上了 Claude Code、Cursor 这类 Coding Agent。方向对了，但场景不同，解法也不同——开发者自己在本地装个 AI 助手提效，和在组织内部搭起一套 AI 驱动的研发协作体系，是完全两个维度的事情。前者已经有成熟的产品了，后者才刚刚开始。本文聊的就是后者。
 
@@ -207,4 +205,4 @@ Coding Agent 的上半场是个人提效——模型更聪明、补全更准、�
 
 文中提到的 codingagent 是一个完整且可读的示例，建议直接 clone 下来跑一遍再翻源码——它把本文讲的这些工程问题都对应到了真实代码。
 
-继续深入：[Harness 架构](../docs/harness/architecture.md) · [工作区](../docs/harness/workspace.md) · [沙箱](../docs/harness/sandbox.md) · [上下文压缩](../docs/harness/compaction.md) · [子 Agent](../docs/harness/subagent.md) · [技能](../docs/harness/skill.md) · [Plan Mode](../docs/harness/plan-mode.md)
+继续深入：[Harness 架构](/v2/zh/docs/harness/architecture) · [工作区](/v2/zh/docs/harness/workspace) · [沙箱](/v2/zh/docs/harness/sandbox) · [上下文压缩](/v2/zh/docs/harness/compaction) · [子 Agent](/v2/zh/docs/harness/subagent) · [技能](/v2/zh/docs/harness/skill) · [Plan Mode](/v2/zh/docs/harness/plan-mode)

@@ -1,6 +1,6 @@
 ---
-title: "Channel"
-description: "Route messages, manage sessions, and stream events through Channel"
+title: Channel
+description: Route messages, manage sessions, and stream events through Channel
 ---
 
 ## What they do
@@ -321,15 +321,15 @@ gw.stop();    // calls stop() on all channels
 
 AgentScope provides ready-to-use Channel adapters for popular messaging platforms as extension modules:
 
-- [DingTalk](../../integration/channel/dingtalk.md) — Stream protocol (persistent WebSocket)
-- [Feishu / Lark](../../integration/channel/feishu.md) — Event subscription callback
-- [GitHub](../../integration/channel/github.md) — Issue / PR comment webhook
-- [GitLab](../../integration/channel/gitlab.md) — Note hook
-- [WeCom](../../integration/channel/wecom.md) — Encrypted callback
+- [DingTalk](/v2/en/integration/channel/dingtalk) — Stream protocol (persistent WebSocket)
+- [Feishu / Lark](/v2/en/integration/channel/feishu) — Event subscription callback
+- [GitHub](/v2/en/integration/channel/github) — Issue / PR comment webhook
+- [GitLab](/v2/en/integration/channel/gitlab) — Note hook
+- [WeCom](/v2/en/integration/channel/wecom) — Encrypted callback
 
-See the [Channel Adapters](../../integration/channel/index.md) integration overview for details.
+See the [Channel Adapters](/v2/en/integration/channel/index) integration overview for details.
 
 ## Related pages
 
-- [Subagent](./subagent.md) — declaring and spawning subagents, background tasks, streaming forwarding
-- [Architecture](./architecture.md) — how parent and child agents cooperate
+- [Subagent](/v2/en/docs/harness/subagent) — declaring and spawning subagents, background tasks, streaming forwarding
+- [Architecture](/v2/en/docs/harness/architecture) — how parent and child agents cooperate

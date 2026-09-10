@@ -1,4 +1,6 @@
-# Issues and Team collaboration
+---
+title: Issues and Team collaboration
+---
 
 Use an Issue to express a work objective, a Team to organize a leader and members, and execution records to understand progress.
 
@@ -20,4 +22,4 @@ When review or approval is requested, inspect deliverables and explicitly accept
 
 Teams support dynamic collaboration; Workflows express predefined steps and dependencies. They can work together, but inspect Run node state separately from business acceptance of the Issue.
 
-Continue with [Sessions, tasks and approvals](sessions.md) and [Automation and channels](automation.md).
+Continue with [Sessions, tasks and approvals](/v2/en/service/sessions) and [Automation and channels](/v2/en/service/automation).

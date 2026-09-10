@@ -230,6 +230,26 @@ class HarnessAgentTest {
     }
 
     @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
     void artifactDeliveryTarget_registersDeliverTool() throws Exception {
         Files.createDirectories(workspace);
         Model model = stubModel("ok");

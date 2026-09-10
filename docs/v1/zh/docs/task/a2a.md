@@ -1,4 +1,6 @@
-# A2A (Agent2Agent)
+---
+title: A2A 协议
+---
 
 A2A 是 AgentScope 对 [A2A 协议](https://a2a-protocol.org/latest/specification/) 的支持，包括客户端（调用远程 Agent）和服务端（暴露本地 Agent）两部分。
 

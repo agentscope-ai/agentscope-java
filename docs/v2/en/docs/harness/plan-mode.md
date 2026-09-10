@@ -1,6 +1,7 @@
 ---
-title: "Plan Mode"
-description: "Think before acting: a read-only phase that writes a plan file and requires HITL approval before executing"
+title: Plan Mode
+description: 'Think before acting: a read-only phase that writes a plan file and requires
+  HITL approval before executing'
 ---
 
 ## Role
@@ -47,7 +48,7 @@ You can also call `enableTaskList()` so that todos created during the plan phase
 
 ## Workflow
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     participant U as User
@@ -112,7 +113,7 @@ This mirrors how OpenCode handles its plan agent: it allows the shell for invest
 
 ## Runtime permission switching (the "bypass" escape hatch)
 
-Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](../building-blocks/context.md) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
+Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](/v2/en/docs/building-blocks/context) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -163,7 +164,7 @@ Plan Mode and `todo_write` (provided by core) are **independent but commonly use
 
 Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in execution use `todo_write` to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.
 
-⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent.md).
+⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](/v2/en/docs/harness/subagent).
 
 ## Viewing the task list
 
@@ -205,6 +206,6 @@ agent.streamEvents(message)
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — `plans/` directory location
-- [Subagent](./subagent.md) — `todo_write` ≠ subagent task; don't confuse them
-- [Architecture](./architecture.md) — where Plan Mode sits in the call() timeline
+- [Workspace](/v2/en/docs/harness/workspace) — `plans/` directory location
+- [Subagent](/v2/en/docs/harness/subagent) — `todo_write` ≠ subagent task; don't confuse them
+- [Architecture](/v2/en/docs/harness/architecture) — where Plan Mode sits in the call() timeline
