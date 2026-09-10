@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: AgentScope Builder Release
 ---
-
-# AgentScope Builder — Turning OpenClaw's "Self-Evolution" into a Team-Wide Platform
 
 In AgentScope Java 1.1.0, we distilled the "workspace as truth + self-evolution" experience from OpenClaw and the Coding Agent into a Harness engineering foundation: `HarnessAgent` + `AbstractFilesystem` + built-in compaction and layered memory. At the time, we made a promise: **write agent logic once and switch deployment shapes on demand — from a personal laptop all the way to enterprise distributed deployments**.
 
@@ -27,7 +25,7 @@ Claw lives in the repository at:
 agentscope-examples/agents/agentscope-claw/
 ```
 
-It is not sample code; it is a **complete Spring Boot application**: JDK 17, one `mvn package`, one `java -jar`, then open <http://localhost:8080> in a browser. All state is persisted under the `~/.agentscope/` workspace, which can be overridden with the `CLAW_HOME` environment variable. On first launch it auto-creates a built-in `default` agent, so you can start chatting without writing any code.
+It is not sample code; it is a **complete Spring Boot application**: JDK 17, one `mvn package`, one `java -jar`, then open [http://localhost:8080](http://localhost:8080) in a browser. All state is persisted under the `~/.agentscope/` workspace, which can be overridden with the `CLAW_HOME` environment variable. On first launch it auto-creates a built-in `default` agent, so you can start chatting without writing any code.
 
 ### Three Core Capabilities
 
@@ -218,7 +216,7 @@ CompositeFilesystem's solution is direct: **swap the bottom storage backend from
 - The web layer managing user workspaces also uses the same `BaseStore` — what the web sees and what the agent sees is the same data
 - Combined with a distributed `Session` (typical implementation: `RedisSession`), Builder processes themselves can be deployed as equal replicas
 
-The "namespace-routing top layer" in the diagram does not change at all — namespace routing is done inside CompositeFilesystem, and the storage backend, whether local disk, Docker container, or Redis, knows nothing about it. **This is exactly where the `AbstractFilesystem` from the [Harness article](agentscope-v1-harness.md) shows its real power** — business code does not change a single line; the deployment side swaps a Bean and the migration from single-node to distributed is complete.
+The "namespace-routing top layer" in the diagram does not change at all — namespace routing is done inside CompositeFilesystem, and the storage backend, whether local disk, Docker container, or Redis, knows nothing about it. **This is exactly where the `AbstractFilesystem` from the [Harness article](/v2/en/blogs/agentscope-v1-harness) shows its real power** — business code does not change a single line; the deployment side swaps a Bean and the migration from single-node to distributed is complete.
 
 ---
 
@@ -271,7 +269,7 @@ mvn -pl agentscope-examples/agents/agentscope-claw -am clean package -DskipTests
 java -jar agentscope-examples/agents/agentscope-claw/target/agentscope-claw-*.jar
 ```
 
-Open <http://localhost:8080>. The default home directory is `~/.agentscope`. To connect DingTalk / WeCom / Feishu / other channels, edit `~/.agentscope/agentscope.json` and add the corresponding channel entries. See the [Claw README] for details.
+Open [http://localhost:8080](http://localhost:8080). The default home directory is `~/.agentscope`. To connect DingTalk / WeCom / Feishu / other channels, edit `~/.agentscope/agentscope.json` and add the corresponding channel entries. See the [Claw README] for details.
 
 ### Builder
 
@@ -307,7 +305,7 @@ The service starts on port 8080. Log in with `admin/admin`, `bob/bob`, or `alice
 
 ## Summary
 
-In the [Harness article](agentscope-v1-harness.md), we delivered the "self-evolving agent runtime" — `HarnessAgent` + workspace conventions + pluggable filesystem + hook pipeline.
+In the [Harness article](/v2/en/blogs/agentscope-v1-harness), we delivered the "self-evolving agent runtime" — `HarnessAgent` + workspace conventions + pluggable filesystem + hook pipeline.
 
 Today's article turns that runtime into **two directly runnable products**:
 

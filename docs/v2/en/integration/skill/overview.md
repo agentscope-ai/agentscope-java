@@ -1,16 +1,18 @@
-# Skill Repository
+---
+title: Overview
+---
 
-An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](../../docs/harness/skill.md)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
+An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](/v2/en/docs/harness/skill)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.
 
 The `agentscope-extensions-*` repository ships the following ready-to-use implementations:
 
 | Extension | Backend | Best for |
 | --- | --- | --- |
-| [Git Repository](git-repository.md) | Remote Git repo | Git-based versioning and review |
-| [MySQL Repository](mysql-repository.md) | MySQL database | Online editing via admin console / business systems |
-| [PostgreSQL Repository](postgresql-repository.md) | PostgreSQL database | Existing PostgreSQL infra, online editing |
+| [Git Repository](/v2/en/integration/skill/git-repository) | Remote Git repo | Git-based versioning and review |
+| [MySQL Repository](/v2/en/integration/skill/mysql-repository) | MySQL database | Online editing via admin console / business systems |
+| [PostgreSQL Repository](/v2/en/integration/skill/postgresql-repository) | PostgreSQL database | Existing PostgreSQL infra, online editing |
 
-> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](../infrastructure/nacos.md).
+> Nacos also provides an `AgentSkillRepository` implementation: see [Nacos](/v2/en/integration/infrastructure/nacos).
 
 ## Wiring
 
