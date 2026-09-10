@@ -1,4 +1,6 @@
-# 会话、任务与审批
+---
+title: 会话、任务与审批
+---
 
 Sessions 适合直接对话和观察运行历史；Tasks 与 Runs 帮助定位一次协作中的具体工作。
 
@@ -18,4 +20,4 @@ Sessions 适合直接对话和观察运行历史；Tasks 与 Runs 帮助定位�
 
 依次检查：是否有未处理确认、模型请求是否失败、Environment / Host 是否在线、任务是否已派发、相关组件日志是否存在异常。保留 Session、Task、Attempt 和 Run ID，便于关联日志。
 
-更多：[排障](troubleshooting.md)、[Issue 与 Team](teams.md)。
+更多：[排障](/v2/zh/service/troubleshooting)、[Issue 与 Team](/v2/zh/service/teams)。

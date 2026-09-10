@@ -1,4 +1,6 @@
-# Workspace
+---
+title: Workspace
+---
 
 ## Purpose
 
@@ -36,7 +38,7 @@ workspace/                           ← default: .agentscope/workspace
         └── <sessionId>.log.jsonl   ← full conversation log (append-only)
 ```
 
-> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](./subagent.md).
+> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](/v1/en/docs/harness/subagent).
 
 ## Key Logic
 
@@ -44,7 +46,7 @@ workspace/                           ← default: .agentscope/workspace
 
 `WorkspaceManager` is a stateless accessor; all reads and writes follow the same contract:
 
-```{mermaid}
+```mermaid
 graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read first| FS[AbstractFilesystem<br/>multi-tenant namespace transparent]
@@ -110,11 +112,11 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](./overview.md)).
+If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](/v1/en/docs/harness/overview)).
 
 ## Related Pages
 
-- [Architecture](./architecture.md) — `WorkspaceContextHook` position in the `call()` lifecycle
-- [Filesystem](./filesystem.md) — implementation of the "upper layer" in the two-layer read path
-- [Memory](./memory.md) — how `MEMORY.md` / `memory/*.md` are generated and maintained
-- [Session](./session.md) — details of `agents/<agentId>/sessions/`
+- [Architecture](/v1/en/docs/harness/architecture) — `WorkspaceContextHook` position in the `call()` lifecycle
+- [Filesystem](/v1/en/docs/harness/filesystem) — implementation of the "upper layer" in the two-layer read path
+- [Memory](/v1/en/docs/harness/memory) — how `MEMORY.md` / `memory/*.md` are generated and maintained
+- [Session](/v1/en/docs/harness/session) — details of `agents/<agentId>/sessions/`

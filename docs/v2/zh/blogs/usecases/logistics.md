@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: 从配置驱动到业务原生：企业级 Agent 开发实践
 ---
-
-# 从配置驱动到业务原生：基于 AgentScope 的企业级 Agent 开发实践
 
 ## 01 背景
 
@@ -917,7 +915,7 @@ HTTP Header（X-Temperature 等） > DB JSON 字段（modelParams） > DEFAULT �
 
 完整生命周期性能画像表，汇总 `createAgent` → `hasMemory` → `onEnter` → `saveAgent` → `removeSession` 各阶段的耗时与 DB 操作。
 
-这四个方法共同构成了 finance agent 的轻量级运行时：`createAgent` 解决创建轻（< 1ms，零 DB），`hasMemory` 解决探测轻（索引命中），`saveAgent` 解决持久化轻（增量写），`removeSession` 解决清理轻（批量删除）。
+这四个方法共同构成了 finance agent 的轻量级运行时：`createAgent` 解决创建轻（&lt; 1ms，零 DB），`hasMemory` 解决探测轻（索引命中），`saveAgent` 解决持久化轻（增量写），`removeSession` 解决清理轻（批量删除）。
 
 ##### 5.1.4.3 工程级别的 human in the loop（SPI3）
 

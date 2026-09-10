@@ -1,4 +1,6 @@
-# Issue 与 Team 协作
+---
+title: Issue 与 Team 协作
+---
 
 用 Issue 表达要完成的工作，用 Team 组织 leader 与成员，再用执行记录检查工作如何推进。
 
@@ -20,4 +22,4 @@ leader 的一轮回复结束不代表所有成员都结束。某次执行失败�
 
 Team 适合动态协作；Workflow 适合预先定义步骤和依赖。两者可以配合，但 Run 节点状态与 Issue 的业务验收状态应分别查看。
 
-下一步：[会话、任务与审批](sessions.md)、[自动化与渠道](automation.md)。
+下一步：[会话、任务与审批](/v2/zh/service/sessions)、[自动化与渠道](/v2/zh/service/automation)。

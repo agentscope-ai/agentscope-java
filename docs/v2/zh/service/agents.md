@@ -1,4 +1,6 @@
-# Agent、工具与技能
+---
+title: Agent、工具与技能
+---
 
 Agent 是可重复使用的配置。先选择执行方式，再配置它需要的资料与能力。
 
@@ -22,4 +24,4 @@ Agent 的定义、运行实例和 Session 是不同对象。修改配置后检�
 
 在相应 Namespace 中配置资源授权，同时检查依赖的 Workspace、模型或 Vault 是否可用。能够看到 Agent 不等于能够访问所有依赖，更不代表可以查看其他人的私有工作。
 
-接下来：[Workspace 与 Environment](workspaces.md)、[权限与账号](access.md)。
+接下来：[Workspace 与 Environment](/v2/zh/service/workspaces)、[权限与账号](/v2/zh/service/access)。

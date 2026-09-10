@@ -1,4 +1,6 @@
-# GLM 模型
+---
+title: GLM
+---
 
 `agentscope-extensions-model-openai` 通过 OpenAI 兼容模型栈提供 GLM（智谱 / Z.AI）的一等支持。引入 OpenAI 模型扩展模块后，可以通过 `ModelRegistry` 使用 `glm:<model>`。
 

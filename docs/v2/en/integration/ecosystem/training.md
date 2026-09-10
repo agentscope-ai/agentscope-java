@@ -1,4 +1,6 @@
-# Online Training
+---
+title: Online Training
+---
 
 `agentscope-extensions-training` plugs a Trinity-style training backend into AgentScope: it samples production traffic, collects traces, computes rewards, and periodically commits training jobs — closing the loop.
 
