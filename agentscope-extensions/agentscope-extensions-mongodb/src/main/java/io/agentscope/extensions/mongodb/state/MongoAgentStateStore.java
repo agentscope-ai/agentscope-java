@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -91,7 +92,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
     private final MongoClient mongoClient;
     private final boolean ownsClient;
     private final MongoCollection<Document> collection;
-    private final java.util.function.BiConsumer<String, String> onDeleteCallback;
+    private final BiConsumer<String, String> onDeleteCallback;
 
     private MongoAgentStateStore(Builder builder) {
         if (builder.mongoClient != null) {
@@ -582,7 +583,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
         private String databaseName;
         private String collectionName;
         private Integer ttlDays;
-        private java.util.function.BiConsumer<String, String> onDeleteCallback;
+        private BiConsumer<String, String> onDeleteCallback;
 
         /**
          * Use an existing {@link MongoClient}. The caller owns its lifecycle; {@link
@@ -659,8 +660,7 @@ public class MongoAgentStateStore implements AgentStateStore, AutoCloseable {
          * @param onDeleteCallback the callback (userId, sessionId) to run before session deletion
          * @return this builder
          */
-        public Builder onDeleteCallback(
-                java.util.function.BiConsumer<String, String> onDeleteCallback) {
+        public Builder onDeleteCallback(BiConsumer<String, String> onDeleteCallback) {
             this.onDeleteCallback = onDeleteCallback;
             return this;
         }

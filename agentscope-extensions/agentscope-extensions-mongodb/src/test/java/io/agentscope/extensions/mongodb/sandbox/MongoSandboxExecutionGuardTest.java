@@ -45,6 +45,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -97,7 +98,7 @@ class MongoSandboxExecutionGuardTest {
     }
 
     private MongoSandboxExecutionGuard createGuard(
-            java.util.function.UnaryOperator<MongoSandboxExecutionGuard.Builder> customizer) {
+            UnaryOperator<MongoSandboxExecutionGuard.Builder> customizer) {
         MongoSandboxExecutionGuard.Builder builder =
                 MongoSandboxExecutionGuard.builder(mongoClient);
         MongoSandboxExecutionGuard guard = customizer.apply(builder).build();

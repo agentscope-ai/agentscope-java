@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -209,7 +210,7 @@ class MongoAgentStateStoreContractTest {
         ready.await();
         start.countDown();
         pool.shutdown();
-        assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
 
         assertEquals(1, successes.get());
         assertEquals(

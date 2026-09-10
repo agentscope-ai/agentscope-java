@@ -30,6 +30,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -179,7 +180,7 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         List<GridFSFile> files =
                 gridFSBucket
                         .find(Filters.eq("metadata." + META_SESSION_ID, sessionId))
-                        .into(new java.util.ArrayList<>());
+                        .into(new ArrayList<>());
         for (GridFSFile file : files) {
             try {
                 gridFSBucket.delete(file.getId());
