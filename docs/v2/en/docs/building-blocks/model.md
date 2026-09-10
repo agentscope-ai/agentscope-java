@@ -30,6 +30,7 @@ Provider-specific model implementations have been moved out of `agentscope-core`
 | Provider | Maven artifact | Main package |
 |----------|----------------|--------------|
 | OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `io.agentscope.extensions.model.openaiofficial` |
 | DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
 | Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
 | Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
@@ -46,7 +47,7 @@ Provider-specific model implementations have been moved out of `agentscope-core`
 </dependency>
 ```
 
-Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
+Other provider artifacts follow the same pattern: `agentscope-extensions-model-openai`, `agentscope-extensions-model-openai-official`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-anthropic`, and `agentscope-extensions-model-ollama`.
 
 2. Replace provider imports from `io.agentscope.core.model.*` with `io.agentscope.extensions.model.<provider>.*`.
 3. Replace provider formatter imports from `io.agentscope.core.formatter.<provider>.*` with `io.agentscope.extensions.model.<provider>.formatter.*`.
@@ -213,12 +214,13 @@ A **Chat Model** is the LLM driving conversation and tool calling, with input an
 | Provider | Class | Notes |
 |----------|-------|-------|
 | OpenAI | `OpenAIChatModel` | Chat Completions API; works with vLLM and OpenAI-compatible endpoints (DeepSeek, Kimi, …) |
+| OpenAI Official | `OpenAIResponsesChatModel` | Responses API via official SDK; reasoning, structured output |
 | Anthropic | `AnthropicChatModel` | Claude models; prompt caching and thinking |
 | DashScope | `DashScopeChatModel` | Qwen models; multi-modal (vision/audio/video), reasoning |
 | Gemini | `GeminiChatModel` | Google Gemini; multi-modal |
 | Ollama | `OllamaChatModel` | Locally hosted LLMs; credential optional |
 
-Provider credential classes live with their model extension modules, for example `OpenAICredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
+Provider credential classes live with their model extension modules, for example `OpenAICredential`, `OpenAIOfficialCredential`, `AnthropicCredential`, `DashScopeCredential`, `GeminiCredential`, and `OllamaCredential`. OpenAI-compatible credentials such as `DeepSeekCredential`, `KimiCredential`, and `XAICredential` remain available from core.
 
 ### Creating a chat model
 
@@ -385,6 +387,7 @@ If the native path fails (e.g. model returns HTTP 400), the framework **automati
 | Provider | `supportsNativeStructuredOutput` | Notes |
 |----------|----------------------------------|-------|
 | OpenAI (GPT-4o, etc.) | `true` | Native `json_schema` support |
+| OpenAI Official (Responses API) | `true` | Native `json_schema` support |
 | OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
 | DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
 | Anthropic | `false` (default) | — |
@@ -448,6 +451,7 @@ Per-provider formatters now live with their provider extension modules:
 |----------|------|------------|
 | DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
 | Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
