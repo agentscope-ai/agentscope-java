@@ -1,4 +1,6 @@
-# Managed Harness 的任务结果与子任务归属
+---
+title: Managed Harness 的任务结果与子任务归属
+---
 
 本次增强用于处理 AgentTask 调研过程中出现的子任务无法查询、空完成事件被误读为仍在执行、普通文本被自动完成，以及部分报告未进入主 Issue 的问题。
 

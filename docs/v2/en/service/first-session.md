@@ -1,10 +1,12 @@
-# Your first Session
+---
+title: Your first Session
+---
 
 By the end of this guide, you should be able to send a message, receive an Agent response and find the conversation again after refreshing the console.
 
 ## 1. Prepare a model and Environment
 
-Start the platform with the [quickstart](quickstart.md). Configure an available model and its credentials. Enable Local only for a trusted evaluation; otherwise create a Sandbox or Self-hosted Environment and confirm connectivity.
+Start the platform with the [quickstart](/v2/en/service/quickstart). Configure an available model and its credentials. Enable Local only for a trusted evaluation; otherwise create a Sandbox or Self-hosted Environment and confirm connectivity.
 
 ## 2. Create an Agent
 
@@ -38,4 +40,4 @@ Agent creation uses `/api/v1/agents` with `agentKey`, `displayName`, `binding` a
 
 A message body is `{"events":[{"type":"user.message","payload":{"text":"Hello"}}]}`. Use the signed-in user's Bearer token. Internal service tokens are not browser credentials.
 
-If no response arrives, inspect the model, Environment and Dataplane with the [troubleshooting guide](troubleshooting.md).
+If no response arrives, inspect the model, Environment and Dataplane with the [troubleshooting guide](/v2/en/service/troubleshooting).

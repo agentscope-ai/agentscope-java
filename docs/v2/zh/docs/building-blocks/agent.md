@@ -1,6 +1,6 @@
 ---
-title: "智能体"
-description: "了解如何在 AgentScope Java 2.0 中定义和配置智能体"
+title: 智能体
+description: 了解如何在 AgentScope Java 2.0 中定义和配置智能体
 ---
 
 ## 概述
@@ -30,7 +30,7 @@ description: "了解如何在 AgentScope Java 2.0 中定义和配置智能体"
 
 智能体在每次 `call` 调用时运行推理-行动循环，下图展示了主要控制流程：
 
-```{mermaid}
+```mermaid
 flowchart TD
     A([输入: 消息 / 事件]) --> B{等待\n外部事件?}
     B -- 是 --> C[处理事件\n更新工具状态]
@@ -61,8 +61,12 @@ flowchart TD
 
 通过 `ReActAgent.builder()...build()` 创建智能体。`.model(...)` 既接受 `ModelRegistry` 解析的字符串 id（最常用、自动读取 env），也接受手动 builder 构造的 `Model` 实例（需要精细控制超时、自定义 endpoint 时用）。
 
-::::{tab-set}
-:::{tab-item} 字符串 model id（推荐）
+
+<Tabs>
+
+
+<Tab title="字符串 model id（推荐）">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -78,8 +82,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} 显式 Model builder
+
+</Tab>
+
+
+<Tab title="显式 Model builder">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
@@ -100,8 +108,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} 配置 Toolkit / MCP
+
+</Tab>
+
+
+<Tab title="配置 Toolkit / MCP">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -127,12 +139,20 @@ ReActAgent agent =
                 .toolkit(toolkit)
                 .build();
 ```
-:::
-::::
 
-:::{tip}
-`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](../harness/architecture.md) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
-:::
+</Tab>
+
+
+</Tabs>
+
+
+
+<Tip>
+
+`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](/v2/zh/docs/harness/architecture) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
+
+</Tip>
+
 
 ### 参数说明
 
@@ -145,7 +165,7 @@ ReActAgent agent =
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | 应用于 agent / reasoning / acting / model call / system prompt 钩子 |
 | `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
 | `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
-| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](./permission-system.md) |
+| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
 | `modelConfig` | `ModelConfig` | 默认值 | 模型重试次数和备用模型 |
 | `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
 | `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数（也可放在 `reactConfig` 中） |
@@ -180,9 +200,13 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 每次 `call()` 开始时，agent 根据 `RuntimeContext` 中的 `(userId, sessionId)` 自动加载对应的 `AgentState`（对话上下文、权限规则等）；call 结束后自动保存。不同 session 的状态完全隔离。
 
-:::{tip}
+
+<Tip>
+
 同一个 `(userId, sessionId)` 的调用会按到达顺序**串行化执行**——第二个请求等待第一个完成后再开始。不同 session 的调用可以完全并行。
-:::
+
+</Tip>
+
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
@@ -262,7 +286,7 @@ agent.streamEvents(new UserMessage("总结一下 README 的内容。"))
         .blockLast();
 ```
 
-完整事件类型与字段参考 [消息与事件](./message-and-event.md)。
+完整事件类型与字段参考 [消息与事件](/v2/zh/docs/building-blocks/message-and-event)。
 
 ### observe
 
@@ -288,7 +312,7 @@ agent.observe(otherAgentMsg).block();
 | 字符串属性（任意 key-value） | `put(String key, Object value)` | `<T> T get(String key)` |
 | 类型化属性（按 `Class<T>` 注入业务 POJO） | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
-类型化属性是给 tool 用的——`@Tool` 方法里声明同类型参数即可被框架自动注入，详见 [Tool — 接收 Context](./tool.md#接收-context)。字符串属性通常用于内部协调（例如 middleware 之间传值）。两层互不串扰：类型化层放进去的对象不会出现在 `getExtra()` 里，反之亦然。
+类型化属性是给 tool 用的——`@Tool` 方法里声明同类型参数即可被框架自动注入，详见 [Tool — 接收 Context](/v2/zh/docs/building-blocks/tool#接收-context)。字符串属性通常用于内部协调（例如 middleware 之间传值）。两层互不串扰：类型化层放进去的对象不会出现在 `getExtra()` 里，反之亦然。
 
 ### 构造并传入
 
@@ -313,8 +337,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ### 谁能读到
 
-- **Tool**（`@Tool` 方法或 `ToolBase.callAsync`）—— 见 [Tool — 接收 Context](./tool.md#接收-context)。
-- **Middleware**（`MiddlewareBase` 所有 hook）—— 作为第二个参数 `ctx` 直接传入。详见 [Middleware — 读取 RuntimeContext](./middleware.md#读取-runtimecontext)。
+- **Tool**（`@Tool` 方法或 `ToolBase.callAsync`）—— 见 [Tool — 接收 Context](/v2/zh/docs/building-blocks/tool#接收-context)。
+- **Middleware**（`MiddlewareBase` 所有 hook）—— 作为第二个参数 `ctx` 直接传入。详见 [Middleware — 读取 RuntimeContext](/v2/zh/docs/building-blocks/middleware#读取-runtimecontext)。
 - **同一次调用的所有线程**—— `RuntimeContext` 内部使用 `ConcurrentMap`，hook / tool 之间可以读写同一实例做协调。
 
 ### 与持久化的关系
@@ -324,9 +348,13 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 完整示例：`agentscope-examples/documentation/.../context/RuntimeContextExample.java`、`tool/ToolExecutionContextExample.java`。
 
-:::{note}
+
+<Note>
+
 存在一个旧的 `ToolExecutionContext`（`io.agentscope.core.tool`），已标记 `@Deprecated`，新代码统一使用 `RuntimeContext`。它在底层会被自动桥接到 `RuntimeContext.asToolExecutionContext()`，老代码不会立即失效。
-:::
+
+</Note>
+
 
 ## 人机交互
 
@@ -433,13 +461,17 @@ for (var tc : externalEvent.getToolCalls()) {
 
 **3. 恢复智能体** —— 将结果作为下一次 `call` 的输入消息回传。结果校验通过后会被注入智能体上下文，agent 会先发出 `ExternalExecutionResultEvent`，其 `getReplyId()` 与之前的 `RequireExternalExecutionEvent#getReplyId()` 相同，然后从中断处继续推理。
 
-:::{tip}
+
+<Tip>
+
 构建交互式 UI 时使用 `streamEvents`——它可以实时检测暂停事件并立即提示用户。以编程方式处理事件的自动化流程则使用 `call`。完整可运行示例见 `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
-:::
+
+</Tip>
+
 
 ## 配置状态持久化（AgentStateStore）
 
-`AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。[`AgentStateStore`](../../integration/session/index.md) 是它的存储抽象。
+`AgentState` 是 agent 的全部可恢复状态——对话上下文、压缩摘要、权限规则、工具状态和当前 reply 位置。[`AgentStateStore`](/v2/zh/integration/session/index) 是它的存储抽象。
 
 **只需在 builder 上配 `stateStore(...)`，agent 就会自动持久化与恢复**：每次 `call` 结束把 `AgentState` 写回，下次用同一 `(userId, sessionId)` 调用时自动加载。Agent 实例本身对 session 无状态——具体读写哪个槽位由该次调用的 `RuntimeContext` 决定（缺省回退到 `defaultSessionId`）。
 
@@ -486,7 +518,7 @@ state.getContext().size();                  // 当前对话消息数
 String json = state.toJson();               // 序列化为 JSON
 ```
 
-完整字段、跨节点接续见[上下文与 AgentState](context.md)；压缩 / Plan Mode / 子 agent 的协作细节见[上下文压缩](../harness/compaction.md)。
+完整字段、跨节点接续见[上下文与 AgentState](/v2/zh/docs/building-blocks/context)；压缩 / Plan Mode / 子 agent 的协作细节见[上下文压缩](/v2/zh/docs/harness/compaction)。
 
 ## 结构化输出
 
@@ -603,18 +635,27 @@ ReActAgent.builder()
 
 ## 延伸阅读
 
-::::{grid} 2
 
-:::{grid-item-card} 权限系统
-:link: ./permission-system.html
+<CardGroup cols={2}>
+
+
+
+<Card title="权限系统" href="/v2/zh/docs/building-blocks/permission-system">
+
 
 控制智能体可以调用哪些工具以及在什么条件下调用。
-:::
 
-:::{grid-item-card} 中间件
-:link: ./middleware.html
+</Card>
+
+
+
+<Card title="中间件" href="/v2/zh/docs/building-blocks/middleware">
+
 
 在 agent、reasoning、acting 和 model call 钩子处拦截和修改智能体行为。
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

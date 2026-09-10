@@ -1,4 +1,6 @@
-# Accounts, Namespaces and permissions
+---
+title: Accounts, Namespaces and permissions
+---
 
 Platform administrators manage accounts and spaces. Resource use and work visibility also depend on Namespace and work-specific permissions.
 

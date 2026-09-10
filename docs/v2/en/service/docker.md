@@ -1,4 +1,6 @@
-# Docker deployment
+---
+title: Docker deployment
+---
 
 Release deployments use the image references in `agentscope-service/deploy/compose.yaml`. The existing `agentscope-service/docker-compose.yml` builds a development stack from source and uses different initialization settings.
 
@@ -33,4 +35,4 @@ docker compose ps
 
 `init-env.sh` preserves existing files and secrets. JWT, internal-token and Vault settings must match across the components using them. Vault-key rotation is not an ordinary configuration refresh.
 
-Before changing versions, follow [Backup and recovery](operations.md). See [Releasing](releasing.md) for artifact publication.
+Before changing versions, follow [Backup and recovery](/v2/en/service/operations). See [Releasing](/v2/en/service/releasing) for artifact publication.

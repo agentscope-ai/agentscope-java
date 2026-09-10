@@ -1,4 +1,6 @@
-# GLM Model
+---
+title: GLM
+---
 
 `agentscope-extensions-model-openai` provides first-class GLM (Zhipu AI / Z.AI) support through the OpenAI-compatible model stack. Add the OpenAI model extension module, then use `glm:<model>` with `ModelRegistry`.
 

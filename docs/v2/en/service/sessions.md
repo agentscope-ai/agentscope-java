@@ -1,4 +1,6 @@
-# Sessions, tasks and approvals
+---
+title: Sessions, tasks and approvals
+---
 
 Sessions support direct conversations and execution history. Tasks and Runs identify specific work within a collaboration.
 
@@ -18,4 +20,4 @@ A denied tool may require an alternative approach. Missing access requires a gra
 
 Check pending confirmations, model errors, Environment or Host connectivity, task dispatch and component logs. Preserve Session, Task, Attempt and Run IDs to correlate evidence.
 
-See [Troubleshooting](troubleshooting.md) and [Issues and Teams](teams.md).
+See [Troubleshooting](/v2/en/service/troubleshooting) and [Issues and Teams](/v2/en/service/teams).

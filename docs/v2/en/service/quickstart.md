@@ -1,4 +1,6 @@
-# Docker quickstart
+---
+title: Docker quickstart
+---
 
 Start the complete Service, sign in, then run your first Agent Session.
 
@@ -38,7 +40,7 @@ Open `http://localhost:18080`. Use `admin` and the `AISTIO_BOOTSTRAP_PASSWORD` i
 
 For a trusted local evaluation, set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true` in `.env`, add model credentials such as `DASHSCOPE_API_KEY`, and repeat the startup command. Local tools execute inside the Dataplane container.
 
-For other installations, keep Local disabled and configure a Sandbox or Self-hosted Environment in the console. Continue with [Your first Session](first-session.md).
+For other installations, keep Local disabled and configure a Sandbox or Self-hosted Environment in the console. Continue with [Your first Session](/v2/en/service/first-session).
 
 ## Stop and resume
 
@@ -47,4 +49,4 @@ docker compose down
 docker compose up -d --wait --wait-timeout 600
 ```
 
-Database, workspace and artifact volumes remain available. `down -v` deletes volumes and is not a normal stop command. See [Docker deployment](docker.md) and [Operations](operations.md) for remote access and upgrades.
+Database, workspace and artifact volumes remain available. `down -v` deletes volumes and is not a normal stop command. See [Docker deployment](/v2/en/service/docker) and [Operations](/v2/en/service/operations) for remote access and upgrades.

@@ -1,4 +1,6 @@
-# 分布式存储（Distributed Store）
+---
+title: 分布式存储（Distributed Store）
+---
 
 AgentScope 将所有需要分布式持久化的组件统一到 `DistributedStore` 接口下。一行配置即可让 Agent 的状态、工作区文件系统、沙箱快照和并发锁全部切到同一个分布式后端。
 
@@ -80,9 +82,9 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 
 ## 后端详细文档
 
-- [Redis](redis.md) — 最全功能覆盖，多副本生产首选
-- [MySQL / JDBC](mysql.md) — 已有关系型数据库的场景
-- [阿里云 OSS](oss.md) — 对象存储，大容量快照首选
+- [Redis](/v2/zh/integration/distributed/redis) — 最全功能覆盖，多副本生产首选
+- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — 已有关系型数据库的场景
+- [阿里云 OSS](/v2/zh/integration/distributed/oss) — 对象存储，大容量快照首选
 
 ## aistio 托管 Store
 

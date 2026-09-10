@@ -1,4 +1,6 @@
-# SDKs and application integration
+---
+title: SDKs and application integration
+---
 
 Existing Agent applications can retain their own process lifecycle while exposing identity, availability, Session information and execution capabilities to the control plane.
 
