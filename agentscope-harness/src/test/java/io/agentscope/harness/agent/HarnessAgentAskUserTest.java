@@ -268,6 +268,13 @@ class HarnessAgentAskUserTest {
         Map<String, Object> schemaProps =
                 (Map<String, Object>) tool.getParameters().get("properties");
         assertTrue(schemaProps.containsKey("questions"), "schema must expose questions");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> questionsSchema = (Map<String, Object>) schemaProps.get("questions");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> questionItemSchema = (Map<String, Object>) questionsSchema.get("items");
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) questionItemSchema.get("required");
+        assertTrue(required.contains("id"), "question ids must be required for answer redaction");
         assertEquals(
                 PermissionDecision.askUser("x").getBehavior(),
                 tool.checkPermissions(Map.of(), PermissionContextState.builder().build())
