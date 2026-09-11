@@ -30,6 +30,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -107,6 +109,63 @@ class AgentBaseTest {
                             .content(TextBlock.builder().text("Interrupted").build())
                             .build();
             return Mono.just(interruptMsg);
+        }
+    }
+
+    static class LifecycleTestAgent extends TestAgent {
+        private final AtomicReference<String> beforeThreadName = new AtomicReference<>();
+        private final AtomicInteger activeBeforeCalls = new AtomicInteger();
+        private final AtomicInteger maxActiveBeforeCalls = new AtomicInteger();
+        private final AtomicBoolean firstBeforeEntered = new AtomicBoolean();
+        private Duration beforeDelay = Duration.ZERO;
+        private Object serializationKey;
+
+        LifecycleTestAgent(String name) {
+            super(name);
+        }
+
+        void setBeforeDelay(Duration beforeDelay) {
+            this.beforeDelay = beforeDelay;
+        }
+
+        void setSerializationKey(Object serializationKey) {
+            this.serializationKey = serializationKey;
+        }
+
+        String getBeforeThreadName() {
+            return beforeThreadName.get();
+        }
+
+        int getMaxActiveBeforeCalls() {
+            return maxActiveBeforeCalls.get();
+        }
+
+        boolean hasEnteredBefore() {
+            return firstBeforeEntered.get();
+        }
+
+        @Override
+        protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+            beforeThreadName.set(Thread.currentThread().getName());
+            firstBeforeEntered.set(true);
+            int active = activeBeforeCalls.incrementAndGet();
+            maxActiveBeforeCalls.accumulateAndGet(active, Math::max);
+            try {
+                if (!beforeDelay.isZero()) {
+                    Thread.sleep(beforeDelay.toMillis());
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } finally {
+                activeBeforeCalls.decrementAndGet();
+            }
+            return null;
+        }
+
+        @Override
+        protected Object callSerializationKey(RuntimeContext rc) {
+            return serializationKey;
         }
     }
 
@@ -198,6 +257,52 @@ class AgentBaseTest {
                 "Response should be from the agent");
 
         assertNotNull(response2, "Response should not be null");
+    }
+
+    @Test
+    @DisplayName("Should run beforeAgentExecution on boundedElastic and keep null scope valid")
+    void testBeforeAgentExecutionRunsOnBoundedElastic() {
+        LifecycleTestAgent lifecycleAgent = new LifecycleTestAgent("LifecycleAgent");
+
+        Msg response =
+                lifecycleAgent
+                        .call(TestUtils.createUserMessage("User", "thread check"))
+                        .subscribeOn(Schedulers.single())
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(
+                response, "Response should not be null when beforeAgentExecution returns null");
+        assertTrue(lifecycleAgent.hasEnteredBefore(), "beforeAgentExecution should run");
+        assertTrue(
+                lifecycleAgent.getBeforeThreadName().contains("boundedElastic"),
+                "beforeAgentExecution should run on boundedElastic, but ran on "
+                        + lifecycleAgent.getBeforeThreadName());
+    }
+
+    @Test
+    @DisplayName("Should keep serialized beforeAgentExecution calls for the same key")
+    void testBeforeAgentExecutionStillSerializedByKey() {
+        LifecycleTestAgent lifecycleAgent = new LifecycleTestAgent("SerializedLifecycleAgent");
+        lifecycleAgent.setSerializationKey("same-session");
+        lifecycleAgent.setBeforeDelay(Duration.ofMillis(150));
+
+        Msg msg1 = TestUtils.createUserMessage("User", "call 1");
+        Msg msg2 = TestUtils.createUserMessage("User", "call 2");
+
+        List<Msg> results =
+                Mono.zip(
+                                lifecycleAgent.call(msg1).subscribeOn(Schedulers.parallel()),
+                                lifecycleAgent.call(msg2).subscribeOn(Schedulers.parallel()))
+                        .map(tuple -> List.of(tuple.getT1(), tuple.getT2()))
+                        .block(Duration.ofSeconds(5));
+
+        assertNotNull(results, "Both calls should complete");
+        assertEquals(2, results.size(), "Both calls should return responses");
+        assertEquals(
+                1,
+                lifecycleAgent.getMaxActiveBeforeCalls(),
+                "beforeAgentExecution should not overlap for calls with the same serialization"
+                        + " key");
     }
 
     @Test
