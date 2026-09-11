@@ -1,0 +1,322 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.mongodb;
+
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
+import io.agentscope.extensions.mongodb.snapshot.MongoRemoteSnapshotClient;
+import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
+import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
+import io.agentscope.extensions.mongodb.store.MongoBaseStore;
+import io.agentscope.harness.agent.DistributedStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * MongoDB-backed {@link DistributedStore}.
+ *
+ * <p>Usage:
+ *
+ * <pre>{@code
+ * MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017");
+ *
+ * HarnessAgent agent = HarnessAgent.builder()
+ *     .name("my-agent")
+ *     .model("dashscope:qwen-plus")
+ *     .distributedStore(MongoDistributedStore.create(mongoClient, "agentscope"))
+ *     .build();
+ * }</pre>
+ *
+ * <p>This configures:
+ *
+ * <ul>
+ *   <li>{@link MongoAgentStateStore} — agent session state in MongoDB
+ *   <li>{@link MongoBaseStore} — workspace filesystem KV in MongoDB
+ *   <li>{@link MongoSandboxExecutionGuard} — sandbox execution locking in MongoDB
+ *   <li>{@link MongoSnapshotSpec} — sandbox workspace snapshots in MongoDB
+ * </ul>
+ *
+ * <p>When created via {@link #create(MongoClient)}, the caller owns the {@link MongoClient}
+ * lifecycle; {@link #close()} will NOT close the client. When created via {@link
+ * #fromConnectionString(String)}, the store owns the client and {@link #close()} will close it.
+ * In both cases, {@link #close()} also cascades to shut down any cached
+ * {@link MongoSandboxExecutionGuard} executor.
+ */
+public class MongoDistributedStore implements DistributedStore, AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(MongoDistributedStore.class);
+
+    private final MongoClient mongoClient;
+    private final boolean ownsClient;
+    private final String databaseName;
+
+    private volatile AgentStateStore cachedAgentStateStore;
+    private volatile BaseStore cachedBaseStore;
+    private volatile SandboxSnapshotSpec cachedSnapshotSpec;
+    private volatile SandboxExecutionGuard cachedExecutionGuard;
+
+    private MongoDistributedStore(MongoClient mongoClient, String databaseName) {
+        this(mongoClient, databaseName, false);
+    }
+
+    private MongoDistributedStore(
+            MongoClient mongoClient, String databaseName, boolean ownsClient) {
+        this.mongoClient = Objects.requireNonNull(mongoClient, "mongoClient");
+        this.ownsClient = ownsClient;
+        this.databaseName = databaseName != null ? databaseName : MongoConstants.DEFAULT_DATABASE;
+    }
+
+    /**
+     * Creates a MongoDB distributed store with the default database name ({@code "agentscope"}).
+     *
+     * @param mongoClient the MongoDB client
+     * @return a new MongoDB distributed store
+     */
+    public static MongoDistributedStore create(MongoClient mongoClient) {
+        return new MongoDistributedStore(mongoClient, null);
+    }
+
+    /**
+     * Creates a MongoDB distributed store.
+     *
+     * @param mongoClient  the MongoDB client
+     * @param databaseName the database name
+     * @return a new MongoDB distributed store
+     */
+    public static MongoDistributedStore create(MongoClient mongoClient, String databaseName) {
+        return new MongoDistributedStore(mongoClient, databaseName);
+    }
+
+    /**
+     * Creates a MongoDB distributed store from a connection string. A new {@link MongoClient} is
+     * created internally and owned by the store; {@link #close()} will close it.
+     *
+     * <p>If the connection string includes a database path (e.g.
+     * {@code "mongodb://host:27017/mydb"}), that database is used instead of the default.
+     *
+     * @param connectionString the MongoDB connection string
+     * @return a new MongoDB distributed store
+     */
+    public static MongoDistributedStore fromConnectionString(String connectionString) {
+        ConnectionString cs = new ConnectionString(connectionString);
+        MongoClientSettings settings =
+                MongoClientSettings.builder().applyConnectionString(cs).build();
+        return new MongoDistributedStore(MongoClients.create(settings), cs.getDatabase(), true);
+    }
+
+    @Override
+    public AgentStateStore agentStateStore() {
+        AgentStateStore result = cachedAgentStateStore;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedAgentStateStore;
+                if (result == null) {
+                    result =
+                            MongoAgentStateStore.builder()
+                                    .mongoClient(mongoClient)
+                                    .databaseName(databaseName)
+                                    .collectionName(MongoConstants.SESSIONS_COLLECTION)
+                                    .onDeleteCallback(this::cascadeDeleteSnapshots)
+                                    .build();
+                    cachedAgentStateStore = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Cascade-deletes the sandbox snapshot associated with the session being deleted. This
+     * ensures snapshots are only reclaimed when their owning session is explicitly removed,
+     * aligned with Postgres/JDBC/Redis which have no independent snapshot expiry.
+     *
+     * <p>Only the SESSION isolation scope is eligible for cascade cleanup, because a
+     * SESSION-scoped sandbox is tied 1:1 to the session. USER/AGENT/GLOBAL scopes share a
+     * sandbox across multiple sessions and must not be reclaimed when one session is removed.
+     *
+     * <p>This is best-effort: if the snapshot lookup or delete fails, the session is still
+     * removed and the failure is logged as a warning. A snapshot orphaned by such a failure
+     * is only reclaimed by a later explicit {@link MongoRemoteSnapshotClient#delete(String)} of
+     * the same snapshot id, since snapshots have no independent TTL.
+     */
+    private void cascadeDeleteSnapshots(String userId, String sessionId) {
+        try {
+            String snapshotId = findSessionSnapshotId(sessionId);
+            if (snapshotId == null) {
+                return;
+            }
+            MongoRemoteSnapshotClient snapshotClient =
+                    new MongoRemoteSnapshotClient(
+                            mongoClient, databaseName, MongoConstants.SNAPSHOTS_COLLECTION);
+            if (snapshotClient.delete(snapshotId)) {
+                log.info(
+                        "[mongo-cascade] Deleted snapshot '{}' for session {}",
+                        snapshotId,
+                        sessionId);
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[mongo-cascade] Failed to cascade-delete snapshots for session {}",
+                    sessionId,
+                    e);
+        }
+    }
+
+    // ── Coupled to SessionSandboxStateStore (harness) internals ──
+    // These names mirror io.agentscope.harness.agent.sandbox.SessionSandboxStateStore
+    // and SandboxSnapshot rather than being re-exported as shared constants. If the
+    // harness-side naming changes, cascade cleanup silently becomes a no-op and
+    // snapshots become orphans.
+    //
+    // NOTE: The contract test in MongoIndexLifecycleContractTest verifies the cascade
+    // mechanism against a real MongoDB instance, but uses the same hardcoded strings
+    // as this class. It cannot detect naming drift if SessionSandboxStateStore changes
+    // its internal field names — that would require an end-to-end test through the
+    // harness module, which is outside this module's scope.
+    //
+    // sandbox/session/<sessionId>  — SESSION-scoped synthetic sessionId
+    // _sandbox_state               — state key for the serialized SandboxState JSON
+    // snapshot.type == "remote"    — discriminator for remote vs local snapshots
+    // snapshot.id                  — the GridFS filename (= sandbox UUID)
+    private static final String SANDBOX_SESSION_PREFIX = "sandbox/session/";
+    private static final String SANDBOX_STATE_KEY = "_sandbox_state";
+
+    private String findSessionSnapshotId(String sessionId) {
+        Optional<SandboxSlotView> slot =
+                agentStateStore()
+                        .get(
+                                null,
+                                SANDBOX_SESSION_PREFIX + sessionId,
+                                SANDBOX_STATE_KEY,
+                                SandboxSlotView.class);
+        if (slot.isEmpty() || slot.get().getJson() == null) {
+            return null;
+        }
+        return extractRemoteSnapshotId(slot.get().getJson());
+    }
+
+    /** State-slot view mirroring {@code SessionSandboxStateStore.SandboxStateSlot}. */
+    private static class SandboxSlotView implements State {
+        private String json;
+
+        @SuppressWarnings("unused")
+        SandboxSlotView() {}
+
+        public String getJson() {
+            return json;
+        }
+
+        public void setJson(String json) {
+            this.json = json;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String extractRemoteSnapshotId(String json) {
+        try {
+            Map<String, Object> root = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+            Object snapshot = root.get("snapshot");
+            if (!(snapshot instanceof Map<?, ?> snapMap)) {
+                return null;
+            }
+            if (!"remote".equals(snapMap.get("type"))) {
+                return null;
+            }
+            Object id = snapMap.get("id");
+            return (id instanceof String s && !s.isBlank()) ? s : null;
+        } catch (Exception e) {
+            log.warn("[mongo-cascade] Failed to parse sandbox state JSON", e);
+            return null;
+        }
+    }
+
+    @Override
+    public BaseStore baseStore() {
+        BaseStore result = cachedBaseStore;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedBaseStore;
+                if (result == null) {
+                    MongoDatabase db = mongoClient.getDatabase(databaseName);
+                    result = new MongoBaseStore(db, MongoConstants.BASE_STORE_COLLECTION);
+                    cachedBaseStore = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public SandboxSnapshotSpec sandboxSnapshotSpec() {
+        SandboxSnapshotSpec result = cachedSnapshotSpec;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedSnapshotSpec;
+                if (result == null) {
+                    result = new MongoSnapshotSpec(mongoClient, databaseName);
+                    cachedSnapshotSpec = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public SandboxExecutionGuard sandboxExecutionGuard() {
+        SandboxExecutionGuard result = cachedExecutionGuard;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedExecutionGuard;
+                if (result == null) {
+                    result =
+                            MongoSandboxExecutionGuard.builder(mongoClient)
+                                    .databaseName(databaseName)
+                                    .collectionName(MongoConstants.SANDBOX_LOCKS_COLLECTION)
+                                    .build();
+                    cachedExecutionGuard = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void close() {
+        if (cachedExecutionGuard instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                log.warn("Failed to close sandbox execution guard", e);
+            }
+        }
+        if (ownsClient) {
+            mongoClient.close();
+        }
+    }
+}

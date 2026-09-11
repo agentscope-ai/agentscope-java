@@ -1,9 +1,9 @@
 ---
-title: "Sandbox"
-description: "Isolated execution + cross-call recovery + multi-replica deployment"
+title: Sandbox
+description: Isolated execution + cross-call recovery + multi-replica deployment
 ---
 
-> For the three filesystem-mode comparison see [Filesystem](./filesystem.md). This page focuses on sandbox mode usage.
+> For the three filesystem-mode comparison see [Filesystem](/v2/en/docs/harness/filesystem). This page focuses on sandbox mode usage.
 
 ## What sandbox solves
 
@@ -313,6 +313,6 @@ To integrate a non-Docker isolation environment (self-hosted remote executor, co
 
 ## Related pages
 
-- [Filesystem](./filesystem.md) — three declarative modes compared
-- [Workspace](./workspace.md) — which files under `workspace/` sync into the sandbox
-- [Architecture](./architecture.md) — where sandbox acquire / release sits in the call() timeline
+- [Filesystem](/v2/en/docs/harness/filesystem) — three declarative modes compared
+- [Workspace](/v2/en/docs/harness/workspace) — which files under `workspace/` sync into the sandbox
+- [Architecture](/v2/en/docs/harness/architecture) — where sandbox acquire / release sits in the call() timeline
