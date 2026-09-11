@@ -219,6 +219,24 @@ class RemoteFilesystemCASTest {
     }
 
     @Test
+    void uploadFiles_nonUtf8Binary_roundTripsWithoutCorruption() {
+        InMemoryStore store = new InMemoryStore();
+        RemoteFilesystem fs = newFs(store);
+        byte[] expected = new byte[] {0, (byte) 0xff, 1, (byte) 0x80};
+
+        List<FileUploadResponse> upload =
+                fs.uploadFiles(CTX, List.of(Map.entry("/image.png", expected)));
+        assertEquals(1, upload.size());
+        assertTrue(upload.get(0).isSuccess(), () -> "upload failed: " + upload.get(0).error());
+
+        var download = fs.downloadFiles(CTX, List.of("/image.png"));
+        assertEquals(1, download.size());
+        assertTrue(
+                download.get(0).isSuccess(), () -> "download failed: " + download.get(0).error());
+        assertArrayEquals(expected, download.get(0).content());
+    }
+
+    @Test
     void downloadFiles_decodesWrappedBase64Content() {
         InMemoryStore store = new InMemoryStore();
         RemoteFilesystem fs = newFs(store);
