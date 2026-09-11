@@ -29,9 +29,11 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A layered filesystem that overlays a user-specific "upper" layer on top of a shared "lower"
@@ -202,10 +204,21 @@ public class OverlayFilesystem implements AbstractFilesystem {
             return lowerResult;
         }
 
+        // Upper-layer paths fully shadow lower-layer content for the same path, even when the
+        // upper file no longer matches the pattern (upperResult has no entries for that path).
+        Set<String> upperShadowedPaths = new HashSet<>();
         Map<String, GrepMatch> merged = new LinkedHashMap<>();
         if (lowerResult.isSuccess() && lowerResult.matches() != null) {
             for (GrepMatch m : lowerResult.matches()) {
-                merged.put(m.path() + ":" + m.line(), m);
+                String matchPath = m.path();
+                if (!upperShadowedPaths.contains(matchPath)
+                        && upper.exists(runtimeContext, matchPath)) {
+                    upperShadowedPaths.add(matchPath);
+                }
+                if (upperShadowedPaths.contains(matchPath)) {
+                    continue;
+                }
+                merged.put(matchPath + ":" + m.line(), m);
             }
         }
         if (upperResult.isSuccess() && upperResult.matches() != null) {
