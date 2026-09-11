@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -323,6 +324,34 @@ class AguiRequestProcessorTest {
             assertEquals(2, adapterCount.get());
         } finally {
             nextRun.dispose();
+        }
+    }
+
+    @Test
+    void processAllowsImmediateFollowUpRunAfterPreviousRunTerminates() {
+        // Regression guard for a CI-observed flake in AguiPermissionResumeTest: the
+        // active-run marker used to be cleared in doFinally, which runs after the
+        // terminal signal is propagated. A caller that collected the first run's events
+        // and immediately started the next run on the same thread could therefore be
+        // rejected with "Thread already has an active run". finishRun must happen
+        // before the terminal signal reaches the caller; it is idempotent, and the
+        // doFinally hook still covers the cancellation path.
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply")));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        for (int i = 0; i < 20; i++) {
+            List<AguiEvent> events =
+                    processor.process(request(input("run-" + i))).events().collectList().block();
+            assertNotNull(events);
+            assertTrue(
+                    events.stream().noneMatch(AguiEvent.RunError.class::isInstance),
+                    () -> "follow-up run was rejected: " + events);
         }
     }
 
