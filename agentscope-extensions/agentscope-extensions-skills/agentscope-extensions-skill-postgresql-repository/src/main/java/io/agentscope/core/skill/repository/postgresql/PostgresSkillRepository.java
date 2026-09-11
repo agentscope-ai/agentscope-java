@@ -204,11 +204,11 @@ public class PostgresSkillRepository implements AgentSkillRepository {
      * auto-migrated to add {@code metadata_json}.
      *
      * <p>
-     * This constructor is private. Use {@link #builder(DataSource)} to create instances
-     * with custom configuration.
+     * Users may call this constructor directly to pass custom schema and table names without
+     * using the builder, or continue to use {@link #builder(DataSource)} for a fluent API.
      *
      * @param dataSource         DataSource for database connections
-     * @param schemaName       Custom schema name (uses default if null or
+     * @param schemaName         Custom schema name (uses default if null or
      *                           empty)
      * @param skillsTableName    Custom skills table name (uses default if null or
      *                           empty)
@@ -223,7 +223,7 @@ public class PostgresSkillRepository implements AgentSkillRepository {
      * @throws IllegalStateException    if createIfNotExist is false and
      *                                  schema/tables do not exist
      */
-    private PostgresSkillRepository(
+    public PostgresSkillRepository(
             DataSource dataSource,
             String schemaName,
             String skillsTableName,
