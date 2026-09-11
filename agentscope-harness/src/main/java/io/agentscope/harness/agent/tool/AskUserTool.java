@@ -107,7 +107,7 @@ public class AskUserTool extends ToolBase {
         Map<String, Object> question = new LinkedHashMap<>();
         question.put("type", "object");
         question.put("description", "A single question for the user.");
-        question.put("required", List.of("question"));
+        question.put("required", List.of("id", "question"));
         Map<String, Object> questionProps = new LinkedHashMap<>();
         questionProps.put(
                 "id",
