@@ -1406,6 +1406,86 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testConfirmedToolResultsFromPreviousRunAreEmittedWithoutToolCallEvents() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            UserConfirmResultEvent confirmation =
+                    new UserConfirmResultEvent(
+                            "previous-reply", List.of(new ConfirmResult(true, toolUse)));
+            List<AguiEvent> events =
+                    runReActEvents(
+                            confirmation,
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "text"),
+                            confirmation,
+                            new ToolResultDataDeltaEvent(
+                                    "resumed-reply",
+                                    "tool-1",
+                                    "lookup",
+                                    TextBlock.builder().text("data").build()),
+                            new ToolCallDeltaEvent("previous-reply", "tool-1", "lookup", "{}"),
+                            new ToolCallEndEvent("previous-reply", "tool-1", "lookup"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "text\ndata");
+            assertEquals(
+                    "resumed-reply:tool-1", ((AguiEvent.ToolCallResult) events.get(0)).messageId());
+        }
+
+        @Test
+        void testConfirmedToolSuspensionDiscardsPartialResultWithoutEmittingToolCallEnd() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "previous-reply", List.of(new ConfirmResult(true, toolUse))),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent(
+                                    "resumed-reply", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "final"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "final");
+        }
+
+        @Test
+        void testAdoptionIsSilentAndLocalToTheStreamContext() {
+            AguiStreamContext context =
+                    new AguiStreamContext(
+                            "thread", "resumed-run", AguiAdapterConfig.defaultConfig());
+            context.adoptToolCall(null);
+            context.adoptToolCall(" ");
+            context.adoptToolCall("resumed-tool");
+            context.adoptToolCall("resumed-tool");
+            assertTrue(context.drainEvents().isEmpty());
+            assertTrue(context.finishPendingEvents().isEmpty());
+            context.endToolResult("reply", null);
+            context.endToolResult("reply", " ");
+            assertTrue(context.drainEvents().isEmpty());
+
+            context.startToolCall("current-tool", "lookup");
+            context.adoptToolCall("current-tool");
+            context.drainEvents();
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_END), types(context.finishPendingEvents()));
+            context.endToolResult("reply", "resumed-tool");
+            List<AguiEvent> result = context.drainEvents();
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(result));
+            assertToolCallResult(result.get(0), "resumed-tool", null);
+
+            AguiStreamContext nextRun =
+                    new AguiStreamContext("thread", "next-run", AguiAdapterConfig.defaultConfig());
+            nextRun.endToolResult("reply", "resumed-tool");
+            assertTrue(nextRun.drainEvents().isEmpty());
+        }
+
+        @Test
         void testToolResultEventsWithoutStartedToolCallAreIgnored() {
             List<AguiEvent> events =
                     runReActEvents(
