@@ -2,11 +2,14 @@
 title: Configuration reference
 ---
 
+[简体中文](/v2/zh/service/configuration)
+
 Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Secret and configure ingress and storage through Chart values.
 
 | Setting | Purpose | Notes |
 | --- | --- | --- |
 | `IMAGE_REPOSITORY` / `SERVICE_VERSION` | Compose image namespace and version | Use a specific published release |
+| `BIND_ADDRESS` / `GATEWAY_PORT` | Compose listener | Defaults to `127.0.0.1` / `18080`; update public URL when changed |
 | `POSTGRES_DB` | Compose database name | Defaults to `agentscope`; can select a restored database |
 | `POSTGRES_PASSWORD` | Compose database password | Preserve after initialization; use URL-safe values |
 | `AISTIO_PRODUCT_DSN` | Product database | Uses schema `cp` |
@@ -17,7 +20,7 @@ Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Sec
 | `BUILDER_VAULT_MASTER_KEY` | Credential encryption | Shared across components; back up with data |
 | `AISTIO_BOOTSTRAP_ADMIN` / `PASSWORD` | Initial administrator | Full password name: `AISTIO_BOOTSTRAP_PASSWORD`; 12–72 bytes |
 | `AISTIO_SEED_USERS` | Go demo-account seeding | Release configuration sets `false` |
-| `BUILDER_SEED_USERS` | Java legacy-account seeding | Release configuration sets `false` |
+| `BUILDER_SEED_USERS` | Java demo-account seeding | Release configuration sets `false` |
 | `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Permit Local Environments | Defaults to `false` |
 | `BUILDER_OAUTH_PUBLIC_URL` | Public origin | Must match OAuth callback configuration |
 | `DASHSCOPE_API_KEY` | Default DashScope model credentials | Required only for that model path |
@@ -31,4 +34,4 @@ Release deployments share `/data/workspaces`. The control plane uses `AISTIO_WOR
 
 ## Schema management
 
-Dataplane and Scheduler currently default to Hibernate `update`; Go runs migrations on startup. Without separately managed versioned SQL migrations, changing `BUILDER_JPA_DDL_AUTO` to `validate` will not initialize a new database. Back up and rehearse upgrades with the [operations guide](/v2/en/service/operations).
+Dataplane and Scheduler default to Hibernate `update`; Go runs migrations on startup. `BUILDER_JPA_DDL_AUTO=validate` checks existing tables without initializing a new database; use it only when you manage the schema separately. Back up and rehearse upgrades with the [operations guide](/v2/en/service/operations).

@@ -2,6 +2,8 @@
 title: Accounts, Namespaces and permissions
 ---
 
+[简体中文](/v2/zh/service/access)
+
 Platform administrators manage accounts and spaces. Resource use and work visibility also depend on Namespace and work-specific permissions.
 
 ## Initialize accounts

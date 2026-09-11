@@ -1,49 +1,80 @@
 ---
-title: Helm deployment
+title: "Production installation with Kubernetes and Helm"
 ---
 
-The complete Service Chart installs the Gateway, Control Plane, Dataplane and Scheduler. You operate PostgreSQL and the storage provisioner separately.
+[简体中文](/v2/zh/service/kubernetes)
 
-## Prerequisites
+The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
 
-Prepare a Kubernetes cluster, Helm 3.17+ or a compatible version, and reachable PostgreSQL. Run the release package's `postgres-init.sql` as the application database owner to create the `cp`, `rt` and `dp` schemas.
+## 1. Prepare dependencies
 
-Workspaces request ReadWriteMany storage by default. Supply an RWX StorageClass or an existing shared PVC. Artifacts request ReadWriteOnce. RWO workspace storage can work for a single-node test; this does not establish shared storage support across nodes.
+Prepare Kubernetes, Helm and reachable PostgreSQL. Workspaces need an RWX StorageClass or an existing shared PVC because several components mount them. Artifacts default to RWO. Single-node RWO behavior does not establish shared access across nodes.
 
-## 1. Create the configuration Secret
+Download the Chart and deployment configuration package from the Release and verify SHA256SUMS. Execute `postgres-init.sql` in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys.
 
-Copy `kubernetes.env.example` from the release package to a private file. Fill database connections, random secrets and initial administrator credentials. URL-encode passwords inside Go DSNs; supply the raw JDBC password separately. Configure database TLS for your network and certificates.
+## 2. Create a Secret
+
+Copy `kubernetes.env.example` to a private file and replace every placeholder: database connections, random JWT/internal/Vault secrets, bootstrap password and required model credentials. URL-encode URI passwords and provide the raw JDBC password separately. Configure TLS according to database certificates.
 
 ```bash
 kubectl create namespace agentscope
-kubectl -n agentscope create secret generic agentscope-service   --from-env-file=/private/path/service.env
+kubectl -n agentscope create secret generic agentscope-service --from-env-file=/private/path/service.env
 ```
 
-Keep the completed file and rendered Secret out of Git.
+Keep plaintext configuration and rendered Secrets out of the repository.
 
-## 2. Install
+## 3. Configure values
 
-Use the Chart archive downloaded from the release:
+Use this `production-values.yaml` starting point. Replace domain, storage classes, Ingress class and TLS Secret. Provision the TLS Secret beforehand or through your certificate controller.
 
-```bash
-helm upgrade --install service ./agentscope-service-VERSION.tgz   --namespace agentscope   --set imageRepository=REGISTRY/NAMESPACE   --set existingSecret=agentscope-service   --wait --timeout 10m
+```yaml
+existingSecret: agentscope-service
+allowLocalEnvironment: false
+publicURL: https://agentscope.example.com
+persistence:
+  workspaces:
+    storageClass: shared-rwx
+    size: 20Gi
+  artifacts:
+    storageClass: standard
+    size: 20Gi
+ingress:
+  enabled: true
+  className: nginx
+  host: agentscope.example.com
+  tls:
+    - hosts: [agentscope.example.com]
+      secretName: agentscope-service-tls
 ```
 
-After OCI publication, use `oci://REGISTRY/NAMESPACE/charts/agentscope-service` with `--version VERSION` instead of a file. Private registries require both Helm authentication and Kubernetes `imagePullSecrets`.
+Use `existingClaim` for retained PVCs. Configure `imagePullSecrets` for private images and controller-specific annotations for SSE timeouts and buffering. Tune requests and limits under `control`, `dataplane`, `scheduler` and `gateway` using measured workload requirements.
 
-Configure storage with `persistence.workspaces.storageClass`, `persistence.workspaces.existingClaim` and the corresponding artifact settings. For Ingress, configure host, class, TLS and controller-specific SSE settings, and set `publicURL`.
+## 4. Install a pinned version
 
-## 3. Verify
+Use the Release's OCI Chart location and image namespace:
 
 ```bash
-kubectl -n agentscope get pods,pvc,svc
+helm upgrade --install service oci://REGISTRY/NAMESPACE/charts/agentscope-service \
+  --version VERSION \
+  --namespace agentscope \
+  --set imageRepository=REGISTRY/NAMESPACE \
+  -f production-values.yaml \
+  --wait --timeout 10m
+```
+
+Alternatively replace the OCI location and `--version VERSION` with the downloaded `./agentscope-service-VERSION.tgz`. Authenticate to private OCI registries with Helm first. Keep Chart and component image versions aligned.
+
+## 5. Verify user workflows
+
+```bash
+kubectl -n agentscope get pods,pvc,svc,ingress
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-Sign in and follow [Your first Session](/v2/en/service/first-session). Verify Bound PVCs, Ready components, and readable history and files after restarting.
+Confirm Bound PVCs and Ready Pods. Sign in through the public domain with the bootstrap administrator and change its password. Verify the model, Environment, first Chat, Issue delivery and streaming. Port-forwarding helps diagnosis but does not validate public callbacks.
 
-## Operational boundaries
+## Maintain the installation
 
-The Chart uses one replica per component and Recreate updates. Schedule a maintenance window. It does not promise zero-downtime database migration or qualified multi-replica HA. Restart affected Deployments after Secret updates.
+Restart affected Deployments after Secret updates. Follow [operations](/v2/en/service/operations) before upgrading and retain prior Charts, values and image versions. PVCs are retained on uninstall; explicitly select them with existingClaim on reinstall.
 
-Uninstall retains PVCs. Reinstall with explicit existingClaim settings to reuse them. This Chart runs standalone HTTP mode; the legacy `aistio` Chart serves Kubernetes-native control-plane use cases. Do not blindly install both as one product stack.
+This Chart runs complete Service standalone HTTP. Kubernetes-native Aistio/ASDP is a separate deployment mode, requiring deliberate SDK connectivity planning rather than blindly combining Charts. The single-replica installation does not guarantee zero-downtime migrations or multi-replica HA.
