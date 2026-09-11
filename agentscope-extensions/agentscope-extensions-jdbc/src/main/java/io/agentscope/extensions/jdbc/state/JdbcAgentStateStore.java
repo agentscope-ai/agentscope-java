@@ -228,12 +228,32 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
+    private long readVersion(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        validateSlotId(slotId);
+        validateStateKey(key);
+
+        // Read only the version column — never deserialize state_data. Deserializing into the
+        // `State` marker interface is impossible (no concrete type to construct), so reading the
+        // version must not touch the payload.
+        BoundSql boundSql = dialect.sessionStateSelectVersioned(slotId, key, SINGLE_STATE_INDEX);
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getLong("version") : 0L;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version: " + key, e);
+        }
+    }
+
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersion(userId, sessionId, key);
         }
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);

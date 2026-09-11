@@ -100,7 +100,7 @@ func joinWorkspace(root, rel string) (string, error) {
 }
 
 func (s *Server) workspaceSummary(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -200,7 +200,7 @@ type fileNode struct {
 }
 
 func (s *Server) workspaceFiles(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -263,7 +263,7 @@ func buildFileTree(root, rel string, recursive bool) ([]*fileNode, error) {
 }
 
 func (s *Server) workspaceReadFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *Server) workspaceReadFile(c *gin.Context) {
 }
 
 func (s *Server) workspaceWriteFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -326,12 +326,13 @@ func (s *Server) workspaceWriteFile(c *gin.Context) {
 	}
 	if scopeType == scopeTypeWorkspace {
 		_ = s.bumpWorkspaceVersion(c.Request.Context(), owner, scopeID)
+		s.rematerializeLinkedAgents(c.Request.Context(), owner, scopeID)
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) workspaceCreateFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -364,7 +365,7 @@ func (s *Server) workspaceCreateFile(c *gin.Context) {
 }
 
 func (s *Server) workspaceMoveFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -400,7 +401,7 @@ func (s *Server) workspaceMoveFile(c *gin.Context) {
 }
 
 func (s *Server) workspaceDeleteFile(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -419,7 +420,7 @@ func (s *Server) workspaceDeleteFile(c *gin.Context) {
 }
 
 func (s *Server) workspaceUpload(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	ws, _, err := s.resolveAgentWorkspace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -459,7 +460,7 @@ func (s *Server) workspaceUpload(c *gin.Context) {
 }
 
 func (s *Server) listSubagents(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -512,7 +513,7 @@ func (s *Server) listSubagents(c *gin.Context) {
 }
 
 func (s *Server) upsertSubagent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {
@@ -569,7 +570,7 @@ func (s *Server) subagentFromAgent(c *gin.Context) {
 		name = req.SourceAgentID
 	}
 	c.Params = append(c.Params, gin.Param{Key: "name", Value: name})
-	src, err := s.loadAgent(c.Request.Context(), currentUserID(c), req.SourceAgentID)
+	src, err := s.loadAgent(c.Request.Context(), currentResourceOwner(c), req.SourceAgentID)
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "source agent not found")
 		return
@@ -594,7 +595,7 @@ func (s *Server) subagentFromAgent(c *gin.Context) {
 }
 
 func (s *Server) deleteSubagent(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	a, err := s.loadAgent(c.Request.Context(), owner, agentID)
 	if err != nil {

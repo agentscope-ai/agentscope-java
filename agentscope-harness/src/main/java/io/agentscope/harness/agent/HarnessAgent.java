@@ -122,6 +122,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
+import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -183,6 +184,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillCurator skillCurator;
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
+    private final Toolkit ownedMcpToolkit;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -216,8 +218,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
             MemoryConfig memoryConfig,
             Object subagentMiddleware,
             DistributedStore distributedStore,
-            WorkspacePathNormalizer pathNormalizer) {
+            WorkspacePathNormalizer pathNormalizer,
+            Toolkit ownedMcpToolkit) {
         this.delegate = delegate;
+        this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
@@ -471,6 +475,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     ownedWorkspaceIndex.close();
                 }
             } finally {
+                ownedMcpToolkit.closeMcpClients();
                 delegate.close();
             }
         }
@@ -1239,6 +1244,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
+        boolean disableWebTools = false;
+
+        /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
+        HttpClient webHttpClient;
+
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
         boolean disableTranscript = false;
@@ -1261,6 +1271,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean skillCuratorEnabled = false;
         SkillCuratorConfig skillCuratorConfig;
         io.agentscope.core.skill.SkillFilter skillFilter;
+        PermissionContextState permissionContextOverride;
 
         boolean planModeEnabled = false;
         boolean planModeAllowShell = false;
@@ -1697,6 +1708,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder permissionContext(PermissionContextState permissionContext) {
+            this.permissionContextOverride = permissionContext;
             inner.permissionContext(permissionContext);
             return this;
         }
@@ -2041,6 +2053,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Skips registration of {@link ShellExecuteTool}. */
         public Builder disableShellTool() {
             this.disableShellTool = true;
+            return this;
+        }
+
+        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        public Builder disableWebTools() {
+            this.disableWebTools = true;
+            return this;
+        }
+
+        /**
+         * Supplies a custom {@link java.net.http.HttpClient} used by the built-in {@code web_fetch}
+         * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
+         * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
+         * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
+         * fails under HTTP/2 negotiation (see issue #3101).
+         */
+        public Builder webHttpClient(HttpClient client) {
+            this.webHttpClient = client;
             return this;
         }
 
@@ -2678,8 +2708,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
-            agentToolkit.registerTool(new WebTools.WebFetchTool());
-            agentToolkit.registerTool(new WebTools.WebSearchTool());
+            if (!disableWebTools) {
+                if (webHttpClient != null) {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
+                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
+                } else {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool());
+                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                }
+            }
 
             // ---- Plan mode (read-only design phase) ----
             PlanModeManager planModeManager = null;
@@ -2830,7 +2867,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 : null;
 
                 io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
-                if (disableShellTool) {
+                boolean shellToolAvailable =
+                        !disableShellTool
+                                && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
+                if (!shellToolAvailable) {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
                 } else if (filesystem instanceof LocalFilesystemWithShell) {
@@ -2927,7 +2967,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     memoryConfig,
                     capturedSubagentMw,
                     distributedStore,
-                    pathNormalizer);
+                    pathNormalizer,
+                    agentToolkit);
         }
     }
 }

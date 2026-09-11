@@ -1,6 +1,6 @@
 ---
-title: "Message & Event"
-description: "The core data abstractions for agent communication and streaming"
+title: Message & Event
+description: The core data abstractions for agent communication and streaming
 ---
 
 Message and event are the two fundamental data structures in AgentScope.
@@ -14,9 +14,13 @@ The event sequence emitted by a single `call` always condenses into exactly one 
 
 `Msg` (`io.agentscope.core.message`) represents one turn of conversation — a user input, an agent reply, or a system instruction — with content modelled as an ordered list of typed `ContentBlock`s.
 
-:::{tip}
+
+<Tip>
+
 A single assistant `Msg` corresponds to one full `call` cycle (multiple reasoning + acting iterations until the final reply).
-:::
+
+</Tip>
+
 
 ### Structure
 
@@ -47,9 +51,13 @@ Message content is composed of typed blocks, each representing one type of infor
 | `ToolResultBlock` | A tool result with `state` (`ToolResultState`) | ASSISTANT |
 | `HintBlock` | Instructions injected into the loop as user context | ASSISTANT |
 
-:::{note}
+
+<Note>
+
 Role constraints are enforced at construction: `USER` only allows text/data/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
-:::
+
+</Note>
+
 
 ### Creating a message
 
@@ -130,7 +138,7 @@ Events are the streaming counterpart of messages. While the agent runs, it emits
 
 Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` acts as a correlation key for events that belong to the same content-block lifecycle. Events follow a **start → delta → end** pattern:
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant Client
     participant Agent
@@ -191,7 +199,9 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
 
-  :::{dropdown} Lifecycle events
+
+<Accordion title="Lifecycle events">
+
 **AgentStartEvent** — agent begins a new reply.
 
     | Method | Type | Description |
@@ -214,9 +224,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
 
     **RequestStopEvent** — early-stop request raised by middleware or a tool.
-:::
 
-  :::{dropdown} Text streaming events
+</Accordion>
+
+
+
+<Accordion title="Text streaming events">
+
 **TextBlockStartEvent** — a new text block begins.
 
     | Method | Type | Description |
@@ -238,20 +252,32 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getBlockId()` | `String` | Text-block correlation key within the current reply |
-:::
 
-  :::{dropdown} Thinking streaming events
+</Accordion>
+
+
+
+<Accordion title="Thinking streaming events">
+
 **ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought. Its `blockId` has the same reply-scoped correlation-key semantics.
-:::
 
-  :::{dropdown} Data streaming events
+</Accordion>
+
+
+
+<Accordion title="Data streaming events">
+
 **DataBlockStartEvent / DataBlockDeltaEvent / DataBlockEndEvent** — same shape as the text streaming events, carrying images / audio / video binary data:
 
     - `DataBlockStartEvent`: `getMediaType()` returns the MIME type (e.g. `"image/png"`).
     - `DataBlockDeltaEvent`: `getData()` returns incremental base64-encoded data.
-:::
 
-  :::{dropdown} Tool-call streaming events
+</Accordion>
+
+
+
+<Accordion title="Tool-call streaming events">
+
 **ToolCallStartEvent** — agent begins a tool call.
 
     | Method | Type | Description |
@@ -263,9 +289,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     **ToolCallDeltaEvent** — incremental tool-call arguments arrive; `getDelta()` returns a JSON fragment.
 
     **ToolCallEndEvent** — tool-call arguments complete.
-:::
 
-  :::{dropdown} Tool-result streaming events
+</Accordion>
+
+
+
+<Accordion title="Tool-result streaming events">
+
 **ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
 
     **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
@@ -279,15 +309,23 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
     | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
-:::
 
-  :::{dropdown} Model-call events
+</Accordion>
+
+
+
+<Accordion title="Model-call events">
+
 **ModelCallStartEvent** — model API call starts (carries `modelName`).
 
     **ModelCallEndEvent** — model API call completes (carries `inputTokens` / `outputTokens`).
-:::
 
-  :::{dropdown} Human-in-the-loop events
+</Accordion>
+
+
+
+<Accordion title="Human-in-the-loop events">
+
 **RequireUserConfirmEvent** — agent pauses for user confirmation.
 
     | Method | Type | Description |
@@ -323,9 +361,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getDeniedToolCalls()` | `List<ToolUseBlock>` | The denied tool calls |
-:::
 
-  :::{dropdown} Subagent events
+</Accordion>
+
+
+
+<Accordion title="Subagent events">
+
 **SubagentExposedEvent** — a subagent spawned via `agent_spawn(expose_to_user=true)` has been exposed as a user-addressable entry point. SSE / streaming consumers can use this to render a new conversation entry in the UI.
 
 | Method | Type | Description |
@@ -334,7 +376,9 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 | `getAgentId()` | `String` | Agent type ID of the subagent |
 | `getSessionId()` | `String` | Session ID of the subagent |
 | `getLabel()` | `String` | User-visible label (optional) |
-:::
+
+</Accordion>
+
 
 ## Reconstructing messages from events
 
@@ -369,9 +413,13 @@ agent.streamEvents(userMsg)
         .blockLast();
 ```
 
-:::{tip}
+
+<Tip>
+
 This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
-:::
+
+</Tip>
+
 
 ### Example: streaming UI
 
@@ -404,17 +452,26 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/en/docs/building-blocks/agent">
+
 
 How agents emit events and messages in the ReAct loop
-:::
-  :::{grid-item-card} Context
-:link: context.html
+
+</Card>
+
+
+<Card title="Context" href="/v2/en/docs/building-blocks/context">
+
 
 How messages are stored and persisted
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

@@ -1,6 +1,7 @@
 ---
-title: "Quickstart"
-description: "Get started with AgentScope Java 2.0 — bring up your first long-running agent with HarnessAgent"
+title: Quickstart
+description: Get started with AgentScope Java 2.0 — bring up your first long-running
+  agent with HarnessAgent
 ---
 
 ## Installation
@@ -19,11 +20,15 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 </dependency>
 ```
 
-:::{note}
-Substitute `${agentscope.version}` with the latest version. See [Release Notes](others/release-notes.md) for the latest version and full release details.
-:::
 
-If you only need the bare `ReActAgent` APIs (no workspace / persistence / subagents / sandbox), `agentscope-core` is enough for the agent framework itself. Concrete model providers are separate: provider-specific chat models and formatters live in independent `agentscope-extensions-model-*` modules. The difference between `ReActAgent` and `HarnessAgent` is covered in [Harness Architecture](./harness/architecture.md).
+<Note>
+
+Substitute `${agentscope.version}` with the latest version. See [Release Notes](/v2/en/docs/others/release-notes) for the latest version and full release details.
+
+</Note>
+
+
+If you only need the bare `ReActAgent` APIs (no workspace / persistence / subagents / sandbox), `agentscope-core` is enough for the agent framework itself. Concrete model providers are separate: provider-specific chat models and formatters live in independent `agentscope-extensions-model-*` modules. The difference between `ReActAgent` and `HarnessAgent` is covered in [Harness Architecture](/v2/en/docs/harness/architecture).
 
 The quickstart below uses DashScope through `.model("dashscope:qwen-plus")`, so add the matching model extension as well:
 
@@ -93,9 +98,13 @@ After this run you get two directory trees — the **workspace** and the **state
 
 `AgentState` lives **outside the workspace** at `~/.agentscope/state/<agentId>/` by default — because state is a prerequisite for restoring the workspace itself (e.g. after a sandbox wipe), so it must not be entangled with workspace data. Restart the process with the same `sessionId` and the second turn still remembers the first.
 
-:::{warning}
-The default `JsonFileAgentStateStore` is a local-file backend suitable for development and single-node deployment. For production clusters, use a distributed implementation such as `RedisAgentStateStore` (provided by `agentscope-extensions-redis`) or implement your own `AgentStateStore`. See [Going to Production](./others/going-to-production.md).
-:::
+
+<Warning>
+
+The default `JsonFileAgentStateStore` is a local-file backend suitable for development and single-node deployment. For production clusters, use a distributed implementation such as `RedisAgentStateStore` (provided by `agentscope-extensions-redis`) or implement your own `AgentStateStore`. See [Going to Production](/v2/en/docs/others/going-to-production).
+
+</Warning>
+
 
 After enough turns trip compaction, distilled facts first land in `workspace/memory/YYYY-MM-DD.md`, then a throttled background job merges them into `MEMORY.md`, which is injected into the system prompt on the next reasoning step.
 
@@ -122,9 +131,13 @@ agent.streamEvents(new UserMessage("Summarize today in three bullets."))
         .blockLast();
 ```
 
-:::{tip}
+
+<Tip>
+
 Set `DASHSCOPE_API_KEY` in the environment before running. To switch providers, add the matching `agentscope-extensions-model-*` module, change the string passed to `.model(...)`, and export the matching API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). When you need explicit control over timeouts or custom endpoints, build the model with the provider builder such as `DashScopeChatModel.builder()...build()` and pass it to `.model(Model)` instead.
-:::
+
+</Tip>
+
 
 ### Multi-user concurrency
 
@@ -157,11 +170,11 @@ agent.call(new UserMessage(userInput), RuntimeContext.builder()
         .build()).block();
 ```
 
-Calls targeting the same `(userId, sessionId)` are automatically serialized (no concurrent writes to one session); calls to different sessions run in parallel. For full production patterns (Redis session, sandbox, skill repositories), see [Going to Production](./others/going-to-production.md).
+Calls targeting the same `(userId, sessionId)` are automatically serialized (no concurrent writes to one session); calls to different sessions run in parallel. For full production patterns (Redis session, sandbox, skill repositories), see [Going to Production](/v2/en/docs/others/going-to-production).
 
 ## Next steps
 
-- [Agent](./building-blocks/agent.md) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, `AgentStateStore` configuration
-- [Harness Architecture](./harness/architecture.md) — how `HarnessAgent`'s capabilities cooperate, how state flows
-- [Workspace](./harness/workspace.md) — `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` directory layout and loading model
-- [Filesystem](./harness/filesystem.md) — local + shell / shared store / sandbox deployment modes
+- [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API, builder fields, `call` / `streamEvents` / `observe`, human-in-the-loop, `AgentStateStore` configuration
+- [Harness Architecture](/v2/en/docs/harness/architecture) — how `HarnessAgent`'s capabilities cooperate, how state flows
+- [Workspace](/v2/en/docs/harness/workspace) — `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` directory layout and loading model
+- [Filesystem](/v2/en/docs/harness/filesystem) — local + shell / shared store / sandbox deployment modes
