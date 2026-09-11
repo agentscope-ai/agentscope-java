@@ -264,9 +264,10 @@ class GeminiResponseParserTest {
                         // cachedContentTokenCount 是 promptTokenCount 的子集(Gemini SDK 文档:
                         // promptTokenCount 包含 cachedContentTokenCount),故 prompt 必须 > cached
                         .promptTokenCount(500)
+                        .toolUsePromptTokenCount(300)
                         .candidatesTokenCount(60)
                         .thoughtsTokenCount(10)
-                        .totalTokenCount(570)
+                        .totalTokenCount(870)
                         .cachedContentTokenCount(300)
                         .build();
 
@@ -281,9 +282,35 @@ class GeminiResponseParserTest {
 
         assertNotNull(chatResponse.getUsage());
         assertEquals(300, chatResponse.getUsage().getCachedTokens());
-        assertEquals(500, chatResponse.getUsage().getInputTokens());
+        assertEquals(800, chatResponse.getUsage().getInputTokens());
         assertEquals(70, chatResponse.getUsage().getOutputTokens());
-        assertEquals(570, chatResponse.getUsage().getTotalTokens());
+        assertEquals(870, chatResponse.getUsage().getTotalTokens());
+    }
+
+    @Test
+    void testUsageTokenAccountingFromIssuePayloadJson() {
+        // Preserve the issue #3033 reproduction in provider wire format so SDK field mapping cannot
+        // drift together with the parser's arithmetic fixtures.
+        GenerateContentResponse response =
+                GenerateContentResponse.fromJson(
+                        """
+                        {
+                          "usageMetadata": {
+                            "promptTokenCount": 500,
+                            "candidatesTokenCount": 120,
+                            "toolUsePromptTokenCount": 300,
+                            "thoughtsTokenCount": 10,
+                            "totalTokenCount": 930
+                          }
+                        }
+                        """);
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(130, usage.getOutputTokens());
+        assertEquals(930, usage.getTotalTokens());
     }
 
     @ParameterizedTest(name = "{0}")

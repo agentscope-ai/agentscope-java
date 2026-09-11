@@ -39,7 +39,12 @@ public class DashScopeUsage {
     @JsonProperty("input_tokens")
     private Integer inputTokens;
 
-    /** Number of tokens in the output. */
+    /**
+     * Number of tokens in the output.
+     *
+     * <p>DashScope includes reasoning tokens in this total; any separately reported reasoning-token
+     * count is a subset rather than an additional amount.
+     */
     @JsonProperty("output_tokens")
     private Integer outputTokens;
 

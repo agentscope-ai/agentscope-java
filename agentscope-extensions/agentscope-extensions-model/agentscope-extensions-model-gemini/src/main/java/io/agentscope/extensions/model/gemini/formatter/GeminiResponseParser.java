@@ -107,10 +107,19 @@ public class GeminiResponseParser {
                 if (metadata.candidatesTokenCount().isPresent()) {
                     outputTokens = metadata.candidatesTokenCount().get() + thinkingTokens;
                 } else {
-                    outputTokens =
-                            metadata.totalTokenCount()
-                                    .map(total -> Math.max(0, total - inputTokens))
-                                    .orElse(thinkingTokens);
+                    outputTokens = thinkingTokens;
+                    if (metadata.totalTokenCount().isPresent()) {
+                        int totalTokens = metadata.totalTokenCount().get();
+                        int reportedOutputTokens = totalTokens - inputTokens;
+                        if (reportedOutputTokens < 0) {
+                            log.debug(
+                                    "Gemini usage totalTokenCount ({}) is smaller than input token"
+                                            + " count ({}); clamping outputTokens to zero",
+                                    totalTokens,
+                                    inputTokens);
+                        }
+                        outputTokens = Math.max(0, reportedOutputTokens);
+                    }
                 }
 
                 usage =

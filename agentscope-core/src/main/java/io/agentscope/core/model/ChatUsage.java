@@ -22,8 +22,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Represents token usage information for chat completion responses.
  *
  * <p>This immutable data class tracks the number of tokens used during a chat completion,
- * including input tokens (prompt), output tokens (generated response), cached input tokens, and
- * execution time.
+ * including input tokens (prompt), output tokens (generated response, including reasoning/thinking
+ * tokens when the provider reports them separately), cached input tokens, and execution time.
  */
 public class ChatUsage {
 
@@ -39,7 +39,8 @@ public class ChatUsage {
      * #ChatUsage(int, int, int, double)} with {@code cachedTokens} defaulting to {@code 0}.
      *
      * @param inputTokens the number of tokens used for the input/prompt
-     * @param outputTokens the number of tokens used for the output/generated response
+     * @param outputTokens the number of tokens used for model-generated output, including
+     *     reasoning/thinking tokens when reported separately by the provider
      * @param time the execution time in seconds
      */
     public ChatUsage(int inputTokens, int outputTokens, double time) {
@@ -50,7 +51,8 @@ public class ChatUsage {
      * Creates a new ChatUsage instance.
      *
      * @param inputTokens the number of tokens used for the input/prompt
-     * @param outputTokens the number of tokens used for the output/generated response
+     * @param outputTokens the number of tokens used for model-generated output, including
+     *     reasoning/thinking tokens when reported separately by the provider
      * @param cachedTokens the number of input tokens served from the prompt cache (a subset of
      *     {@code inputTokens}); {@code 0} when the provider does not report cache information
      * @param time the execution time in seconds
@@ -79,7 +81,8 @@ public class ChatUsage {
     /**
      * Gets the number of output tokens used.
      *
-     * @return the number of tokens used for the output/generated response
+     * @return the number of model-generated output tokens, including reasoning/thinking tokens when
+     *     reported separately by the provider
      */
     public int getOutputTokens() {
         return outputTokens;
@@ -148,7 +151,8 @@ public class ChatUsage {
         /**
          * Sets the number of output tokens.
          *
-         * @param outputTokens the number of tokens used for the output/generated response
+         * @param outputTokens the number of tokens used for model-generated output, including
+         *     reasoning/thinking tokens when reported separately by the provider
          * @return this builder instance
          */
         public Builder outputTokens(int outputTokens) {
