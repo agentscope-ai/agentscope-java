@@ -13,7 +13,7 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
+  -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -21,55 +21,65 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Harness</name>
-    <artifactId>agentscope-harness</artifactId>
-    <description>AgentScope Harness - Enhanced agent runtime with workspace context, subagent orchestration, memory management, and backend abstraction</description>
+    <name>AgentScope Java - Extensions - MongoDB</name>
+    <description>MongoDB-backed distributed implementation for AgentStateStore. Provides MongoDistributedStore for one-line distributed configuration.</description>
+    <artifactId>agentscope-extensions-mongodb</artifactId>
 
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Shared test fixtures from agentscope-core (MockModel, MockToolkit, etc.). -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
-            <type>test-jar</type>
+            <artifactId>agentscope-harness</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- MongoDB Java Driver (sync) -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+        </dependency>
+
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Exercise AG-UI resume conversion against the real HarnessAgent. -->
         <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-agui</artifactId>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- YAML parsing for subagent config -->
         <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
 
-        <!-- Commons Compress for secure tar archive extraction in sandbox -->
+        <!-- Testcontainers for CI-runnable contract tests -->
         <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-compress</artifactId>
-            <version>1.27.1</version>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mongodb</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
         </dependency>
-
-        <!-- SQLite for best-effort local workspace index -->
         <dependency>
-            <groupId>org.xerial</groupId>
-            <artifactId>sqlite-jdbc</artifactId>
-            <version>3.47.1.0</version>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
