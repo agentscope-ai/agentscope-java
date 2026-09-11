@@ -1,49 +1,80 @@
 ---
-title: Helm 部署
+title: "生产安装：Kubernetes 与 Helm"
 ---
 
-完整 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL 与存储提供程序由部署者管理。
+[English](/v2/en/service/kubernetes)
 
-## 前置条件
+正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
 
-准备 Kubernetes 集群、Helm 3.17+ 或兼容版本，以及可被各组件访问的 PostgreSQL。以应用数据库所有者身份执行发布包中的 `postgres-init.sql`，建立 `cp`、`rt` 和 `dp` 三个 schema。
+## 1. 准备依赖
 
-Workspace 默认请求 ReadWriteMany 持久卷，需要 RWX StorageClass 或已有共享 PVC。Artifact 默认请求 ReadWriteOnce。单节点测试可以使用 RWO Workspace；多节点部署不能据此假定共享存储可用。
+准备 Kubernetes、Helm、可达的 PostgreSQL，以及 Workspace 所需的 RWX StorageClass 或已有共享 PVC。Artifact 默认使用 RWO。工作目录会被多个组件挂载；只在单节点可用的 RWO 卷不能替代跨节点共享存储。
 
-## 1. 创建配置 Secret
+从 Release 获取 Chart 和部署配置包，校验 SHA256SUMS。用应用数据库所有者在目标数据库执行 `postgres-init.sql`，创建 `cp`、`rt`、`dp` 三个 schema。为数据库、文件和密钥建立备份策略。
 
-复制发布包中的 `kubernetes.env.example` 到私有文件，填写数据库连接、随机密钥及初始管理员密码。Go DSN 中的密码需要 URL 编码，JDBC 密码使用原始值。生产数据库连接按你的证书和网络配置启用 TLS。
+## 2. 创建 Secret
+
+复制 `kubernetes.env.example` 到私有文件并替换全部占位值：数据库连接、随机 JWT/internal/Vault 密钥、初始管理员密码及需要的模型凭据。URI 中的密码 URL 编码，JDBC 密码单独提供原值。根据数据库证书设置 TLS。
 
 ```bash
 kubectl create namespace agentscope
-kubectl -n agentscope create secret generic agentscope-service   --from-env-file=/private/path/service.env
+kubectl -n agentscope create secret generic agentscope-service --from-env-file=/private/path/service.env
 ```
 
-不要把填好的文件或渲染后的 Secret 提交到 Git。
+Secret 是运行配置；不要把明文文件或含 Secret 的渲染结果提交到仓库。
 
-## 2. 安装
+## 3. 准备 values
 
-使用 Release 下载的 Chart 包：
+以下是 `production-values.yaml` 起点，替换域名、StorageClass、Ingress class 和 TLS Secret。TLS Secret 必须预先存在或由你的证书控制器创建。
 
-```bash
-helm upgrade --install service ./agentscope-service-VERSION.tgz   --namespace agentscope   --set imageRepository=REGISTRY/NAMESPACE   --set existingSecret=agentscope-service   --wait --timeout 10m
+```yaml
+existingSecret: agentscope-service
+allowLocalEnvironment: false
+publicURL: https://agentscope.example.com
+persistence:
+  workspaces:
+    storageClass: shared-rwx
+    size: 20Gi
+  artifacts:
+    storageClass: standard
+    size: 20Gi
+ingress:
+  enabled: true
+  className: nginx
+  host: agentscope.example.com
+  tls:
+    - hosts: [agentscope.example.com]
+      secretName: agentscope-service-tls
 ```
 
-发布到 OCI 后，也可把包路径换成 `oci://REGISTRY/NAMESPACE/charts/agentscope-service` 并加 `--version VERSION`。私有仓库同时配置 Helm 登录和 Kubernetes `imagePullSecrets`。
+已有 PVC 时设置对应 `existingClaim`。私有镜像配置 `imagePullSecrets`；Ingress annotations 按实际控制器设置 SSE 超时和缓冲行为。资源 requests/limits 可分别通过 `control`、`dataplane`、`scheduler`、`gateway` 调整，按实际任务负载压测定容。
 
-自定义存储通过 `persistence.workspaces.storageClass`、`persistence.workspaces.existingClaim` 及对应 Artifact 字段设置。启用 Ingress 时填写 `ingress.host`、`ingress.className`、TLS 与控制器支持的 SSE 参数，并设置 `publicURL`。
+## 4. 安装指定版本
 
-## 3. 验证
+使用 Release 提供的 OCI Chart 地址和镜像命名空间：
 
 ```bash
-kubectl -n agentscope get pods,pvc,svc
+helm upgrade --install service oci://REGISTRY/NAMESPACE/charts/agentscope-service \
+  --version VERSION \
+  --namespace agentscope \
+  --set imageRepository=REGISTRY/NAMESPACE \
+  -f production-values.yaml \
+  --wait --timeout 10m
+```
+
+也可以将 OCI 地址和 `--version VERSION` 替换为下载的 `./agentscope-service-VERSION.tgz`。私有 OCI 仓库需要先完成 Helm registry 登录。保持 Chart 与组件镜像版本配套。
+
+## 5. 验证用户路径
+
+```bash
+kubectl -n agentscope get pods,pvc,svc,ingress
 kubectl -n agentscope port-forward service/service-agentscope-gateway 18080:8080
 ```
 
-登录后按[第一个 Session](/v2/zh/service/first-session)验证业务流程。检查 PVC 为 Bound，组件为 Ready，重启后历史和文件仍可读取。
+确认 PVC Bound、Pod Ready，使用初始管理员登录公开域名并修改密码。验证模型连接、执行 Environment、第一次 Chat、Issue 交付和长连接。port-forward 用于排障，不替代公开回调地址验证。
 
-## 运行边界
+## 升级、卸载与运行模式
 
-Chart 默认每组件单副本，采用 Recreate 更新，需安排维护窗口。当前没有承诺无停机数据库迁移或多副本 HA。Secret 更新后需要重新启动相关 Deployment。
+Secret 更新后重启相关 Deployment；升级前按[运维手册](/v2/zh/service/operations)备份，并保留原 Chart、values 和镜像版本。Chart 保留 PVC；重新安装时显式指定保留的 existingClaim。
 
-卸载保留 PVC；重新安装时显式指定保留的 existingClaim。完整 Chart 使用 standalone HTTP 模式；旧 `aistio` Chart 服务于 Kubernetes-native 控制面场景，两者不能不加区分地叠装成同一套产品服务。
+此 Chart 提供完整 Service standalone HTTP。Kubernetes-native Aistio/ASDP 是另外的部署模式，应按 SDK 网络契约规划，不把两个 Chart 直接叠装为同一服务。当前 Chart 的单副本安装不提供无停机迁移或多副本 HA 保证。

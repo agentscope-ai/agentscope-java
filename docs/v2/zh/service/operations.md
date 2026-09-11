@@ -2,6 +2,8 @@
 title: 备份、升级与恢复
 ---
 
+[English](/v2/en/service/operations)
+
 一份可恢复的备份包括数据库、Workspace、Artifact 和解密这些数据所需的密钥。
 
 ## Docker 备份
@@ -45,4 +47,8 @@ pg_restore --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" backup/database.
 
 检查管理员登录、已有 Agent 与 Session 历史、Workspace 文件、Vault 凭据解密、运行时连接，以及一项新的小任务。Task/Issue 的验收状态应与备份时刻相符。
 
-只有数据库、文件和密钥都能共同恢复，备份才算通过验证。当前发布准备不承诺多副本 HA 或无停机升级。
+只有数据库、文件和密钥都能共同恢复，备份才算通过验证。升级按维护窗口执行；单副本安装不提供多副本 HA 或无停机升级保证。
+
+## 恢复后重新开放服务
+
+先保持定时规则和外部入口受控，在测试工作上验证登录、历史、文件和凭据。确认 Runtime Host 重新上线，再逐个恢复计划触发与业务流量。数据库快照恢复不会撤销备份之后已经发出的消息或外部写入；对照业务系统核对幂等记录和未完成工作后再重跑。

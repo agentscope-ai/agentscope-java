@@ -2,6 +2,8 @@
 title: 账号、Namespace 与权限
 ---
 
+[English](/v2/en/service/access)
+
 平台管理员负责账号与空间管理；资源使用和工作可见性还受 Namespace 及工作自身权限约束。
 
 ## 初始化账号

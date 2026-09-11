@@ -93,17 +93,40 @@ export function checkSite(docs) {
   for (const route of published) if (!pages.has(route)) errors.push(`Missing navigation page: ${route}`);
   for (const route of pages.keys()) if (!published.has(route)) errors.push(`Page missing from navigation: ${route}`);
   const redirects = new Map();
+  const wildcards = [];
   for (const { source, destination } of config.redirects || []) {
     if (redirects.has(source)) errors.push(`Duplicate redirect: ${source}`);
     if (pages.has(source)) errors.push(`Redirect shadows page: ${source}`);
     redirects.set(source, destination);
+    if (source.includes('*') || destination.includes('*')) {
+      if (!source.endsWith('/:slug*') || !destination.endsWith('/:slug*') ||
+          /[:*]/.test(source.slice(0, -7) + destination.slice(0, -7))) {
+        errors.push(`Unsupported wildcard redirect: ${source}`);
+        continue;
+      }
+      wildcards.push({ source: source.slice(0, -7), destination: destination.slice(0, -7) });
+    }
+  }
+  const matchesPrefix = (route, prefix) => route === prefix || route.startsWith(prefix + '/');
+  function nextRedirect(target) {
+    if (redirects.has(target)) return redirects.get(target);
+    const rule = wildcards.find(({ source }) => matchesPrefix(target, source));
+    return rule ? rule.destination + target.slice(rule.source.length) : undefined;
+  }
+  for (const rule of wildcards) {
+    for (const route of pages.keys()) {
+      if (matchesPrefix(route, rule.source)) errors.push(`Redirect shadows page: ${route}`);
+    }
+    if (![...pages.keys()].some((route) => matchesPrefix(route, rule.destination))) {
+      errors.push(`Wildcard redirect has no destination pages: ${rule.source}`);
+    }
   }
   function resolve(target) {
     const seen = new Set();
-    while (redirects.has(target)) {
-      if (seen.has(target)) return null;
+    while (nextRedirect(target) !== undefined) {
+      if (seen.has(target) || seen.size > redirects.size) return null;
       seen.add(target);
-      target = redirects.get(target);
+      target = nextRedirect(target);
     }
     return target;
   }
@@ -124,7 +147,15 @@ export function checkSite(docs) {
     }
   }
   for (const [route, page] of pages) for (const link of page.links) checkLink(route, link);
-  for (const [source, destination] of redirects) checkLink(source, destination);
+  for (const [source] of redirects) {
+    if (!source.includes('*')) checkLink(source, source);
+  }
+  for (const rule of wildcards) {
+    if (resolve(rule.source + '/__redirect_probe__') === null) errors.push(`redirect cycle at ${rule.source}`);
+    for (const route of pages.keys()) {
+      if (matchesPrefix(route, rule.destination)) checkLink(rule.source, rule.source + route.slice(rule.destination.length));
+    }
+  }
   for (const asset of [config.favicon, config.logo?.light, config.logo?.dark]) if (asset) checkLink('/docs.json', asset);
   return { errors: [...new Set(errors)], pageCount: pages.size, redirectCount: redirects.size };
 }
