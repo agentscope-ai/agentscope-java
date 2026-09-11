@@ -256,7 +256,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         // Edit script is assembled with real newlines, then base64-encoded and piped via stdin
-        // to `python3 -`; the payload is passed through argv[1].
+        // to `python3 -`; the payload is passed through heredoc stdin.
         //
         // Do NOT revert to `python3 -c "...\n..."` inline form: under `bash -lc`, \n inside
         // double quotes is a literal backslash+n (not a newline), so the entire script collapses
@@ -264,10 +264,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         //   SyntaxError: unexpected character after line continuation character
         // This makes edit_file 100% non-functional in sandbox environments (the model falls back
         // to write_file, which refuses to overwrite existing files, so no file can be modified).
-        // Using stdin + argv avoids all quoting/escaping issues.
+        // Using printf + heredoc avoids all quoting/escaping issues.
         String script =
                 "import sys, os, base64, json\n"
-                    + "payload = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))\n"
+                    + "payload ="
+                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\n"
                     + "path, old, new = payload['path'], payload['old'], payload['new']\n"
                     + "replace_all = payload.get('replace_all', False)\n"
                     + "if not os.path.isfile(path):\n"
@@ -289,7 +290,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        String cmd = "echo " + scriptB64 + " | base64 -d | python3 - " + payloadB64 + " 2>&1";
+        String cmd =
+                "printf '%s\n' "
+                        + scriptB64
+                        + " | base64 -d | python3 - 2>&1 <<'__EDIT_EOF__'\n"
+                        + payloadB64
+                        + "\n__EDIT_EOF__\n";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
