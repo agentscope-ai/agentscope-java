@@ -197,6 +197,28 @@ public final class ToolResultBlock extends ContentBlock {
     }
 
     /**
+     * Create a successful result with text output (for tool method return values).
+     *
+     * <p>Unlike {@link #text(String)}, this sets {@link ToolResultState#SUCCESS} explicitly. An
+     * unset state is coerced to {@link ToolResultState#RUNNING} by the constructor, which the agent
+     * runtime treats as "state unknown" and falls back to inspecting the output text for an error
+     * prefix. Tools whose successful output is external content — file contents, HTTP bodies, shell
+     * output — should therefore prefer this factory, so that content which merely looks like an
+     * error message is not misclassified as a failed call.
+     *
+     * @param text Text content
+     * @return ToolResultBlock with text output and state SUCCESS
+     */
+    public static ToolResultBlock success(String text) {
+        return new ToolResultBlock(
+                null,
+                null,
+                List.of(TextBlock.builder().text(text).build()),
+                null,
+                ToolResultState.SUCCESS);
+    }
+
+    /**
      * Create an error result (for tool method return values).
      *
      * @param errorMessage Error message

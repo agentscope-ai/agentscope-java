@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
@@ -47,7 +48,7 @@ public class ShellExecuteTool {
                         + " operations. Returns combined output and exit code. If a dedicated tool"
                         + " exists (e.g., read_file, write_file), you MUST use it instead of shell"
                         + " commands.")
-    public String execute(
+    public ToolResultBlock execute(
             RuntimeContext runtimeContext,
             @ToolParam(name = "command", description = "Shell command to execute") String command,
             @ToolParam(
@@ -65,8 +66,9 @@ public class ShellExecuteTool {
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
-                return "Error: working_directory must be a relative path within the workspace"
-                        + " (absolute paths, '~', and '..' are not allowed).";
+                return ToolResultBlock.error(
+                        "working_directory must be a relative path within the workspace"
+                                + " (absolute paths, '~', and '..' are not allowed).");
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
@@ -86,7 +88,9 @@ public class ShellExecuteTool {
         if (result.truncated()) {
             sb.append("\n(output was truncated)");
         }
-        return sb.toString();
+        // The tool call itself succeeded; a non-zero exit code is reported as data, preserving
+        // the pre-existing contract.
+        return ToolResultBlock.success(sb.toString());
     }
 
     static String commandWithWorkingDirectory(
