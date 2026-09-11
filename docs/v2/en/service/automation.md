@@ -1,25 +1,53 @@
 ---
-title: Automation and channels
+title: "Automations: scheduled and event-driven work"
 ---
 
-Verify a manual workflow before triggering the same work from schedules or external events.
+[简体中文](/v2/zh/service/automation)
 
-## Automation
+An Automation saves when to trigger work and what an Agent or Team should do. Use it for digests, recurring checks and external events. Use a [Workflow](/v2/en/service/workflows) when you need a fixed multi-step topology.
 
-Create an Automation and choose its trigger and supported Agent, Team or orchestration target. Run it manually once and inspect inputs, resource permissions, execution records and deliverables before enabling recurring execution.
+## Create a daily digest
 
-Specify scope, output location and expected behavior on repeated runs. When a run fails, locate its Run or Task before retrying. Avoid creating duplicate schedules for the same work.
+Create a rule under **WORK → Automations**:
 
-## Channels
+| Field | Example and purpose |
+| --- | --- |
+| Name | Daily engineering digest |
+| Runbook | Summarize project progress, cite sources and identify unconfirmed items |
+| Context | One project or document URL per line; the Agent needs actual access to read it |
+| Assignee | A runnable Agent or Team |
+| Output | Create issue for collaborative work; Run only for an automation execution record |
+| Completion policy | Require human review for deliverables needing acceptance; automatic for suitable work |
+| Schedule | `0 9 * * 1-5` for weekdays at 09:00 |
+| Time zone | `Asia/Shanghai`, or your explicit intended zone |
 
-Configure a platform connection and Agent association in Channels. Platform credentials, callback URLs, message routing and user identity pairing have different responsibilities. Remote callbacks require a reachable HTTPS endpoint; OAuth callbacks also require the correct public service URL.
+Check the upcoming times in the schedule preview. Keep the rule disabled initially, use **Test run**, inspect the result and artifacts, then enable it. A Test run performs real work and can invoke models and tools.
 
-Send a test message and inspect the resulting work, authorization and reply delivery. Pair user identities where the channel workflow requires it. Profile provides personal connection and subscription management.
+## Handle overlap
 
-Message formats and capabilities differ by channel. Use its configuration screen and verified behavior rather than assuming all channels implement identical webhook events.
+**Skip** skips a new trigger while work is already active. **Queue** processes triggers in order when each event matters. Set Queue timeout to discard stale waiting work and Run timeout to bound execution duration. These apply to different phases.
 
-## Operational checks
+Inspect status, waitReason, input, output, errors and linked Issues in Runs. Disabling a rule stops future automatic triggers; use a particular Run's Cancel action to stop existing work.
 
-Check Scheduler health, control-plane connectivity, credential validity and third-party reachability of callback paths. After rotating credentials, verify the complete inbound and outbound path again.
+## Receive a Webhook
 
-See [Configuration](/v2/en/service/configuration) and [Permissions](/v2/en/service/access).
+Add a Webhook trigger and copy its URL from the detail view. Store the secret shown on creation or rotation. Send a JSON object or array with `X-Automation-Secret` and a stable `Idempotency-Key`:
+
+```bash
+curl --fail-with-body "$AUTOMATION_WEBHOOK_URL" \
+  -H 'Content-Type: application/json' \
+  -H "X-Automation-Secret: $AUTOMATION_SECRET" \
+  -H 'Idempotency-Key: build-2026-09-10-001' \
+  -H 'X-Event-Type: build.completed' \
+  --data '{"project":"example","result":"passed"}'
+```
+
+Set the environment variables to the values from your rule. Retransmit the same event with the same key and content; use a new key for a new event. Event filters accept names such as `build.completed`; empty filters accept all events. A JSON `event` field can specify the event type.
+
+Update senders after secret rotation. A third-party webhook may need an adapter you operate if it cannot send the required authentication header.
+
+## Diagnose and retry
+
+Deliveries show whether an event arrived or was filtered. Runs show whether work executed and what it produced. Receipt is not completion. Check the rule, trigger, filters and runtime before choosing Replay delivery or Rerun; these can repeat business side effects.
+
+Next: [Issues](/v2/en/service/issues) · [Team collaboration](/v2/en/service/team-collaboration).

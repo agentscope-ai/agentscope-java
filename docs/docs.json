@@ -95,32 +95,78 @@
                     "group": "Getting started",
                     "pages": [
                       "v2/en/service/index",
-                      "v2/en/service/quickstart",
                       "v2/en/service/concepts",
                       "v2/en/service/first-session"
                     ]
                   },
                   {
-                    "group": "Working with Agents",
+                    "group": "WORK",
+                    "pages": [
+                      "v2/en/service/chat",
+                      "v2/en/service/issues",
+                      "v2/en/service/inbox",
+                      "v2/en/service/automation"
+                    ]
+                  },
+                  {
+                    "group": "DESIGN",
                     "pages": [
                       "v2/en/service/agents",
-                      "v2/en/service/workspaces",
-                      "v2/en/service/sessions",
                       "v2/en/service/teams",
-                      "v2/en/service/access",
-                      "v2/en/service/automation",
+                      "v2/en/service/workflows",
+                      "v2/en/service/channels",
+                      {
+                        "group": "Resources",
+                        "pages": [
+                          "v2/en/service/workspaces",
+                          "v2/en/service/environments",
+                          "v2/en/service/memory",
+                          "v2/en/service/vault"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Installation",
+                    "pages": [
+                      "v2/en/service/quickstart",
+                      "v2/en/service/docker",
+                      "v2/en/service/kubernetes",
+                      "v2/en/service/operations"
+                    ]
+                  },
+                  {
+                    "group": "Integration guides",
+                    "pages": [
+                      "v2/en/service/managed-agent",
+                      "v2/en/service/hosted-agent",
+                      "v2/en/service/external-agent",
+                      "v2/en/service/team-collaboration",
+                      "v2/en/service/endpoints",
                       "v2/en/service/runtime-host",
                       "v2/en/service/integrations"
                     ]
                   },
                   {
-                    "group": "Deploy and operate",
+                    "group": "Use cases",
                     "pages": [
-                      "v2/en/service/docker",
-                      "v2/en/service/kubernetes",
+                      "v2/en/service/usecases"
+                    ]
+                  },
+                  {
+                    "group": "Reference",
+                    "pages": [
+                      "v2/en/service/api-reference",
                       "v2/en/service/configuration",
-                      "v2/en/service/operations",
-                      "v2/en/service/troubleshooting",
+                      "v2/en/service/access",
+                      "v2/en/service/sessions",
+                      "v2/en/service/managed-harness-task-outcomes",
+                      "v2/en/service/troubleshooting"
+                    ]
+                  },
+                  {
+                    "group": "Release maintainers",
+                    "pages": [
                       "v2/en/service/releasing"
                     ]
                   }
@@ -238,6 +284,7 @@
                     "pages": [
                       "v2/en/integration/distributed/index",
                       "v2/en/integration/distributed/mysql",
+                      "v2/en/integration/distributed/mongodb",
                       "v2/en/integration/distributed/oss",
                       "v2/en/integration/distributed/redis"
                     ]
@@ -471,39 +518,79 @@
                     "group": "开始使用",
                     "pages": [
                       "v2/zh/service/index",
-                      "v2/zh/service/quickstart",
                       "v2/zh/service/concepts",
                       "v2/zh/service/first-session"
                     ]
                   },
                   {
-                    "group": "使用与协作",
+                    "group": "WORK",
+                    "pages": [
+                      "v2/zh/service/chat",
+                      "v2/zh/service/issues",
+                      "v2/zh/service/inbox",
+                      "v2/zh/service/automation"
+                    ]
+                  },
+                  {
+                    "group": "DESIGN",
                     "pages": [
                       "v2/zh/service/agents",
-                      "v2/zh/service/workspaces",
-                      "v2/zh/service/sessions",
                       "v2/zh/service/teams",
-                      "v2/zh/service/access",
-                      "v2/zh/service/automation",
+                      "v2/zh/service/workflows",
+                      "v2/zh/service/channels",
+                      {
+                        "group": "Resources · 资源",
+                        "pages": [
+                          "v2/zh/service/workspaces",
+                          "v2/zh/service/environments",
+                          "v2/zh/service/memory",
+                          "v2/zh/service/vault"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "安装与部署",
+                    "pages": [
+                      "v2/zh/service/quickstart",
+                      "v2/zh/service/docker",
+                      "v2/zh/service/kubernetes",
+                      "v2/zh/service/operations"
+                    ]
+                  },
+                  {
+                    "group": "接入与能力扩展",
+                    "pages": [
+                      "v2/zh/service/managed-agent",
+                      "v2/zh/service/hosted-agent",
+                      "v2/zh/service/external-agent",
+                      "v2/zh/service/team-collaboration",
+                      "v2/zh/service/endpoints",
                       "v2/zh/service/runtime-host",
                       "v2/zh/service/integrations"
                     ]
                   },
                   {
-                    "group": "部署运维",
+                    "group": "场景案例",
                     "pages": [
-                      "v2/zh/service/docker",
-                      "v2/zh/service/kubernetes",
-                      "v2/zh/service/configuration",
-                      "v2/zh/service/operations",
-                      "v2/zh/service/troubleshooting",
-                      "v2/zh/service/releasing"
+                      "v2/zh/service/usecases"
                     ]
                   },
                   {
-                    "group": "技术说明",
+                    "group": "参考手册",
                     "pages": [
-                      "v2/zh/service/managed-harness-task-outcomes"
+                      "v2/zh/service/api-reference",
+                      "v2/zh/service/configuration",
+                      "v2/zh/service/access",
+                      "v2/zh/service/sessions",
+                      "v2/zh/service/managed-harness-task-outcomes",
+                      "v2/zh/service/troubleshooting"
+                    ]
+                  },
+                  {
+                    "group": "发布维护者",
+                    "pages": [
+                      "v2/zh/service/releasing"
                     ]
                   }
                 ]
@@ -620,6 +707,7 @@
                     "pages": [
                       "v2/zh/integration/distributed/index",
                       "v2/zh/integration/distributed/mysql",
+                      "v2/zh/integration/distributed/mongodb",
                       "v2/zh/integration/distributed/oss",
                       "v2/zh/integration/distributed/redis"
                     ]

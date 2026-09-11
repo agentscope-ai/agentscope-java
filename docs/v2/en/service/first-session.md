@@ -1,43 +1,43 @@
 ---
-title: Your first Session
+title: "Your first conversation and deliverable"
 ---
 
-By the end of this guide, you should be able to send a message, receive an Agent response and find the conversation again after refreshing the console.
+[简体中文](/v2/zh/service/first-session)
 
-## 1. Prepare a model and Environment
+Start with Chat, verify a reply and turn the request into an Issue with acceptance. Skip Agent creation if you already have a suitable Agent.
 
-Start the platform with the [quickstart](/v2/en/service/quickstart). Configure an available model and its credentials. Enable Local only for a trusted evaluation; otherwise create a Sandbox or Self-hosted Environment and confirm connectivity.
+## 1. Prepare a Managed Agent
 
-## 2. Create an Agent
+Sign in. For a new installation, configure model credentials and an Environment through [local setup](/v2/en/service/quickstart). Create “Notes assistant” under **DESIGN → Agents**, explicitly choose **AgentScope Managed** and use:
 
-Create a Managed Agent in Agents. Give it a name and instructions, such as “Answer briefly and explain which files you need before using them.” Select its model, Workspace and Environment. Enable only the tools needed for the first task.
+```text
+Organize the supplied material. Separate facts from open questions.
+Identify missing information rather than inventing sources.
+```
 
-After saving, check the Environment binding. Saving a configuration does not start execution.
+Select an available Environment in Advanced settings. Start with text-only work and save the Agent before adding external tools.
 
-## 3. Create a Session and send a message
+## 2. Verify Chat
 
-In Sessions, select the Agent and create a Session. Send “Introduce the work you can do in one sentence.” Follow messages, tool calls and state changes. Handle tool confirmations in the conversation when requested.
+Open **WORK → Chat → New chat**, select the assistant and send:
 
-For a file-based task, add a small example file to the Workspace and ask the Agent to list or summarize it. Verify that it uses the intended Environment.
+```text
+Turn these meeting notes into action items:
+Alex will finish the installation guide by Friday.
+Review is planned for Monday; its time is unconfirmed.
+List tasks, owners, deadlines and open questions.
+```
 
-## 4. Check the result
+Check that the reply uses only supplied facts, then ask which information needs confirmation. Refresh, reopen the same Chat and confirm both turns remain available.
 
-Refresh the page and reopen the Session to confirm that its history remains available. Refreshing during execution should not be treated as a request to resend the message. Judge completion from the result and state, rather than a streaming connection closing.
+## 3. Create deliverable work
 
-## Corresponding APIs
+Select **Create issue**, use “Organize installation-guide actions” as the title, include the material, assign the assistant and review Sharing. Add acceptance criteria requiring owners, deadlines and open questions without an invented meeting time.
 
-| Operation | API |
-| --- | --- |
-| Sign in | `POST /api/auth/login` |
-| Create Agent | `POST /api/v1/agents` |
-| Create Environment | `POST /api/environments` |
-| Create Session | `POST /api/sessions` |
-| Send message | `POST /api/sessions/{id}/events` |
-| Read history | `GET /api/sessions/{id}/events` |
-| Subscribe | `GET /api/sessions/{id}/events/stream` |
+Follow Executions and read result comments and deliverables. If no execution starts, inspect ownership and runtime readiness. If blocked, provide the information requested in the latest update.
 
-Agent creation uses `/api/v1/agents` with `agentKey`, `displayName`, `binding` and `definition`. Without an explicit Namespace, requests use the account’s personal space. Do not assume a new installation contains a shared Namespace named `default`.
+## 4. Accept the result
 
-A message body is `{"events":[{"type":"user.message","payload":{"text":"Hello"}}]}`. Use the signed-in user's Bearer token. Internal service tokens are not browser credentials.
+When human-review work enters In review, open **WORK → Inbox → Review result**. Compare the output with the criteria. Choose **Accept result** if satisfied, or **Request changes** with specific feedback and arrange follow-up execution.
 
-If no response arrives, inspect the model, Environment and Dataplane with the [troubleshooting guide](/v2/en/service/troubleshooting).
+Done means completion according to the work's policy. Verify the actual content, not only a green execution state. Next add Workspace files and one read-only tool using the [Managed Agent guide](/v2/en/service/managed-agent).
