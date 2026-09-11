@@ -274,13 +274,46 @@ class BaseSandboxFilesystemTest {
             // return an error result, but we only care about verifying the command shape.
             var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
 
-            // Verify command uses base64 pipe mode (not python3 -c inline form)
+            // Verify command uses temp file + printf + base64 pipe (not echo/argv)
             assertTrue(
-                    fs.lastCommand.contains("base64 -d | python3 -"),
-                    "edit should use base64 piped to python3, got: " + fs.lastCommand);
+                    fs.lastCommand.contains("cat > /tmp/.agentscope-edit-$$"),
+                    "edit should write payload to temp file, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("printf '%s\\n'"),
+                    "edit should use printf for script base64, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("base64 -d | python3 - /tmp/.agentscope-edit-$$"),
+                    "edit should pipe script and pass temp file as argv, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("<<'__EDIT_EOF__'"),
+                    "edit should use heredoc to write payload, got: " + fs.lastCommand);
             assertFalse(
                     fs.lastCommand.contains("python3 -c"),
                     "edit should NOT use python3 -c inline form");
+            assertFalse(
+                    fs.lastCommand.contains("echo "),
+                    "edit should NOT use echo (may wrap long base64), got: " + fs.lastCommand);
+        }
+
+        @Test
+        void edit_largePayloadUsesHeredocNotArgv() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+
+            // Simulate a large edit (multi-KB payload) to verify it goes through
+            // temp file (via heredoc), not argv[1] (which would hit ARG_MAX limits).
+            String largeString = "x".repeat(100_000);
+            fs.edit(RT, "/workspace/large.txt", "old", largeString, false);
+
+            // Payload must NOT appear directly as argv[1]
+            // It should be written to temp file via heredoc
+            assertTrue(
+                    fs.lastCommand.contains("<<'__EDIT_EOF__'"),
+                    "large payload should use heredoc to write temp file, got command length: "
+                            + fs.lastCommand.length());
+            // Verify the payload is after the heredoc marker, not before it (i.e., not in argv)
+            int heredocPos = fs.lastCommand.indexOf("<<'__EDIT_EOF__'");
+            int editEofPos = fs.lastCommand.indexOf("__EDIT_EOF__", heredocPos + 1);
+            assertTrue(editEofPos > heredocPos, "payload should be between heredoc markers");
         }
     }
 
