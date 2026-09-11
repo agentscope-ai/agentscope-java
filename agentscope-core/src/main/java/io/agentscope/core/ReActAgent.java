@@ -1908,12 +1908,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             String replyId = resolvePendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
-            if (!replyId.isEmpty()) {
-                publishEvent(new UserConfirmResultEvent(replyId, normalized));
-                clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            if (replyId.isEmpty()) {
+                // Older persisted ASKING calls may not carry request correlation metadata.
+                replyId = UUID.randomUUID().toString().replace("-", "");
             }
+            publishEvent(new UserConfirmResultEvent(replyId, normalized));
+            clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
 
-            applyConfirmResults(normalized);
+            applyConfirmResults(normalized, replyId);
         }
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
@@ -1975,10 +1977,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
          *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume.</li>
+         *       the tool will no longer be pending on resume, and publish its result events.</li>
          * </ul>
          */
-        private void applyConfirmResults(List<ConfirmResult> results) {
+        private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
             List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
@@ -2011,6 +2013,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
+                deniedToolResultEvents(denied, replyId, "Permission denied by user")
+                        .forEach(this::publishEvent);
             }
         }
 
@@ -2919,11 +2923,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 resultHolder.set(List.of());
                                 persistPendingRequestReplyId(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
-                                return Flux.<AgentEvent>just(
-                                        new RequireUserConfirmEvent(replyId, pending),
-                                        new RequestStopEvent(
-                                                "permission asking",
-                                                GenerateReason.PERMISSION_ASKING));
+                                return Flux.fromIterable(toolCalls)
+                                        .filter(tc -> autoDenied.contains(tc.getId()))
+                                        .concatMapIterable(
+                                                tc ->
+                                                        deniedToolResultEvents(
+                                                                tc,
+                                                                replyId,
+                                                                "Permission denied by rules"))
+                                        .concatWith(
+                                                Flux.just(
+                                                        new RequireUserConfirmEvent(
+                                                                replyId, pending),
+                                                        new RequestStopEvent(
+                                                                "permission asking",
+                                                                GenerateReason.PERMISSION_ASKING)));
                             })
                     .doOnNext(this::publishEvent);
         }
@@ -2945,6 +2959,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
                 state.contextMutable().add(deniedMsg);
             }
+        }
+
+        /** Build the same complete result lifecycle for every permission-denial path. */
+        private List<AgentEvent> deniedToolResultEvents(
+                ToolUseBlock toolCall, String replyId, String reason) {
+            return List.of(
+                    new ToolResultStartEvent(replyId, toolCall.getId(), toolCall.getName()),
+                    new ToolResultTextDeltaEvent(
+                            replyId, toolCall.getId(), toolCall.getName(), reason),
+                    new ToolResultEndEvent(
+                            replyId, toolCall.getId(), toolCall.getName(), ToolResultState.DENIED));
         }
 
         /**
@@ -2975,23 +3000,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> deniedEvents =
                     Flux.fromIterable(deniedEntries)
-                            .concatMap(
-                                    entry -> {
-                                        ToolUseBlock use = entry.getKey();
-                                        return Flux.<AgentEvent>just(
-                                                new ToolResultStartEvent(
-                                                        replyId, use.getId(), use.getName()),
-                                                new ToolResultTextDeltaEvent(
-                                                        replyId,
-                                                        use.getId(),
-                                                        use.getName(),
-                                                        "Permission denied by rules"),
-                                                new ToolResultEndEvent(
-                                                        replyId,
-                                                        use.getId(),
-                                                        use.getName(),
-                                                        ToolResultState.DENIED));
-                                    });
+                            .concatMapIterable(
+                                    entry ->
+                                            deniedToolResultEvents(
+                                                    entry.getKey(),
+                                                    replyId,
+                                                    "Permission denied by rules"));
 
             if (approved.isEmpty()) {
                 resultHolder.set(deniedEntries);

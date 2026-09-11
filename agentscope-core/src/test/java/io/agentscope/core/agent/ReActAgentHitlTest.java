@@ -23,9 +23,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -52,6 +55,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -115,7 +120,9 @@ class ReActAgentHitlTest {
         return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
-    private static final class AskingTool extends ToolBase {
+    private static class AskingTool extends ToolBase {
+        private final AtomicInteger executions = new AtomicInteger();
+
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
         }
@@ -140,6 +147,7 @@ class ReActAgentHitlTest {
         @Override
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            executions.incrementAndGet();
             return Mono.just(ToolResultBlock.text("executed:" + q));
         }
     }
@@ -406,6 +414,186 @@ class ReActAgentHitlTest {
                                         "tc1".equals(tr.getId())
                                                 && tr.getState() == ToolResultState.DENIED);
         assertTrue(foundDenied, "expected a DENIED ToolResultBlock for the rejected tool");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void deniedResumeEmitsCompleteResultEvenWithoutSavedReplyId(boolean legacyState) {
+        AskingTool tool = new AskingTool("ask");
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        try (ReActAgent agent = buildAgent(model, toolkitWith(tool))) {
+            List<AgentEvent> paused = agent.streamEvents(List.of()).collectList().block();
+            RequireUserConfirmEvent request =
+                    (RequireUserConfirmEvent)
+                            paused.get(indexOf(paused, RequireUserConfirmEvent.class));
+            if (legacyState) {
+                List<Msg> context = agent.getAgentState().contextMutable();
+                for (int i = 0; i < context.size(); i++) {
+                    Msg msg = context.get(i);
+                    Map<String, Object> metadata = new HashMap<>(msg.getMetadata());
+                    metadata.remove(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+                    context.set(i, msg.withMetadata(metadata));
+                }
+            }
+            List<AgentEvent> resumed =
+                    agent.streamEvents(List.of(confirmMsg(false, request.getToolCalls().get(0))))
+                            .collectList()
+                            .block();
+            assertDeniedEvents(resumed, "tc1", "ask", "Permission denied by user");
+            ToolResultStartEvent start =
+                    (ToolResultStartEvent)
+                            resumed.get(indexOf(resumed, ToolResultStartEvent.class));
+            assertTrue(start.getReplyId() != null && !start.getReplyId().isBlank());
+            int confirmIndex = indexOf(resumed, UserConfirmResultEvent.class);
+            assertTrue(confirmIndex >= 0);
+            assertTrue(confirmIndex < indexOf(resumed, ToolResultStartEvent.class));
+            assertEquals(
+                    start.getReplyId(),
+                    ((UserConfirmResultEvent) resumed.get(confirmIndex)).getReplyId());
+            assertTrue(
+                    indexOf(resumed, ToolResultEndEvent.class)
+                            < indexOf(resumed, ModelCallStartEvent.class));
+            if (!legacyState) {
+                assertEquals(request.getReplyId(), start.getReplyId());
+            }
+            assertEquals(0, tool.executions.get());
+            assertEquals(
+                    1L,
+                    agent.getAgentState().getContext().stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .filter(
+                                    r ->
+                                            "tc1".equals(r.getId())
+                                                    && r.getState() == ToolResultState.DENIED)
+                            .count());
+        }
+    }
+
+    @Test
+    void mixedDenialsAndPartialConfirmationEmitEachResultOnce() {
+        AskingTool first = new AskingTool("first");
+        AskingTool second = new AskingTool("second");
+        AskingTool blocked =
+                new AskingTool("blocked") {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> input, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.deny("blocked"));
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("first")
+                                                                        .input(Map.of("query", "x"))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("second")
+                                                                        .input(Map.of("query", "y"))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc3")
+                                                                        .name("blocked")
+                                                                        .input(Map.of("query", "z"))
+                                                                        .build()))),
+                                () -> Flux.just(textResponse("done"))));
+        try (ReActAgent agent = buildAgent(model, toolkitWith(first, second, blocked))) {
+            List<AgentEvent> paused = agent.streamEvents(List.of()).collectList().block();
+            assertDeniedEvents(paused, "tc3", "blocked", "Permission denied by rules");
+            RequireUserConfirmEvent request =
+                    (RequireUserConfirmEvent)
+                            paused.get(indexOf(paused, RequireUserConfirmEvent.class));
+            assertTrue(
+                    indexOf(paused, ToolResultEndEvent.class)
+                            < indexOf(paused, RequireUserConfirmEvent.class));
+            assertEquals(
+                    request.getReplyId(),
+                    ((ToolResultStartEvent) paused.get(indexOf(paused, ToolResultStartEvent.class)))
+                            .getReplyId());
+            List<AgentEvent> partial =
+                    agent.streamEvents(
+                                    List.of(
+                                            confirmMsg(
+                                                    false,
+                                                    request.getToolCalls().stream()
+                                                            .filter(t -> "tc1".equals(t.getId()))
+                                                            .findFirst()
+                                                            .orElseThrow())))
+                            .collectList()
+                            .block();
+            assertDeniedEvents(partial, "tc1", "first", "Permission denied by user");
+            assertEquals(
+                    request.getReplyId(),
+                    ((ToolResultStartEvent)
+                                    partial.get(indexOf(partial, ToolResultStartEvent.class)))
+                            .getReplyId());
+            RequireUserConfirmEvent remaining =
+                    (RequireUserConfirmEvent)
+                            partial.get(indexOf(partial, RequireUserConfirmEvent.class));
+            assertEquals(
+                    List.of("tc2"),
+                    remaining.getToolCalls().stream().map(ToolUseBlock::getId).toList());
+            List<AgentEvent> completed =
+                    agent.streamEvents(List.of(confirmMsg(true, remaining.getToolCalls().get(0))))
+                            .collectList()
+                            .block();
+            List<ToolResultEndEvent> ends =
+                    completed.stream()
+                            .filter(ToolResultEndEvent.class::isInstance)
+                            .map(ToolResultEndEvent.class::cast)
+                            .toList();
+            assertEquals(
+                    remaining.getReplyId(),
+                    ((UserConfirmResultEvent)
+                                    completed.get(indexOf(completed, UserConfirmResultEvent.class)))
+                            .getReplyId());
+            assertEquals(1, ends.size());
+            assertEquals("tc2", ends.get(0).getToolCallId());
+            assertEquals(ToolResultState.SUCCESS, ends.get(0).getState());
+            assertEquals(0, first.executions.get());
+            assertEquals(0, blocked.executions.get());
+            assertEquals(1, second.executions.get());
+        }
+    }
+
+    private static void assertDeniedEvents(
+            List<AgentEvent> events, String id, String name, String text) {
+        List<AgentEvent> results =
+                events.stream()
+                        .filter(
+                                e ->
+                                        e instanceof ToolResultStartEvent
+                                                || e instanceof ToolResultTextDeltaEvent
+                                                || e instanceof ToolResultEndEvent)
+                        .toList();
+        assertEquals(3, results.size(), "one complete result sequence must be emitted");
+        assertTrue(results.get(0) instanceof ToolResultStartEvent);
+        assertTrue(results.get(1) instanceof ToolResultTextDeltaEvent);
+        assertTrue(results.get(2) instanceof ToolResultEndEvent);
+        ToolResultStartEvent start = (ToolResultStartEvent) results.get(0);
+        ToolResultTextDeltaEvent delta = (ToolResultTextDeltaEvent) results.get(1);
+        ToolResultEndEvent end = (ToolResultEndEvent) results.get(2);
+        assertEquals(id, start.getToolCallId());
+        assertEquals(id, delta.getToolCallId());
+        assertEquals(id, end.getToolCallId());
+        assertEquals(name, start.getToolCallName());
+        assertEquals(name, delta.getToolCallName());
+        assertEquals(name, end.getToolCallName());
+        assertEquals(start.getReplyId(), delta.getReplyId());
+        assertEquals(start.getReplyId(), end.getReplyId());
+        assertEquals(text, delta.getDelta());
+        assertEquals(ToolResultState.DENIED, end.getState());
     }
 
     @Test
