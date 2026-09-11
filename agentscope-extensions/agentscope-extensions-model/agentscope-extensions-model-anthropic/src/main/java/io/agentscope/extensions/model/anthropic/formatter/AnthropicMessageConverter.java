@@ -21,6 +21,7 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.MessageParam.Role;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.ThinkingBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.ContentBlock;
@@ -257,12 +258,22 @@ public class AnthropicMessageConverter {
                         ContentBlockParam.ofText(
                                 TextBlockParam.builder().text(hb.getHint()).build()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Anthropic supports thinking blocks natively
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(thinkingBlock.getThinking())
-                                        .build()));
+                Object signature =
+                        thinkingBlock.getMetadata() != null
+                                ? thinkingBlock
+                                        .getMetadata()
+                                        .get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE)
+                                : null;
+                if (signature instanceof String signatureText && !signatureText.isBlank()) {
+                    contentBlocks.add(
+                            ContentBlockParam.ofThinking(
+                                    ThinkingBlockParam.builder()
+                                            .thinking(thinkingBlock.getThinking())
+                                            .signature(signatureText)
+                                            .build()));
+                } else {
+                    log.debug("Skipping unsigned ThinkingBlock when formatting Anthropic history.");
+                }
             } else if (block instanceof ImageBlock ib) {
                 try {
                     ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);

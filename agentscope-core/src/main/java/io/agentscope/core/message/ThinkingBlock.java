@@ -39,6 +39,9 @@ public final class ThinkingBlock extends ContentBlock {
     /** Metadata key for storing OpenRouter/Gemini reasoning details list. */
     public static final String METADATA_REASONING_DETAILS = "reasoningDetails";
 
+    /** Metadata key for storing the signature of an Anthropic extended-thinking block. */
+    public static final String METADATA_ANTHROPIC_SIGNATURE = "anthropicSignature";
+
     private final String thinking;
     private final Map<String, Object> metadata;
 
@@ -73,6 +76,8 @@ public final class ThinkingBlock extends ContentBlock {
      * <ul>
      *   <li>{@link #METADATA_REASONING_DETAILS} - List of OpenAIReasoningDetail objects from
      *       OpenRouter/Gemini
+     *   <li>{@link #METADATA_ANTHROPIC_SIGNATURE} - Signature of an Anthropic extended-thinking
+     *       block
      * </ul>
      *
      * @return The metadata map, or null if no metadata is set

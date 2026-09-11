@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -170,6 +171,41 @@ class ReasoningContextTest {
         assertNotNull(msg);
         ChatUsage resultUsage = msg.getChatUsage();
         assertNull(resultUsage);
+    }
+
+    @Test
+    @DisplayName("Should preserve thinking metadata across streaming chunks")
+    void testThinkingMetadataAccumulation() {
+        ChatResponse thinkingChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(ThinkingBlock.builder().thinking("Reasoning").build()))
+                        .build();
+        ChatResponse signatureChunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .metadata(
+                                                        Map.of(
+                                                                ThinkingBlock
+                                                                        .METADATA_ANTHROPIC_SIGNATURE,
+                                                                "stream-signature"))
+                                                .build()))
+                        .build();
+
+        context.processChunk(thinkingChunk);
+        context.processChunk(signatureChunk);
+
+        ThinkingBlock aggregated =
+                context.buildFinalMessage().getFirstContentBlock(ThinkingBlock.class);
+        assertNotNull(aggregated);
+        assertEquals("Reasoning", aggregated.getThinking());
+        assertNotNull(aggregated.getMetadata());
+        assertEquals(
+                "stream-signature",
+                aggregated.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
     }
 
     @Test

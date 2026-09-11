@@ -202,6 +202,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
         when(contentBlock.thinking()).thenReturn(Optional.of(thinkingBlock));
         when(thinkingBlock.thinking()).thenReturn("Let me think about this...");
+        when(thinkingBlock.signature()).thenReturn("signature-123");
 
         Instant startTime = Instant.now();
         ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
@@ -212,6 +213,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ThinkingBlock parsedThinking =
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me think about this...", parsedThinking.getThinking());
+        assertNotNull(parsedThinking.getMetadata());
+        assertEquals(
+                "signature-123",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
     }
 
     @Test
@@ -386,6 +391,27 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamEventSignatureDelta() throws Exception {
+        RawContentBlockDeltaEvent deltaEvent =
+                RawContentBlockDeltaEvent.builder()
+                        .index(0)
+                        .signatureDelta("stream-signature")
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockDelta(deltaEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("", parsedThinking.getThinking());
+        assertNotNull(parsedThinking.getMetadata());
+        assertEquals(
+                "stream-signature",
+                parsedThinking.getMetadata().get(ThinkingBlock.METADATA_ANTHROPIC_SIGNATURE));
     }
 
     @Test
