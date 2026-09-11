@@ -68,4 +68,16 @@ public interface ToolEmitter {
      * @param chunk The chunk to emit
      */
     void emit(ToolResultBlock chunk);
+
+    /**
+     * Returns the ID of the tool call associated with this emitter.
+     *
+     * <p>The default implementation returns {@code null} so custom emitters without tool call
+     * context remain compatible.
+     *
+     * @return The tool call ID, or {@code null} if it is not available
+     */
+    default String getToolCallId() {
+        return null;
+    }
 }
