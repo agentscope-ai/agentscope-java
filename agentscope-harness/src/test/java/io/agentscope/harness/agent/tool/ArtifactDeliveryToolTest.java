@@ -138,6 +138,21 @@ class ArtifactDeliveryToolTest {
     }
 
     @Test
+    void directTarget_byteBasedEntryPointReturnsFailure() {
+        DirectArtifactDeliveryTarget direct =
+                (context, sourceFilesystem, source) -> ArtifactDeliveryResult.success();
+
+        ArtifactDeliveryResult result =
+                direct.deliver(
+                        RT,
+                        new ArtifactDeliveryRequest(
+                                "report.pdf", new byte[] {1}, "report.pdf", null, false));
+
+        assertFalse(result.successful());
+        assertTrue(result.error().contains("requires a source filesystem"));
+    }
+
+    @Test
     void deliverArtifact_downloadsBytesAndForwardsToTarget_withDefaults() {
         byte[] content = new byte[] {1, 2, 3};
         when(filesystem.downloadFiles(RT, List.of("outputs/report.docx")))

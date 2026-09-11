@@ -2022,6 +2022,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *
          * <p>The tool is exposed only to the main agent — it is not propagated to automatically
          * constructed subagents, which return plain text results for the main agent to deliver.
+         * {@link io.agentscope.harness.agent.artifact.DirectArtifactDeliveryTarget} implementations
+         * are supported only by the registered {@code deliver_artifact} tool because their inherited
+         * byte-based {@link ArtifactDeliveryTarget#deliver} method has no source filesystem.
          *
          * <p>Note: the tool reads files from the agent filesystem, so it is also suppressed when
          * {@link #disableFilesystemTools()} is used. Combining both leaves the tool

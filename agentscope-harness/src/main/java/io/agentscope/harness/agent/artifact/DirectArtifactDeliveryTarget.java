@@ -25,6 +25,9 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
  * invokes {@link #deliverFromFilesystem} without calling {@code downloadFiles}. Implementations
  * can upload within the sandbox using a backend SDK or shell, or stream from their backing store.
  * Existing byte-based targets continue to use {@link ArtifactDeliveryTarget} unchanged.
+ * Direct targets are supported only by the framework's {@code deliver_artifact} tool; callers that
+ * invoke them solely through the base {@link ArtifactDeliveryTarget#deliver} method receive a
+ * failure result because that method has no source filesystem.
  *
  * <p>The target must resolve the source in the supplied filesystem and runtime context, respecting
  * its routing and access policy; a normalized path is not necessarily a native sandbox path.
@@ -40,7 +43,9 @@ public interface DirectArtifactDeliveryTarget extends ArtifactDeliveryTarget {
      *
      * @param runtimeContext per-call runtime, possibly {@code null}; use it for sandbox resolution
      * @param filesystem the active agent filesystem, potentially an overlay or routed filesystem
-     * @param source validated destination metadata and normalized source path; contains no bytes
+     * @param source validated destination metadata and normalized source path; contains no bytes.
+     *     The source path is not guaranteed to exist. The implementation must check existence and
+     *     any size limit, and enforce the requested overwrite/conflict behavior.
      * @return delivery result, never {@code null}
      */
     ArtifactDeliveryResult deliverFromFilesystem(
