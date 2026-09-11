@@ -109,6 +109,9 @@ public interface MiddlewareBase {
     /**
      * Intercept the tool-call execution phase.
      *
+     * <p>Transformations to tool-result delta events in the returned stream are reflected in the
+     * result message passed to the next model iteration.
+     *
      * @param agent the agent instance
      * @param ctx   per-call runtime context (session, user, attributes)
      * @param input acting input (the tool calls)
