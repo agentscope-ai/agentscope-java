@@ -215,6 +215,29 @@ class JsonlTraceExporterTest {
     }
 
     @Test
+    void runStateIsIsolatedForInstancesWithSameLogicalAgentId() throws Exception {
+        Path output = tempDir.resolve("instance-runs.jsonl");
+        TestAgent first = new TestAgent("instance-1", "shared-agent", "First");
+        TestAgent second = new TestAgent("instance-2", "shared-agent", "Second");
+
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(output).append(false).flushEveryLine(true).build()) {
+            exporter.onEvent(new PreCallEvent(first, List.of(textMsg(MsgRole.USER, "a")))).block();
+            exporter.onEvent(new PreCallEvent(second, List.of(textMsg(MsgRole.USER, "b")))).block();
+            exporter.onEvent(new PostCallEvent(first, textMsg(MsgRole.ASSISTANT, "a"))).block();
+            exporter.onEvent(new PostCallEvent(second, textMsg(MsgRole.ASSISTANT, "b"))).block();
+        }
+
+        List<Map<String, Object>> records = readAll(output);
+        assertEquals(4, records.size());
+        assertTrue(records.stream().allMatch(r -> "shared-agent".equals(r.get("agent_id"))));
+        assertTrue(records.stream().allMatch(r -> ((Number) r.get("turn_id")).intValue() == 1));
+        assertEquals(records.get(0).get("run_id"), records.get(2).get("run_id"));
+        assertEquals(records.get(1).get("run_id"), records.get(3).get("run_id"));
+        assertNotEquals(records.get(0).get("run_id"), records.get(1).get("run_id"));
+    }
+
+    @Test
     void failFastControlsErrorPropagation() throws Exception {
         Path output = tempDir.resolve("failfast.jsonl");
         TestAgent agent = new TestAgent("agent-1", "TestAgent");
@@ -395,12 +418,23 @@ class JsonlTraceExporterTest {
     }
 
     private static final class TestAgent implements Agent {
+        private final String id;
         private final String agentId;
         private final String name;
 
         private TestAgent(String agentId, String name) {
+            this(agentId, agentId, name);
+        }
+
+        private TestAgent(String id, String agentId, String name) {
+            this.id = id;
             this.agentId = agentId;
             this.name = name;
+        }
+
+        @Override
+        public String getId() {
+            return id;
         }
 
         @Override

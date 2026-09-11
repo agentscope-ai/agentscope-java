@@ -53,6 +53,7 @@ docs/_build
 
 # vibe coding
 .claude
+.codex
 openspec
 AGENTS.md
 # Product documentation must remain tracked on case-insensitive filesystems.
