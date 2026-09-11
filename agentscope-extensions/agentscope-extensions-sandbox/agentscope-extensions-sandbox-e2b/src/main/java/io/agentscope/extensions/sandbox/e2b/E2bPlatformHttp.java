@@ -21,16 +21,23 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** HTTP client for {@code https://api.e2b.app} sandbox lifecycle. */
 final class E2bPlatformHttp {
+
+    private static final Logger log = LoggerFactory.getLogger(E2bPlatformHttp.class);
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
@@ -67,10 +74,104 @@ final class E2bPlatformHttp {
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
     }
 
-    JsonNode createSandboxSnapshot(String sandboxId) throws IOException {
+    JsonNode createSandboxSnapshot(String sandboxId, String name) throws IOException {
         ObjectNode body = json.createObjectNode();
+        if (name != null && !name.isBlank()) {
+            body.put("name", name);
+        }
         String url = trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId + "/snapshots";
         return E2bRetry.withRetries(opt.getMaxRetries(), () -> postJson(url, body, true));
+    }
+
+    void deleteSnapshot(String snapshotId) throws IOException {
+        HttpUrl parsed = HttpUrl.parse(trimSlash(opt.getApiBaseUrl()) + "/templates");
+        if (parsed == null) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "Invalid E2B apiBaseUrl: " + opt.getApiBaseUrl());
+        }
+        HttpUrl url = parsed.newBuilder().addPathSegment(snapshotId).build();
+        Request req =
+                new Request.Builder()
+                        .url(url)
+                        .addHeader("X-API-Key", requireApiKey())
+                        .delete()
+                        .build();
+        E2bRetry.withRetries(
+                opt.getMaxRetries(),
+                () -> {
+                    try (Response res = http.newCall(req).execute()) {
+                        if (!res.isSuccessful() && res.code() != 404) {
+                            throw new SandboxException.SandboxRuntimeException(
+                                    SandboxErrorCode.SNAPSHOT_PERSIST_ERROR,
+                                    "E2B snapshot delete failed: HTTP " + res.code());
+                        }
+                    }
+                    return null;
+                });
+    }
+
+    /** Retention keeps the last N snapshots by insertion order (most recent last). */
+    List<String> pruneSnapshots(
+            String keepSnapshotId, List<String> olderSnapshotIds, int retention) {
+        if (retention <= 0) {
+            return append(keepSnapshotId, olderSnapshotIds);
+        }
+        List<String> all = new ArrayList<>();
+        for (String id : olderSnapshotIds) {
+            if (id == null || id.isBlank() || id.equals(keepSnapshotId)) {
+                continue;
+            }
+            all.add(id);
+        }
+        all.add(keepSnapshotId);
+        if (all.size() <= retention) {
+            return all;
+        }
+        int deleteCount = all.size() - retention;
+        List<String> toDelete = new ArrayList<>(all.subList(0, deleteCount));
+        List<String> kept = new ArrayList<>(all.subList(deleteCount, all.size()));
+        // toDelete are oldest; failures are kept
+        List<String> actuallyKeptPrefix = new ArrayList<>();
+        for (String old : toDelete) {
+            try {
+                deleteSnapshot(old);
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                actuallyKeptPrefix.add(old);
+            }
+        }
+        if (!actuallyKeptPrefix.isEmpty()) {
+            List<String> result = new ArrayList<>(actuallyKeptPrefix);
+            result.addAll(kept);
+            return result;
+        }
+        return kept;
+    }
+
+    private static List<String> append(String keepSnapshotId, List<String> olderSnapshotIds) {
+        List<String> all = new ArrayList<>(olderSnapshotIds);
+        all.add(keepSnapshotId);
+        return all;
+    }
+
+    /** One-shot cleanup keeps the last {@code retention} ids by insertion order. */
+    List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
+        List<String> ids = snapshotIds != null ? new ArrayList<>(snapshotIds) : new ArrayList<>();
+        if (retention <= 0 || ids.isEmpty() || ids.size() <= retention) {
+            return ids;
+        }
+        int deleteCount = ids.size() - retention;
+        List<String> toDelete = new ArrayList<>(ids.subList(0, deleteCount));
+        List<String> kept = new ArrayList<>(ids.subList(deleteCount, ids.size()));
+        for (String old : toDelete) {
+            try {
+                deleteSnapshot(old);
+            } catch (Exception e) {
+                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
+                kept.add(0, old);
+            }
+        }
+        return kept;
     }
 
     void killSandbox(String sandboxId) throws IOException {
