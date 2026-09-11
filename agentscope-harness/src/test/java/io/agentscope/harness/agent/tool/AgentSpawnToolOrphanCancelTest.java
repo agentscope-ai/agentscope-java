@@ -15,19 +15,25 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -42,12 +48,17 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -89,6 +100,105 @@ class AgentSpawnToolOrphanCancelTest {
                 // best-effort cleanup
             }
         }
+    }
+
+    @Test
+    @DisplayName("Parent cancel interrupts the delegate of a HarnessAgent child")
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void harnessAgentDelegateInterruptedOnParentCancel() throws Exception {
+        CountDownLatch childStarted = new CountDownLatch(1);
+        ReActAgent delegate = Mockito.mock(ReActAgent.class);
+        HarnessAgent harness = Mockito.mock(HarnessAgent.class);
+        Mockito.when(harness.getDelegate()).thenReturn(delegate);
+        Mockito.when(harness.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(Mono.<Msg>never().doOnSubscribe(ignored -> childStarted.countDown()));
+
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("harness_agent", "Harness child", rc -> harness)),
+                        null);
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new NoopTaskRepository(), 0);
+        RuntimeContext parentCtx =
+                RuntimeContext.builder().sessionId("parent-session").userId("parent-user").build();
+
+        Disposable subscription =
+                tool.agentSpawn(parentCtx, null, "harness_agent", "work", null, 30, null)
+                        .subscribe();
+        assertTrue(childStarted.await(5, TimeUnit.SECONDS), "Harness child should start");
+
+        subscription.dispose();
+
+        ArgumentCaptor<RuntimeContext> ctxCaptor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(delegate, Mockito.timeout(2_000)).interrupt(ctxCaptor.capture());
+        RuntimeContext interruptedCtx = ctxCaptor.getValue();
+        assertEquals("parent-user", interruptedCtx.getUserId());
+        assertNotEquals("parent-session", interruptedCtx.getSessionId());
+        assertTrue(
+                interruptedCtx.getSessionId().startsWith("sub-"),
+                "Interrupt should target the spawned HarnessAgent session");
+    }
+
+    @Test
+    @DisplayName("Parent cancel interrupts the spawned child session, not the parent session")
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void parentCancelTargetsSpawnedChildRuntimeContext() throws Exception {
+        CountDownLatch childStarted = new CountDownLatch(1);
+        ReActAgent child = Mockito.mock(ReActAgent.class);
+        Mockito.when(child.call(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Mono.<Msg>never().doOnSubscribe(ignored -> childStarted.countDown()));
+
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("react_agent", "ReAct child", rc -> child)),
+                        null);
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new NoopTaskRepository(), 0);
+        RuntimeContext parentCtx =
+                RuntimeContext.builder().sessionId("parent-session").userId("parent-user").build();
+
+        Disposable subscription =
+                tool.agentSpawn(parentCtx, null, "react_agent", "work", null, 30, null).subscribe();
+        assertTrue(childStarted.await(5, TimeUnit.SECONDS), "ReAct child should start");
+
+        subscription.dispose();
+
+        ArgumentCaptor<RuntimeContext> ctxCaptor = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(child, Mockito.timeout(2_000)).interrupt(ctxCaptor.capture());
+        RuntimeContext interruptedCtx = ctxCaptor.getValue();
+        assertEquals("parent-user", interruptedCtx.getUserId());
+        assertNotEquals("parent-session", interruptedCtx.getSessionId());
+        assertTrue(
+                interruptedCtx.getSessionId().startsWith("sub-"),
+                "Interrupt should target the spawned child session");
+    }
+
+    @Test
+    @DisplayName("Parent cancel still disposes a non-looping Agent without interrupt support")
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void plainAgentSubscriptionDisposedOnParentCancel() throws Exception {
+        CountDownLatch childStarted = new CountDownLatch(1);
+        AtomicBoolean childCancelled = new AtomicBoolean();
+        Agent child = Mockito.mock(Agent.class);
+        Mockito.when(child.call(anyList()))
+                .thenReturn(
+                        Mono.<Msg>never()
+                                .doOnSubscribe(ignored -> childStarted.countDown())
+                                .doOnCancel(() -> childCancelled.set(true)));
+
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("plain_agent", "Plain child", rc -> child)),
+                        null);
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new NoopTaskRepository(), 0);
+        RuntimeContext parentCtx =
+                RuntimeContext.builder().sessionId("parent-session").userId("parent-user").build();
+
+        Disposable subscription =
+                tool.agentSpawn(parentCtx, null, "plain_agent", "work", null, 30, null).subscribe();
+        assertTrue(childStarted.await(5, TimeUnit.SECONDS), "Plain child should start");
+
+        subscription.dispose();
+
+        assertTrue(childCancelled.get(), "Plain child subscription should be disposed");
     }
 
     @Test
