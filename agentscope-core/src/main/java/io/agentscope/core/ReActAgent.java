@@ -1913,7 +1913,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
             }
 
-            applyConfirmResults(normalized);
+            applyConfirmResults(normalized, replyId);
         }
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
@@ -1978,7 +1978,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       the tool will no longer be pending on resume.</li>
          * </ul>
          */
-        private void applyConfirmResults(List<ConfirmResult> results) {
+        private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
             List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
@@ -2011,6 +2011,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
+                if (replyId != null && !replyId.isEmpty()) {
+                    publishEvent(
+                            new ToolResultStartEvent(replyId, denied.getId(), denied.getName()));
+                    publishEvent(
+                            new ToolResultTextDeltaEvent(
+                                    replyId,
+                                    denied.getId(),
+                                    denied.getName(),
+                                    "Permission denied by user"));
+                    publishEvent(
+                            new ToolResultEndEvent(
+                                    replyId,
+                                    denied.getId(),
+                                    denied.getName(),
+                                    ToolResultState.DENIED));
+                }
             }
         }
 
