@@ -23,7 +23,8 @@ import java.util.function.BiConsumer;
  * Default implementation of ToolEmitter that delivers chunks to a callback.
  *
  * <p>This class is package-private and created internally by the framework when a tool method
- * declares a ToolEmitter parameter. Each tool invocation gets its own DefaultToolEmitter instance.
+ * declares a ToolEmitter parameter. Each tool invocation gets its own DefaultToolEmitter
+ * instance. Users access the tool call ID via {@link ToolEmitter#getToolUseBlock()}.
  */
 class DefaultToolEmitter implements ToolEmitter {
 
@@ -40,6 +41,16 @@ class DefaultToolEmitter implements ToolEmitter {
             ToolUseBlock toolUseBlock, BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback) {
         this.toolUseBlock = toolUseBlock;
         this.chunkCallback = chunkCallback;
+    }
+
+    /**
+     * Returns the tool use block containing the tool call ID and metadata.
+     *
+     * @return the tool use block
+     */
+    @Override
+    public ToolUseBlock getToolUseBlock() {
+        return toolUseBlock;
     }
 
     /**
