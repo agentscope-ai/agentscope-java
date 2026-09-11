@@ -15,6 +15,9 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 
 /**
@@ -42,7 +45,35 @@ public interface SandboxClient<O extends SandboxClientOptions> {
 
     SandboxState deserializeState(String json);
 
+    /**
+     * Deserializes sandbox state and rebinds a {@link
+     * io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient} when the given snapshot
+     * spec is a {@link RemoteSnapshotSpec}.
+     *
+     * <p>{@link RemoteSandboxSnapshot} only persists its {@code id} across JSON serialization; the
+     * client must be re-injected from the live {@link RemoteSnapshotSpec} on resume.
+     */
     default SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
-        return deserializeState(json);
+        SandboxState state = deserializeState(json);
+        rebindRemoteSnapshot(state, snapshotSpec);
+        return state;
+    }
+
+    /**
+     * Rebinds {@link RemoteSandboxSnapshot} with the client from {@link RemoteSnapshotSpec}.
+     *
+     * <p>No-op when the spec is not remote, the snapshot is missing/non-remote, or the snapshot
+     * id is null.
+     */
+    static void rebindRemoteSnapshot(SandboxState state, SandboxSnapshotSpec snapshotSpec) {
+        if (state == null || !(snapshotSpec instanceof RemoteSnapshotSpec remoteSnapshotSpec)) {
+            return;
+        }
+        SandboxSnapshot snapshot = state.getSnapshot();
+        if (!(snapshot instanceof RemoteSandboxSnapshot) || snapshot.getId() == null) {
+            return;
+        }
+        state.setSnapshot(
+                new RemoteSandboxSnapshot(remoteSnapshotSpec.getClient(), snapshot.getId()));
     }
 }
