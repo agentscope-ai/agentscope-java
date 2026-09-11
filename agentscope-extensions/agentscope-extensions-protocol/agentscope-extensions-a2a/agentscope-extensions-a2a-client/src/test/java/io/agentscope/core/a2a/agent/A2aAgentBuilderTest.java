@@ -34,6 +34,7 @@ import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.middleware.MiddlewareBase;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -181,6 +182,29 @@ class A2aAgentBuilderTest {
         List<Hook> hooks = getFieldValue(agent, "hooks", List.class);
         assertTrue(hooks.containsAll(inputHooks));
     }
+
+    @Test
+    @DisplayName("Should add and order middlewares")
+    void testMiddlewares() {
+        MiddlewareBase defaultMiddleware = new OrderedMiddleware(1);
+        MiddlewareBase highPriorityMiddleware = new OrderedMiddleware(2);
+        MiddlewareBase lowPriorityMiddleware = new OrderedMiddleware(-1);
+
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(agentCardResolver)
+                        .a2aAgentConfig(a2aAgentConfig)
+                        .middleware(defaultMiddleware)
+                        .middlewares(List.of(lowPriorityMiddleware, highPriorityMiddleware))
+                        .build();
+
+        assertEquals(
+                List.of(highPriorityMiddleware, defaultMiddleware, lowPriorityMiddleware),
+                agent.getMiddlewares());
+    }
+
+    private record OrderedMiddleware(int order) implements MiddlewareBase {}
 
     @Test
     @DisplayName("Should support builder method chaining")
