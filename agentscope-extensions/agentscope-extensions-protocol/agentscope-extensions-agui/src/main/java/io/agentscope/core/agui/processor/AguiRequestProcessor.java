@@ -23,7 +23,6 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -44,7 +43,6 @@ import reactor.core.publisher.Flux;
  * <p><b>Responsibilities:</b>
  * <ul>
  *   <li>Agent ID resolution from multiple sources</li>
- *   <li>Message extraction for server-side memory scenarios</li>
  *   <li>Agent resolution via {@link AgentResolver}</li>
  *   <li>Event stream generation via {@link AguiAgentAdapter}</li>
  * </ul>
@@ -163,17 +161,10 @@ public class AguiRequestProcessor {
                             }
 
                             try {
-                                // Determine effective input based on server-side memory
+                                // Full input is forwarded; message dedup against persisted
+                                // AgentState context is handled by the onStateLoaded callback
+                                // registered in AguiAgentAdapter.buildRuntimeContext().
                                 RunAgentInput effectiveInput = input;
-                                if (agentResolver.hasMemory(runtimeContext)) {
-                                    logger.debug(
-                                            "Using server-side memory for thread {} user {},"
-                                                    + " extracting follow-up messages",
-                                            threadId,
-                                            runtimeContext.getUserId());
-                                    effectiveInput = extractLatestUserMessage(input);
-                                }
-
                                 RuntimeContext effectiveRuntimeContext =
                                         resumeCoordinator.addResumeInterrupts(
                                                 input, runtimeContext);
@@ -287,64 +278,6 @@ public class AguiRequestProcessor {
         // 5. Fall back to "default"
         logger.debug("Using fallback agent ID: default");
         return "default";
-    }
-
-    /**
-     * Extract messages that arrived after the last assistant turn.
-     *
-     * <p>When server-side memory is enabled the agent already holds prior turns. CopilotKit (and
-     * similar clients) still send the full transcript, including HITL tool results that follow the
-     * last assistant message. Only those trailing messages should be appended.
-     *
-     * <p>If the transcript has no assistant message yet, the original input is returned unchanged.
-     * If the transcript ends with an assistant turn (regenerate/continue flows) and there
-     * are no trailing follow-up messages, the last user message before that turn is returned so
-     * the agent has a prompt to regenerate from instead of receiving an empty input.
-     *
-     * @param input The original input
-     * @return A new input containing only the follow-up messages, or the original input
-     */
-    public RunAgentInput extractLatestUserMessage(RunAgentInput input) {
-        List<AguiMessage> messages = input.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return input;
-        }
-
-        int lastAssistantIdx = -1;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            if ("assistant".equalsIgnoreCase(messages.get(i).getRole())) {
-                lastAssistantIdx = i;
-                break;
-            }
-        }
-        if (lastAssistantIdx < 0) {
-            return input;
-        }
-
-        List<AguiMessage> after =
-                lastAssistantIdx < messages.size() - 1
-                        ? List.copyOf(messages.subList(lastAssistantIdx + 1, messages.size()))
-                        : List.of();
-
-        if (after.isEmpty()) {
-            for (int i = lastAssistantIdx - 1; i >= 0; i--) {
-                if ("user".equalsIgnoreCase(messages.get(i).getRole())) {
-                    after = List.of(messages.get(i));
-                    break;
-                }
-            }
-        }
-
-        return RunAgentInput.builder()
-                .threadId(input.getThreadId())
-                .runId(input.getRunId())
-                .messages(after)
-                .tools(input.getTools())
-                .context(input.getContext())
-                .state(input.getState())
-                .forwardedProps(input.getForwardedProps())
-                .resume(input.getResume())
-                .build();
     }
 
     /**

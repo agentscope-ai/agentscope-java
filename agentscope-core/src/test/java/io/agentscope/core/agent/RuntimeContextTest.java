@@ -19,10 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolExecutionContext;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -155,6 +163,91 @@ class RuntimeContextTest {
         assertNull(empty.getSessionId());
         assertNull(empty.getUserId());
         assertNull(empty.get("missing", Marker.class));
+    }
+
+    @Test
+    @DisplayName("onStateLoaded defaults to null")
+    void onStateLoaded_defaultsToNull() {
+        RuntimeContext ctx = RuntimeContext.empty();
+        assertNull(ctx.getOnStateLoaded());
+    }
+
+    @Test
+    @DisplayName("builder.onStateLoaded propagates the callback to the built context")
+    void onStateLoaded_builderPropagatesCallback() {
+        BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> {};
+        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(callback).build();
+        assertSame(callback, ctx.getOnStateLoaded());
+    }
+
+    @Test
+    @DisplayName("setOnStateLoaded replaces and clears the callback")
+    void onStateLoaded_setterReplacesAndClears() {
+        BiConsumer<RuntimeContext, List<Msg>> first = (c, m) -> {};
+        BiConsumer<RuntimeContext, List<Msg>> second = (c, m) -> {};
+        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(first).build();
+        assertSame(first, ctx.getOnStateLoaded());
+
+        ctx.setOnStateLoaded(second);
+        assertSame(second, ctx.getOnStateLoaded());
+
+        ctx.setOnStateLoaded(null);
+        assertNull(ctx.getOnStateLoaded());
+    }
+
+    @Test
+    @DisplayName("builder(source) preserves the onStateLoaded callback")
+    void onStateLoaded_builderCopyPreservesCallback() {
+        BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> {};
+        RuntimeContext source = RuntimeContext.builder().onStateLoaded(callback).build();
+        RuntimeContext copy = RuntimeContext.builder(source).build();
+        assertSame(callback, copy.getOnStateLoaded());
+    }
+
+    @Test
+    @DisplayName("onStateLoaded callback receives the context and mutable message list")
+    void onStateLoaded_callbackReceivesContextAndMsgs() {
+        RuntimeContext ctx = RuntimeContext.empty();
+        AtomicInteger fired = new AtomicInteger();
+        ctx.setOnStateLoaded(
+                (c, m) -> {
+                    fired.incrementAndGet();
+                    assertSame(c, ctx);
+                    m.clear();
+                });
+        AgentState state = AgentState.builder().build();
+        List<Msg> msgs = new ArrayList<>(List.of(new UserMessage("hi")));
+
+        ctx.setAgentState(state);
+        ctx.getOnStateLoaded().accept(ctx, msgs);
+
+        assertEquals(1, fired.get());
+        assertTrue(msgs.isEmpty());
+    }
+
+    @Test
+    @DisplayName("onStateLoaded callback can read the agent state just set on the context")
+    void onStateLoaded_callbackReadsFreshlySetState() {
+        AgentState state = AgentState.builder().summary("loaded").build();
+        AtomicReference<AgentState> seen = new AtomicReference<>();
+        BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> seen.set(c.getAgentState());
+        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(callback).build();
+        ctx.setAgentState(state);
+        ctx.getOnStateLoaded().accept(ctx, List.of());
+
+        assertSame(state, seen.get());
+    }
+
+    @Test
+    @DisplayName("onStateLoaded can be registered on a copied context without affecting the source")
+    void onStateLoaded_copyIsIndependentAfterRegistration() {
+        BiConsumer<RuntimeContext, List<Msg>> original = (c, m) -> {};
+        RuntimeContext source = RuntimeContext.builder().onStateLoaded(original).build();
+        BiConsumer<RuntimeContext, List<Msg>> override = (c, m) -> {};
+        RuntimeContext copy = RuntimeContext.builder(source).onStateLoaded(override).build();
+
+        assertSame(override, copy.getOnStateLoaded());
+        assertSame(original, source.getOnStateLoaded());
     }
 
     @Test
