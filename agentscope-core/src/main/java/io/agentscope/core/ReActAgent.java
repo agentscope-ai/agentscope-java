@@ -5320,14 +5320,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // means hook/meta tools are registered in-place onto the caller-supplied toolkit.
             Toolkit agentToolkit = this.toolkit;
 
-            // Rebind externally-constructed middleware that may hold a reference to a different
-            // toolkit (e.g. the builder's default) so it observes this agent's actual toolkit.
-            for (MiddlewareBase mw : middlewares) {
-                if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
-                    aware.rebindToolkit(agentToolkit);
-                }
-            }
-
             registerToolsFromHooks(agentToolkit);
 
             if (enableMetaTool) {

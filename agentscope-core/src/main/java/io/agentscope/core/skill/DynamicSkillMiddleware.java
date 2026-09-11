@@ -20,7 +20,6 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.ToolkitAware;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -57,12 +56,12 @@ import reactor.core.publisher.Mono;
  * the input list unchanged.
  */
 @SuppressWarnings("deprecation")
-public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
+public class DynamicSkillMiddleware implements MiddlewareBase {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicSkillMiddleware.class);
 
     private final List<AgentSkillRepository> repositories;
-    private volatile Toolkit toolkit;
+    private final Toolkit toolkit;
     private final SkillFilter builderFilter;
     private final boolean codeExecutionEnabled;
 
@@ -118,11 +117,6 @@ public class DynamicSkillMiddleware implements MiddlewareBase, ToolkitAware {
      */
     public SkillBox getCurrentSkillBox() {
         return currentSkillBox;
-    }
-
-    @Override
-    public void rebindToolkit(Toolkit toolkit) {
-        this.toolkit = toolkit;
     }
 
     @Override
