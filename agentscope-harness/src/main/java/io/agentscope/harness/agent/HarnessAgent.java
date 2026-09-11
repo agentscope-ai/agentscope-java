@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.config.ModelConfig;
@@ -164,7 +165,7 @@ import reactor.core.publisher.Mono;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
-public class HarnessAgent implements Agent, AutoCloseable {
+public class HarnessAgent implements Agent, EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
@@ -858,6 +859,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @deprecated Use {@link #streamEvents(Msg, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg), RuntimeContext.empty());
     }
@@ -866,6 +868,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @deprecated Use {@link #streamEvents(List, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         return streamEvents(msgs, RuntimeContext.empty());
     }
@@ -878,6 +881,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext ctx) {
         return streamEvents(List.of(msg), ctx);
     }
@@ -917,6 +921,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());

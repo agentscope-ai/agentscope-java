@@ -24,9 +24,12 @@ import io.agentscope.core.tool.Toolkit;
  * <p>This interface defines the core contract for agents, combining:
  * <ul>
  *   <li>{@link CallableAgent} - Process messages and generate responses</li>
- *   <li>{@link StreamableAgent} - Stream events during execution</li>
+ *   <li>{@link StreamableAgent} - Stream coarse-grained v1 events during execution</li>
  *   <li>{@link ObservableAgent} - Observe messages without responding</li>
  * </ul>
+ *
+ * <p>Fine-grained v2 streaming is an optional capability. Agents that emit
+ * {@link io.agentscope.core.event.AgentEvent}s should also implement {@link EventStreamingAgent}.
  *
  * <p>Design Philosophy:
  * <ul>

@@ -26,9 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
@@ -287,7 +290,7 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
-        void testRunUsesHarnessStreamEventsViaReflection() {
+        void testRunUsesHarnessStreamEvents() {
             HarnessAgent agent = new HarnessAgent();
             agent.setEvents(Flux.just(new TextBlockDeltaEvent("reply-harness", "block-1", "hi")));
 
@@ -302,6 +305,30 @@ class AguiAgentAdapterV2Test {
             assertEquals("run-v2", agent.getSeenContext().get("agui.runId"));
             assertEquals(1, agent.getSeenMessages().size());
             assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent));
+        }
+
+        @Test
+        void testRunUsesCustomEventStreamingAgentWithoutConcreteTypeChecks() {
+            CustomStreamingAgent agent = mock(CustomStreamingAgent.class);
+            ArgumentCaptor<RuntimeContext> contextCaptor =
+                    ArgumentCaptor.forClass(RuntimeContext.class);
+            when(agent.streamEvents(anyList(), contextCaptor.capture()))
+                    .thenReturn(
+                            Flux.just(new TextBlockDeltaEvent("reply-custom", "block-1", "hi")));
+
+            List<AguiEvent> events =
+                    new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig())
+                            .run(input())
+                            .collectList()
+                            .block();
+
+            assertNotNull(events);
+            assertFalse(agent instanceof ReActAgent);
+            assertFalse(agent instanceof HarnessAgent);
+            assertTrue(agent instanceof EventStreamingAgent);
+            assertEquals("thread-v2", contextCaptor.getValue().getSessionId());
+            assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent));
+            verify(agent).streamEvents(anyList(), any(RuntimeContext.class));
         }
     }
 
@@ -2341,6 +2368,8 @@ class AguiAgentAdapterV2Test {
                                         Map.of("query", Map.of("type", "string"))))
                         .build());
     }
+
+    private interface CustomStreamingAgent extends Agent, EventStreamingAgent {}
 
     private static final class GhostToolNameToolkit extends Toolkit {
 

@@ -15,13 +15,12 @@
  */
 package io.agentscope.core.agui.adapter;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverterRegistry;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
@@ -40,8 +39,6 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -201,22 +198,12 @@ public class AguiAgentAdapter {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
-        if (agent instanceof ReActAgent reAct) {
+        if (agent instanceof EventStreamingAgent streaming) {
             AguiStreamContext context =
                     new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
-                            reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
-            return new AgentStream(
-                    convertAgentEvents(events, context), () -> finishPendingEvents(context));
-        }
-        if (AguiUtil.isHarnessAgent(agent)) {
-            AguiStreamContext context =
-                    new AguiStreamContext(threadId, runId, config, input, externalToolDetector());
-            Flux<AgentEvent> events =
-                    Objects.requireNonNull(
-                            invokeHarnessStreamEvents(agent, msgs, runtimeContext),
-                            "agent stream is null");
+                            streaming.streamEvents(msgs, runtimeContext), "agent stream is null");
             return new AgentStream(
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
@@ -249,34 +236,6 @@ public class AguiAgentAdapter {
     }
 
     private record AgentStream(Flux<AguiEvent> events, Supplier<Flux<AguiEvent>> finish) {}
-
-    @SuppressWarnings("unchecked")
-    private Flux<AgentEvent> invokeHarnessStreamEvents(
-            Agent harnessAgent, List<Msg> msgs, RuntimeContext runtimeContext) {
-        try {
-            Method method =
-                    harnessAgent
-                            .getClass()
-                            .getMethod("streamEvents", List.class, RuntimeContext.class);
-            Object result = method.invoke(harnessAgent, msgs, runtimeContext);
-            if (!(result instanceof Flux<?> flux)) {
-                throw new IllegalStateException("HarnessAgent streamEvents did not return Flux");
-            }
-            return (Flux<AgentEvent>) flux;
-        } catch (InvocationTargetException e) {
-            Throwable target = e.getTargetException();
-            if (target instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (target instanceof Error error) {
-                throw error;
-            }
-            throw new IllegalStateException("HarnessAgent streamEvents failed", target);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                    "HarnessAgent does not expose streamEvents(List, RuntimeContext)", e);
-        }
-    }
 
     /**
      * Build the runtime context used for the agent invocation.
