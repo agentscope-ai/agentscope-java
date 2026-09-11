@@ -53,6 +53,8 @@ public class SkillBox {
     private Path uploadDir;
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
+    private final String instruction;
+    private boolean exposeAllSkillMetadata = true;
 
     private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
@@ -70,6 +72,34 @@ public class SkillBox {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry, instruction);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
+        this.instruction = instruction;
+    }
+
+    /**
+     * Creates a copy of this SkillBox bound to {@code toolkit}, mirroring {@link Toolkit#copy()}.
+     *
+     * <p>A SkillBox holds a mutable reference to the toolkit it serves, so a single instance
+     * cannot back two agents: binding it to a second agent's toolkit silently repoints the first
+     * agent's {@link SkillHook} at the wrong toolkit. Copying per agent keeps each agent's skill
+     * state isolated while sharing the (immutable) skills themselves.
+     *
+     * <p>The registered skills and configuration are carried over; {@code uploadDir} is left
+     * unset so it is recomputed lazily against the copy's {@code workDir}.
+     *
+     * @param toolkit The toolkit the copy should be bound to (must not be null)
+     * @return A new SkillBox carrying this box's skills and configuration
+     */
+    public SkillBox copy(Toolkit toolkit) {
+        if (toolkit == null) {
+            throw new IllegalArgumentException("Toolkit cannot be null");
+        }
+        SkillBox copy = new SkillBox(toolkit, this.instruction);
+        this.skillRegistry.copyTo(copy.skillRegistry);
+        copy.workDir = this.workDir;
+        copy.fileFilter = this.fileFilter;
+        copy.autoUploadSkill = this.autoUploadSkill;
+        copy.setExposeAllSkillMetadata(this.exposeAllSkillMetadata);
+        return copy;
     }
 
     /**
@@ -104,6 +134,7 @@ public class SkillBox {
      *                          the core fields
      */
     public void setExposeAllSkillMetadata(boolean exposeAllMetadata) {
+        this.exposeAllSkillMetadata = exposeAllMetadata;
         skillPromptProvider.setExposeAllMetadata(exposeAllMetadata);
     }
 
