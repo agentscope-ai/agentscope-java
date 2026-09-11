@@ -15,11 +15,20 @@
  */
 package io.agentscope.core.util;
 
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Utility methods for message processing and extraction.
@@ -62,5 +71,103 @@ public final class MessageUtils {
         }
 
         return List.of();
+    }
+
+    /**
+     * Builds a provider-safe copy of a transcript by placing each tool result immediately after
+     * the assistant message that owns its tool call.
+     *
+     * <p>If an earlier interruption left a tool call without any result in the transcript, this
+     * method adds a terminal error result. It does not mutate the supplied messages.
+     *
+     * @param messages messages to normalize
+     * @return a normalized transcript, or an empty list when the input is null or empty
+     */
+    public static List<Msg> normalizeToolCallResults(List<Msg> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, ToolResultBlock> resultsById = new HashMap<>();
+        for (Msg message : messages) {
+            if (message == null) {
+                continue;
+            }
+            for (ToolResultBlock result : message.getContentBlocks(ToolResultBlock.class)) {
+                if (result.getId() != null) {
+                    resultsById.putIfAbsent(result.getId(), result);
+                }
+            }
+        }
+
+        List<Msg> normalized = new ArrayList<>(messages.size());
+        Set<String> relocatedResultIds = new HashSet<>();
+        for (Msg message : messages) {
+            if (message == null) {
+                continue;
+            }
+            if (message.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolUses = message.getContentBlocks(ToolUseBlock.class);
+                if (!toolUses.isEmpty()) {
+                    Set<String> toolUseIds = new HashSet<>();
+                    for (ToolUseBlock toolUse : toolUses) {
+                        if (toolUse.getId() != null) {
+                            toolUseIds.add(toolUse.getId());
+                        }
+                    }
+                    List<ContentBlock> assistantContent = new ArrayList<>(message.getContent());
+                    assistantContent.removeIf(
+                            block ->
+                                    block instanceof ToolResultBlock result
+                                            && toolUseIds.contains(result.getId()));
+                    normalized.add(
+                            assistantContent.equals(message.getContent())
+                                    ? message
+                                    : message.withContent(assistantContent));
+                    for (ToolUseBlock toolUse : toolUses) {
+                        if (toolUse.getId() == null) {
+                            continue;
+                        }
+                        ToolResultBlock result = resultsById.get(toolUse.getId());
+                        if (result == null) {
+                            result = interruptedToolResult(toolUse);
+                        }
+                        relocatedResultIds.add(toolUse.getId());
+                        normalized.add(Msg.builder().role(MsgRole.TOOL).content(result).build());
+                    }
+                    continue;
+                }
+            }
+
+            if (message.getRole() == MsgRole.TOOL && !relocatedResultIds.isEmpty()) {
+                List<ContentBlock> retained = new ArrayList<>();
+                for (ContentBlock block : message.getContent()) {
+                    if (!(block instanceof ToolResultBlock result)
+                            || !relocatedResultIds.contains(result.getId())) {
+                        retained.add(block);
+                    }
+                }
+                if (!retained.isEmpty()) {
+                    normalized.add(message.withContent(retained));
+                }
+                continue;
+            }
+
+            normalized.add(message);
+        }
+        return normalized;
+    }
+
+    private static ToolResultBlock interruptedToolResult(ToolUseBlock toolUse) {
+        return new ToolResultBlock(
+                        toolUse.getId(),
+                        toolUse.getName(),
+                        TextBlock.builder()
+                                .text(
+                                        "Previous tool call was interrupted before a result was"
+                                                + " recorded. Treat this tool call as failed or"
+                                                + " canceled.")
+                                .build())
+                .withState(ToolResultState.ERROR);
     }
 }
