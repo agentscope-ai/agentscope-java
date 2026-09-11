@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -110,6 +111,18 @@ class AgentBaseTest {
         }
     }
 
+    static class ScopedTestAgent extends TestAgent {
+
+        ScopedTestAgent(String name) {
+            super(name);
+        }
+
+        @Override
+        protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+            return new Object();
+        }
+    }
+
     @BeforeEach
     void setUp() {
         agent = new TestAgent(TestConstants.TEST_AGENT_NAME);
@@ -151,6 +164,19 @@ class AgentBaseTest {
         String text = TestUtils.extractTextContent(response);
         assertEquals(
                 TestConstants.TEST_ASSISTANT_RESPONSE, text, "Response text should match expected");
+    }
+
+    @Test
+    @DisplayName("Should support call scope with the default terminal callback")
+    void testDefaultAfterCallScopeExecution() {
+        ScopedTestAgent scopedAgent = new ScopedTestAgent(TestConstants.TEST_AGENT_NAME);
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        assertDoesNotThrow(
+                () ->
+                        scopedAgent
+                                .call(userMsg)
+                                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS)));
     }
 
     @Test
