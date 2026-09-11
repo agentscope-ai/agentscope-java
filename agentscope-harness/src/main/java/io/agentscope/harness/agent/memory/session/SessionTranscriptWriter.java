@@ -36,6 +36,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,12 +53,18 @@ import org.slf4j.LoggerFactory;
  * <p>Tool calls and results are recorded as structured {@link SessionEntry.ToolUseEntry} /
  * {@link SessionEntry.ToolResultEntry} rows so the call/result process is machine-readable.
  * Content may still be truncated; truncated fields carry {@code truncated} + {@code originalSize}.
+ * Concurrent appends for the same session are serialized across writer instances in this process.
+ * Cross-process coordination remains the responsibility of the configured transcript store.
  */
 public class SessionTranscriptWriter {
 
     private static final Logger log = LoggerFactory.getLogger(SessionTranscriptWriter.class);
 
     private static final String SESSION_CONTEXT_TAG = "<session_context>";
+
+    /** Active process-local locks for the transcript read/merge/write cycle; idle entries are evicted. */
+    private static final ConcurrentHashMap<String, WriteLock> WRITE_LOCKS =
+            new ConcurrentHashMap<>();
 
     /** Soft cap for tool input JSON in the transcript (process-complete; content may truncate). */
     public static final int INPUT_TRUNCATE_CHARS = 500;
@@ -90,66 +98,39 @@ public class SessionTranscriptWriter {
         }
         try {
             Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
-            String contextRelPath =
-                    WorkspaceConstants.AGENTS_DIR
-                            + "/"
-                            + agentId
-                            + "/"
-                            + WorkspaceConstants.SESSIONS_DIR
-                            + "/"
-                            + sessionId
-                            + WorkspaceConstants.SESSION_CONTEXT_EXT;
-            SessionTree tree =
-                    new SessionTree(
-                                    contextFile,
-                                    workspaceManager.getWorkspace(),
-                                    workspaceManager.getFilesystem(),
-                                    workspaceManager.getIndex(),
-                                    contextRelPath)
-                            .setRuntimeContext(rc)
-                            .setTranscriptStore(
-                                    transcriptStore, new TranscriptRef(tenant, agentId, sessionId));
-            tree.load();
-            tree.syncFromRemote();
-
-            List<SessionEntry> existingEntries = new ArrayList<>(tree.getAllEntries());
-            Set<String> existingIds =
-                    existingEntries.stream()
-                            .map(SessionEntry::getId)
-                            .collect(Collectors.toCollection(HashSet::new));
-            String lastId =
-                    existingEntries.isEmpty()
-                            ? null
-                            : existingEntries.get(existingEntries.size() - 1).getId();
-
-            int appended = 0;
-            for (Msg msg : messages) {
-                if (msg.getRole() == null || isSessionContextMessage(msg)) {
-                    continue;
-                }
-                List<SessionEntry> derived = deriveEntries(msg, lastId);
-                for (SessionEntry entry : derived) {
-                    if (existingIds.contains(entry.getId())) {
-                        continue;
+            String lockKey = contextFile.toAbsolutePath().normalize().toString();
+            // Count waiters before blocking so the last releaser cannot evict a lock still in use.
+            WriteLock writeLock =
+                    WRITE_LOCKS.compute(
+                            lockKey,
+                            (k, existing) -> {
+                                WriteLock next = existing != null ? existing : new WriteLock();
+                                next.users++;
+                                return next;
+                            });
+            writeLock.lock.lock();
+            try {
+                appendMessagesLocked(rc, messages, agentId, sessionId, contextFile);
+            } finally {
+                try {
+                    WRITE_LOCKS.computeIfPresent(
+                            lockKey,
+                            (k, current) -> {
+                                if (current != writeLock) {
+                                    return current;
+                                }
+                                boolean idle = --current.users == 0;
+                                // Keep the map mutation and unlock ordered together: a new caller
+                                // cannot publish a replacement lock until this append is released.
+                                writeLock.lock.unlock();
+                                return idle ? null : current;
+                            });
+                } finally {
+                    if (writeLock.lock.isHeldByCurrentThread()) {
+                        writeLock.lock.unlock();
                     }
-                    tree.append(entry);
-                    existingIds.add(entry.getId());
-                    lastId = entry.getId();
-                    appended++;
                 }
             }
-
-            if (appended > 0) {
-                tree.flush();
-                workspaceManager.updateSessionIndex(
-                        rc, agentId, sessionId, "transcript updated (" + appended + " entries)");
-            }
-            log.debug(
-                    "Transcript append agent={} session={} msgs={} newEntries={}",
-                    agentId,
-                    sessionId,
-                    messages.size(),
-                    appended);
         } catch (Exception e) {
             log.warn(
                     "Failed to append transcript for agent={}, session={}: {}",
@@ -157,6 +138,80 @@ public class SessionTranscriptWriter {
                     sessionId,
                     e.getMessage());
         }
+    }
+
+    private void appendMessagesLocked(
+            RuntimeContext rc,
+            List<Msg> messages,
+            String agentId,
+            String sessionId,
+            Path contextFile) {
+        String contextRelPath =
+                WorkspaceConstants.AGENTS_DIR
+                        + "/"
+                        + agentId
+                        + "/"
+                        + WorkspaceConstants.SESSIONS_DIR
+                        + "/"
+                        + sessionId
+                        + WorkspaceConstants.SESSION_CONTEXT_EXT;
+        SessionTree tree =
+                new SessionTree(
+                                contextFile,
+                                workspaceManager.getWorkspace(),
+                                workspaceManager.getFilesystem(),
+                                workspaceManager.getIndex(),
+                                contextRelPath)
+                        .setRuntimeContext(rc)
+                        .setTranscriptStore(
+                                transcriptStore, new TranscriptRef(tenant, agentId, sessionId));
+        tree.load();
+        tree.syncFromRemote();
+
+        List<SessionEntry> existingEntries = new ArrayList<>(tree.getAllEntries());
+        Set<String> existingIds =
+                existingEntries.stream()
+                        .map(SessionEntry::getId)
+                        .collect(Collectors.toCollection(HashSet::new));
+        String lastId =
+                existingEntries.isEmpty()
+                        ? null
+                        : existingEntries.get(existingEntries.size() - 1).getId();
+
+        int appended = 0;
+        for (Msg msg : messages) {
+            if (msg.getRole() == null || isSessionContextMessage(msg)) {
+                continue;
+            }
+            List<SessionEntry> derived = deriveEntries(msg, lastId);
+            for (SessionEntry entry : derived) {
+                if (existingIds.contains(entry.getId())) {
+                    continue;
+                }
+                tree.append(entry);
+                existingIds.add(entry.getId());
+                lastId = entry.getId();
+                appended++;
+            }
+        }
+
+        if (appended > 0) {
+            tree.flush();
+            workspaceManager.updateSessionIndex(
+                    rc, agentId, sessionId, "transcript updated (" + appended + " entries)");
+        }
+        log.debug(
+                "Transcript append agent={} session={} msgs={} newEntries={}",
+                agentId,
+                sessionId,
+                messages.size(),
+                appended);
+    }
+
+    /** Lock and reference count for one active transcript path. */
+    private static final class WriteLock {
+        private final ReentrantLock lock = new ReentrantLock();
+        private int users;
     }
 
     /**
