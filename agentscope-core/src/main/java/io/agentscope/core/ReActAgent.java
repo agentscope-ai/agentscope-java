@@ -146,6 +146,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -3020,56 +3021,62 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Set<String> chunkedToolIds =
                                                         ConcurrentHashMap.newKeySet();
 
-                                                toolkit.setInternalChunkCallback(
-                                                        (toolUse, chunk) -> {
-                                                            if (chunk.getOutput() != null
-                                                                    && !chunk.getOutput()
-                                                                            .isEmpty()) {
-                                                                chunkedToolIds.add(toolUse.getId());
-                                                                for (ContentBlock block :
-                                                                        chunk.getOutput()) {
-                                                                    if (block
-                                                                            instanceof
-                                                                            TextBlock tb) {
-                                                                        sink.next(
-                                                                                new ToolResultTextDeltaEvent(
-                                                                                                replyId,
-                                                                                                toolUse
-                                                                                                        .getId(),
-                                                                                                toolUse
-                                                                                                        .getName(),
-                                                                                                tb
-                                                                                                        .getText())
-                                                                                        .withMetadata(
-                                                                                                chunk
-                                                                                                        .getMetadata()));
-                                                                    } else {
-                                                                        sink.next(
-                                                                                new ToolResultDataDeltaEvent(
-                                                                                                replyId,
-                                                                                                toolUse
-                                                                                                        .getId(),
-                                                                                                toolUse
-                                                                                                        .getName(),
-                                                                                                block)
-                                                                                        .withMetadata(
-                                                                                                chunk
-                                                                                                        .getMetadata()));
+                                                BiConsumer<ToolUseBlock, ToolResultBlock>
+                                                        internalChunkCallback =
+                                                                (toolUse, chunk) -> {
+                                                                    if (chunk.getOutput() != null
+                                                                            && !chunk.getOutput()
+                                                                                    .isEmpty()) {
+                                                                        chunkedToolIds.add(
+                                                                                toolUse.getId());
+                                                                        for (ContentBlock block :
+                                                                                chunk.getOutput()) {
+                                                                            if (block
+                                                                                    instanceof
+                                                                                    TextBlock tb) {
+                                                                                sink.next(
+                                                                                        new ToolResultTextDeltaEvent(
+                                                                                                        replyId,
+                                                                                                        toolUse
+                                                                                                                .getId(),
+                                                                                                        toolUse
+                                                                                                                .getName(),
+                                                                                                        tb
+                                                                                                                .getText())
+                                                                                                .withMetadata(
+                                                                                                        chunk
+                                                                                                                .getMetadata()));
+                                                                            } else {
+                                                                                sink.next(
+                                                                                        new ToolResultDataDeltaEvent(
+                                                                                                        replyId,
+                                                                                                        toolUse
+                                                                                                                .getId(),
+                                                                                                        toolUse
+                                                                                                                .getName(),
+                                                                                                        block)
+                                                                                                .withMetadata(
+                                                                                                        chunk
+                                                                                                                .getMetadata()));
+                                                                            }
+                                                                        }
                                                                     }
-                                                                }
-                                                            }
-                                                            hookDispatcher
-                                                                    .fireActingChunk(
-                                                                            toolUse, chunk, toolkit)
-                                                                    .contextWrite(
-                                                                            ctx ->
-                                                                                    ctx.putAll(
-                                                                                            parentCtx))
-                                                                    .subscribe();
-                                                        });
+                                                                    hookDispatcher
+                                                                            .fireActingChunk(
+                                                                                    toolUse, chunk,
+                                                                                    toolkit)
+                                                                            .contextWrite(
+                                                                                    ctx ->
+                                                                                            ctx
+                                                                                                    .putAll(
+                                                                                                            parentCtx))
+                                                                            .subscribe();
+                                                                };
 
                                                 Disposable toolCallsDisposable =
-                                                        executeToolCalls(approved)
+                                                        executeToolCalls(
+                                                                        approved,
+                                                                        internalChunkCallback)
                                                                 .contextWrite(
                                                                         ctx -> {
                                                                             Context merged =
@@ -3369,7 +3376,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
                 List<ToolUseBlock> toolCalls) {
-            return dispatchToolCalls(toolCalls)
+            return executeToolCalls(toolCalls, null);
+        }
+
+        private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
+                List<ToolUseBlock> toolCalls,
+                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+            return dispatchToolCalls(toolCalls, internalChunkCallback)
                     .map(
                             results ->
                                     IntStream.range(0, toolCalls.size())
@@ -3419,6 +3432,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * through {@link Toolkit#callTools}.
          */
         private Mono<List<ToolResultBlock>> dispatchToolCalls(List<ToolUseBlock> toolCalls) {
+            return dispatchToolCalls(toolCalls, null);
+        }
+
+        private Mono<List<ToolResultBlock>> dispatchToolCalls(
+                List<ToolUseBlock> toolCalls,
+                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
             boolean hasStructured =
                     soTool != null
                             && toolCalls.stream()
@@ -3428,7 +3447,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         toolCalls,
                         toolExecutionConfig,
                         ReActAgent.this,
-                        buildMergedRuntimeContext(rc));
+                        buildMergedRuntimeContext(rc),
+                        internalChunkCallback);
             }
 
             List<ToolUseBlock> regular =
@@ -3442,7 +3462,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             regular,
                                             toolExecutionConfig,
                                             ReActAgent.this,
-                                            buildMergedRuntimeContext(rc))
+                                            buildMergedRuntimeContext(rc),
+                                            internalChunkCallback)
                                     .map(
                                             list -> {
                                                 Map<String, ToolResultBlock> byId = new HashMap<>();

@@ -32,10 +32,13 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonUtils;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -343,6 +346,44 @@ class ToolEmitterIntegrationTest {
     }
 
     @Test
+    @DisplayName("Concurrent tool calls keep internal chunk callbacks call-scoped")
+    void testConcurrentCallsDoNotCrossRouteInternalChunks() {
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        toolkit.registerTool(new ConcurrentStreamingTool(barrier));
+
+        List<String> first = new CopyOnWriteArrayList<>();
+        List<String> second = new CopyOnWriteArrayList<>();
+        ToolUseBlock firstCall = createToolCall("concurrent_stream", Map.of("input", "first"));
+        ToolUseBlock secondCall =
+                ToolUseBlock.builder()
+                        .id("call-2")
+                        .name("concurrent_stream")
+                        .input(Map.of("input", "second"))
+                        .content(JsonUtils.getJsonCodec().toJson(Map.of("input", "second")))
+                        .build();
+
+        Mono<List<ToolResultBlock>> firstExecution =
+                toolkit.callTools(
+                        List.of(firstCall),
+                        null,
+                        null,
+                        null,
+                        (toolUse, chunk) -> first.add(toolUse.getId() + ":" + extractText(chunk)));
+        Mono<List<ToolResultBlock>> secondExecution =
+                toolkit.callTools(
+                        List.of(secondCall),
+                        null,
+                        null,
+                        null,
+                        (toolUse, chunk) -> second.add(toolUse.getId() + ":" + extractText(chunk)));
+
+        Mono.when(firstExecution, secondExecution).block(Duration.ofSeconds(5));
+
+        assertEquals(List.of("call-1:progress:first"), first);
+        assertEquals(List.of("call-2:progress:second"), second);
+    }
+
+    @Test
     @DisplayName("User chunk callback failure should not interrupt tool execution")
     void testUserChunkCallbackFailureDoesNotInterruptToolExecution() {
         toolkit.registerTool(new StreamingTool());
@@ -441,6 +482,27 @@ class ToolEmitterIntegrationTest {
             emitter.emit(ToolResultBlock.text("chunk:1:" + input));
             emitter.emit(ToolResultBlock.text("chunk:2:" + input));
             return ToolResultBlock.text("tool-result:" + input);
+        }
+    }
+
+    static class ConcurrentStreamingTool {
+        private final CyclicBarrier barrier;
+
+        ConcurrentStreamingTool(CyclicBarrier barrier) {
+            this.barrier = barrier;
+        }
+
+        @Tool(name = "concurrent_stream", description = "Emit one call-scoped progress chunk")
+        public ToolResultBlock execute(
+                @ToolParam(name = "input", description = "Input text") String input,
+                ToolEmitter emitter) {
+            try {
+                barrier.await(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new IllegalStateException("concurrency test barrier failed", e);
+            }
+            emitter.emit(ToolResultBlock.text("progress:" + input));
+            return ToolResultBlock.text("done:" + input);
         }
     }
 }
