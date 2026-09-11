@@ -25,6 +25,7 @@ import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT
 
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ToolUseBlock;
@@ -54,7 +55,9 @@ import java.util.Set;
  * {@code ToolUseBlock}, and tool-input validation reads {@code content} directly with no fallback to
  * {@code input}; a null content would fail the resume with {@code argument "content" is null}.
  *
- * <p>{@link UserConfirmResultEvent} is intentionally registered here as a no-op.
+ * <p>{@link UserConfirmResultEvent} silently adopts the validated tool-call ids so the new run
+ * can deliver their results without replaying the previous run's tool-call events. Core emits
+ * this event after validating the confirmation against its pending tool calls.
  */
 final class PermissionConfirmEventConverter implements AgentEventConverter {
 
@@ -82,7 +85,12 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
 
     @Override
     public void convert(AgentEvent event, AguiStreamContext context) {
-        if (event instanceof UserConfirmResultEvent) {
+        if (event instanceof UserConfirmResultEvent resultEvent) {
+            for (ConfirmResult result : resultEvent.getConfirmResults()) {
+                if (result.getToolCall() != null) {
+                    context.adoptToolCall(result.getToolCall().getId());
+                }
+            }
             return;
         }
         RequireUserConfirmEvent confirmEvent = (RequireUserConfirmEvent) event;
