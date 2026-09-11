@@ -232,6 +232,14 @@ public class AguiStreamContext {
         }
     }
 
+    /** Recognize a validated permission resume without replaying the previous run's call events. */
+    public void resumeToolCall(String toolCallId) {
+        if (!isBlank(toolCallId)) {
+            startedToolCalls.add(toolCallId);
+            endedToolCalls.add(toolCallId);
+        }
+    }
+
     public void beginToolResult(String toolCallId) {
         if (!hasStartedToolCall(toolCallId, "ToolResultStartEvent")) {
             return;

@@ -1418,6 +1418,30 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testPermissionResumeOnlyRestoresConfirmedToolIds() {
+            ToolUseBlock confirmed = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "reply-confirm", List.of(new ConfirmResult(false, confirmed))),
+                            new ToolResultStartEvent("reply-confirm", "tool-2", "unrelated"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-confirm", "tool-2", "unrelated", "ignored"),
+                            new ToolResultEndEvent(
+                                    "reply-confirm", "tool-2", "unrelated", ToolResultState.DENIED),
+                            new ToolResultStartEvent("reply-confirm", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "reply-confirm",
+                                    "tool-1",
+                                    "lookup",
+                                    "Permission denied by user"),
+                            new ToolResultEndEvent(
+                                    "reply-confirm", "tool-1", "lookup", ToolResultState.DENIED));
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "Permission denied by user");
+        }
+
+        @Test
         void testWarnMissingToolCallIdDeduplicatesByEventName() throws Exception {
             AguiStreamContext context =
                     new AguiStreamContext("thread-v2", "run-v2", AguiAdapterConfig.defaultConfig());
