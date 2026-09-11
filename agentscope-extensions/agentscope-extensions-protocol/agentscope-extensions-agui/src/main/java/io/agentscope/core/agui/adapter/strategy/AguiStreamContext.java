@@ -44,6 +44,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +58,15 @@ public class AguiStreamContext {
                     GenerateReason.MODEL_STOP,
                     GenerateReason.STRUCTURED_OUTPUT,
                     GenerateReason.MAX_ITERATIONS);
+
+    /**
+     * Matches the reserved live text-segment message ids produced by the AG-UI text/reasoning
+     * converters ({@code <replyId>-text[-N]}, {@code <replyId>-thinking[-N]}). The reply id itself
+     * is recovered from the first capture group.
+     */
+    private static final Pattern TEXT_SEGMENT_ID =
+            Pattern.compile("^(.+)-(?:text|thinking|reasoning)(?:-\\d+)?$");
+
     private final String threadId;
     private final String runId;
     private final AguiAdapterConfig config;
@@ -175,9 +186,15 @@ public class AguiStreamContext {
         return tokenUsageAccumulator;
     }
 
-    public void startTextMessage(String replyId) {
-        String messageId = resolveTextMessageId(replyId);
+    public void startTextMessage(String messageId) {
+        String replyId = replyIdOf(messageId);
         if (startedTextMessages.add(messageId)) {
+            if (config.isTextOutputDispositionEnabled()) {
+                textMessageIdsByReply
+                        .computeIfAbsent(replyId, ignored -> new ArrayList<>())
+                        .add(messageId);
+                activeTextMessageIdsByReply.put(replyId, messageId);
+            }
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
             emitRememberedTextOutputDisposition(replyId);
         }
@@ -185,9 +202,9 @@ public class AguiStreamContext {
         currentTextMessageId = messageId;
     }
 
-    public void appendTextDelta(String replyId, String delta) {
+    public void appendTextDelta(String messageId, String delta) {
         if (delta != null && !delta.isEmpty()) {
-            startTextMessage(replyId);
+            startTextMessage(messageId);
             emit(new AguiEvent.TextMessageContent(threadId, runId, currentTextMessageId, delta));
         }
     }
@@ -196,18 +213,10 @@ public class AguiStreamContext {
         if (currentTextMessageId == null) {
             return;
         }
-        closeResolvedTextMessage(currentTextReplyId, currentTextMessageId);
+        closeTextMessage(currentTextMessageId);
     }
 
-    public void closeTextMessage(String replyId) {
-        String messageId =
-                config.isTextOutputDispositionEnabled()
-                        ? activeTextMessageIdsByReply.get(replyId)
-                        : replyId;
-        closeResolvedTextMessage(replyId, messageId);
-    }
-
-    private void closeResolvedTextMessage(String replyId, String messageId) {
+    public void closeTextMessage(String messageId) {
         if (messageId == null
                 || !startedTextMessages.contains(messageId)
                 || endedTextMessages.contains(messageId)) {
@@ -219,7 +228,7 @@ public class AguiStreamContext {
             currentTextReplyId = null;
         }
         if (config.isTextOutputDispositionEnabled()) {
-            activeTextMessageIdsByReply.remove(replyId, messageId);
+            activeTextMessageIdsByReply.remove(replyIdOf(messageId), messageId);
         }
         emit(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
     }
@@ -452,20 +461,16 @@ public class AguiStreamContext {
         return toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
     }
 
-    private String resolveTextMessageId(String replyId) {
-        if (!config.isTextOutputDispositionEnabled()) {
-            return replyId;
+    /**
+     * Recovers the owning reply id from a live text-segment message id. Ids that are not segment ids
+     * (for example a single-block reply id) are their own reply id.
+     */
+    private static String replyIdOf(String messageId) {
+        if (messageId == null) {
+            return null;
         }
-        return activeTextMessageIdsByReply.computeIfAbsent(
-                replyId,
-                key -> {
-                    List<String> messageIds =
-                            textMessageIdsByReply.computeIfAbsent(
-                                    key, ignored -> new ArrayList<>());
-                    String messageId = key + ":text:" + messageIds.size();
-                    messageIds.add(messageId);
-                    return messageId;
-                });
+        Matcher matcher = TEXT_SEGMENT_ID.matcher(messageId);
+        return matcher.matches() ? matcher.group(1) : messageId;
     }
 
     private void emitRememberedTextOutputDisposition(String replyId) {
