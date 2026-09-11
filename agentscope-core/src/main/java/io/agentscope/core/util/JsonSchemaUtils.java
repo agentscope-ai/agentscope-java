@@ -27,9 +27,11 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import io.agentscope.core.tool.ToolSchemaModule;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Utility class for JSON Schema operations.
@@ -60,6 +62,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * seen). A cache hit converts a fresh, independently mutable {@code Map} from the cached,
  * never-mutated {@link JsonNode}, so it needs no lock.</p>
  *
+ * <p>Cache entries are scoped to the class they describe instead of living in a static map keyed
+ * by {@code Class}, so an entry cannot outlive that class or pin the classloader that defined it.
+ * That matters because the structured-output and tool-parameter classes reaching this utility are
+ * not always compile-time-fixed: extensions can load skills and tools at runtime, and
+ * multi-tenant deployments may load classes per tenant.</p>
+ *
  * @hidden
  */
 public class JsonSchemaUtils {
@@ -71,31 +79,47 @@ public class JsonSchemaUtils {
     /**
      * Guards the shared victools {@link SchemaGenerator}, which is not thread-safe: its
      * JacksonModule keeps an unsynchronized introspection cache, so concurrent schema
-     * generation must be serialized. Only cache misses in {@link #CLASS_SCHEMA_CACHE} and
-     * {@link #TYPE_SCHEMA_CACHE} take this lock; cache hits never do.
+     * generation must be serialized. Only cache misses in {@link #CLASS_SCHEMA_SLOT} and
+     * {@link #TYPE_SCHEMA_SLOT} take this lock; cache hits never do.
      */
     private static final Object SCHEMA_LOCK = new Object();
 
     /**
-     * Caches the schema {@link JsonNode} generated for each class. A schema is a deterministic
-     * function of the class and the static, never-changing generator config, so entries never
-     * need invalidation. Cached nodes are never mutated after being stored: every call still
-     * converts a fresh, independently mutable {@link Map} from the cached node, so callers that
-     * mutate the returned map (e.g. {@code ToolSchemaGenerator}) cannot corrupt the cache or
-     * interfere with one another.
+     * Schema cache slot of each class. A schema is a deterministic function of the class and the
+     * static, never-changing generator config, so entries never need invalidation. Cached nodes
+     * are never mutated after being stored: every call still converts a fresh, independently
+     * mutable {@link Map} from the cached node, so callers that mutate the returned map (e.g.
+     * {@code ToolSchemaGenerator}) cannot corrupt the cache or interfere with one another.
      *
-     * <p>Unbounded by design: keys are the compile-time-fixed structured-output and
-     * tool-parameter classes declared by application code, so the entry count is bounded by the
-     * small, finite set of such classes the JVM loads for that purpose — not by request volume
-     * or untrusted input.
+     * <p>Creating the slot through {@link ClassValue} holds it on the class it describes, rather
+     * than in a static map that strongly references the class as a key, so a slot cannot keep that
+     * class — or the classloader which defined it — reachable once the rest of the application has
+     * let go of them.
      */
-    private static final Map<Class<?>, JsonNode> CLASS_SCHEMA_CACHE = new ConcurrentHashMap<>();
+    private static final ClassValue<AtomicReference<JsonNode>> CLASS_SCHEMA_SLOT =
+            new ClassValue<>() {
+                @Override
+                protected AtomicReference<JsonNode> computeValue(Class<?> clazz) {
+                    return new AtomicReference<>();
+                }
+            };
 
     /**
-     * Same caching strategy and bound rationale as {@link #CLASS_SCHEMA_CACHE}, keyed by generic
-     * {@link Type} to support parameterized structured-output and tool-parameter types.
+     * Same caching strategy as {@link #CLASS_SCHEMA_SLOT}, keyed by generic {@link Type} to support
+     * parameterized structured-output and tool-parameter types. The variants of one raw class (e.g.
+     * {@code List<String>} versus {@code List<Integer>}) share the map held on that raw class, so
+     * these slots are scoped to a classloader in the same way.
+     *
+     * <p>Because unrelated raw classes never share a map, a miss takes {@link #SCHEMA_LOCK} without
+     * grouping unrelated types behind the same lock.
      */
-    private static final Map<Type, JsonNode> TYPE_SCHEMA_CACHE = new ConcurrentHashMap<>();
+    private static final ClassValue<Map<Type, JsonNode>> TYPE_SCHEMA_SLOT =
+            new ClassValue<>() {
+                @Override
+                protected Map<Type, JsonNode> computeValue(Class<?> rawType) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
 
     static {
         // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
@@ -131,14 +155,7 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            JsonNode schemaNode =
-                    CLASS_SCHEMA_CACHE.computeIfAbsent(
-                            clazz,
-                            c -> {
-                                synchronized (SCHEMA_LOCK) {
-                                    return schemaGenerator.generateSchema(c);
-                                }
-                            });
+            JsonNode schemaNode = cachedSchemaNode(clazz);
             return JsonUtils.getJsonCodec()
                     .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
@@ -173,20 +190,91 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JsonNode schemaNode =
-                    TYPE_SCHEMA_CACHE.computeIfAbsent(
-                            type,
-                            t -> {
-                                synchronized (SCHEMA_LOCK) {
-                                    return schemaGenerator.generateSchema(t);
-                                }
-                            });
+            JsonNode schemaNode = cachedSchemaNode(type);
             return JsonUtils.getJsonCodec()
                     .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
         }
+    }
+
+    /**
+     * Returns the cached schema node for a class, generating it under {@link #SCHEMA_LOCK} on a
+     * miss. The slot is re-read inside the lock so that a class several threads reach at once is
+     * still generated exactly once.
+     */
+    private static JsonNode cachedSchemaNode(Class<?> clazz) {
+        AtomicReference<JsonNode> slot = CLASS_SCHEMA_SLOT.get(clazz);
+        JsonNode cached = slot.get();
+        if (cached != null) {
+            return cached;
+        }
+
+        synchronized (SCHEMA_LOCK) {
+            cached = slot.get();
+            if (cached == null) {
+                cached = schemaGenerator.generateSchema(clazz);
+                slot.set(cached);
+            }
+        }
+        return cached;
+    }
+
+    /**
+     * Returns the cached schema node for a type, generating it under {@link #SCHEMA_LOCK} on a
+     * miss.
+     *
+     * <p>The miss path re-reads the slot inside the lock rather than calling {@code
+     * ConcurrentHashMap#computeIfAbsent}, which runs its mapping function while holding the map's
+     * bin lock: nesting the schema lock inside it would block unrelated types hashing to the same
+     * bin for the whole generation, and would break the contract that a mapping function must not
+     * modify its own map.
+     */
+    private static JsonNode cachedSchemaNode(Type type) {
+        Class<?> rawType = rawTypeOf(type);
+        if (rawType == null) {
+            // Type variables, wildcards and generic arrays have no raw class to hang a slot on;
+            // generate them without caching.
+            synchronized (SCHEMA_LOCK) {
+                return schemaGenerator.generateSchema(type);
+            }
+        }
+
+        Map<Type, JsonNode> slot = TYPE_SCHEMA_SLOT.get(rawType);
+        JsonNode cached = slot.get(type);
+        if (cached != null) {
+            return cached;
+        }
+
+        synchronized (SCHEMA_LOCK) {
+            cached = slot.get(type);
+            if (cached == null) {
+                cached = schemaGenerator.generateSchema(type);
+                slot.put(type, cached);
+            }
+        }
+        return cached;
+    }
+
+    /**
+     * Returns the raw class whose cache a type's schema belongs to, or {@code null} when the type
+     * has no raw class and therefore cannot be cached.
+     *
+     * @throws NullPointerException if the type is null
+     */
+    private static Class<?> rawTypeOf(Type type) {
+        if (type == null) {
+            throw new NullPointerException("type must not be null");
+        }
+        if (type instanceof Class<?> clazz) {
+            return clazz;
+        }
+        if (type instanceof ParameterizedType parameterizedType
+                && parameterizedType.getRawType() instanceof Class<?> rawClass) {
+            return rawClass;
+        }
+        return null;
     }
 
     /**
