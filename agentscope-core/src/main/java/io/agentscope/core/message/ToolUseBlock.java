@@ -17,9 +17,11 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents a tool use request within a message.
@@ -33,7 +35,7 @@ import java.util.Map;
  */
 public final class ToolUseBlock extends ContentBlock {
 
-    /** Metadata key for Gemini thought signature (byte[] value). */
+    /** Metadata key for provider thought signatures (String value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
     private final String id;
@@ -114,8 +116,26 @@ public final class ToolUseBlock extends ContentBlock {
         this.metadata =
                 metadata == null
                         ? Collections.emptyMap()
-                        : Collections.unmodifiableMap(new HashMap<>(metadata));
+                        : Collections.unmodifiableMap(normalizeMetadata(metadata));
         this.state = state != null ? state : ToolCallState.PENDING;
+    }
+
+    /**
+     * Normalizes metadata values to ensure stable {@link #equals(Object)} and {@link #hashCode()}
+     * across serialization round-trips.
+     *
+     * <p>Specifically, a {@code byte[]} stored under {@link #METADATA_THOUGHT_SIGNATURE} is
+     * converted to a Base64-encoded {@code String}, because {@code byte[]} relies on identity
+     * equality and would otherwise cause two semantically equal blocks to hash differently after
+     * deserialization.
+     */
+    private static Map<String, Object> normalizeMetadata(Map<String, Object> metadata) {
+        Map<String, Object> copy = new HashMap<>(metadata);
+        Object signature = copy.get(METADATA_THOUGHT_SIGNATURE);
+        if (signature instanceof byte[] bytes) {
+            copy.put(METADATA_THOUGHT_SIGNATURE, Base64.getEncoder().encodeToString(bytes));
+        }
+        return copy;
     }
 
     /**
@@ -157,7 +177,7 @@ public final class ToolUseBlock extends ContentBlock {
     /**
      * Gets the provider-specific metadata.
      *
-     * <p>For Gemini, this may contain the thought signature under the key
+     * <p>For Gemini, this may contain a Base64-encoded thought signature under the key
      * {@link #METADATA_THOUGHT_SIGNATURE}.
      *
      * @return The metadata map, or an empty map if not set
@@ -183,6 +203,29 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock withState(ToolCallState state) {
         return new ToolUseBlock(this.id, this.name, this.input, this.content, this.metadata, state);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolUseBlock)) {
+            return false;
+        }
+        ToolUseBlock that = (ToolUseBlock) o;
+        return Objects.equals(this.id, that.id)
+                && Objects.equals(this.name, that.name)
+                && Objects.equals(this.input, that.input)
+                && Objects.equals(this.content, that.content)
+                && Objects.equals(this.metadata, that.metadata)
+                && Objects.equals(this.state, that.state);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                this.id, this.name, this.input, this.content, this.metadata, this.state);
     }
 
     /**
@@ -253,7 +296,7 @@ public final class ToolUseBlock extends ContentBlock {
          * Sets the provider-specific metadata.
          *
          * <p>For Gemini, use {@link ToolUseBlock#METADATA_THOUGHT_SIGNATURE} as the key
-         * to store thought signatures.
+         * to store Base64-encoded thought signatures.
          *
          * @param metadata The metadata map
          * @return This builder for chaining

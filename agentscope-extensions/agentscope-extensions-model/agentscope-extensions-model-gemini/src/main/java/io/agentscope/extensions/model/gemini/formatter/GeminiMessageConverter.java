@@ -124,13 +124,22 @@ public class GeminiMessageConverter {
                     // Build Part with FunctionCall and optional thought signature
                     Part.Builder partBuilder = Part.builder().functionCall(functionCall);
 
-                    // Check for thought signature in metadata
+                    // Check for thought signature in metadata (always stored as Base64 String,
+                    // see ToolUseBlock#normalizeMetadata)
                     Map<String, Object> metadata = tub.getMetadata();
                     if (metadata != null
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
+                        if (signature instanceof String encodedSignature
+                                && !encodedSignature.isEmpty()) {
+                            try {
+                                partBuilder.thoughtSignature(
+                                        Base64.getDecoder().decode(encodedSignature));
+                            } catch (IllegalArgumentException e) {
+                                log.warn(
+                                        "Invalid Base64 thought signature in ToolUseBlock metadata,"
+                                                + " skipping");
+                            }
                         }
                     }
 

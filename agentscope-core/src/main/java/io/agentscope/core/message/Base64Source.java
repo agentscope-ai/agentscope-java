@@ -75,6 +75,24 @@ public class Base64Source extends Source {
         return data;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Base64Source)) {
+            return false;
+        }
+        Base64Source that = (Base64Source) o;
+        return Objects.equals(this.mediaType, that.mediaType)
+                && Objects.equals(this.data, that.data);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.mediaType, this.data);
+    }
+
     /**
      * Creates a new builder for constructing Base64Source instances.
      *

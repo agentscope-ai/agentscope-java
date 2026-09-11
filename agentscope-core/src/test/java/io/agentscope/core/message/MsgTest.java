@@ -16,9 +16,11 @@
 package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -204,5 +206,168 @@ class MsgTest {
         assertEquals("Hello World", msg.getTextContent());
         assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
         assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
+
+    @Test
+    void testContentBlocksEqualsAndHashCodeUseValues() {
+        assertValueEquality(
+                TextBlock.builder().text("hello").build(),
+                TextBlock.builder().text("hello").build(),
+                TextBlock.builder().text("different").build());
+
+        assertValueEquality(
+                URLSource.builder().url("https://example.com/image.png").build(),
+                URLSource.builder().url("https://example.com/image.png").build(),
+                URLSource.builder().url("https://example.com/other.png").build());
+
+        assertValueEquality(
+                Base64Source.builder().mediaType("image/png").data("abc").build(),
+                Base64Source.builder().mediaType("image/png").data("abc").build(),
+                Base64Source.builder().mediaType("image/png").data("def").build());
+
+        assertValueEquality(
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .minPixels(128)
+                        .maxPixels(512)
+                        .build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .minPixels(128)
+                        .maxPixels(512)
+                        .build(),
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
+                        .minPixels(128)
+                        .maxPixels(1024)
+                        .build());
+
+        assertValueEquality(
+                AudioBlock.builder()
+                        .source(Base64Source.builder().mediaType("audio/mp3").data("abc").build())
+                        .build(),
+                AudioBlock.builder()
+                        .source(Base64Source.builder().mediaType("audio/mp3").data("abc").build())
+                        .build(),
+                AudioBlock.builder()
+                        .source(Base64Source.builder().mediaType("audio/mp3").data("def").build())
+                        .build());
+
+        assertValueEquality(
+                VideoBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/video.mp4").build())
+                        .fps(2.0f)
+                        .maxFrames(12)
+                        .minPixels(128)
+                        .maxPixels(512)
+                        .totalPixels(2048)
+                        .build(),
+                VideoBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/video.mp4").build())
+                        .fps(2.0f)
+                        .maxFrames(12)
+                        .minPixels(128)
+                        .maxPixels(512)
+                        .totalPixels(2048)
+                        .build(),
+                VideoBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/video.mp4").build())
+                        .fps(2.0f)
+                        .maxFrames(12)
+                        .minPixels(128)
+                        .maxPixels(512)
+                        .totalPixels(4096)
+                        .build());
+
+        assertValueEquality(
+                ThinkingBlock.builder().thinking("thinking").metadata(Map.of("k", "v")).build(),
+                ThinkingBlock.builder().thinking("thinking").metadata(Map.of("k", "v")).build(),
+                ThinkingBlock.builder()
+                        .thinking("thinking")
+                        .metadata(Map.of("k", "different"))
+                        .build());
+
+        assertValueEquality(
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .content("{\"query\":\"agent\"}")
+                        .metadata(Map.of("signature", "sig-1"))
+                        .build(),
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .content("{\"query\":\"agent\"}")
+                        .metadata(Map.of("signature", "sig-1"))
+                        .build(),
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("search")
+                        .input(Map.of("query", "agent"))
+                        .content("{\"query\":\"agent\"}")
+                        .metadata(Map.of("signature", "sig-2"))
+                        .build());
+
+        assertValueEquality(
+                ToolResultBlock.of(
+                        "call-1",
+                        "search",
+                        List.of(TextBlock.builder().text("result").build()),
+                        Map.of("status", "ok")),
+                ToolResultBlock.of(
+                        "call-1",
+                        "search",
+                        List.of(TextBlock.builder().text("result").build()),
+                        Map.of("status", "ok")),
+                ToolResultBlock.of(
+                        "call-1",
+                        "search",
+                        List.of(TextBlock.builder().text("result").build()),
+                        Map.of("status", "different")));
+    }
+
+    @Test
+    void testMsgEqualsAndHashCodeUseValues() {
+        Msg first =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("hello").build())
+                        .metadata(Map.of("k", "v"))
+                        .timestamp("2026-05-13 11:00:00.000")
+                        .build();
+        Msg second =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("hello").build())
+                        .metadata(Map.of("k", "v"))
+                        .timestamp("2026-05-13 11:00:00.000")
+                        .build();
+        Msg different =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("hello").build())
+                        .metadata(Map.of("k", "v"))
+                        .timestamp("2026-05-13 11:00:01.000")
+                        .build();
+
+        assertValueEquality(first, second, different);
+    }
+
+    private void assertValueEquality(Object first, Object second, Object different) {
+        assertEquals(first, first);
+        assertNotEquals(first, null);
+        assertNotEquals(first, "other");
+        assertEquals(first, second);
+        assertEquals(second, first);
+        assertEquals(first.hashCode(), second.hashCode());
+        assertNotEquals(first, different);
     }
 }

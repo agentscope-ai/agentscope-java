@@ -18,6 +18,7 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents video content in a message.
@@ -133,6 +134,34 @@ public final class VideoBlock extends ContentBlock {
      */
     public Integer getTotalPixels() {
         return totalPixels;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof VideoBlock)) {
+            return false;
+        }
+        VideoBlock that = (VideoBlock) o;
+        return Objects.equals(this.source, that.source)
+                && Objects.equals(this.fps, that.fps)
+                && Objects.equals(this.maxFrames, that.maxFrames)
+                && Objects.equals(this.minPixels, that.minPixels)
+                && Objects.equals(this.maxPixels, that.maxPixels)
+                && Objects.equals(this.totalPixels, that.totalPixels);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                this.source,
+                this.fps,
+                this.maxFrames,
+                this.minPixels,
+                this.maxPixels,
+                this.totalPixels);
     }
 
     /**

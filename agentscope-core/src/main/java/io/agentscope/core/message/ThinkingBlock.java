@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents reasoning or thinking content in a message.
@@ -79,6 +80,24 @@ public final class ThinkingBlock extends ContentBlock {
      */
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ThinkingBlock)) {
+            return false;
+        }
+        ThinkingBlock that = (ThinkingBlock) o;
+        return Objects.equals(this.thinking, that.thinking)
+                && Objects.equals(this.metadata, that.metadata);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.thinking, this.metadata);
     }
 
     /**
