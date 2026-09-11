@@ -284,6 +284,7 @@
                     "pages": [
                       "v2/en/integration/distributed/index",
                       "v2/en/integration/distributed/mysql",
+                      "v2/en/integration/distributed/mongodb",
                       "v2/en/integration/distributed/oss",
                       "v2/en/integration/distributed/redis"
                     ]
@@ -706,6 +707,7 @@
                     "pages": [
                       "v2/zh/integration/distributed/index",
                       "v2/zh/integration/distributed/mysql",
+                      "v2/zh/integration/distributed/mongodb",
                       "v2/zh/integration/distributed/oss",
                       "v2/zh/integration/distributed/redis"
                     ]
