@@ -25,6 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -162,8 +163,18 @@ public class SessionTranscriptWriter {
     /**
      * Resolves the workspace-relative path of the session context JSONL (for compaction
      * summary references).
+     *
+     * <p>Returns an empty string for sandbox-backed filesystems: session archives live in the
+     * host-side workspace, which a sandboxed agent cannot resolve, so the path must not be
+     * advertised as agent-readable in the summary prompt. This mirrors the guard in {@link
+     * io.agentscope.harness.agent.memory.MemoryFlushManager#resolveOffloadPath}.
      */
     public String resolveContextPath(RuntimeContext rc, String agentId, String sessionId) {
+        // Session archives are persisted in the host-side workspace. A sandboxed agent cannot
+        // resolve that path, so do not advertise it as agent-readable in the summary prompt.
+        if (workspaceManager.getFilesystem() instanceof AbstractSandboxFilesystem) {
+            return "";
+        }
         try {
             Path file = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
             Path ws = workspaceManager.getWorkspace();

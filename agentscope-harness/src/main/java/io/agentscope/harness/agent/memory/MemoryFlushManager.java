@@ -24,6 +24,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -192,6 +193,11 @@ public class MemoryFlushManager {
      */
     @Deprecated
     public String resolveOffloadPath(RuntimeContext rc, String agentId, String sessionId) {
+        // Session archives are persisted in the host-side workspace. A sandboxed agent cannot
+        // resolve that path, so do not advertise it as agent-readable in the summary prompt.
+        if (workspaceManager.getFilesystem() instanceof AbstractSandboxFilesystem) {
+            return "";
+        }
         return new SessionTranscriptWriter(workspaceManager)
                 .resolveContextPath(rc, agentId, sessionId);
     }
