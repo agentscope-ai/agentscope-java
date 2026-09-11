@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
@@ -26,6 +27,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAITool;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolFunction;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -143,7 +145,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         ResponseFormat responseFormat =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getResponseFormat);
         if (responseFormat != null) {
-            request.setResponseFormat(responseFormat);
+            request.setResponseFormat(normalizeStrictResponseFormat(responseFormat));
         }
 
         // Apply additional body params (must be last to allow overriding)
@@ -276,7 +278,8 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                         }
 
                         if (value instanceof ResponseFormat responseFormat) {
-                            request.setResponseFormat(responseFormat);
+                            request.setResponseFormat(
+                                    normalizeStrictResponseFormat(responseFormat));
                         }
 
                         break;
@@ -289,5 +292,63 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             }
             log.debug("Applied {} additional body params to OpenAI request", params.size());
         }
+    }
+
+    /**
+     * Normalize a strict JSON Schema for OpenAI Structured Outputs.
+     *
+     * <p>OpenAI requires every object schema to disable additional properties and list every
+     * declared property as required when strict mode is enabled. The schema is copied recursively
+     * so callers' maps are never mutated.
+     */
+    private ResponseFormat normalizeStrictResponseFormat(ResponseFormat responseFormat) {
+        JsonSchema jsonSchema = responseFormat.getJsonSchema();
+        if (!"json_schema".equals(responseFormat.getType())
+                || jsonSchema == null
+                || !Boolean.TRUE.equals(jsonSchema.getStrict())
+                || jsonSchema.getSchema() == null) {
+            return responseFormat;
+        }
+
+        JsonSchema normalizedSchema =
+                JsonSchema.builder()
+                        .name(jsonSchema.getName())
+                        .description(jsonSchema.getDescription())
+                        .schema(normalizeSchemaMap(jsonSchema.getSchema()))
+                        .strict(true)
+                        .build();
+        return ResponseFormat.jsonSchema(normalizedSchema);
+    }
+
+    private Map<String, Object> normalizeSchemaMap(Map<?, ?> schema) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        schema.forEach(
+                (key, value) -> normalized.put(String.valueOf(key), normalizeSchemaValue(value)));
+
+        if (isObjectSchema(normalized)) {
+            normalized.put("additionalProperties", false);
+            if (normalized.get("properties") instanceof Map<?, ?> properties) {
+                List<String> required = properties.keySet().stream().map(String::valueOf).toList();
+                normalized.put("required", required);
+            }
+        }
+        return normalized;
+    }
+
+    private Object normalizeSchemaValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return normalizeSchemaMap(map);
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(this::normalizeSchemaValue).toList();
+        }
+        return value;
+    }
+
+    private boolean isObjectSchema(Map<String, Object> schema) {
+        Object type = schema.get("type");
+        return "object".equals(type)
+                || (type instanceof List<?> types && types.contains("object"))
+                || schema.get("properties") instanceof Map<?, ?>;
     }
 }
