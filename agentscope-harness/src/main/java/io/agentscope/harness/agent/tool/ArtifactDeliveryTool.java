@@ -53,8 +53,8 @@ public class ArtifactDeliveryTool {
         this.target = target;
     }
 
-    private String norm(String path) {
-        return pathNormalizer != null ? pathNormalizer.normalize(path) : path;
+    private String norm(String path, RuntimeContext runtimeContext) {
+        return pathNormalizer != null ? pathNormalizer.normalize(path, runtimeContext) : path;
     }
 
     /**
@@ -111,7 +111,7 @@ public class ArtifactDeliveryTool {
         if (filePath == null || filePath.isBlank()) {
             return "Error: filePath must not be blank";
         }
-        String normalized = norm(filePath);
+        String normalized = norm(filePath, runtimeContext);
         String effectiveFileName =
                 fileName == null || fileName.isBlank() ? basename(normalized) : fileName;
         if (effectiveFileName.isBlank()) {

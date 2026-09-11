@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.workspace;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,9 +34,11 @@ import java.util.List;
 public final class WorkspacePathNormalizer {
 
     private final List<String> prefixes;
+    private final NamespaceFactory namespaceFactory;
 
-    private WorkspacePathNormalizer(List<String> prefixes) {
+    private WorkspacePathNormalizer(List<String> prefixes, NamespaceFactory namespaceFactory) {
         this.prefixes = List.copyOf(prefixes);
+        this.namespaceFactory = namespaceFactory;
     }
 
     /**
@@ -49,7 +53,7 @@ public final class WorkspacePathNormalizer {
         if (trimmed != null && !trimmed.isEmpty()) {
             list.add(trimmed);
         }
-        return new WorkspacePathNormalizer(list);
+        return new WorkspacePathNormalizer(list, null);
     }
 
     /**
@@ -65,7 +69,25 @@ public final class WorkspacePathNormalizer {
                 list.add(trimmed);
             }
         }
-        return new WorkspacePathNormalizer(list);
+        return new WorkspacePathNormalizer(list, null);
+    }
+
+    /**
+     * Creates a normalizer that also strips the runtime namespace beneath the workspace prefix.
+     * This is needed when a prompt advertises a session-scoped absolute path while the filesystem
+     * applies the same namespace to relative paths at operation time.
+     *
+     * @param workspacePrefix the unscoped workspace root
+     * @param namespaceFactory factory for the current runtime namespace
+     */
+    public static WorkspacePathNormalizer of(
+            String workspacePrefix, NamespaceFactory namespaceFactory) {
+        List<String> list = new ArrayList<>(1);
+        String trimmed = trimTrailingSlash(workspacePrefix);
+        if (trimmed != null && !trimmed.isEmpty()) {
+            list.add(trimmed);
+        }
+        return new WorkspacePathNormalizer(list, namespaceFactory);
     }
 
     /**
@@ -75,8 +97,37 @@ public final class WorkspacePathNormalizer {
      * @return workspace-relative path, or the original path if no registered prefix matched
      */
     public String normalize(String path) {
+        return normalize(path, RuntimeContext.empty());
+    }
+
+    /**
+     * Normalizes a path using the namespace for the supplied runtime context.
+     *
+     * <p>Namespaced workspace prefixes are checked before the unscoped prefix, so an absolute path
+     * such as {@code /workspace/session-1/file.txt} becomes {@code file.txt} rather than
+     * {@code session-1/file.txt} when the active namespace is {@code session-1}.
+     *
+     * @param path the raw path (absolute or relative)
+     * @param runtimeContext current operation context
+     * @return workspace-relative path, or the original path if no registered prefix matched
+     */
+    public String normalize(String path, RuntimeContext runtimeContext) {
         if (path == null || path.isBlank()) {
             return path;
+        }
+        if (namespaceFactory != null) {
+            List<String> namespace =
+                    namespaceFactory.getNamespace(
+                            runtimeContext != null ? runtimeContext : RuntimeContext.empty());
+            if (namespace != null && !namespace.isEmpty()) {
+                String namespacePrefix = String.join("/", namespace);
+                for (String prefix : prefixes) {
+                    String stripped = tryStrip(path, prefix + "/" + namespacePrefix);
+                    if (stripped != null) {
+                        return stripped;
+                    }
+                }
+            }
         }
         for (String prefix : prefixes) {
             String stripped = tryStrip(path, prefix);

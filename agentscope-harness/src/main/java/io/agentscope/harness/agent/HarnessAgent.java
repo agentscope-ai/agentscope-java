@@ -2658,7 +2658,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 // would produce relative paths whose lower-layer virtual entries (/src/...)
                 // then fail in the upper layer's ROOTED check.
                 pathNormalizer =
-                        WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
+                        WorkspacePathNormalizer.of(
+                                resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
             } else if (filesystem instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
