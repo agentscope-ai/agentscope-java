@@ -205,17 +205,82 @@ class JsonSchemaUtilsTest {
     }
 
     @Test
+    void testGenerateSchemaFromClassNestedMutationDoesNotAffectLaterCalls() {
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstProperties = (Map<String, Object>) first.get("properties");
+        assertNotNull(firstProperties);
+
+        // Real callers mutate below the top level: ToolSchemaGenerator hoists "$defs" out of
+        // nested schemas and ReActAgent rewrites nested properties in place. A later call must
+        // still observe the pristine schema, which is exactly the deep-copy invariant the cache
+        // relies on.
+        assertNotNull(firstProperties.remove("tags"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstAuthor = (Map<String, Object>) firstProperties.get("author");
+        assertNotNull(firstAuthor);
+        firstAuthor.put("description", "mutated");
+
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondProperties = (Map<String, Object>) second.get("properties");
+        assertNotNull(secondProperties);
+        assertTrue(secondProperties.containsKey("tags"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondAuthor = (Map<String, Object>) secondProperties.get("author");
+        assertNotNull(secondAuthor);
+        assertFalse(secondAuthor.containsKey("description"));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeNestedMutationDoesNotAffectLaterCalls() {
+        Type listType = new TypeReference<List<SimpleModel>>() {}.getType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstItems = (Map<String, Object>) first.get("items");
+        assertNotNull(firstItems);
+        firstItems.put("description", "mutated");
+
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(listType);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondItems = (Map<String, Object>) second.get("items");
+        assertNotNull(secondItems);
+        assertFalse(secondItems.containsKey("description"));
+    }
+
+    @Test
     void testGenerateSchemaFromClassNullThrows() {
-        // Caching routes a null class through ConcurrentHashMap#computeIfAbsent, which rejects
-        // null keys; the resulting NPE must match the pre-cache behavior for a null argument.
+        // Caching routes a null class through ClassValue#get, which rejects null keys; the
+        // resulting NPE must match the pre-cache behavior for a null argument.
         assertThrows(
                 NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromClass(null));
     }
 
     @Test
     void testGenerateSchemaFromTypeNullThrows() {
+        // A null type has no raw class to cache under, so the NPE surfaces from the raw-class
+        // lookup, matching the pre-cache behavior for a null argument.
         assertThrows(
                 NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromType(null));
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeVariableStillGenerates() {
+        // A type variable has no raw class to hang an entry on, so it is generated without
+        // caching; that fallback must still yield a usable scheme.
+        Type typeVariable = List.class.getTypeParameters()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertNotNull(first);
+        assertEquals(first, second);
     }
 
     static class ConcurrentClassA {
