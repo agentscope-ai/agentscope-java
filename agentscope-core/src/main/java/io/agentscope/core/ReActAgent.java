@@ -1598,6 +1598,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // Preserve the source message's identity fields, consistent with the other
             // message-rebuild paths (wrapNativeStructuredResult, markRetryResidue): a fresh
             // builder synthesizes a new id/timestamp and drops the usage field.
+            // Note: on this path mergeCollectedMetadata later overwrites the usage field with
+            // the call's aggregated value; the copy here is defensive, keeping the
+            // intermediate rebuild consistent with the other paths.
             return Msg.builderForRole(responseMsg.getRole())
                     .id(responseMsg.getId())
                     .name(responseMsg.getName())

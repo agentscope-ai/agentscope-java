@@ -269,6 +269,18 @@ class ReActAgentStructuredOutputTest {
                 "extracted result must preserve the tool-built message timestamp");
         // Note: the final message's usage field is owned by mergeCollectedMetadata
         // (aggregated across model calls), so it is intentionally not asserted here.
+        // Pin the id-propagation contract: the source response_msg only ever lived inside
+        // the tool result's metadata (never as a standalone context message), so the
+        // preserved id must appear exactly once in the final conversation state.
+        List<Msg> contextMsgs = agent.getAgentState().getContext();
+        assertEquals(
+                1,
+                contextMsgs.stream().filter(m -> original.getId().equals(m.getId())).count(),
+                "preserved id must appear exactly once in the conversation context");
+        assertEquals(
+                contextMsgs.size(),
+                contextMsgs.stream().map(Msg::getId).distinct().count(),
+                "conversation context must not contain duplicate message ids");
     }
 
     @Test
