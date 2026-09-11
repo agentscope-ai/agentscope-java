@@ -68,6 +68,7 @@ import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -247,6 +248,31 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("web_search"));
         assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
+    void webHttpClient_injectsCustomClient() throws Exception {
+        Files.createDirectories(workspace);
+        HttpClient custom =
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(custom)
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("web_search"));
+        assertTrue(toolNames.contains("web_fetch"));
     }
 
     @Test
