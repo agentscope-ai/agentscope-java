@@ -26,7 +26,6 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -68,9 +67,8 @@ public class LocalFilesystemSpec {
      * this directory and copies-on-write into the agent {@code workspace} when modified. Also
      * the shell {@code pwd} for {@code execute()} so command output matches user expectation.
      *
-     * <p>{@code null} until {@link #project(Path)} is called; defaults to
-     * {@link System#getProperty(String) System.getProperty("user.dir")} at
-     * {@link #toFilesystem} time.
+     * <p>{@code null} until {@link #project(Path)} is called; defaults to the agent
+     * {@code workspace} at {@link #toFilesystem} time.
      */
     private Path project;
 
@@ -249,7 +247,7 @@ public class LocalFilesystemSpec {
      * etc. fall back to this directory when the agent {@code workspace} does not contain them;
      * shell {@code execute()} runs with {@code pwd} set to this directory.
      *
-     * <p>Defaults to {@code System.getProperty("user.dir")} when not set.
+     * <p>Defaults to the agent {@code workspace} when not set.
      *
      * @param project project root path
      * @return this spec
@@ -270,7 +268,7 @@ public class LocalFilesystemSpec {
      * @param localNamespaceFactory optional namespace factory for per-user/session folder scoping
      * @return an {@link OverlayFilesystem} wired with the options in this spec
      */
-    /** Project root explicitly configured, or {@code null} to fall back to {@code ${user.dir}}. */
+    /** Project root explicitly configured, or {@code null} to fall back to workspace. */
     public Path getProject() {
         return project;
     }
@@ -286,8 +284,7 @@ public class LocalFilesystemSpec {
     }
 
     public AbstractFilesystem toFilesystem(Path workspace, NamespaceFactory localNamespaceFactory) {
-        Path effectiveProject =
-                project != null ? project : Paths.get(System.getProperty("user.dir"));
+        Path effectiveProject = project != null ? project : workspace;
         List<Path> policyRoots = new ArrayList<>();
         policyRoots.add(effectiveProject);
         policyRoots.add(workspace);
