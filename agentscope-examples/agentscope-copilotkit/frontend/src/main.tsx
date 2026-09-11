@@ -15,7 +15,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       debug={true}
       useSingleEndpoint={false}
       agent={WORKBENCH_AGENT_ID}
-      enableInspector={false}
+      enableInspector={import.meta.env.DEV}
       headers={{}}
       // Passing a catalog is what activates the A2UI renderer against a self-hosted AG-UI
       // backend: CopilotKit normally learns about A2UI from a CopilotRuntime /info response,

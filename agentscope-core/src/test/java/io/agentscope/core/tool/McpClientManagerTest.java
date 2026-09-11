@@ -19,8 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -412,5 +415,40 @@ class McpClientManagerTest {
         assertEquals("mcp-group", registeredGroupName[0]);
         assertEquals("test-client", registeredClientName[0]);
         assertEquals(toolPresetParams, registeredPresetParams[0]);
+    }
+
+    @Test
+    void testRegisterMcpClient_PropagatesInitializationFailure() {
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        IllegalStateException failure = new IllegalStateException("initialize failure");
+        when(clientWrapper.getName()).thenReturn("broken-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.error(failure));
+
+        IllegalStateException thrown =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> manager.registerMcpClient(clientWrapper).block());
+
+        assertSame(failure, thrown);
+        verify(clientWrapper).initialize();
+        verify(clientWrapper, never()).listTools();
+    }
+
+    @Test
+    void testRegisterMcpClient_PropagatesListToolsFailure() {
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        IllegalStateException failure = new IllegalStateException("list tools failure");
+        when(clientWrapper.getName()).thenReturn("broken-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+        when(clientWrapper.listTools()).thenReturn(Mono.error(failure));
+
+        IllegalStateException thrown =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> manager.registerMcpClient(clientWrapper).block());
+
+        assertSame(failure, thrown);
+        verify(clientWrapper).initialize();
+        verify(clientWrapper).listTools();
     }
 }

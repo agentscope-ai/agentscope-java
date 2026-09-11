@@ -84,7 +84,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 
@@ -121,7 +121,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 
@@ -163,7 +163,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 
@@ -205,7 +205,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 
@@ -248,7 +248,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 
@@ -291,7 +291,7 @@ class OpenAITextEmbeddingEmbedTest {
             EmbeddingService mockEmbeddings = mock(EmbeddingService.class);
 
             when(mockBuilder.build()).thenReturn(mockOpenAIClient);
-            when(mockBuilder.apiKey(any())).thenReturn(mockBuilder);
+            when(mockBuilder.apiKey(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenReturn(mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenReturn(mockBuilder);
 

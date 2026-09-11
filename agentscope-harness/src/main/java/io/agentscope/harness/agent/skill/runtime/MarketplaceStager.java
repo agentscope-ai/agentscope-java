@@ -19,12 +19,19 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.EnumSet;
@@ -54,6 +61,14 @@ import org.slf4j.LoggerFactory;
  * directories that should remain under {@code .skills-cache}, materialises any files whose
  * SHA-256 has changed, and deletes orphan directories not present in the white-list.
  *
+ * <p><b>The cache is shared.</b> One stager instance serves every concurrent call against a
+ * workspace root, and on a shared volume other replicas write into the same tree. A white-list
+ * built from one call's visible skills therefore says nothing about what other in-flight calls
+ * still need: with per-user skill visibility, call B's "orphan" is call A's live
+ * {@code filesRoot}. Orphan GC is consequently gated on {@link #DEFAULT_ORPHAN_GRACE} — a
+ * directory is deleted only after sitting untouched for that long, and every retained directory
+ * is touched on each pass — and every traversal tolerates entries deleted underneath it.
+ *
  * <p>Workspace-native skills (those produced by {@link WorkspaceSkillRepository}) are NOT
  * staged: they already live under {@code <wsRoot>/skills/} (or are produced lazily from the
  * sandbox-backed filesystem) and projection covers them through the regular {@code skills}
@@ -67,10 +82,32 @@ public final class MarketplaceStager {
     public static final String CACHE_DIR = ".skills-cache";
     public static final String GLOBAL_NAMESPACE = "_global";
 
+    /**
+     * How long an orphan must sit untouched before it may be deleted. The window has to outlast
+     * the longest call that could still shell out to a staged script, because a staged path is
+     * handed to the model in the system prompt and used much later in the call. Leaving a stale
+     * directory costs a few KB; deleting a live one breaks another user's call, so the default
+     * errs long.
+     */
+    public static final Duration DEFAULT_ORPHAN_GRACE = Duration.ofMinutes(30);
+
+    /** Segment used when the caller has no isolation identity to key on. */
+    public static final String SHARED_SCOPE = "_shared";
+
     private final Path workspaceRoot;
+    private final Duration orphanGrace;
 
     public MarketplaceStager(Path workspaceRoot) {
+        this(workspaceRoot, DEFAULT_ORPHAN_GRACE);
+    }
+
+    /** Overload for callers (and tests) that need a non-default orphan grace window. */
+    public MarketplaceStager(Path workspaceRoot, Duration orphanGrace) {
         this.workspaceRoot = workspaceRoot;
+        this.orphanGrace =
+                orphanGrace != null && !orphanGrace.isNegative()
+                        ? orphanGrace
+                        : DEFAULT_ORPHAN_GRACE;
     }
 
     /**
@@ -93,6 +130,22 @@ public final class MarketplaceStager {
      */
     public Map<String, StageResult> stage(
             List<RepoBound> visible, Map<AgentSkillRepository, String> sourceNs) {
+        // null means "no identity to key on", which is distinct from an identity that
+        // happens to be spelled like the shared bucket.
+        return stage(visible, sourceNs, null);
+    }
+
+    /**
+     * Stages into this call's isolation scope. Every directory GC may remove lives under
+     * {@code .skills-cache/<scope>/}, and only calls that share a scope share that subtree —
+     * so a white-list built from one call's visible skills is authoritative for everything it
+     * can reach, which is the property the flat layout never had.
+     *
+     * @param scope per-call isolation key (typically {@code userId} or {@code sessionId});
+     *     blank collapses to {@value #SHARED_SCOPE}
+     */
+    public Map<String, StageResult> stage(
+            List<RepoBound> visible, Map<AgentSkillRepository, String> sourceNs, String scope) {
         Map<String, StageResult> roots = new HashMap<>(visible.size());
         if (workspaceRoot == null) {
             // No host workspace available (rare; e.g. classpath-only build). Skip staging
@@ -108,9 +161,57 @@ public final class MarketplaceStager {
             return roots;
         }
 
-        Path cacheRoot = workspaceRoot.resolve(CACHE_DIR);
+        Path scopeRoot = workspaceRoot.resolve(CACHE_DIR).resolve(scopeSegment(scope));
         Set<Path> retained = new HashSet<>();
 
+        stageAll(visible, sourceNs, scopeRoot, retained, roots);
+
+        try {
+            garbageCollectOrphans(scopeRoot, retained);
+        } catch (Exception e) {
+            // Cache hygiene is best-effort and must never fail the agent call — the same
+            // fallback the per-skill materialisation applies.
+            log.warn("Orphan GC under {} skipped: {}", scopeRoot, e.getMessage());
+        }
+        return roots;
+    }
+
+    /** Blank scopes collapse to one shared segment so GC always has exactly one subtree. */
+    private static final int MAX_SCOPE_SEGMENT = 64;
+
+    /**
+     * Maps a caller-supplied identity to one path segment, injectively. Sanitising alone would
+     * not do: {@code alice@corp.com} and {@code alice#corp.com} both flatten to
+     * {@code alice_corp.com}, and two identities sharing a subtree is exactly what the scope
+     * exists to prevent. Anything that is not already a distinct, filesystem-safe segment keeps
+     * a readable prefix and is disambiguated by a digest of the original.
+     */
+    private static String scopeSegment(String scope) {
+        if (scope == null || scope.isBlank()) {
+            return SHARED_SCOPE;
+        }
+        String safe = scope.replaceAll("[^A-Za-z0-9._-]", "_");
+        boolean lossless =
+                safe.equals(scope)
+                        && !safe.equals(SHARED_SCOPE)
+                        && safe.length() <= MAX_SCOPE_SEGMENT
+                        // Windows rejects a trailing dot or space in a path component.
+                        && !safe.endsWith(".");
+        if (lossless) {
+            return safe;
+        }
+        String digest = sha256(scope.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
+        int keep = Math.min(safe.length(), MAX_SCOPE_SEGMENT - digest.length() - 1);
+        return safe.substring(0, Math.max(keep, 0)) + "-" + digest;
+    }
+
+    /** Materialises every eligible input under this call's scope subtree. */
+    private void stageAll(
+            List<RepoBound> visible,
+            Map<AgentSkillRepository, String> sourceNs,
+            Path scopeRoot,
+            Set<Path> retained,
+            Map<String, StageResult> roots) {
         for (RepoBound bound : visible) {
             AgentSkill skill = bound.skill();
             String name = skill.getName();
@@ -132,19 +233,20 @@ public final class MarketplaceStager {
                 }
             }
 
-            Path stagedDir = cacheRoot.resolve(ns).resolve(name);
+            Path stagedDir = scopeRoot.resolve(ns).resolve(name);
             try {
                 materializeIfChanged(stagedDir, skill.getResources());
+                // Mark as live before GC runs: this is what stops a concurrent call — or
+                // another replica sharing the volume — from treating it as an orphan.
+                touch(stagedDir);
                 retained.add(stagedDir);
-                roots.put(name, new StageResult.Cached(ns, name));
+                roots.put(
+                        name, new StageResult.Cached(scopeRoot.getFileName().toString(), ns, name));
             } catch (Exception e) {
                 log.warn("Failed to stage skill '{}' (source-ns={}): {}", name, ns, e.getMessage());
                 roots.put(name, StageResult.NONE);
             }
         }
-
-        garbageCollectOrphans(cacheRoot, retained);
-        return roots;
     }
 
     /** Convenience for callers that don't care about return values. */
@@ -153,12 +255,13 @@ public final class MarketplaceStager {
             return;
         }
         Path cacheRoot = workspaceRoot.resolve(CACHE_DIR);
-        if (Files.isDirectory(cacheRoot)) {
-            try {
-                deleteRecursively(cacheRoot);
-            } catch (IOException e) {
-                log.warn("Failed to clear {}: {}", cacheRoot, e.getMessage());
-            }
+        if (!Files.isDirectory(cacheRoot)) {
+            return;
+        }
+        try {
+            deleteRecursively(cacheRoot);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to clear {}: {}", cacheRoot, e.getMessage());
         }
     }
 
@@ -273,7 +376,7 @@ public final class MarketplaceStager {
                     .filter(p -> !expected.contains(p.normalize()))
                     .forEach(toDelete::add);
             for (Path p : toDelete) {
-                Files.deleteIfExists(p);
+                deleteQuietly(p);
             }
             // Prune now-empty subdirectories left after file removal.
             try (var dirStream = Files.walk(stagedDir)) {
@@ -287,12 +390,14 @@ public final class MarketplaceStager {
                 for (Path d : dirs) {
                     try (var probe = Files.list(d)) {
                         if (probe.findAny().isEmpty()) {
-                            Files.deleteIfExists(d);
+                            deleteQuietly(d);
                         }
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
+            // Files.walk / Files.list wrap mid-iteration IO errors (an entry deleted by a
+            // concurrent call) in UncheckedIOException, which is NOT an IOException.
             log.debug("Cleanup of {} failed: {}", stagedDir, e.getMessage());
         }
     }
@@ -301,6 +406,9 @@ public final class MarketplaceStager {
         if (!Files.isDirectory(cacheRoot)) {
             return;
         }
+        // `retained` reflects ONE call's visible skills; the cache is shared. Only delete
+        // entries that no call has staged for a full grace window.
+        Instant cutoff = Instant.now().minus(orphanGrace);
         // Two-level layout: <source-ns>/<skill-name>/
         try (var nsStream = Files.list(cacheRoot)) {
             List<Path> nsDirs = new ArrayList<>();
@@ -310,35 +418,83 @@ public final class MarketplaceStager {
                     List<Path> skillDirs = new ArrayList<>();
                     skillStream.filter(Files::isDirectory).forEach(skillDirs::add);
                     for (Path skillDir : skillDirs) {
-                        if (!retained.contains(skillDir)) {
-                            deleteRecursively(skillDir);
+                        if (retained.contains(skillDir) || !isStale(skillDir, cutoff)) {
+                            continue;
                         }
+                        deleteRecursively(skillDir);
                     }
                 }
                 // Clean up empty namespace dir.
                 try (var probe = Files.list(nsDir)) {
                     if (probe.findAny().isEmpty()) {
-                        Files.deleteIfExists(nsDir);
+                        deleteQuietly(nsDir);
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
             log.debug("Orphan GC under {} failed: {}", cacheRoot, e.getMessage());
         }
     }
 
+    /** Refreshes the mtime GC reads, so a live directory is never mistaken for an orphan. */
+    private static void touch(Path dir) {
+        try {
+            Files.setLastModifiedTime(dir, FileTime.from(Instant.now()));
+        } catch (IOException | RuntimeException e) {
+            log.debug("Failed to touch {}: {}", dir, e.getMessage());
+        }
+    }
+
+    /** Unreadable mtime means we cannot prove the entry is dead, so we keep it. */
+    private static boolean isStale(Path dir, Instant cutoff) {
+        try {
+            return Files.getLastModifiedTime(dir).toInstant().isBefore(cutoff);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Cannot read mtime of {}; keeping it: {}", dir, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Delete one entry, tolerating a concurrent call having deleted or replaced it already. */
+    private static void deleteQuietly(Path p) {
+        try {
+            Files.deleteIfExists(p);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Failed to delete {}: {}", p, e.getMessage());
+        }
+    }
+
+    /**
+     * Recursive delete that tolerates the tree changing underneath it. Uses
+     * {@link Files#walkFileTree} rather than {@link Files#walk}: the lazy stream aborts the
+     * whole traversal with an {@link UncheckedIOException} the moment an entry vanishes, while
+     * the visitor reports it through {@code visitFileFailed} and we simply carry on.
+     */
     private void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }
-        try (var stream = Files.walk(root)) {
-            List<Path> all = new ArrayList<>();
-            stream.forEach(all::add);
-            all.sort((a, b) -> b.getNameCount() - a.getNameCount());
-            for (Path p : all) {
-                Files.deleteIfExists(p);
-            }
-        }
+        Files.walkFileTree(
+                root,
+                new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        deleteQuietly(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                        // Gone or unreadable — nothing left for us to remove.
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+                        deleteQuietly(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
     }
 
     private static byte[] decode(String content) {
@@ -430,6 +586,7 @@ public final class MarketplaceStager {
         record WorkspaceNative() implements StageResult {}
 
         /** Skill staged under {@code .skills-cache/<sourceNs>/<skillName>/}. */
-        record Cached(String sourceNamespace, String skillName) implements StageResult {}
+        record Cached(String scopeSegment, String sourceNamespace, String skillName)
+                implements StageResult {}
     }
 }

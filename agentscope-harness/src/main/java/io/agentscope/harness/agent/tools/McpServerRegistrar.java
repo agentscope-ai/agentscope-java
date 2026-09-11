@@ -32,8 +32,8 @@ import org.slf4j.LoggerFactory;
  * to its {@code transport} ({@code stdio} / {@code sse} / {@code http}) and then registered through
  * {@link Toolkit#registration()} so that per-server {@code enableTools} allowlists are honoured.
  *
- * <p>Failures during a single server's setup are caught and logged; remaining servers still
- * register so that one bad entry never aborts the agent's bootstrap.
+ * <p>Required connections abort bootstrap. Optional failures are reported through the configured
+ * callback and do not prevent other connections from registering.
  */
 public final class McpServerRegistrar {
 
@@ -47,6 +47,20 @@ public final class McpServerRegistrar {
      * empty (no-op).
      */
     public static void register(Toolkit toolkit, Map<String, McpServerConfig> servers) {
+        register(toolkit, servers, null);
+    }
+
+    /**
+     * Registers every entry in {@code servers} into {@code toolkit} and reports each terminal
+     * result to {@code listener}. Synchronous: each server is built and registered before the next
+     * is attempted. {@code servers} or {@code listener} may be {@code null}.
+     *
+     * <p>Listener failures are logged and do not affect registration or later entries.
+     */
+    public static void register(
+            Toolkit toolkit,
+            Map<String, McpServerConfig> servers,
+            McpServerRegistrationListener listener) {
         if (toolkit == null || servers == null || servers.isEmpty()) {
             return;
         }
@@ -55,33 +69,108 @@ public final class McpServerRegistrar {
             McpServerConfig cfg = entry.getValue();
             if (name == null || name.isBlank() || cfg == null) {
                 log.warn("Skipping MCP server with blank name or null config.");
+                notifyListener(
+                        listener,
+                        McpServerRegistrationResult.skipped(
+                                name,
+                                cfg != null ? cfg.getTransport() : null,
+                                new IllegalArgumentException(
+                                        "MCP server name must not be blank and config must not be"
+                                                + " null.")));
                 continue;
             }
             try {
                 registerOne(toolkit, name, cfg);
             } catch (Exception e) {
+                notifyListener(
+                        listener, McpServerRegistrationResult.failed(name, cfg.getTransport(), e));
+                McpConnectionException failure = new McpConnectionException(name);
+                if (cfg.isRequired()) {
+                    toolkit.closeMcpClients();
+                    throw failure;
+                }
+                if (cfg.getConnectionFailureHandler() != null)
+                    cfg.getConnectionFailureHandler().accept(failure);
                 log.warn(
                         "Failed to register MCP server '{}' ({}): {}",
                         name,
                         cfg.getTransport(),
-                        e.getMessage());
+                        e.getClass().getSimpleName());
+                continue;
             }
+            notifyListener(listener, McpServerRegistrationResult.success(name, cfg.getTransport()));
+        }
+    }
+
+    private static void notifyListener(
+            McpServerRegistrationListener listener, McpServerRegistrationResult result) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onCompleted(result);
+        } catch (Exception e) {
+            log.warn(
+                    "MCP registration listener failed for server '{}' with status {}.",
+                    result.serverName(),
+                    result.status(),
+                    e);
         }
     }
 
     private static void registerOne(Toolkit toolkit, String name, McpServerConfig cfg) {
-        McpClientWrapper wrapper = buildClient(name, cfg);
-        Toolkit.ToolRegistration reg = toolkit.registration().mcpClient(wrapper);
-        List<String> enableTools = cfg.getEnableTools();
-        if (enableTools != null && !enableTools.isEmpty()) {
-            reg.enableTools(enableTools);
+        registerClient(toolkit, name, cfg, buildClient(name, cfg));
+    }
+
+    static void registerClient(
+            Toolkit toolkit, String name, McpServerConfig cfg, McpClientWrapper wrapper) {
+        try {
+            wrapper.initialize().block();
+            List<String> selected =
+                    wrapper.listTools().block().stream()
+                            .map(tool -> tool.name())
+                            .filter(tool -> isToolEnabled(tool, cfg))
+                            .toList();
+            if (selected.isEmpty()) {
+                wrapper.close();
+                return;
+            }
+            Toolkit.ToolRegistration reg =
+                    toolkit.registration().mcpClient(wrapper).enableTools(selected);
+            if (cfg.isPrefixToolNames()) reg.mcpToolNamePrefix(name + "__");
+            reg.apply();
+        } catch (RuntimeException | Error failure) {
+            closeAfterFailedRegistration(wrapper, failure);
+            throw failure;
         }
-        reg.apply();
+        List<String> enableTools = cfg.getEnableTools();
         log.info(
                 "Registered MCP server '{}' (transport={}, enableTools={}).",
                 name,
                 cfg.getTransport(),
                 enableTools);
+    }
+
+    static boolean isToolEnabled(String tool, McpServerConfig cfg) {
+        if (cfg.getDisableTools() != null && cfg.getDisableTools().contains(tool)) return false;
+        List<String> allow = cfg.getEnableTools();
+        return allow != null && !allow.isEmpty()
+                ? allow.contains(tool)
+                : cfg.isDefaultToolsEnabled();
+    }
+
+    private static void closeAfterFailedRegistration(
+            McpClientWrapper wrapper, Throwable registrationFailure) {
+        if (wrapper == null) {
+            return;
+        }
+        try {
+            wrapper.close();
+        } catch (Throwable closeFailure) {
+            if (closeFailure != registrationFailure) {
+                registrationFailure.addSuppressed(closeFailure);
+            }
+        }
     }
 
     private static McpClientWrapper buildClient(String name, McpServerConfig cfg) {

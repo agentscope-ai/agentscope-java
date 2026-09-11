@@ -1,4 +1,8 @@
-# Routing
+---
+title: Routing
+---
+
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
 In the **router** pattern, a routing step classifies the input and directs it to specialized agents. Zero or more specialists can be invoked (e.g. in parallel), and results are synthesized into a single response. This is useful when you have distinct **verticals**—separate knowledge domains that each have their own agent (e.g. GitHub, Notion, Slack).
 
@@ -107,36 +111,13 @@ The AgentScope example provides two variants: **Simple** (single routing agent +
 
 ## Example project
 
-**Location**: `agentscope-examples/multiagent-patterns/routing/`
-
 - **Simple**: Entry is `RouterService.run(query)`; flow is classify → parallel specialists → (framework merge) → optional RouterService synthesis. Set `routing.runner.enabled=true` to run the Simple demo on startup (see **RoutingRunner**).
 - **Graph**: Entry is `RoutingGraphService.run(query)`; flow is preprocess → routing subgraph → postprocess. Set `routing-graph.runner.enabled=true` to run the Graph demo on startup (see **RoutingGraphRunner**).
-
-**Build and run** (from repo root):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run
-```
-
-**Run Simple demo only**:
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
-  -Dspring-boot.run.arguments="--routing.runner.enabled=true"
-```
-
-**Run Graph demo only**:
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
-  -Dspring-boot.run.arguments="--routing-graph.runner.enabled=true"
-```
 
 **Configuration**: Set `AI_DASHSCOPE_API_KEY` (or `spring.ai.dashscope.api-key`) for DashScope model and specialist calls.
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent composition
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Registering an agent as a tool

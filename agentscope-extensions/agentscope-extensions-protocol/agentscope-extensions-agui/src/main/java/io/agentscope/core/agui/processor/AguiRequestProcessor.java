@@ -18,6 +18,7 @@ package io.agentscope.core.agui.processor;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -107,7 +108,8 @@ public class AguiRequestProcessor {
          * @param threadId The AG-UI thread id for this request
          */
         public void interrupt(String threadId) {
-            if (agent instanceof ReActAgent reActAgent) {
+            ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
+            if (reActAgent != null) {
                 RuntimeContext interruptContext =
                         RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
                 reActAgent.interrupt(interruptContext);
@@ -133,17 +135,19 @@ public class AguiRequestProcessor {
         RunAgentInput input = request.getInput();
         String headerAgentId = request.getHeaderAgentId();
         String pathAgentId = request.getPathAgentId();
-        RuntimeContext runtimeContext =
-                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
-
         String threadId = input.getThreadId();
         String runId = input.getRunId();
+
+        RuntimeContext resolved =
+                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder(resolved).sessionId(threadId).build();
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
 
         // Resolve agent
-        Agent agent = agentResolver.resolveAgent(agentId, threadId);
+        Agent agent = agentResolver.resolveAgent(agentId, threadId, runtimeContext.getUserId());
 
         Flux<AguiEvent> events =
                 Flux.defer(
@@ -161,11 +165,12 @@ public class AguiRequestProcessor {
                             try {
                                 // Determine effective input based on server-side memory
                                 RunAgentInput effectiveInput = input;
-                                if (agentResolver.hasMemory(threadId)) {
+                                if (agentResolver.hasMemory(runtimeContext)) {
                                     logger.debug(
-                                            "Using server-side memory for thread {}, extracting"
-                                                    + " latest user message",
-                                            threadId);
+                                            "Using server-side memory for thread {} user {},"
+                                                    + " extracting follow-up messages",
+                                            threadId,
+                                            runtimeContext.getUserId());
                                     effectiveInput = extractLatestUserMessage(input);
                                 }
 
@@ -285,13 +290,19 @@ public class AguiRequestProcessor {
     }
 
     /**
-     * Extract only the latest user message from the input.
+     * Extract messages that arrived after the last assistant turn.
      *
-     * <p>This is used when server-side memory is enabled and the agent already
-     * has conversation history. Only the latest user message needs to be passed.
+     * <p>When server-side memory is enabled the agent already holds prior turns. CopilotKit (and
+     * similar clients) still send the full transcript, including HITL tool results that follow the
+     * last assistant message. Only those trailing messages should be appended.
+     *
+     * <p>If the transcript has no assistant message yet, the original input is returned unchanged.
+     * If the transcript ends with an assistant turn (regenerate/continue flows) and there
+     * are no trailing follow-up messages, the last user message before that turn is returned so
+     * the agent has a prompt to regenerate from instead of receiving an empty input.
      *
      * @param input The original input
-     * @return A new input with only the latest user message
+     * @return A new input containing only the follow-up messages, or the original input
      */
     public RunAgentInput extractLatestUserMessage(RunAgentInput input) {
         List<AguiMessage> messages = input.getMessages();
@@ -299,25 +310,35 @@ public class AguiRequestProcessor {
             return input;
         }
 
-        // Find the last user message
-        AguiMessage lastUserMessage = null;
+        int lastAssistantIdx = -1;
         for (int i = messages.size() - 1; i >= 0; i--) {
-            AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                lastUserMessage = msg;
+            if ("assistant".equalsIgnoreCase(messages.get(i).getRole())) {
+                lastAssistantIdx = i;
                 break;
             }
         }
-
-        if (lastUserMessage == null) {
+        if (lastAssistantIdx < 0) {
             return input;
         }
 
-        // Create new input with only the last user message
+        List<AguiMessage> after =
+                lastAssistantIdx < messages.size() - 1
+                        ? List.copyOf(messages.subList(lastAssistantIdx + 1, messages.size()))
+                        : List.of();
+
+        if (after.isEmpty()) {
+            for (int i = lastAssistantIdx - 1; i >= 0; i--) {
+                if ("user".equalsIgnoreCase(messages.get(i).getRole())) {
+                    after = List.of(messages.get(i));
+                    break;
+                }
+            }
+        }
+
         return RunAgentInput.builder()
                 .threadId(input.getThreadId())
                 .runId(input.getRunId())
-                .messages(List.of(lastUserMessage))
+                .messages(after)
                 .tools(input.getTools())
                 .context(input.getContext())
                 .state(input.getState())

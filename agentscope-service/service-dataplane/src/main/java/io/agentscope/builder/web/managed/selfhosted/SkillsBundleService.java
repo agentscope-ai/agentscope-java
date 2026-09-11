@@ -15,24 +15,17 @@
  */
 package io.agentscope.builder.web.managed.selfhosted;
 
-import io.agentscope.builder.runtime.config.SkillRepositoryConfigEntry;
-import io.agentscope.builder.runtime.config.SkillRepositorySupport;
 import io.agentscope.builder.web.catalog.HarnessAgentBuildService;
 import io.agentscope.builder.web.catalog.UserAgentDefinitionStore;
 import io.agentscope.builder.web.managed.DataSessionService;
 import io.agentscope.builder.web.managed.ManagedSessionDto;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
-import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
@@ -44,7 +37,6 @@ public class SkillsBundleService {
 
     private final DataSessionService sessionService;
     private final HarnessAgentBuildService agentBuildService;
-    private final UserAgentDefinitionStore store;
 
     public SkillsBundleService(
             DataSessionService sessionService,
@@ -52,34 +44,72 @@ public class SkillsBundleService {
             UserAgentDefinitionStore store) {
         this.sessionService = sessionService;
         this.agentBuildService = agentBuildService;
-        this.store = store;
     }
 
     /** Builds a JSON-friendly skills bundle for the session's agent. */
     public Map<String, Object> bundleForSession(String sessionId) {
-        ManagedSessionDto session = sessionService.requireById(sessionId);
-        Path workspace =
-                agentBuildService.resolveAgentWorkspace(session.agentOwnerId(), session.agentId());
-        List<SkillRepositoryConfigEntry> entries = List.of();
-        Optional<UserAgentDefinitionStore.StoredEntry> stored =
-                session.agentOwnerId() != null
-                        ? store.findById(session.agentOwnerId(), session.agentId())
-                        : Optional.empty();
-        if (stored.isPresent() && stored.get().skillRepositories() != null) {
-            entries = stored.get().skillRepositories();
-        }
-
-        List<AgentSkillRepository> repos =
-                new ArrayList<>(SkillRepositorySupport.createAll(workspace, entries));
-        Path skillsDir = workspace.resolve("skills");
-        if (Files.isDirectory(skillsDir)) {
-            repos.add(new FileSystemSkillRepository(skillsDir));
-        }
-
+        var resolved = sessionService.resolve(sessionId);
+        ManagedSessionDto session = resolved.session();
+        var snapshot =
+                new com.fasterxml.jackson.databind.ObjectMapper()
+                        .convertValue(
+                                resolved.agentSnapshot(),
+                                io.agentscope.builder.web.managed.AgentVersionSnapshot.class);
+        var enabled =
+                io.agentscope.builder.web.catalog.spec.AgentSpecCodec.workspaceSkillNames(
+                        snapshot.skills());
+        Map<String, String> files =
+                resolved.definitionFiles() == null ? Map.of() : resolved.definitionFiles();
         List<Map<String, Object>> skills = new ArrayList<>();
-        for (AgentSkillRepository repo : repos) {
-            for (AgentSkill skill : repo.getAllSkills()) {
-                skills.add(toSkillEntry(skill));
+        for (String name : enabled) {
+            String prefix = "skills/" + name + "/";
+            String content = files.get(prefix + "SKILL.md");
+            if (content == null) continue;
+            Map<String, Object> resources = new LinkedHashMap<>();
+            for (var file : files.entrySet()) {
+                if (!file.getKey().startsWith(prefix) || file.getKey().equals(prefix + "SKILL.md"))
+                    continue;
+                String path = file.getKey().substring(prefix.length());
+                resources.put(
+                        path,
+                        Map.of(
+                                "encoding",
+                                "utf8",
+                                "contentBase64",
+                                Base64.getEncoder()
+                                        .encodeToString(
+                                                file.getValue().getBytes(StandardCharsets.UTF_8)),
+                                "executable",
+                                path.startsWith("scripts/")
+                                        || path.endsWith(".sh")
+                                        || path.endsWith(".py")));
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", name);
+            entry.put("description", "");
+            entry.put("source", "managed-definition");
+            entry.put("skillContent", content);
+            entry.put("resources", resources);
+            skills.add(entry);
+        }
+        // Keep declared external repositories available, under the same filter and precedence
+        // as the Brain. Workspace skills above win on duplicate names.
+        var workspace = agentBuildService.resolveSessionWorkspace(session, resolved);
+        io.agentscope.builder.web.catalog.ManagedDefinitionMaterializer.materialize(
+                workspace, files);
+        var included = new java.util.HashSet<String>();
+        for (var skill : skills) included.add((String) skill.get("name"));
+        for (var repository :
+                io.agentscope.builder.runtime.config.SkillRepositorySupport.createAll(
+                        workspace, snapshot.skillRepositories())) {
+            try (repository) {
+                for (AgentSkill skill : repository.getAllSkills()) {
+                    if (enabled.contains(skill.getName()) && included.add(skill.getName())) {
+                        skills.add(toSkillEntry(skill));
+                    }
+                }
+            } catch (Exception e) {
+                throw new IllegalStateException("Cannot package declared skill repository", e);
             }
         }
         Map<String, Object> out = new LinkedHashMap<>();

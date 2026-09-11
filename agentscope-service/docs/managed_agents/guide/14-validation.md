@@ -10,7 +10,7 @@
 下文假设：
 
 ```bash
-export BASE=http://localhost:8080
+export BASE=http://localhost:18080
 TOKEN=$(curl -s -X POST "$BASE/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin"}' | jq -r .token)
