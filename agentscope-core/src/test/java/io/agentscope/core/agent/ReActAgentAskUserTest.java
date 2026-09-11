@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,6 +112,23 @@ class ReActAgentAskUserTest {
                                         .id(toolId)
                                         .name("ask_user")
                                         .input(input)
+                                        .build()))
+                .build();
+    }
+
+    private static ChatResponse secretAskToolUseResponse(String toolId) {
+        Map<String, Object> question =
+                Map.of(
+                        "id", "q_secret",
+                        "question", "What is the API key?",
+                        "type", "secret");
+        return ChatResponse.builder()
+                .content(
+                        List.<ContentBlock>of(
+                                ToolUseBlock.builder()
+                                        .id(toolId)
+                                        .name("ask_user")
+                                        .input(Map.of("questions", List.of(question)))
                                         .build()))
                 .build();
     }
@@ -260,6 +278,14 @@ class ReActAgentAskUserTest {
         assertTrue(
                 toolResultText.contains("premium"),
                 "model must see the answer value, got: " + toolResultText);
+        assertTrue(
+                secondInput.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolUseBlock.class).stream())
+                        .anyMatch(
+                                toolUse ->
+                                        "tc1".equals(toolUse.getId())
+                                                && toolUse.getState() == ToolCallState.FINISHED),
+                "answered ask_user calls must no longer remain ASKING");
     }
 
     @Test
@@ -321,6 +347,54 @@ class ReActAgentAskUserTest {
         assertEquals(req.getReplyId(), result.getReplyId());
         assertEquals(1, result.getAskUserResults().size());
         assertEquals("tc1", result.getAskUserResults().get(0).getToolCallId());
+    }
+
+    @Test
+    void secretAnswersAreRedactedFromModelContextAndEvents() {
+        AskTool tool = new AskTool("ask_user");
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(secretAskToolUseResponse("tc1")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.ASK_USER_ASKING, firstResult.getGenerateReason());
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(
+                                List.of(
+                                        answerMsg(
+                                                new AskUserResult(
+                                                        "tc1", Map.of("q_secret", "top-secret")))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        UserAskResultEvent resultEvent =
+                resumeEvents.stream()
+                        .filter(UserAskResultEvent.class::isInstance)
+                        .map(UserAskResultEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "[REDACTED]", resultEvent.getAskUserResults().get(0).getAnswers().get("q_secret"));
+
+        String toolResultText =
+                model.seenInputs.get(1).stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .flatMap(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .flatMap(r -> r.getOutput().stream()))
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .reduce("", (a, b) -> a + " " + b);
+        assertTrue(toolResultText.contains("q_secret: [REDACTED]"));
+        assertFalse(toolResultText.contains("top-secret"));
     }
 
     @Test

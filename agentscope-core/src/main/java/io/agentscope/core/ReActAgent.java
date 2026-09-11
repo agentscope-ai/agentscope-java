@@ -1769,12 +1769,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // HITL pauses: an ASKING tool call must be resumed either with ConfirmResults
             // (permission confirmation) or — when the pause was an ASK_USER question — with
             // AskUserResults. The pause kind is correlated via the reply-id metadata persisted
-            // on the assistant message when the interrupt was emitted; a resume payload that
-            // carries AskUserResults is honored regardless of that metadata.
+            // on the assistant message when the interrupt was emitted. AskUserResults without an
+            // active ASK_USER pause are rejected so they cannot be consumed as permission
+            // confirmations or silently dropped.
             List<ToolUseBlock> asking = askingToolCalls();
-            if (isAskUserPaused() || hasAskUserResults(msgs)) {
+            if (isAskUserPaused()) {
                 validateAndAcceptAskUserResults(msgs, asking);
                 return resumeAgent();
+            }
+            if (hasAskUserResults(msgs)) {
+                throw new IllegalStateException(
+                        "AskUserResult was supplied, but no ASK_USER pause is pending. "
+                                + "AskUserResult can only resume a RequireUserAskEvent.");
             }
             if (!asking.isEmpty()) {
                 validateAndAcceptConfirmResults(msgs, asking);
@@ -2001,6 +2007,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .collect(Collectors.toCollection(LinkedHashSet::new));
 
             Set<String> providedIds = new LinkedHashSet<>();
+            Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (AskUserResult result : results) {
                 String toolCallId = result.getToolCallId();
                 if (!providedIds.add(toolCallId)) {
@@ -2018,25 +2025,67 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (target == null) {
                     continue;
                 }
+                Set<String> secretQuestionIds = secretQuestionIds(target);
                 ToolResultBlock answerBlock =
-                        ToolResultBlock.text(AskUserResult.formatAnswers(result.getAnswers()))
+                        ToolResultBlock.text(
+                                        AskUserResult.formatAnswers(
+                                                result.getAnswers(), secretQuestionIds))
                                 .withIdAndName(target.getId(), target.getName());
                 state.contextMutable()
                         .add(
                                 ToolResultMessageBuilder.buildToolResultMsg(
                                         answerBlock, target, getName()));
+                replacements.put(target.getId(), target.withState(ToolCallState.FINISHED));
             }
+            applyToolUseBlockReplacements(replacements);
 
             String replyId = resolvePendingRequestReplyId(Msg.METADATA_ASK_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
-                publishEvent(new UserAskResultEvent(replyId, results));
+                List<AskUserResult> safeResults =
+                        results.stream()
+                                .map(
+                                        result -> {
+                                            ToolUseBlock target =
+                                                    questionToolCall(
+                                                            asking, result.getToolCallId());
+                                            return target == null
+                                                    ? result
+                                                    : result.redactedFor(secretQuestionIds(target));
+                                        })
+                                .toList();
+                publishEvent(new UserAskResultEvent(replyId, safeResults));
                 clearPendingRequestReplyId(Msg.METADATA_ASK_REQUEST_REPLY_ID);
             }
         }
 
+        /** Returns the ids of secret questions in one ask_user tool call. */
+        private Set<String> secretQuestionIds(ToolUseBlock toolCall) {
+            if (toolCall == null || toolCall.getInput() == null) {
+                return Set.of();
+            }
+            Object rawQuestions = toolCall.getInput().get("questions");
+            if (!(rawQuestions instanceof List<?> questions)) {
+                return Set.of();
+            }
+            Set<String> secretIds = new LinkedHashSet<>();
+            for (Object rawQuestion : questions) {
+                if (!(rawQuestion instanceof Map<?, ?> question)) {
+                    continue;
+                }
+                if (!"secret".equals(question.get("type"))) {
+                    continue;
+                }
+                Object rawId = question.get("id");
+                if (rawId instanceof String id && !id.isBlank()) {
+                    secretIds.add(id);
+                }
+            }
+            return secretIds;
+        }
+
         private ToolUseBlock questionToolCall(List<ToolUseBlock> asking, String toolCallId) {
             return asking.stream()
-                    .filter(t -> toolCallId.equals(t.getId()))
+                    .filter(t -> Objects.equals(toolCallId, t.getId()))
                     .findFirst()
                     .orElse(null);
         }
@@ -3033,6 +3082,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // acting() will set GenerateReason to ASK_USER_ASKING and return;
                                 // the tool is never executed.
                                 if (!pendingAskUser.isEmpty()) {
+                                    if (!autoDenied.isEmpty()) {
+                                        // Write DENIED results before returning the ask-user pause
+                                        // so they are not re-evaluated when the user answers.
+                                        writeAutoDeniedResults(toolCalls, autoDenied);
+                                    }
                                     // resultHolder may be inspected by the caller after stream
                                     // completion; initialise it to empty since no successful
                                     // execution happened.
@@ -3314,7 +3368,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Outcome of running every {@link ToolBase} call through the {@link PermissionEngine}.
          *
          * @param pendingAsk tool calls that require user confirmation before execution.
-         * @param pendingAskUser tool calls that ask the user for input (ASK_USER questions).
+         * @param pendingAskUser tool calls that ask the user for input (ASK_USER questions). A
+         *     single model tool batch must not contain both permission confirmations and
+         *     ASK_USER questions; callers must issue them in separate turns.
          * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
          *     synthesises denied results for them without invoking the tool.
          */
@@ -3326,8 +3382,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Whether the given tool call id appears in any of the pending lists. */
         private static boolean isInAny(
                 List<ToolUseBlock> pending, List<ToolUseBlock> pendingAskUser, String id) {
-            return pending.stream().anyMatch(p -> id.equals(p.getId()))
-                    || pendingAskUser.stream().anyMatch(p -> id.equals(p.getId()));
+            return pending.stream().anyMatch(p -> Objects.equals(id, p.getId()))
+                    || pendingAskUser.stream().anyMatch(p -> Objects.equals(id, p.getId()));
         }
 
         /**
@@ -3364,6 +3420,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             // auto-approved; falls through to execution
                                         }
                                     }
+                                }
+                                if (!pending.isEmpty() && !pendingAskUser.isEmpty()) {
+                                    throw new IllegalStateException(
+                                            "A single model tool batch cannot mix permission "
+                                                    + "confirmation (ASK) and user-input "
+                                                    + "(ASK_USER) pauses. Issue the two pause "
+                                                    + "kinds in separate model turns.");
                                 }
                                 return new PermissionGate(pending, pendingAskUser, denied);
                             });

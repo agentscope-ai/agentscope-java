@@ -17,6 +17,11 @@ package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * The user's answer to one {@code ask_user} tool call.
@@ -36,18 +41,23 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class AskUserResult {
 
+    private static final String REDACTED_VALUE = "[REDACTED]";
+
     private final String toolCallId;
-    private final java.util.Map<String, Object> answers;
+    private final Map<String, Object> answers;
 
     @JsonCreator
     public AskUserResult(
             @JsonProperty("toolCallId") String toolCallId,
-            @JsonProperty("answers") java.util.Map<String, Object> answers) {
+            @JsonProperty("answers") Map<String, Object> answers) {
         if (toolCallId == null || toolCallId.isEmpty()) {
             throw new IllegalArgumentException("AskUserResult.toolCallId must not be empty");
         }
         this.toolCallId = toolCallId;
-        this.answers = answers != null ? java.util.Map.copyOf(answers) : java.util.Map.of();
+        this.answers =
+                answers == null
+                        ? Map.of()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(answers));
     }
 
     @JsonProperty("toolCallId")
@@ -56,7 +66,7 @@ public class AskUserResult {
     }
 
     @JsonProperty("answers")
-    public java.util.Map<String, Object> getAnswers() {
+    public Map<String, Object> getAnswers() {
         return answers;
     }
 
@@ -66,39 +76,77 @@ public class AskUserResult {
      * @param answers the answer map (questionId → answer)
      * @return a stable, human-readable rendering of the answers
      */
-    public static String formatAnswers(java.util.Map<String, Object> answers) {
+    public static String formatAnswers(Map<String, Object> answers) {
+        return formatAnswers(answers, Set.of());
+    }
+
+    /**
+     * Formats the answers while masking values belonging to secret questions.
+     *
+     * @param answers the answer map (questionId → answer)
+     * @param secretQuestionIds question ids whose values must not be exposed
+     * @return a stable, human-readable rendering of the answers with secret values redacted
+     */
+    public static String formatAnswers(Map<String, Object> answers, Set<String> secretQuestionIds) {
         if (answers == null || answers.isEmpty()) {
             return "The user did not answer any question.";
         }
+        Set<String> secrets = secretQuestionIds == null ? Set.of() : secretQuestionIds;
         StringBuilder sb = new StringBuilder();
-        for (java.util.Map.Entry<String, Object> e : answers.entrySet()) {
+        for (Map.Entry<String, Object> e : answers.entrySet()) {
             if (sb.length() > 0) {
                 sb.append('\n');
             }
-            sb.append(e.getKey()).append(": ").append(formatAnswerValue(e.getValue()));
+            sb.append(e.getKey())
+                    .append(": ")
+                    .append(formatAnswerValue(e.getValue(), secrets.contains(e.getKey())));
         }
         return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private static String formatAnswerValue(Object value) {
+    /**
+     * Returns a copy safe to publish in an event stream. Secret answer values are replaced with a
+     * fixed marker, while non-secret answers and insertion order are preserved.
+     *
+     * @param secretQuestionIds question ids whose values must be redacted
+     * @return this result when no redaction is needed, otherwise a redacted copy
+     */
+    public AskUserResult redactedFor(Set<String> secretQuestionIds) {
+        if (secretQuestionIds == null || secretQuestionIds.isEmpty() || answers.isEmpty()) {
+            return this;
+        }
+        Map<String, Object> redacted = new LinkedHashMap<>(answers);
+        boolean changed = false;
+        for (String questionId : secretQuestionIds) {
+            if (redacted.containsKey(questionId)) {
+                redacted.put(questionId, REDACTED_VALUE);
+                changed = true;
+            }
+        }
+        return changed ? new AskUserResult(toolCallId, redacted) : this;
+    }
+
+    private static String formatAnswerValue(Object value, boolean secret) {
+        if (secret) {
+            return REDACTED_VALUE;
+        }
         if (value == null) {
             return "(no answer)";
         }
         if (value instanceof String s) {
             return s;
         }
-        if (value instanceof java.util.List<?> list) {
+        if (value instanceof List<?> list) {
             return list.isEmpty() ? "(no answer)" : String.join("; ", toStrings(list));
         }
-        if (value instanceof java.util.Map<?, ?> map) {
+        if (value instanceof Map<?, ?> map) {
             Object skipped = map.get("skipped");
             if (Boolean.TRUE.equals(skipped)) {
                 return "(skipped)";
             }
-            java.util.List<String> parts = new java.util.ArrayList<>();
+            List<String> parts = new java.util.ArrayList<>();
             Object selected = map.get("selected");
-            if (selected instanceof java.util.List<?> sel && !sel.isEmpty()) {
+            if (selected instanceof List<?> sel && !sel.isEmpty()) {
                 parts.add(String.join("; ", toStrings(sel)));
             }
             Object text = map.get("text");
@@ -110,12 +158,12 @@ public class AskUserResult {
         return value.toString();
     }
 
-    private static java.util.List<String> toStrings(java.util.List<?> values) {
+    private static List<String> toStrings(List<?> values) {
         return values.stream().map(v -> v == null ? "" : v.toString()).toList();
     }
 
     @Override
     public String toString() {
-        return "AskUserResult{toolCallId='" + toolCallId + "', answers=" + answers + '}';
+        return "AskUserResult{toolCallId='" + toolCallId + "', answers=<redacted>}";
     }
 }

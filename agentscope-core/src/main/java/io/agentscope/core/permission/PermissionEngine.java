@@ -209,26 +209,36 @@ public final class PermissionEngine {
     /**
      * Runs the tool-specific permission pipeline.
      *
-     * <p>EXPLORE / ACCEPT_EDITS read-only handling first, then the tool's own
-     * {@link ToolBase#checkPermissions}. Emits empty when the tool returns PASSTHROUGH.
+     * <p>The tool check runs before the mode shortcut so a tool-generated {@code ASK_USER}
+     * decision is never bypassed. For all other decisions, EXPLORE / ACCEPT_EDITS retain their
+     * existing read-only semantics. Emits empty when the tool returns PASSTHROUGH and the mode has
+     * no decision of its own.
      */
     private Mono<PermissionDecision> toolCheckPermissions(
             ToolBase tool, Map<String, Object> input) {
-        if (context.getMode() == PermissionMode.EXPLORE
-                || context.getMode() == PermissionMode.ACCEPT_EDITS) {
-            PermissionDecision modeDecision = checkExploreMode(tool);
-            if (modeDecision != null) {
-                return Mono.just(modeDecision);
-            }
-        }
         return tool.checkPermissions(input, context)
                 .flatMap(
                         decision -> {
+                            if (decision.getBehavior() == PermissionBehavior.ASK_USER) {
+                                return Mono.just(decision);
+                            }
+                            PermissionDecision modeDecision = checkExploreMode(tool);
+                            if (modeDecision != null) {
+                                return Mono.just(modeDecision);
+                            }
                             if (decision.getBehavior() == PermissionBehavior.PASSTHROUGH) {
                                 return Mono.empty();
                             }
                             return Mono.just(decision);
-                        });
+                        })
+                .switchIfEmpty(
+                        Mono.defer(
+                                () -> {
+                                    PermissionDecision modeDecision = checkExploreMode(tool);
+                                    return modeDecision == null
+                                            ? Mono.empty()
+                                            : Mono.just(modeDecision);
+                                }));
     }
 
     private PermissionDecision checkExploreMode(ToolBase tool) {
