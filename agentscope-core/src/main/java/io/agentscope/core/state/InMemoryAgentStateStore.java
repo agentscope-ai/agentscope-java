@@ -51,6 +51,13 @@ public class InMemoryAgentStateStore implements AgentStateStore {
     /** users → (sessionId → SessionData) */
     private final Map<String, Map<String, SessionData>> users = new ConcurrentHashMap<>();
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link #saveIfVersion} writes directly through the internal atomic versioning operation,
+     * including unconditional writes; it does not invoke this method. Subclasses that intercept
+     * single-state writes should override both entry points.
+     */
     @Override
     public void save(String userId, String sessionId, String key, State value) {
         SessionData data = lookupOrCreate(userId, sessionId);
@@ -86,6 +93,13 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         return new VersionedState<>(type.cast(state), entry.version());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The state write and its returned version are determined in the same critical section. This
+     * method does not delegate to {@link #save(String, String, String, State)}, even when {@code
+     * expectedVersion == UNVERSIONED}.
+     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {

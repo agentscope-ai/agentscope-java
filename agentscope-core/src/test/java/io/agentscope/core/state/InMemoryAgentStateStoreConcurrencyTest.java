@@ -17,7 +17,13 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +94,69 @@ class InMemoryAgentStateStoreConcurrencyTest {
                             "key",
                             new TestState("stale"),
                             Math.min(firstVersion, secondVersion)));
+            assertEquals(latest, store.getVersioned("user", "session", "key", TestState.class));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void concurrentUnconditionalWritesReturnUniqueVersions() throws Exception {
+        int writers = 4;
+        int writesPerWriter = 200;
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        CyclicBarrier startRound = new CyclicBarrier(writers);
+        ExecutorService pool = Executors.newFixedThreadPool(writers);
+        try {
+            List<Future<List<VersionedState<TestState>>>> results = new ArrayList<>();
+            for (int writer = 0; writer < writers; writer++) {
+                int writerId = writer;
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    List<VersionedState<TestState>> writes = new ArrayList<>();
+                                    for (int iteration = 0;
+                                            iteration < writesPerWriter;
+                                            iteration++) {
+                                        TestState value = new TestState(writerId + ":" + iteration);
+                                        // Contend on the real store each round, without a save
+                                        // override.
+                                        startRound.await(5, TimeUnit.SECONDS);
+                                        long version =
+                                                store.saveIfVersion(
+                                                        "user",
+                                                        "session",
+                                                        "key",
+                                                        value,
+                                                        AgentStateStore.UNVERSIONED);
+                                        writes.add(new VersionedState<>(value, version));
+                                    }
+                                    return writes;
+                                }));
+            }
+
+            Map<Long, TestState> writesByVersion = new HashMap<>();
+            for (Future<List<VersionedState<TestState>>> result : results) {
+                for (VersionedState<TestState> write : result.get(10, TimeUnit.SECONDS)) {
+                    assertNull(
+                            writesByVersion.put(write.version(), write.value()),
+                            "Each write must return its own unique version");
+                }
+            }
+            long totalWrites = (long) writers * writesPerWriter;
+            assertEquals(totalWrites, writesByVersion.size());
+            for (long version = 1; version <= totalWrites; version++) {
+                assertTrue(writesByVersion.containsKey(version));
+            }
+            VersionedState<TestState> latest =
+                    store.getVersioned("user", "session", "key", TestState.class);
+            assertEquals(totalWrites, latest.version());
+            assertEquals(writesByVersion.get(latest.version()), latest.value());
+            assertEquals(
+                    AgentStateStore.UNVERSIONED,
+                    store.saveIfVersion(
+                            "user", "session", "key", new TestState("stale"), totalWrites - 1));
             assertEquals(latest, store.getVersioned("user", "session", "key", TestState.class));
         } finally {
             pool.shutdownNow();
