@@ -1,28 +1,33 @@
 ---
-title: AgentScope Service
+title: "AgentScope Service 用户指南"
 ---
 
-AgentScope Service 为托管 Agent、已有 Agent 应用和 Coding Agent 提供统一的控制面。你可以创建 Agent 并运行会话，也可以把现有运行时接入平台，再通过 Issue、Team 和工作流组织协作。
+[English](/v2/en/service/index)
 
-![AgentScope Service 架构](/imgs/agentservice/agentscope-service-architecture.png)
+AgentScope Service 让你在一个控制台中与 Agent 对话、分派工作、组织多 Agent 协作，并将这些能力提供给应用。你既可以创建平台托管的 Agent，也可以接入本机 Coding Agent 或独立部署的 Agent 应用。
 
-## 从你的目标开始
+## 先完成第一项工作
 
-| 你想做什么 | 从哪里开始 |
+已有服务账号时，从[第一次对话与交付](/v2/zh/service/first-session)开始；自行部署时，先完成[本地安装](/v2/zh/service/quickstart)。第一次成功的标准是：能登录、能收到回复、能找回历史，并能检查一项工作交付物。
+
+## 按控制台学习
+
+| 区域 | 你能完成的工作 |
 | --- | --- |
-| 在自己的机器上体验 | [Docker 快速上手](/v2/zh/service/quickstart) |
-| 让第一个 Agent 完成任务 | [第一个 Session](/v2/zh/service/first-session) |
-| 理解平台中的对象 | [核心概念](/v2/zh/service/concepts) |
-| 让多个 Agent 协作 | [Issue 与 Team](/v2/zh/service/teams) |
-| 连接运行 Coding Agent 的电脑 | [Runtime Host](/v2/zh/service/runtime-host) |
-| 把已有应用接入控制面 | [SDK 与应用接入](/v2/zh/service/integrations) |
-| 在 Kubernetes 部署 | [Helm 部署](/v2/zh/service/kubernetes) |
-| 维护已有安装 | [备份、升级与恢复](/v2/zh/service/operations) |
+| WORK | [Chat](/v2/zh/service/chat) 探索需求 → [Issues](/v2/zh/service/issues) 跟踪工作 → [Inbox](/v2/zh/service/inbox) 审批验收 → [Automations](/v2/zh/service/automation) 重复执行 |
+| DESIGN | 配置 [Agents](/v2/zh/service/agents)、[Teams](/v2/zh/service/teams)、[Workflows](/v2/zh/service/workflows) 和 [Channels](/v2/zh/service/channels) |
+| Resources | 管理 [Workspaces](/v2/zh/service/workspaces)、[Environments](/v2/zh/service/environments)、[Memory](/v2/zh/service/memory) 和 [Vault](/v2/zh/service/vault) |
 
-## 部署包含什么
+Overview 是日常工作的总览；具体操作按上述页面展开。菜单和操作会按账号权限显示。Namespace 是资源与授权范围，Workspace 是文件与能力资源，二者不要混淆。
 
-Gateway 提供公共入口；Control Plane（`aistiod`）提供 API 和 Dashboard；Dataplane 执行托管 Harness 会话；Scheduler 处理渠道、定时和工作调度。PostgreSQL 保存持久状态，工作目录与产物使用持久卷。
+## 部署和接入
 
-服务本身不附带模型额度，也不替你安装外部 Coding Agent。部署与执行环境是两个步骤：服务启动后，还需要配置模型、环境或接入已有运行时。
+管理员可以用 [Docker Compose](/v2/zh/service/docker) 安装单机服务，或用 [Helm](/v2/zh/service/kubernetes) 安装到 Kubernetes。Gateway 提供统一入口，Control 管理目录和工作，Dataplane 执行托管会话，Scheduler 处理运行调度；PostgreSQL、Workspace 和 Artifact 存储保存持久数据。
 
-本文档覆盖完整 Service 的独立 HTTP 部署模式。版本、镜像地址和已验证平台以相应 Release Notes 为准；仓库中的候选版本不代表制品已经公开发布。
+选择运行方式时，阅读 [Managed Agent](/v2/zh/service/managed-agent)、[Hosted Agent](/v2/zh/service/hosted-agent) 或 [External Agent](/v2/zh/service/external-agent)。要把工作接入业务系统，使用 [Endpoint](/v2/zh/service/endpoints)；多个成员协作见 [Team 指南](/v2/zh/service/team-collaboration)。
+
+服务安装和模型/执行能力配置是两个步骤。安装包不包含模型额度、外部系统账号或 Coding Agent provider 登录。
+
+## 查阅与实践
+
+[概念](/v2/zh/service/concepts)解释对象关系，[API 参考](/v2/zh/service/api-reference)提供调用入口，[运维](/v2/zh/service/operations)覆盖升级恢复，[排障](/v2/zh/service/troubleshooting)帮助定位失败。[场景案例](/v2/zh/service/usecases)列出后续完整教程的方向；已有操作步骤可直接从功能指南实践。

@@ -1,25 +1,33 @@
 ---
-title: Issues and Team collaboration
+title: "Teams: organize collaborative roles"
 ---
 
-Use an Issue to express a work objective, a Team to organize a leader and members, and execution records to understand progress.
+[简体中文](/v2/zh/service/teams)
 
-## Create a small Team
+**DESIGN → Teams** groups Agents into an assignable team. The Lead interprets the objective, chooses members and combines results. Members contribute specialist capabilities. Choose a [Workflow](/v2/en/service/workflows) for fixed ordering and branching rules.
 
-Verify that each Agent can complete an independent task first. Create a Team, select a leader and members, and describe responsibilities such as research, implementation and review. Configure collaboration policy and human review requirements for the task.
+## Create a team
 
-Create an Issue with a clear objective, such as “Compare two implementation options and recommend one with validation steps.” Specify deliverables and acceptance criteria, then assign it to the Team.
+First verify each member with a small individual task. For a reporting team, choose a coordinator as Lead and add Researcher and Reviewer members.
 
-## Follow collaboration
+In **Roles & members**, define each role's responsibility and output: the Researcher supplies sourced facts; the Reviewer checks evidence and uncertainty. Team Instructions define shared goals, boundaries and the final deliverable. Avoid giving every member the same broad instructions.
 
-Use the Issue discussion to inspect the leader's decisions, member results and artifacts. Use Tasks and Runs to inspect dispatch, attempts, failures and waiting reasons. Add new requirements to the original Issue so that the discussion remains available.
+The Lead chooses which members a request needs. Membership is an available capability set, not a promise that every member runs on every request.
 
-A leader finishing one response does not mean every member has finished. A failed attempt does not require discarding the Issue. Identify the affected task and failure reason before retrying or supplying missing information.
+## Check readiness
 
-## Review work
+| State | Meaning and next action |
+| --- | --- |
+| Ready | Configuration and member capabilities pass readiness checks; verify a small task |
+| Degraded | Some members or capabilities are unavailable; inspect individual reasons |
+| Unavailable | Effective collaboration cannot start; check the Lead and runtime dependencies |
 
-When review or approval is requested, inspect deliverables and explicitly accept them or describe the required changes. State the missing result and verifiable acceptance criteria. Preserve deliverable files as Artifacts rather than leaving only a temporary machine path in a conversation.
+Members can use different execution types. Before configuring Runtime policy or member overrides, check capabilities, runtime targets and security constraints. Additional candidates do not imply seamless session migration.
 
-Teams support dynamic collaboration; Workflows express predefined steps and dependencies. They can work together, but inspect Run node state separately from business acceptance of the Issue.
+## Try and expose the team
 
-Continue with [Sessions, tasks and approvals](/v2/en/service/sessions) and [Automation and channels](/v2/en/service/automation).
+Assign a small Issue to the Team. Inspect discussion, Task map and execution results. Confirm that the Lead produces a combined deliverable and explains failures or missing information. Keep human acceptance for work needing review.
+
+Use Teams from Issues, Automations or job Endpoints. After editing, verify a new execution; earlier executions retain their team snapshots for traceability.
+
+Continue with [Team collaboration and extension](/v2/en/service/team-collaboration) · [Endpoints](/v2/en/service/endpoints).

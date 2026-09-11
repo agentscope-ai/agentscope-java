@@ -122,6 +122,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
+import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -1244,6 +1245,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
+
+        /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
+        HttpClient webHttpClient;
+
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
         boolean disableTranscript = false;
@@ -2058,6 +2063,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Supplies a custom {@link java.net.http.HttpClient} used by the built-in {@code web_fetch}
+         * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
+         * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
+         * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
+         * fails under HTTP/2 negotiation (see issue #3101).
+         */
+        public Builder webHttpClient(HttpClient client) {
+            this.webHttpClient = client;
+            return this;
+        }
+
+        /**
          * Registers schema-only external tools on the builder toolkit (merged into the final
          * agent toolkit at {@link #build()}). Used by {@code self_hosted} environments to expose
          * hands tools that suspend for worker execution.
@@ -2691,8 +2708,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
-                agentToolkit.registerTool(new WebTools.WebFetchTool());
-                agentToolkit.registerTool(new WebTools.WebSearchTool());
+                if (webHttpClient != null) {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
+                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
+                } else {
+                    agentToolkit.registerTool(new WebTools.WebFetchTool());
+                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                }
             }
 
             // ---- Plan mode (read-only design phase) ----
