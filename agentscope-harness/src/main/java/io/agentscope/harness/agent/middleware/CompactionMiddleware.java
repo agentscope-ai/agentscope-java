@@ -28,6 +28,7 @@ import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,7 +102,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-                    CompactionConfig effectiveConfig = resolveEffectiveConfig();
+                    CompactionConfig effectiveConfig =
+                            resolveEffectiveConfig(reActAgent.getModel());
 
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
@@ -110,8 +112,21 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     final Msg sys = systemMsg;
 
                     // Only compaction may degrade; downstream reasoning errors must propagate.
-                    return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                    return Mono.defer(
+                                    () -> {
+                                        int requestOverhead =
+                                                TokenCounterUtil.calculateToken(
+                                                        sys == null ? List.of() : List.of(sys),
+                                                        input.tools(),
+                                                        input.options());
+                                        return compactor.compactIfNeeded(
+                                                rc,
+                                                conversation,
+                                                effectiveConfig,
+                                                agentId,
+                                                sessionId,
+                                                requestOverhead);
+                                    })
                             .onErrorResume(
                                     error -> {
                                         if (ExceptionUtils.containsInterruptedException(error)) {
@@ -152,7 +167,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     /**
      * Resolves dynamic defaults in the config using the model's context window.
      */
-    private CompactionConfig resolveEffectiveConfig() {
+    private CompactionConfig resolveEffectiveConfig(Model reasoningModel) {
         int configTrigger = config.getTriggerTokens();
         int configKeep = config.getKeepTokens();
 
@@ -161,7 +176,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             return config;
         }
 
-        int contextWindow = model.getContextWindowSize();
+        int contextWindow =
+                (reasoningModel != null ? reasoningModel : model).getContextWindowSize();
 
         int effectiveTrigger;
         if (configTrigger == 0) {
