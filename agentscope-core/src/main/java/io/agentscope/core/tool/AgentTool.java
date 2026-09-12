@@ -113,6 +113,14 @@ public interface AgentTool {
     }
 
     /**
+     * Whether this tool's result should be returned directly to the caller,
+     * skipping the next reasoning iteration. Defaults to {@code false}.
+     */
+    default boolean isReturnDirect() {
+        return false;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for
