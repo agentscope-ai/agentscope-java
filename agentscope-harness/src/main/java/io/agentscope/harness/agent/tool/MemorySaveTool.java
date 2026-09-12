@@ -70,14 +70,14 @@ public class MemorySaveTool {
 
         String section = "\n" + content.strip() + "\n";
 
-        workspaceManager.appendUtf8WorkspaceRelative(rc, WorkspaceConstants.MEMORY_MD, section);
+        workspaceManager.appendMemoryFileUtf8(rc, WorkspaceConstants.MEMORY_MD, section);
 
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String dailyEntry =
                 String.format(
                         "\n## Memory Save — %s\n%s\n", Instant.now().toString(), content.strip());
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyPath, dailyEntry);
 
         long count = content.strip().lines().filter(l -> l.stripLeading().startsWith("-")).count();
         if (count == 0) {

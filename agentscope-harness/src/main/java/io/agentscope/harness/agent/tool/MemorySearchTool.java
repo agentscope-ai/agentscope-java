@@ -69,7 +69,7 @@ public class MemorySearchTool {
         Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
 
         for (String relativePath : memoryPaths) {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
+            String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
                 continue;
             }
