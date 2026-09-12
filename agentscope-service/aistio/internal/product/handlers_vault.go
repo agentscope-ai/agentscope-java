@@ -16,6 +16,7 @@ package product
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -62,7 +63,8 @@ type updateCredReq struct {
 }
 
 func (s *Server) listVaults(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	limit, offset, ok := pageParams(c)
 	if !ok {
 		writeErr(c, http.StatusBadRequest, "invalid limit/offset")
@@ -70,14 +72,14 @@ func (s *Server) listVaults(c *gin.Context) {
 	}
 	var total int64
 	if err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*) FROM vaults WHERE owner_id=$1 AND archived_at IS NULL`, owner).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM vaults WHERE owner_id=$1 AND (NOT $2::boolean OR vault_id=ANY($3::text[])) AND archived_at IS NULL`, owner, restricted, allowedIDs).Scan(&total); err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeTotalCount(c, total)
 	q := `SELECT vault_id, owner_id, display_name, metadata_json, created_at, updated_at
-		 FROM vaults WHERE owner_id=$1 AND archived_at IS NULL ORDER BY updated_at DESC`
-	args := []any{owner}
+		 FROM vaults WHERE owner_id=$1 AND (NOT $2::boolean OR vault_id=ANY($3::text[])) AND archived_at IS NULL ORDER BY updated_at DESC`
+	args := []any{owner, restricted, allowedIDs}
 	q, args = appendPage(q, limit, offset, args)
 	rows, err := s.db.Pool.Query(c.Request.Context(), q, args...)
 	if err != nil {
@@ -96,7 +98,7 @@ func (s *Server) listVaults(c *gin.Context) {
 		}
 		list = append(list, gin.H{
 			"id": id, "ownerId": oid, "displayName": name,
-			"metadata": parseJSONRaw(deref(meta)), "createdAt": created, "updatedAt": updated,
+			"metadata": parseJSONRaw(deref(meta)), "createdAt": created, "revision": updated,
 		})
 	}
 	c.JSON(http.StatusOK, list)
@@ -110,7 +112,7 @@ func (s *Server) createVault(c *gin.Context) {
 	}
 	id := shortID("vault_")
 	now := nowMillis()
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	_, err := s.db.Pool.Exec(c.Request.Context(),
 		`INSERT INTO vaults (vault_id, owner_id, display_name, metadata_json, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$5)`, id, owner, req.DisplayName, mustJSON(req.Metadata), now)
@@ -125,7 +127,7 @@ func (s *Server) createVault(c *gin.Context) {
 }
 
 func (s *Server) getVault(c *gin.Context) {
-	out, err := s.loadVault(c.Request.Context(), c.Param("id"), currentUserID(c))
+	out, err := s.loadVault(c.Request.Context(), c.Param("id"), currentResourceOwner(c))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "vault not found")
 		return
@@ -148,12 +150,12 @@ func (s *Server) loadVault(ctx context.Context, id, owner string) (gin.H, error)
 	}
 	return gin.H{
 		"id": id, "ownerId": oid, "displayName": name,
-		"metadata": parseJSONRaw(deref(meta)), "createdAt": created, "updatedAt": updated,
+		"metadata": parseJSONRaw(deref(meta)), "createdAt": created, "revision": updated,
 	}, nil
 }
 
 func (s *Server) updateVault(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	out, err := s.loadVault(c.Request.Context(), id, owner)
 	if err != nil {
@@ -194,7 +196,7 @@ func (s *Server) updateVault(c *gin.Context) {
 }
 
 func (s *Server) archiveVault(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
@@ -213,7 +215,7 @@ func (s *Server) archiveVault(c *gin.Context) {
 }
 
 func (s *Server) deleteVault(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := c.Param("id")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM vaults WHERE vault_id=$1 AND owner_id=$2`, id, owner)
@@ -233,7 +235,7 @@ func (s *Server) ownVault(c *gin.Context, vaultID string) bool {
 	var owner string
 	err := s.db.Pool.QueryRow(c.Request.Context(),
 		`SELECT owner_id FROM vaults WHERE vault_id=$1 AND archived_at IS NULL`, vaultID).Scan(&owner)
-	return err == nil && owner == currentUserID(c)
+	return err == nil && owner == currentResourceOwner(c)
 }
 
 func (s *Server) listCredentials(c *gin.Context) {
@@ -329,7 +331,7 @@ func (s *Server) updateCredential(c *gin.Context) {
 			return
 		}
 		_, err = s.db.Pool.Exec(c.Request.Context(),
-			`UPDATE vault_credentials SET label=$1, target=$2, ciphertext=$3
+			`UPDATE vault_credentials SET label=$1, target=$2, ciphertext=$3, revision=revision+1
 			 WHERE vault_id=$4 AND credential_id=$5`, label, target, ct, vaultID, cid)
 		if err != nil {
 			writeErr(c, http.StatusInternalServerError, err.Error())
@@ -337,7 +339,7 @@ func (s *Server) updateCredential(c *gin.Context) {
 		}
 	} else {
 		_, err = s.db.Pool.Exec(c.Request.Context(),
-			`UPDATE vault_credentials SET label=$1, target=$2
+			`UPDATE vault_credentials SET label=$1, target=$2, revision=revision+1
 			 WHERE vault_id=$3 AND credential_id=$4`, label, target, vaultID, cid)
 		if err != nil {
 			writeErr(c, http.StatusInternalServerError, err.Error())
@@ -423,31 +425,57 @@ func (s *Server) resolveVaultCredentials(ctx context.Context, vaultIDs []string,
 		err := s.db.Pool.QueryRow(ctx,
 			`SELECT owner_id FROM vaults WHERE vault_id=$1 AND archived_at IS NULL`, vid).Scan(&oid)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		if ownerID != "" && oid != ownerID {
-			continue
+		if ownerID == "" || oid != ownerID {
+			return nil, fmt.Errorf("vault unavailable")
 		}
 		rows, err := s.db.Pool.Query(ctx,
-			`SELECT credential_id, type, label, target, ciphertext FROM vault_credentials WHERE vault_id=$1`, vid)
+			`SELECT credential_id, type, label, target, ciphertext, revision FROM vault_credentials WHERE vault_id=$1 ORDER BY credential_id`, vid)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for rows.Next() {
 			var id, typ, label, target string
 			var ct []byte
-			if err := rows.Scan(&id, &typ, &label, &target, &ct); err != nil {
-				continue
+			var updated int64
+			if err := rows.Scan(&id, &typ, &label, &target, &ct, &updated); err != nil {
+				rows.Close()
+				return nil, err
 			}
 			secret, err := decryptAESGCM(s.vaultKey, ct)
 			if err != nil {
-				continue
+				rows.Close()
+				return nil, fmt.Errorf("credential unavailable")
 			}
-			out = append(out, gin.H{
-				"id": id, "vaultId": vid, "type": typ, "label": label, "target": target, "secret": secret,
-			})
+			out = append(out, gin.H{"id": id, "vaultId": vid, "type": typ, "label": label,
+				"target": target, "secret": secret, "revision": updated})
 		}
+		err = rows.Err()
 		rows.Close()
+		if err != nil {
+			return nil, err
+		}
 	}
+	// Close discovery rows before taking a refresh transaction; concurrent resolvers must not
+	// exhaust the pool while each holds a connection and waits for a second one.
+	for _, credential := range out {
+		if credential["type"] != "mcp_oauth" && credential["type"] != "oauth_token" {
+			continue
+		}
+		id := credential["id"].(string)
+		secret, revision, err := s.refreshOAuthCredential(ctx, id, ownerID)
+		if err != nil {
+			return nil, fmt.Errorf("MCP OAuth credential %s could not be refreshed: %w", id, err)
+		}
+		var oauth map[string]any
+		if json.Unmarshal([]byte(secret), &oauth) != nil {
+			return nil, fmt.Errorf("invalid OAuth credential")
+		}
+		// The Brain only needs the access token, never the refresh token or client secret.
+		credential["secret"] = mustJSON(gin.H{"access_token": oauth["access_token"]})
+		credential["revision"] = revision
+	}
+
 	return out, nil
 }

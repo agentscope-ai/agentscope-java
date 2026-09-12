@@ -1,6 +1,7 @@
 ---
-title: "上生产（Going to Production）"
-description: "从单机原型到多副本分布式部署：AgentStateStore / Filesystem / Skill / Sandbox / 快照 / 观测的组件选型与配置清单"
+title: 上生产（Going to Production）
+description: 从单机原型到多副本分布式部署：AgentStateStore / Filesystem / Skill / Sandbox / 快照 /
+  观测的组件选型与配置清单
 ---
 
 > 把 `HarnessAgent` 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页**只讲单机 → 分布式生产的差异**：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 `IllegalStateException`。
@@ -41,7 +42,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — aistio 托管 Store](../../integration/distributed/index.md#aistio-托管-store)。
+控制面开启 `--enable-hosted-store`（生产建议 Postgres）。`withAgentStateStore` 已含托管 TaskRepository；**SandboxFilesystem 模式下的子 agent 后台任务**需此路径。AgentStateStore 的 Redis/Postgres/MySQL/InMemory 支持 versioning CAS，其余后端仍为 LWW；多副本可选 turn gate + `ConflictPolicy.FAIL` 减少重复 turn，正确性靠 CAS。鉴权为共享 internal token，租户取自请求体——不适用于同一控制面上互不信任的多租户。`queueDrain` 为 destructive（读即 ack）。详见 [分布式存储 — aistio 托管 Store](/v2/zh/integration/distributed/index#aistio-托管-store)。
 
 ## 一图速览：单机默认 vs 分布式生产
 
@@ -81,7 +82,7 @@ HarnessAgent.builder()
 
 > **推荐**：直接用 `distributedStore(...)` 一键配置，不需要手动设置 `stateStore`。下面的详细表格供需要单独控制 `AgentStateStore` 的高级用户参考。
 
-`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 [`AgentStateStore`](../../integration/session/index.md)。
+`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 [`AgentStateStore`](/v2/zh/integration/session/index)。
 
 | 实现 | 模块 | 何时使用 |
 |------|------|---------|
@@ -119,11 +120,11 @@ agent.call(msg, RuntimeContext.builder()
         .build()).block();
 ```
 
-完整细节见[上下文与 AgentState](../building-blocks/context.md)。
+完整细节见[上下文与 AgentState](/v2/zh/docs/building-blocks/context)。
 
 ## 2. Filesystem 模式 & IsolationScope：决定"谁和谁共享文件"
 
-三种模式快速回顾（详见 [filesystem](../harness/filesystem.md)）：
+三种模式快速回顾（详见 [filesystem](/v2/zh/docs/harness/filesystem)）：
 
 | 模式 | 配置 | 提供 shell？ | 适用 |
 |------|------|-------------|------|
@@ -214,7 +215,7 @@ DistributedStore mysqlStore = MysqlDistributedStore.create(dataSource);
 
 `RemoteFilesystemSpec.toFilesystem(...)` 实际产出的是 `CompositeFilesystem`：底层一个不带 shell 的 `LocalFilesystem`（兜底读本地模板），顶层每条路由是一个 `OverlayFilesystem`（上层 `RemoteFilesystem` + 下层只读 `LocalFilesystem` 模板）。
 
-效果：**写永远落 Remote，读优先 Remote、没有再退回本地模板**。这就是 [Workspace](../harness/workspace.md) 文档里讲的"两层读架构"在 Remote 模式下的具体形态——本地 `<workspace>/AGENTS.md` 是种子（团队 git 同步），Remote 一旦写入就接管。
+效果：**写永远落 Remote，读优先 Remote、没有再退回本地模板**。这就是 [Workspace](/v2/zh/docs/harness/workspace) 文档里讲的"两层读架构"在 Remote 模式下的具体形态——本地 `<workspace>/AGENTS.md` 是种子（团队 git 同步），Remote 一旦写入就接管。
 
 ### `WorkspaceIndex`：可选 SQLite 索引
 
@@ -226,7 +227,7 @@ DistributedStore mysqlStore = MysqlDistributedStore.create(dataSource);
 
 ## 4. Skill 集中管理：选哪种 SkillRepository
 
-Skill 优先级从低到高合成（详见 [技能](../harness/skill.md)）：
+Skill 优先级从低到高合成（详见 [技能](/v2/zh/docs/harness/skill)）：
 
 | 层 | 来源 | 用什么 | 适用 |
 |---|------|-------|------|
@@ -413,7 +414,7 @@ HarnessAgent.builder()
 | 暴露的子 agent（用户直接和子 agent 对话） | 注册表由 `distributedStore` 自动接好——`subagentId` 在任意副本/重启后都能解析并恢复子 agent；把某个 `subagentId` 的消息路由回同一节点（粘性）即可让恢复只作为故障切换兜底。多 agent 的 `GatewayBootstrap` 传 `.distributedStore(...)` |
 | 优雅停机 | `GracefulShutdownManager`（默认注册 JVM hook）；接好 SIGTERM；视需要 `setConfig(...)` 调 inflight 等待时间 |
 | 可观测 | `OtelTracingMiddleware` + OpenTelemetry SDK + OTLP exporter |
-| 限流 | 自写 `MiddlewareBase`（onModelCall）；参考 [Middleware — 限速 middleware](../building-blocks/middleware.md#限速-middleware) |
+| 限流 | 自写 `MiddlewareBase`（onModelCall）；参考 [Middleware — 限速 middleware](/v2/zh/docs/building-blocks/middleware#限速-middleware) |
 
 ## 7. 一个完整的生产 builder 模板
 
@@ -474,7 +475,7 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. 常见坑位
 
-- **忘记传 `RuntimeContext`**——不传 `sessionId` 时所有请求共享 `defaultSessionId` 的状态，造成串台。在多用户场景下，**每次 `call()` 都应通过 `RuntimeContext.builder().userId(...).sessionId(...).build()` 传入**，确保各会话状态隔离。参见 [Agent — 多用户并发](../building-blocks/agent.md#多用户--多会话并发)。
+- **忘记传 `RuntimeContext`**——不传 `sessionId` 时所有请求共享 `defaultSessionId` 的状态，造成串台。在多用户场景下，**每次 `call()` 都应通过 `RuntimeContext.builder().userId(...).sessionId(...).build()` 传入**，确保各会话状态隔离。参见 [Agent — 多用户并发](/v2/zh/docs/building-blocks/agent#多用户--多会话并发)。
 - **`java.nio.Files` 写工作区**——在沙箱 / Remote 模式下落到错的位置。永远走 `agent.getWorkspaceManager()`。**例外**：builder 装配时的种子文件（`initWorkspaceIfAbsent` 之类）那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的。
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
@@ -485,12 +486,12 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 相关文档
 
-- [Quickstart](../quickstart.md) —— 端到端跑通第一个 `HarnessAgent`
-- [Harness 架构](../harness/architecture.md) —— 各能力如何协作
-- [上下文与 AgentState](../building-blocks/context.md) —— `AgentState` / `AgentStateStore` / 跨节点恢复
-- [上下文压缩](../harness/compaction.md) —— 对话摘要、工具结果卸载、溢出恢复
-- [Workspace](../harness/workspace.md) —— 目录布局、两层读、`tools.json`
-- [Filesystem](../harness/filesystem.md) —— 三种部署模式、`IsolationScope`
-- [Sandbox](../harness/sandbox.md) —— 沙箱细节、五种实现、快照机制
-- [技能](../harness/skill.md) —— 四层合成、市场存储源、自学习闭环
-- [Middleware](../building-blocks/middleware.md) —— 自定义观测 / 限流 / fallback 中间件
+- [Quickstart](/v2/zh/docs/quickstart) —— 端到端跑通第一个 `HarnessAgent`
+- [Harness 架构](/v2/zh/docs/harness/architecture) —— 各能力如何协作
+- [上下文与 AgentState](/v2/zh/docs/building-blocks/context) —— `AgentState` / `AgentStateStore` / 跨节点恢复
+- [上下文压缩](/v2/zh/docs/harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复
+- [Workspace](/v2/zh/docs/harness/workspace) —— 目录布局、两层读、`tools.json`
+- [Filesystem](/v2/zh/docs/harness/filesystem) —— 三种部署模式、`IsolationScope`
+- [Sandbox](/v2/zh/docs/harness/sandbox) —— 沙箱细节、五种实现、快照机制
+- [技能](/v2/zh/docs/harness/skill) —— 四层合成、市场存储源、自学习闭环
+- [Middleware](/v2/zh/docs/building-blocks/middleware) —— 自定义观测 / 限流 / fallback 中间件

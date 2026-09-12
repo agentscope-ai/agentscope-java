@@ -1,4 +1,6 @@
-# RAG (检索增强生成)
+---
+title: RAG
+---
 
 AgentScope 提供内置 RAG 支持，使 Agent 能够访问外部知识库。
 
@@ -537,7 +539,7 @@ public class CustomReader implements Reader {
    - 使用 **Agentic 模式**：复杂任务、选择性检索、强大的 LLM
 
 6. **向量存储选择**：
-   - 使用 **InMemoryStore**：开发、测试、小型数据集（<10K 文档）
+   - 使用 **InMemoryStore**：开发、测试、小型数据集（&lt;10K 文档）
    - 使用 **QdrantStore**：生产环境、大型数据集、需要持久化
    - 使用 **ElasticsearchStore**: 生产环境、大型数据集、私有部署服务。
 

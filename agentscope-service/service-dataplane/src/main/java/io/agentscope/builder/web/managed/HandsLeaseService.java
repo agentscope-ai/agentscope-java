@@ -17,8 +17,10 @@ package io.agentscope.builder.web.managed;
 
 import io.agentscope.builder.web.managed.service.HandsMetrics;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -43,7 +45,7 @@ public class HandsLeaseService {
     private final EnvironmentWorkQueue workQueue;
     private final ExternalSandboxRegistry registry;
     private final HandsMetrics metrics;
-    private final ConcurrentHashMap<String, String> activeLeasesBySession =
+    private final ConcurrentHashMap<String, ActiveHandsLease> activeLeasesBySession =
             new ConcurrentHashMap<>();
 
     public HandsLeaseService(
@@ -63,7 +65,13 @@ public class HandsLeaseService {
      */
     public Optional<io.agentscope.harness.agent.sandbox.Sandbox> acquire(
             ManagedSessionDto session, EnvironmentDto environment) {
-        return acquire(session, environment, DEFAULT_TIMEOUT);
+        return acquire(session, environment, DEFAULT_TIMEOUT, null);
+    }
+
+    /** Acquires hands resources owned by one exact physical turn. */
+    public Optional<io.agentscope.harness.agent.sandbox.Sandbox> acquire(
+            ManagedSessionDto session, EnvironmentDto environment, String turnOwnerId) {
+        return acquire(session, environment, DEFAULT_TIMEOUT, turnOwnerId);
     }
 
     /**
@@ -73,6 +81,14 @@ public class HandsLeaseService {
      */
     public Optional<io.agentscope.harness.agent.sandbox.Sandbox> acquire(
             ManagedSessionDto session, EnvironmentDto environment, Duration timeout) {
+        return acquire(session, environment, timeout, null);
+    }
+
+    private Optional<io.agentscope.harness.agent.sandbox.Sandbox> acquire(
+            ManagedSessionDto session,
+            EnvironmentDto environment,
+            Duration timeout,
+            String turnOwnerId) {
         if (environment == null || !EnvironmentTypes.TYPE_SELF_HOSTED.equals(environment.type())) {
             return Optional.empty();
         }
@@ -86,17 +102,19 @@ public class HandsLeaseService {
             return Optional.of(existing);
         }
 
-        if (!activeLeasesBySession.containsKey(sessionId)) {
-            EnvironmentWorkQueue.WorkItem item =
-                    workQueue.enqueue(sessionId, environment.id(), session.ownerId());
-            activeLeasesBySession.put(sessionId, item.leaseId());
-            log.debug(
-                    "[hands] enqueued work item {} for session={}, environment={} (event-driven;"
-                            + " no local sandbox wait)",
-                    item.leaseId(),
-                    sessionId,
-                    environment.id());
-        }
+        activeLeasesBySession.computeIfAbsent(
+                sessionId,
+                ignored -> {
+                    EnvironmentWorkQueue.WorkItem item =
+                            workQueue.enqueue(sessionId, environment.id(), session.ownerId());
+                    log.debug(
+                            "[hands] enqueued work item {} for session={}, environment={}"
+                                    + " (event-driven; no local sandbox wait)",
+                            item.leaseId(),
+                            sessionId,
+                            environment.id());
+                    return new ActiveHandsLease(turnOwnerId, item.leaseId());
+                });
         metrics.recordAcquire(sessionId);
         return Optional.empty();
     }
@@ -109,11 +127,35 @@ public class HandsLeaseService {
         if (sessionId == null) {
             return;
         }
-        String leaseId = activeLeasesBySession.remove(sessionId);
-        if (leaseId != null) {
-            workQueue.stop(leaseId);
+        ActiveHandsLease lease = activeLeasesBySession.remove(sessionId);
+        if (lease != null) {
+            workQueue.stop(lease.workLeaseId());
         }
         registry.remove(sessionId);
         metrics.recordRelease(sessionId);
     }
+
+    /** Releases only when the caller still owns this session's hands work item. */
+    public void release(String sessionId, String expectedTurnOwnerId) {
+        if (sessionId == null) {
+            return;
+        }
+        AtomicBoolean removed = new AtomicBoolean(false);
+        activeLeasesBySession.computeIfPresent(
+                sessionId,
+                (ignored, active) -> {
+                    if (!Objects.equals(active.turnOwnerId(), expectedTurnOwnerId)) {
+                        return active;
+                    }
+                    workQueue.stop(active.workLeaseId());
+                    removed.set(true);
+                    return null;
+                });
+        if (removed.get()) {
+            registry.remove(sessionId);
+            metrics.recordRelease(sessionId);
+        }
+    }
+
+    private record ActiveHandsLease(String turnOwnerId, String workLeaseId) {}
 }

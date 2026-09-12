@@ -1,4 +1,6 @@
-# Hook
+---
+title: 钩子系统
+---
 
 Hook 是一系列的扩展点，用于在特定执行阶段监控和修改智能体行为。
 
@@ -247,4 +249,3 @@ public class JsonlTraceExample {
     }
 }
 ```
-

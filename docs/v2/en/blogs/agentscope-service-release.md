@@ -1,10 +1,10 @@
 ---
-hide-toc: true
+title: AgentScope Service Release
 ---
 
 **AgentScope Service** — an Agent control plane built on AgentScope Harness.
 
-<!-- 这是一张图片，ocr 内容为：AISTIO LS FLEET OVERVIEW CONTROL PLANE CONSOLE CROSS-FRAMEWORK AGENT INSTANCES AND RUNTIME SESSIONS REPORTED INTO AISTIOD. 品 DASHBOARD TOKENS (24H, IDLE SESSIONS STALE AGENTS HEALTHY ERRORS (24H) ACTIVE OVERVIEW A) INSTANCES INSTANCES SESSIONS 0 1 R AGENTS 1 R 6,319 3 SESSIONS GOVERNANCE AGENTS COUNTS LIVE INSTANCES ONLY.3 HISTORICAL MANAGED AGENTS TOKEN USAGE(24H) 8 TEAMS HOURLY SUM OF USAGE DELTAS (NOT CUMULATIVE SNAPSHOTS) 14:00:6,319 TOKENS TOP 10 AGENTS BY TOKENS TOP 10 SESSIONS BY TOKENS RANKED BY TOKEN USAGE DELTAS - LAST 24H RANKED BY TOKEN USAGE DELTAS `LAST 24H #SESSION ACTIVE TOKENS ERRORS 井 AGENT PHASE TOKENS ADMIN MAIN-ED0098A8-E94E-42A9-9578- DEFAULT 1 6,319 6.319 B5FAD881F839 DEFAULT ACTIVE PROFILE USERS DEFAULT -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785989956180-2b6581fd-cf41-4155-baaf-08db90a6eb5d.png)
 
 
@@ -37,14 +37,14 @@ The Dashboard is the Control Plane's visual console. It gives the whole fleet a 
 
 
 
-<!-- 这是一张图片，ocr 内容为：AISTIO AS FLEET OVERVIEW CONTROL PLANE CONSOLE CROSS-FRAMEWORK AGENT INSTANCES AND RUNTIME SESSIONS REPORTED INTO AISTIOD. 品 DASHBOARD TOKENS (24H. HEALTHY IDLE SESSIONS STALE ERRORS (24H) AGENTS ACTIVE OVERVIEW 4) INSTANCES INSTANCES SESSIONS 1 R R AGENTS O 1 6,319 3 SESSIONS GOVERNANCE AGENTS COUNTS LIVE INSTANCES ONLY.3 HISTORICAL MANAGED AGENTS TOKEN USAGE(24H) 8 TEAMS HOURLY SUM OF USAGE DELTAS (NOT CUMULATIVE SNAPSHOTS) 14:00:6,319 TOKENS TOP 10 AGENTS BY TOKENS TOP 10 SESSIONS BY TOKENS RANKED BY TOKEN USAGE DELTAS `LAST 24H RANKED BY TOKEN USAGE DELTAS `LAST 24H SESSION TOKENS ACTIVE ERRORS # PHASE AGENT TOKENS ADMIN MAIN-ED0098A8-E94E-42A9-9578 DEFAULT 1 6,319 6,319 B5FAD881F839 DEFAULT ACTIVE PROFILE USERS DEFAULT -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785934371848-7b1b934e-11ed-4625-97cc-820f2fe5d214.png)
 
 
 
 From the Dashboard you can also inspect session details, view the live context state of an active session (including how different parts of the context contribute), dynamically adjust or compress session context, and intervene in a running conversation.
 
-<!-- 这是一张图片，ocr 内容为：AISTIO S SESSIONS CONTROL PLANE CONSOLE 7818AE8D-D486-4B41-BD2A ABORT TUM RESTORE EXIT PLAN ENTER PLAN COMPRESS TERMINATE CF8B7EB67224 品 DASHBOARD AGENTSCOPE-PAW - DEFAULT - AGENTSCOPE-JAVA - TURN #7 OVERVIEW AGENTS LIFETIME USAGE PHASE LAST ACTIVE INSTANCE MODEL PRESSURE SESSIONS 31% 46,777 2026/7/30 HEALTHY 22:55:01 GOVERNANCE ZPROMPT+COMPLETION U-FF406114-1819... HTTP://LOCALHOS MANAGED AGENTS WINDOW-IN 45,260/ OUT 1.517 TEAMS CONTEXT VIEW COMPACTED. 6 CFFECTIVE MSGS -7 TOOLS - WINDOW 125/ 32,768 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785946414310-ff29cee8-2b2b-40df-9ec8-0211ee03fe8c.png)
 
 ### Managed Agents
@@ -53,7 +53,7 @@ Managed Agents evolve from the `agentscope-builder` platform. They remain a low-
 
 
 
-<!-- 这是一张图片，ocr 内容为：AISTIO AGENTS NEW AGENT CONTROL PLANE CONSOLE LOW-CODE MANAGED AGENTS. EACH AGENT IS SHAPED BY ITS WORKSPACE - AGENTS.MD, TOOLS, SKILLS AND SUBAGENTS. 品 DASHBOARD CLONE-ONLY O ALL 4 SHARED WITH ME O MINE 4 GLOBAL MANAGED AGENTS AGENTS SESSIONS BBB PPP OWNER OWNER OWNER CCC 调用专用AGENT 擅长做微服务相关搜索 WORKSPACES BBB TEST AG_4ECD3838B3CD AG_1426C299ADF8 AG_5AF01156E61F ENVIRONMENTS WORKSPACE LINKED WORKSPACE LINKED WORKSPACE LINKED MEMORY VAULTS DEPLOYMENTS OWNER AAA CHANNELS XXXXX AG_CECC0395E056 8 TEAMS WORKSPACE LINKED ADMIN PROFILE USERS -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948183107-014a5cb1-6fcf-4b04-93cb-f01341b35350.png)
 
 
@@ -64,14 +64,14 @@ Agent definition follows the core design of AgentScope Harness. You first define
 
 Define a Workspace:
 
-<!-- 这是一张图片，ocr 内容为：AISTIO WORKSPACES CONTROLPLANE CONSOLE TEST MANAGE AGENTS.MD, SKILLS, TOOLS AND SUBAGENTS FOR LINKED AGENTS. 品 DASHBOARD V1 SKILLS O SUBAGENTS O . AGENTS.MD MANAGED AGENTS SUBAGENTS AGENTS.MD SKILLS TOOLS MARKETPLACE AGENTS SESSIONS BUILTIN TOOLSET WORKSPACES BASH FILESYSTEM EXECUTE A SHELL COMMAND ENVIRONMENTS READ FILESYSTEM MEMORY READ A FILE FROM THE WORKSPACE VAULTS WRITE FILESYSTEM WRITE A FILE IN THE WORKSPACE DEPLOYMENTS EDIT FILESYSTEM EDIT A FILE VIA STRING REPLACEMENT CHANNELS GLOB FILESYSTEM 8 TEAMS FIND FILES BY GLOB PATTERN GREP FILESYSTEM SEARCH FILE CONTENTS WITH REGEX WEB_FETCH WEB FETCH CONTENT FROM A URL WEB SEARCH WEB SEARCH THE WEB FOR INFORMATION MEMORY_SAVE HARNESS SAVE A LONG-TERM MEMORY FACT MEMORY_GET HARNESS GET A MEMORY ENTRY -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948616059-4d7be456-50bf-4e68-9ebf-3d48ce0ca9d3.png)
 
 
 
 Define an Agent:
 
-<!-- 这是一张图片，ocr 内容为：AISTIO SY NEW AGENT CONTROL PLANE CONSOLE DASHBOARD PREFER LINKING A WORKSPAGE SO AGENTS.ND / SKILLS/  TOOLS / SUBAGENTS ARE AUTHORED ONCE AND INTO THIS AGENT.OR LEAVE WORKSPACE EMPTY FOR AN AGENT-PRIVATE DEFINITION. MANAGED AGENTS NAME AGENTS ASSISTANT SESSIONS WORKSPACES DESCRIPTION ENVIRONMENTS DEMO ASSISTANT AGENT MEMORY WORKSPACE VAULTS TEST DEPLOYMENTS LINK A WORKSPACE TO INHERIT AGENTS.ND; SKILLS, TOOLS AND SUBAGENTS,MANAGE WORKSPACES FROM THE WORKSPA CHANNELS WILLINHERIT FROM TEST(V1):AGENTS.ND - SKILS O- SUBAGENTS O,LEAVE SYSTEM PROMPT BLANK TO USE WORKSPACE TEAMS AGENTS.MD. DEFAULT ENVIRONMENT(OPTIONAL) NONE-CHAT WILL ENSURE A LOCAL DEFAULT USED WHEN OPENING CHAT / CHANNEL SESSIONS.VAULTS AND MEMORY STORES CAN BE ATTACHED LATERIN SETTINGS WORKSPACE PATH(OPTIONAL OVERRIDE) LEAVE BLANK FOR DEFAULT UNDER AISTIOD WORKSPACE ROOT LEAVE BLANK TO USE THE CONTROL-PLANE DEFAULT PATH.ABSOLUTE PATHS ARE USED AS-IS. ADMIN SYSTEM PROMPT PROFILE USERS YOU ARE A HELPFUL ASSISTANT. -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948697346-865380da-fb2c-420b-9968-4275b51a85b6.png)
 
 
@@ -82,14 +82,14 @@ The biggest change in this upgrade is the hosted runtime logic and architecture 
 
 Create a session and bind a self-hosted sandbox runtime environment:
 
-<!-- 这是一张图片，ocr 内容为：AISTIO AS SESSIONS CONTROLPLANE CONSOLE NEW SESSION CREATES A SESSION RESOURCE BOUND TO AN AGENT AND MOUNTS.NO TURN STARTS UNTILYOU SEND A DASHBOARD MESSAGE IN CHAT. MANAGED AGENTS AGENT ASSISTANT AGENTS SESSIONS NEW SESSION WORKSPACES / CREATE A SESSION DEFINITION ONLY - NO TURN STARTS UNTIL THE FIRST MESSAGE. CHOOSE ENVIRONMENT, I VAULTS, AND MEMORY STORES. AGENT SESSION DEFAULTS PREFILL THE FORM. ENVIRONMENTS RESET TO AGENT DEFAULTS MEMORY ENVIRONMENT VAULTS SELF-HOSTED-FC-SANDBOX(SELF_HOSTED) DEPLOYMENTS VAULTS CHANNELS NO VAULTS.CREATE ONE UNDER BUILD > VAULTS. TEAMS MEMORY STORES BBB AAA OPTIONAL OVERRIDES CREATE SESSION CANCEL -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948796759-2723bb0e-e25e-49a6-aad4-27f8eb368d8d.png)
 
 
 
 Creating a Session does not by itself start an SSE event stream. The conversation and full inference path begin only when the user sends a message. As shown below, you can send a user message from the console chat page:
 
-<!-- 这是一张图片，ocr 内容为：AISTIO CHAT SESSION DETAILS SESS_AD018033431F SESSIONS SY CONTROL PLANE CONSOLE ENV:SELF-HOSTED-FC-SANDBOX . VAULTS:0 MEMORY:1 ALL SESSIONS MANAGED SESSION DETAILS SESS_AD018033431F DASHBOARD NEW SESSION MANAGED AGENTS USER你好 AGENTS SESSIONS ASSISTANT 你好!有什么可以帮助你的吗? WORKSPACES ENVIRONMENTS MEMORY VAULTS DEPLOYMENTS CHANNELS -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948840673-56827ddd-93f4-4091-9b7c-bbafa217a511.png)
 
 
@@ -102,7 +102,7 @@ Runtime design is closely aligned with Claude Managed Agents. Harness infrastruc
 
 Every agent registered with the AgentScope Service Control Plane — whether self-deployed and registered through a framework (LangChain, AgentScope, ADK, Claude SDK, and so on), or created as a Managed Agent through the low-code path — can be orchestrated into one or more Agent Teams to collaborate on complex work.
 
-<!-- 这是一张图片，ocr 内容为：AISTIO IS TEAM1 BACK COMPLETE TEAM FORCE DELETE LEAD CLOSE CONTROL PLANE CONSOLE CCC SOSS_025CA811A27B 帮我分析E2B沙箱和DAYTONA沙箱 SESS_E25CA811A27B FULL PAGE TEAM CHAT DASHBOARD IDLE NS-DEFAULT TASKS 1/2COMPLETE 1 IN PROGRESS 0 PENDING TASK-1.I ALSO LET THEM KNOW THAT THEY CAN REACH OUT IF THEY NEED ANY MANAGED AGENTS SPECIFIC RESOURCES OR HAVE ANY TOPOLOGY AGENTS QUESTIONS. SESSIONS WORKER1 LEAD IS THERE ANYTHING ELSE YOU WOULD LIKE TO ADDRESS AT THIS MOMENT? WORKS PACES ENVIRONMENTS OPEN CHAT CHAT OPEN [TEAM:TEAM1 FROM WORKER1]I HAVE MEMORY CLAIMED TASK-1 AND WILL START THE VAULTS ANALYSIS OF THE E2B SANDBOX.I WILL REACH OUT IF I NEED ANY SPECIFIC DEPLOYMENTS TASK BOARD MEMBERS MESSAGES RESOURCES OR HAVE ANY QUESTIONS. CHANNELS NEW TASK SUBJECT ADD TASK TEAMS TOOL:CLAIMTASK CA11_78816 UNASSIGNED(0) BLOCKED((() COMPLETED(1) IN PROGRESS(1) ASSIGNED(0) TOOL: CA11_5B2 TEAMS 分析E2B治理沙箱 分析DAYTONA 治理沙 箱 TEMPLATES TOOL:TEAM COMPLETE UNCLAIM SEND MESSAGE AG_4ECD3838B3CD... FAILED(0) ADMIN PROFILE USERS -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785948895276-d0221173-9683-4a94-b281-55f9372cee65.png)
 
 In AgentScope Service, a Team is not a chat room. It is an operable collaboration unit: tasks can be claimed, plans can be approved, members can be woken, and state does not vanish just because a Session ends. A common pattern is a Lead that decomposes and accepts work, with Members claiming research, coding, verification, and other subtasks by capability. The platform owns message routing, the task board, and lifecycle — business code should not have to hand-roll temporary multi-process communication.
@@ -113,26 +113,26 @@ One point worth calling out: AgentScope Framework natively supports Agent Teams.
 
 ### Overall Architecture
 
-<!-- 这是一张图片，ocr 内容为：HUMAN 用户USER REST API DASHBOARD 接入入口:日 SDK/CURL BROWSER .可视化控制台 第三方系统集成 AGENTSCOPE SERVICE 控制面.CONTROLPLANE CONTROLPLANE 框架接入FRAMEWORKS AGENTSCOPE CLAUDE QWENPAW LANGCHAIN SIDECAR  接入 原生接入 SIDECAR 接入 INSTRUMENT SDK AGENTSCOPE  SERVICE  系统架构图 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785984168683-7e939049-046d-4ffa-b30d-1c0e6c0ff01b.png)
 
 Humans reach the AgentScope Service Control Plane through two entry points: the Dashboard (browser) and the REST API (SDK / curl / third-party integration). Under the control plane, four Agent attachment models are managed together: native AgentScope attachment, LangChain via `instrument()`, and Claude / QwenPaw via Sidecar.
 
 ### Managed Agents
 
-<!-- 这是一张图片，ocr 内容为： -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785976191807-3dde2cf8-ece0-4819-b376-328b498ed00c.png)
 
 
 
-<!-- 这是一张图片，ocr 内容为： -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785976204028-86690651-b369-4c47-b3eb-73c9f7da508e.png)
 
 ### Agent Teams Collaboration Flow
 
 Members of a Team do not need to come from the same framework or hosting model. In the console, you pick several Agents already registered with the control plane, choose who is Lead and who is Worker, and the orchestration is done — the Lead creates and assigns tasks, Workers claim and execute them, and collaboration state is maintained by the control plane:
 
-<!-- 这是一张图片，ocr 内容为：HUMAN/CONSOLE 发起方HUMAN 创建 TEAM:选择已注册 AGENT 组成 LEAD +WORKERS AGENTSCOPE SERVICE CONTROL PLANE TEAM: RESEARCH 控制面CONTROL PLANE TASK BOARD (PENDING / CLAIMED / DONE) MAILBOX(单播 TO-MEMBER  广播TO 空) TEAM-JOIN (BYO 成员)/FIND-OR-CREATE SESSION (MANAGED 成员) 团队成员TEAMMEMBERS WORKER 3 WORKER 1 WORKER  2 LEAD (代码评审) (安全扫描) (法务合规) (CTO) LANGCHAIN/CLAUDE SIDECAR AGENTSCOPE 原生 MANAGED AGENT MANAGED AGENT SELF-CLAIM 创建任务.ASSIGN SELF-CLAIM CLAIM 未分配任务 未分配任务 已分配任务 自动认领 自动认领 共享 TEAM 状态 跨进程/跨 SESSION 持久化消息与任务 共享状态SHARED STATE AGENTSCOPE SERVICE - TEAM 协作架构图 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785985724730-b8f8d88c-669a-430c-bbf6-0c9f2d64b0f7.png)
 
 Key points in the figure:
@@ -154,7 +154,7 @@ The figure below shows the **runtime topology**: how multiple `HarnessAgent` rep
 
 
 
-<!-- 这是一张图片，ocr 内容为：控制面:CONTROLPLANE AGENTSCOPE SERVICE CONTROL PLANE (AISTIO) 面向HARNESS的托管能力 WORKSPACE 共享  AGENT TEAMS (消息/任务协作) SESSION 并发控制.异步工具执行 协调类API调用(无状态数据本身) 运行副本WORKERS HARNESSAGENT HARNESSAGENT HARNESSAGENT 副本2(JVM) 副本1(JVM) 副本N(JVM) 直连读写会话状态(不经过控制面) 状态后端 `STATE STORE AGENTSTATESTORE 后端 REDIS / MYSQL / POSTGRES / OSS 业务自备,多副本共享同一后端 AGENTSCOPE SERVICE `HARNESS 托管运行架构图 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785985855412-a79588d2-9ae3-4922-a30b-337ff4e6e526.png)
 
 
@@ -176,7 +176,7 @@ AgentScope Framework also ships a closed-loop Agent Teams capability. How a team
 
 
 
-<!-- 这是一张图片，ocr 内容为：开发阶段:为MAIN AGENT预先注册一组可调用的 SUBAGENTREF),不提前编排成固定 TEAM 预定义SUBAGENT池(只是候选成员名单,不是TEAM) REVIEWER - SECURITY-SCANNER " PERF-TESTER " 运行期:HUMAN发一条消息给MAIN AGENT,消息里带着团队任务描息给MAN发一条消息里带着团队任务团队任务团队任务团队任务团队任务团队任务团队任务团队任务团队任务描述 "帮我并行做一次代码评审+安全扫描+性能测试,组个团队来处理" (HARNESSAGENT)收到消息后自行判断需要组队 MAIN AGENT 从SUBAGENT池中挑人调用 SPAWNMEMBER CREATETEAM 不需要人工编排,也不用改代码 动态组建TEAM LEAD WORKER WORKER WORKER MAIN AGENT PERF-TESTER REVIEWER SECURITY-SCANNER 成员之间可直接互发消息,共享同一个 TASK BOARD(认领/完成/通知) (框架内抽象接口) TEAMCLIENT LOCALTEAMCLIENT(BASESTORE,闭环) / CONTROLPLANETEAMCLIENT (HTTP,托管) AGENTSCOPE SERVICE  `动态组队(DYNAMIC  TEAM) 流程图 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785987685062-a679fc73-257a-4f74-8ff8-d214a82b7c88.png)
 
 
@@ -187,7 +187,7 @@ Key points above:
 + **The trigger is a runtime message, not code or console configuration.** When a Human sends the Main Agent an ordinary message that carries intent such as "form a team to handle this," the Main Agent's reasoning decides to call `createTeam` (and `spawnMember` when extra members are needed), sets itself as Lead, and instantiates the chosen Subagents as Workers. That decision happens inside one LLM turn — no human pre-orchestration, no code change.
 + **Once formed, the Team uses the same collaboration machinery.** Lead and Workers share one `TeamClient` (Task Board + Mailbox). That can be a Control-Plane-free `LocalTeamClient` (closed-loop, optimistic concurrency directly on `BaseStore`), or a `ControlPlaneTeamClient` that buys cross-replica coordination and Dashboard observability. This matches the console orchestration path above; the only difference is how the Team is formed.
 
-This capability and the [Subagents](../docs/harness/subagent.md) pattern reuse the same Subagent definitions, but the collaboration model is completely different — and easy to confuse — so it is worth comparing them explicitly:
+This capability and the [Subagents](/v2/en/docs/harness/subagent) pattern reuse the same Subagent definitions, but the collaboration model is completely different — and easy to confuse — so it is worth comparing them explicitly:
 
 ```text
 Subagent mode (one-way delegation, peers isolated)
@@ -214,7 +214,7 @@ For remote cases, the AgentScope Service Control Plane's role is to let Agent A 
 
 
 
-<!-- 这是一张图片，ocr 内容为：TARGET AGENT(TECHLEAD) AGENTSCOPE SERVICE AGENT A(CTO) MANAGED AGENT / LANGCHAIN CONTROL PLANE(AISTIOD) AGENTSCOPO FRAMEWORK AGENT AGENT TEAMS/SUBAGENT 委派 DELEGATE("TECHLEAD", "REVIEW THIS PR") IS TECHLEAD A LOCAL, IN-PROCESS SUBAGENT? [ TECHLEAD 是本地 IN-PROCESS SUBAGENT ] ALT YES- SKIP CONTROL PLANE (AGENT 直接本地调用) [NO-REMOTE / CROSS-FRAMEWORK TARGET] POST /API/V1/AGENT-CHAT/TECHLEAD 1.CHECK ACL / TEAM MEMBERSHIP 2. LOOK UP TARGET INSTANCE (MANAGED  AGENT 或 LANGCHAIN REGISTERED VIA INSTRUMENT) 3.PROXY TO TARGET'S CHAT URL POST /ASK 或/SESSIONS/{ID}/EVENTS TARGET RESPONSE RELAY RESPONSE AGENTSCOPE SERVICE  AGENT-TO-AGENT 委派与控制面代理 时序图 -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785987846445-098ee5ce-1d73-4343-a3b2-09cc17ebf963.png)
 
 
@@ -229,7 +229,7 @@ That is why the "how to attach" section stresses that AgentScope, LangChain, and
 
 ### Production Deployment Architecture
 
-<!-- 这是一张图片，ocr 内容为：AGENT SERVICE WEB CONSOLE: DASHBOARD - MANAGED AGENTS - AGENT TEAMS BROWSER / SDK / CLI 认证与公共API路由 :8080 SERVICE-GATEWAY 统一入口鉴权反向代理 AISTIOD :8081  SERVICE-DATAPLANE :8082 产品与运行时控制面 AGENTSCOPE BRAIN TURN ` EVENT . SSE ` HITL AGENT 注册.AGENT TEAMS SERVICE-SCHEDULER :8083 POSTGRESQL CHANNEL`CRON`HANDS WORKER CP RT DP SCHEMAS RUNTIME MANAGED AGENTS RUNTIME - SELF HOSTED FRAMEWORK RUNTIME ' SANDBOX -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785987384213-cab424c2-502c-43b3-ac78-ee0e43eb9c9c.png)
 
 The four planes can be understood as follows:
@@ -251,7 +251,7 @@ That lets an enterprise answer three questions separately: which context can the
 
 It also explains why "managed" does not mean "all data must leave the customer environment." When desensitization on the cloud side is acceptable, use a hosted sandbox; when tools must reach internal systems or sensitive filesystems, put Hands in the customer VPC so an outbound Worker executes tools and returns results. The Brain still owns orchestration and state recovery — only the execution plane is swapped.
 
-Readers who want a deeper look at Turn paths, event contracts, and schema boundaries can read our companion technical post: [AgentScope Service Technical Deep Dive](./agentscope-service-release-tech.md).
+Readers who want a deeper look at Turn paths, event contracts, and schema boundaries can read our companion technical post: [AgentScope Service Technical Deep Dive](/v2/en/blogs/agentscope-service-release-tech).
 
 ## How Agents Attach
 
@@ -336,3 +336,5 @@ Going forward, AgentScope Service will keep evolving toward more open attachment
 
 
 If you care about enterprise-grade offerings on Alibaba Cloud, also see [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
+
+[Complete deployment and usage documentation](/v2/en/service/index).

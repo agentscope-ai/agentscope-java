@@ -94,35 +94,37 @@ var (
 		Help: "Total gRPC stream errors.",
 	}, []string{"namespace", "direction"})
 
-	// TeamsActive tracks the number of active teams (phase=Running).
-	TeamsActive = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "agentscope_teams_active",
-		Help: "Number of active teams (phase=Running).",
-	})
+	AgentTaskTransitions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "agentscope_agent_task_transitions_total",
+		Help: "AgentTask transitions by namespace, backend, and state.",
+	}, []string{"namespace", "backend", "state"})
 
-	// TeamMembersByPhase reports team members by phase.
-	TeamMembersByPhase = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "agentscope_team_members_by_phase",
-		Help: "Team members by phase.",
-	}, []string{"namespace", "team", "phase"})
+	CommentRoutes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "agentscope_comment_routes_total",
+		Help: "Comment routing outcomes by namespace, target type, and outcome.",
+	}, []string{"namespace", "target_type", "outcome"})
 
-	// TeamTasksByState reports team tasks by state.
-	TeamTasksByState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "agentscope_team_tasks_by_state",
-		Help: "Team tasks by state.",
-	}, []string{"namespace", "team", "state"})
+	AgentTaskInputAge = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "agentscope_agent_task_input_age_seconds",
+		Help:    "Age of AgentTask inputs when they enter a delivery state.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
+	}, []string{"namespace", "state"})
 
-	// TeamRecoveryTotal counts member recovery attempts.
-	TeamRecoveryTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentscope_team_recovery_total",
-		Help: "Total member recovery attempts.",
-	}, []string{"namespace", "team", "result"})
+	ExecutionAttemptTransitions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "agentscope_execution_attempt_transitions_total",
+		Help: "Execution attempt transitions by backend, state, and failure code.",
+	}, []string{"namespace", "backend", "state", "failure_code"})
 
-	// TeamMessagesTotal counts team messages.
-	TeamMessagesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentscope_team_messages_total",
-		Help: "Total team messages.",
-	}, []string{"namespace", "team", "status"})
+	ExecutionAttemptDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "agentscope_execution_attempt_duration_seconds",
+		Help:    "Execution attempt duration from start to terminal state.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 12),
+	}, []string{"namespace", "backend", "state"})
+
+	RuntimeClaims = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "agentscope_runtime_claims_total",
+		Help: "Runtime Host claim attempts by pool and result.",
+	}, []string{"namespace", "pool", "result"})
 )
 
 func init() {
@@ -138,11 +140,12 @@ func init() {
 		GRPCConfigPushTotal,
 		GRPCConfigNackTotal,
 		GRPCStreamErrors,
-		TeamsActive,
-		TeamMembersByPhase,
-		TeamTasksByState,
-		TeamRecoveryTotal,
-		TeamMessagesTotal,
+		AgentTaskTransitions,
+		CommentRoutes,
+		AgentTaskInputAge,
+		ExecutionAttemptTransitions,
+		ExecutionAttemptDuration,
+		RuntimeClaims,
 	)
 }
 
@@ -211,27 +214,25 @@ func RecordStreamError(namespace, direction string) {
 	GRPCStreamErrors.WithLabelValues(namespace, direction).Inc()
 }
 
-// RecordTeamsActive sets the number of active teams.
-func RecordTeamsActive(count int) {
-	TeamsActive.Set(float64(count))
+func RecordAgentTaskTransition(namespace, backend, state string) {
+	AgentTaskTransitions.WithLabelValues(namespace, backend, state).Inc()
 }
 
-// RecordTeamMembers sets the member count for a team by phase.
-func RecordTeamMembers(namespace, team, phase string, count int) {
-	TeamMembersByPhase.WithLabelValues(namespace, team, phase).Set(float64(count))
+func RecordCommentRoute(namespace, targetType, outcome string) {
+	CommentRoutes.WithLabelValues(namespace, targetType, outcome).Inc()
 }
 
-// RecordTeamTasks sets the task count for a team by state.
-func RecordTeamTasks(namespace, team, state string, count int) {
-	TeamTasksByState.WithLabelValues(namespace, team, state).Set(float64(count))
+func ObserveAgentTaskInputAge(namespace, state string, age time.Duration) {
+	AgentTaskInputAge.WithLabelValues(namespace, state).Observe(age.Seconds())
 }
 
-// RecordTeamRecovery increments the team recovery counter.
-func RecordTeamRecovery(namespace, team, result string) {
-	TeamRecoveryTotal.WithLabelValues(namespace, team, result).Inc()
+func RecordExecutionAttemptTransition(namespace, backend, state, failureCode string, duration time.Duration) {
+	ExecutionAttemptTransitions.WithLabelValues(namespace, backend, state, failureCode).Inc()
+	if duration > 0 && (state == "succeeded" || state == "failed" || state == "cancelled") {
+		ExecutionAttemptDuration.WithLabelValues(namespace, backend, state).Observe(duration.Seconds())
+	}
 }
 
-// RecordTeamMessage increments the team message counter.
-func RecordTeamMessage(namespace, team, status string) {
-	TeamMessagesTotal.WithLabelValues(namespace, team, status).Inc()
+func RecordRuntimeClaim(namespace, pool, result string) {
+	RuntimeClaims.WithLabelValues(namespace, pool, result).Inc()
 }
