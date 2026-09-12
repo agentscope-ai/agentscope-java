@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -53,23 +54,34 @@ import org.slf4j.LoggerFactory;
  * {@code volatile sandbox} field is retained only as a best-effort fallback for context-free
  * internal callers that resolve the filesystem with a shared empty {@link RuntimeContext} (e.g.
  * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}, which carries no per-call binding).
- * The middleware still maintains that field via {@link #setSandbox} on acquire and {@link
- * #clearSandboxIfCurrent} on release, so it remains last-writer-wins under concurrency and must not
- * be relied on for isolation.
+ * The middleware maintains that fallback via {@link #setSandbox} on acquire and {@link
+ * #clearSandboxIfCurrent} on release. Active bindings are retained in acquisition order so a
+ * release restores another still-active binding instead of transiently leaving context-free
+ * callers without a sandbox (issue #2849). The fallback still must not be relied on for session
+ * isolation; per-call bindings remain authoritative.
  */
 public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements SandboxAware {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxBackedFilesystem.class);
 
     private final String fsId;
+    private final List<Sandbox> fallbackBindings = new ArrayList<>();
     private volatile Sandbox sandbox;
 
     public SandboxBackedFilesystem() {
         this.fsId = "sandbox-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
+    /**
+     * Registers an active fallback binding.
+     *
+     * @param sandbox the active sandbox; must not be {@code null}
+     * @throws NullPointerException if {@code sandbox} is {@code null}
+     */
     @Override
     public synchronized void setSandbox(Sandbox sandbox) {
+        Objects.requireNonNull(sandbox, "sandbox");
+        fallbackBindings.add(sandbox);
         this.sandbox = sandbox;
     }
 
@@ -79,16 +91,25 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
     }
 
     /**
-     * Clears the fallback {@code sandbox} field only if it still points at {@code expected}. Used by
-     * {@link io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} on release so a
-     * finishing call never nulls a concurrent sibling call's fallback binding (issue #2490).
+     * Removes one fallback binding for {@code expected} and restores the most recently acquired
+     * binding that remains active. Used by {@link
+     * io.agentscope.harness.agent.middleware.SandboxLifecycleMiddleware} on release so a finishing
+     * call neither clears nor later restores a concurrent sibling call's binding (issues #2490 and
+     * #2849).
      *
      * @param expected the sandbox this call bound at acquire time
      */
     public synchronized void clearSandboxIfCurrent(Sandbox expected) {
-        if (this.sandbox == expected) {
-            this.sandbox = null;
+        for (int i = fallbackBindings.size() - 1; i >= 0; i--) {
+            if (fallbackBindings.get(i) == expected) {
+                fallbackBindings.remove(i);
+                break;
+            }
         }
+        this.sandbox =
+                fallbackBindings.isEmpty()
+                        ? null
+                        : fallbackBindings.get(fallbackBindings.size() - 1);
     }
 
     @Override
