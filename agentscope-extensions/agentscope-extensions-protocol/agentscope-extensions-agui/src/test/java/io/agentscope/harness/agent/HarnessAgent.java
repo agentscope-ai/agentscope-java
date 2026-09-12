@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.event.AgentEvent;
@@ -27,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class HarnessAgent implements Agent {
+public class HarnessAgent implements Agent, EventStreamingAgent {
 
     private Flux<AgentEvent> events = Flux.empty();
     private final AtomicReference<List<Msg>> seenMessages = new AtomicReference<>();
@@ -45,6 +46,7 @@ public class HarnessAgent implements Agent {
         return seenContext.get();
     }
 
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
         seenMessages.set(msgs);
         seenContext.set(context);
