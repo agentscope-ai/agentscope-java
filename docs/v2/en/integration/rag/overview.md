@@ -1,14 +1,16 @@
-# RAG Knowledge Base
+---
+title: Overview
+---
 
 `io.agentscope.core.rag.Knowledge` is AgentScope's interface for plugging in an external knowledge base. The Agent uses it during inference to retrieve documents that are then handed to the model. The `agentscope-extensions-*` repository ships several implementations:
 
 | Extension | Type | Best for |
 | --- | --- | --- |
-| [Simple](simple.md) | Self-managed: embeddings + vector store | Bring-your-own vector store (PgVector / Milvus / Qdrant / Elasticsearch / in-memory) |
-| [Bailian](bailian.md) | Alibaba Cloud Bailian Knowledge Base | Use a Bailian-hosted enterprise KB |
-| [Dify](dify.md) | Dify dataset | Already maintaining KB content in Dify |
-| [HayStack](haystack.md) | Self-hosted HayStack RAG | Existing HayStack pipelines |
-| [RAGFlow](ragflow.md) | RAGFlow service | Complex documents needing OCR / knowledge graphs |
+| [Simple](/v2/en/integration/rag/simple) | Self-managed: embeddings + vector store | Bring-your-own vector store (PgVector / Milvus / Qdrant / Elasticsearch / in-memory) |
+| [Bailian](/v2/en/integration/rag/bailian) | Alibaba Cloud Bailian Knowledge Base | Use a Bailian-hosted enterprise KB |
+| [Dify](/v2/en/integration/rag/dify) | Dify dataset | Already maintaining KB content in Dify |
+| [HayStack](/v2/en/integration/rag/haystack) | Self-hosted HayStack RAG | Existing HayStack pipelines |
+| [RAGFlow](/v2/en/integration/rag/ragflow) | RAGFlow service | Complex documents needing OCR / knowledge graphs |
 
 ## Same wiring everywhere
 

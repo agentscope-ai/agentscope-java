@@ -79,7 +79,7 @@ public final class SkillPromptBuilder {
             ## Code Execution
 
             <code_execution>
-            You have access to the execute_shell_command tool. Each skill in <available_skills>
+            You have access to the execute tool. Each skill in <available_skills>
             includes a <files-root> element giving the absolute path to that skill's files.
 
             Workflow:

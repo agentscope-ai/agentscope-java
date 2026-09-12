@@ -1,12 +1,10 @@
 ---
-hide-toc: true
+title: 'AgentScope Service Explained: Control Plane, Data Plane & Recoverable Runtime'
 ---
-
-# AgentScope Service Technical Deep Dive: Control Plane, Data Plane, and Recoverable Agent Runtime
 
 If the launch announcement answers "what AgentScope Service can do," this post focuses on "how it is built." We will walk through the product resource model, plane boundaries, the Turn lifecycle, the Brain / Hands split, the Session event contract, and multi-framework integration paths to explain the system design behind the platform.
 
-For a product overview and capability summary, see the companion post: [AgentScope Service Official Release](./agentscope-service-release.md). This post assumes readers already understand the basics of AgentScope 2.0 / Harness and are interested in scaling a single runnable agent into an operable platform.
+For a product overview and capability summary, see the companion post: [AgentScope Service Official Release](/v2/en/blogs/agentscope-service-release). This post assumes readers already understand the basics of AgentScope 2.0 / Harness and are interested in scaling a single runnable agent into an operable platform.
 
 ## What Is AgentScope Service (Implementation View)
 
@@ -242,7 +240,7 @@ It is recommended to validate at least three paths:
 2. HITL: trigger Ask Policy, continue after confirmation, and verify the history is complete;
 3. `self_hosted`: Worker poll / ack / heartbeat / return `tool_result`, and confirm the Turn recovers correctly.
 
-See [`docs/guide/14-validation.md`](../../../agentscope-service/docs/guide/14-validation.md) and the architecture notes in [`docs/guide/02-architecture.md`](../../../agentscope-service/docs/guide/02-architecture.md).
+See [`docs/guide/14-validation.md`](/v2/en/service/first-session) and the architecture notes in [`docs/guide/02-architecture.md`](/v2/en/service/concepts).
 
 ## Implementation Pitfalls Worth Avoiding Early
 
@@ -301,4 +299,4 @@ The technical kernel of AgentScope Service can be summarized in three sentences:
 2. **The persisted event sequence is the source of truth for Session; in-process objects are only disposable caches**;
 3. **Managed and BYO share the fleet contract; framework differences converge in adapters, not scattered across the Console**.
 
-If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](../../../agentscope-service/README.md) directly; for product capabilities and onboarding stories, return to the [release post](./agentscope-service-release.md).
+If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](/v2/en/service/quickstart) directly; for product capabilities and onboarding stories, return to the [release post](/v2/en/blogs/agentscope-service-release).

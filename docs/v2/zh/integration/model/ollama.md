@@ -1,4 +1,6 @@
-# Ollama 模型
+---
+title: Ollama
+---
 
 `agentscope-extensions-model-ollama` 接入本地托管的 Ollama 模型，适合本地开发、私有化部署和离线模型服务。
 
@@ -60,4 +62,4 @@ agentscope:
     # base-url: http://localhost:11434
 ```
 
-完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。
+完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

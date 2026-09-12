@@ -1,4 +1,6 @@
-# Anthropic 模型
+---
+title: Anthropic
+---
 
 `agentscope-extensions-model-anthropic` 接入 Anthropic Claude Model，并提供 Anthropic 专属 formatter 和请求 DTO 支持。
 
@@ -49,4 +51,4 @@ Spring Boot 应用可以使用 Anthropic starter：
 </dependency>
 ```
 
-完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。
+完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

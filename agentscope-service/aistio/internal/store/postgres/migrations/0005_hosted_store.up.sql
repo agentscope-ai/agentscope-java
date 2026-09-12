@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS dp_kv (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, ns_path, item_key)
 );
-CREATE INDEX IF NOT EXISTS idx_dp_kv_prefix ON dp_kv (tenant, ns_path text_pattern_ops, item_key);
 
 CREATE SEQUENCE IF NOT EXISTS dp_lock_fencing_seq;
 CREATE TABLE IF NOT EXISTS dp_locks (
@@ -24,7 +23,6 @@ CREATE TABLE IF NOT EXISTS dp_locks (
     expires_at    TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (tenant, lock_name)
 );
-CREATE INDEX IF NOT EXISTS idx_dp_locks_expiry ON dp_locks (expires_at);
 
 CREATE TABLE IF NOT EXISTS dp_snapshots (
     tenant       TEXT   NOT NULL,
@@ -37,7 +35,6 @@ CREATE TABLE IF NOT EXISTS dp_snapshots (
     accessed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, snapshot_id)
 );
-CREATE INDEX IF NOT EXISTS idx_dp_snapshots_accessed ON dp_snapshots (accessed_at);
 
 CREATE TABLE IF NOT EXISTS dp_bus_entries (
     id         BIGSERIAL PRIMARY KEY,
@@ -47,7 +44,6 @@ CREATE TABLE IF NOT EXISTS dp_bus_entries (
     payload    JSONB    NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_dp_bus_key ON dp_bus_entries (tenant, bus_key, kind, id);
 
 CREATE TABLE IF NOT EXISTS dp_async_tools (
     tenant       TEXT NOT NULL,
@@ -62,4 +58,3 @@ CREATE TABLE IF NOT EXISTS dp_async_tools (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, record_id)
 );
-CREATE INDEX IF NOT EXISTS idx_dp_async_stale ON dp_async_tools (tenant, session_id, status, created_at);

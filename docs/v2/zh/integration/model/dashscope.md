@@ -1,4 +1,6 @@
-# DashScope 模型
+---
+title: DashScope
+---
 
 `agentscope-extensions-model-dashscope` 接入阿里云 DashScope Qwen Model，包括多模态和推理能力的 Qwen 模型。
 
@@ -56,4 +58,4 @@ Spring Boot 应用可以使用 DashScope starter：
 </dependency>
 ```
 
-完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。
+完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

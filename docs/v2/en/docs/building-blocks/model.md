@@ -1,6 +1,6 @@
 ---
-title: "Model"
-description: "Configure and connect LLM model providers in AgentScope Java"
+title: Model
+description: Configure and connect LLM model providers in AgentScope Java
 ---
 
 ## Overview
@@ -224,8 +224,12 @@ Provider credential classes live with their model extension modules, for example
 
 Each chat model is built with a builder. The most common fields are `apiKey`, `modelName`, `stream`, `formatter`, `defaultOptions`. Three typical setups:
 
-::::{tab-set}
-:::{tab-item} Streaming
+
+<Tabs>
+
+
+<Tab title="Streaming">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -238,8 +242,12 @@ DashScopeChatModel model =
                 .formatter(new DashScopeChatFormatter())
                 .build();
 ```
-:::
-:::{tab-item} Tools
+
+</Tab>
+
+
+<Tab title="Tools">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -257,8 +265,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-:::{tab-item} Reasoning
+
+</Tab>
+
+
+<Tab title="Reasoning">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -277,8 +289,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 Common builder fields:
 
@@ -539,9 +555,13 @@ Today, `ModelCard` is a minimal record:
 | `displayName()` | `String` | Human-readable label (e.g. `"Claude Sonnet 4.6"`) |
 | `contextSize()` | `Integer` | Maximum context window (in tokens) |
 
-:::{note}
+
+<Note>
+
 The `ModelCard` schema is intentionally minimal at this stage; capability flags (input/output MIME types) and parameter schemas will be added as model-discovery infrastructure matures.
-:::
+
+</Note>
+
 
 ### Fetching ModelCards
 
