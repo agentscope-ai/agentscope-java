@@ -1577,6 +1577,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Adds an explicitly configured hook; {@code null} is ignored.
+         *
+         * <p>Automatically constructed local declared subagents, including declarations loaded
+         * from workspace Markdown, inherit all explicitly configured parent hooks. The same Hook
+         * instances are reused, with the existing priority ordering and deduplication, so these
+         * hooks also receive child agent events.
+         *
+         * <p>A hook that should handle only parent events should compare
+         * {@code event.getAgent().getAgentId()} with the parent's {@link HarnessAgent#getAgentId()}
+         * and return the event unchanged for other agents. This avoids duplicate reporting,
+         * duplicate metrics and other duplicated side effects or unexpected child event handling.
+         * Hook events carry the inner ReActAgent; use the agent ID rather than comparing the event
+         * agent directly with the HarnessAgent wrapper.
+         *
+         * @param hook the hook to add
+         * @return this builder
+         */
         public Builder hook(Hook hook) {
             if (hook != null) {
                 hooks.add(hook);
@@ -1585,6 +1603,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Adds explicitly configured hooks with the same inheritance semantics as {@link #hook}.
+         *
+         * @param hooks hooks to add; {@code null} lists and entries are ignored
+         * @return this builder
+         */
         public Builder hooks(List<Hook> hooks) {
             if (hooks != null) {
                 for (Hook h : hooks) {
@@ -2340,6 +2364,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public HarnessAgent build() {
+            return build(null);
+        }
+
+        /**
+         * Builds an automatic declared child while restricting tools contributed by inherited
+         * Hooks. A null allowlist retains normal registration; an empty allowlist still applies
+         * the declared child's workspace tool policy.
+         */
+        HarnessAgent build(List<String> inheritedHookToolAllowlist) {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
@@ -2748,6 +2781,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
                 }
             }
+            if (inheritedHookToolAllowlist != null) {
+                resolvedToolsConfig =
+                        HarnessAgentBuilderSupport.childToolsConfig(
+                                resolvedToolsConfig, inheritedHookToolAllowlist);
+            }
             if (resolvedToolsConfig != null) {
                 McpServerRegistrar.register(
                         agentToolkit,
@@ -2946,7 +2984,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
-            ReActAgent delegate = inner.build();
+            ReActAgent delegate;
+            if (inheritedHookToolAllowlist == null) {
+                delegate = inner.build();
+            } else {
+                ToolsConfig childToolsConfig = resolvedToolsConfig;
+                delegate =
+                        inner.build(
+                                toolName -> {
+                                    // Filter before installation, even when the real toolkit
+                                    // forbids runtime deletion. Rejected contributions leave the
+                                    // child's own same-name Harness tools intact.
+                                    return (inheritedHookToolAllowlist.isEmpty()
+                                                    || inheritedHookToolAllowlist.contains(
+                                                            toolName))
+                                            && ToolFilter.isAllowed(toolName, childToolsConfig);
+                                });
+            }
             selfRef.set(delegate);
 
             return new HarnessAgent(

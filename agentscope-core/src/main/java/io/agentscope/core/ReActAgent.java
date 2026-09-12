@@ -147,6 +147,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -5352,6 +5353,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
+            return build(null);
+        }
+
+        /**
+         * Builds an agent after filtering tools contributed by its hooks.
+         *
+         * <p>The predicate receives each resolved {@link Hook#tools()} contribution's registered
+         * tool name ({@link AgentTool#getName()}), also used as its tool schema name. For annotated
+         * methods, this is the {@code @Tool} name, or the method name when no name is specified.
+         * Returning {@code true} retains the tool; {@code false} excludes it before installation,
+         * independently of the agent toolkit's runtime deletion policy.
+         *
+         * <p>Only resolved hook contributions are tested, after normal registration has resolved
+         * duplicate tool names. Existing toolkit tools and tools installed separately by the
+         * builder are not tested. Retained contributions use normal tool registration semantics,
+         * including replacement of existing tools with the same name. Toolkit execution
+         * configuration, callbacks, tool metadata and Hook instances are preserved. Passing
+         * {@code null} retains normal hook tool registration, as does {@link #build()}.
+         *
+         * @param hookToolFilter optional construction-time filter for hook-contributed tools
+         * @return a new ReActAgent instance
+         * @throws IllegalArgumentException if required parameters are missing or invalid
+         */
+        public ReActAgent build(Predicate<String> hookToolFilter) {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
@@ -5363,7 +5388,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
-            registerToolsFromHooks(agentToolkit);
+            if (hookToolFilter == null) {
+                registerToolsFromHooks(agentToolkit);
+            } else {
+                Toolkit hookTools = new Toolkit();
+                registerToolsFromHooks(hookTools);
+                for (String toolName : hookTools.getToolNames()) {
+                    if (hookToolFilter.test(toolName)) {
+                        agentToolkit.registerAgentTool(hookTools.getTool(toolName));
+                    }
+                }
+            }
 
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
