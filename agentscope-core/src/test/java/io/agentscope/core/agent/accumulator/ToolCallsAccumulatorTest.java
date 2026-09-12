@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
 import java.util.List;
@@ -101,6 +102,42 @@ class ToolCallsAccumulatorTest {
         assertEquals("search", toolCall.getName());
         // Metadata should be empty (null metadata passed to builder)
         assertTrue(toolCall.getMetadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should fail closed and fallback content for malformed JSON")
+    void testMalformedJsonFailsClosedWithFallbackContent() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_malformed")
+                        .name("write_text_file")
+                        .input(Map.of("path", "output.txt"))
+                        .content("{\"projectName\": \"改造\"文化礼堂\"及配套设施\"}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        // Partial arguments must not remain executable after final JSON parsing fails.
+        assertTrue(toolCall.getInput().isEmpty());
+        assertEquals("{}", toolCall.getContent());
+        assertEquals(ToolCallState.PARSE_FAILED, toolCall.getState());
+    }
+
+    @Test
+    @DisplayName("Should allow an explicitly valid empty object")
+    void testValidEmptyObjectRemainsExecutable() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_empty")
+                        .name("noop")
+                        .input(Map.of())
+                        .content("{}")
+                        .build());
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertTrue(toolCall.getInput().isEmpty());
+        assertEquals(ToolCallState.PENDING, toolCall.getState());
     }
 
     @Test

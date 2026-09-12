@@ -26,7 +26,10 @@ public enum ToolCallState {
 
     SUBMITTED("submitted"),
 
-    FINISHED("finished");
+    FINISHED("finished"),
+
+    /** The streamed tool arguments failed final JSON parsing and must not execute. */
+    PARSE_FAILED("parse_failed");
 
     private final String value;
 
