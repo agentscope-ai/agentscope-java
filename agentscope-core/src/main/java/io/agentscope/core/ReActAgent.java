@@ -97,6 +97,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionEscalation;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.rag.GenericRAGHook;
@@ -136,6 +137,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -2898,14 +2900,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
-                                Set<String> autoDenied = gate.autoDeniedIds();
+                                Map<String, String> autoDenied = gate.autoDenied();
 
                                 // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
                                 // calls run immediately; ASKING calls cause the agent to pause and
                                 // return; DENIED calls get DENIED ToolResultBlocks written below.
                                 Map<String, ToolCallState> stateUpdates = new HashMap<>();
                                 for (ToolUseBlock tc : toolCalls) {
-                                    if (autoDenied.contains(tc.getId())) {
+                                    if (autoDenied.containsKey(tc.getId())) {
                                         // DENIED tools don't need a state change — they'll get a
                                         // DENIED ToolResultBlock and won't reappear in pending.
                                         continue;
@@ -2959,13 +2961,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * them to context so the conversation reflects the rejection (and resume doesn't see them
          * as pending).
          */
-        private void writeAutoDeniedResults(List<ToolUseBlock> toolCalls, Set<String> deniedIds) {
+        private void writeAutoDeniedResults(
+                List<ToolUseBlock> toolCalls, Map<String, String> deniedMessages) {
             for (ToolUseBlock tc : toolCalls) {
-                if (!deniedIds.contains(tc.getId())) {
+                String message = deniedMessages.get(tc.getId());
+                if (message == null) {
                     continue;
                 }
                 ToolResultBlock denied =
-                        ToolResultBlock.text("Permission denied by rules")
+                        ToolResultBlock.text(message)
                                 .withIdAndName(tc.getId(), tc.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg = ToolResultMessageBuilder.buildToolResultMsg(denied, tc, getName());
@@ -2981,16 +2985,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Flux<AgentEvent> runToolBatch(
                 List<ToolUseBlock> toolCalls,
-                Set<String> deniedIds,
+                Map<String, String> deniedMessages,
                 String replyId,
                 AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
             List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
             List<ToolUseBlock> approved = new ArrayList<>();
             for (ToolUseBlock tc : toolCalls) {
-                if (deniedIds.contains(tc.getId())) {
+                String deniedMessage = deniedMessages.get(tc.getId());
+                if (deniedMessage != null) {
                     ToolResultBlock denied =
-                            ToolResultBlock.text("Permission denied by rules")
+                            ToolResultBlock.text(deniedMessage)
                                     .withIdAndName(tc.getId(), tc.getName())
                                     .withState(ToolResultState.DENIED);
                     deniedEntries.add(Map.entry(tc, denied));
@@ -3011,7 +3016,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         replyId,
                                                         use.getId(),
                                                         use.getName(),
-                                                        "Permission denied by rules"),
+                                                        deniedMessages.getOrDefault(
+                                                                use.getId(), "Permission denied")),
                                                 new ToolResultEndEvent(
                                                         replyId,
                                                         use.getId(),
@@ -3201,7 +3207,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
          *     synthesises denied results for them without invoking the tool.
          */
-        private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
+        /**
+         * Calls gated to ASK, plus a map of auto-denied call id -> denial message (the engine's or
+         * the tool self-check's own text; never a generic placeholder when one exists).
+         */
+        private record PermissionGate(
+                List<ToolUseBlock> pendingAsk, Map<String, String> autoDenied) {}
 
         /**
          * Run every tool call through the permission gate.
@@ -3217,7 +3228,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
             if (toolCalls == null || toolCalls.isEmpty()) {
-                return Mono.just(new PermissionGate(List.of(), Set.of()));
+                return Mono.just(new PermissionGate(List.of(), Map.of()));
             }
             boolean useEngine = !state.getPermissionContext().isTrivial();
             return Flux.fromIterable(toolCalls)
@@ -3226,11 +3237,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .map(
                             verdicts -> {
                                 List<ToolUseBlock> pending = new ArrayList<>();
-                                Set<String> denied = new HashSet<>();
+                                Map<String, String> denied = new LinkedHashMap<>();
                                 for (PermissionVerdict v : verdicts) {
                                     switch (v.behavior()) {
-                                        case DENY -> denied.add(v.use().getId());
-                                        case ASK -> pending.add(v.use());
+                                        case DENY ->
+                                                denied.put(
+                                                        v.use().getId(),
+                                                        v.message() != null
+                                                                ? v.message()
+                                                                : "Permission denied");
+                                        // Pending blocks enter the gate possibly rewritten
+                                        // (e.g. the escalation justification cap applied at
+                                        // the boundary the approver actually sees).
+                                        case ASK -> pending.add(v.effectiveUse());
                                         case ALLOW, PASSTHROUGH -> {
                                             // auto-approved; falls through to execution
                                         }
@@ -3250,7 +3269,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
             Map<String, Object> input = use.getInput() == null ? Map.of() : use.getInput();
-            if (useEngine) {
+            // Calls carrying escalation arguments on a tool that advertises them always engage
+            // the engine — enabling the escalation feature must not flip the evaluation path of
+            // calls that did not opt in (an otherwise-trivial context keeps its lightweight
+            // pre-2.0 path), and ordinary business tools with e.g. a legitimate `justification`
+            // parameter keep their previous evaluation entirely.
+            if (useEngine
+                    || (PermissionEscalation.hasEscalationArgs(input)
+                            && PermissionEscalation.advertisesEscalation(tb))) {
                 return permissionEngine
                         .checkPermission(tb, input)
                         .map(
@@ -3259,7 +3285,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 use,
                                                 decision == null
                                                         ? PermissionBehavior.ASK
-                                                        : decision.getBehavior()));
+                                                        : decision.getBehavior(),
+                                                decision == null ? null : decision.getMessage(),
+                                                decision == null
+                                                        ? null
+                                                        : decision.getUpdatedInput()));
             }
             return tb.checkPermissions(input, state.getPermissionContext())
                     .map(
@@ -3271,15 +3301,47 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // gates execution; PASSTHROUGH and ALLOW both run, DENY is
                                 // honoured.
                                 return switch (decision.getBehavior()) {
-                                    case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                    case ASK ->
+                                            new PermissionVerdict(
+                                                    use,
+                                                    PermissionBehavior.ASK,
+                                                    decision.getMessage());
                                     case DENY ->
-                                            new PermissionVerdict(use, PermissionBehavior.DENY);
+                                            new PermissionVerdict(
+                                                    use,
+                                                    PermissionBehavior.DENY,
+                                                    decision.getMessage());
                                     default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
                                 };
                             });
         }
 
-        private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+        /**
+         * One tool call's permission verdict. {@code message} carries the engine's (or the tool
+         * self-check's) decision text so DENIED results can tell the model WHY it was denied —
+         * a generic "denied" gives the model nothing to correct against.
+         */
+        private record PermissionVerdict(
+                ToolUseBlock use,
+                PermissionBehavior behavior,
+                String message,
+                Map<String, Object> updatedInput) {
+
+            /** Convenience for ALLOW/PASSTHROUGH verdicts, which never enter the denied map. */
+            PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {
+                this(use, behavior, null, null);
+            }
+
+            /** Convenience for verdicts with a message but no input rewrite. */
+            PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior, String message) {
+                this(use, behavior, message, null);
+            }
+
+            /** The call as it should enter the gate: rewritten when the decision updated it. */
+            ToolUseBlock effectiveUse() {
+                return updatedInput == null ? use : use.withInput(updatedInput);
+            }
+        }
 
         private List<ToolUseBlock> getSuspendedToolCalls(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {

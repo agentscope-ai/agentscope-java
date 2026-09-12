@@ -176,6 +176,20 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
+     * Returns a copy of this block with a replaced input map (used by permission decisions
+     * that rewrite arguments). All other fields — including streaming {@code content} and
+     * provider-specific {@code metadata} — are preserved, matching {@link #withState}'s
+     * field-fidelity contract.
+     *
+     * @param newInput The new input map
+     * @return A new ToolUseBlock with the updated input
+     */
+    public ToolUseBlock withInput(Map<String, Object> newInput) {
+        return new ToolUseBlock(
+                this.id, this.name, newInput, this.content, this.metadata, this.state);
+    }
+
+    /**
      * Returns a copy of this block with the given state.
      *
      * @param state The new state
