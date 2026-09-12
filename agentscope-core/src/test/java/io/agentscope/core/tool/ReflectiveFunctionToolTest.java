@@ -15,15 +15,26 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.permission.AdditionalWorkingDirectory;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionEngine;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.file.WriteFileTool;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Verifies that {@code @Tool}-annotated methods are now bridged into the {@link ToolBase}
@@ -75,6 +86,17 @@ class ReflectiveFunctionToolTest {
         @Tool(name = "external_call", description = "external", externalTool = true)
         public String external(@ToolParam(name = "q", description = "q") String q) {
             return q;
+        }
+    }
+
+    static final class DuplicateFilePathParamTools {
+        // Duplicate entries must be deduplicated at registration instead of crashing.
+        @Tool(
+                name = "dup_path_tool",
+                description = "Declares the same path param twice",
+                filePathParams = {"path", "path"})
+        public String dupPath(@ToolParam(name = "path", description = "path") String path) {
+            return path;
         }
     }
 
@@ -146,5 +168,111 @@ class ReflectiveFunctionToolTest {
         AgentTool tool = toolkit.getTool("external_call");
         ToolBase tb = assertInstanceOf(ToolBase.class, tool);
         assertTrue(tb.isExternalTool());
+    }
+
+    @Test
+    void filePathParamsAnnotationPropagatesToToolBase() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WriteFileTool());
+
+        AgentTool tool = toolkit.getTool("write_text_file");
+        ToolBase tb = assertInstanceOf(ToolBase.class, tool);
+        assertTrue(
+                tb.getFilePathParams().contains("file_path"),
+                "@Tool(filePathParams) must propagate to the registered tool");
+    }
+
+    @Test
+    void duplicateFilePathParamsAreDeduplicatedAtRegistration() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DuplicateFilePathParamTools());
+
+        assertNotNull(toolkit.getTool("dup_path_tool"), "tool must register despite duplicates");
+        ToolBase tb = assertInstanceOf(ToolBase.class, toolkit.getTool("dup_path_tool"));
+        assertEquals(1, tb.getFilePathParams().size(), "duplicates must collapse");
+    }
+
+    @Test
+    void builtinWriteFileToolPathChecksFlowThroughRealRegistration(@TempDir Path workDir) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WriteFileTool());
+        ToolBase writeTool = assertInstanceOf(ToolBase.class, toolkit.getTool("write_text_file"));
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        PermissionContextState.builder()
+                                .mode(PermissionMode.ACCEPT_EDITS)
+                                .addWorkingDirectory(
+                                        workDir.toString(),
+                                        new AdditionalWorkingDirectory(workDir.toString(), "test"))
+                                .build());
+
+        assertEquals(
+                PermissionBehavior.ALLOW,
+                engine.checkPermission(
+                                writeTool,
+                                Map.of("file_path", workDir.resolve("new.txt").toString()))
+                        .block()
+                        .getBehavior(),
+                "in-scope write must be auto-allowed through the real registration path");
+        assertEquals(
+                PermissionBehavior.ASK,
+                engine.checkPermission(writeTool, Map.of("file_path", "/etc/evil.txt"))
+                        .block()
+                        .getBehavior(),
+                "out-of-scope write must fall back to the engine default ASK");
+        assertEquals(
+                PermissionBehavior.ASK,
+                engine.checkPermission(
+                                writeTool,
+                                Map.of("file_path", workDir.resolve(".bashrc").toString()))
+                        .block()
+                        .getBehavior(),
+                "dangerous path must Safety-ASK even inside the working directory");
+    }
+
+    @Test
+    void builtinWriteFileToolWithBaseDirCatchesDangerousResolverLanding(@TempDir Path sshProj)
+            throws IOException {
+        Path sshDir = sshProj.resolve(".ssh");
+        Files.createDirectories(sshDir);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WriteFileTool(sshProj.toString()));
+        ToolBase writeTool = assertInstanceOf(ToolBase.class, toolkit.getTool("write_text_file"));
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        PermissionContextState.builder().mode(PermissionMode.BYPASS).build());
+
+        assertEquals(
+                PermissionBehavior.ASK,
+                engine.checkPermission(writeTool, Map.of("file_path", ".ssh/config"))
+                        .block()
+                        .getBehavior(),
+                "the baseDir resolver landing (.ssh/config) must trip the bypass-immune safety"
+                        + " check");
+    }
+
+    @Test
+    void builtinWriteFileToolRelativePathWithBaseDirAllowsInScope(@TempDir Path workDir) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new WriteFileTool(workDir.toString()));
+        ToolBase writeTool = assertInstanceOf(ToolBase.class, toolkit.getTool("write_text_file"));
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        PermissionContextState.builder()
+                                .mode(PermissionMode.ACCEPT_EDITS)
+                                .addWorkingDirectory(
+                                        workDir.toString(),
+                                        new AdditionalWorkingDirectory(workDir.toString(), "test"))
+                                .build());
+
+        assertEquals(
+                PermissionBehavior.ALLOW,
+                engine.checkPermission(writeTool, Map.of("file_path", "a.txt"))
+                        .block()
+                        .getBehavior(),
+                "relative path with the baseDir resolver must auto-allow inside the scope");
     }
 }

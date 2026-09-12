@@ -18,6 +18,7 @@ package io.agentscope.core.tool.file;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -51,16 +52,11 @@ public class FileToolUtils {
             throw new IOException("File path cannot be null or empty.");
         }
 
-        Path inputPath = Paths.get(filePath);
-
-        // If baseDir is specified, relative paths should be resolved relative to baseDir
         Path path;
-        if (baseDir != null && !inputPath.isAbsolute()) {
-            // Relative path: resolve relative to baseDir
-            path = baseDir.resolve(inputPath).normalize();
-        } else {
-            // Absolute path or no baseDir: convert to absolute path
-            path = inputPath.toAbsolutePath().normalize();
+        try {
+            path = resolveLexical(filePath, baseDir);
+        } catch (InvalidPathException e) {
+            throw new IOException("Invalid file path: " + filePath, e);
         }
 
         // If baseDir is specified, ensure the path is within it
@@ -76,6 +72,25 @@ public class FileToolUtils {
         }
 
         return path;
+    }
+
+    /**
+     * Lexically resolve {@code filePath} to the absolute path the tool's execution would operate
+     * on, without side effects. Shared by {@link #validatePath(String, Path)} and the permission
+     * resolver so they cannot drift apart. A relative path is anchored at {@code baseDir} when
+     * present, otherwise at the JVM working directory; an absolute path is used as-is. No
+     * {@code ~} expansion is applied.
+     *
+     * @param filePath non-null, non-blank path string
+     * @param baseDir base directory for relative paths; {@code null} means JVM working dir
+     * @return the normalised absolute path; throws {@code InvalidPathException} when malformed
+     */
+    static Path resolveLexical(String filePath, Path baseDir) {
+        Path inputPath = Paths.get(filePath);
+        if (baseDir != null && !inputPath.isAbsolute()) {
+            return baseDir.resolve(inputPath).normalize();
+        }
+        return inputPath.toAbsolutePath().normalize();
     }
 
     /**
