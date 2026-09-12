@@ -1378,7 +1378,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             getName());
 
                     return scope.doCallInner(msgs)
-                            .onErrorResume(error -> saveStateAfterCallFailure(scope, error))
+                            .onErrorResume(
+                                    error -> {
+                                        scope.rollbackInjectedSoEnterReminder();
+                                        return saveStateAfterCallFailure(scope, error);
+                                    })
                             .flatMap(
                                     result -> {
                                         Msg out = result;
@@ -1409,9 +1413,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     })
                             .switchIfEmpty(
                                     Mono.defer(
-                                            () ->
-                                                    saveStateToSession(scope)
-                                                            .then(Mono.<Msg>empty())));
+                                            () -> {
+                                                scope.rollbackInjectedSoEnterReminder();
+                                                return saveStateToSession(scope)
+                                                        .then(Mono.<Msg>empty());
+                                            }));
                 });
     }
 
@@ -1841,6 +1847,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         Msg soResultMsg;
 
         /**
+         * The enter {@code <system-reminder>} this call injected into the state context when it
+         * entered structured-output tool mode. Held so a call that produces no result (empty
+         * response or failure) can roll the mode entry back and keep the durable state clean.
+         */
+        Msg injectedSoEnterReminder;
+
+        /**
          * Cumulative count of forced {@code generate_response} calls. {@code 0} = never forced;
          * when greater than {@code 0} the next reasoning round consumes the flag to force
          * {@code tool_choice} (or a prompt reminder), and the value doubles as the retry cap: at
@@ -1881,6 +1894,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     : Mono.empty());
         }
 
+        /**
+         * Roll back a structured-output mode entry that this call injected but never turned into a
+         * result (empty response or failure). Removes the injected enter {@code
+         * <system-reminder>} and resets the persistent mode flag so durable state on such turns
+         * contains only the safe user input, consistent with
+         * {@code ReActAgentCallFailurePersistenceTest}.
+         */
+        private void rollbackInjectedSoEnterReminder() {
+            if (injectedSoEnterReminder == null) {
+                return;
+            }
+            state.contextMutable().remove(injectedSoEnterReminder);
+            state.setSoToolActive(false);
+            injectedSoEnterReminder = null;
+        }
+
         private Mono<Msg> doCallInner(List<Msg> msgs) {
             // Structured-output tool mode enter/exit reminders (Issue 2): inject a one-shot
             // <system-reminder> at the transition boundary and flip the persistent flag so
@@ -1889,7 +1918,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // (STRUCTURED_OUTPUT_REMINDER metadata, cleaned on completion), these reminders carry
             // no metadata and are never cleaned.
             if (soTool != null && !state.isSoToolActive()) {
-                state.contextMutable().add(buildSoToolEnterReminder());
+                injectedSoEnterReminder = buildSoToolEnterReminder();
+                state.contextMutable().add(injectedSoEnterReminder);
                 state.setSoToolActive(true);
                 log.debug(
                         "Entering structured-output mode: injected enter <system-reminder>"
