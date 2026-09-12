@@ -469,7 +469,7 @@ if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
 }
 ```
 
-Streaming resumes emit `UserAskResultEvent` correlated with the pause via `replyId`. Because `ASK_USER` is produced by the tool self-check, it is **not** registerable as a rule and is unaffected by `DONT_ASK` mode (unlike `ASK`); to make unattended runs skip questions entirely, simply do not register the `ask_user` tool.
+Streaming resumes emit `UserAskResultEvent` correlated with the pause via `replyId`. Because `ASK_USER` is produced by the tool self-check, it is **not** registerable as a rule and is unaffected by `DONT_ASK` mode (unlike `ASK`); to make unattended runs skip questions entirely, simply do not register the `ask_user` tool. A model batch may contain both `ask_user` and permission-gated calls; in that case the response uses `GenerateReason.PERMISSION_AND_ASK_USER_ASKING`, emits both pause events, and each subset must be resumed with its own metadata payload. Adapters that support only one pause kind must preserve the other subset instead of treating the turn as complete.
 
 ## Common recipes
 

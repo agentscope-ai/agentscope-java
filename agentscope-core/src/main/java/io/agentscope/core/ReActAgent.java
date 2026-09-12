@@ -2760,8 +2760,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 == GenerateReason.MIDDLEWARE_STOP_REQUESTED
                                         || msg.getGenerateReason()
                                                 == GenerateReason.PERMISSION_ASKING
+                                        || msg.getGenerateReason() == GenerateReason.ASK_USER_ASKING
                                         || msg.getGenerateReason()
-                                                == GenerateReason.ASK_USER_ASKING) {
+                                                == GenerateReason.PERMISSION_AND_ASK_USER_ASKING) {
                                     return Mono.just(msg);
                                 }
                                 return runPostReasoningPipeline(msg, iter);
@@ -3132,7 +3133,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (rs != null) {
                                     if (rs.getGenerateReason() == GenerateReason.PERMISSION_ASKING
                                             || rs.getGenerateReason()
-                                                    == GenerateReason.ASK_USER_ASKING) {
+                                                    == GenerateReason.ASK_USER_ASKING
+                                            || rs.getGenerateReason()
+                                                    == GenerateReason
+                                                            .PERMISSION_AND_ASK_USER_ASKING) {
                                         Msg lastAssistant = findLastAssistantMsg();
                                         if (lastAssistant != null) {
                                             return Mono.just(
@@ -3243,8 +3247,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Ask-user HITL: the model asked the user questions. Surface the
                                 // pending ask_user calls, persist the reply id for resume
                                 // correlation, then signal stop via RequestStopEvent. The agent's
-                                // acting() will set GenerateReason to ASK_USER_ASKING and return;
-                                // the tool is never executed.
+                                // acting() will set the corresponding HITL GenerateReason and
+                                // return; the tool is never executed.
                                 if (!pendingAskUser.isEmpty()) {
                                     if (!autoDenied.isEmpty()) {
                                         // Write DENIED results before returning the ask-user pause
@@ -3265,7 +3269,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 new RequireUserConfirmEvent(replyId, pending),
                                                 new RequestStopEvent(
                                                         "ask user and permission confirmation",
-                                                        GenerateReason.ASK_USER_ASKING));
+                                                        GenerateReason
+                                                                .PERMISSION_AND_ASK_USER_ASKING));
                                     }
                                     return Flux.<AgentEvent>just(
                                             new RequireUserAskEvent(replyId, pendingAskUser),

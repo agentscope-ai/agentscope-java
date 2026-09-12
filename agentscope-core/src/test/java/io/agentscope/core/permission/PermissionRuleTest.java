@@ -57,6 +57,13 @@ class PermissionRuleTest {
     }
 
     @Test
+    void rejectsAskUserBehaviorAsRule() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new PermissionRule("ask_user", null, PermissionBehavior.ASK_USER, "test"));
+    }
+
+    @Test
     void jsonUsesSnakeCase() throws Exception {
         PermissionRule rule =
                 new PermissionRule("Bash", "git:*", PermissionBehavior.ALLOW, "userSettings");

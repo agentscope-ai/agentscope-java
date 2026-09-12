@@ -72,6 +72,16 @@ public enum GenerateReason {
     ASK_USER_ASKING,
 
     /**
+     * The run is paused for both permission confirmations and model-initiated user questions.
+     *
+     * <p>The returned message contains separate pending tool-call subsets. Resume each subset with
+     * its corresponding metadata payload: {@code ConfirmResult}s for permission calls and
+     * {@code AskUserResult}s for question calls. Adapters that only support one pause kind must
+     * preserve the other subset instead of treating this reason as a completed turn.
+     */
+    PERMISSION_AND_ASK_USER_ASKING,
+
+    /**
      * A middleware requested the agent to pause via {@code RequestStopEvent}.
      *
      * <p>The caller resumes by issuing a second {@code agent.call()} with no arguments — the

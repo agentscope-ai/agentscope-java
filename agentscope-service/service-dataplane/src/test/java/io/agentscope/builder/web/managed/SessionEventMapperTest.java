@@ -119,6 +119,15 @@ class SessionEventMapperTest {
         Msg completed = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
 
         assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(asking))).isTrue();
+
+        Msg mixed =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("approval and question required")
+                        .generateReason(GenerateReason.PERMISSION_AND_ASK_USER_ASKING)
+                        .build();
+        assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(mixed))).isTrue();
+
         assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(completed)))
                 .isFalse();
     }

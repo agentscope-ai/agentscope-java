@@ -134,4 +134,6 @@ if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
 }
 ```
 
-Streaming callers receive `RequireUserAskEvent` for the pause and `UserAskResultEvent` on resume, correlated by `replyId` — the same shape as the permission-confirmation flow.
+Streaming callers receive `RequireUserAskEvent` for the pause and `UserAskResultEvent` on resume, correlated by `replyId` — the same shape as the permission-confirmation flow. `DONT_ASK` does not auto-decline an `ASK_USER` pause; it only changes permission-rule `ASK` decisions.
+
+If one model response contains both an `ask_user` call and a permission-gated call, the response uses `GenerateReason.PERMISSION_AND_ASK_USER_ASKING` and emits both pause events. Resume the two pending subsets independently with `AskUserResult` and `ConfirmResult` metadata; adapters that support only one pause kind must preserve the other subset rather than treating the turn as complete.

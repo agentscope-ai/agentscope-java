@@ -636,6 +636,10 @@ public class Msg implements State {
      *   <li>{@link GenerateReason#TOOL_SUSPENDED} - External tools need user execution</li>
      *   <li>{@link GenerateReason#REASONING_STOP_REQUESTED} - HITL stop in reasoning phase</li>
      *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
+     *   <li>{@link GenerateReason#PERMISSION_ASKING} - Permission confirmation is required</li>
+     *   <li>{@link GenerateReason#ASK_USER_ASKING} - The model is asking the user a question</li>
+     *   <li>{@link GenerateReason#PERMISSION_AND_ASK_USER_ASKING} - Both HITL pause kinds are
+     *       pending</li>
      *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>
      *   <li>{@link GenerateReason#MAX_ITERATIONS} - Maximum iterations reached</li>
      * </ul>

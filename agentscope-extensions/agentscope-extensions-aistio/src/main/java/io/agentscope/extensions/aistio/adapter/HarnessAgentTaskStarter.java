@@ -27,6 +27,7 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -361,15 +362,14 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             HarnessAgent agent, Msg input, RuntimeContext context, AgentTaskAssignment assignment) {
         Msg response = agent.call(input, context).block();
         for (int round = 0;
-                response != null
-                        && response.getGenerateReason() == GenerateReason.PERMISSION_ASKING;
+                response != null && isPermissionApprovalPause(response.getGenerateReason());
                 round++) {
             if (round >= 32)
                 throw new IllegalStateException("runtime approval round limit exceeded");
-            List<ToolUseBlock> pending = response.getContentBlocks(ToolUseBlock.class);
+            List<ToolUseBlock> pending = permissionConfirmationCalls(response);
             if (pending.isEmpty())
                 throw new IllegalStateException(
-                        "PERMISSION_ASKING response contains no tool calls");
+                        "permission pause response contains no confirmation tool calls");
             List<ConfirmResult> confirmations = new ArrayList<>();
             for (ToolUseBlock call : pending) {
                 var decision =
@@ -395,6 +395,39 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             .block();
         }
         return response;
+    }
+
+    private static boolean isPermissionApprovalPause(GenerateReason reason) {
+        return reason == GenerateReason.PERMISSION_ASKING
+                || reason == GenerateReason.PERMISSION_AND_ASK_USER_ASKING;
+    }
+
+    static List<ToolUseBlock> permissionConfirmationCalls(Msg response) {
+        List<ToolUseBlock> pending = response.getContentBlocks(ToolUseBlock.class);
+        if (response.getGenerateReason() != GenerateReason.PERMISSION_AND_ASK_USER_ASKING) {
+            return pending;
+        }
+        return pending.stream()
+                .filter(HarnessAgentTaskStarter::isPermissionConfirmationCall)
+                .toList();
+    }
+
+    private static boolean isPermissionConfirmationCall(ToolUseBlock toolCall) {
+        Object raw =
+                toolCall == null || toolCall.getMetadata() == null
+                        ? null
+                        : toolCall.getMetadata().get(ToolUseBlock.METADATA_PERMISSION_BEHAVIOR);
+        if (raw instanceof PermissionBehavior behavior) {
+            return behavior == PermissionBehavior.ASK;
+        }
+        if (raw instanceof String value) {
+            try {
+                return PermissionBehavior.fromString(value) == PermissionBehavior.ASK;
+            } catch (IllegalArgumentException ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private static Msg message(String text) {

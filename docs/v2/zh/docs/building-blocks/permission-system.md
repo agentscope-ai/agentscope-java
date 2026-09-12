@@ -469,7 +469,7 @@ if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
 }
 ```
 
-流式恢复时发出 `UserAskResultEvent`，通过 `replyId` 与暂停事件关联。由于 `ASK_USER` 来自工具自检，它**不能配置成规则**，也不受 `DONT_ASK` 模式影响（与 `ASK` 不同）；无人值守场景若不想让模型提问，直接不注册 `ask_user` 工具即可。
+流式恢复时发出 `UserAskResultEvent`，通过 `replyId` 与暂停事件关联。由于 `ASK_USER` 来自工具自检，它**不能配置成规则**，也不受 `DONT_ASK` 模式影响（与 `ASK` 不同）；无人值守场景若不想让模型提问，直接不注册 `ask_user` 工具即可。如果一次模型响应同时包含 `ask_user` 调用和需要权限确认的调用，响应会使用 `GenerateReason.PERMISSION_AND_ASK_USER_ASKING`，并同时发出两种暂停事件；调用方应分别通过各自的元数据载荷恢复两组调用。只支持其中一种暂停类型的适配器必须保留另一组调用，不能把本轮当作已完成。
 
 ## 常见配方
 
