@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,12 @@ public class SessionSearchTool {
         this.workspaceManager = workspaceManager;
     }
 
+    /** Retains the original Java API and its literal phrase matching behavior. */
+    public String sessionSearch(
+            RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
+        return sessionSearch(runtimeContext, query, agentId, maxResults, null);
+    }
+
     @Tool(
             name = "session_search",
             readOnly = true,
@@ -57,7 +64,12 @@ public class SessionSearchTool {
                             + " Returns matching entries with session context.")
     public String sessionSearch(
             RuntimeContext runtimeContext,
-            @ToolParam(name = "query", description = "Search query (keyword or phrase)")
+            @ToolParam(
+                            name = "query",
+                            description =
+                                    "Literal phrase, or whitespace-separated keywords when"
+                                            + " matchMode is all/any; no automatic Chinese word"
+                                            + " segmentation")
                     String query,
             @ToolParam(
                             name = "agentId",
@@ -68,7 +80,15 @@ public class SessionSearchTool {
                             name = "maxResults",
                             description = "Maximum number of results to return (default: 10)",
                             required = false)
-                    Integer maxResults) {
+                    Integer maxResults,
+            @ToolParam(
+                            name = "matchMode",
+                            description =
+                                    "phrase (default): exact substring; all: every keyword in the"
+                                        + " same session entry; any: at least one keyword in that"
+                                        + " entry. Case-insensitive literal matching.",
+                            required = false)
+                    String matchMode) {
         if (query == null || query.isBlank()) {
             return "Error: query is required";
         }
@@ -76,7 +96,19 @@ public class SessionSearchTool {
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
-        String lowerQuery = query.toLowerCase();
+        Predicate<String> matcher;
+        try {
+            matcher =
+                    KeywordMatcher.compile(
+                            query,
+                            matchMode,
+                            term -> {
+                                String lowerTerm = term.toLowerCase();
+                                return text -> text.toLowerCase().contains(lowerTerm);
+                            });
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
+        }
 
         List<String> results = new ArrayList<>();
 
@@ -85,7 +117,7 @@ public class SessionSearchTool {
             if (results.size() >= limit) {
                 break;
             }
-            searchInSessionFile(file, lowerQuery, results, limit);
+            searchInSessionFile(file, matcher, results, limit);
         }
 
         if (results.isEmpty()) {
@@ -267,7 +299,7 @@ public class SessionSearchTool {
     }
 
     private void searchInSessionFile(
-            Path logFile, String lowerQuery, List<String> results, int limit) {
+            Path logFile, Predicate<String> matcher, List<String> results, int limit) {
         try {
             Path contextFile =
                     logFile.resolveSibling(
@@ -285,7 +317,7 @@ public class SessionSearchTool {
                     break;
                 }
                 String content = searchableText(entry);
-                if (content != null && content.toLowerCase().contains(lowerQuery)) {
+                if (content != null && matcher.test(content)) {
                     String preview =
                             content.length() > 200 ? content.substring(0, 200) + "..." : content;
                     String roleLabel =
