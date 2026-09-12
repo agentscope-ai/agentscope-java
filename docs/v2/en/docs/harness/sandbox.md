@@ -138,6 +138,48 @@ To customize lock parameters, set the guard explicitly on the `SandboxFilesystem
 
 Built-in implementations: `RedisSandboxExecutionGuard` (Redis `SET NX PX`), `JdbcSandboxExecutionGuard` (MySQL `GET_LOCK()`). You can also implement `SandboxExecutionGuard` to plug in Zookeeper, etcd, or other lock stores.
 
+## DockerDaemon: docker-java direct to a remote daemon (avoiding docker-in-docker)
+
+When AgentScope itself runs inside a container, there is no docker CLI / socket inside the
+container, so the CLI-based `DockerSandbox` in harness cannot work (mounting the host socket for
+docker-outside-of-docker is a security risk, and running dind inside the container has storage /
+network flaws). The extension module `agentscope-extensions-sandbox-docker` provides
+`DockerDaemonFilesystemSpec`: it uses the **docker-java** library to talk to a remote Docker
+daemon's Engine HTTP API directly over TCP — no local CLI / socket / dind required:
+
+```java
+.filesystem(new DockerDaemonFilesystemSpec()
+    .image("ubuntu:24.04")
+    .daemonUrl("tcp://192.168.1.10:2375"))   // or the DOCKER_HOST environment variable
+```
+
+- Add the dependency `io.agentscope:agentscope-extensions-sandbox-docker` to the consuming pom.
+- The target daemon must expose TCP listening (e.g. `dockerd -H tcp://0.0.0.0:2375`); TLS is
+  recommended for production (`https://` + the `DOCKER_CERT_PATH` environment variable, natively
+  supported by docker-java).
+- `daemonUrl` takes precedence, falling back to the `DOCKER_HOST` environment variable; the
+  resolved value is frozen into the sandbox state, so resume across processes reconnects to the
+  same daemon.
+- Differences vs the CLI-based `DockerSandbox`: no raw argument passthrough
+  (`additionalRunArgs`); use the typed `mount(...)` method for artifacts (see below); no local
+  CLI dependency; an exec timeout cannot kill the remote process (the Docker Engine API has no
+  exec-kill endpoint — it just stops waiting after the timeout).
+- Mounting artifacts is the equivalent of the CLI's `--mount`, with `bind` / `volume` / `tmpfs`:
+
+```java
+.filesystem(new DockerDaemonFilesystemSpec()
+    .image("ubuntu:24.04")
+    .daemonUrl("tcp://192.168.1.10:2375")
+    .mount("bind", "/host/artifacts", "/app/artifacts")   // same as --mount type=bind,src=...,dst=...
+    .mount("bind", "/host/config", "/etc/app", true)      // read-only
+    .mount("volume", "mydata", "/data")
+    .mount("tmpfs", null, "/tmp/shm"))
+```
+
+- Mounts are persisted in the sandbox state and restored when the container is recreated on
+  resume; invalid mounts (unknown type, blank source/target) fail fast with an
+  `IllegalArgumentException` at configuration time.
+
 ## Self-managed sandbox instances (advanced)
 
 By default the framework owns the whole sandbox lifecycle. Three "I'll manage it myself" scenarios:
@@ -181,6 +223,7 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 | Store | Best for |
 |---------|----------|
 | **Docker** | Local dev / single machine / trusted shell |
+| **DockerDaemon** | AgentScope running containerized / no docker CLI available; docker-java talking to a remote daemon over TCP, avoiding docker-in-docker |
 | **Kubernetes** | Self-hosted K8s; fully based on [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) (SandboxClaim / WarmPool), workspace persistence via PVC (see below) |
 | **Daytona** | Generic managed sandbox HTTP API |
 | **E2B** | Generic managed sandbox + native platform snapshots |

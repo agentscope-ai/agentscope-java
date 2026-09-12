@@ -138,6 +138,43 @@ HarnessAgent.builder()
 
 内置实现：`RedisSandboxExecutionGuard`（Redis `SET NX PX`）、`JdbcSandboxExecutionGuard`（MySQL `GET_LOCK()`）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（Zookeeper / etcd 等）。
 
+## docker-java 直连远端 daemon（DockerDaemon，避免 docker-in-docker）
+
+当 AgentScope 自身运行在容器里时，容器内没有 docker CLI / socket，harness 的 CLI 版
+`DockerSandbox` 无法工作（挂载宿主 socket 的 docker-outside-of-docker 有安全风险，容器内跑
+dind 有存储/网络缺陷）。扩展模块 `agentscope-extensions-sandbox-docker` 提供
+`DockerDaemonFilesystemSpec`：用 **docker-java** 库直接通过 TCP 访问远端 Docker daemon 的
+Engine HTTP API，不需要本机 CLI / socket / dind：
+
+```java
+.filesystem(new DockerDaemonFilesystemSpec()
+    .image("ubuntu:24.04")
+    .daemonUrl("tcp://192.168.1.10:2375"))   // 或 DOCKER_HOST 环境变量
+```
+
+- 需在使用方 pom 添加依赖 `io.agentscope:agentscope-extensions-sandbox-docker`。
+- 目标 daemon 需开启 TCP 监听（如 `dockerd -H tcp://0.0.0.0:2375`）；生产环境建议用 TLS
+  （`https://` + `DOCKER_CERT_PATH` 环境变量，docker-java 原生支持）。
+- `daemonUrl` 优先，回退 `DOCKER_HOST` 环境变量；解析结果冻结进沙箱 state，跨进程 resume
+  按同一 daemon 恢复。
+- 与 CLI 版 `DockerSandbox` 的差异：无 raw 参数透传（`additionalRunArgs`），产物挂载用
+  类型化 `mount(...)` 方法（见下）；无本机 CLI 依赖；exec 超时无法强杀远端进程（Docker
+  Engine API 无 exec-kill 端点，超时后停止等待）。
+- 挂载产物等价于 CLI 版的 `--mount`，支持 `bind` / `volume` / `tmpfs`：
+
+```java
+.filesystem(new DockerDaemonFilesystemSpec()
+    .image("ubuntu:24.04")
+    .daemonUrl("tcp://192.168.1.10:2375")
+    .mount("bind", "/host/artifacts", "/app/artifacts")   // 等价于 --mount type=bind,src=...,dst=...
+    .mount("bind", "/host/config", "/etc/app", true)      // ro
+    .mount("volume", "mydata", "/data")
+    .mount("tmpfs", null, "/tmp/shm"))
+```
+
+- 挂载信息随沙箱 state 序列化，跨进程 resume 重建容器时还原；校验失败（非法 type、空
+  source/target）在配置时即抛 `IllegalArgumentException`。
+
 ## 自管沙箱实例（高级）
 
 默认沙箱的整个生命周期由框架托管。三种"我自己管"的场景：
@@ -180,6 +217,7 @@ SandboxContext callCtx = SandboxContext.builder()
 | 后端 | 适合 |
 |------|------|
 | **Docker** | 本地开发 / 单机 / 信任 shell |
+| **DockerDaemon** | AgentScope 自身容器化部署 / 无 docker CLI 环境；docker-java 直连远端 daemon（TCP），避免 docker-in-docker |
 | **Kubernetes** | 自建 K8s 集群；完全基于 [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)（SandboxClaim / WarmPool），工作区持久化靠 PVC（见下文） |
 | **Daytona** | 通用托管沙箱 HTTP API |
 | **E2B** | 通用托管沙箱 + 平台原生快照 |
