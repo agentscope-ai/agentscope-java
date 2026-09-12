@@ -26,6 +26,8 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -328,6 +330,39 @@ class ReActAgentHitlTest {
         assertEquals(req.getReplyId(), confirm.getReplyId());
         assertEquals(1, confirm.getConfirmResults().size());
         assertEquals("tc1", confirm.getConfirmResults().get(0).getToolCall().getId());
+    }
+
+    @Test
+    void deniedResumeEmitsToolResultEventsCorrelatedToRequireEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> pauseEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(pauseEvents);
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        pauseEvents.get(indexOf(pauseEvents, RequireUserConfirmEvent.class));
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(false, req.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iStart = indexOf(resumeEvents, ToolResultStartEvent.class);
+        int iDelta = indexOf(resumeEvents, ToolResultTextDeltaEvent.class);
+        int iEnd = indexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(iStart >= 0, "denied resume must emit ToolResultStartEvent");
+        assertTrue(iDelta > iStart, "denied resume must emit a result delta");
+        assertTrue(iEnd > iDelta, "denied resume must emit ToolResultEndEvent");
+        ToolResultEndEvent end = (ToolResultEndEvent) resumeEvents.get(iEnd);
+        assertEquals(req.getReplyId(), end.getReplyId());
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
     }
 
     @Test
