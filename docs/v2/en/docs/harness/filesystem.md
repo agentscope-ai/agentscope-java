@@ -487,6 +487,14 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 | Shared store | `CompositeFilesystem`: routed paths go through KV overlay (remote upper + local template lower); others go local |
 | Sandbox | All file operations forwarded into the sandbox container |
 
+#### Moving files across backends
+
+When the source and destination resolve to different backends, `CompositeFilesystem.move(...)` downloads the original bytes, uploads them with `UploadMode.CREATE_NEW`, and deletes the source only after the upload succeeds. `LocalFilesystem` and `RemoteFilesystem` support this transfer for binary files as well as empty and whitespace-only text. An existing destination is not overwritten; the original `uploadFiles(...)` overload retains its overwrite behavior.
+
+Backends must support raw-byte downloads and create-only uploads for the source content to participate in cross-backend moves. The default `CREATE_NEW` implementation accepts valid UTF-8 bytes through the backend's existing `write(...)` method; other byte sequences require an override. Creation and layer semantics depend on that backend. If a required capability is unavailable, the move fails without deleting the source. This includes sources such as the service's `MemoryStoreFilesystem`, which does not implement downloads. `RemoteFilesystem` also requires its `BaseStore` to support conditional creation (`putIfVersion` with version `0`).
+
+A cross-backend move is not atomic. If the destination has been written but deleting the source fails, the result reports that the copy succeeded and source deletion failed; the destination is retained. Check the result before retrying, since both copies may now exist. Moves within the same backend continue to use that backend's own `move(...)` implementation.
+
 ### Shell execution (execute)
 
 | Mode | Shell available? | Where it runs |

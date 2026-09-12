@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.file.FileSystems;
@@ -36,6 +37,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Routes file operations to different {@link AbstractFilesystem} stores by path prefix.
@@ -397,6 +399,13 @@ public class CompositeFilesystem implements AbstractFilesystem {
     @Override
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+        return uploadFiles(runtimeContext, files, UploadMode.OVERWRITE);
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files, UploadMode mode) {
+        Objects.requireNonNull(mode, "mode");
         FileUploadResponse[] results = new FileUploadResponse[files.size()];
         Map<AbstractFilesystem, List<IndexedFile>> batches = new HashMap<>();
 
@@ -413,7 +422,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
                 batchFiles.add(Map.entry(f.backendPath(), f.content()));
             }
             List<FileUploadResponse> responses =
-                    batch.getKey().uploadFiles(runtimeContext, batchFiles);
+                    mode == UploadMode.OVERWRITE
+                            ? batch.getKey().uploadFiles(runtimeContext, batchFiles)
+                            : batch.getKey().uploadFiles(runtimeContext, batchFiles, mode);
             List<IndexedFile> indexed = batch.getValue();
             for (int i = 0; i < responses.size() && i < indexed.size(); i++) {
                 FileUploadResponse backendResp = responses.get(i);
@@ -488,22 +499,75 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return result;
         }
 
-        // Cross-backend move: read → write → delete
-        var readResult = srcRoute.backend().read(runtimeContext, srcRoute.backendPath(), 0, 0);
-        if (!readResult.isSuccess() || readResult.fileData() == null) {
-            return WriteResult.fail("Cannot read source for cross-backend move: " + fromPath);
-        }
-        String content = readResult.fileData().content();
-        if (content == null) {
-            content = "";
-        }
-        WriteResult writeResult =
-                dstRoute.backend().write(runtimeContext, dstRoute.backendPath(), content);
-        if (!writeResult.isSuccess()) {
+        // Transfer original bytes; read() may return a formatted view of the file.
+        List<FileDownloadResponse> downloads;
+        try {
+            downloads =
+                    srcRoute.backend()
+                            .downloadFiles(runtimeContext, List.of(srcRoute.backendPath()));
+        } catch (RuntimeException e) {
             return WriteResult.fail(
-                    "Cross-backend move write failed for '" + toPath + "': " + writeResult.error());
+                    "Cannot download source for cross-backend move: "
+                            + fromPath
+                            + ": "
+                            + e.getMessage());
         }
-        srcRoute.backend().delete(runtimeContext, srcRoute.backendPath());
+        if (downloads == null || downloads.size() != 1 || downloads.get(0) == null) {
+            return WriteResult.fail(
+                    "Invalid download response for cross-backend move: " + fromPath);
+        }
+        FileDownloadResponse download = downloads.get(0);
+        if (!download.isSuccess() || download.content() == null) {
+            return WriteResult.fail(
+                    "Cannot download source for cross-backend move: "
+                            + fromPath
+                            + (download.error() == null
+                                    ? " (missing content)"
+                                    : ": " + download.error()));
+        }
+        List<FileUploadResponse> uploads;
+        try {
+            uploads =
+                    dstRoute.backend()
+                            .uploadFiles(
+                                    runtimeContext,
+                                    List.of(Map.entry(dstRoute.backendPath(), download.content())),
+                                    UploadMode.CREATE_NEW);
+        } catch (RuntimeException e) {
+            return WriteResult.fail(
+                    "Cross-backend move upload failed for '" + toPath + "': " + e.getMessage());
+        }
+        if (uploads == null || uploads.size() != 1 || uploads.get(0) == null) {
+            return WriteResult.fail("Invalid upload response for cross-backend move: " + toPath);
+        }
+        if (!uploads.get(0).isSuccess()) {
+            return WriteResult.fail(
+                    "Cross-backend move upload failed for '"
+                            + toPath
+                            + "': "
+                            + uploads.get(0).error());
+        }
+        WriteResult deleted;
+        try {
+            deleted = srcRoute.backend().delete(runtimeContext, srcRoute.backendPath());
+        } catch (RuntimeException e) {
+            return WriteResult.fail(
+                    "Copied to '"
+                            + toPath
+                            + "' but could not delete source '"
+                            + fromPath
+                            + "': "
+                            + e.getMessage());
+        }
+        if (deleted == null || !deleted.isSuccess()) {
+            return WriteResult.fail(
+                    "Copied to '"
+                            + toPath
+                            + "' but could not delete source '"
+                            + fromPath
+                            + "': "
+                            + (deleted == null ? "missing delete response" : deleted.error()));
+        }
         return WriteResult.ok(toPath);
     }
 
