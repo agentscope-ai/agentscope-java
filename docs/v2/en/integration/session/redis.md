@@ -23,7 +23,17 @@ This page has been superseded by [Distributed Storage — Redis](/v2/en/integrat
 </dependency>
 ```
 
-The module does not pin a Redis client — bring whatever you already use (Jedis / Lettuce / Redisson).
+Choose Jedis, Lettuce, or Redisson to match your project. The Redisson state-store integration requires the **Redisson 4.x API** (`RScript.ReturnType.LONG`); Redisson 3.x is incompatible. AgentScope currently manages and tests against **4.2.0**. For example, align a direct Redisson dependency with that version:
+
+```xml
+<dependency>
+    <groupId>org.redisson</groupId>
+    <artifactId>redisson</artifactId>
+    <version>4.2.0</version>
+</dependency>
+```
+
+If you manage your own Redisson Spring Boot starter, a 3.x starter (for example, 3.52.0) is incompatible with this state-store integration. Align the starter and its Redisson dependencies with the current 4.2.0 baseline and check the resolved runtime dependencies. Both `RedisAgentStateStore.builder().redissonClient(...)` and the deprecated `RedissonAgentStateStore` fail during construction when the loaded API lacks `LONG`. This check reports the incompatibility; it does not repair dependency resolution or make Redisson 3.x persistence supported.
 
 ## Quickstart (Lettuce, standalone)
 
