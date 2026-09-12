@@ -27,10 +27,10 @@ import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.gateway.ChannelManager;
-import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelRouter;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
+import io.agentscope.harness.agent.gateway.channel.Peer;
 import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.time.Duration;
@@ -38,8 +38,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,6 +51,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -62,8 +66,10 @@ import reactor.core.publisher.Sinks;
  *   <li>{@code GET  /api/agents/{agentId}/chat/session} — current session key for rehydration.
  * </ul>
  *
- * <p>Each agent has a single per-process session keyed by its id. Slash commands {@code /new} and
- * {@code /reset} clear the conversation history before the agent is invoked.
+ * <p>Each ChatGPT-style browser tab is a conversation addressed by {@code sessionKey} (a
+ * caller-supplied conversation id). That id is placed on a thread peer so the gateway routing key
+ * includes {@code |t:<conversationId>} and inbox can list many MAIN sessions per agent. Slash
+ * command {@code /new} mints a fresh conversation id; {@code /reset} clears the current one.
  */
 @RestController
 @RequestMapping("/api/agents/{agentId}/chat")
@@ -71,6 +77,10 @@ public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    static final String LOCAL_USER_ID = "__anonymous__";
+
+    /** Conversation ids are concatenated into {@code |t:} / {@code |x:} routing keys. */
+    private static final Pattern CONVERSATION_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
     private final HarnessGateway gateway;
     private final SessionAgentManager sessionAgentManager;
@@ -90,7 +100,10 @@ public class ChatController {
         this.channelManager = bootstrap.channelManager();
     }
 
-    /** Request body for both endpoints. {@code sessionKey} is reserved for future routing use. */
+    /**
+     * Request body for both endpoints. {@code sessionKey} is the caller-supplied conversation id
+     * (not the internal {@code SessionEntry.sessionKey()}).
+     */
     public record ChatRequest(String message, String sessionKey) {}
 
     /** Response for the synchronous endpoint. */
@@ -98,8 +111,8 @@ public class ChatController {
 
     /**
      * Response for {@link #currentSession}. {@code exists} is {@code true} when a session entry has
-     * already been created (i.e. the user has sent at least one message); the frontend uses this to
-     * decide whether to fetch turns on mount.
+     * already been created (i.e. the user has sent at least one message). Chat restore fetches
+     * turns by conversation id directly; {@code exists} is informational.
      */
     public record CurrentSessionResponse(String sessionKey, boolean exists) {}
 
@@ -107,14 +120,20 @@ public class ChatController {
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> stream(
             @PathVariable String agentId, @RequestBody ChatRequest req) {
-        CommandResult cmd = handleSlashCommand(agentId, req.message());
+        ChatIdentity identity = resolveChatIdentity(req.sessionKey());
+        CommandResult cmd = handleSlashCommand(agentId, req.message(), identity);
         if (cmd != null) {
+            Map<String, Object> doneFrame = new LinkedHashMap<>();
+            doneFrame.put("type", "done");
+            doneFrame.put(
+                    "sessionKey",
+                    cmd.newSessionKey != null ? cmd.newSessionKey : identity.echoKey());
             return Flux.just(
                     sse("token", Map.of("type", "token", "data", cmd.message)),
-                    sse("done", Map.of("type", "done")));
+                    sse("done", doneFrame));
         }
 
-        String gateKey = resolveGateKey(agentId);
+        String gateKey = resolveGateKey(agentId, identity.conversationId());
         String existingSessionKey = findSessionKeyByGate(gateKey);
         Sinks.One<Boolean> done = Sinks.one();
         Flux<ServerSentEvent<String>> toolEvents =
@@ -127,7 +146,7 @@ public class ChatController {
                         : Flux.empty();
 
         Mono<Flux<ServerSentEvent<String>>> agentCall =
-                executeChat(agentId, req.message())
+                executeChat(agentId, req.message(), identity.conversationId())
                         .map(
                                 reply -> {
                                     String text =
@@ -137,10 +156,7 @@ public class ChatController {
                                     done.tryEmitValue(true);
                                     Map<String, Object> doneFrame = new LinkedHashMap<>();
                                     doneFrame.put("type", "done");
-                                    String resolved = findSessionKeyByGate(gateKey);
-                                    if (resolved != null) {
-                                        doneFrame.put("sessionKey", resolved);
-                                    }
+                                    doneFrame.put("sessionKey", identity.echoKey());
                                     return Flux.just(
                                             sse("token", Map.of("type", "token", "data", text)),
                                             sse("done", doneFrame));
@@ -166,38 +182,50 @@ public class ChatController {
         return Flux.merge(toolEvents, Flux.from(agentCall.flatMapMany(f -> f)));
     }
 
-    /** Returns the current session key for {@code agentId}, used by the UI on mount. */
+    /**
+     * Returns whether a conversation already has a registered session. The {@code sessionKey}
+     * field echoes the caller's conversation id (never the internal storage key).
+     */
     @GetMapping("/session")
-    public Mono<CurrentSessionResponse> currentSession(@PathVariable String agentId) {
+    public Mono<CurrentSessionResponse> currentSession(
+            @PathVariable String agentId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false)
+                    String sessionKey) {
         return Mono.fromCallable(
                 () -> {
-                    String gateKey = resolveGateKey(agentId);
-                    if (gateKey == null) {
+                    ChatIdentity identity = resolveChatIdentity(sessionKey, false);
+                    if (identity.echoKey() == null) {
                         return new CurrentSessionResponse(null, false);
                     }
-                    String sessionKey = findSessionKeyByGate(gateKey);
-                    if (sessionKey == null) {
-                        return new CurrentSessionResponse(null, false);
+                    if (sessionAgentManager.getSession(identity.echoKey()).isPresent()) {
+                        return new CurrentSessionResponse(identity.echoKey(), true);
                     }
-                    return new CurrentSessionResponse(sessionKey, true);
+                    if (findSessionKeyByConversationId(identity.echoKey()) != null) {
+                        return new CurrentSessionResponse(identity.echoKey(), true);
+                    }
+                    String gateKey = resolveGateKey(agentId, identity.conversationId());
+                    boolean exists = gateKey != null && findSessionKeyByGate(gateKey) != null;
+                    return new CurrentSessionResponse(identity.echoKey(), exists);
                 });
     }
 
     /** Synchronous (non-streaming) chat. Blocks until the agent produces a reply. */
     @PostMapping("/send")
     public Mono<ChatResponse> send(@PathVariable String agentId, @RequestBody ChatRequest req) {
-        CommandResult cmd = handleSlashCommand(agentId, req.message());
+        ChatIdentity identity = resolveChatIdentity(req.sessionKey());
+        CommandResult cmd = handleSlashCommand(agentId, req.message(), identity);
         if (cmd != null) {
-            return Mono.just(new ChatResponse(cmd.message, null));
+            return Mono.just(
+                    new ChatResponse(
+                            cmd.message,
+                            cmd.newSessionKey != null ? cmd.newSessionKey : identity.echoKey()));
         }
-        String gateKey = resolveGateKey(agentId);
-        return executeChat(agentId, req.message())
+        return executeChat(agentId, req.message(), identity.conversationId())
                 .map(
                         reply -> {
                             String text =
                                     reply.getTextContent() != null ? reply.getTextContent() : "";
-                            String sessionKey = findSessionKeyByGate(gateKey);
-                            return new ChatResponse(text, sessionKey);
+                            return new ChatResponse(text, identity.echoKey());
                         });
     }
 
@@ -223,44 +251,45 @@ public class ChatController {
     }
 
     /**
-     * Computes the gateway routing key for the given agent by running the same {@link
-     * ChannelRouter} pass that {@link ChatUiChannel#dispatch} will use, then taking the
-     * {@link MsgContext#canonicalKey()} of the resolved context. This guarantees the key matches
-     * the one created by an in-flight dispatch even when chatui bindings override the requested
-     * agent. It is <em>not</em> the {@code SessionEntry.sessionKey()} stored on disk; use
-     * {@link #findSessionKeyByGate} to translate.
+     * Builds the inbound message used for Chat UI turns. A non-blank {@code conversationId} is
+     * placed on a thread peer so {@code dmScope=MAIN} still yields a distinct {@code |t:} routing
+     * key per conversation.
      */
-    String resolveGateKey(String agentId) {
+    static InboundMessage buildConversationInbound(
+            String gatewayAgentId, String conversationId, List<Msg> messages) {
+        List<Msg> payload = messages != null ? messages : List.of();
+        if (conversationId != null && !conversationId.isBlank()) {
+            String threadId = conversationId.trim();
+            requireSafeConversationId(threadId);
+            return InboundMessage.builder(ChatUiChannel.CHANNEL_ID, Peer.thread(threadId), payload)
+                    .senderId(LOCAL_USER_ID)
+                    .parentPeer(Peer.direct(LOCAL_USER_ID))
+                    .preferredAgentId(gatewayAgentId)
+                    .build();
+        }
+        return InboundMessage.builder(ChatUiChannel.CHANNEL_ID, Peer.direct(LOCAL_USER_ID), payload)
+                .senderId(LOCAL_USER_ID)
+                .preferredAgentId(gatewayAgentId)
+                .build();
+    }
+
+    String resolveGateKey(String agentId, String conversationId) {
         if (agentId == null || agentId.isBlank()) return null;
         try {
-            return resolveRoute(agentId, "__probe__").context().canonicalKey();
+            return resolveRoute(agentId, "__probe__", conversationId).context().canonicalKey();
         } catch (Exception e) {
             return null;
         }
     }
 
-    /**
-     * Builds the inbound for a chat request and runs it through the chatui channel's router. The
-     * router-resolved {@link RouteResult} drives both session-key lookup and {@link
-     * HarnessGateway#run} so bindings, channel-default, and requested-agent hints all use a single
-     * source of truth.
-     */
-    private RouteResult resolveRoute(String agentId, String probeText) {
+    private RouteResult resolveRoute(String agentId, String probeText, String conversationId) {
         String gatewayAgentId = catalogService.resolveGatewayAgentId(agentId);
         ChatUiChannel chatui = lookupChatUi();
         InboundMessage inbound =
-                InboundMessage.builder(
-                                ChatUiChannel.CHANNEL_ID,
-                                io.agentscope.harness.agent.gateway.channel.Peer.direct(
-                                        "__anonymous__"),
-                                List.of(
-                                        Msg.builder()
-                                                .role(MsgRole.USER)
-                                                .textContent(probeText)
-                                                .build()))
-                        .senderId("__anonymous__")
-                        .preferredAgentId(gatewayAgentId)
-                        .build();
+                buildConversationInbound(
+                        gatewayAgentId,
+                        conversationId,
+                        List.of(Msg.builder().role(MsgRole.USER).textContent(probeText).build()));
         return router.resolveRoute(chatui.config(), inbound);
     }
 
@@ -290,43 +319,117 @@ public class ChatController {
     }
 
     /**
-     * Handles {@code /new} and {@code /reset}. Returns {@code null} for ordinary messages or
-     * unknown slash commands.
+     * Looks up a MAIN session by the {@code |t:} conversation id, without recomputing the routing
+     * key. Inbox already lists by this id; Chat restore must use the same match.
      */
-    private CommandResult handleSlashCommand(String agentId, String message) {
+    private String findSessionKeyByConversationId(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return null;
+        }
+        String wanted = conversationId.trim();
+        for (SessionEntry e : sessionAgentManager.allSessions()) {
+            if (e.kind() != SessionKind.MAIN) {
+                continue;
+            }
+            if (wanted.equals(SessionController.extractConversationId(e.gateKey()))) {
+                return e.sessionKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Handles {@code /new} (mint a fresh conversation) and {@code /reset} (clear the current one).
+     * Returns {@code null} for ordinary messages or unknown slash commands.
+     */
+    private CommandResult handleSlashCommand(
+            String agentId, String message, ChatIdentity identity) {
         if (message == null) return null;
         String m = message.trim();
         if (!m.startsWith("/")) return null;
         String cmd = m.split("\\s+", 2)[0].toLowerCase();
 
         return switch (cmd) {
-            case "/new", "/reset" -> {
-                String gateKey = resolveGateKey(agentId);
+            case "/new" ->
+                    new CommandResult(
+                            "Started a fresh conversation. Your next message opens a new chat.",
+                            UUID.randomUUID().toString());
+            case "/reset" -> {
+                String gateKey = resolveGateKey(agentId, identity.conversationId());
                 if (gateKey == null) {
-                    yield new CommandResult("No active session to reset.");
+                    yield new CommandResult("No active session to reset.", identity.echoKey());
                 }
                 String sessionKey = findSessionKeyByGate(gateKey);
+                if (sessionKey == null && identity.echoKey() != null) {
+                    sessionKey =
+                            sessionAgentManager.getSession(identity.echoKey()).isPresent()
+                                    ? identity.echoKey()
+                                    : null;
+                }
                 if (sessionKey == null) {
                     yield new CommandResult(
                             "No active session yet — your next message will start a fresh"
-                                    + " conversation.");
+                                    + " conversation.",
+                            identity.echoKey());
                 }
                 boolean ok = sessionAgentManager.resetSession(sessionKey);
                 yield new CommandResult(
                         ok
                                 ? "AgentStateStore reset. Conversation history cleared; the next"
                                         + " message starts a fresh turn."
-                                : "No matching session found for reset.");
+                                : "No matching session found for reset.",
+                        identity.echoKey());
             }
             default -> null;
         };
     }
 
     /** Internal carrier for slash-command results. */
-    private record CommandResult(String message) {}
+    private record CommandResult(String message, String newSessionKey) {}
 
-    private Mono<Msg> executeChat(String agentId, String message) {
-        RouteResult route = resolveRoute(agentId, message);
+    /**
+     * Resolves the conversation id to route with. A value that already matches an internal storage
+     * key (legacy UI) keeps the old direct-peer MAIN routing so the original session is reused.
+     */
+    private ChatIdentity resolveChatIdentity(String requested) {
+        return resolveChatIdentity(requested, true);
+    }
+
+    private ChatIdentity resolveChatIdentity(String requested, boolean mintIfAbsent) {
+        String key = normalizedConversationId(requested);
+        if (key != null && sessionAgentManager.getSession(key).isPresent()) {
+            return new ChatIdentity(null, key, false);
+        }
+        if (key != null) {
+            requireSafeConversationId(key);
+            return new ChatIdentity(key, key, true);
+        }
+        if (!mintIfAbsent) {
+            return new ChatIdentity(null, null, false);
+        }
+        String minted = UUID.randomUUID().toString();
+        return new ChatIdentity(minted, minted, true);
+    }
+
+    private static String normalizedConversationId(String key) {
+        return (key != null && !key.isBlank()) ? key.trim() : null;
+    }
+
+    /**
+     * Rejects ids that would forge {@code |t:} / {@code |x:} segments in the gateway routing key.
+     * Legacy internal storage keys are accepted earlier via {@link #resolveChatIdentity} and never
+     * reach this check.
+     */
+    static void requireSafeConversationId(String conversationId) {
+        if (conversationId == null || !CONVERSATION_ID_PATTERN.matcher(conversationId).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid conversation id");
+        }
+    }
+
+    private record ChatIdentity(String conversationId, String echoKey, boolean threadRouted) {}
+
+    private Mono<Msg> executeChat(String agentId, String message, String conversationId) {
+        RouteResult route = resolveRoute(agentId, message, conversationId);
         return gateway.run(route.context(), List.of(messageOf(message)), route.outboundAddress());
     }
 

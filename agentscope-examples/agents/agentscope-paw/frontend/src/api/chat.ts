@@ -18,8 +18,13 @@ export interface CurrentSession {
   exists: boolean;
 }
 
-export async function currentSession(agentId: string): Promise<CurrentSession> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/chat/session`);
+export async function currentSession(agentId: string, sessionKey?: string | null): Promise<CurrentSession> {
+  const params = new URLSearchParams();
+  if (sessionKey) params.set('sessionKey', sessionKey);
+  const qs = params.toString();
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(agentId)}/chat/session${qs ? `?${qs}` : ''}`,
+  );
   if (!res.ok) throw new Error(`Failed to resolve current session: ${res.status}`);
   return res.json();
 }
