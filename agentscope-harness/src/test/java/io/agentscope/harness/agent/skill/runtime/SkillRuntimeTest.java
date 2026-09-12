@@ -176,7 +176,18 @@ class SkillRuntimeTest {
             assertTrue(out.contains("<files-root>/workspace/skills/alpha</files-root>"));
             assertTrue(out.contains("## Code Execution"));
             assertTrue(out.contains("<files-root>"));
-            assertTrue(out.contains("access to the execute tool"));
+            assertTrue(out.contains("You have access to the execute tool"));
+            assertTrue(
+                    out.contains(
+                            "In the command, always use absolute paths derived from <files-root>"));
+            assertTrue(
+                    out.contains(
+                            "The working_directory parameter accepts only workspace-relative paths;"
+                                    + " never pass <files-root> to it"));
+            assertTrue(
+                    out.contains(
+                            "Omit working_directory unless the command needs a workspace-relative"
+                                    + " directory"));
             assertFalse(out.contains("execute_shell_command"));
         }
 

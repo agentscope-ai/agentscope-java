@@ -16,12 +16,18 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +71,45 @@ class ShellExecuteToolTest {
         assertTrue(sandbox.command.startsWith("cd "));
         assertTrue(sandbox.command.endsWith(" && ls"));
         assertEquals(30, sandbox.timeoutSeconds);
+    }
+
+    @Test
+    void execute_absoluteWorkingDirectory_isRejectedWithRecoveryGuidance() {
+        String result =
+                tool.execute(RT, "python3 /workspace/skills/alpha/run.py", "/workspace", null);
+
+        assertTrue(result.contains("working_directory must be a relative path"));
+        assertTrue(result.contains("Put absolute paths in the command instead"));
+        assertNull(sandbox.command);
+        assertNull(sandbox.timeoutSeconds);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void execute_schemaClarifiesWorkingDirectoryUsage() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(tool);
+
+        AgentTool registered = toolkit.getTool(ShellExecuteTool.NAME);
+        assertEquals("execute", registered.getName());
+
+        Map<String, Object> parameters = registered.getParameters();
+        Map<String, Object> properties = (Map<String, Object>) parameters.get("properties");
+        Map<String, Object> workingDirectory =
+                (Map<String, Object>) properties.get("working_directory");
+        List<String> required = (List<String>) parameters.get("required");
+
+        assertFalse(required.contains("working_directory"));
+        assertTrue(
+                workingDirectory
+                        .get("description")
+                        .toString()
+                        .contains("relative to the workspace root"));
+        assertTrue(
+                workingDirectory
+                        .get("description")
+                        .toString()
+                        .contains("Omit it when invoking an absolute path"));
     }
 
     @Test
