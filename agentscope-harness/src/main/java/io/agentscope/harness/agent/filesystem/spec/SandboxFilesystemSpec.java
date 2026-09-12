@@ -77,12 +77,13 @@ public abstract class SandboxFilesystemSpec {
      * Sets a {@link SandboxExecutionGuard} that serialises concurrent executions on the same
      * isolation slot.
      *
-     * <p>Only relevant for {@link io.agentscope.harness.agent.IsolationScope#AGENT} and
-     * {@link io.agentscope.harness.agent.IsolationScope#GLOBAL} scopes, where multiple callers
-     * could otherwise race on the same persistent state. When {@code null} (default), no guard is
-     * applied and the existing no-lock behaviour is preserved.
+     * <p>Relevant for every scope where concurrent calls can resolve to the same state slot,
+     * including same-session concurrency. When {@code null} (default), the harness applies a
+     * JVM-local guard ({@link SandboxExecutionGuard#inProcess()}) that serialises same-slot calls
+     * within one process. Supply a distributed guard when the same slot can be contended across
+     * multiple JVM instances.
      *
-     * @param executionGuard the guard to apply, or {@code null} for no guard
+     * @param executionGuard the guard to apply, or {@code null} to use the in-process default
      * @return this spec
      */
     public SandboxFilesystemSpec executionGuard(SandboxExecutionGuard executionGuard) {
