@@ -93,9 +93,14 @@ public final class WorkspacePathNormalizer {
     /**
      * Normalize a path to workspace-relative form by stripping the active mode's prefix.
      *
+     * <p>Callers using a normalizer with a namespace factory should use
+     * {@link #normalize(String, RuntimeContext)} so the operation context is available. This
+     * overload is retained for compatibility and uses an empty context.
+     *
      * @param path the raw path (absolute or relative)
      * @return workspace-relative path, or the original path if no registered prefix matched
      */
+    @Deprecated
     public String normalize(String path) {
         return normalize(path, RuntimeContext.empty());
     }
