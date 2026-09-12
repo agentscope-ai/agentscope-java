@@ -1635,12 +1635,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     && Boolean.TRUE.equals(result.getMetadata().get("success"))
                     && result.getMetadata().containsKey("response_msg")) {
                 Object responseMsgObj = result.getMetadata().get("response_msg");
-                if (responseMsgObj instanceof Msg responseMsg) {
+                Msg responseMsg = toMsg(responseMsgObj);
+                if (responseMsg != null) {
                     return extractResponseData(responseMsg);
                 }
             }
         }
         return hookResultMsg;
+    }
+
+    /**
+     * Restores a {@link Msg} from a metadata value.
+     *
+     * <p>After a JSON persistence round-trip (agent session save/load) the typed message
+     * stored in {@code ToolResultBlock.metadata["response_msg"]} is restored as a {@code LinkedHashMap},
+     * so it is converted back to its typed form here.
+     *
+     * @param value the raw metadata value
+     * @return the typed message, or {@code null} if it cannot be restored
+     */
+    private static Msg toMsg(Object value) {
+        if (value instanceof Msg msg) {
+            return msg;
+        }
+        if (value instanceof Map<?, ?>) {
+            try {
+                return JsonUtils.getJsonCodec().convertValue(value, Msg.class);
+            } catch (RuntimeException e) {
+                log.warn("Failed to restore response_msg from tool result metadata", e);
+                return null;
+            }
+        }
+        return null;
     }
 
     private Msg extractResponseData(Msg responseMsg) {
