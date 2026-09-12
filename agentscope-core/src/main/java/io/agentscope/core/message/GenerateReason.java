@@ -16,6 +16,9 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +114,9 @@ public enum GenerateReason {
     /** Tool result returned directly to the caller without a follow-up model call. */
     TOOL_RETURN_DIRECT;
 
+    private static final int MAX_REPORTED_UNKNOWN_VALUES = 256;
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
+    private static final Set<String> reportedUnknownValues = new LinkedHashSet<>();
 
     /**
      * Decodes a wire value without making newer reason values fatal to older readers.
@@ -128,8 +133,25 @@ public enum GenerateReason {
         try {
             return valueOf(value);
         } catch (IllegalArgumentException ignored) {
-            logger.warn("Unknown GenerateReason '{}' received; falling back to MODEL_STOP", value);
+            if (shouldReportUnknownValue(value)) {
+                logger.warn(
+                        "Unknown GenerateReason '{}' received; falling back to MODEL_STOP", value);
+            }
             return MODEL_STOP;
+        }
+    }
+
+    private static boolean shouldReportUnknownValue(String value) {
+        synchronized (reportedUnknownValues) {
+            if (!reportedUnknownValues.add(value)) {
+                return false;
+            }
+            if (reportedUnknownValues.size() > MAX_REPORTED_UNKNOWN_VALUES) {
+                Iterator<String> iterator = reportedUnknownValues.iterator();
+                iterator.next();
+                iterator.remove();
+            }
+            return true;
         }
     }
 }
