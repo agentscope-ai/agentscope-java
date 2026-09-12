@@ -17,8 +17,9 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -112,8 +113,11 @@ public enum GenerateReason {
     MAX_ITERATIONS;
 
     private static final int MAX_REPORTED_UNKNOWN_VALUES = 256;
+    private static final int MAX_UNKNOWN_VALUE_LENGTH = 256;
+    private static final long UNKNOWN_VALUE_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
-    private static final Set<String> reportedUnknownValues = new LinkedHashSet<>();
+    private static final Map<String, UnknownValueWarningState> unknownValueWarningStates =
+            new LinkedHashMap<>();
 
     /**
      * Decodes a wire value without making newer reason values fatal to older readers.
@@ -130,25 +134,72 @@ public enum GenerateReason {
         try {
             return valueOf(value);
         } catch (IllegalArgumentException ignored) {
-            if (shouldReportUnknownValue(value)) {
-                logger.warn(
-                        "Unknown GenerateReason '{}' received; falling back to MODEL_STOP", value);
-            }
+            reportUnknownValue(value);
             return MODEL_STOP;
         }
     }
 
-    private static boolean shouldReportUnknownValue(String value) {
-        synchronized (reportedUnknownValues) {
-            if (!reportedUnknownValues.add(value)) {
-                return false;
-            }
-            if (reportedUnknownValues.size() > MAX_REPORTED_UNKNOWN_VALUES) {
-                Iterator<String> iterator = reportedUnknownValues.iterator();
-                iterator.next();
-                iterator.remove();
-            }
-            return true;
+    private static void reportUnknownValue(String value) {
+        long suppressedCount = getUnknownValueSuppressedCount(value, System.nanoTime());
+        if (suppressedCount < 0) {
+            return;
         }
+
+        String reportedValue = truncateUnknownValue(value);
+        if (suppressedCount == 0) {
+            logger.warn(
+                    "Unknown GenerateReason '{}' received; falling back to MODEL_STOP",
+                    reportedValue);
+        } else {
+            logger.warn(
+                    "Unknown GenerateReason '{}' received again after suppressing {} repeats; "
+                            + "falling back to MODEL_STOP",
+                    reportedValue,
+                    suppressedCount);
+        }
+    }
+
+    /**
+     * Tracks an unknown value and returns its suppressed repeat count when a warning is due.
+     * Returns {@code -1} while the value is still within the warning interval. The timestamp is
+     * supplied by the caller so the state transition can be tested without waiting.
+     */
+    static long getUnknownValueSuppressedCount(String value, long nowNanos) {
+        String key = truncateUnknownValue(value);
+        synchronized (unknownValueWarningStates) {
+            UnknownValueWarningState state = unknownValueWarningStates.get(key);
+            if (state != null
+                    && nowNanos - state.lastReportedAtNanos < UNKNOWN_VALUE_LOG_INTERVAL_NANOS) {
+                state.suppressedCount++;
+                return -1;
+            }
+
+            if (state == null) {
+                if (unknownValueWarningStates.size() >= MAX_REPORTED_UNKNOWN_VALUES) {
+                    Iterator<String> iterator = unknownValueWarningStates.keySet().iterator();
+                    iterator.next();
+                    iterator.remove();
+                }
+                state = new UnknownValueWarningState();
+                unknownValueWarningStates.put(key, state);
+            }
+
+            long suppressedCount = state.suppressedCount;
+            state.lastReportedAtNanos = nowNanos;
+            state.suppressedCount = 0;
+            return suppressedCount;
+        }
+    }
+
+    private static String truncateUnknownValue(String value) {
+        if (value.length() <= MAX_UNKNOWN_VALUE_LENGTH) {
+            return value;
+        }
+        return value.substring(0, MAX_UNKNOWN_VALUE_LENGTH - 3) + "...";
+    }
+
+    private static final class UnknownValueWarningState {
+        private long lastReportedAtNanos;
+        private long suppressedCount;
     }
 }

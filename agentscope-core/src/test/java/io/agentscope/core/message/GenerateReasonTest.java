@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -130,6 +131,31 @@ class GenerateReasonTest {
         assertEquals(
                 GenerateReason.MODEL_STOP,
                 mapper.readValue("\"FUTURE_PAUSE_REASON\"", GenerateReason.class));
+    }
+
+    @Test
+    @DisplayName("Should periodically report repeated unknown GenerateReason values")
+    void testUnknownGenerateReasonWarningState() {
+        String value = "TEST_UNKNOWN_GENERATE_REASON";
+        long firstReportNanos = 1_000_000_000L;
+
+        assertEquals(0L, GenerateReason.getUnknownValueSuppressedCount(value, firstReportNanos));
+        assertEquals(
+                -1L, GenerateReason.getUnknownValueSuppressedCount(value, firstReportNanos + 1));
+        assertEquals(
+                1L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        value, firstReportNanos + TimeUnit.MINUTES.toNanos(5)));
+
+        String longValuePrefix = "X".repeat(253);
+        assertEquals(
+                0L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        longValuePrefix + "first", firstReportNanos));
+        assertEquals(
+                -1L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        longValuePrefix + "second", firstReportNanos + 1));
     }
 
     @Test
