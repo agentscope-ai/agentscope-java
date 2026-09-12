@@ -51,7 +51,13 @@ public final class LegacyStateLoader {
      * @param userId nullable user identifier
      * @param sessionId the session identifier (required)
      * @return a new AgentState populated with the legacy data
+     * @deprecated Use
+     *     {@link #loadFromLegacySession(AgentStateStore, String, String, PermissionContextState)}
+     *     instead. Legacy keys never carry a permission context, so this variant reconstructs the
+     *     state with the default permission mode and silently discards any caller-configured
+     *     context.
      */
+    @Deprecated
     public static AgentState loadFromLegacySession(
             AgentStateStore stateStore, String userId, String sessionId) {
         return loadFromLegacySessionWithPresence(stateStore, userId, sessionId, null).state();
@@ -64,6 +70,10 @@ public final class LegacyStateLoader {
      * Legacy keys carry no permission context; passing {@code permCtx} is the only way to
      * preserve a non-default permission mode (for example {@code BYPASS}) when reconstructing
      * state from a v1 session.
+     *
+     * <p>Unlike {@code freshState}, v1 keys must be upgraded in place: the reconstructed state
+     * keeps the {@code userId} / {@code sessionId} identity of the migrated session so it stays
+     * the same slot.
      *
      * @param stateStore the state store to read from
      * @param userId nullable user identifier
@@ -90,7 +100,14 @@ public final class LegacyStateLoader {
      * context to the reconstructed state; legacy keys themselves never carry one. Callers that
      * do not need a specific permission mode may use the {@code (stateStore, userId, sessionId)}
      * variant.
+     *
+     * @deprecated Use
+     *     {@link #loadFromLegacySessionWithPresence(AgentStateStore, String, String, PermissionContextState)}
+     *     instead. Legacy keys never carry a permission context, so this variant reconstructs the
+     *     state with the default permission mode and silently discards any caller-configured
+     *     context.
      */
+    @Deprecated
     public static LegacyLoadResult loadFromLegacySessionWithPresence(
             AgentStateStore stateStore, String userId, String sessionId) {
         return loadFromLegacySessionWithPresence(stateStore, userId, sessionId, null);
@@ -119,7 +136,10 @@ public final class LegacyStateLoader {
         Optional<ToolkitState> toolkitState =
                 stateStore.get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class);
 
-        AgentState.Builder builder = AgentState.builder().context(msgs);
+        AgentState.Builder builder = AgentState.builder().sessionId(sessionId).context(msgs);
+        if (userId != null) {
+            builder.userId(userId);
+        }
         if (permCtx != null) {
             builder.permissionContext(permCtx);
         }
