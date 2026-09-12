@@ -27,9 +27,14 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import io.agentscope.core.tool.ToolSchemaModule;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.GenericDeclaration;
+import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -68,6 +73,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * not always compile-time-fixed: extensions can load skills and tools at runtime, and
  * multi-tenant deployments may load classes per tenant.</p>
  *
+ * <p>The number of entries a single class's cache can hold is bounded by the distinct generic
+ * signatures the code produces against it: every {@link Type} reaching this utility originates in
+ * a {@link TypeReference} literal or a reflective method signature, and two structurally equal
+ * signatures share one entry. Loading a class at runtime therefore adds a class with its own
+ * cache rather than another entry on an existing one. A caller that synthesizes {@code Type}
+ * instances at runtime can add entries beyond that bound, but those entries are released together
+ * with the class that owns the cache.</p>
+ *
  * @hidden
  */
 public class JsonSchemaUtils {
@@ -105,18 +118,23 @@ public class JsonSchemaUtils {
             };
 
     /**
-     * Same caching strategy as {@link #CLASS_SCHEMA_SLOT}, keyed by generic {@link Type} to support
-     * parameterized structured-output and tool-parameter types. The variants of one raw class (e.g.
-     * {@code List<String>} versus {@code List<Integer>}) share the map held on that raw class, so
-     * these slots are scoped to a classloader in the same way.
+     * Schema cache slot of each class, keyed by generic {@link Type} to support parameterized
+     * structured-output and tool-parameter types. The variants of one class (e.g. {@code
+     * List<String>} versus {@code List<Integer>}, or a type variable that class declares) share the
+     * map held on that class, so these slots are scoped to a classloader in the same way as {@link
+     * #CLASS_SCHEMA_SLOT}.
      *
-     * <p>Because unrelated raw classes never share a map, a miss takes {@link #SCHEMA_LOCK} without
+     * <p>The map grows with the distinct generic signatures the code writes against that class,
+     * not with anything a caller supplies at runtime, so it carries the same bound the previous
+     * static {@code Map<Type, JsonNode>} relied on. See the class javadoc for the full argument.
+     *
+     * <p>Because unrelated classes never share a map, a miss takes {@link #SCHEMA_LOCK} without
      * grouping unrelated types behind the same lock.
      */
     private static final ClassValue<Map<Type, JsonNode>> TYPE_SCHEMA_SLOT =
             new ClassValue<>() {
                 @Override
-                protected Map<Type, JsonNode> computeValue(Class<?> rawType) {
+                protected Map<Type, JsonNode> computeValue(Class<?> scopeClass) {
                     return new ConcurrentHashMap<>();
                 }
             };
@@ -187,8 +205,10 @@ public class JsonSchemaUtils {
      *
      * @param type The type to generate schema for
      * @return JSON Schema as a Map
+     * @throws NullPointerException if the type is null
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
+        Objects.requireNonNull(type, "type");
         try {
             JsonNode schemaNode = cachedSchemaNode(type);
             return JsonUtils.getJsonCodec()
@@ -232,16 +252,18 @@ public class JsonSchemaUtils {
      * modify its own map.
      */
     private static JsonNode cachedSchemaNode(Type type) {
-        Class<?> rawType = rawTypeOf(type);
-        if (rawType == null) {
-            // Type variables, wildcards and generic arrays have no raw class to hang a slot on;
-            // generate them without caching.
+        Class<?> scope = scopeClassOf(type);
+        if (scope == null) {
+            // No class to hang a slot on, so this type cannot be cached. Every type a method
+            // signature can declare is attributed, so this path is only reachable for a type a
+            // caller synthesizes: a wildcard is only ever a type argument, never a parameter or
+            // return type.
             synchronized (SCHEMA_LOCK) {
                 return schemaGenerator.generateSchema(type);
             }
         }
 
-        Map<Type, JsonNode> slot = TYPE_SCHEMA_SLOT.get(rawType);
+        Map<Type, JsonNode> slot = TYPE_SCHEMA_SLOT.get(scope);
         JsonNode cached = slot.get(type);
         if (cached != null) {
             return cached;
@@ -258,21 +280,38 @@ public class JsonSchemaUtils {
     }
 
     /**
-     * Returns the raw class whose cache a type's schema belongs to, or {@code null} when the type
-     * has no raw class and therefore cannot be cached.
+     * Returns the class whose cache a type's schema belongs to, or {@code null} when the type
+     * cannot be attributed to one.
      *
-     * @throws NullPointerException if the type is null
+     * <p>A parameterized type belongs to its raw class. The types with no raw class belong to the
+     * class that declares them: a type variable to its declaring class or to the class declaring
+     * its method, and a generic array to whichever class its component type resolves to. Caching
+     * those under a class rather than in a static map keyed by the type itself keeps the
+     * no-classloader-pinning property of {@link #CLASS_SCHEMA_SLOT}, since a type variable holds
+     * its declaration and would otherwise pin it.
+     *
+     * @param type the type to attribute; must not be {@code null}
+     * @return the class to cache the schema under, or {@code null} if the type has none
      */
-    private static Class<?> rawTypeOf(Type type) {
-        if (type == null) {
-            throw new NullPointerException("type must not be null");
-        }
+    private static Class<?> scopeClassOf(Type type) {
         if (type instanceof Class<?> clazz) {
             return clazz;
         }
         if (type instanceof ParameterizedType parameterizedType
                 && parameterizedType.getRawType() instanceof Class<?> rawClass) {
             return rawClass;
+        }
+        if (type instanceof GenericArrayType arrayType) {
+            return scopeClassOf(arrayType.getGenericComponentType());
+        }
+        if (type instanceof TypeVariable<?> typeVariable) {
+            GenericDeclaration declaration = typeVariable.getGenericDeclaration();
+            if (declaration instanceof Class<?> declaringClass) {
+                return declaringClass;
+            }
+            if (declaration instanceof Method method) {
+                return method.getDeclaringClass();
+            }
         }
         return null;
     }
