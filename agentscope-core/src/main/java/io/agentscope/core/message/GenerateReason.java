@@ -117,7 +117,7 @@ public enum GenerateReason {
     private static final long UNKNOWN_VALUE_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
     private static final Map<String, UnknownValueWarningState> unknownValueWarningStates =
-            new LinkedHashMap<>();
+            new LinkedHashMap<>(16, 0.75f, true);
 
     /**
      * Decodes a wire value without making newer reason values fatal to older readers.
@@ -188,6 +188,12 @@ public enum GenerateReason {
             state.lastReportedAtNanos = nowNanos;
             state.suppressedCount = 0;
             return suppressedCount;
+        }
+    }
+
+    static void clearUnknownValueWarningStatesForTest() {
+        synchronized (unknownValueWarningStates) {
+            unknownValueWarningStates.clear();
         }
     }
 

@@ -159,6 +159,38 @@ class GenerateReasonTest {
     }
 
     @Test
+    @DisplayName("Should retain recently accessed values during warning state eviction")
+    void testUnknownGenerateReasonWarningStateUsesLruEviction() {
+        GenerateReason.clearUnknownValueWarningStatesForTest();
+        try {
+            long firstReportNanos = 2_000_000_000L;
+            String hotValue = "HOT_UNKNOWN_GENERATE_REASON";
+
+            assertEquals(
+                    0L, GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos));
+            for (int i = 0; i < 255; i++) {
+                assertEquals(
+                        0L,
+                        GenerateReason.getUnknownValueSuppressedCount(
+                                "FILLER_UNKNOWN_GENERATE_REASON_" + i, firstReportNanos));
+            }
+
+            assertEquals(
+                    -1L,
+                    GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos + 1));
+            assertEquals(
+                    0L,
+                    GenerateReason.getUnknownValueSuppressedCount(
+                            "NEW_UNKNOWN_GENERATE_REASON", firstReportNanos + 2));
+            assertEquals(
+                    -1L,
+                    GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos + 3));
+        } finally {
+            GenerateReason.clearUnknownValueWarningStatesForTest();
+        }
+    }
+
+    @Test
     @DisplayName("Should preserve other metadata when setting GenerateReason")
     void testPreserveMetadataWithGenerateReason() {
         Map<String, Object> metadata = new HashMap<>();
