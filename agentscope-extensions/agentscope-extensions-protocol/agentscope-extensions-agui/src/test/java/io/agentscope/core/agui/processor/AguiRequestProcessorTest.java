@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -353,6 +354,81 @@ class AguiRequestProcessorTest {
                     events.stream().noneMatch(AguiEvent.RunError.class::isInstance),
                     () -> "follow-up run was rejected: " + events);
         }
+    }
+
+    @Test
+    void processAllowsImmediateFollowUpRunAfterInStreamRunError() {
+        // An in-stream failure is converted by the adapter into a RunError event on a
+        // normally-completing stream. The active-run marker must already be cleared when
+        // the caller sees the terminal signal (doOnComplete path), so an immediate
+        // follow-up run on the same thread can start despite the error.
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        AtomicInteger calls = new AtomicInteger();
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenAnswer(
+                        inv ->
+                                calls.getAndIncrement() == 0
+                                        ? Flux.error(new IllegalStateException("boom"))
+                                        : Flux.just(new AgentEndEvent("recovered")));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        List<AguiEvent> failed =
+                processor.process(request(input("run-0"))).events().collectList().block();
+        assertNotNull(failed);
+        assertTrue(
+                failed.stream().anyMatch(AguiEvent.RunError.class::isInstance),
+                () -> "expected an in-stream RunError: " + failed);
+
+        List<AguiEvent> followUp =
+                processor.process(request(input("run-1"))).events().collectList().block();
+        assertNotNull(followUp);
+        assertTrue(
+                followUp.stream().noneMatch(AguiEvent.RunError.class::isInstance),
+                () -> "follow-up run was rejected: " + followUp);
+    }
+
+    @Test
+    void processClearsActiveRunWhenAdapterStreamFailsWithErrorSignal() {
+        // Defense-in-depth contract for doOnError: if an adapter's stream fails with a
+        // raw error signal (escaping the adapter's own error-to-RunError conversion),
+        // the marker must be cleared before the error reaches the caller, so an
+        // immediate follow-up run on the same thread can start.
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        AtomicInteger adapterRuns = new AtomicInteger();
+        AguiAgentAdapter failingAdapter =
+                new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig()) {
+                    @Override
+                    public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext context) {
+                        // Only the first run fails with a raw error signal; the follow-up
+                        // run must find the marker cleared and start normally.
+                        return adapterRuns.getAndIncrement() == 0
+                                ? Flux.error(new IllegalStateException("adapter stream failed"))
+                                : Flux.empty();
+                    }
+                };
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory((resolvedAgent, config) -> failingAdapter)
+                        .build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> processor.process(request(input("run-1"))).events().collectList().block());
+
+        List<AguiEvent> followUp =
+                processor.process(request(input("run-2"))).events().collectList().block();
+        assertNotNull(followUp);
+        assertTrue(
+                followUp.stream().noneMatch(AguiEvent.RunError.class::isInstance),
+                () -> "follow-up run was rejected: " + followUp);
     }
 
     @Test
