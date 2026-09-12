@@ -21,7 +21,6 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
 import java.util.StringJoiner;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,22 +51,30 @@ public class MemorySearchTool {
     public String memorySearch(
             RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Keywords to search for in memory files")
-                    String query) {
+                    String query,
+            @ToolParam(
+                            name = "matchMode",
+                            description = "Matching mode: phrase (default), all, or any",
+                            required = false)
+                    String matchMode) {
         if (query == null || query.isBlank()) {
             return "No query provided";
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        return keywordSearch(rc, query);
+        return keywordSearch(rc, query, SearchMatchMode.parse(matchMode));
     }
 
-    private String keywordSearch(RuntimeContext rc, String query) {
+    /** Preserves the pre-matchMode Java entry point for direct callers. */
+    public String memorySearch(RuntimeContext runtimeContext, String query) {
+        return memorySearch(runtimeContext, query, null);
+    }
+
+    private String keywordSearch(RuntimeContext rc, String query, SearchMatchMode matchMode) {
         StringJoiner results = new StringJoiner("\n");
         int matchCount = 0;
 
         List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
-        Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
-
         for (String relativePath : memoryPaths) {
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
@@ -75,7 +82,7 @@ public class MemorySearchTool {
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
-                if (pattern.matcher(lines[i]).find()) {
+                if (matchMode.matches(lines[i], query)) {
                     results.add(String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]));
                     matchCount++;
                 }
