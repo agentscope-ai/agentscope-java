@@ -48,6 +48,7 @@ Key points:
 - Layer 1 only appends, never dedupes; Layer 2 is periodically rewritten as a whole; **the two layers never overwrite each other**.
 - Layer 2 is the only one injected into the prompt; Layer 1 waits to be merged.
 - Raw messages dropped during compaction are also saved into a never-compacted log file (`*.log.jsonl`) for later audit or `session_search`.
+- Each flushed section header (`## Memory Flush — <timestamp>`) is a **zone-aware** ISO-8601 offset date-time in the JVM default zone, e.g. `2026-09-10T16:05:32.3096574+08:00` (previously it always rendered `...Z`). The daily file name date and the header timestamp are derived from the same instant, and the value still round-trips through `OffsetDateTime.parse(...).toInstant()`, so existing readers are unaffected.
 
 ## When flush fires
 
