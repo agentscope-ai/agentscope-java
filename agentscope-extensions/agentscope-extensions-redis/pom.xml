@@ -27,7 +27,7 @@
     </parent>
 
     <name>AgentScope Java - Extensions - Redis</name>
-    <description>Redis-backed distributed implementations for AgentStateStore, BaseStore, SandboxSnapshot, and SandboxExecutionGuard. Provides RedisDistributedStore for one-line distributed configuration.</description>
+    <description>Redis-backed distributed implementations for AgentStateStore, BaseStore, AG-UI resume coordination, SandboxSnapshot, and SandboxExecutionGuard. Provides RedisDistributedStore for one-line distributed configuration.</description>
     <artifactId>agentscope-extensions-redis</artifactId>
 
     <dependencies>
@@ -41,6 +41,13 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-harness</artifactId>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 
         <!-- Redis clients -->

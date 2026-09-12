@@ -20,6 +20,7 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -100,7 +101,8 @@ public class AgentscopeAguiMvcAutoConfiguration {
             ObjectProvider<AgentEventConverter> eventConvertersProvider,
             ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
             ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
-            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider,
+            ObjectProvider<AguiResumeStateStore> resumeStateStoreProvider) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
@@ -124,6 +126,7 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 .interruptOnDisconnect(props.isInterruptOnDisconnect())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
+                .resumeStateStore(resumeStateStoreProvider.getIfAvailable())
                 .config(config)
                 .build();
     }

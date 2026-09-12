@@ -20,6 +20,7 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -104,6 +105,7 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
             ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
             ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
             ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider,
+            ObjectProvider<AguiResumeStateStore> resumeStateStoreProvider,
             AguiRequestBodyParser requestBodyParser) {
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
@@ -127,6 +129,7 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                 .interruptOnDisconnect(props.isInterruptOnDisconnect())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
+                .resumeStateStore(resumeStateStoreProvider.getIfAvailable())
                 .requestBodyParser(requestBodyParser)
                 .config(config)
                 .build();

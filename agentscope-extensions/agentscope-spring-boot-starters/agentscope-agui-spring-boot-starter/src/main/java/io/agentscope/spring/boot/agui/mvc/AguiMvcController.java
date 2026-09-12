@@ -22,6 +22,7 @@ import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -94,6 +95,7 @@ public class AguiMvcController {
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
+                        .resumeStateStore(builder.resumeStateStore)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -360,6 +362,7 @@ public class AguiMvcController {
         private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiResumeStateStore resumeStateStore;
 
         /**
          * Set the agent registry.
@@ -457,6 +460,17 @@ public class AguiMvcController {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
+            return this;
+        }
+
+        /**
+         * Set the store used to coordinate active runs and pending interrupts.
+         *
+         * @param resumeStateStore The resume coordination state store
+         * @return This builder
+         */
+        public Builder resumeStateStore(AguiResumeStateStore resumeStateStore) {
+            this.resumeStateStore = resumeStateStore;
             return this;
         }
 
