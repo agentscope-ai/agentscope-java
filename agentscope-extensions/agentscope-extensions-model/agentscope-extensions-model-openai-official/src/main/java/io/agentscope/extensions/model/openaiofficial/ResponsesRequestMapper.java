@@ -182,8 +182,10 @@ final class ResponsesRequestMapper {
                         if (schema.getDescription() != null) {
                             schemaBuilder.description(schema.getDescription());
                         }
-                        if (strictJsonSchema != null) {
-                            schemaBuilder.strict(strictJsonSchema);
+                        Boolean effectiveStrict =
+                                schema.getStrict() != null ? schema.getStrict() : strictJsonSchema;
+                        if (effectiveStrict != null) {
+                            schemaBuilder.strict(effectiveStrict);
                         }
                         builder.text(
                                 ResponseTextConfig.builder().format(schemaBuilder.build()).build());
@@ -431,10 +433,13 @@ final class ResponsesRequestMapper {
     }
 
     static void mapAssistantMessage(Msg msg, List<ResponseInputItem> items) {
-        Map<String, Object> metadata = msg.getMetadata();
         String encryptedContent = null;
-        if (metadata != null) {
-            Object ec = metadata.get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT);
+        ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (thinkingBlock != null && thinkingBlock.getMetadata() != null) {
+            Object ec =
+                    thinkingBlock
+                            .getMetadata()
+                            .get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT);
             if (ec instanceof String s) {
                 encryptedContent = s;
             }

@@ -59,8 +59,8 @@ import reactor.core.publisher.Flux;
  * short-circuits to a non-retryable exception. Failed/error events are translated to
  * {@link OpenAIOfficialModelException}.
  *
- * <p>The SDK {@link StreamResponse} is closed on any terminal signal (complete, error, cancel)
- * via {@code doFinally}.
+ * <p>The SDK {@link StreamResponse} is closed on any terminal signal (complete, error,
+ * cancel) via {@code doFinally}.
  */
 final class ResponsesStreamingAssembler {
 
@@ -101,7 +101,7 @@ final class ResponsesStreamingAssembler {
                 .onErrorMap(e -> OpenAIErrorTranslator.translate(e, modelName));
     }
 
-    private static void closeQuietly(StreamResponse<?> streamResponse) {
+    static void closeQuietly(StreamResponse<?> streamResponse) {
         try {
             streamResponse.close();
         } catch (Exception e) {
@@ -257,21 +257,25 @@ final class ResponsesStreamingAssembler {
             String finishReason = (String) metadata.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS);
             ChatUsage usage = ResponsesHelper.extractUsage(response, startTime, metadata);
 
-            // Reasoning metadata
-            if (encryptedContent != null) {
-                metadata.put(
-                        OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT, encryptedContent);
-            }
-            if (!summaryText.isEmpty()) {
-                metadata.put(OpenAIOfficialConstants.MD_REASONING_SUMMARY, summaryText);
-            }
-            if (!reasoningText.isEmpty()) {
-                metadata.put(OpenAIOfficialConstants.MD_REASONING_TEXT, reasoningText);
+            // Reasoning metadata is placed on a ThinkingBlock in the terminal
+            // content for reasoning replay.
+            List<ContentBlock> terminalContent = new ArrayList<>();
+            if (encryptedContent != null || !summaryText.isEmpty() || !reasoningText.isEmpty()) {
+                Map<String, Object> thinkingMetadata = new HashMap<>();
+                if (encryptedContent != null) {
+                    thinkingMetadata.put(
+                            OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT,
+                            encryptedContent);
+                }
+                if (!reasoningText.isEmpty()) {
+                    thinkingMetadata.put(OpenAIOfficialConstants.MD_REASONING_TEXT, reasoningText);
+                }
+                terminalContent.add(ThinkingBlock.builder().metadata(thinkingMetadata).build());
             }
 
             return ChatResponse.builder()
                     .id(responseId)
-                    .content(new ArrayList<>())
+                    .content(terminalContent)
                     .usage(usage)
                     .metadata(metadata)
                     .finishReason(finishReason)

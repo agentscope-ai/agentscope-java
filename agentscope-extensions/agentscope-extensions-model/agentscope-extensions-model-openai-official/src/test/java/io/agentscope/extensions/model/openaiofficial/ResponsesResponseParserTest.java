@@ -139,7 +139,7 @@ class ResponsesResponseParserTest {
         // Encrypted content is in metadata, not in ThinkingBlock
         assertEquals(
                 "encrypted_data",
-                result.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT));
+                tb.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT));
     }
 
     @Test
@@ -154,23 +154,15 @@ class ResponsesResponseParserTest {
         // Raw reasoning text is in metadata
         assertEquals(
                 "raw reasoning text",
-                result.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_TEXT));
+                tb.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_TEXT));
     }
 
     @Test
-    void reasoningSummaryWrittenToMetadata() {
+    void reasoningSummaryWrittenToThinkingBlock() {
         Response response = TestSdkFixtures.reasoningResponse("my summary", "enc", null);
         ChatResponse result = parse(response);
-        assertEquals(
-                "my summary",
-                result.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_SUMMARY));
-    }
-
-    @Test
-    void reasoningSummaryNotWrittenWhenEmpty() {
-        Response response = TestSdkFixtures.textResponse("hello");
-        ChatResponse result = parse(response);
-        assertNull(result.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_SUMMARY));
+        ThinkingBlock tb = (ThinkingBlock) result.getContent().get(0);
+        assertEquals("my summary", tb.getThinking());
     }
 
     // ── Text concatenation ───────────────────────────────────────────────

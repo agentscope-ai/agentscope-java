@@ -177,11 +177,12 @@ class ResponsesStreamingAssemblerTest {
 
         // reasoning_text.delta produces no intermediate block
         assertEquals(1, results.size());
+        // Reasoning text is on the terminal ThinkingBlock's metadata
+        ChatResponse terminal = terminalBlock(results);
+        ThinkingBlock terminalTb = (ThinkingBlock) terminal.getContent().get(0);
         assertEquals(
                 "raw reasoning",
-                terminalBlock(results)
-                        .getMetadata()
-                        .get(OpenAIOfficialConstants.MD_REASONING_TEXT));
+                terminalTb.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_TEXT));
     }
 
     @Test
@@ -199,9 +200,11 @@ class ResponsesStreamingAssemblerTest {
         assertEquals("summary", tb.getThinking());
         assertFalse(tb.getThinking().contains("raw"));
 
-        // Terminal metadata has both
+        // Terminal ThinkingBlock metadata has reasoning text
         ChatResponse terminal = terminalBlock(results);
-        assertEquals("raw", terminal.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_TEXT));
+        ThinkingBlock terminalTb = (ThinkingBlock) terminal.getContent().get(0);
+        assertEquals(
+                "raw", terminalTb.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_TEXT));
     }
 
     @Test
@@ -357,7 +360,7 @@ class ResponsesStreamingAssemblerTest {
     // ── Terminal re-extraction ────────────────────────────────────────────
 
     @Test
-    void terminalReextractsEncryptedContentAndSummary() {
+    void terminalReextractsEncryptedContent() {
         List<ResponseStreamEvent> events =
                 List.of(
                         TestSdkFixtures.reasoningSummaryDeltaEvent("my summary", "rs_001"),
@@ -367,12 +370,13 @@ class ResponsesStreamingAssemblerTest {
         List<ChatResponse> results = assemble(events);
 
         ChatResponse terminal = terminalBlock(results);
+        // Encrypted content is on the terminal ThinkingBlock's metadata
+        ThinkingBlock terminalTb = (ThinkingBlock) terminal.getContent().get(0);
         assertEquals(
                 "enc_data_123",
-                terminal.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT));
-        assertEquals(
-                "my summary",
-                terminal.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_SUMMARY));
+                terminalTb
+                        .getMetadata()
+                        .get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT));
     }
 
     @Test
@@ -409,24 +413,6 @@ class ResponsesStreamingAssemblerTest {
         assertEquals(
                 "priority",
                 terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER));
-    }
-
-    @Test
-    void terminalValueOverridesAccumulatedReasoning() {
-        // Delta accumulates "delta summary", but terminal response has "terminal summary"
-        List<ResponseStreamEvent> events =
-                List.of(
-                        TestSdkFixtures.reasoningSummaryDeltaEvent("delta summary", "rs_001"),
-                        TestSdkFixtures.completedEvent(
-                                TestSdkFixtures.reasoningResponse(
-                                        "terminal summary", "enc", null)));
-        List<ChatResponse> results = assemble(events);
-
-        ChatResponse terminal = terminalBlock(results);
-        assertEquals(
-                "terminal summary",
-                terminal.getMetadata().get(OpenAIOfficialConstants.MD_REASONING_SUMMARY),
-                "Terminal re-extracted value should override accumulated delta");
     }
 
     @Test
@@ -529,13 +515,19 @@ class ResponsesStreamingAssemblerTest {
                         TestSdkFixtures.completedEvent(
                                 TestSdkFixtures.completedResponse(List.of())));
         List<ChatResponse> results = assemble(events);
-        for (ChatResponse result : results) {
-            for (Object block : result.getContent()) {
+        for (int i = 0; i < results.size() - 1; i++) {
+            for (Object block : results.get(i).getContent()) {
                 assertFalse(
                         block instanceof ThinkingBlock,
                         "No ThinkingBlock should be created without summary opt-in");
             }
         }
+        // Terminal block carries reasoning metadata on a ThinkingBlock with no
+        // visible thinking text (reasoning text is metadata-only, not content)
+        ChatResponse terminal = terminalBlock(results);
+        assertFalse(terminal.getContent().isEmpty());
+        ThinkingBlock terminalTb = (ThinkingBlock) terminal.getContent().get(0);
+        assertTrue(terminalTb.getThinking().isEmpty());
     }
 
     // ── Incomplete event ─────────────────────────────────────────────

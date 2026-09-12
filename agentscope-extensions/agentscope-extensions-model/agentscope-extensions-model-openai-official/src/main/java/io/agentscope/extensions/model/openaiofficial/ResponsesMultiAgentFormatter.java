@@ -177,6 +177,11 @@ public class ResponsesMultiAgentFormatter {
                         || msg.hasContentBlocks(ToolResultBlock.class)) {
                     yield GroupType.TOOL_SEQUENCE;
                 }
+                // Assistant messages with encrypted reasoning content must be
+                // passed through to mapAssistantMessage.
+                if (msg.getRole() == MsgRole.ASSISTANT && hasEncryptedReasoning(msg)) {
+                    yield GroupType.TOOL_SEQUENCE;
+                }
                 yield GroupType.AGENT_CONVERSATION;
             }
         };
@@ -189,6 +194,22 @@ public class ResponsesMultiAgentFormatter {
         Object bypassFlag =
                 msg.getMetadata().get(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE);
         return Boolean.TRUE.equals(bypassFlag);
+    }
+
+    /**
+     * Checks whether a message carries encrypted reasoning content that must be
+     * preserved as a Responses reasoning replay item (not merged into history text).
+     */
+    private static boolean hasEncryptedReasoning(Msg msg) {
+        ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (thinkingBlock == null || thinkingBlock.getMetadata() == null) {
+            return false;
+        }
+        Object ec =
+                thinkingBlock
+                        .getMetadata()
+                        .get(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT);
+        return ec instanceof String s && !s.isEmpty();
     }
 
     // -- Conversation merging --------------------------------------

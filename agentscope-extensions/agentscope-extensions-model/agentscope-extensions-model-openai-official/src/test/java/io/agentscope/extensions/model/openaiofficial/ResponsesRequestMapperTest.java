@@ -690,12 +690,12 @@ class ResponsesRequestMapperTest {
                                     .content(
                                             ThinkingBlock.builder()
                                                     .thinking("some reasoning")
+                                                    .metadata(
+                                                            Map.of(
+                                                                    OpenAIOfficialConstants
+                                                                            .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                    "encrypted123"))
                                                     .build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "encrypted123"))
                                     .build());
             ResponseCreateParams params = mapHistory(baseOptions(), messages);
             assertNotNull(params.input());
@@ -989,6 +989,72 @@ class ResponsesRequestMapperTest {
                             .asJsonSchema()
                             .strict()
                             .isPresent());
+        }
+
+        @Test
+        void responseFormatJsonSchemaSchemaLevelStrictTrue() {
+            JsonSchema schema =
+                    JsonSchema.builder()
+                            .name("Result")
+                            .schema(Map.of("type", "object"))
+                            .strict(true)
+                            .build();
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .responseFormat(ResponseFormat.jsonSchema(schema))
+                            .build();
+            ResponseCreateParams params =
+                    ResponsesRequestMapper.map(
+                            List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
+                            opts,
+                            null,
+                            null,
+                            ResponsesRequestMapper::mapHistory);
+            assertTrue(params.text().isPresent());
+            assertTrue(params.text().orElseThrow().format().orElseThrow().isJsonSchema());
+            assertEquals(
+                    true,
+                    params.text()
+                            .orElseThrow()
+                            .format()
+                            .orElseThrow()
+                            .asJsonSchema()
+                            .strict()
+                            .orElseThrow());
+        }
+
+        @Test
+        void responseFormatJsonSchemaSchemaLevelOverridesBuilder() {
+            JsonSchema schema =
+                    JsonSchema.builder()
+                            .name("Result")
+                            .schema(Map.of("type", "object"))
+                            .strict(false)
+                            .build();
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .responseFormat(ResponseFormat.jsonSchema(schema))
+                            .build();
+            ResponseCreateParams params =
+                    ResponsesRequestMapper.map(
+                            List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
+                            opts,
+                            null,
+                            true,
+                            ResponsesRequestMapper::mapHistory);
+            assertTrue(params.text().isPresent());
+            assertTrue(params.text().orElseThrow().format().orElseThrow().isJsonSchema());
+            assertEquals(
+                    false,
+                    params.text()
+                            .orElseThrow()
+                            .format()
+                            .orElseThrow()
+                            .asJsonSchema()
+                            .strict()
+                            .orElseThrow());
         }
     }
 

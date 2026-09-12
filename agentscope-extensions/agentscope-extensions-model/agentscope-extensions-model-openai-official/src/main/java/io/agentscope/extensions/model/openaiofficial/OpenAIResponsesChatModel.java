@@ -148,12 +148,15 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
         return Flux.defer(
                         () -> {
                             Instant start = Instant.now();
+                            StreamResponse<ResponseStreamEvent> streamResponse = null;
                             try {
-                                StreamResponse<ResponseStreamEvent> streamResponse =
-                                        client.responses().createStreaming(params);
+                                streamResponse = client.responses().createStreaming(params);
                                 return ResponsesStreamingAssembler.assemble(
                                         streamResponse, modelName, start);
                             } catch (RuntimeException e) {
+                                if (streamResponse != null) {
+                                    ResponsesStreamingAssembler.closeQuietly(streamResponse);
+                                }
                                 return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
                             }
                         })
@@ -205,15 +208,9 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             }
 
             if (current instanceof OpenAIIoException
-                    || current instanceof OpenAIRetryableException) {
-                return true;
-            }
-
-            if (current instanceof IOException) {
-                return true;
-            }
-
-            if (current instanceof TimeoutException) {
+                    || current instanceof OpenAIRetryableException
+                    || current instanceof IOException
+                    || current instanceof TimeoutException) {
                 return true;
             }
 
