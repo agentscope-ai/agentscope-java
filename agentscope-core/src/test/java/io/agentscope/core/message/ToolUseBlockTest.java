@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionRule;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -292,5 +295,82 @@ class ToolUseBlockTest {
         assertNotNull(toolUseBlock.getMetadata());
         assertTrue(toolUseBlock.getMetadata().isEmpty());
         assertEquals(null, toolUseBlock.getContent());
+    }
+
+    @Test
+    void testSuggestedRulesDefaultsToEmptyList() {
+        ToolUseBlock toolUseBlock = new ToolUseBlock("tool-1000", "no-rules", Map.of());
+
+        assertNotNull(toolUseBlock.getSuggestedRules());
+        assertTrue(toolUseBlock.getSuggestedRules().isEmpty());
+    }
+
+    @Test
+    void testWithSuggestedRulesKeepsStateAndCopiesRules() {
+        PermissionRule rule =
+                new PermissionRule("calculator", "add(*)", PermissionBehavior.ALLOW, "tool");
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("tool-1001")
+                        .name("calculator")
+                        .state(ToolCallState.ASKING)
+                        .build();
+
+        ToolUseBlock updated = original.withSuggestedRules(List.of(rule));
+
+        assertTrue(original.getSuggestedRules().isEmpty());
+        assertEquals(ToolCallState.ASKING, updated.getState());
+        assertEquals(List.of(rule), updated.getSuggestedRules());
+    }
+
+    @Test
+    void testWithStateAndSuggestedRules() {
+        PermissionRule rule =
+                new PermissionRule("calculator", "add(*)", PermissionBehavior.ALLOW, "tool");
+        ToolUseBlock original = ToolUseBlock.builder().id("tool-1002").name("calculator").build();
+
+        ToolUseBlock updated =
+                original.withStateAndSuggestedRules(ToolCallState.ASKING, List.of(rule));
+
+        assertEquals(ToolCallState.ASKING, updated.getState());
+        assertEquals(List.of(rule), updated.getSuggestedRules());
+    }
+
+    @Test
+    void testWithStatePreservesSuggestedRules() {
+        PermissionRule rule =
+                new PermissionRule("calculator", "add(*)", PermissionBehavior.ALLOW, "tool");
+        ToolUseBlock asking =
+                ToolUseBlock.builder()
+                        .id("tool-1003")
+                        .name("calculator")
+                        .state(ToolCallState.ASKING)
+                        .suggestedRules(List.of(rule))
+                        .build();
+
+        ToolUseBlock allowed = asking.withState(ToolCallState.ALLOWED);
+
+        assertEquals(ToolCallState.ALLOWED, allowed.getState());
+        assertEquals(List.of(rule), allowed.getSuggestedRules());
+    }
+
+    @Test
+    void testSuggestedRulesRoundTrip() throws JsonProcessingException {
+        PermissionRule rule =
+                new PermissionRule("calculator", "add(*)", PermissionBehavior.ALLOW, "tool");
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("tool-1004")
+                        .name("calculator")
+                        .state(ToolCallState.ASKING)
+                        .suggestedRules(List.of(rule))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(toolUseBlock);
+        assertTrue(json.contains("\"suggested_rules\""));
+
+        ToolUseBlock parsed = objectMapper.readValue(json, ToolUseBlock.class);
+        assertEquals(List.of(rule), parsed.getSuggestedRules());
+        assertEquals(ToolCallState.ASKING, parsed.getState());
     }
 }

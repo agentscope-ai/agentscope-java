@@ -17,8 +17,11 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.permission.PermissionRule;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,6 +45,7 @@ public final class ToolUseBlock extends ContentBlock {
     private final String content; // Raw content for streaming tool calls
     private final Map<String, Object> metadata; // Provider-specific metadata
     private final ToolCallState state;
+    private final List<PermissionRule> suggestedRules; // Rules suggested when gated by ASK
 
     /**
      * Creates a new tool use block for JSON deserialization.
@@ -53,7 +57,7 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock(
             String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
-        this(id, name, input, null, metadata, null);
+        this(id, name, input, null, metadata, null, null);
     }
 
     /**
@@ -64,7 +68,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @param input Input parameters for the tool (will be defensively copied)
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
-        this(id, name, input, null, null, null);
+        this(id, name, input, null, null, null, null);
     }
 
     /**
@@ -82,7 +86,7 @@ public final class ToolUseBlock extends ContentBlock {
             Map<String, Object> input,
             String content,
             Map<String, Object> metadata) {
-        this(id, name, input, content, metadata, null);
+        this(id, name, input, content, metadata, null, null);
     }
 
     /**
@@ -95,6 +99,27 @@ public final class ToolUseBlock extends ContentBlock {
      * @param metadata Provider-specific metadata (will be defensively copied)
      * @param state The tool call state, defaults to PENDING if null
      */
+    public ToolUseBlock(
+            String id,
+            String name,
+            Map<String, Object> input,
+            String content,
+            Map<String, Object> metadata,
+            ToolCallState state) {
+        this(id, name, input, content, metadata, state, null);
+    }
+
+    /**
+     * Creates a new tool use block with all fields.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     * @param content Raw content for streaming tool calls
+     * @param metadata Provider-specific metadata (will be defensively copied)
+     * @param state The tool call state, defaults to PENDING if null
+     * @param suggestedRules Permission rules suggested for this call (will be defensively copied)
+     */
     @JsonCreator
     public ToolUseBlock(
             @JsonProperty("id") String id,
@@ -102,7 +127,8 @@ public final class ToolUseBlock extends ContentBlock {
             @JsonProperty("input") Map<String, Object> input,
             @JsonProperty("content") String content,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("state") ToolCallState state) {
+            @JsonProperty("state") ToolCallState state,
+            @JsonProperty("suggested_rules") List<PermissionRule> suggestedRules) {
         this.id = id;
         this.name = name;
         // Defensive copy to prevent external modifications
@@ -116,6 +142,10 @@ public final class ToolUseBlock extends ContentBlock {
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new HashMap<>(metadata));
         this.state = state != null ? state : ToolCallState.PENDING;
+        this.suggestedRules =
+                suggestedRules == null
+                        ? Collections.emptyList()
+                        : Collections.unmodifiableList(new ArrayList<>(suggestedRules));
     }
 
     /**
@@ -176,13 +206,66 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
+     * Gets the permission rules suggested for this tool call.
+     *
+     * <p>Populated when the permission engine gates this call with
+     * {@link io.agentscope.core.permission.PermissionBehavior#ASK}: the owning tool derives
+     * candidate rules from the actual invocation via
+     * {@link io.agentscope.core.tool.ToolBase#generateSuggestions}. Passing them back in a
+     * {@code ConfirmResult} registers them with the engine, so future matching calls resolve
+     * without another prompt.
+     *
+     * @return The suggested rules, or an empty list when none were suggested
+     */
+    @JsonProperty("suggested_rules")
+    public List<PermissionRule> getSuggestedRules() {
+        return suggestedRules;
+    }
+
+    /**
      * Returns a copy of this block with the given state.
      *
      * @param state The new state
      * @return A new ToolUseBlock with the updated state
      */
     public ToolUseBlock withState(ToolCallState state) {
-        return new ToolUseBlock(this.id, this.name, this.input, this.content, this.metadata, state);
+        return new ToolUseBlock(
+                this.id,
+                this.name,
+                this.input,
+                this.content,
+                this.metadata,
+                state,
+                this.suggestedRules);
+    }
+
+    /**
+     * Returns a copy of this block with the given suggested rules.
+     *
+     * @param suggestedRules The suggested permission rules
+     * @return A new ToolUseBlock with the updated suggested rules
+     */
+    public ToolUseBlock withSuggestedRules(List<PermissionRule> suggestedRules) {
+        return new ToolUseBlock(
+                this.id,
+                this.name,
+                this.input,
+                this.content,
+                this.metadata,
+                this.state,
+                suggestedRules);
+    }
+
+    /**
+     * Returns a copy of this block with the given suggested rules.
+     * @param state The new state
+     * @param suggestedRules The suggested permission rules
+     * @return A new ToolUseBlock with the updated suggested rules and state
+     */
+    public ToolUseBlock withStateAndSuggestedRules(
+            ToolCallState state, List<PermissionRule> suggestedRules) {
+        return new ToolUseBlock(
+                this.id, this.name, this.input, this.content, this.metadata, state, suggestedRules);
     }
 
     /**
@@ -204,6 +287,7 @@ public final class ToolUseBlock extends ContentBlock {
         private String content;
         private Map<String, Object> metadata;
         private ToolCallState state;
+        private List<PermissionRule> suggestedRules;
 
         /**
          * Sets the unique identifier for the tool call.
@@ -275,12 +359,23 @@ public final class ToolUseBlock extends ContentBlock {
         }
 
         /**
+         * Sets the permission rules suggested for this tool call.
+         *
+         * @param suggestedRules The suggested permission rules
+         * @return This builder for chaining
+         */
+        public Builder suggestedRules(List<PermissionRule> suggestedRules) {
+            this.suggestedRules = suggestedRules;
+            return this;
+        }
+
+        /**
          * Builds a new ToolUseBlock with the configured properties.
          *
          * @return A new ToolUseBlock instance
          */
         public ToolUseBlock build() {
-            return new ToolUseBlock(id, name, input, content, metadata, state);
+            return new ToolUseBlock(id, name, input, content, metadata, state, suggestedRules);
         }
     }
 }
