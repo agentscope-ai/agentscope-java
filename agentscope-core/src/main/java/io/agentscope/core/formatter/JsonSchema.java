@@ -96,6 +96,17 @@ public class JsonSchema {
         this.strict = strict;
     }
 
+    /**
+     * Validates a model output against this schema (response-side check).
+     *
+     * @param output the parsed model output (JSON object)
+     * @return the list of validation errors; empty when the output conforms
+     */
+    public java.util.List<StructuredOutputValidator.ValidationError> validate(
+            com.fasterxml.jackson.databind.JsonNode output) {
+        return StructuredOutputValidator.validate(output, this);
+    }
+
     public static Builder builder() {
         return new Builder();
     }

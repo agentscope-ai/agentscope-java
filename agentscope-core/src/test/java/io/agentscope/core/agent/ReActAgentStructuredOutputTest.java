@@ -18,10 +18,12 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -39,6 +41,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -742,5 +745,240 @@ class ReActAgentStructuredOutputTest {
 
         // The agent should handle null eventMsg gracefully — either by returning
         // empty or by continuing the loop. No NPE should be thrown.
+    }
+
+    @Test
+    @DisplayName(
+            "prose-wrapped conforming output: validation passes and structured metadata is"
+                    + " populated")
+    void testProseWrappedOutputYieldsStructuredData() {
+        // The validation loop tolerates leading prose when extracting the payload;
+        // the result wrapping must reuse that payload instead of re-parsing the raw
+        // text (which would fail on prose and silently drop the structured metadata).
+        MockModel nativeModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_prose")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "好的，答案是：{\"answer\":"
+                                                                                    + " 7}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result, "structured metadata must survive prose-wrapped output");
+        assertEquals(7, result.answer);
+    }
+
+    @Test
+    @DisplayName("dedupe guard: message reusing a failed attempt's id is re-validated, not skipped")
+    void testSameIdMessageRevalidatedAfterFailedAttempt() {
+        // Attempt 1: id "msg_x", schema-violating payload (answer is a string).
+        // Attempt 2: SAME id "msg_x", still violating. The dedupe guard records validated
+        // ids only, so this attempt must be re-validated (and fail) instead of skipped.
+        // Attempt 3: fresh id, conforming JSON. Total model calls must be 3; a guard that
+        // skips the same-id second attempt would finish the call after 2 calls with an
+        // unvalidated result.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            int call = calls.incrementAndGet();
+                            if (call == 1) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            if (call == 2) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"still-bad\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_ok")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder().maxAttempts(3).build())
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        assertEquals(3, calls.get(), "same-id failed attempt must be re-validated, not skipped");
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
+    }
+
+    @Test
+    @DisplayName(
+            "error-feedback retry: invalid first attempt corrected, failed-turn thinking does not"
+                    + " leak")
+    void testStructuredOutputErrorFeedbackRetry() {
+        // Attempt 1: thinking + invalid JSON (answer is string, schema requires number)
+        // Attempt 2 (after error feedback): conforming JSON
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasFeedback =
+                                    msgs.stream()
+                                            .filter(m -> m.getRole() == MsgRole.USER)
+                                            .flatMap(m -> m.getContent().stream())
+                                            .filter(b -> b instanceof TextBlock)
+                                            .map(b -> ((TextBlock) b).getText())
+                                            .anyMatch(
+                                                    t ->
+                                                            t.contains(
+                                                                            "failed JSON Schema"
+                                                                                    + " validation")
+                                                                    || t.contains(
+                                                                            "JSON Schema 校验"));
+                            if (!hasFeedback) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_bad")
+                                                .content(
+                                                        List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking(
+                                                                                "bad attempt"
+                                                                                    + " thinking")
+                                                                        .build(),
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_good")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 15))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 6 * 7?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
+
+        boolean leakedThinking =
+                responseMsg.getContent().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof ThinkingBlock
+                                                && ((ThinkingBlock) b).getThinking() != null
+                                                && ((ThinkingBlock) b)
+                                                        .getThinking()
+                                                        .contains("bad attempt"));
+        assertTrue(!leakedThinking, "failed-turn thinking leaked into final message");
+    }
+
+    /** Schema target for the error-feedback retry test. */
+    static class MathAnswer {
+        public int answer;
     }
 }
