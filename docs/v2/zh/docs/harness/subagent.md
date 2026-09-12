@@ -1,6 +1,6 @@
 ---
-title: "子 Agent（Subagent）"
-description: "声明子 agent、同步/后台调用、自动反向通知、远程子 agent、流式转发"
+title: 子 Agent（Subagent）
+description: 声明子 agent、同步/后台调用、自动反向通知、远程子 agent、流式转发
 ---
 
 ## 作用
@@ -59,6 +59,7 @@ top_p: 0.95                   # 可选
 hidden: false                 # true 时不出现在 agent 可见列表（仍可程序化 spawn）
 mode: subagent                # primary / subagent / all，默认 all；primary 不允许被 spawn
 expose_to_user: true          # 可选三态；强制/禁止向用户暴露（不写表示不表态）
+enable_pending_tool_recovery: true # 可选；不写则继承父 agent 的恢复配置
 tools: [read_file, grep_files]   # 可选；继承工具的白名单
 ---
 
@@ -91,6 +92,14 @@ HarnessAgent.builder()
 ```
 
 三种来源互斥：`workspace(...)`、`inlineAgentsBody(...)`、`url(...)` **三选一**。
+
+框架自动构建的本地子 agent（包括 `general-purpose`）会继承父级
+`HarnessAgent.Builder.enablePendingToolRecovery(...)` 配置，默认关闭。声明中可用
+`.enablePendingToolRecovery(true)` 或 `.enablePendingToolRecovery(false)` 显式覆盖，
+`null` 表示继承。工作区 spec 支持 `enable_pending_tool_recovery`，也兼容
+`enablePendingToolRecovery` 写法。开启后，新的普通消息会为悬空工具调用补充错误结果，
+也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
+调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
 ### 内置 `general-purpose`
 
@@ -234,7 +243,7 @@ chat.sendStream(SendOptions.userId("user-1"), "派一个研究员调查 AI 趋�
 chat.sendToSubagent(subagentId, "重点关注 LLM agent").block();
 ```
 
-适合"分支对话"场景：父 agent spawn 一个专家，用户独立地和那个专家继续交流。完整的 Channel 侧 API 见 [Channel — 与暴露的子 Agent 对话](./channel.md#与暴露的子-agent-对话)。
+适合"分支对话"场景：父 agent spawn 一个专家，用户独立地和那个专家继续交流。完整的 Channel 侧 API 见 [Channel — 与暴露的子 Agent 对话](/v2/zh/docs/harness/channel#与暴露的子-agent-对话)。
 
 ### 怎么开启
 
@@ -250,7 +259,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
-没有绑定 Channel 时，`agent_spawn` 里的 `expose_to_user=true` 会被静默忽略——子 agent 照常工作，只是不会暴露给用户。多 agent 场景用 `GatewayBootstrap` 的接法见 [Channel — GatewayBootstrap 下暴露子 Agent](./channel.md#gatewaybootstrap-下暴露子-agent)。
+没有绑定 Channel 时，`agent_spawn` 里的 `expose_to_user=true` 会被静默忽略——子 agent 照常工作，只是不会暴露给用户。多 agent 场景用 `GatewayBootstrap` 的接法见 [Channel — GatewayBootstrap 下暴露子 Agent](/v2/zh/docs/harness/channel#gatewaybootstrap-下暴露子-agent)。
 
 ### 用代码控制是否暴露
 
@@ -306,7 +315,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自动接好
 ```
 
-`subagentId` 会持久化到后端，子 agent 自己的对话会按 session 从分布式 `AgentStateStore` 重新加载——即使后续消息落到不同节点，用户面对的仍是*同一个*子 agent。多 agent 的 `GatewayBootstrap` 传 `.distributedStore(...)`（不传则继承 main agent 的）。部署建议——包括把某个 `subagentId` 路由回它的活实例所在节点（粘性路由）——见 [上生产](../others/going-to-production.md)。
+`subagentId` 会持久化到后端，子 agent 自己的对话会按 session 从分布式 `AgentStateStore` 重新加载——即使后续消息落到不同节点，用户面对的仍是*同一个*子 agent。多 agent 的 `GatewayBootstrap` 传 `.distributedStore(...)`（不传则继承 main agent 的）。部署建议——包括把某个 `subagentId` 路由回它的活实例所在节点（粘性路由）——见 [上生产](/v2/zh/docs/others/going-to-production)。
 
 ## 让 agent 自己写新的子 agent spec
 
@@ -353,7 +362,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 | `remoteStreaming` | `true`（未设置时） | 父代理使用 `streamEvents()` 时，把远程任务的 SSE 事件转发进父流，并带 `source` 标记与 `metadata.taskId` / `metadata.parentSessionId`（与 harness `TaskRecord` / 父 session 一致） |
 | `remoteStreamDetail` | `FULL` | 回传多少远程事件——见[远程流式详细度](#远程流式详细度) |
 | `remoteAskPolicy` | `DENY` | 如何处理远程工具确认（HITL）请求——见 [远程授权](#远程授权) |
-| `remoteContextAttributes` | 无 | 每次提交都携带的静态调用方属性，写入 `context.attributes`。按次追加时，在父代理的 `RuntimeContext` 上用 `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` 放一个 map；见[上下文属性](../../integration/protocol/agent-protocol.md#上下文属性contextattributes) |
+| `remoteContextAttributes` | 无 | 每次提交都携带的静态调用方属性，写入 `context.attributes`。按次追加时，在父代理的 `RuntimeContext` 上用 `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` 放一个 map；见[上下文属性](/v2/zh/integration/protocol/agent-protocol#上下文属性contextattributes) |
 
 ### 远程流式详细度
 
@@ -375,7 +384,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 远程 agent 因工具确认而暂停（`awaiting_confirm`）时：
 
-- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) 恢复，请求体为 `decisions[{toolCallId, approved}]`。
+- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](/v2/zh/integration/protocol/agent-protocol) 恢复，请求体为 `decisions[{toolCallId, approved}]`。
 - **父代理非流式（`call`）或 `remoteAskPolicy=DENY`（默认）**：自动拒绝待确认项。工具结果中会附注：`remote tool confirmation(s) were auto-denied`。
 
 等待确认期间任务状态保持 `RUNNING`（`awaitingConfirm=true`）。因此 `wait_async_results` 等 barrier 会继续等待，直到任务被 resume 并进入终态。
@@ -394,7 +403,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 ## 子 Agent 流式
 
-> 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](../building-blocks/message-and-event.md) 与 [V1 迁移指南 B.4](../change-log.md)。
+> 新代码请用 `streamEvents()`（返回 `Flux<AgentEvent>`）。旧 `stream()` 系列（`Flux<Event>`）在 2.0.0 起 `@Deprecated(forRemoval = true)` —— 详见 [消息与事件](/v2/zh/docs/building-blocks/message-and-event) 与 [V1 迁移指南 B.4](/v2/zh/docs/change-log)。
 
 父 agent 通过 `agent_spawn` / `agent_send` 同步调用子 agent 时，子 agent 的中间事件会**实时转发**到父的 `streamEvents()` 流中。每个子事件都带一个 `source` 字段（`/` 分隔的路径，如 `"main/researcher"`），父事件的 `source` 为 `null`。远程 Agent Protocol 子 agent 还会写入 `metadata.taskId`（`AgentEvent.METADATA_TASK_ID`，harness 侧任务 id）与 `metadata.parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，父 session），因此同一轮里对同一远程 agent 的多次调用即使 `source` 相同也能区分，并能回溯到发起方会话。
 
@@ -496,10 +505,10 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 
 ## 相关文档
 
-- [Channel](./channel.md) — `expose_to_user`、`SendOptions`、用户直接与子 agent 交互
-- [工作区](./workspace.md) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
-- [计划模式](./plan-mode.md) — plan 阶段对子 agent 的限制
-- [架构](./architecture.md) — 主/子 agent 怎么协作
-- [Agent Protocol](../../integration/protocol/agent-protocol.md) — 远程任务端点（SSE + HITL resume）
-- [消息与事件](../building-blocks/message-and-event.md) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
-- [V1 迁移指南 B.4](../change-log.md) — `stream()` → `streamEvents()` 弃用时间线
+- [Channel](/v2/zh/docs/harness/channel) — `expose_to_user`、`SendOptions`、用户直接与子 agent 交互
+- [工作区](/v2/zh/docs/harness/workspace) — `subagents/` 与 `agents/<id>/tasks/` 的目录布局
+- [计划模式](/v2/zh/docs/harness/plan-mode) — plan 阶段对子 agent 的限制
+- [架构](/v2/zh/docs/harness/architecture) — 主/子 agent 怎么协作
+- [Agent Protocol](/v2/zh/integration/protocol/agent-protocol) — 远程任务端点（SSE + HITL resume）
+- [消息与事件](/v2/zh/docs/building-blocks/message-and-event) — `AgentEvent` 体系（推荐）以及已弃用的 `Event` / `EventType` / `StreamOptions`
+- [V1 迁移指南 B.4](/v2/zh/docs/change-log) — `stream()` → `streamEvents()` 弃用时间线

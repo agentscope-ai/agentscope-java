@@ -28,6 +28,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -43,6 +44,13 @@ public class DashScopeChatFormatter
         extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+
+    /**
+     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
+     * {@code @JsonInclude(NON_EMPTY)} on {@link DashScopeMessage#cacheControl}), so the upstream
+     * API receives no {@code cache_control} field and therefore performs no caching.
+     */
+    private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -176,8 +184,8 @@ public class DashScopeChatFormatter
      * Apply cache control to DashScope messages.
      *
      * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * message in the list. Messages that already carry a cache_control value (including the empty
+     * "no cache" sentinel) are left untouched.
      *
      * @param messages the list of formatted DashScope messages
      */
@@ -186,12 +194,12 @@ public class DashScopeChatFormatter
             return;
         }
         for (DashScopeMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+            if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
                 msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
             }
         }
         DashScopeMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
+        if (shouldAutoCache(lastMsg)) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
@@ -203,5 +211,28 @@ public class DashScopeChatFormatter
      */
     static Map<String, String> getEphemeralCacheControl() {
         return EPHEMERAL_CACHE_CONTROL;
+    }
+
+    /**
+     * Get the "no cache" sentinel constant.
+     *
+     * @return unmodifiable empty map representing an explicit "no cache" intent
+     */
+    static Map<String, String> getNoCacheControl() {
+        return NO_CACHE_CONTROL;
+    }
+
+    /**
+     * Whether the automatic cache-control strategy should mark a message as ephemeral.
+     *
+     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
+     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
+     * sentinel — is left unchanged.
+     *
+     * @param message the message to inspect
+     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
+     */
+    static boolean shouldAutoCache(DashScopeMessage message) {
+        return message.getCacheControl() == null;
     }
 }

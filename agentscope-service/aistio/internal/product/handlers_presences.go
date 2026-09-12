@@ -73,7 +73,7 @@ func (ch channelRow) toPresenceJSON(maskSecrets bool) gin.H {
 }
 
 func (s *Server) listAgentPresences(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -100,7 +100,7 @@ func (s *Server) listAgentPresences(c *gin.Context) {
 }
 
 func (s *Server) createAgentPresence(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -154,7 +154,7 @@ func (s *Server) createAgentPresence(c *gin.Context) {
 }
 
 func (s *Server) updateAgentPresence(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Param("channelId")
 	ch, err := s.loadChannel(c.Request.Context(), channelID)
@@ -219,7 +219,7 @@ func (s *Server) updateAgentPresence(c *gin.Context) {
 }
 
 func (s *Server) deleteAgentPresence(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Param("channelId")
 	ch, err := s.loadChannel(c.Request.Context(), channelID)
@@ -239,7 +239,7 @@ func (s *Server) deleteAgentPresence(c *gin.Context) {
 }
 
 func (s *Server) getAgentPresence(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Param("channelId")
 	ch, err := s.loadChannel(c.Request.Context(), channelID)
