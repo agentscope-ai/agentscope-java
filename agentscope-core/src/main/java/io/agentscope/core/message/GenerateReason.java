@@ -121,6 +121,8 @@ public enum GenerateReason {
         try {
             return valueOf(value);
         } catch (IllegalArgumentException ignored) {
+            // Keep this fallback observable via metrics/logging; it may hide a pending
+            // HITL/ASK_USER pause.
             return MODEL_STOP;
         }
     }
