@@ -23,6 +23,8 @@ import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.InMemoryAguiSnapshotStore;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import org.springframework.beans.factory.ObjectProvider;
@@ -30,6 +32,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -87,6 +90,22 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     }
 
     /**
+     * Creates the in-memory AG-UI presentation snapshot store when the snapshot store is enabled.
+     *
+     * @param props The configuration properties
+     * @return A new in-memory snapshot store
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "agentscope.agui",
+            name = "snapshot-store-enabled",
+            havingValue = "true")
+    public AguiSnapshotStore aguiSnapshotStore(AguiProperties props) {
+        return new InMemoryAguiSnapshotStore(props.getSnapshotMaxThreads());
+    }
+
+    /**
      * Creates the AG-UI WebFlux handler bean.
      *
      * @param registry The agent registry
@@ -104,7 +123,9 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
             ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
             ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
             ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider,
+            ObjectProvider<AguiSnapshotStore> snapshotStoreProvider,
             AguiRequestBodyParser requestBodyParser) {
+        AguiSnapshotStore snapshotStore = snapshotStoreProvider.getIfAvailable();
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
@@ -117,6 +138,8 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                         .defaultAgentId(props.getDefaultAgentId())
                         .eventConverters(eventConvertersProvider.orderedStream().toList())
                         .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
+                        .snapshotStoreEnabled(props.isSnapshotStoreEnabled())
+                        .snapshotStore(snapshotStore)
                         .build();
 
         return AguiWebFluxHandler.builder()
@@ -128,6 +151,7 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .requestBodyParser(requestBodyParser)
+                .snapshotStore(snapshotStore)
                 .config(config)
                 .build();
     }
@@ -156,6 +180,11 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
         if (props.isEnablePathRouting()) {
             routerBuilder.POST(
                     props.getPathPrefix() + "/run/{agentId}", handler::handleWithAgentId);
+        }
+
+        // Register the read-only hydrate route when the snapshot store is enabled.
+        if (props.isSnapshotStoreEnabled()) {
+            routerBuilder.POST(props.getPathPrefix() + "/connect", handler::handleConnect);
         }
 
         return routerBuilder.build();

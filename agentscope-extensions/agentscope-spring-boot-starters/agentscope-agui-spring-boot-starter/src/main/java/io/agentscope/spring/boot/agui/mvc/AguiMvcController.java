@@ -25,6 +25,7 @@ import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,6 +42,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Flux;
 
 /**
  * MVC controller for AG-UI protocol requests.
@@ -94,6 +96,7 @@ public class AguiMvcController {
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
+                        .snapshotStore(builder.snapshotStore)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -155,6 +158,76 @@ public class AguiMvcController {
             String pathAgentId,
             HttpServletRequest request) {
         return handleInternal(input, headerAgentId, pathAgentId, request);
+    }
+
+    /**
+     * Handle an AG-UI {@code /connect} hydrate request.
+     *
+     * <p>Returns a read-only SSE stream reconstructed from the presentation snapshot store. No
+     * agent is invoked and there is no cancel-time interrupt, because hydrate has no live agent.
+     *
+     * @param input The run agent input (threadId / runId identify the snapshot)
+     * @param request The native servlet request (may be null)
+     * @return An SseEmitter for the hydrate SSE stream
+     */
+    public SseEmitter handleConnect(RunAgentInput input, HttpServletRequest request) {
+        SseEmitter emitter = new SseEmitter(sseTimeout);
+        String threadId = input.getThreadId();
+        String runId = input.getRunId();
+        executorService.submit(
+                () -> {
+                    try {
+                        Flux<AguiEvent> events =
+                                processor.hydrate(
+                                        runtimeContextRequest(input, null, null, request));
+                        BaseSubscriber<AguiEvent> subscription =
+                                new BaseSubscriber<>() {
+                                    @Override
+                                    protected void hookOnNext(AguiEvent event) {
+                                        sendEvent(emitter, event);
+                                    }
+
+                                    @Override
+                                    protected void hookOnError(Throwable error) {
+                                        logger.error(
+                                                "Error during AG-UI hydrate: {}",
+                                                error.getMessage());
+                                        sendErrorAndComplete(
+                                                emitter, threadId, runId, error.getMessage());
+                                    }
+
+                                    @Override
+                                    protected void hookOnComplete() {
+                                        try {
+                                            emitter.complete();
+                                        } catch (Exception e) {
+                                            logger.debug(
+                                                    "Error completing emitter: {}", e.getMessage());
+                                        }
+                                    }
+                                };
+                        emitter.onCompletion(
+                                () -> logger.debug("SSE hydrate completed for run {}", runId));
+                        emitter.onTimeout(
+                                () -> {
+                                    subscription.dispose();
+                                    logger.debug("SSE hydrate timed out for run {}", runId);
+                                });
+                        emitter.onError(
+                                (ex) -> {
+                                    subscription.dispose();
+                                    logger.debug(
+                                            "SSE hydrate error for run {}: {}",
+                                            runId,
+                                            ex.getMessage());
+                                });
+                        events.subscribe(subscription);
+                    } catch (Exception e) {
+                        logger.error("Error processing AG-UI connect: {}", e.getMessage());
+                        sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
+                    }
+                });
+        return emitter;
     }
 
     private SseEmitter handleInternal(
@@ -360,6 +433,7 @@ public class AguiMvcController {
         private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiSnapshotStore snapshotStore;
 
         /**
          * Set the agent registry.
@@ -457,6 +531,18 @@ public class AguiMvcController {
          */
         public Builder adapterFactory(AguiAgentAdapterFactory adapterFactory) {
             this.adapterFactory = adapterFactory;
+            return this;
+        }
+
+        /**
+         * Set the presentation snapshot store used for {@code /connect} hydrate and trailing
+         * interrupt clearing. Optional; only effective when the snapshot store is enabled.
+         *
+         * @param snapshotStore the snapshot store, or null
+         * @return This builder
+         */
+        public Builder snapshotStore(AguiSnapshotStore snapshotStore) {
+            this.snapshotStore = snapshotStore;
             return this;
         }
 

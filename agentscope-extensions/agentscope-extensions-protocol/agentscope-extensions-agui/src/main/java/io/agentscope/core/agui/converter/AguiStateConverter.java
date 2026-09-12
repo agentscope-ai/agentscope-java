@@ -17,12 +17,8 @@ package io.agentscope.core.agui.converter;
 
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEvent.JsonPatchOperation;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Converter for state management in the AG-UI protocol.
@@ -59,7 +55,7 @@ public class AguiStateConverter {
      */
     public AguiEvent.StateDelta createDelta(
             Map<String, Object> before, Map<String, Object> after, String threadId, String runId) {
-        List<JsonPatchOperation> operations = computeDelta(before, after, "");
+        List<JsonPatchOperation> operations = AguiJsonDiff.computeDelta(before, after, "");
 
         if (operations.isEmpty()) {
             return null; // No changes
@@ -76,76 +72,6 @@ public class AguiStateConverter {
      * @return true if there are differences
      */
     public boolean hasChanges(Map<String, Object> before, Map<String, Object> after) {
-        return !computeDelta(before, after, "").isEmpty();
-    }
-
-    /**
-     * Compute the JSON Patch operations needed to transform "before" into "after".
-     *
-     * @param before The state before changes
-     * @param after The state after changes
-     * @param basePath The base JSON Pointer path
-     * @return List of JsonPatchOperations
-     */
-    @SuppressWarnings("unchecked")
-    private List<JsonPatchOperation> computeDelta(
-            Map<String, Object> before, Map<String, Object> after, String basePath) {
-        List<JsonPatchOperation> operations = new ArrayList<>();
-
-        if (before == null && after == null) {
-            return operations;
-        }
-
-        if (before == null) {
-            before = Map.of();
-        }
-
-        if (after == null) {
-            after = Map.of();
-        }
-
-        Set<String> allKeys = new HashSet<>();
-        allKeys.addAll(before.keySet());
-        allKeys.addAll(after.keySet());
-
-        for (String key : allKeys) {
-            String path = basePath + "/" + escapeJsonPointer(key);
-            Object beforeValue = before.get(key);
-            Object afterValue = after.get(key);
-
-            if (!before.containsKey(key)) {
-                // Key was added
-                operations.add(JsonPatchOperation.add(path, afterValue));
-            } else if (!after.containsKey(key)) {
-                // Key was removed
-                operations.add(JsonPatchOperation.remove(path));
-            } else if (!Objects.equals(beforeValue, afterValue)) {
-                // Value changed
-                if (beforeValue instanceof Map && afterValue instanceof Map) {
-                    // Recurse into nested maps
-                    operations.addAll(
-                            computeDelta(
-                                    (Map<String, Object>) beforeValue,
-                                    (Map<String, Object>) afterValue,
-                                    path));
-                } else {
-                    // Replace value
-                    operations.add(JsonPatchOperation.replace(path, afterValue));
-                }
-            }
-        }
-
-        return operations;
-    }
-
-    /**
-     * Escape a string for use in a JSON Pointer (RFC 6901).
-     *
-     * @param value The string to escape
-     * @return The escaped string
-     */
-    private String escapeJsonPointer(String value) {
-        // Per RFC 6901, ~ must be escaped as ~0 and / as ~1
-        return value.replace("~", "~0").replace("/", "~1");
+        return AguiJsonDiff.hasChanges(before, after);
     }
 }

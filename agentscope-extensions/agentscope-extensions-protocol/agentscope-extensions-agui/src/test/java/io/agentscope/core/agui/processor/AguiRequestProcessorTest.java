@@ -40,7 +40,10 @@ import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.store.AguiThreadSnapshot;
+import io.agentscope.core.agui.store.InMemoryAguiSnapshotStore;
 import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
@@ -727,6 +730,122 @@ class AguiRequestProcessorTest {
         public Flux<AguiEvent> run(RunAgentInput input, RuntimeContext runtimeContext) {
             return Flux.never();
         }
+    }
+
+    @Test
+    void hydrateWithNoStoreReturnsEmptyHandshake() {
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
+
+        List<AguiEvent> events = processor.hydrate(request(input("run-1"))).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(3, events.size());
+        assertEquals(AguiEventType.RUN_STARTED, events.get(0).getType());
+        assertInstanceOf(AguiEvent.MessagesSnapshot.class, events.get(1));
+        assertEquals(AguiEventType.RUN_FINISHED, events.get(2).getType());
+    }
+
+    @Test
+    void hydrateWithSnapshotReplaysMessages() {
+        InMemoryAguiSnapshotStore store = new InMemoryAguiSnapshotStore();
+        store.save(
+                new AguiThreadSnapshot(
+                        "thread-1",
+                        List.of(AguiMessage.userMessage("u1", "hi")),
+                        Map.of(),
+                        List.of(),
+                        null,
+                        "run-0",
+                        1L));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(mock(AgentResolver.class))
+                        .snapshotStore(store)
+                        .build();
+
+        List<AguiEvent> events = processor.hydrate(request(input("run-1"))).collectList().block();
+
+        assertNotNull(events);
+        AguiEvent.MessagesSnapshot snapshot =
+                assertInstanceOf(AguiEvent.MessagesSnapshot.class, events.get(1));
+        assertEquals(1, snapshot.messages().size());
+        assertEquals("u1", snapshot.messages().get(0).getId());
+    }
+
+    @Test
+    void beginRunClearsPendingInterruptFromSnapshotStore() {
+        InMemoryAguiSnapshotStore store = new InMemoryAguiSnapshotStore();
+        store.save(
+                new AguiThreadSnapshot(
+                        "thread-1",
+                        List.of(AguiMessage.userMessage("u1", "hi")),
+                        Map.of(),
+                        List.of(),
+                        new AguiEvent.RunFinishedInterruptOutcome(List.of(interrupt("i1", "tc1"))),
+                        "run-0",
+                        1L));
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("ok")));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> null)
+                        .snapshotStore(store)
+                        .build();
+
+        processor.process(request(input("run-1"))).events().collectList().block();
+
+        AguiThreadSnapshot snapshot = store.find("thread-1").orElseThrow();
+        assertEquals(null, snapshot.pendingOutcome());
+    }
+
+    @Test
+    void processRecordsSnapshotReplayedByHydrate() {
+        InMemoryAguiSnapshotStore store = new InMemoryAguiSnapshotStore();
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder().snapshotStoreEnabled(true).snapshotStore(store).build();
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(resolver.hasMemory(any(RuntimeContext.class))).thenReturn(false);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new AgentStartEvent("thread-1", "reply-1", "assistant"),
+                                new AgentEndEvent("ok")));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> null)
+                        .config(config)
+                        .snapshotStore(store)
+                        .build();
+
+        processor.process(request(input("run-1"))).events().collectList().block();
+
+        // The framework recorded a presentation snapshot for the thread.
+        AguiThreadSnapshot snapshot = store.find("thread-1").orElseThrow();
+        assertEquals("run-1", snapshot.lastRunId());
+        // The user turn from RUN_STARTED.input survived.
+        assertEquals(1, snapshot.messages().size());
+        assertEquals("msg-1", snapshot.messages().get(0).getId());
+
+        // Hydrate replays a read-only frame sequence from the recorded snapshot.
+        List<AguiEvent> frames = processor.hydrate(request(input("run-2"))).collectList().block();
+        assertNotNull(frames);
+        assertEquals(AguiEventType.RUN_STARTED, frames.get(0).getType());
+        assertInstanceOf(AguiEvent.MessagesSnapshot.class, frames.get(1));
+        AguiEvent.MessagesSnapshot messages = (AguiEvent.MessagesSnapshot) frames.get(1);
+        assertEquals(1, messages.messages().size());
+        assertEquals("msg-1", messages.messages().get(0).getId());
+        assertEquals(AguiEventType.RUN_FINISHED, frames.get(frames.size() - 1).getType());
     }
 
     private static void assertResumeContractErrorLifecycle(List<AguiEvent> events) {

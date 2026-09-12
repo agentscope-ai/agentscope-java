@@ -39,6 +39,10 @@ import org.springframework.stereotype.Component;
  * and resets workbench snapshot baselines per historical run so {@code STATE_SNAPSHOT} /
  * {@code STATE_DELTA} projection matches a fresh conversion.
  *
+ * <p>Presentation replay for reconnect (resolved-interrupt suppression and dangling tool-call
+ * synthesis) has moved to the framework presentation snapshot store; this replayer now serves the
+ * {@code /threads/{id}/events} inspect API, which is legitimately an event log rather than
+ * presentation state.
  */
 @Component
 public final class AgentEventAguiReplayer {

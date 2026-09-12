@@ -23,6 +23,8 @@ import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.InMemoryAguiSnapshotStore;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import org.springframework.beans.factory.ObjectProvider;
@@ -30,6 +32,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -84,6 +87,22 @@ public class AgentscopeAguiMvcAutoConfiguration {
     }
 
     /**
+     * Creates the in-memory AG-UI presentation snapshot store when the snapshot store is enabled.
+     *
+     * @param props The configuration properties
+     * @return A new in-memory snapshot store
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "agentscope.agui",
+            name = "snapshot-store-enabled",
+            havingValue = "true")
+    public AguiSnapshotStore aguiSnapshotStore(AguiProperties props) {
+        return new InMemoryAguiSnapshotStore(props.getSnapshotMaxThreads());
+    }
+
+    /**
      * Creates the AG-UI MVC controller bean.
      *
      * @param registry The agent registry
@@ -100,7 +119,9 @@ public class AgentscopeAguiMvcAutoConfiguration {
             ObjectProvider<AgentEventConverter> eventConvertersProvider,
             ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
             ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
-            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider,
+            ObjectProvider<AguiSnapshotStore> snapshotStoreProvider) {
+        AguiSnapshotStore snapshotStore = snapshotStoreProvider.getIfAvailable();
         AguiAdapterConfig config =
                 AguiAdapterConfig.builder()
                         .toolMergeMode(props.getDefaultToolMergeMode())
@@ -113,6 +134,8 @@ public class AgentscopeAguiMvcAutoConfiguration {
                         .defaultAgentId(props.getDefaultAgentId())
                         .eventConverters(eventConvertersProvider.orderedStream().toList())
                         .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
+                        .snapshotStoreEnabled(props.isSnapshotStoreEnabled())
+                        .snapshotStore(snapshotStore)
                         .build();
 
         return AguiMvcController.builder()
@@ -124,6 +147,7 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 .interruptOnDisconnect(props.isInterruptOnDisconnect())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
+                .snapshotStore(snapshotStore)
                 .config(config)
                 .build();
     }
@@ -146,5 +170,24 @@ public class AgentscopeAguiMvcAutoConfiguration {
                 props.getPathPrefix(),
                 props.isEnablePathRouting(),
                 requestBodyParser);
+    }
+
+    /**
+     * Creates the MVC {@code /connect} hydrate controller, only when the snapshot store is enabled,
+     * so the MVC route mirrors the WebFlux {@code RouterFunction} gating.
+     *
+     * @param aguiMvcController The AG-UI MVC controller
+     * @param requestBodyParser The parser used to decode request bodies
+     * @return A new AguiConnectController
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "agentscope.agui",
+            name = "snapshot-store-enabled",
+            havingValue = "true")
+    public AguiConnectController aguiConnectController(
+            AguiMvcController aguiMvcController, AguiRequestBodyParser requestBodyParser) {
+        return new AguiConnectController(aguiMvcController, requestBodyParser);
     }
 }
