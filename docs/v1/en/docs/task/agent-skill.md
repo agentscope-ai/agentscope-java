@@ -1,4 +1,6 @@
-# Agent Skills
+---
+title: Agent Skill
+---
 
 ## Overview
 
@@ -10,7 +12,7 @@ Agent Skills are modular skill packages that extend agent capabilities. Each Ski
 
 ### Progressive Disclosure Mechanism
 
-Adopts **three-stage on-demand loading** to optimize context: Initially loads only metadata (~100 tokens/Skill) → AI loads complete instructions when needed (<5k tokens) → On-demand access to resource files. Tools are also progressively disclosed, activated only when the Skill is in use.
+Adopts **three-stage on-demand loading** to optimize context: Initially loads only metadata (~100 tokens/Skill) → AI loads complete instructions when needed (&lt;5k tokens) → On-demand access to resource files. Tools are also progressively disclosed, activated only when the Skill is in use.
 
 **Workflow:** User Query → AI Identifies Relevant Skill → Calls `load_skill_through_path` Tool to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion
 
@@ -403,5 +405,5 @@ skillBox.codeExecution()
 ## Related Documentation
 
 - [Claude Agent Skills Official Documentation](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview) - Complete concept and architecture introduction
-- [Tool Usage Guide](./tool.md) - Tool system usage methods
-- [Agent Configuration](./agent.md) - Agent configuration and usage
+- [Tool Usage Guide](/v1/en/docs/task/tool) - Tool system usage methods
+- [Agent Configuration](/v1/en/docs/quickstart/agent) - Agent configuration and usage

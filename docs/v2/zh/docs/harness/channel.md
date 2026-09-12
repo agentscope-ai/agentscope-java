@@ -1,6 +1,6 @@
 ---
-title: "Channel"
-description: "通过 Channel 路由消息、管理会话、流式传输事件"
+title: Channel
+description: 通过 Channel 路由消息、管理会话、流式传输事件
 ---
 
 ## 它们做什么
@@ -321,15 +321,15 @@ gw.stop();    // 调用所有 channel 的 stop()
 
 AgentScope 提供了多个开箱即用的 Channel 适配器作为扩展模块：
 
-- [钉钉](../../integration/channel/dingtalk.md) — Stream 协议（持久 WebSocket）
-- [飞书 / Lark](../../integration/channel/feishu.md) — 事件订阅回调
-- [GitHub](../../integration/channel/github.md) — Issue / PR 评论 webhook
-- [GitLab](../../integration/channel/gitlab.md) — Note hook
-- [企业微信](../../integration/channel/wecom.md) — 加密回调
+- [钉钉](/v2/zh/integration/channel/dingtalk) — Stream 协议（持久 WebSocket）
+- [飞书 / Lark](/v2/zh/integration/channel/feishu) — 事件订阅回调
+- [GitHub](/v2/zh/integration/channel/github) — Issue / PR 评论 webhook
+- [GitLab](/v2/zh/integration/channel/gitlab) — Note hook
+- [企业微信](/v2/zh/integration/channel/wecom) — 加密回调
 
-详见 [Channel 适配器](../../integration/channel/index.md)集成总览。
+详见 [Channel 适配器](/v2/zh/integration/channel/index)集成总览。
 
 ## 相关文档
 
-- [子 Agent](./subagent.md) — 声明和 spawn 子 agent、后台任务、流式转发
-- [架构](./architecture.md) — 主/子 agent 如何协作
+- [子 Agent](/v2/zh/docs/harness/subagent) — 声明和 spawn 子 agent、后台任务、流式转发
+- [架构](/v2/zh/docs/harness/architecture) — 主/子 agent 如何协作

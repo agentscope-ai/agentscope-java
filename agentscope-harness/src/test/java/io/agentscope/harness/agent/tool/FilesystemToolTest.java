@@ -98,6 +98,39 @@ class FilesystemToolTest {
         verify(filesystem).ls(RT, "memory");
     }
 
+    // ==================== Bug reproduction: listFiles ambiguous error message ====================
+
+    @Test
+    void listFiles_nonExistentPath_returnsError() {
+        when(filesystem.ls(RT, "/nonexistent"))
+                .thenReturn(LsResult.fail("Path does not exist: /nonexistent"));
+
+        String result = tool.listFiles(RT, "/nonexistent");
+
+        assertTrue(result.startsWith("Error:"), "should report error for non-existent path");
+        assertTrue(result.contains("does not exist"), "error should mention 'does not exist'");
+    }
+
+    @Test
+    void listFiles_filePath_returnsError() {
+        when(filesystem.ls(RT, "/path/to/file.txt"))
+                .thenReturn(LsResult.fail("Not a directory: /path/to/file.txt"));
+
+        String result = tool.listFiles(RT, "/path/to/file.txt");
+
+        assertTrue(result.startsWith("Error:"), "should report error for file path");
+        assertTrue(result.contains("Not a directory"), "error should mention 'Not a directory'");
+    }
+
+    @Test
+    void listFiles_emptyDirectory_returnsEmptyDirMessage() {
+        when(filesystem.ls(RT, "/empty/dir")).thenReturn(LsResult.success(List.of()));
+
+        String result = tool.listFiles(RT, "/empty/dir");
+
+        assertEquals("Empty directory: /empty/dir", result);
+    }
+
     @Test
     void readFile_omittedOffsetAndLimit_defaultToZero() {
         when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))
@@ -118,6 +151,36 @@ class FilesystemToolTest {
 
         assertEquals("world", result);
         verify(filesystem).read(RT, "f.txt", 2, 5);
+    }
+
+    @Test
+    void broadListingsAreBoundedAndExplicitlyTruncated() {
+        var entries =
+                java.util.stream.IntStream.range(0, 1000)
+                        .mapToObj(i -> FileInfo.ofDir("directory-" + i, ""))
+                        .toList();
+        when(filesystem.glob(RT, "**/*", "."))
+                .thenReturn(
+                        io.agentscope.harness.agent.filesystem.model.GlobResult.success(entries));
+        when(filesystem.ls(RT, ".")).thenReturn(LsResult.success(entries));
+        for (String result : List.of(tool.globFiles(RT, "**/*", "."), tool.listFiles(RT, "."))) {
+            assertTrue(result.contains("truncated"));
+            assertTrue(result.length() < 17000);
+            assertTrue(result.lines().count() <= 202);
+        }
+    }
+
+    @Test
+    void hugeGrepLineCannotFloodModelContext() {
+        when(filesystem.grep(RT, "pattern", ".", null))
+                .thenReturn(
+                        io.agentscope.harness.agent.filesystem.model.GrepResult.success(
+                                List.of(
+                                        new io.agentscope.harness.agent.filesystem.model.GrepMatch(
+                                                "file", 1, "x".repeat(300000)))));
+        String result = tool.grepFiles(RT, "pattern", ".", null);
+        assertTrue(result.contains("truncated"));
+        assertTrue(result.length() < 17000);
     }
 
     @Test
@@ -147,11 +210,15 @@ class FilesystemToolTest {
     @Test
     void grepFiles_limitAboveMaximum_isCapped() {
         when(filesystem.grep(RT, "needle", ".", null))
-                .thenReturn(GrepResult.success(grepMatches(FilesystemTool.MAX_SEARCH_LIMIT + 1)));
+                .thenReturn(
+                        GrepResult.success(
+                                IntStream.range(0, FilesystemTool.MAX_SEARCH_LIMIT + 1)
+                                        .mapToObj(i -> new GrepMatch("f", i, "x"))
+                                        .toList()));
 
         String result = tool.grepFiles(RT, "needle", ".", null, Integer.MAX_VALUE);
 
-        assertFalse(result.contains("file-1000.txt:1001:match-1000"));
+        assertFalse(result.contains("f:1000:x"));
         assertTrue(result.contains("showing 1000 of 1001 matches"));
         assertTrue(result.contains("Hard maximum of 1000 reached"));
         assertFalse(result.contains("increase limit"));
@@ -202,6 +269,37 @@ class FilesystemToolTest {
             assertTrue(properties.containsKey("limit"));
             assertFalse(required.contains("limit"));
         }
+    }
+
+    @Test
+    void explicitGlobLimitAboveDefault_stillRespectsCharacterBudget() {
+        when(filesystem.glob(RT, "**/*.txt", ".")).thenReturn(GlobResult.success(files(351)));
+
+        String result = tool.globFiles(RT, "**/*.txt", ".", 350);
+
+        assertTrue(result.contains("file-349.txt (349 bytes)"));
+        assertFalse(result.contains("file-350.txt (350 bytes)"));
+        assertTrue(result.contains("showing 350 of 351 files"));
+        assertTrue(result.length() < 17000);
+    }
+
+    @Test
+    void characterBudget_reportsActualCountInsteadOfRequestedLimit() {
+        when(filesystem.grep(RT, "needle", ".", null))
+                .thenReturn(
+                        GrepResult.success(
+                                List.of(
+                                        new GrepMatch("small", 1, "match"),
+                                        new GrepMatch("large", 2, "x".repeat(300000)),
+                                        new GrepMatch("last", 3, "match"))));
+
+        String result = tool.grepFiles(RT, "needle", ".", null, 1000);
+
+        assertTrue(result.contains("small:1:match"));
+        assertTrue(result.contains("showing 1 of 3 matches"));
+        assertTrue(result.contains("character limit"));
+        assertFalse(result.contains("increase limit"));
+        assertTrue(result.length() < 17000);
     }
 
     private static List<GrepMatch> grepMatches(int count) {

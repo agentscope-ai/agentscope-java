@@ -1,6 +1,6 @@
 ---
-title: "Middleware"
-description: "在 agent 生命周期的关键位置拦截并扩展行为"
+title: Middleware
+description: 在 agent 生命周期的关键位置拦截并扩展行为
 ---
 
 ## 概述
@@ -33,9 +33,13 @@ onAgent/
     └── onActing（每次工具调用）
 ```
 
-:::{note}
+
+<Note>
+
 当前 `onActing` 只包裹 agent 运行时内部的工具执行；通过 external execution 在 agent 外部执行的工具不会被 `onActing` 追踪到。
-:::
+
+</Note>
+
 
 ## 装备 Middleware
 
@@ -171,6 +175,24 @@ ReActAgent agent =
                 .build();
 ```
 
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` 仅输出 ReAct 最终推理轮次的文本。产生工具调用的中间轮次文本会被过滤，工具事件及其他非文本事件仍会正常流式输出。
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+由于只有在未观察到工具调用时才能确定当前轮次是最终轮次，该 middleware 会将每轮文本缓冲到模型调用结束。
+
 ## 自定义 Middleware
 
 实现 `MiddlewareBase` 接口（位于 `io.agentscope.core.middleware`），只重写需要的 hook 即可，其它的不用管。
@@ -239,7 +261,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
 ### 读取 RuntimeContext
 
-`MiddlewareBase` 的所有 hook 都将本次 `call` / `stream` 绑定的 [`RuntimeContext`](./agent.md#runtimecontext-per-call-上下文) 作为第二个参数直接传入——既能读会话字段，也能按类型 / 按 key 取属性，还能反向写入来给下游 hook 和 tool 传值。
+`MiddlewareBase` 的所有 hook 都将本次 `call` / `stream` 绑定的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 作为第二个参数直接传入——既能读会话字段，也能按类型 / 按 key 取属性，还能反向写入来给下游 hook 和 tool 传值。
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -451,9 +473,13 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 }
 ```
 
-:::{tip}
+
+<Tip>
+
 若只是简单的「主→备」回退，`ReActAgent.Builder` 直接暴露了 `fallbackModel(...)` 与 `maxRetries(...)`，无需自己写 middleware。
-:::
+
+</Tip>
+
 
 ### 全部工具被拒绝时停止 agent
 

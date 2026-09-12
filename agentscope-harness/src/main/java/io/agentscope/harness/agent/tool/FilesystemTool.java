@@ -29,7 +29,6 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * File system tools backed by a {@link AbstractFilesystem}, exposing read/write/edit/grep/glob
@@ -52,6 +51,56 @@ public class FilesystemTool {
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+    }
+
+    static final int MAX_LISTING_ENTRIES = 200;
+    static final int MAX_LISTING_CHARS = 16000;
+
+    private static String boundedListing(
+            java.util.stream.Stream<String> lines, int total, int limit, String resultLabel) {
+        StringBuilder out = new StringBuilder();
+        var iterator = lines.iterator();
+        int count = 0;
+        boolean characterLimitReached = false;
+        while (count < limit && iterator.hasNext()) {
+            String line = iterator.next();
+            int separatorLength = count > 0 ? 1 : 0;
+            if (out.length() + line.length() + separatorLength > MAX_LISTING_CHARS) {
+                characterLimitReached = true;
+                break;
+            }
+            if (count++ > 0) out.append('\n');
+            out.append(line);
+        }
+        if (count == total) {
+            return out.toString();
+        }
+        String guidance =
+                characterLimitReached
+                        ? "Output character limit of "
+                                + MAX_LISTING_CHARS
+                                + " reached; narrow the path/pattern."
+                        : "entries".equals(resultLabel)
+                                ? "Listing limit of " + limit + " reached; narrow the directory."
+                                : limit < MAX_SEARCH_LIMIT
+                                        ? "Narrow the path/pattern or increase limit (hard maximum:"
+                                                + " "
+                                                + MAX_SEARCH_LIMIT
+                                                + ")."
+                                        : "Hard maximum of "
+                                                + MAX_SEARCH_LIMIT
+                                                + " reached; narrow the path/pattern to retrieve"
+                                                + " more targeted results.";
+        return out
+                + "\n[Results truncated: showing "
+                + count
+                + " of "
+                + total
+                + " "
+                + resultLabel
+                + ". "
+                + guidance
+                + "]";
     }
 
     private String norm(String path) {
@@ -157,15 +206,14 @@ public class FilesystemTool {
         if (matches == null || matches.isEmpty()) {
             return "No matches found";
         }
-        String output =
-                matches.stream()
-                        .limit(effectiveLimit)
-                        .map(m -> m.path() + ":" + m.line() + ":" + m.text())
-                        .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, matches.size(), effectiveLimit, "matches");
+        return boundedListing(
+                matches.stream().map(m -> m.path() + ":" + m.line() + ":" + m.text()),
+                matches.size(),
+                effectiveLimit,
+                "matches");
     }
 
-    /** Backward-compatible overload for direct Java callers. */
+    /** Search using the default result limit. */
     public String grepFiles(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         return grepFiles(runtimeContext, pattern, path, glob, null);
@@ -205,15 +253,15 @@ public class FilesystemTool {
         if (files == null || files.isEmpty()) {
             return "No matching files found";
         }
-        String output =
+        return boundedListing(
                 files.stream()
-                        .limit(effectiveLimit)
-                        .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)"))
-                        .collect(Collectors.joining("\n"));
-        return appendTruncationNotice(output, files.size(), effectiveLimit, "files");
+                        .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)")),
+                files.size(),
+                effectiveLimit,
+                "files");
     }
 
-    /** Backward-compatible overload for direct Java callers. */
+    /** Search using the default result limit. */
     public String globFiles(RuntimeContext runtimeContext, String pattern, String path) {
         return globFiles(runtimeContext, pattern, path, null);
     }
@@ -223,32 +271,6 @@ public class FilesystemTool {
             return defaultLimit;
         }
         return Math.min(requestedLimit, MAX_SEARCH_LIMIT);
-    }
-
-    private static String appendTruncationNotice(
-            String output, int total, int limit, String resultLabel) {
-        if (total <= limit) {
-            return output;
-        }
-        String guidance =
-                limit < MAX_SEARCH_LIMIT
-                        ? "Narrow the path/pattern or increase limit (hard maximum: "
-                                + MAX_SEARCH_LIMIT
-                                + ")."
-                        : "Hard maximum of "
-                                + MAX_SEARCH_LIMIT
-                                + " reached; narrow the path/pattern to retrieve more targeted"
-                                + " results.";
-        return output
-                + "\n[Results truncated: showing "
-                + limit
-                + " of "
-                + total
-                + " "
-                + resultLabel
-                + ". "
-                + guidance
-                + "]";
     }
 
     @Tool(
@@ -264,14 +286,19 @@ public class FilesystemTool {
         }
         List<FileInfo> infos = r.entries();
         if (infos == null || infos.isEmpty()) {
-            return "Empty or not a directory: " + path;
+            return "Empty directory: " + path;
         }
-        return infos.stream()
-                .map(
-                        f ->
-                                (f.isDirectory() ? "[DIR]  " : "[FILE] ")
-                                        + f.path()
-                                        + (f.isDirectory() ? "" : " (" + f.size() + " bytes)"))
-                .collect(Collectors.joining("\n"));
+        return boundedListing(
+                infos.stream()
+                        .map(
+                                f ->
+                                        (f.isDirectory() ? "[DIR]  " : "[FILE] ")
+                                                + f.path()
+                                                + (f.isDirectory()
+                                                        ? ""
+                                                        : " (" + f.size() + " bytes)")),
+                infos.size(),
+                MAX_LISTING_ENTRIES,
+                "entries");
     }
 }
