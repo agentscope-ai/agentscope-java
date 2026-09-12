@@ -31,7 +31,7 @@
     <artifactId>agentscope-extensions-jdbc</artifactId>
 
     <properties>
-        <h2.version>2.4.240</h2.version>
+        <h2.version>2.5.250</h2.version>
         <sqlite.version>3.47.1.0</sqlite.version>
         <testcontainers.version>1.21.3</testcontainers.version>
         <!-- Testcontainers integration tests are excluded from compilation by default;
