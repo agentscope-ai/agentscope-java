@@ -60,4 +60,25 @@ class AskUserResultTest {
         assertEquals("Tokyo", redacted.getAnswers().get("region"));
         assertFalse(redacted.toString().contains("top-secret"));
     }
+
+    @Test
+    void failClosedRedactionMasksUnknownAnswerKeysWhenSecretQuestionExists() {
+        Map<String, Object> answers = new LinkedHashMap<>();
+        answers.put("region", "Tokyo");
+        answers.put("q_secret", "top-secret");
+        answers.put("What is the API key?", "also-secret");
+        AskUserResult result = new AskUserResult("call-1", answers);
+
+        String formatted = AskUserResult.formatAnswers(result.getAnswers(), Set.of("region"), true);
+        AskUserResult redacted = result.redactedFor(Set.of("region"), true);
+
+        assertTrue(formatted.contains("region: Tokyo"));
+        assertTrue(formatted.contains("q_secret: [REDACTED]"));
+        assertTrue(formatted.contains("What is the API key?: [REDACTED]"));
+        assertFalse(formatted.contains("top-secret"));
+        assertFalse(formatted.contains("also-secret"));
+        assertEquals("Tokyo", redacted.getAnswers().get("region"));
+        assertEquals("[REDACTED]", redacted.getAnswers().get("q_secret"));
+        assertEquals("[REDACTED]", redacted.getAnswers().get("What is the API key?"));
+    }
 }

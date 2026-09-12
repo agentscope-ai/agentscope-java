@@ -24,8 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AskUserResult;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserAskEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.UserAskResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -97,6 +99,10 @@ class ReActAgentAskUserTest {
     }
 
     private static ChatResponse askToolUseResponse(String toolId) {
+        return askToolUseResponse(toolId, "ask_user");
+    }
+
+    private static ChatResponse askToolUseResponse(String toolId, String toolName) {
         Map<String, Object> questions =
                 Map.of(
                         "id", "q_1",
@@ -110,7 +116,7 @@ class ReActAgentAskUserTest {
                         List.<ContentBlock>of(
                                 ToolUseBlock.builder()
                                         .id(toolId)
-                                        .name("ask_user")
+                                        .name(toolName)
                                         .input(input)
                                         .build()))
                 .build();
@@ -129,6 +135,44 @@ class ReActAgentAskUserTest {
                                         .id(toolId)
                                         .name("ask_user")
                                         .input(Map.of("questions", List.of(question)))
+                                        .build()))
+                .build();
+    }
+
+    private static ChatResponse secretAskToolUseResponseWithoutId(String toolId) {
+        Map<String, Object> question = Map.of("question", "What is the API key?", "type", "secret");
+        return ChatResponse.builder()
+                .content(
+                        List.<ContentBlock>of(
+                                ToolUseBlock.builder()
+                                        .id(toolId)
+                                        .name("ask_user")
+                                        .input(Map.of("questions", List.of(question)))
+                                        .build()))
+                .build();
+    }
+
+    private static ChatResponse mixedToolUseResponse() {
+        Map<String, Object> question =
+                Map.of(
+                        "id", "q_1",
+                        "question", "What is your budget?",
+                        "type", "single",
+                        "options", List.of(Map.of("label", "cheap"), Map.of("label", "premium")));
+        Map<String, Object> askInput = new HashMap<>();
+        askInput.put("questions", List.of(question));
+        return ChatResponse.builder()
+                .content(
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id("ask-1")
+                                        .name("ask_user")
+                                        .input(askInput)
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("confirm-1")
+                                        .name("confirm")
+                                        .input(Map.of("query", "mutate"))
                                         .build()))
                 .build();
     }
@@ -164,9 +208,49 @@ class ReActAgentAskUserTest {
         }
     }
 
-    private static Toolkit toolkitWith(AskTool... tools) {
+    private static final class ConfirmTool extends ToolBase {
+        private final AtomicInteger invocations = new AtomicInteger(0);
+
+        ConfirmTool() {
+            super(
+                    "confirm",
+                    "requires confirmation",
+                    schemaFor(),
+                    false,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        private static Map<String, Object> schemaFor() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            Map<String, Object> props = new HashMap<>();
+            Map<String, Object> query = new HashMap<>();
+            query.put("type", "string");
+            props.put("query", query);
+            schema.put("properties", props);
+            return schema;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput, PermissionContextState context) {
+            return Mono.just(PermissionDecision.ask("confirm before execution"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            invocations.incrementAndGet();
+            return Mono.just(ToolResultBlock.text("confirmed"));
+        }
+    }
+
+    private static Toolkit toolkitWith(ToolBase... tools) {
         Toolkit tk = new Toolkit();
-        for (AskTool t : tools) {
+        for (ToolBase t : tools) {
             tk.registerAgentTool(t);
         }
         return tk;
@@ -197,6 +281,19 @@ class ReActAgentAskUserTest {
                 .build();
     }
 
+    private static Msg confirmMsg(ToolUseBlock... toolCalls) {
+        Map<String, Object> meta = new HashMap<>();
+        List<ConfirmResult> results =
+                List.of(toolCalls).stream().map(call -> new ConfirmResult(true, call)).toList();
+        meta.put(Msg.METADATA_CONFIRM_RESULTS, results);
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("[confirmations]")
+                .metadata(meta)
+                .build();
+    }
+
     private static int indexOf(List<AgentEvent> events, Class<?> type) {
         for (int i = 0; i < events.size(); i++) {
             if (type.isInstance(events.get(i))) {
@@ -222,6 +319,9 @@ class ReActAgentAskUserTest {
                 1, returnedBlocks.size(), "returned Msg must contain the pending ToolUseBlock");
         assertEquals(ToolCallState.ASKING, returnedBlocks.get(0).getState());
         assertEquals("tc1", returnedBlocks.get(0).getId());
+        assertEquals(
+                "ASK_USER",
+                returnedBlocks.get(0).getMetadata().get(ToolUseBlock.METADATA_PERMISSION_BEHAVIOR));
         assertEquals(0, tool.invocations.get(), "ask_user must never be executed");
     }
 
@@ -286,6 +386,78 @@ class ReActAgentAskUserTest {
                                         "tc1".equals(toolUse.getId())
                                                 && toolUse.getState() == ToolCallState.FINISHED),
                 "answered ask_user calls must no longer remain ASKING");
+    }
+
+    @Test
+    void resumeRecoversWhenAskUserReplyMetadataIsLost() {
+        AskTool tool = new AskTool("ask_user");
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(askToolUseResponse("tc1")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+
+        List<Msg> context = agent.getAgentState().contextMutable();
+        int assistantIndex = context.size() - 1;
+        Msg assistant = context.get(assistantIndex);
+        Map<String, Object> metadata = new HashMap<>(assistant.getMetadata());
+        metadata.remove(Msg.METADATA_ASK_REQUEST_REPLY_ID);
+        context.set(assistantIndex, assistant.withMetadata(metadata));
+
+        Msg resumed =
+                agent.call(List.of(answerMsg(new AskUserResult("tc1", Map.of("q_1", "premium")))))
+                        .block();
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.MODEL_STOP, resumed.getGenerateReason());
+    }
+
+    @Test
+    void resumeRecoversCustomAskUserWhenAllPauseMetadataIsLost() {
+        AskTool tool = new AskTool("custom_ask_user");
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(askToolUseResponse("tc1", "custom_ask_user")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+
+        List<Msg> context = agent.getAgentState().contextMutable();
+        int assistantIndex = context.size() - 1;
+        Msg assistant = context.get(assistantIndex);
+        Map<String, Object> metadata = new HashMap<>(assistant.getMetadata());
+        metadata.remove(Msg.METADATA_ASK_REQUEST_REPLY_ID);
+        List<ContentBlock> contentWithoutPauseMetadata =
+                assistant.getContent().stream()
+                        .map(
+                                block -> {
+                                    if (!(block instanceof ToolUseBlock toolCall)) {
+                                        return block;
+                                    }
+                                    return new ToolUseBlock(
+                                            toolCall.getId(),
+                                            toolCall.getName(),
+                                            toolCall.getInput(),
+                                            toolCall.getContent(),
+                                            Map.of(),
+                                            toolCall.getState());
+                                })
+                        .toList();
+        context.set(
+                assistantIndex,
+                assistant.withMetadata(metadata).withContent(contentWithoutPauseMetadata));
+
+        Msg resumed =
+                agent.call(List.of(answerMsg(new AskUserResult("tc1", Map.of("q_1", "premium")))))
+                        .block();
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.MODEL_STOP, resumed.getGenerateReason());
     }
 
     @Test
@@ -395,6 +567,95 @@ class ReActAgentAskUserTest {
                         .reduce("", (a, b) -> a + " " + b);
         assertTrue(toolResultText.contains("q_secret: [REDACTED]"));
         assertFalse(toolResultText.contains("top-secret"));
+    }
+
+    @Test
+    void secretAnswerWithMismatchedKeyIsRedactedFromModelContextAndEvents() {
+        AskTool tool = new AskTool("ask_user");
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(secretAskToolUseResponseWithoutId("tc1")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(tool));
+
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(
+                                List.of(
+                                        answerMsg(
+                                                new AskUserResult(
+                                                        "tc1",
+                                                        Map.of(
+                                                                "What is the API key?",
+                                                                "top-secret")))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        UserAskResultEvent resultEvent =
+                resumeEvents.stream()
+                        .filter(UserAskResultEvent.class::isInstance)
+                        .map(UserAskResultEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "[REDACTED]",
+                resultEvent.getAskUserResults().get(0).getAnswers().get("What is the API key?"));
+
+        String toolResultText =
+                model.seenInputs.get(1).stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .flatMap(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .flatMap(r -> r.getOutput().stream()))
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .reduce("", (a, b) -> a + " " + b);
+        assertTrue(toolResultText.contains("What is the API key?: [REDACTED]"));
+        assertFalse(toolResultText.contains("top-secret"));
+    }
+
+    @Test
+    void mixedAskUserAndPermissionBatchPausesSequentially() {
+        AskTool askTool = new AskTool("ask_user");
+        ConfirmTool confirmTool = new ConfirmTool();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(mixedToolUseResponse()),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(askTool, confirmTool));
+
+        List<AgentEvent> firstEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(firstEvents);
+        assertTrue(indexOf(firstEvents, RequireUserAskEvent.class) >= 0);
+        assertTrue(indexOf(firstEvents, RequireUserConfirmEvent.class) >= 0);
+
+        List<AgentEvent> afterAnswer =
+                agent.streamEvents(
+                                List.of(
+                                        answerMsg(
+                                                new AskUserResult(
+                                                        "ask-1", Map.of("q_1", "premium")))))
+                        .collectList()
+                        .block();
+        assertNotNull(afterAnswer);
+        int confirmPause = indexOf(afterAnswer, RequireUserConfirmEvent.class);
+        assertTrue(confirmPause >= 0, "the remaining permission pause must be surfaced");
+        RequireUserConfirmEvent confirmEvent =
+                (RequireUserConfirmEvent) afterAnswer.get(confirmPause);
+
+        List<AgentEvent> afterConfirmation =
+                agent.streamEvents(List.of(confirmMsg(confirmEvent.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(afterConfirmation);
+        assertEquals(1, confirmTool.invocations.get());
     }
 
     @Test
