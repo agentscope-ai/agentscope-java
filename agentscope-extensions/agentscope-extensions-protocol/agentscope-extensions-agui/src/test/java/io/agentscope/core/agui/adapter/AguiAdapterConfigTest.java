@@ -25,8 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.BaseEventPropertiesEnricher;
-import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.tool.ToolMergeMode;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
@@ -42,7 +42,7 @@ class AguiAdapterConfigTest {
         AguiAdapterConfig config = AguiAdapterConfig.defaultConfig();
 
         assertNotNull(config);
-        assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
+        assertEquals(ToolMergeMode.MERGE_EXTERNAL_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEmitTokenUsage());
@@ -60,7 +60,7 @@ class AguiAdapterConfigTest {
         AguiAdapterConfig config = AguiAdapterConfig.builder().build();
 
         assertNotNull(config);
-        assertEquals(ToolMergeMode.MERGE_FRONTEND_PRIORITY, config.getToolMergeMode());
+        assertEquals(ToolMergeMode.MERGE_EXTERNAL_PRIORITY, config.getToolMergeMode());
         assertTrue(config.isEmitStateEvents());
         assertTrue(config.isEmitToolCallArgs());
         assertFalse(config.isEmitTokenUsage());
@@ -72,9 +72,9 @@ class AguiAdapterConfigTest {
     @Test
     void testBuilderToolMergeMode() {
         AguiAdapterConfig config =
-                AguiAdapterConfig.builder().toolMergeMode(ToolMergeMode.FRONTEND_ONLY).build();
+                AguiAdapterConfig.builder().toolMergeMode(ToolMergeMode.EXTERNAL_ONLY).build();
 
-        assertEquals(ToolMergeMode.FRONTEND_ONLY, config.getToolMergeMode());
+        assertEquals(ToolMergeMode.EXTERNAL_ONLY, config.getToolMergeMode());
     }
 
     @Test
@@ -192,7 +192,7 @@ class AguiAdapterConfigTest {
         AguiAdapterConfig.Builder builder = AguiAdapterConfig.builder();
 
         AguiAdapterConfig.Builder result =
-                builder.toolMergeMode(ToolMergeMode.FRONTEND_ONLY)
+                builder.toolMergeMode(ToolMergeMode.EXTERNAL_ONLY)
                         .emitStateEvents(true)
                         .emitToolCallArgs(true)
                         .emitTokenUsage(true)
@@ -209,13 +209,13 @@ class AguiAdapterConfigTest {
     void testMultipleBuilds() {
         // Builder can be used to create multiple configs
         AguiAdapterConfig.Builder builder =
-                AguiAdapterConfig.builder().toolMergeMode(ToolMergeMode.FRONTEND_ONLY);
+                AguiAdapterConfig.builder().toolMergeMode(ToolMergeMode.EXTERNAL_ONLY);
 
         AguiAdapterConfig config1 = builder.build();
         AguiAdapterConfig config2 = builder.emitStateEvents(false).build();
 
-        assertEquals(ToolMergeMode.FRONTEND_ONLY, config1.getToolMergeMode());
-        assertEquals(ToolMergeMode.FRONTEND_ONLY, config2.getToolMergeMode());
+        assertEquals(ToolMergeMode.EXTERNAL_ONLY, config1.getToolMergeMode());
+        assertEquals(ToolMergeMode.EXTERNAL_ONLY, config2.getToolMergeMode());
         assertTrue(config1.isEmitStateEvents());
         assertFalse(config2.isEmitStateEvents());
     }

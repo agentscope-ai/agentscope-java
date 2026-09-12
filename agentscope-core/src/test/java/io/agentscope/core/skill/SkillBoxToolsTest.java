@@ -21,16 +21,25 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -178,7 +187,11 @@ class SkillBoxToolsTest {
         String skillId = "test_skill_custom";
         String toolGroupName = skillId + "_skill_tools";
 
-        assertFalse(skillBox.isSkillActive(skillId));
+        ToolContextState toolContext = ToolContextState.builder().build();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(toolContext).build())
+                        .build();
 
         Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
@@ -188,15 +201,20 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(runtimeContext)
+                        .build();
         tool.callAsync(param).block(TIMEOUT);
 
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated");
-        // Tool group should also be activated when skill is loaded
-        assertNotNull(toolkit.getToolGroup(toolGroupName), "Tool group should exist");
+        // Activation now lands in the per-session activated-group set, never on the shared toolkit.
         assertTrue(
+                toolContext.getActivatedGroups().contains(toolGroupName),
+                "Per-session activated groups should include the skill's tool group");
+        assertFalse(
                 toolkit.getToolGroup(toolGroupName).isActive(),
-                "Tool group should be activated when skill is loaded");
+                "Shared toolkit group-manager flag must remain inactive");
     }
 
     @Test
@@ -298,7 +316,11 @@ class SkillBoxToolsTest {
         String skillId = "test_skill_custom";
         String toolGroupName = skillId + "_skill_tools";
 
-        assertFalse(skillBox.isSkillActive(skillId));
+        ToolContextState toolContext = ToolContextState.builder().build();
+        RuntimeContext runtimeContext =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(toolContext).build())
+                        .build();
 
         Map<String, Object> input = Map.of("skillId", skillId, "path", "data.txt");
         ToolUseBlock toolUseBlock =
@@ -308,15 +330,145 @@ class SkillBoxToolsTest {
                         .input(input)
                         .build();
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(runtimeContext)
+                        .build();
         tool.callAsync(param).block(TIMEOUT);
 
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated");
-        // Tool group should also be activated when skill is loaded
-        assertNotNull(toolkit.getToolGroup(toolGroupName), "Tool group should exist");
+        // Activation now lands in the per-session activated-group set, never on the shared toolkit.
         assertTrue(
+                toolContext.getActivatedGroups().contains(toolGroupName),
+                "Per-session activated groups should include the skill's tool group");
+        assertFalse(
                 toolkit.getToolGroup(toolGroupName).isActive(),
-                "Tool group should be activated when skill is loaded");
+                "Shared toolkit group-manager flag must remain inactive");
+    }
+
+    @Test
+    @DisplayName("Loading without a runtime context does not mutate the shared toolkit")
+    void testLoadWithoutRuntimeContextDoesNotMutateSharedToolkit() {
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        String skillId = "test_skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
+
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(
+                                ToolUseBlock.builder()
+                                        .id("test-call-no-rc")
+                                        .name("load_skill_through_path")
+                                        .input(input)
+                                        .build())
+                        .input(input)
+                        .build();
+
+        ToolResultBlock result = tool.callAsync(param).block(TIMEOUT);
+
+        assertNotNull(result);
+        // Without a per-session context, the tool-group gate is skipped and the shared toolkit is
+        // never touched.
+        assertFalse(
+                toolkit.getToolGroup(toolGroupName).isActive(),
+                "Shared toolkit group-manager flag must remain inactive");
+    }
+
+    @Test
+    @DisplayName("Separate sessions load different skills without cross-talk")
+    void testSeparateSessionsLoadDifferentSkillsWithoutCrossTalk() {
+        // Register a second tool-bearing skill.
+        AgentSkill other = new AgentSkill("other_skill", "Other Skill", "# Other", null);
+        skillBox.registration().skill(other).agentTool(createDummyTool("other_skill_tool")).apply();
+        String groupA = "test_skill_custom_skill_tools";
+        String groupB = "other_skill_custom_skill_tools";
+
+        ToolContextState tcsA = ToolContextState.builder().build();
+        ToolContextState tcsB = ToolContextState.builder().build();
+        RuntimeContext rcA =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(tcsA).build())
+                        .build();
+        RuntimeContext rcB =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(tcsB).build())
+                        .build();
+
+        loadSkillWithContext("test_skill_custom", rcA);
+        loadSkillWithContext("other_skill_custom", rcB);
+
+        assertTrue(tcsA.getActivatedGroups().contains(groupA), "Session A activates its own group");
+        assertFalse(
+                tcsA.getActivatedGroups().contains(groupB),
+                "Session A must not see session B's group");
+        assertTrue(tcsB.getActivatedGroups().contains(groupB), "Session B activates its own group");
+        assertFalse(
+                tcsB.getActivatedGroups().contains(groupA),
+                "Session B must not see session A's group");
+    }
+
+    private ToolResultBlock loadSkillWithContext(String skillId, RuntimeContext rc) {
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(
+                                ToolUseBlock.builder()
+                                        .id("call-" + skillId)
+                                        .name("load_skill_through_path")
+                                        .input(input)
+                                        .build())
+                        .input(input)
+                        .runtimeContext(rc)
+                        .build();
+        return tool.callAsync(param).block(TIMEOUT);
+    }
+
+    @Test
+    @DisplayName("Parallel loads into the same session do not lose activations")
+    void testParallelLoadsIntoSameSessionDoNotLoseActivations() throws Exception {
+        int n = 8;
+        List<String> groupNames = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            AgentSkill skill = new AgentSkill("parallel_" + i, "Parallel " + i, "# Content", null);
+            skillBox.registration()
+                    .skill(skill)
+                    .agentTool(createDummyTool("parallel_tool_" + i))
+                    .apply();
+            groupNames.add(skill.getSkillId() + "_skill_tools");
+        }
+
+        ToolContextState tcs = ToolContextState.builder().build();
+        RuntimeContext rc =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(tcs).build())
+                        .build();
+
+        ExecutorService pool = Executors.newFixedThreadPool(n);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            final String skillId = "parallel_" + i + "_custom";
+            futures.add(
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                loadSkillWithContext(skillId, rc);
+                                return null;
+                            }));
+        }
+        start.countDown();
+        for (Future<?> future : futures) {
+            future.get(30, TimeUnit.SECONDS);
+        }
+        pool.shutdownNow();
+
+        for (String group : groupNames) {
+            assertTrue(
+                    tcs.getActivatedGroups().contains(group),
+                    "Activation lost under concurrency for group " + group);
+        }
     }
 
     @Test
@@ -487,7 +639,6 @@ class SkillBoxToolsTest {
         // Should succeed even without tool group
         assertNotNull(result);
         assertFalse(isErrorResult(result), "Should not fail when skill has no tools");
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should still be activated");
         assertNull(
                 toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
     }
@@ -497,7 +648,6 @@ class SkillBoxToolsTest {
     void testInvalidResourcePathDoesNotActivateSkill() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
         String skillId = "test_skill_custom";
-        assertFalse(skillBox.isSkillActive(skillId));
 
         Map<String, Object> input = Map.of("skillId", skillId, "path", ".");
         ToolUseBlock toolUseBlock =
@@ -513,6 +663,5 @@ class SkillBoxToolsTest {
 
         assertNotNull(result);
         assertTrue(isErrorResult(result));
-        assertFalse(skillBox.isSkillActive(skillId));
     }
 }
