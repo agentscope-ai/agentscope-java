@@ -290,4 +290,42 @@ class OpenAIStreamingToolCallTest {
         assertEquals("call_null", toolUse.getId());
         assertEquals("null_args_tool", toolUse.getName());
     }
+
+    @Test
+    @DisplayName("Should preserve the streaming finish reason from OpenAI-compatible responses")
+    void testStreamingFinishReason() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-length");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+        choice.setDelta(new OpenAIMessage());
+        choice.setFinishReason("length");
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        assertEquals("length", chatResponse.getFinishReason());
+    }
+
+    @Test
+    @DisplayName("Should preserve the non-streaming finish reason from OpenAI-compatible responses")
+    void testCompletionFinishReason() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-length");
+        response.setObject("chat.completion");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+        choice.setMessage(new OpenAIMessage());
+        choice.setFinishReason("length");
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        assertEquals("length", chatResponse.getFinishReason());
+    }
 }

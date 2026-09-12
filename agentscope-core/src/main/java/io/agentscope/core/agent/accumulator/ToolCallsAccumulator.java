@@ -93,6 +93,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
+            boolean rawContentIncomplete =
+                    !rawContentStr.isEmpty() && !JsonUtils.isValidJsonObject(rawContentStr);
 
             // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
             // look like complete objects ({...}) but still contain null/incomplete values;
@@ -124,10 +126,17 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             String contentStr;
             if (rawContentStr.isEmpty()) {
                 contentStr = "{}";
-            } else if (JsonUtils.isValidJsonObject(rawContentStr)) {
+            } else if (!rawContentIncomplete) {
                 contentStr = rawContentStr;
             } else {
                 contentStr = "{}";
+            }
+
+            Map<String, Object> finalMetadata = new HashMap<>(metadata);
+            if (rawContentIncomplete) {
+                // Keep the legacy content fallback while preserving enough provenance for the
+                // response-level finish reason to make a safe execution decision later.
+                finalMetadata.put(ToolUseBlock.METADATA_RAW_CONTENT_INCOMPLETE, true);
             }
 
             return ToolUseBlock.builder()
@@ -135,7 +144,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .build();
         }
 

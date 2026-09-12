@@ -36,6 +36,12 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /** Metadata key indicating a non-empty streaming argument payload was not valid JSON. */
+    public static final String METADATA_RAW_CONTENT_INCOMPLETE = "_raw_content_incomplete";
+
+    /** Metadata key indicating a length-limited model response left tool arguments incomplete. */
+    public static final String METADATA_OUTPUT_LENGTH_LIMIT = "_output_length_limit";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;

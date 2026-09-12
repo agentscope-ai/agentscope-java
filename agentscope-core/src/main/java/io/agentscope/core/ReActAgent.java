@@ -2618,7 +2618,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
-                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                events.add(
+                                        new ModelCallEndEvent(
+                                                replyId,
+                                                context.getChatUsage(),
+                                                context.getFinishReason()));
                                 return Flux.fromIterable(events);
                             });
 
@@ -3750,7 +3754,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             () -> {
                                 List<AgentEvent> events = new ArrayList<>();
                                 blockLifecycle.flushAll(events);
-                                events.add(new ModelCallEndEvent(replyId, context.getChatUsage()));
+                                events.add(
+                                        new ModelCallEndEvent(
+                                                replyId,
+                                                context.getChatUsage(),
+                                                context.getFinishReason()));
                                 return Flux.fromIterable(events);
                             });
 
