@@ -1,8 +1,13 @@
-# Agent State Store (AgentStateStore)
+---
+title: Overview
+---
 
-```{note}
-**Recommended: use [DistributedStore](../distributed/index.md) for one-line setup** — it covers AgentStateStore, BaseStore, SandboxSnapshotSpec, and SandboxExecutionGuard together. Read on if you only need to configure AgentStateStore individually.
-```
+<Note>
+
+**Recommended: use [DistributedStore](/v2/en/integration/distributed/index) for one-line setup** — it covers AgentStateStore, BaseStore, SandboxSnapshotSpec, and SandboxExecutionGuard together. Read on if you only need to configure AgentStateStore individually.
+
+</Note>
+
 
 `io.agentscope.core.state.AgentStateStore` is the interface AgentScope uses to persist agent state — Memory, Workspace, Plan, and other components are serialized as `State` objects and stored via `AgentStateStore`, enabling restart recovery and cross-node sharing.
 
@@ -17,9 +22,9 @@ State is addressed by `(userId, sessionId)`:
 | --- | --- | --- |
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests |
 | `JsonFileAgentStateStore` | `agentscope-core` | Single-node dev (**HarnessAgent default**) |
-| `RedisAgentStateStore` | `agentscope-extensions-redis` | [Multi-replica production default](../distributed/redis.md) |
-| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](../distributed/mysql.md) |
-| `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](../distributed/oss.md) |
+| `RedisAgentStateStore` | `agentscope-extensions-redis` | [Multi-replica production default](/v2/en/integration/distributed/redis) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](/v2/en/integration/distributed/mysql) |
+| `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](/v2/en/integration/distributed/oss) |
 
 ## Standalone Configuration
 
@@ -33,6 +38,6 @@ ReActAgent agent = ReActAgent.builder()
 
 For detailed usage and code examples, see each store's documentation:
 
-- [Redis](../distributed/redis.md#1-redisagentstatestore)
-- [MySQL](../distributed/mysql.md#1-mysqlagentstatestore)
-- [OSS](../distributed/oss.md#1-ossagentstatestore)
+- [Redis](/v2/en/integration/distributed/redis#1-redisagentstatestore)
+- [MySQL](/v2/en/integration/distributed/mysql#1-mysqlagentstatestore)
+- [OSS](/v2/en/integration/distributed/oss#1-ossagentstatestore)

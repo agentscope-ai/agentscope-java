@@ -15,10 +15,11 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { readFile } from '../api/workspace';
+import { readFile, writeFile } from '../api/workspace';
 
 interface Props {
   agentId: string;
+  canEdit?: boolean;
   path: string | null;
 }
 
@@ -47,8 +48,9 @@ const S: Record<string, React.CSSProperties> = {
 
 const TEXT_EXT = /\.(md|txt|json|jsonl|ndjson|log|yaml|yml|toml|properties|conf|ini|csv|tsv|xml|html?|css|sql|sh|bash|zsh|java|py|ts|tsx|js|jsx|kt|go|rs|c|cpp|h|hpp)$/i;
 
-export default function WorkspaceEditor({ agentId, path }: Props) {
+export default function WorkspaceEditor({ agentId, path, canEdit = false }: Props) {
   const [content, setContent] = useState('');
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -66,10 +68,12 @@ export default function WorkspaceEditor({ agentId, path }: Props) {
     }
     setLoading(true);
     setErr(null);
+    let active = true;
     readFile(agentId, path)
-      .then(text => setContent(text))
-      .catch(e => setErr(e instanceof Error ? e.message : 'Failed to read'))
-      .finally(() => setLoading(false));
+      .then(text => { if (active) setContent(text); })
+      .catch(e => { if (active) setErr(e instanceof Error ? e.message : 'Failed to read'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [agentId, path, viewable]);
 
   if (!path) {
@@ -80,7 +84,10 @@ export default function WorkspaceEditor({ agentId, path }: Props) {
     <div style={S.root}>
       <div style={S.bar}>
         <span style={S.pathTxt}>{path}</span>
-        <span style={S.readonlyBadge}>read-only</span>
+        <span style={S.readonlyBadge}>{canEdit ? 'draft' : 'read-only'}</span>
+        {canEdit && viewable && <button disabled={loading || saving} onClick={async () => {
+          setSaving(true); setErr(null); try { await writeFile(agentId, path, content); } catch (e) { setErr(String(e)); } finally { setSaving(false); }
+        }}>{saving ? 'Saving…' : 'Save draft'}</button>}
         {err && <span style={{ ...S.status, ...S.err }}>{err}</span>}
       </div>
       {loading ? (
@@ -91,7 +98,9 @@ export default function WorkspaceEditor({ agentId, path }: Props) {
         <textarea
           style={S.textarea}
           value={content}
-          readOnly
+          aria-label="Definition file content"
+          readOnly={!canEdit || saving}
+          onChange={e => setContent(e.target.value)}
           spellCheck={false}
         />
       )}

@@ -42,7 +42,7 @@ Session 语义：AgentScope Python 的 session_id 不在 Agent 上（由外部
     aistio.instrument(
         agent,
         control_plane="aistiod:9090",
-        agent_name="my-agentscope-agent",
+        agent_key="my-agentscope-agent",
         adapter=AgentScopeAdapter(session_resolver=lambda a, kw: kw["session_id"]),
     )
 """

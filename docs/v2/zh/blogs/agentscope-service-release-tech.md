@@ -1,12 +1,10 @@
 ---
-hide-toc: true
+title: AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时
 ---
-
-# AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时
 
 如果把发布通告看作「AgentScope Service 能做什么」，这篇更关注「它是怎么做成的」。我们将沿着产品资源模型、平面边界、Turn 生命周期、Brain / Hands 拆分、Session 事件契约，以及多框架接入路径，把平台背后的系统设计讲清楚。
 
-产品概述与能力说明见姊妹篇：[AgentScope Service 正式发布](./agentscope-service-release.md)。本文默认读者已了解 AgentScope 2.0 / Harness 的基本概念，并关心如何把单个可运行 Agent 扩展成可运营平台。
+产品概述与能力说明见姊妹篇：[AgentScope Service 正式发布](/v2/zh/blogs/agentscope-service-release)。本文默认读者已了解 AgentScope 2.0 / Harness 的基本概念，并关心如何把单个可运行 Agent 扩展成可运营平台。
 
 ## 什么是 AgentScope Service（实现视角）
 
@@ -242,7 +240,7 @@ scripts/smoke.sh
 2. HITL：触发 Ask Policy，确认后续跑，历史完整；
 3. `self_hosted`：Worker poll / ack / heartbeat / 回传 `tool_result`，Turn 正确恢复。
 
-详见 [`docs/guide/14-validation.md`](../../../agentscope-service/docs/guide/14-validation.md) 与架构说明 [`docs/guide/02-architecture.md`](../../../agentscope-service/docs/guide/02-architecture.md)。
+详见 [`docs/guide/14-validation.md`](/v2/zh/service/first-session) 与架构说明 [`docs/guide/02-architecture.md`](/v2/zh/service/concepts)。
 
 ## 几个值得提前避开的实现误区
 
@@ -301,4 +299,4 @@ AgentScope Service 的技术内核可以概括成三句话：
 2. **持久化事件序列才是 Session 真相，进程内对象只是可丢弃的缓存**；
 3. **Managed 与 BYO 共用舰队契约，框架差异收敛在适配器，而不是散落在 Console**。
 
-如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](../../../agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](./agentscope-service-release.md)。
+如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](/v2/zh/blogs/agentscope-service-release)。

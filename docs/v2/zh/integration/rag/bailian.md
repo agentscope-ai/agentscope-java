@@ -1,4 +1,6 @@
-# Bailian Knowledge
+---
+title: 百炼知识库
+---
 
 `agentscope-extensions-rag-bailian` 接入阿里云百炼知识库，所有 embedding、索引、检索都由百炼托管。Agent 这边只负责把 query 抛过去、把文档拿回来。
 

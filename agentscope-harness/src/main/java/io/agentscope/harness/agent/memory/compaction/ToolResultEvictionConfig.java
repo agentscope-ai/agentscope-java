@@ -37,7 +37,7 @@ import java.util.Set;
  *   <li>Trigger at 80,000 characters (~20 K tokens at 4 chars/token)</li>
  *   <li>Preview: first + last 2,000 characters of the original output</li>
  *   <li>Eviction path prefix: {@code large_tool_results} (relative to the workspace)</li>
- *   <li>Excluded tools: filesystem read/write/edit/list + memory tools (small or self-paginating)</li>
+ *   <li>Excluded tools: filesystem read/write/edit + memory tools (small or self-paginating)</li>
  * </ul>
  */
 public class ToolResultEvictionConfig {
@@ -57,7 +57,7 @@ public class ToolResultEvictionConfig {
      * <ul>
      *   <li>{@code read_file} — evicting would cause re-read loops; pagination handles size</li>
      *   <li>{@code write_file}, {@code edit_file} — return tiny success messages</li>
-     *   <li>{@code list_files} — normally returns a small directory listing</li>
+     *   <li>Search/list tools have bounded previews and remain eligible for eviction.</li>
      *   <li>{@code memory_search}, {@code memory_get}, {@code session_search} — small/paginated results</li>
      * </ul>
      *
@@ -68,7 +68,6 @@ public class ToolResultEvictionConfig {
                     "read_file",
                     "write_file",
                     "edit_file",
-                    "list_files",
                     "memory_search",
                     "memory_get",
                     "session_search");

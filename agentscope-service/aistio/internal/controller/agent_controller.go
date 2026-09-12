@@ -76,7 +76,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if !agent.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&agent, agentFinalizer) {
 			if r.Store != nil {
-				if err := r.Store.Sessions().DeleteByAgent(ctx, agent.Name, agent.Namespace); err != nil {
+				if err := r.Store.Sessions().DeleteByAgent(ctx, "default", agent.Name, agent.Namespace); err != nil {
 					logger.Error(err, "failed to cleanup owned sessions")
 					return ctrl.Result{}, err
 				}
@@ -254,7 +254,7 @@ func (r *AgentReconciler) updateStatus(ctx context.Context, agent *v1alpha1.Agen
 
 	var activeSessions int32
 	if r.Store != nil {
-		activeSessions, _ = r.Store.Sessions().CountActive(ctx, agent.Name, agent.Namespace)
+		activeSessions, _ = r.Store.Sessions().CountActive(ctx, "default", agent.Name, agent.Namespace)
 	}
 
 	metrics.RecordAgent(agent.Namespace, agent.Name, string(agent.Spec.Type), agent.Spec.Runtime,

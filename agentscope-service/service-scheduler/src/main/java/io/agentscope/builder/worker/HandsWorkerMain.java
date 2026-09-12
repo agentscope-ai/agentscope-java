@@ -66,7 +66,7 @@ public final class HandsWorkerMain {
     private HandsWorkerMain() {}
 
     public static void main(String[] args) throws Exception {
-        String baseUrl = opt(args, "--base-url", "http://localhost:8080");
+        String baseUrl = opt(args, "--base-url", "http://localhost:18080");
         String environmentId = require(args, "--environment-id");
         String environmentKey = opt(args, "--environment-key", null);
         if (environmentKey == null || environmentKey.isBlank()) {

@@ -1,4 +1,6 @@
-# State
+---
+title: State Management
+---
 
 State provides serialization and deserialization capabilities for component state, serving as the foundation for Session persistence.
 
@@ -147,5 +149,5 @@ String sessionId = ((SimpleSessionKey) key).sessionId();
 
 ## Related Documentation
 
-- [Session](./session.md) - Session management API
-- [Memory](./memory.md) - Memory management
+- [Session](/v1/en/docs/task/session) - Session management API
+- [Memory](/v1/en/docs/task/memory) - Memory management
