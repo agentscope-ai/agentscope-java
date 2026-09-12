@@ -36,11 +36,14 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /** Metadata key for the framework-resolved permission behavior of a tool call. */
+    public static final String METADATA_PERMISSION_BEHAVIOR = "agentscope.permissionBehavior";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
-    private final Map<String, Object> metadata; // Provider-specific metadata
+    private final Map<String, Object> metadata; // Provider/framework-specific metadata
     private final ToolCallState state;
 
     /**
@@ -49,7 +52,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
-     * @param metadata Provider-specific metadata (will be defensively copied)
+     * @param metadata Provider/framework-specific metadata (will be defensively copied)
      */
     public ToolUseBlock(
             String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
@@ -74,7 +77,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @param name Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
      * @param content Raw content for streaming tool calls
-     * @param metadata Provider-specific metadata (will be defensively copied)
+     * @param metadata Provider/framework-specific metadata (will be defensively copied)
      */
     public ToolUseBlock(
             String id,
@@ -155,7 +158,7 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
-     * Gets the provider-specific metadata.
+     * Gets the provider/framework-specific metadata.
      *
      * <p>For Gemini, this may contain the thought signature under the key
      * {@link #METADATA_THOUGHT_SIGNATURE}.
@@ -250,7 +253,7 @@ public final class ToolUseBlock extends ContentBlock {
         }
 
         /**
-         * Sets the provider-specific metadata.
+         * Sets the provider/framework-specific metadata.
          *
          * <p>For Gemini, use {@link ToolUseBlock#METADATA_THOUGHT_SIGNATURE} as the key
          * to store thought signatures.

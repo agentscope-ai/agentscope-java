@@ -210,9 +210,12 @@ public final class PermissionEngine {
      * Runs the tool-specific permission pipeline.
      *
      * <p>The tool check runs before the mode shortcut so a tool-generated {@code ASK_USER}
-     * decision is never bypassed. For all other decisions, EXPLORE / ACCEPT_EDITS retain their
-     * existing read-only semantics. Emits empty when the tool returns PASSTHROUGH and the mode has
-     * no decision of its own.
+     * decision is never bypassed. Consequently, {@code checkPermissions()} is invoked even in
+     * EXPLORE / ACCEPT_EDITS before the mode result is applied; tool implementations should keep
+     * that check side-effect free. For all other decisions, EXPLORE / ACCEPT_EDITS retain their
+     * existing read-only semantics, including ACCEPT_EDITS overriding a read-only tool's own
+     * {@code DENY} with {@code ALLOW}. Emits empty when the tool returns PASSTHROUGH and the mode
+     * has no decision of its own.
      */
     private Mono<PermissionDecision> toolCheckPermissions(
             ToolBase tool, Map<String, Object> input) {

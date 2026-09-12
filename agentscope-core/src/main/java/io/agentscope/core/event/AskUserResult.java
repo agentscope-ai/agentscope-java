@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * The user's answer to one {@code ask_user} tool call.
@@ -88,10 +89,34 @@ public class AskUserResult {
      * @return a stable, human-readable rendering of the answers with secret values redacted
      */
     public static String formatAnswers(Map<String, Object> answers, Set<String> secretQuestionIds) {
+        Set<String> secrets = secretQuestionIds == null ? Set.of() : secretQuestionIds;
+        return formatAnswers(answers, key -> secrets.contains(key));
+    }
+
+    /**
+     * Formats answers using a fail-closed policy for a tool call that declared a secret question.
+     * When {@code hasSecretQuestion} is true, only ids in {@code nonSecretQuestionIds} are
+     * considered safe to expose; all other answer keys are masked. This protects against hosts
+     * that return an invented key or the question text instead of the declared secret id.
+     *
+     * @param answers the answer map (questionId → answer)
+     * @param nonSecretQuestionIds declared question ids that are safe to expose
+     * @param hasSecretQuestion whether the tool call declared at least one secret question
+     * @return a stable, human-readable rendering of the answers with unknown values redacted
+     */
+    public static String formatAnswers(
+            Map<String, Object> answers,
+            Set<String> nonSecretQuestionIds,
+            boolean hasSecretQuestion) {
+        Set<String> nonSecrets = nonSecretQuestionIds == null ? Set.of() : nonSecretQuestionIds;
+        return formatAnswers(answers, key -> hasSecretQuestion && !nonSecrets.contains(key));
+    }
+
+    private static String formatAnswers(
+            Map<String, Object> answers, Predicate<String> secretAnswerPredicate) {
         if (answers == null || answers.isEmpty()) {
             return "The user did not answer any question.";
         }
-        Set<String> secrets = secretQuestionIds == null ? Set.of() : secretQuestionIds;
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, Object> e : answers.entrySet()) {
             if (sb.length() > 0) {
@@ -99,7 +124,9 @@ public class AskUserResult {
             }
             sb.append(e.getKey())
                     .append(": ")
-                    .append(formatAnswerValue(e.getValue(), secrets.contains(e.getKey())));
+                    .append(
+                            formatAnswerValue(
+                                    e.getValue(), secretAnswerPredicate.test(e.getKey())));
         }
         return sb.toString();
     }
@@ -119,6 +146,31 @@ public class AskUserResult {
         boolean changed = false;
         for (String questionId : secretQuestionIds) {
             if (redacted.containsKey(questionId)) {
+                redacted.put(questionId, REDACTED_VALUE);
+                changed = true;
+            }
+        }
+        return changed ? new AskUserResult(toolCallId, redacted) : this;
+    }
+
+    /**
+     * Returns a copy safe to publish when the originating tool call declared a secret question.
+     * Only declared non-secret ids remain visible; every other answer key is replaced with the
+     * fixed redaction marker.
+     *
+     * @param nonSecretQuestionIds declared question ids that are safe to expose
+     * @param hasSecretQuestion whether the tool call declared at least one secret question
+     * @return this result when no redaction is needed, otherwise a redacted copy
+     */
+    public AskUserResult redactedFor(Set<String> nonSecretQuestionIds, boolean hasSecretQuestion) {
+        if (!hasSecretQuestion || answers.isEmpty()) {
+            return this;
+        }
+        Set<String> nonSecrets = nonSecretQuestionIds == null ? Set.of() : nonSecretQuestionIds;
+        Map<String, Object> redacted = new LinkedHashMap<>(answers);
+        boolean changed = false;
+        for (String questionId : answers.keySet()) {
+            if (!nonSecrets.contains(questionId)) {
                 redacted.put(questionId, REDACTED_VALUE);
                 changed = true;
             }
