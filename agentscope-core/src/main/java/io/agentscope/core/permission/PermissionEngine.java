@@ -87,7 +87,8 @@ public final class PermissionEngine {
      * Adds a rule to the engine's internal rule set.
      *
      * <p>The rule is routed by its {@link PermissionRule#behavior()}: ALLOW/DENY/ASK rules are
-     * appended to the engine's allow/deny/ask tables; PASSTHROUGH rules are ignored.
+     * appended to the engine's allow/deny/ask tables; PASSTHROUGH rules are ignored. ASK_USER is
+     * rejected because it is emitted only by a tool's own permission check.
      *
      * @param rule the rule to add; must be non-null
      */
@@ -102,6 +103,9 @@ public final class PermissionEngine {
             case PASSTHROUGH -> {
                 // PASSTHROUGH rules are not stored; they signal "defer to engine".
             }
+            case ASK_USER ->
+                    throw new IllegalArgumentException(
+                            "ASK_USER is only valid as a tool permission decision, not a rule");
         }
     }
 

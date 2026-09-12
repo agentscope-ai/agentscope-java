@@ -78,7 +78,7 @@ public class AskUserResult {
      * @return a stable, human-readable rendering of the answers
      */
     public static String formatAnswers(Map<String, Object> answers) {
-        return formatAnswers(answers, Set.of());
+        return formatAnswers(answers, Set.of(), false);
     }
 
     /**
@@ -87,7 +87,10 @@ public class AskUserResult {
      * @param answers the answer map (questionId → answer)
      * @param secretQuestionIds question ids whose values must not be exposed
      * @return a stable, human-readable rendering of the answers with secret values redacted
+     * @deprecated Use {@link #formatAnswers(Map, Set, boolean)}. This overload is fail-open for
+     *     unknown answer keys when a secret question is present.
      */
+    @Deprecated
     public static String formatAnswers(Map<String, Object> answers, Set<String> secretQuestionIds) {
         Set<String> secrets = secretQuestionIds == null ? Set.of() : secretQuestionIds;
         return formatAnswers(answers, key -> secrets.contains(key));
@@ -137,7 +140,10 @@ public class AskUserResult {
      *
      * @param secretQuestionIds question ids whose values must be redacted
      * @return this result when no redaction is needed, otherwise a redacted copy
+     * @deprecated Use {@link #redactedFor(Set, boolean)}. This overload cannot fail closed when a
+     *     host uses an unknown answer key for a tool call containing a secret question.
      */
+    @Deprecated
     public AskUserResult redactedFor(Set<String> secretQuestionIds) {
         if (secretQuestionIds == null || secretQuestionIds.isEmpty() || answers.isEmpty()) {
             return this;

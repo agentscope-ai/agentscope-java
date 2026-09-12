@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AskUserResult;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
@@ -635,6 +636,15 @@ class ReActAgentAskUserTest {
         assertNotNull(firstEvents);
         assertTrue(indexOf(firstEvents, RequireUserAskEvent.class) >= 0);
         assertTrue(indexOf(firstEvents, RequireUserConfirmEvent.class) >= 0);
+        AgentResultEvent firstResult =
+                firstEvents.stream()
+                        .filter(AgentResultEvent.class::isInstance)
+                        .map(AgentResultEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                GenerateReason.PERMISSION_AND_ASK_USER_ASKING,
+                firstResult.getResult().getGenerateReason());
 
         List<AgentEvent> afterAnswer =
                 agent.streamEvents(

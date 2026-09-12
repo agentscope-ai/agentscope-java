@@ -764,7 +764,9 @@ public class SessionTurnRunner {
     static boolean isCorePermissionAsking(AgentEvent event) {
         return event instanceof AgentResultEvent result
                 && result.getResult() != null
-                && result.getResult().getGenerateReason() == GenerateReason.PERMISSION_ASKING;
+                && (result.getResult().getGenerateReason() == GenerateReason.PERMISSION_ASKING
+                        || result.getResult().getGenerateReason()
+                                == GenerateReason.PERMISSION_AND_ASK_USER_ASKING);
     }
 
     private static final class CorePermissionConfirmationException extends RuntimeException {

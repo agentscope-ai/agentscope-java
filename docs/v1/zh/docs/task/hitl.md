@@ -132,4 +132,6 @@ if (response.getGenerateReason() == GenerateReason.ASK_USER_ASKING) {
 }
 ```
 
-流式调用方会在暂停时收到 `RequireUserAskEvent`、恢复时收到 `UserAskResultEvent`，通过 `replyId` 关联——与权限确认流程同构。
+流式调用方会在暂停时收到 `RequireUserAskEvent`、恢复时收到 `UserAskResultEvent`，通过 `replyId` 关联——与权限确认流程同构。`DONT_ASK` 不会自动拒绝 `ASK_USER` 暂停；它只会改变权限规则产生的 `ASK` 决策。
+
+如果一次模型响应同时包含 `ask_user` 调用和需要权限确认的调用，响应会使用 `GenerateReason.PERMISSION_AND_ASK_USER_ASKING`，并同时发出两种暂停事件。调用方应分别通过 `AskUserResult` 和 `ConfirmResult` 元数据恢复两组待处理调用；只支持其中一种暂停类型的适配器必须保留另一组调用，不能把本轮当作已完成。
