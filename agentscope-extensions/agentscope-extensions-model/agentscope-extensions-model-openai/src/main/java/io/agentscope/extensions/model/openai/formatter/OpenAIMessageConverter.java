@@ -326,10 +326,6 @@ public class OpenAIMessageConverter {
             builder.content("");
         }
 
-        // Reasoning details collected from the ThinkingBlock and from tool use metadata;
-        // both sources must be merged, not overwrite each other (see issue #2913)
-        List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
-
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
         // These models require reasoning content to be preserved in history
         ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
@@ -345,11 +341,15 @@ public class OpenAIMessageConverter {
                 Object detailsObj =
                         thinkingBlock.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
+                    List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
                         OpenAIReasoningDetail detail = toReasoningDetail(item);
                         if (detail != null) {
-                            reasoningDetails.add(detail);
+                            details.add(detail);
                         }
+                    }
+                    if (!details.isEmpty()) {
+                        builder.reasoningDetails(details);
                     }
                 }
             }
@@ -395,13 +395,6 @@ public class OpenAIMessageConverter {
                     Object signatureObj =
                             toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
                     signature = toSignatureString(signatureObj);
-
-                    // Add reasoning detail if present
-                    Object detailObj = toolUse.getMetadata().get("reasoningDetail");
-                    OpenAIReasoningDetail detail = toReasoningDetail(detailObj);
-                    if (detail != null) {
-                        reasoningDetails.add(detail);
-                    }
                 }
 
                 // Fallback to shared signature if missing
@@ -426,10 +419,6 @@ public class OpenAIMessageConverter {
                         signature != null);
             }
             builder.toolCalls(toolCalls);
-        }
-
-        if (!reasoningDetails.isEmpty()) {
-            builder.reasoningDetails(reasoningDetails);
         }
 
         return builder.build();

@@ -73,17 +73,24 @@ class OpenAIThoughtSignatureTest {
     }
 
     @Test
-    @DisplayName("Should attach typed signature and reasoning detail on direct conversion")
+    @DisplayName(
+            "Should attach signature from tool metadata and reasoning detail from thinking block")
     void testTypedMetadataAttachedDirectly() {
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, SIGNATURE);
-        metadata.put("reasoningDetail", reasoningDetail(SIGNATURE_BASE64));
+        Map<String, Object> thinkingMetadata = new HashMap<>();
+        thinkingMetadata.put(
+                ThinkingBlock.METADATA_REASONING_DETAILS,
+                new ArrayList<>(List.of(reasoningDetail(SIGNATURE_BASE64))));
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().thinking("thinking...").metadata(thinkingMetadata).build();
+
+        Map<String, Object> toolMetadata = new HashMap<>();
+        toolMetadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, SIGNATURE);
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_1").name("search").metadata(metadata).build();
+                ToolUseBlock.builder().id("call_1").name("search").metadata(toolMetadata).build();
         Msg msg =
                 Msg.builder()
                         .name("assistant")
-                        .content(List.of(toolUse))
+                        .content(List.of(thinking, toolUse))
                         .role(MsgRole.ASSISTANT)
                         .build();
 
@@ -113,27 +120,6 @@ class OpenAIThoughtSignatureTest {
             OpenAIMessage result = converter.convertToMessage(msg, false);
 
             assertNull(result.getToolCalls().get(0).getFunction().getThoughtSignature());
-        }
-    }
-
-    @Test
-    @DisplayName("Should ignore reasoning detail values that cannot be restored")
-    void testUnconvertibleReasoningDetailIgnored() {
-        for (Object detail : new Object[] {Map.of("id", List.of("not-a-string")), 42}) {
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put("reasoningDetail", detail);
-            ToolUseBlock toolUse =
-                    ToolUseBlock.builder().id("call_1").name("search").metadata(metadata).build();
-            Msg msg =
-                    Msg.builder()
-                            .name("assistant")
-                            .content(List.of(toolUse))
-                            .role(MsgRole.ASSISTANT)
-                            .build();
-
-            OpenAIMessage result = converter.convertToMessage(msg, false);
-
-            assertNull(result.getReasoningDetails());
         }
     }
 
@@ -177,15 +163,21 @@ class OpenAIThoughtSignatureTest {
     @Test
     @DisplayName("Should keep tool signature and reasoning detail after JSON round-trip")
     void testToolMetadataRestoredAfterRoundTrip() {
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, SIGNATURE);
-        metadata.put("reasoningDetail", reasoningDetail(SIGNATURE_BASE64));
+        Map<String, Object> thinkingMetadata = new HashMap<>();
+        thinkingMetadata.put(
+                ThinkingBlock.METADATA_REASONING_DETAILS,
+                new ArrayList<>(List.of(reasoningDetail(SIGNATURE_BASE64))));
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().thinking("thinking...").metadata(thinkingMetadata).build();
+
+        Map<String, Object> toolMetadata = new HashMap<>();
+        toolMetadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, SIGNATURE);
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_1").name("search").metadata(metadata).build();
+                ToolUseBlock.builder().id("call_1").name("search").metadata(toolMetadata).build();
         Msg msg =
                 Msg.builder()
                         .name("assistant")
-                        .content(List.of(toolUse))
+                        .content(List.of(thinking, toolUse))
                         .role(MsgRole.ASSISTANT)
                         .build();
 
