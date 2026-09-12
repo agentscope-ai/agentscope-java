@@ -372,6 +372,25 @@ Host: <agent-pod-ip>:8080
 
 **响应：** 见上方「Command 响应与错误语义」。
 
+#### `POST /agentscope/sessions/{id}/messages`
+
+向指定会话注入一条用户消息（控制面 / Console 发起聊天，sdk-design 方案 A）。忙时返回 `409` + `hint=wait_idle`。成功响应为 `202 Accepted`（与 Command 成功体同形）；客户端从控制面持久事件 SSE 观察后续输出，断线时按 `seq` 恢复，不轮询 messages。
+
+**请求：**
+
+```
+POST /agentscope/sessions/sess-abc123/messages HTTP/1.1
+Host: <agent-pod-ip>:8080
+X-Builder-Internal-Token: <shared-token>
+Content-Type: application/json
+
+{"content":"hello from console"}
+```
+
+**响应：** `202 Accepted`，体见上方「Command 响应与错误语义」。
+
+当数据面配置了内部 token 时，**写操作**（`POST`/`DELETE`：abort、terminate、compress、join、leave、inbound messages、plan-mode）必须携带与自注册相同的 `X-Builder-Internal-Token`。`GET /agentscope/health` 与 `GET /agentscope/info` 保持开放，供 HTTP prober 探测。
+
 ---
 
 ### Capability 门控扩展端点
@@ -384,6 +403,7 @@ Host: <agent-pod-ip>:8080
 |------|------|------------|------|
 | `/agentscope/sessions/{id}/context` | GET | `context-query` | 当前生效 Context 快照 |
 | `/agentscope/sessions/{id}/messages` | GET | `message-query` | 完整消息历史，`?offset=&limit=` 分页 |
+| `/agentscope/sessions/{id}/messages` | POST | （控制面注入，无单独 capability） | 注入用户消息；忙时 409 `wait_idle`；成功 202 |
 | `/agentscope/subagents` | GET | `subagent-inventory` | 当前实例 subagent 清单 |
 | `/agentscope/workspaces` | GET | `workspace-inventory` | 当前实例 workspace 清单 |
 
@@ -434,7 +454,9 @@ Host: <agent-pod-ip>:8080
 
 #### `GET /agentscope/sessions/{id}/messages`
 
-Level 3 完整消息历史（Level 2 事件流只存摘要；全文走本端点按需拉取，不主动上报）。
+Level 3 兼容消息查询。新会话界面的事实源是默认开启、保留完整内容的 Level 2 事件日志；
+本端点供旧版数据面或需要运行时原生消息分页的调用方使用，控制面不再要求
+`message-query` 才能展示会话。
 
 **响应（200 OK）：**
 
@@ -651,43 +673,14 @@ go test ./test/mock/ ./internal/sessionops/ -count=1
 | 词汇 | 含义 | 对应通道与端点 |
 |------|------|----------------|
 | `session-reporting` | 会话摘要快照上报 | ASDP `SessionReport`；HTTP `GET /agentscope/sessions` |
-| `event-reporting` | 事件流摘要上报（默认关闭，SDK `enable_events` 开启） | ASDP `EventReport` |
+| `event-reporting` | 完整事件流上报（SDK 默认开启；本地持久化、ACK 后出队） | ASDP `EventReport` / `EventReportAck` |
 | `context-reporting` | 生效 Context 变更主动推送（hash 变更防抖 + compaction 立即推） | ASDP `ContextReport` |
 | `context-query` | 按需查询当前生效 Context | HTTP `GET /agentscope/sessions/{id}/context` |
 | `message-query` | 完整消息历史分页拉取 | HTTP `GET /agentscope/sessions/{id}/messages` |
 | `session-command` | 接收 compress / terminate 控制指令 | HTTP `POST .../compress\|terminate`；ASDP `SessionCommand` 下行 |
 | `subagent-inventory` | subagent 运行时清单上报与查询 | ASDP `InventoryReport`；HTTP `GET /agentscope/subagents` |
 | `workspace-inventory` | workspace 运行时清单上报与查询 | ASDP `InventoryReport`；HTTP `GET /agentscope/workspaces` |
-| `team-coordination` | 加入/离开 AgentTeam（`team_join` / `team_leave`）并参与共享任务板 | ASDP `SessionCommand{command=team_join\|team_leave, params=TeamContext}`；HTTP `POST /agentscope/teams/join`；上行 `TeamEventReport` |
-
-### AgentTeams：`team_join` / `team_leave`
-
-控制面为 BYO 成员分配运行时 `sessionId` 与 `TeamContext` 后，向具备 `team-coordination` 的健康实例下发：
-
-```json
-{
-  "sessionId": "<cp-allocated-id>",
-  "command": "team_join",
-  "params": {
-    "teamName": "research",
-    "objective": "...",
-    "myRole": "worker-1",
-    "isLead": false,
-    "members": [{"name": "lead", "agentRef": "a", "status": "working"}],
-    "availableActions": ["listTasks", "claimTask", "completeTask", "sendMessage", "broadcastMessage", "listMembers"]
-  }
-}
-```
-
-数据面收到后应：
-
-1. `registerExternalSession(sessionId, gateKey)`（或等价映射），使后续 `runWakeup` 可命中该 id；
-2. 挂载 `TeamsMiddleware`（按 `isLead` 裁剪工具面）并启动首轮 wakeup；
-3. （可选）经 ASDP 上报 `TeamEventReport{event_type=member_joined}`。
-
-`team_leave` 对称：停止团队工具、解除外部 session 映射，可选上报 `member_left`。
-
-**Managed 成员不走 `team_join`。** 控制面调用 product `POST /api/internal/sessions/find-or-create`（`externalKey=team|{ns}/{team}|{member}`），把返回的 `sessionId` 写入 runtime `store.Session`（含 `teamContext`），经 `GET /api/internal/sessions/{id}/resolve` 的 `teamContext` 字段下发到数据面构建链路，再 `POST /api/sessions/{id}/events` 投起跑 `user.message`。
+| `agent-task` | 接收统一 AgentTask 工作义务 | ASDP `ExecutionAttemptCommand` 下行；上行 `ExecutionAttemptReport`；task-scoped Issue/Comment/Run API |
 
 ### 新增词汇（BYO Console）
 

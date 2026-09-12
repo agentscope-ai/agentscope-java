@@ -1,4 +1,6 @@
-# Custom Workflow
+---
+title: Custom Workflow
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
@@ -78,6 +80,6 @@ For implementation details, use the snippets on this page and the RAG/SQL config
 
 ## Related Documentation
 
-- [Pipeline](pipeline.md) - Predefined flows (sequential, parallel, loop)
-- [Routing](routing.md) - Classify → specialists → synthesize
-- [Overview](overview.md) - Multi-agent patterns summary
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Predefined flows (sequential, parallel, loop)
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify → specialists → synthesize
+- [Overview](/v1/en/docs/multi-agent/overview) - Multi-agent patterns summary

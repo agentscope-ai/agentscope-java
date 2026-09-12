@@ -21,9 +21,9 @@ func TestMergeSessionMounts(t *testing.T) {
 	vaultJSON := `["vault_a","vault_b"]`
 	memJSON := `["mem_1"]`
 	a := agentRow{
-		DefaultEnvironmentID:       &env,
-		DefaultVaultIDsJSON:        &vaultJSON,
-		DefaultMemoryStoreIDsJSON:  &memJSON,
+		DefaultEnvironmentID:      &env,
+		DefaultVaultIDsJSON:       &vaultJSON,
+		DefaultMemoryStoreIDsJSON: &memJSON,
 	}
 
 	t.Run("all omitted uses agent defaults", func(t *testing.T) {

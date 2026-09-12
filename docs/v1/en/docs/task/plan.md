@@ -1,4 +1,6 @@
-# Plan
+---
+title: Planning
+---
 
 PlanNotebook provides planning capabilities for agents, helping them break down complex tasks into structured subtasks and execute them step by step.
 

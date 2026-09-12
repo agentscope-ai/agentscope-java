@@ -1,11 +1,14 @@
 ---
-title: "V1 迁移指南"
-description: "从 AgentScope Java 1.x 升级到 2.0 的完整迁移指南"
+title: V1 迁移指南
+description: 从 AgentScope Java 1.x 升级到 2.0 的完整迁移指南
 ---
 
-:::{tip}
-如果你在找各版本的具体变更记录，请见 [Release Notes](others/release-notes.md)。
-:::
+<Tip>
+
+如果你在找各版本的具体变更记录，请见 [Release Notes](/v2/zh/docs/others/release-notes)。
+
+</Tip>
+
 
 AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部分用户的平滑升级，但同时 2.0 版本也带来了 API 层面的不兼容变更。本页分为两部分：
 
@@ -28,7 +31,7 @@ AgentScope Java 2.0 版本尽量保持了对 1.x 版本的兼容，确保大部�
 | `.statePersistence(StatePersistence)` | `.stateStore(AgentStateStore)` |
 | `.structuredOutputReminder(StructuredOutputReminder)` | 不再需要，模型层原生支持 |
 
-详见 → [上下文](building-blocks/context.md)
+详见 → [上下文](/v2/zh/docs/building-blocks/context)
 
 #### A.2 已删除的包 / 类
 
@@ -77,7 +80,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 | Anthropic | `agentscope-anthropic-spring-boot-starter` |
 | Ollama | `agentscope-ollama-spring-boot-starter` |
 
-详见 → [模型](building-blocks/model.md)、[模型提供商](../integration/overview.md)
+详见 → [模型](/v2/zh/docs/building-blocks/model)、[模型提供商](/v2/zh/integration/overview)
 
 #### A.4 `state` 包重构（编译错误）
 
@@ -89,7 +92,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 | `ToolkitState` | `io.agentscope.core.state.legacy.ToolkitState`（仅兼容） |
 | （新增） | `Task`、`TaskContextState`、`ToolContextState`、`PlanModeContextState`、`ReadCacheEntry` |
 
-凡是从 `io.agentscope.core.state` import `AgentMetaState`、`StateModule`、`StatePersistence`、`ToolkitState` 的代码都会编译失败。详见 → [上下文](building-blocks/context.md)
+凡是从 `io.agentscope.core.state` import `AgentMetaState`、`StateModule`、`StatePersistence`、`ToolkitState` 的代码都会编译失败。详见 → [上下文](/v2/zh/docs/building-blocks/context)
 
 #### A.5 `PlanNotebook` 已删除 —— 改用 `HarnessAgent.enablePlanMode()`
 
@@ -116,7 +119,7 @@ Spring Boot 应用应使用对应模型提供商的 starter，而不是依赖 co
 - `SYSTEM` —— 仅允许 `TextBlock`
 - `ASSISTANT` —— 不限制
 
-v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在构造时直接抛异常。推荐改用 role 子类 `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`，在调用处就显式表达 role 与 content 的对应关系。详见 → [消息与事件](building-blocks/message-and-event.md)
+v1 中容忍的非法组合（例如 `USER` 携带 `ToolUseBlock`）现在会在构造时直接抛异常。推荐改用 role 子类 `UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`，在调用处就显式表达 role 与 content 的对应关系。详见 → [消息与事件](/v2/zh/docs/building-blocks/message-and-event)
 
 #### A.7 Agent 完全无状态（架构变更）
 
@@ -153,7 +156,7 @@ TracerRegistry.register(TelemetryTracer.builder().tracer(tracer).build());
 | 框架级全局 tracer | 为每个需要输出 span 的 agent 添加 `new OtelTracingMiddleware()` |
 | `TracerRegistry.resetToNoop()` / tracer shutdown | 应用关闭时关闭由应用持有的 `SdkTracerProvider` |
 
-Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，再让 agent 使用 middleware。所需依赖、完整 OTLP 配置以及自定义认证 header 示例见 [Middleware — OtelTracingMiddleware](building-blocks/middleware.md#oteltracingmiddleware)。
+Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，再让 agent 使用 middleware。所需依赖、完整 OTLP 配置以及自定义认证 header 示例见 [Middleware — OtelTracingMiddleware](/v2/zh/docs/building-blocks/middleware#oteltracingmiddleware)。
 
 ---
 
@@ -167,7 +170,7 @@ Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，�
 - 新方式：通过 `AgentSkillRepository`（内置 `ClasspathSkillRepository`、`FileSystemSkillRepository`）注入技能，使用 `Builder.skillRepository(...)` / `.skillRepositories(...)`。只要注册了至少一个 repository，`DynamicSkillMiddleware` 会自动安装，在每次 `call()` 前重建 skill prompt
 - 细粒度过滤：`Builder.skillFilter(SkillFilter)`
 
-详见 → [技能](harness/skill.md)
+详见 → [技能](/v2/zh/docs/harness/skill)
 
 #### B.2 Hook → Middleware
 
@@ -177,7 +180,7 @@ Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，�
 - Builder：`.middleware(MiddlewareBase)` 与 `.middlewares(List<? extends MiddlewareBase>)`
 - 内置：`TaskReminderMiddleware`（与 `TodoTools` 配合，在每个 reasoning step 前注入任务提醒）
 
-详见 → [Middleware](building-blocks/middleware.md)
+详见 → [Middleware](/v2/zh/docs/building-blocks/middleware)
 
 #### B.3 `Memory` → `AgentStateStore` + `AgentState`
 
@@ -188,7 +191,7 @@ Middleware 从 `GlobalOpenTelemetry` 读取 SDK，因此必须先注册 SDK，�
   - **持久化**通过 `AgentStateStore` 抽象（内置 `InMemoryAgentStateStore`、`JsonFileAgentStateStore`），按 `(userId, sessionId)` 二元组分桶
   - Builder 链：`.stateStore(AgentStateStore)` —— `AgentState` 在每次 `call()` 后自动 save/load，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址
 
-详见 → [上下文](building-blocks/context.md)
+详见 → [上下文](/v2/zh/docs/building-blocks/context)
 
 #### B.4 事件订阅：hook + chunk → `streamEvents()`
 
@@ -201,7 +204,7 @@ v1 中通过 `Hook` + 各种 `*ChunkEvent` 拼装文本 / 工具增量的代码�
 - `ToolUseBlock` / `ToolResultBlock` 增加 `state` 字段（`ToolCallState` / `ToolResultState`）—— 完整建模 tool-call 生命周期
 - 所有 block 加 `id` 字段 —— 跨事件流稳定引用
 
-详见 → [消息与事件](building-blocks/message-and-event.md)
+详见 → [消息与事件](/v2/zh/docs/building-blocks/message-and-event)
 
 ##### `stream()` → `streamEvents()`（与 Python 2.0 对齐）
 
@@ -261,7 +264,7 @@ ReActAgent agent = ReActAgent.builder()
 
 - 对于 `HarnessAgent` 用户，harness 模块自带 workspace 感知的文件和 shell 工具（`read_file`、`write_file`、`execute` 等），提供统一的本地 / Docker / 云沙箱后端、权限隔离、读写缓存、HITL 审批，推荐在需要 workspace 集成的场景下使用 harness 内置工具
 
-详见 → [Harness 文件系统](harness/filesystem.md)
+详见 → [Harness 文件系统](/v2/zh/docs/harness/filesystem)
 
 ---
 
@@ -278,7 +281,7 @@ ReActAgent agent = ReActAgent.builder()
 - **行为变更：** `source != null` 的 AgentEvent（子 agent 事件）默认映射为 AG-UI `CUSTOM`（`subagent.lifecycle` / `subagent.text` / `subagent.thinking` / `subagent.tool_call` / `subagent.tool_result` / `subagent.require_confirm`），不再走原生 `TEXT_MESSAGE_*` / `RUN_*`。设 `emitSubagentEventsAsNative(true)` 可恢复旧的原生映射
 - Spring Boot starter 支持 `AguiRuntimeContextResolver` 和自定义 `AguiAgentAdapterFactory`，并支持 frontend tool injection / merge mode 与 HITL interrupt 输出
 
-详见 → [AG-UI](../integration/protocol/agui.md)
+详见 → [AG-UI](/v2/zh/integration/protocol/agui)
 
 ### Toolkit & Permission
 
@@ -293,7 +296,7 @@ ReActAgent agent = ReActAgent.builder()
   - `PermissionEngine`、`PermissionRule`、`PermissionMode`（`DEFAULT` / `ACCEPT_EDITS` / `EXPLORE` / `BYPASS` / `DONT_ASK`）、`PermissionBehavior`
   - 每次 tool 调用前自动经 `PermissionEngine`：允许 / 用户审批 / 拒绝；HITL 决策回流到 `UserConfirmResultEvent`
 
-详见 → [工具](building-blocks/tool.md)、[权限系统](building-blocks/permission-system.md)
+详见 → [工具](/v2/zh/docs/building-blocks/tool)、[权限系统](/v2/zh/docs/building-blocks/permission-system)
 
 ### 模型容错与凭据
 
@@ -301,14 +304,14 @@ ReActAgent agent = ReActAgent.builder()
 - `ModelRegistry`：在对应模型扩展模块位于 classpath 时，按 `"provider:model"` 字符串解析（如 `dashscope:qwen-max`、`openai:gpt-5`）
 - Builder 新增：`.model(String)`、`.maxRetries(int)`、`.fallbackModel(Model)` / `.fallbackModel(String)`、`.stopOnReject(boolean)` —— 主模型失败自动重试 / 切换备用模型
 
-详见 → [模型](building-blocks/model.md)
+详见 → [模型](/v2/zh/docs/building-blocks/model)
 
 ### Workspace（Harness 模块）
 
 - 工作区抽象：本地文件系统 / Docker / E2B 云沙箱统一接口
 - 预热池：支持提前批量初始化执行环境，适配 RL rollout 等并行场景
 
-详见 → [Workspace](harness/workspace.md)
+详见 → [Workspace](/v2/zh/docs/harness/workspace)
 
 ### Builder 其他新方法
 
@@ -318,7 +321,7 @@ ReActAgent agent = ReActAgent.builder()
 - `HarnessAgent.Builder.fromAgent(ReActAgent)` —— 把 ReActAgent 迁到 HarnessAgent 的辅助方法。在 `ReActAgent.Builder.fromAgent` 的 7 个字段之上额外继承 ReActAgent 上**所有可观察的配置**：`stateStore` / `defaultSessionId`、`ModelConfig`（`maxRetries` / `fallbackModel`）、`ReactConfig.stopOnReject`、`modelExecutionConfig` / `toolExecutionConfig` / `toolExecutionContext`、`enablePendingToolRecovery`、`checkRunning`、`permissionContext`、`middlewares`、`hooks`。`enableMetaTool` / `enableTaskList` 不复制（这两个是 Builder-time 工具注册开关，toolkit copy 已经把它们注册的工具带过来了）。harness 独有的 workspace / filesystem / subagent / skill / plan mode / 各 `disable*` 等仍需手动设置。javadoc 里有完整列表
 - **ReActAgent 新增 getter 以支撑上述迁移**：`getModelExecutionConfig()` / `getToolExecutionConfig()` / `getToolExecutionContext()` / `isPendingToolRecoveryEnabled()` / `getPermissionContext()`（位于 `ReActAgent`）；`isCheckRunning()`（位于 `AgentBase`，已弃用，始终返回 `false`）
 
-详见 → [智能体](building-blocks/agent.md)
+详见 → [智能体](/v2/zh/docs/building-blocks/agent)
 
 ### Memory / Compaction 独立模型
 

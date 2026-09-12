@@ -1,4 +1,6 @@
-# 多智能体辩论
+---
+title: 多智能体辩论
+---
 
 多智能体辩论是一种工作流模式，模拟不同智能体之间的多轮讨论。这种模式特别适用于需要多角度思考才能得出更好解决方案的问题求解任务。
 
@@ -355,8 +357,8 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## 相关文档
 
-- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
-- [Pipeline](./pipeline.md) - 顺序和并行智能体执行
-- [Handoffs](./handoffs.md) - 状态驱动路由与智能体间交接
-- [Routing](./routing.md) - 分类并路由到专家智能体
-- [结构化输出](../task/structured-output.md) - 从智能体响应中提取结构化数据
+- [MsgHub](/v1/zh/docs/task/msghub) - 多智能体对话的消息广播
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序和并行智能体执行
+- [Handoffs](/v1/zh/docs/multi-agent/handoffs) - 状态驱动路由与智能体间交接
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类并路由到专家智能体
+- [结构化输出](/v1/zh/docs/task/structured-output) - 从智能体响应中提取结构化数据
