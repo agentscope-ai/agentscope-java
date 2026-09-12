@@ -35,6 +35,7 @@ import java.time.LocalDate;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -150,15 +151,22 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
-                                    .subscribeOn(Schedulers.boundedElastic())
-                                    .doFinally(signal -> MemoryBackgroundTasks.end())
-                                    .subscribe(
-                                            null,
-                                            e ->
-                                                    log.warn(
-                                                            "Memory maintenance failed: {}",
-                                                            e.getMessage()));
+                            final Disposable[] holder = new Disposable[1];
+                            holder[0] =
+                                    Mono.defer(() -> doMaintenance(rc))
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .doFinally(
+                                                    signal -> {
+                                                        MemoryBackgroundTasks.end();
+                                                        MemoryBackgroundTasks.unregister(holder[0]);
+                                                    })
+                                            .subscribe(
+                                                    null,
+                                                    e ->
+                                                            log.warn(
+                                                                    "Memory maintenance failed: {}",
+                                                                    e.getMessage()));
+                            MemoryBackgroundTasks.register(holder[0]);
                         });
     }
 
@@ -168,7 +176,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             // Mono completes.
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return runMaintenance(rc);
     }
 
     /**
@@ -196,12 +204,29 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private void runMaintenance(RuntimeContext rc) {
+    private Mono<Void> runMaintenance(RuntimeContext rc) {
         log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        pruneOldSessions(rc);
-        log.debug("Memory maintenance completed");
+        // NOTE: the consolidation step stays inside the reactive chain (no blocking .block()) so
+        // the
+        // Disposable registered by onAgent actually cancels the model call — otherwise a hung
+        // consolidation would leak its HTTP connection until the JVM exits.
+        Mono<Void> expire = Mono.fromRunnable(() -> expireDailyFiles(rc));
+        Mono<Void> consolidate =
+                consolidator != null
+                        ? consolidator
+                                .consolidate(rc)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Memory consolidation failed: {}",
+                                                    e.getMessage());
+                                            return Mono.empty();
+                                        })
+                        : Mono.empty();
+        Mono<Void> prune = Mono.fromRunnable(() -> pruneOldSessions(rc));
+        return expire.then(consolidate)
+                .then(prune)
+                .doFinally(signal -> log.debug("Memory maintenance completed"));
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -238,17 +263,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             } catch (Exception e) {
                 // not a date-named file, skip
             }
-        }
-    }
-
-    private void consolidateMemory(RuntimeContext rc) {
-        if (consolidator == null) {
-            return;
-        }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
         }
     }
 

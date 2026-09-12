@@ -15,9 +15,15 @@
  */
 package io.agentscope.harness.agent.memory;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 
 /**
  * Tracks in-flight fire-and-forget memory background tasks (flush, maintenance) so
@@ -36,6 +42,8 @@ public final class MemoryBackgroundTasks {
 
     private static final Object MONITOR = new Object();
     private static int inFlight = 0;
+    private static final Set<Disposable> IN_FLIGHT_TASKS =
+            Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     private MemoryBackgroundTasks() {}
 
@@ -56,6 +64,41 @@ public final class MemoryBackgroundTasks {
                 MONITOR.notifyAll();
             }
         }
+    }
+
+    /**
+     * Registers an in-flight background task so it can be cancelled by {@link #cancelAll()}. The
+     * task's {@link Disposable} must be passed here instead of being discarded, otherwise its
+     * underlying model call (and the HTTP connection behind it) can leak until the JVM exits.
+     */
+    public static void register(Disposable d) {
+        if (d != null && !d.isDisposed()) {
+            IN_FLIGHT_TASKS.add(d);
+        }
+    }
+
+    /** Removes a finished task from the registry (call from the task's {@code doFinally}). */
+    public static void unregister(Disposable d) {
+        if (d != null) {
+            IN_FLIGHT_TASKS.remove(d);
+        }
+    }
+
+    /**
+     * Cancels every in-flight background task. Called from {@code HarnessAgent.close()} so the
+     * underlying model calls (and their HTTP connections) are released promptly instead of leaking
+     * until the JVM exits. Already-disposed tasks are skipped.
+     */
+    public static void cancelAll() {
+        List<Disposable> snapshot = new ArrayList<>(IN_FLIGHT_TASKS);
+        for (Disposable d : snapshot) {
+            try {
+                d.dispose();
+            } catch (Exception e) {
+                log.debug("Error cancelling memory background task: {}", e.getMessage());
+            }
+        }
+        IN_FLIGHT_TASKS.clear();
     }
 
     /**

@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -201,14 +202,18 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void runFlush(String key, Agent agent, RuntimeContext rc) {
-        Mono.defer(() -> doFlush(agent, rc))
-                .subscribeOn(Schedulers.boundedElastic())
-                .doFinally(
-                        signal -> {
-                            MemoryBackgroundTasks.end();
-                            drainFlushQueue(key);
-                        })
-                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+        final Disposable[] holder = new Disposable[1];
+        holder[0] =
+                Mono.defer(() -> doFlush(agent, rc))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .doFinally(
+                                signal -> {
+                                    MemoryBackgroundTasks.end();
+                                    MemoryBackgroundTasks.unregister(holder[0]);
+                                    drainFlushQueue(key);
+                                })
+                        .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+        MemoryBackgroundTasks.register(holder[0]);
     }
 
     private void drainFlushQueue(String key) {
