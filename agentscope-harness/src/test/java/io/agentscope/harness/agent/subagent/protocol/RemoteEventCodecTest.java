@@ -25,6 +25,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -114,6 +116,22 @@ class RemoteEventCodecTest {
         assertTrue(RemoteEventCodec.matchesDetail(RemoteEventType.TEXT_DELTA, "full"));
         assertTrue(RemoteEventCodec.matchesDetail(RemoteEventType.TOOL_CALL_START, "status"));
         assertTrue(RemoteEventCodec.matchesDetail(RemoteEventType.REQUIRE_CONFIRM, null));
+    }
+
+    @Test
+    void roundTripTextOutputDispositionAsAgentEventPayload() {
+        RemoteAgentEvent remote =
+                RemoteEventCodec.fromAgentEvent(
+                                new TextOutputDispositionEvent(
+                                        "reply-1", TextOutputDisposition.INTERMEDIATE, null))
+                        .orElseThrow();
+
+        assertEquals(RemoteEventType.AGENT_EVENT, remote.getType());
+        assertEquals("TEXT_OUTPUT_DISPOSITION", remote.getEventType());
+        assertInstanceOf(String.class, remote.getPayload());
+        assertInstanceOf(
+                TextOutputDispositionEvent.class,
+                RemoteEventCodec.toAgentEvent(remote).orElseThrow());
     }
 
     @Test

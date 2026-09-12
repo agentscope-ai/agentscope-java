@@ -27,7 +27,12 @@ public enum RemoteStreamDetail {
     /** Lifecycle, tool call boundaries, tool results and confirmation requests. */
     STATUS,
 
-    /** {@link #STATUS} plus text and thinking deltas. The default for a streaming parent. */
+    /**
+     * {@link #STATUS} plus text and thinking deltas, text output disposition events, and
+     * authoritative agent result events. Disposition and result use {@link
+     * RemoteEventType#AGENT_EVENT} with a JSON string payload. This is the default for a streaming
+     * parent.
+     */
     FULL,
 
     /**

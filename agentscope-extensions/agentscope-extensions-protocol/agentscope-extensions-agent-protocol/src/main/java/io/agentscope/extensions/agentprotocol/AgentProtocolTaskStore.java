@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventStreams;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
@@ -244,7 +245,8 @@ public final class AgentProtocolTaskStore {
             AtomicReference<Msg> resultRef = new AtomicReference<>();
             String detail = submitCtx.detail();
 
-            Flux<AgentEvent> events = agent.streamEvents(msg, ctx);
+            Flux<AgentEvent> events =
+                    AgentEventStreams.withTextOutputDisposition(agent.streamEvents(msg, ctx));
             events.doOnNext(
                             event -> {
                                 if (event instanceof AgentResultEvent resultEvent) {

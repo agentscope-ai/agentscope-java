@@ -16,15 +16,26 @@
 package io.agentscope.core.agui.adapter.strategy;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.event.AgentEndEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,6 +43,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +53,19 @@ import org.slf4j.LoggerFactory;
 public class AguiStreamContext {
 
     private static final Logger logger = LoggerFactory.getLogger(AguiStreamContext.class);
+    private static final Set<GenerateReason> FINAL_SNAPSHOT_REASONS =
+            EnumSet.of(
+                    GenerateReason.MODEL_STOP,
+                    GenerateReason.STRUCTURED_OUTPUT,
+                    GenerateReason.MAX_ITERATIONS);
+
+    /**
+     * Matches the reserved live text-segment message ids produced by the AG-UI text/reasoning
+     * converters ({@code <replyId>-text[-N]}, {@code <replyId>-thinking[-N]}). The reply id itself
+     * is recovered from the first capture group.
+     */
+    private static final Pattern TEXT_SEGMENT_ID =
+            Pattern.compile("^(.+)-(?:text|thinking|reasoning)(?:-\\d+)?$");
 
     private final String threadId;
     private final String runId;
@@ -56,12 +83,18 @@ public class AguiStreamContext {
     private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
     private String currentReasoningMessageId;
+    private final Map<String, List<String>> textMessageIdsByReply = new LinkedHashMap<>();
+    private final Map<String, TextOutputDispositionState> textOutputDispositionsByReply =
+            new LinkedHashMap<>();
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
     private final Map<String, AguiEvent.Interrupt> pendingInterrupts = new LinkedHashMap<>();
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
     private final Predicate<String> isExternalTool;
     private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
+    private final Supplier<List<Msg>> authoritativeMessagesSupplier;
+    private final AguiMessageConverter messageConverter = new AguiMessageConverter();
+    private Msg finalResult;
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
         this(threadId, runId, config, null, null);
@@ -89,12 +122,26 @@ public class AguiStreamContext {
             AguiAdapterConfig config,
             RunAgentInput runInput,
             Predicate<String> isExternalTool) {
+        this(threadId, runId, config, runInput, isExternalTool, List::of);
+    }
+
+    public AguiStreamContext(
+            String threadId,
+            String runId,
+            AguiAdapterConfig config,
+            RunAgentInput runInput,
+            Predicate<String> isExternalTool,
+            Supplier<List<Msg>> authoritativeMessagesSupplier) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.runInput = runInput;
         this.isExternalTool =
                 isExternalTool != null ? isExternalTool : defaultExternalToolDetector(runInput);
+        this.authoritativeMessagesSupplier =
+                Objects.requireNonNull(
+                        authoritativeMessagesSupplier,
+                        "authoritativeMessagesSupplier cannot be null");
     }
 
     public String getThreadId() {
@@ -127,21 +174,49 @@ public class AguiStreamContext {
         pendingEvents.add(event);
     }
 
+    public void observe(AgentEvent event) {
+        if (event instanceof AgentResultEvent resultEvent && isBlank(event.getSource())) {
+            finalResult = resultEvent.getResult();
+        }
+    }
+
     TokenUsageAccumulator getTokenUsageAccumulator() {
         return tokenUsageAccumulator;
     }
 
+    /**
+     * Starts a live text message without naming the reply it belongs to. Callers that know the reply
+     * id should use {@link #startTextMessage(String, String)} instead: this overload has to recover
+     * it from the message id naming convention.
+     */
     public void startTextMessage(String messageId) {
+        startTextMessage(messageId, replyIdOf(messageId));
+    }
+
+    /**
+     * Starts a live text message owned by {@code replyId}. The reply id is recorded explicitly so the
+     * correlation never depends on how the message id was named.
+     */
+    public void startTextMessage(String messageId, String replyId) {
+        String owner = replyId != null ? replyId : replyIdOf(messageId);
         if (startedTextMessages.add(messageId)) {
+            textMessageIdsByReply
+                    .computeIfAbsent(owner, ignored -> new ArrayList<>())
+                    .add(messageId);
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
+            emitRememberedTextOutputDisposition(owner);
         }
         currentTextMessageId = messageId;
     }
 
     public void appendTextDelta(String messageId, String delta) {
+        appendTextDelta(messageId, replyIdOf(messageId), delta);
+    }
+
+    public void appendTextDelta(String messageId, String replyId, String delta) {
         if (delta != null && !delta.isEmpty()) {
-            startTextMessage(messageId);
-            emit(new AguiEvent.TextMessageContent(threadId, runId, messageId, delta));
+            startTextMessage(messageId, replyId);
+            emit(new AguiEvent.TextMessageContent(threadId, runId, currentTextMessageId, delta));
         }
     }
 
@@ -163,6 +238,55 @@ public class AguiStreamContext {
             currentTextMessageId = null;
         }
         emit(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
+    }
+
+    /**
+     * Returns the AG-UI text message ids that were started for {@code replyId}, in start order. Ids
+     * are recorded for every reply regardless of {@code textOutputDispositionEnabled}, so the answer
+     * does not depend on that flag; the list is empty when nothing was streamed for the reply.
+     */
+    public List<String> getTextMessageIds(String replyId) {
+        return List.copyOf(textMessageIdsByReply.getOrDefault(replyId, List.of()));
+    }
+
+    public void emitTextOutputDisposition(TextOutputDispositionEvent dispositionEvent) {
+        TextOutputDispositionState disposition =
+                new TextOutputDispositionState(
+                        dispositionEvent.getDisposition(), dispositionEvent.getGenerateReason());
+        textOutputDispositionsByReply.put(dispositionEvent.getReplyId(), disposition);
+        emitTextOutputDisposition(dispositionEvent.getReplyId(), disposition);
+    }
+
+    public void emitFinalMessagesSnapshot(AgentEndEvent endEvent) {
+        if (!config.isTextOutputDispositionEnabled()
+                || !isBlank(endEvent.getSource())
+                || finalResult == null
+                || !FINAL_SNAPSHOT_REASONS.contains(finalResult.getGenerateReason())
+                || !pendingInterrupts.isEmpty()) {
+            return;
+        }
+        Map<String, AguiMessage> messagesById = new LinkedHashMap<>();
+        List<Msg> authoritativeMessages = authoritativeMessagesSupplier.get();
+        if (authoritativeMessages != null) {
+            for (Msg message : authoritativeMessages) {
+                if (message != null && !isGeneratedTextSegmentId(message.getId())) {
+                    messagesById.put(message.getId(), messageConverter.toAguiMessage(message));
+                }
+            }
+        }
+        if (runInput != null) {
+            // The submitted turn must survive the snapshot: agent state is not guaranteed to echo
+            // it, and consumers reconcile by replacing their streamed text with this snapshot.
+            for (AguiMessage message : runInput.getMessages()) {
+                if (message != null && !isGeneratedTextSegmentId(message.getId())) {
+                    messagesById.put(message.getId(), message);
+                }
+            }
+        }
+        messagesById.put(finalResult.getId(), messageConverter.toAguiMessage(finalResult));
+        emit(
+                new AguiEvent.MessagesSnapshot(
+                        threadId, runId, new ArrayList<>(messagesById.values())));
     }
 
     public void startReasoningMessage(String messageId) {
@@ -343,6 +467,47 @@ public class AguiStreamContext {
         return toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
     }
 
+    /**
+     * Compatibility fallback that recovers the owning reply id from a live text-segment message id
+     * ({@code <replyId>-text[-N]}, {@code <replyId>-thinking[-N]}). The converters know the reply id
+     * they are streaming and pass it explicitly; ids that are not segment ids are treated as their
+     * own reply id, which is only correct when the producer really used the reply id as a message id.
+     */
+    private static String replyIdOf(String messageId) {
+        if (messageId == null) {
+            return null;
+        }
+        Matcher matcher = TEXT_SEGMENT_ID.matcher(messageId);
+        return matcher.matches() ? matcher.group(1) : messageId;
+    }
+
+    private void emitRememberedTextOutputDisposition(String replyId) {
+        TextOutputDispositionState disposition = textOutputDispositionsByReply.get(replyId);
+        if (disposition != null) {
+            emitTextOutputDisposition(replyId, disposition);
+        }
+    }
+
+    private void emitTextOutputDisposition(String replyId, TextOutputDispositionState disposition) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("replyId", replyId);
+        value.put("messageIds", getTextMessageIds(replyId));
+        value.put("disposition", disposition.disposition().name());
+        value.put(
+                "generateReason",
+                disposition.generateReason() != null ? disposition.generateReason().name() : null);
+        emit(
+                new AguiEvent.Custom(
+                        threadId,
+                        runId,
+                        TextOutputDispositionConverter.EVENT_NAME,
+                        Collections.unmodifiableMap(value)));
+    }
+
+    private boolean isGeneratedTextSegmentId(String messageId) {
+        return messageId != null && startedTextMessages.contains(messageId);
+    }
+
     private static String normalizeToolCallName(String toolCallName) {
         return toolCallName != null && !toolCallName.isBlank() ? toolCallName : "unknown";
     }
@@ -357,6 +522,9 @@ public class AguiStreamContext {
             return data.toString();
         }
     }
+
+    private record TextOutputDispositionState(
+            TextOutputDisposition disposition, GenerateReason generateReason) {}
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();

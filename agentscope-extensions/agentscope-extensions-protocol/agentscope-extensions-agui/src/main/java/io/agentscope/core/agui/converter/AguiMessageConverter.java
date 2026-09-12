@@ -129,38 +129,58 @@ public class AguiMessageConverter {
      */
     public AguiMessage toAguiMessage(Msg msg) {
         String role = convertRole(msg.getRole());
-        StringBuilder content = new StringBuilder();
+        List<InputContent> contentParts = new ArrayList<>();
         List<AguiToolCall> toolCalls = new ArrayList<>();
         String toolCallId = null;
 
         for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                if (content.length() > 0) {
-                    content.append("\n");
-                }
-                content.append(tb.getText());
-            } else if (block instanceof ToolUseBlock tub) {
+            if (block instanceof ToolUseBlock tub) {
                 toolCalls.add(toAguiToolCall(tub));
             } else if (block instanceof ToolResultBlock trb) {
                 toolCallId = trb.getId();
-                // Extract text content from tool result
                 for (ContentBlock output : trb.getOutput()) {
-                    if (output instanceof TextBlock tb) {
-                        if (content.length() > 0) {
-                            content.append("\n");
-                        }
-                        content.append(tb.getText());
-                    }
+                    addAguiContentPart(contentParts, output);
                 }
+            } else {
+                addAguiContentPart(contentParts, block);
             }
         }
 
         return new AguiMessage(
                 msg.getId(),
                 role,
-                content.length() > 0 ? new MessageContent.Text(content.toString()) : null,
+                toMessageContent(contentParts),
                 toolCalls.isEmpty() ? null : toolCalls,
                 toolCallId);
+    }
+
+    private MessageContent toMessageContent(List<InputContent> contentParts) {
+        if (contentParts.isEmpty()) {
+            return null;
+        }
+        if (contentParts.stream().allMatch(TextInputContent.class::isInstance)) {
+            String text =
+                    contentParts.stream()
+                            .map(TextInputContent.class::cast)
+                            .map(TextInputContent::text)
+                            .collect(Collectors.joining("\n"));
+            return text.isEmpty() ? null : new MessageContent.Text(text);
+        }
+        return new MessageContent.Blocks(contentParts);
+    }
+
+    private void addAguiContentPart(List<InputContent> contentParts, ContentBlock block) {
+        if (block instanceof TextBlock text) {
+            if (text.getText() != null && !text.getText().isEmpty()) {
+                contentParts.add(new TextInputContent(text.getText()));
+            }
+        } else if (block instanceof ImageBlock image) {
+            contentParts.add(new ImageInputContent(toInputContentSource(image.getSource()), null));
+        } else if (block instanceof AudioBlock audio) {
+            contentParts.add(new AudioInputContent(toInputContentSource(audio.getSource()), null));
+        } else if (block instanceof VideoBlock video) {
+            contentParts.add(new VideoInputContent(toInputContentSource(video.getSource()), null));
+        }
     }
 
     /**
@@ -357,6 +377,16 @@ public class AguiMessageConverter {
             return new Base64Source(data.mimeType(), data.value());
         }
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
+    }
+
+    private InputContentSource toInputContentSource(Source source) {
+        if (source instanceof URLSource url) {
+            return new InputContentUrlSource(url.getUrl(), url.getMimeType());
+        }
+        if (source instanceof Base64Source data) {
+            return new InputContentDataSource(data.getData(), data.getMediaType());
+        }
+        throw new IllegalStateException("Unhandled Source type: " + source);
     }
 
     /**

@@ -29,6 +29,10 @@ import java.util.UUID;
  *
  * <p>Each event carries a unique ID, creation timestamp, and type discriminator.
  * Events are emitted during agent execution and can be consumed via reactive streams.
+ *
+ * <p>The {@code type} discriminator resolves through the types registered below, and that set grows
+ * as the library evolves. A consumer can only deserialize the type ids its own revision knows about,
+ * so it must not assume it can read back everything a newer producer is able to emit.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -37,6 +41,8 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = AgentStartEvent.class, name = "AGENT_START"),
     @JsonSubTypes.Type(value = AgentEndEvent.class, name = "AGENT_END"),
     @JsonSubTypes.Type(value = AgentResultEvent.class, name = "AGENT_RESULT"),
+    // Derived event added after the initial event set: older readers cannot resolve this id.
+    @JsonSubTypes.Type(value = TextOutputDispositionEvent.class, name = "TEXT_OUTPUT_DISPOSITION"),
     @JsonSubTypes.Type(value = ModelCallStartEvent.class, name = "MODEL_CALL_START"),
     @JsonSubTypes.Type(value = ModelCallEndEvent.class, name = "MODEL_CALL_END"),
     @JsonSubTypes.Type(value = TextBlockStartEvent.class, name = "TEXT_BLOCK_START"),

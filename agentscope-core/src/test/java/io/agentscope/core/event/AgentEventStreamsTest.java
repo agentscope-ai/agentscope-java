@@ -1,0 +1,653 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.event;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
+
+class AgentEventStreamsTest {
+
+    @Test
+    void realReActAgentClosesLastModelReplyAtInvocationEnd() {
+        ReActAgent agent =
+                ReActAgent.builder().name("test-agent").model(new MockModel("answer")).build();
+        Msg input = Msg.builder().role(MsgRole.USER).textContent("hello").build();
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(agent.streamEvents(List.of(input)))
+                        .collectList()
+                        .block();
+
+        ModelCallStartEvent modelStart =
+                events.stream()
+                        .filter(ModelCallStartEvent.class::isInstance)
+                        .map(ModelCallStartEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        AgentEndEvent agentEnd =
+                events.stream()
+                        .filter(AgentEndEvent.class::isInstance)
+                        .map(AgentEndEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        TextOutputDispositionEvent terminal =
+                events.stream()
+                        .filter(TextOutputDispositionEvent.class::isInstance)
+                        .map(TextOutputDispositionEvent.class::cast)
+                        .filter(
+                                disposition ->
+                                        disposition.getDisposition()
+                                                == TextOutputDisposition.TERMINAL)
+                        .findFirst()
+                        .orElseThrow();
+
+        assertNotEquals(modelStart.getReplyId(), agentEnd.getReplyId());
+        assertEquals(modelStart.getReplyId(), terminal.getReplyId());
+        assertEquals(GenerateReason.MODEL_STOP, terminal.getGenerateReason());
+    }
+
+    @Test
+    void emitsResultTerminalThenEndOnNormalCompletion() {
+        AgentResultEvent result = result(GenerateReason.MODEL_STOP);
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        new TextBlockEndEvent("reply-1", "block-1"),
+                                        new ModelCallEndEvent("reply-1", null),
+                                        result,
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(7, events.size());
+        assertSame(result, events.get(4));
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, events.get(5));
+        assertEquals("reply-1", disposition.getReplyId());
+        assertEquals(TextOutputDisposition.TERMINAL, disposition.getDisposition());
+        assertEquals(GenerateReason.MODEL_STOP, disposition.getGenerateReason());
+        assertSame(end, events.get(6));
+    }
+
+    @Test
+    void emitsIntermediateBeforeToolWhenVisibleTextPrecedesToolCall() {
+        ToolCallStartEvent tool = new ToolCallStartEvent("reply-1", "call-1", "search");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "checking"),
+                                        tool))
+                        .collectList()
+                        .block();
+
+        assertEquals(4, events.size());
+        assertDisposition(events.get(2), "reply-1", TextOutputDisposition.INTERMEDIATE);
+        assertSame(tool, events.get(3));
+    }
+
+    @Test
+    void emitsIntermediateAfterTextEndWhenToolCallPrecedesVisibleText() {
+        TextBlockEndEvent textEnd = new TextBlockEndEvent("reply-1", "block-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new ToolCallStartEvent("reply-1", "call-1", "search"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "checking"),
+                                        textEnd))
+                        .collectList()
+                        .block();
+
+        assertEquals(5, events.size());
+        assertSame(textEnd, events.get(3));
+        assertDisposition(events.get(4), "reply-1", TextOutputDisposition.INTERMEDIATE);
+    }
+
+    @Test
+    void emitsIntermediateBeforeNextModelRoundWithoutToolCall() {
+        ModelCallStartEvent nextRound = new ModelCallStartEvent("reply-2");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "draft"),
+                                        new ModelCallEndEvent("reply-1", null),
+                                        nextRound))
+                        .collectList()
+                        .block();
+
+        assertEquals(5, events.size());
+        assertDisposition(events.get(3), "reply-1", TextOutputDisposition.INTERMEDIATE);
+        assertSame(nextRound, events.get(4));
+    }
+
+    @Test
+    void classifiesEachReplyAtMostOnceAcrossMultipleTextSegments() {
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "first"),
+                                        new ToolCallStartEvent("reply-1", "call-1", "search"),
+                                        new TextBlockEndEvent("reply-1", "block-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-2", "second"),
+                                        new TextBlockEndEvent("reply-1", "block-2")))
+                        .collectList()
+                        .block();
+
+        assertEquals(
+                1, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void isolatesSameSourceByTaskId() {
+        AgentEvent taskAStart = tagged(new ModelCallStartEvent("reply-a"), "worker", "task-a");
+        AgentEvent taskAText =
+                tagged(
+                        new TextBlockDeltaEvent("reply-a", "block-a", "draft-a"),
+                        "worker",
+                        "task-a");
+        AgentEvent taskBStart = tagged(new ModelCallStartEvent("reply-b"), "worker", "task-b");
+        AgentEvent taskBText =
+                tagged(
+                        new TextBlockDeltaEvent("reply-b", "block-b", "draft-b"),
+                        "worker",
+                        "task-b");
+        AgentEvent taskBTool =
+                tagged(new ToolCallStartEvent("reply-b", "call-b", "search"), "worker", "task-b");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(taskAStart, taskAText, taskBStart, taskBText, taskBTool))
+                        .collectList()
+                        .block();
+
+        assertEquals(6, events.size());
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, events.get(4));
+        assertEquals("reply-b", disposition.getReplyId());
+        assertEquals("worker", disposition.getSource());
+        assertEquals("task-b", disposition.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertSame(taskBTool, events.get(5));
+    }
+
+    @Test
+    void createsIndependentStateForEachSubscription() {
+        Flux<AgentEvent> annotated =
+                AgentEventStreams.withTextOutputDisposition(
+                        Flux.just(
+                                new ModelCallStartEvent("reply-1"),
+                                new TextBlockDeltaEvent("reply-1", "block-1", "draft"),
+                                new ToolCallStartEvent("reply-1", "call-1", "search")));
+
+        List<AgentEventType> first = annotated.map(AgentEvent::getType).collectList().block();
+        List<AgentEventType> second = annotated.map(AgentEvent::getType).collectList().block();
+
+        assertEquals(first, second);
+        assertEquals(AgentEventType.TEXT_OUTPUT_DISPOSITION, first.get(2));
+    }
+
+    @Test
+    void emitsTopLevelEndWithoutTerminalWhenNoAuthoritativeResultExists() {
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(3, events.size());
+        assertSame(end, events.get(2));
+    }
+
+    @Test
+    void emitsTopLevelEndWithoutTerminalWhenAuthoritativeResultIsNull() {
+        AgentResultEvent result = new AgentResultEvent(null);
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result,
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(4, events.size());
+        assertSame(result, events.get(2));
+        assertSame(end, events.get(3));
+    }
+
+    @Test
+    void emitsTopLevelTerminalAndEndBeforeSourceErrorPropagates() {
+        RuntimeException failure = new RuntimeException("boom");
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        Flux<AgentEvent> annotated =
+                AgentEventStreams.withTextOutputDisposition(
+                        Flux.concat(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result(GenerateReason.MODEL_STOP),
+                                        end),
+                                Flux.error(failure)));
+
+        StepVerifier.create(annotated)
+                .expectNextCount(3)
+                .expectNextMatches(TextOutputDispositionEvent.class::isInstance)
+                .expectNext(end)
+                .expectErrorMatches(error -> error == failure)
+                .verify();
+    }
+
+    @Test
+    void cancellationAfterResultDoesNotSynthesizeTerminalDisposition() {
+        TestPublisher<AgentEvent> source = TestPublisher.create();
+        AgentResultEvent result = result(GenerateReason.MODEL_STOP);
+
+        StepVerifier.create(AgentEventStreams.withTextOutputDisposition(source.flux()))
+                .then(
+                        () ->
+                                source.next(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result))
+                .expectNextCount(2)
+                .expectNext(result)
+                .thenCancel()
+                .verify();
+
+        source.assertCancelled();
+    }
+
+    @Test
+    void emitsTopLevelTerminalAndEndBeforeSourceCompletes() {
+        TestPublisher<AgentEvent> source = TestPublisher.create();
+        AgentResultEvent result = result(GenerateReason.MODEL_STOP);
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+
+        StepVerifier.create(AgentEventStreams.withTextOutputDisposition(source.flux()), 0)
+                .thenRequest(1)
+                .then(() -> source.next(new ModelCallStartEvent("reply-1")))
+                .expectNextMatches(ModelCallStartEvent.class::isInstance)
+                .thenRequest(1)
+                .then(() -> source.next(new TextBlockDeltaEvent("reply-1", "block-1", "answer")))
+                .expectNextMatches(TextBlockDeltaEvent.class::isInstance)
+                .thenRequest(1)
+                .then(() -> source.next(result))
+                .expectNext(result)
+                .thenRequest(1)
+                .then(() -> source.next(end))
+                .expectNextMatches(
+                        event -> {
+                            TextOutputDispositionEvent disposition =
+                                    assertInstanceOf(TextOutputDispositionEvent.class, event);
+                            assertEquals(
+                                    TextOutputDisposition.TERMINAL, disposition.getDisposition());
+                            assertEquals("reply-1", disposition.getReplyId());
+                            return true;
+                        })
+                .thenRequest(1)
+                .expectNext(end)
+                .thenCancel()
+                .verify();
+
+        source.assertCancelled();
+    }
+
+    @Test
+    void forwardsLateEventsWithoutFailingOrClassifyingThem() {
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+        AgentResultEvent lateResult = result(GenerateReason.MODEL_STOP);
+        ToolCallStartEvent lateTool = new ToolCallStartEvent("reply-1", "call-1", "search");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        end,
+                                        lateResult,
+                                        lateTool))
+                        .collectList()
+                        .block();
+
+        assertEquals(5, events.size());
+        assertSame(end, events.get(2));
+        assertSame(lateResult, events.get(3));
+        assertSame(lateTool, events.get(4));
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void reopensSourceWhenANewInvocationStartsAfterEnd() {
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+        ToolCallStartEvent nextTool = new ToolCallStartEvent("reply-2", "call-2", "search");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        end,
+                                        new ModelCallStartEvent("reply-2"),
+                                        new TextBlockDeltaEvent("reply-2", "block-2", "more"),
+                                        nextTool))
+                        .collectList()
+                        .block();
+
+        assertEquals(7, events.size());
+        assertSame(end, events.get(2));
+        assertDisposition(events.get(5), "reply-2", TextOutputDisposition.INTERMEDIATE);
+        assertSame(nextTool, events.get(6));
+    }
+
+    @Test
+    void respectsOneAtATimeDownstreamDemandForDerivedEvents() {
+        AtomicBoolean completed = new AtomicBoolean();
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+        Flux<AgentEvent> annotated =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result(GenerateReason.STRUCTURED_OUTPUT),
+                                        end))
+                        .doOnComplete(() -> completed.set(true));
+
+        StepVerifier.create(annotated, 0)
+                .thenRequest(1)
+                .expectNextMatches(ModelCallStartEvent.class::isInstance)
+                .thenRequest(1)
+                .expectNextMatches(TextBlockDeltaEvent.class::isInstance)
+                .thenRequest(1)
+                .expectNextMatches(AgentResultEvent.class::isInstance)
+                .thenRequest(1)
+                .assertNext(
+                        event -> {
+                            TextOutputDispositionEvent disposition =
+                                    assertInstanceOf(TextOutputDispositionEvent.class, event);
+                            assertEquals(
+                                    GenerateReason.STRUCTURED_OUTPUT,
+                                    disposition.getGenerateReason());
+                        })
+                .then(() -> assertEquals(false, completed.get()))
+                .thenRequest(1)
+                .expectNext(end)
+                .verifyComplete();
+    }
+
+    @Test
+    void childEndImmediatelyClosesVisibleReplyWithTerminalDisposition() {
+        AgentEndEvent end = successfulChildEnd("reply-1", "worker", "task-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(4, events.size());
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, events.get(2));
+        assertEquals(TextOutputDisposition.TERMINAL, disposition.getDisposition());
+        assertNull(disposition.getGenerateReason());
+        assertEquals("worker", disposition.getSource());
+        assertEquals("task-1", disposition.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertSame(end, events.get(3));
+    }
+
+    @Test
+    void childDispositionCarriesCorrelationKeysOnly() {
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        successfulChildEnd("reply-1", "worker", "task-1")))
+                        .collectList()
+                        .block();
+
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, events.get(2));
+        assertEquals("task-1", disposition.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertFalse(
+                disposition.getMetadata().containsKey(AgentEndEvent.METADATA_INVOCATION_OUTCOME),
+                "the trigger's invocation outcome describes the invocation, not the disposition");
+    }
+
+    @Test
+    void reclaimsEndedChildSources() {
+        AgentEventStreams.DispositionAnnotator annotator =
+                new AgentEventStreams.DispositionAnnotator();
+
+        List<AgentEvent> events =
+                annotator
+                        .apply(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        successfulChildEnd("reply-1", "worker", "task-1"),
+                                        tagged(
+                                                new ModelCallStartEvent("reply-2"),
+                                                "worker",
+                                                "task-2"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-2", "block-2", "answer"),
+                                                "worker",
+                                                "task-2"),
+                                        successfulChildEnd("reply-2", "worker", "task-2"),
+                                        // A subagent that reports a result but never an end must
+                                        // not
+                                        // be retained either.
+                                        tagged(
+                                                result(GenerateReason.MODEL_STOP),
+                                                "worker",
+                                                "task-3")))
+                        .collectList()
+                        .block();
+
+        assertEquals(9, events.size());
+        assertEquals(
+                0,
+                annotator.retainedSourceCount(),
+                "child sources must not be retained after their end event or result");
+    }
+
+    @Test
+    void releasesTopLevelBookkeepingWhenTheNextInvocationStarts() {
+        AgentEventStreams.DispositionAnnotator annotator =
+                new AgentEventStreams.DispositionAnnotator();
+
+        List<AgentEvent> events =
+                annotator
+                        .apply(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result(GenerateReason.MODEL_STOP),
+                                        new AgentEndEvent("reply-1"),
+                                        new ModelCallStartEvent("reply-2")))
+                        .collectList()
+                        .block();
+
+        assertEquals(6, events.size());
+        assertEquals(0, annotator.retainedSourceCount());
+    }
+
+    @Test
+    void childEndWithoutExplicitSuccessOutcomeProducesNoTerminal() {
+        AgentEndEvent end =
+                (AgentEndEvent) tagged(new AgentEndEvent("reply-1"), "worker", "task-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(3, events.size());
+        assertSame(end, events.get(2));
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void abnormalChildEndProducesNoTerminal() {
+        AgentEndEvent end =
+                (AgentEndEvent)
+                        tagged(new AgentEndEvent("reply-1"), "worker", "task-1")
+                                .withMetadataEntry(
+                                        AgentEndEvent.METADATA_INVOCATION_OUTCOME,
+                                        AgentEndEvent.OUTCOME_CANCELLED);
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(3, events.size());
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void cancellationAfterChildTerminalCanPreventFollowingEnd() {
+        AgentEndEvent end = successfulChildEnd("reply-1", "worker", "task-1");
+
+        StepVerifier.create(
+                        AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end)))
+                .expectNextCount(2)
+                .expectNextMatches(TextOutputDispositionEvent.class::isInstance)
+                .thenCancel()
+                .verify();
+    }
+
+    private static AgentResultEvent result(GenerateReason reason) {
+        return new AgentResultEvent(
+                AssistantMessage.builder().textContent("answer").generateReason(reason).build());
+    }
+
+    private static AgentEndEvent successfulChildEnd(String replyId, String source, String taskId) {
+        return (AgentEndEvent)
+                tagged(new AgentEndEvent(replyId), source, taskId)
+                        .withMetadataEntry(
+                                AgentEndEvent.METADATA_INVOCATION_OUTCOME,
+                                AgentEndEvent.OUTCOME_SUCCESS);
+    }
+
+    private static AgentEvent tagged(AgentEvent event, String source, String taskId) {
+        return event.withSource(source).withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+    }
+
+    private static void assertDisposition(
+            AgentEvent event, String replyId, TextOutputDisposition expected) {
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, event);
+        assertEquals(replyId, disposition.getReplyId());
+        assertEquals(expected, disposition.getDisposition());
+    }
+}
