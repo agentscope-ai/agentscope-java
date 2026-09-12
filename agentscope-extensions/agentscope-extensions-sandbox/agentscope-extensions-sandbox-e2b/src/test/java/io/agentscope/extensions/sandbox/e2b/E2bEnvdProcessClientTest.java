@@ -17,23 +17,30 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicReference;
+import okhttp3.Interceptor;
 import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.Test;
 
 class E2bEnvdProcessClientTest {
@@ -306,5 +313,75 @@ class E2bEnvdProcessClientTest {
         E2bSandboxClientOptions options = new E2bSandboxClientOptions();
         options.setCodec(codec);
         return options;
+    }
+
+    @Test
+    void requestCarriesConnectTimeoutMsHeader() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("timeout");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 3));
+        assertEquals("3000", header.get());
+    }
+
+    @Test
+    void interruptionIsRethrownNotWrappedAsTimeout() throws Exception {
+        Interceptor interrupting =
+                chain -> {
+                    Thread.currentThread().interrupt();
+                    throw new SocketTimeoutException("read timed out");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(interrupting);
+        try {
+            SocketTimeoutException thrown =
+                    assertThrows(
+                            SocketTimeoutException.class,
+                            () -> client.runShell(state(), "/workspace", "sleep 1000", 3));
+            assertEquals("read timed out", thrown.getMessage());
+            assertTrue(Thread.currentThread().isInterrupted(), "interrupt bit must be restored");
+        } finally {
+            // Do not leak the interrupt bit into other tests.
+            Thread.interrupted();
+        }
+        assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    void nonPositiveTimeoutFailsFastWithoutRequest() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("must not be called");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> client.runShell(state(), "/workspace", "echo hi", 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> client.runShell(state(), "/workspace", "echo hi", -5));
+        assertNull(header.get(), "no HTTP request must be issued for invalid timeout");
+    }
+
+    private static E2bEnvdProcessClient clientWithInterceptor(Interceptor interceptor)
+            throws Exception {
+        E2bSandboxClientOptions opt = options(E2bCodec.PROTO);
+        opt.setHttpClient(new OkHttpClient.Builder().addInterceptor(interceptor).build());
+        return new E2bEnvdProcessClient(opt);
+    }
+
+    private static E2bSandboxState state() {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setSandboxId("test-sandbox");
+        return state;
     }
 }
