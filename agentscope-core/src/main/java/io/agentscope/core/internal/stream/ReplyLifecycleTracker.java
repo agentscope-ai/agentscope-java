@@ -31,8 +31,13 @@ import java.util.Objects;
 /**
  * Internal state tracker shared by stream annotators and middleware that reason about model replies.
  *
- * <p>This type is public only so internal components in different packages can share one set of
- * reply/source correlation rules. It is not a stable public API.
+ * <p>This type tracks only reply lifecycle: which reply is current for a source, whether visible text
+ * or a tool call has been seen for it, and whether a disposition has already been emitted. Correlating
+ * the authoritative {@link AgentResultEvent} with a source is the caller's responsibility.
+ *
+ * <p>It is public only so internal components in different packages (for example {@code
+ * io.agentscope.core.middleware}) can share one set of reply/source correlation rules. It is not part
+ * of the supported API surface and may change without notice; do not use it outside this project.
  */
 public final class ReplyLifecycleTracker {
 
@@ -65,11 +70,7 @@ public final class ReplyLifecycleTracker {
     }
 
     public record ReplySnapshot(
-            String replyId,
-            boolean textSeen,
-            boolean toolCallSeen,
-            boolean dispositionEmitted,
-            AgentResultEvent lastResult) {}
+            String replyId, boolean textSeen, boolean toolCallSeen, boolean dispositionEmitted) {}
 
     public record Observation(
             SourceKey sourceKey,
@@ -121,7 +122,6 @@ public final class ReplyLifecycleTracker {
                     state.toolCallSeen = true;
                 }
             }
-            case AGENT_RESULT -> state.lastResult = (AgentResultEvent) event;
             default -> {
                 // The remaining event kinds do not mutate shared reply state.
             }
@@ -137,7 +137,15 @@ public final class ReplyLifecycleTracker {
     }
 
     public void markDispositionEmitted(SourceKey sourceKey) {
-        states.computeIfAbsent(sourceKey, ignored -> new ReplyState()).dispositionEmitted = true;
+        ReplyState state = states.get(sourceKey);
+        if (state != null) {
+            state.dispositionEmitted = true;
+        }
+    }
+
+    /** Number of sources currently holding reply state. Package private for regression tests. */
+    int trackedSourceCount() {
+        return states.size();
     }
 
     public void clearReply(SourceKey sourceKey) {
@@ -216,15 +224,13 @@ public final class ReplyLifecycleTracker {
         private boolean textSeen;
         private boolean toolCallSeen;
         private boolean dispositionEmitted;
-        private AgentResultEvent lastResult;
 
         private ReplySnapshot snapshot() {
-            return new ReplySnapshot(
-                    replyId, textSeen, toolCallSeen, dispositionEmitted, lastResult);
+            return new ReplySnapshot(replyId, textSeen, toolCallSeen, dispositionEmitted);
         }
 
         private static ReplySnapshot emptySnapshot() {
-            return new ReplySnapshot(null, false, false, false, null);
+            return new ReplySnapshot(null, false, false, false);
         }
     }
 }

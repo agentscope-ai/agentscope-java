@@ -138,6 +138,36 @@ class FinalAnswerFilterMiddlewareTest {
                         .anyMatch(event -> "final answer".equals(event.getDelta())));
     }
 
+    @Test
+    void textFromAnIntermediateRoundIsNotLeakedIntoTheFinalRound() {
+        List<AgentEvent> events =
+                apply(
+                        Flux.just(
+                                new ModelCallStartEvent(REPLY_ID),
+                                new TextBlockDeltaEvent(REPLY_ID, "text", "checking"),
+                                new ToolCallStartEvent(REPLY_ID, "tool-1", "search"),
+                                new ModelCallEndEvent(REPLY_ID, (ChatUsage) null),
+                                new ModelCallStartEvent("reply-2"),
+                                new TextBlockStartEvent("reply-2", "text"),
+                                new TextBlockDeltaEvent("reply-2", "text", "final answer"),
+                                new TextBlockEndEvent("reply-2", "text"),
+                                new ModelCallEndEvent("reply-2", (ChatUsage) null)));
+
+        assertFalse(
+                textDeltas(events).stream().anyMatch(delta -> "checking".equals(delta.getDelta())),
+                "text from a round that produced a tool call must not reach the final answer");
+        assertTrue(
+                textDeltas(events).stream()
+                        .anyMatch(delta -> "final answer".equals(delta.getDelta())));
+    }
+
+    private static List<TextBlockDeltaEvent> textDeltas(List<AgentEvent> events) {
+        return events.stream()
+                .filter(TextBlockDeltaEvent.class::isInstance)
+                .map(TextBlockDeltaEvent.class::cast)
+                .toList();
+    }
+
     private List<AgentEvent> apply(Flux<AgentEvent> source) {
         return middleware
                 .onReasoning(

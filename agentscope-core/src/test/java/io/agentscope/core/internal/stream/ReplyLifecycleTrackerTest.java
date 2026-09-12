@@ -101,4 +101,28 @@ class ReplyLifecycleTrackerTest {
         assertFalse(next.after().textSeen());
         assertFalse(next.after().dispositionEmitted());
     }
+
+    @Test
+    void clearSourceRemovesTrackedState() {
+        ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
+        ReplyLifecycleTracker.SourceKey topLevel = ReplyLifecycleTracker.SourceKey.topLevel();
+        tracker.observe(new ModelCallStartEvent("reply-1"));
+        tracker.observe(new TextBlockDeltaEvent("reply-1", "block-1", "answer"));
+
+        tracker.clearSource(topLevel);
+
+        assertEquals(0, tracker.trackedSourceCount());
+    }
+
+    @Test
+    void markDispositionEmittedDoesNotRecreateClearedSource() {
+        ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
+        ReplyLifecycleTracker.SourceKey topLevel = ReplyLifecycleTracker.SourceKey.topLevel();
+        tracker.observe(new ModelCallStartEvent("reply-1"));
+        tracker.clearSource(topLevel);
+
+        tracker.markDispositionEmitted(topLevel);
+
+        assertEquals(0, tracker.trackedSourceCount());
+    }
 }

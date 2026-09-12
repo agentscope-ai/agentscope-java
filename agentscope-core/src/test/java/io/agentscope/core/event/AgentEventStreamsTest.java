@@ -262,7 +262,7 @@ class AgentEventStreamsTest {
     }
 
     @Test
-    void doesNotLeakPendingTopLevelEndOrTerminalOnError() {
+    void emitsTopLevelTerminalAndEndBeforeSourceErrorPropagates() {
         RuntimeException failure = new RuntimeException("boom");
         AgentEndEvent end = new AgentEndEvent("reply-1");
 
@@ -278,6 +278,8 @@ class AgentEventStreamsTest {
 
         StepVerifier.create(annotated)
                 .expectNextCount(3)
+                .expectNextMatches(TextOutputDispositionEvent.class::isInstance)
+                .expectNext(end)
                 .expectErrorMatches(error -> error == failure)
                 .verify();
     }
@@ -303,12 +305,10 @@ class AgentEventStreamsTest {
     }
 
     @Test
-    void cancellationAfterTopLevelEndIsStagedDoesNotLeakTerminalOrEnd() {
+    void emitsTopLevelTerminalAndEndBeforeSourceCompletes() {
         TestPublisher<AgentEvent> source = TestPublisher.create();
         AgentResultEvent result = result(GenerateReason.MODEL_STOP);
         AgentEndEvent end = new AgentEndEvent("reply-1");
-        AgentEvent barrier =
-                tagged(new ModelCallStartEvent("barrier-reply"), "barrier-source", "barrier-task");
 
         StepVerifier.create(AgentEventStreams.withTextOutputDisposition(source.flux()), 0)
                 .thenRequest(1)
@@ -322,8 +322,17 @@ class AgentEventStreamsTest {
                 .expectNext(result)
                 .thenRequest(1)
                 .then(() -> source.next(end))
-                .then(() -> source.next(barrier))
-                .expectNext(barrier)
+                .expectNextMatches(
+                        event -> {
+                            TextOutputDispositionEvent disposition =
+                                    assertInstanceOf(TextOutputDispositionEvent.class, event);
+                            assertEquals(
+                                    TextOutputDisposition.TERMINAL, disposition.getDisposition());
+                            assertEquals("reply-1", disposition.getReplyId());
+                            return true;
+                        })
+                .thenRequest(1)
+                .expectNext(end)
                 .thenCancel()
                 .verify();
 
@@ -331,22 +340,51 @@ class AgentEventStreamsTest {
     }
 
     @Test
-    void rejectsEventsAfterTopLevelEndWithoutLeakingHeldEvents() {
+    void forwardsLateEventsWithoutFailingOrClassifyingThem() {
+        AgentEndEvent end = new AgentEndEvent("reply-1");
         AgentResultEvent lateResult = result(GenerateReason.MODEL_STOP);
+        ToolCallStartEvent lateTool = new ToolCallStartEvent("reply-1", "call-1", "search");
 
-        StepVerifier.create(
-                        AgentEventStreams.withTextOutputDisposition(
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
                                 Flux.just(
                                         new ModelCallStartEvent("reply-1"),
                                         new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
-                                        new AgentEndEvent("reply-1"),
-                                        lateResult)))
-                .expectNextCount(2)
-                .expectErrorMatches(
-                        error ->
-                                error instanceof IllegalStateException
-                                        && error.getMessage().contains("after AgentEndEvent"))
-                .verify();
+                                        end,
+                                        lateResult,
+                                        lateTool))
+                        .collectList()
+                        .block();
+
+        assertEquals(5, events.size());
+        assertSame(end, events.get(2));
+        assertSame(lateResult, events.get(3));
+        assertSame(lateTool, events.get(4));
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void reopensSourceWhenANewInvocationStartsAfterEnd() {
+        AgentEndEvent end = new AgentEndEvent("reply-1");
+        ToolCallStartEvent nextTool = new ToolCallStartEvent("reply-2", "call-2", "search");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        end,
+                                        new ModelCallStartEvent("reply-2"),
+                                        new TextBlockDeltaEvent("reply-2", "block-2", "more"),
+                                        nextTool))
+                        .collectList()
+                        .block();
+
+        assertEquals(7, events.size());
+        assertSame(end, events.get(2));
+        assertDisposition(events.get(5), "reply-2", TextOutputDisposition.INTERMEDIATE);
+        assertSame(nextTool, events.get(6));
     }
 
     @Test
@@ -386,8 +424,7 @@ class AgentEventStreamsTest {
 
     @Test
     void childEndImmediatelyClosesVisibleReplyWithTerminalDisposition() {
-        AgentEndEvent end =
-                (AgentEndEvent) tagged(new AgentEndEvent("reply-1"), "worker", "task-1");
+        AgentEndEvent end = successfulChildEnd("reply-1", "worker", "task-1");
 
         List<AgentEvent> events =
                 AgentEventStreams.withTextOutputDisposition(
@@ -416,9 +453,65 @@ class AgentEventStreamsTest {
     }
 
     @Test
-    void cancellationAfterChildTerminalCanPreventFollowingEnd() {
+    void childEndWithoutExplicitSuccessOutcomeProducesNoTerminal() {
         AgentEndEvent end =
                 (AgentEndEvent) tagged(new AgentEndEvent("reply-1"), "worker", "task-1");
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(3, events.size());
+        assertSame(end, events.get(2));
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void abnormalChildEndProducesNoTerminal() {
+        AgentEndEvent end =
+                (AgentEndEvent)
+                        tagged(new AgentEndEvent("reply-1"), "worker", "task-1")
+                                .withMetadataEntry(
+                                        AgentEndEvent.METADATA_INVOCATION_OUTCOME,
+                                        AgentEndEvent.OUTCOME_CANCELLED);
+
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        end))
+                        .collectList()
+                        .block();
+
+        assertEquals(3, events.size());
+        assertEquals(
+                0, events.stream().filter(TextOutputDispositionEvent.class::isInstance).count());
+    }
+
+    @Test
+    void cancellationAfterChildTerminalCanPreventFollowingEnd() {
+        AgentEndEvent end = successfulChildEnd("reply-1", "worker", "task-1");
 
         StepVerifier.create(
                         AgentEventStreams.withTextOutputDisposition(
@@ -442,6 +535,14 @@ class AgentEventStreamsTest {
     private static AgentResultEvent result(GenerateReason reason) {
         return new AgentResultEvent(
                 AssistantMessage.builder().textContent("answer").generateReason(reason).build());
+    }
+
+    private static AgentEndEvent successfulChildEnd(String replyId, String source, String taskId) {
+        return (AgentEndEvent)
+                tagged(new AgentEndEvent(replyId), source, taskId)
+                        .withMetadataEntry(
+                                AgentEndEvent.METADATA_INVOCATION_OUTCOME,
+                                AgentEndEvent.OUTCOME_SUCCESS);
     }
 
     private static AgentEvent tagged(AgentEvent event, String source, String taskId) {

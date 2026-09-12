@@ -25,6 +25,13 @@ import java.util.Objects;
  *
  * <p>A terminal disposition is a lifecycle signal, not an authoritative final answer. Consumers
  * must use {@link AgentResultEvent} for the invocation result.
+ *
+ * <p><strong>Serialization compatibility.</strong> This type was added after the initial event set,
+ * so it is registered additively in {@link AgentEvent}'s type discriminator. A consumer built against
+ * an older revision cannot resolve the {@code TEXT_OUTPUT_DISPOSITION} type id and will fail to
+ * deserialize it. Producers therefore must not persist or replay these derived events into an event
+ * log that older consumers read back: drop them before persistence, or require the reader to be at
+ * least as new as the writer.
  */
 public final class TextOutputDispositionEvent extends AgentEvent {
 
