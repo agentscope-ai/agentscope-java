@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.model;
 
+import io.agentscope.core.message.ContentBlock;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
@@ -117,17 +119,24 @@ public final class ModelUtils {
                 final Duration effectiveMaxBackoff = maxBackoff;
                 final Predicate<Throwable> effectiveRetryOn = retryOn;
 
-                // Retrying is only safe before the first response is emitted: resubscribing
+                // Retrying is only safe before user-visible content is emitted: resubscribing
                 // after partial output would reissue the request and downstream would observe
                 // the first partial response followed by the retried one, duplicating content.
-                // The emission flag is created inside defer so every subscription (model call)
-                // gets a fresh flag, while it persists across retry attempts of the same call.
+                // The visibility flag is created inside defer so every subscription (model
+                // call) gets a fresh flag, while it persists across retry attempts of the same
+                // call. Role-only or usage-only chunks carry no content blocks and do not
+                // disable retries — nothing user-visible has been delivered yet.
                 final Flux<ChatResponse> source = responseFlux;
                 responseFlux =
                         Flux.defer(
                                 () -> {
-                                    AtomicBoolean emittedAnyResponse = new AtomicBoolean(false);
-                                    return source.doOnNext(response -> emittedAnyResponse.set(true))
+                                    AtomicBoolean emittedVisibleContent = new AtomicBoolean(false);
+                                    return source.doOnNext(
+                                                    response -> {
+                                                        if (hasVisibleContent(response)) {
+                                                            emittedVisibleContent.set(true);
+                                                        }
+                                                    })
                                             .retryWhen(
                                                     Retry.backoff(
                                                                     retryCount,
@@ -135,12 +144,36 @@ public final class ModelUtils {
                                                             .maxBackoff(effectiveMaxBackoff)
                                                             .jitter(0.5)
                                                             .filter(
-                                                                    error ->
-                                                                            !emittedAnyResponse
-                                                                                            .get()
-                                                                                    && effectiveRetryOn
-                                                                                            .test(
-                                                                                                    error))
+                                                                    error -> {
+                                                                        if (emittedVisibleContent
+                                                                                .get()) {
+                                                                            if (effectiveRetryOn
+                                                                                    .test(error)) {
+                                                                                LOG.warn(
+                                                                                        "Skipping"
+                                                                                            + " retry"
+                                                                                            + " of retryable"
+                                                                                            + " error"
+                                                                                            + " because"
+                                                                                            + " visible"
+                                                                                            + " content"
+                                                                                            + " was already"
+                                                                                            + " emitted"
+                                                                                            + " (retrying"
+                                                                                            + " would"
+                                                                                            + " duplicate"
+                                                                                            + " it):"
+                                                                                            + " model={},"
+                                                                                            + " error={}",
+                                                                                        modelName,
+                                                                                        error
+                                                                                                .getMessage());
+                                                                            }
+                                                                            return false;
+                                                                        }
+                                                                        return effectiveRetryOn
+                                                                                .test(error);
+                                                                    })
                                                             .doBeforeRetry(
                                                                     signal ->
                                                                             LOG.warn(
@@ -169,6 +202,20 @@ public final class ModelUtils {
         }
 
         return responseFlux;
+    }
+
+    /**
+     * Whether the response carries user-visible content (text, thinking or tool-call deltas).
+     *
+     * <p>Role-only or usage-only chunks carry no content blocks — nothing user-visible has
+     * been delivered, so retrying past them cannot duplicate content.</p>
+     *
+     * @param response the response chunk to inspect
+     * @return true if the chunk contains at least one content block
+     */
+    private static boolean hasVisibleContent(ChatResponse response) {
+        List<ContentBlock> content = response.getContent();
+        return content != null && !content.isEmpty();
     }
 
     /**

@@ -316,6 +316,53 @@ class ModelTimeoutRetryTest {
         assertEquals(1, attemptCount.get());
     }
 
+    @Test
+    @DisplayName("Should retry after role-only chunks that carry no visible content")
+    void shouldRetryAfterEmptyContentChunks() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // First attempt emits a role-only chunk (no content blocks) before the connection
+        // resets: nothing user-visible was delivered, so retrying cannot duplicate content.
+        Flux<ChatResponse> source =
+                Flux.defer(
+                        () -> {
+                            if (attemptCount.incrementAndGet() == 1) {
+                                return Flux.concat(
+                                        Flux.just(
+                                                new ChatResponse(
+                                                        "role-only-chunk",
+                                                        List.of(),
+                                                        null,
+                                                        null,
+                                                        null)),
+                                        Flux.error(
+                                                new HttpTransportException(
+                                                        "SSE/NDJSON stream failed: Connection"
+                                                                + " reset",
+                                                        new SocketException("Connection reset"))));
+                            }
+                            return Flux.just(createMockResponse());
+                        });
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        StepVerifier.create(
+                        ModelUtils.applyTimeoutAndRetry(
+                                source, options, null, "test-model", "test"))
+                // role-only chunk of attempt 1 + the full response of attempt 2
+                .expectNextCount(2)
+                .verifyComplete();
+
+        // The role-only chunk carries no visible content, so a retry was allowed
+        assertEquals(2, attemptCount.get());
+    }
+
     // Helper methods to create test models
 
     /**
