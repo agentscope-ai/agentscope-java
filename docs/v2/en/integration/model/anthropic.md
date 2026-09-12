@@ -53,7 +53,8 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 ```
 
 Pass the token without the `Bearer ` prefix; the SDK adds it. `apiKey` sets `X-Api-Key`,
-while `authToken` sets `Authorization`. If both are configured, both headers are sent.
+while `authToken` sets `Authorization`. Configure only one: setting both causes model
+construction to fail with an `IllegalArgumentException`.
 Configure authentication through the builder rather than `GenerateOptions.additionalHeaders`,
 because the SDK owns these authentication headers.
 
@@ -82,6 +83,8 @@ agentscope:
 ```
 
 `agentscope.anthropic.auth-token` is optional. An unset or blank value leaves bearer
-authentication disabled. Existing `agentscope.anthropic.api-key` configuration remains supported.
+authentication disabled. Existing `agentscope.anthropic.api-key` configuration remains supported,
+but configuring both nonblank credentials causes startup to fail. Builder customizers run before
+validation and can clear a credential with `apiKey(null)` or `authToken(null)`.
 
 Full builder options, formatters, credentials, and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).

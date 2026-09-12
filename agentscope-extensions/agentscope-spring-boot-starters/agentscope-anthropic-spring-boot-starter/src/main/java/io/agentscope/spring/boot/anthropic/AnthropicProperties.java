@@ -49,7 +49,7 @@ public class AnthropicProperties {
 
     /**
      * Bearer token for an Anthropic-compatible gateway, without the {@code Bearer } prefix.
-     * When an API key is also configured, the SDK sends both authentication headers.
+     * Mutually exclusive with the API key; configuring both causes model construction to fail.
      */
     private String authToken;
 

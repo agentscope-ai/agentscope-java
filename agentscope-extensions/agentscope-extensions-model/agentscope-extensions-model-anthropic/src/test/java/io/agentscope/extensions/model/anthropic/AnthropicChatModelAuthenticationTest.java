@@ -16,7 +16,9 @@
 package io.agentscope.extensions.model.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -91,9 +93,7 @@ class AnthropicChatModelAuthenticationTest {
         "false, , test-gateway-token",
         "true, , test-gateway-token",
         "false, test-api-key, ",
-        "true, test-api-key, ",
-        "false, test-api-key, test-gateway-token",
-        "true, test-api-key, test-gateway-token"
+        "true, test-api-key, "
     })
     void shouldSendConfiguredAuthenticationHeaders(
             boolean streaming, String apiKey, String authToken) throws Exception {
@@ -123,6 +123,49 @@ class AnthropicChatModelAuthenticationTest {
                         null);
 
         assertExchange(model, false, "test-api-key", null);
+    }
+
+    @Test
+    void shouldRejectBothCredentialsWithoutExposingTheirValues() {
+        IllegalArgumentException builderError =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                AnthropicChatModel.builder()
+                                        .apiKey("secret-api-key")
+                                        .authToken("secret-bearer-token")
+                                        .build());
+        IllegalArgumentException constructorError =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                new AnthropicChatModel(
+                                        null,
+                                        "secret-api-key",
+                                        "secret-bearer-token",
+                                        "claude-sonnet-4.5",
+                                        false,
+                                        null,
+                                        null,
+                                        null,
+                                        null));
+
+        for (IllegalArgumentException error : List.of(builderError, constructorError)) {
+            assertEquals(
+                    "apiKey and authToken are mutually exclusive; configure only one credential",
+                    error.getMessage());
+            assertFalse(error.toString().contains("secret-api-key"));
+            assertFalse(error.toString().contains("secret-bearer-token"));
+        }
+        assertEquals(0, server.getRequestCount());
+    }
+
+    @Test
+    void shouldNotExposeBearerTokenInModelOrBuilderToString() {
+        AnthropicChatModel.Builder builder =
+                AnthropicChatModel.builder().authToken("secret-bearer-token");
+        assertFalse(builder.toString().contains("secret-bearer-token"));
+        assertFalse(builder.build().toString().contains("secret-bearer-token"));
     }
 
     private void assertExchange(

@@ -111,8 +111,7 @@ public class AnthropicChatModel extends ChatModelBase {
     /**
      * Creates an Anthropic chat model with optional bearer token authentication.
      *
-     * <p>When both {@code apiKey} and {@code authToken} are configured, the SDK sends both
-     * {@code X-Api-Key} and {@code Authorization} headers.
+     * <p>{@code apiKey} and {@code authToken} are mutually exclusive.
      *
      * @param baseUrl the base URL for the Anthropic API (null for default)
      * @param apiKey the API key for authentication (null to omit)
@@ -123,6 +122,7 @@ public class AnthropicChatModel extends ChatModelBase {
      * @param formatter the message formatter to use (null for the default formatter)
      * @param proxyConfig the proxy configuration (null for no proxy)
      * @param cacheTtl the TTL for prompt-caching markers (null for default 5m)
+     * @throws IllegalArgumentException if both API key and bearer token are configured
      */
     public AnthropicChatModel(
             String baseUrl,
@@ -134,6 +134,10 @@ public class AnthropicChatModel extends ChatModelBase {
             AnthropicBaseFormatter formatter,
             ProxyConfig proxyConfig,
             String cacheTtl) {
+        if (apiKey != null && authToken != null) {
+            throw new IllegalArgumentException(
+                    "apiKey and authToken are mutually exclusive; configure only one credential");
+        }
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -358,8 +362,8 @@ public class AnthropicChatModel extends ChatModelBase {
         /**
          * Sets the bearer token for authentication with an Anthropic-compatible gateway.
          *
-         * <p>The SDK adds the {@code Bearer } prefix to the {@code Authorization} header. If an
-         * API key is also configured, the SDK sends both authentication headers.
+         * <p>The SDK adds the {@code Bearer } prefix to the {@code Authorization} header.
+         * Configuring both an API key and a bearer token causes model construction to fail.
          *
          * @param authToken the token without the {@code Bearer } prefix (null to omit)
          * @return this builder

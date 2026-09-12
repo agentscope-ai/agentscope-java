@@ -53,7 +53,8 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 ```
 
 传入的 Token 不需要包含 `Bearer ` 前缀，SDK 会自动添加。`apiKey` 设置 `X-Api-Key`，
-`authToken` 设置 `Authorization`；同时配置时，两种请求头都会发送。
+`authToken` 设置 `Authorization`；两者只能配置一个，同时配置会在创建模型时抛出
+`IllegalArgumentException`。
 这些鉴权请求头由 SDK 管理，请通过 builder 配置，不要通过 `GenerateOptions.additionalHeaders` 添加。
 
 ## Spring Boot
@@ -81,6 +82,7 @@ agentscope:
 ```
 
 `agentscope.anthropic.auth-token` 为可选配置，未设置或为空白时不启用 Bearer 鉴权。
-原有的 `agentscope.anthropic.api-key` 配置仍然可用。
+原有的 `agentscope.anthropic.api-key` 配置仍然可用，但同时配置两个非空白凭据会导致启动失败。
+Builder customizer 在校验前执行，可以通过 `apiKey(null)` 或 `authToken(null)` 清除其中一种凭据。
 
 完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

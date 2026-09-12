@@ -109,6 +109,49 @@ class AnthropicAutoConfigurationTest {
                 "Bearer customized-token");
     }
 
+    @Test
+    void shouldRejectBothCredentialsWithoutExposingTheirValues() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.model.provider=anthropic",
+                        "agentscope.anthropic.api-key=secret-api-key",
+                        "agentscope.anthropic.auth-token=secret-bearer-token")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                                    .hasStackTraceContaining(
+                                            "apiKey and authToken are mutually exclusive");
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("configure only one credential");
+                            assertThat(context.getStartupFailure().toString())
+                                    .doesNotContain("secret-api-key", "secret-bearer-token");
+                        });
+    }
+
+    @Test
+    void shouldAllowCustomizerToResolveConflictingCredentials() throws Exception {
+        assertGatewayAuthentication(
+                contextRunner
+                        .withPropertyValues(
+                                "agentscope.anthropic.api-key=test-api-key",
+                                "agentscope.anthropic.auth-token=test-gateway-token")
+                        .withBean(
+                                AnthropicChatModelBuilderCustomizer.class,
+                                () -> builder -> builder.apiKey(null)),
+                null,
+                "Bearer test-gateway-token");
+    }
+
+    @Test
+    void shouldNotExposeCredentialsInPropertiesToString() {
+        AnthropicProperties properties = new AnthropicProperties();
+        properties.setApiKey("secret-api-key");
+        properties.setAuthToken("secret-bearer-token");
+        assertThat(properties.toString()).doesNotContain("secret-api-key", "secret-bearer-token");
+    }
+
     private void assertGatewayAuthentication(
             ApplicationContextRunner runner, String expectedApiKey, String expectedAuthorization)
             throws Exception {
