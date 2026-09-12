@@ -68,6 +68,18 @@ public class HarnessAgent implements Agent {
     public void interrupt(Msg msg) {}
 
     @Override
+    public void interrupt(io.agentscope.core.agent.RuntimeContext ctx) {}
+
+    @Override
+    public void interrupt(io.agentscope.core.agent.RuntimeContext ctx, Msg msg) {}
+
+    @Override
+    public void interrupt(String runId) {}
+
+    @Override
+    public void interrupt(String runId, Msg msg) {}
+
+    @Override
     public Mono<Msg> call(List<Msg> msgs) {
         return Mono.empty();
     }

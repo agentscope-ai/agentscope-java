@@ -420,6 +420,18 @@ class JsonlTraceExporterTest {
         public void interrupt(Msg msg) {}
 
         @Override
+        public void interrupt(io.agentscope.core.agent.RuntimeContext ctx) {}
+
+        @Override
+        public void interrupt(io.agentscope.core.agent.RuntimeContext ctx, Msg msg) {}
+
+        @Override
+        public void interrupt(String runId) {}
+
+        @Override
+        public void interrupt(String runId, Msg msg) {}
+
+        @Override
         public Mono<Msg> call(Msg msg) {
             return Mono.error(new UnsupportedOperationException("not used"));
         }

@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
@@ -46,7 +45,7 @@ class SkillCuratorTest {
     void setUp() {
         fs = new LocalFilesystem(workspace);
         store = new SkillUsageStore(fs);
-        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", "main");
     }
 
     private SkillCurator newCurator(int staleAfterDays, int archiveAfterDays) {

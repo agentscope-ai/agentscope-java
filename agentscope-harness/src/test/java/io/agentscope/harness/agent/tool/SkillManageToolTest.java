@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -48,9 +47,8 @@ class SkillManageToolTest {
     @BeforeEach
     void setUp() {
         fs = new LocalFilesystem(workspace);
-        mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
-        draftsRepo =
-                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
+        mainRepo = new WorkspaceSkillRepository(fs, "skills", "main");
+        draftsRepo = new WorkspaceSkillRepository(fs, "skills/_drafts", "drafts");
         toolDraftDefault = new SkillManageTool(mainRepo, draftsRepo, SkillManageConfig.defaults());
         toolAutoPromote =
                 new SkillManageTool(
