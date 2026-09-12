@@ -130,15 +130,15 @@ public class GeminiMessageConverter {
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
                         if (signature instanceof byte[] bytes) {
+                            // In-memory: signature is already byte[]
                             partBuilder.thoughtSignature(bytes);
                         } else if (signature instanceof String base64 && !base64.isEmpty()) {
-                            // Jackson persists byte[] as a Base64 String; decode it back so
-                            // signatures survive an agent state persistence round-trip.
+                            // Persistence: the codec restores byte[] as a String
                             try {
                                 partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
                             } catch (IllegalArgumentException e) {
                                 log.warn(
-                                        "Skipping non-Base64 thought signature on tool call '{}'",
+                                        "Skipping invalid thought signature on tool call '{}'",
                                         tub.getName(),
                                         e);
                             }
