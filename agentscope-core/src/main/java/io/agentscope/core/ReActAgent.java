@@ -757,6 +757,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
+    protected List<Msg> prepareInputMessages(List<Msg> msgs, Object callScope) {
+        CallExecution scope = (CallExecution) callScope;
+        return scope.selectReplayedMessages(msgs);
+    }
+
+    @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
         RuntimeContext rc =
                 callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
@@ -1783,18 +1789,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Set<String> pendingIds = getPendingToolUseIds();
 
-            // No pending tools -> normal processing
-            if (pendingIds.isEmpty()) {
-                addToContext(msgs);
-                return coreAgent();
-            }
-
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
-            List<ToolUseBlock> asking = askingToolCalls();
+            List<ToolUseBlock> asking = pendingIds.isEmpty() ? List.of() : askingToolCalls();
             if (!asking.isEmpty()) {
                 validateAndAcceptConfirmResults(msgs, asking);
                 return resumeAgent();
+            }
+
+            // Transcript-replaying clients may resend results already consumed by this session.
+            // Normalize against the call-scoped state before either recovery or normal input
+            // handling, including calls with no pending tools. Unknown IDs remain invalid.
+            msgs = removeConsumedToolResults(msgs, pendingIds);
+
+            if (pendingIds.isEmpty()) {
+                addToContext(msgs);
+                return coreAgent();
             }
 
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
@@ -2074,6 +2084,133 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 ctx.set(i, m.withContent(rebuilt));
                 return;
             }
+        }
+
+        private List<Msg> selectReplayedMessages(List<Msg> msgs) {
+            if (rc == null
+                    || !Boolean.TRUE.equals(rc.get(RuntimeContext.REPLAYED_INPUT))
+                    || msgs == null
+                    || msgs.isEmpty()) {
+                return msgs;
+            }
+            int lastAssistant = -1;
+            for (int i = msgs.size() - 1; i >= 0; i--) {
+                if (msgs.get(i).getRole() == MsgRole.ASSISTANT) {
+                    lastAssistant = i;
+                    break;
+                }
+            }
+            if (lastAssistant < 0) {
+                return msgs;
+            }
+
+            Set<String> pendingIds = getPendingToolUseIds();
+            List<Msg> selected = new ArrayList<>();
+            // Clients can split one server tool round into several local assistant turns. Do
+            // not let those turns hide a result for a call the server is still waiting for.
+            for (int i = 0; i <= lastAssistant; i++) {
+                Msg msg = msgs.get(i);
+                List<ContentBlock> results =
+                        msg.getContent().stream()
+                                .filter(
+                                        block ->
+                                                block instanceof ToolResultBlock result
+                                                        && pendingIds.contains(result.getId()))
+                                .toList();
+                if (!results.isEmpty()) {
+                    selected.add(msg.withContent(results));
+                }
+            }
+            selected.addAll(msgs.subList(lastAssistant + 1, msgs.size()));
+            // Preserve regenerate/continue behavior, but never replay the old user prompt in
+            // place of a pending tool result found in the middle of the transcript.
+            if (selected.isEmpty()) {
+                for (int i = lastAssistant - 1; i >= 0; i--) {
+                    if (msgs.get(i).getRole() == MsgRole.USER) {
+                        selected.add(msgs.get(i));
+                        break;
+                    }
+                }
+            }
+            return selected;
+        }
+
+        private List<Msg> removeConsumedToolResults(List<Msg> msgs, Set<String> pendingIds) {
+            if (msgs == null
+                    || msgs.stream().noneMatch(m -> m.hasContentBlocks(ToolResultBlock.class))) {
+                return msgs;
+            }
+
+            Set<String> consumedIds =
+                    state.contextMutable().stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .map(ToolResultBlock::getId)
+                            .collect(Collectors.toSet());
+            Set<String> historicalToolIds =
+                    state.contextMutable().stream()
+                            .filter(m -> m.getRole() == MsgRole.ASSISTANT)
+                            .flatMap(m -> m.getContentBlocks(ToolUseBlock.class).stream())
+                            .map(ToolUseBlock::getId)
+                            .collect(Collectors.toSet());
+            consumedIds.retainAll(historicalToolIds);
+            // A stateless caller can supply complete tool-call/result history in its input.
+            boolean initialTranscript = state.contextMutable().isEmpty();
+            Set<String> inputToolIds = new HashSet<>();
+            Set<String> providedIds = new HashSet<>();
+            Set<String> invalidIds = new HashSet<>();
+            for (Msg msg : msgs) {
+                if (initialTranscript && msg.getRole() == MsgRole.ASSISTANT) {
+                    msg.getContentBlocks(ToolUseBlock.class).stream()
+                            .map(ToolUseBlock::getId)
+                            .forEach(inputToolIds::add);
+                }
+                for (ToolResultBlock result : msg.getContentBlocks(ToolResultBlock.class)) {
+                    String id = result.getId();
+                    if (!providedIds.add(id)) {
+                        throw new IllegalStateException("Duplicate tool result ID: " + id);
+                    }
+                    if (!pendingIds.contains(id)
+                            && !consumedIds.contains(id)
+                            && !inputToolIds.contains(id)) {
+                        invalidIds.add(id);
+                    }
+                }
+            }
+            if (!invalidIds.isEmpty()) {
+                throw new IllegalStateException(
+                        "Invalid tool result IDs: " + invalidIds + ". Expected: " + pendingIds);
+            }
+
+            Set<String> replayedIds = new HashSet<>(providedIds);
+            replayedIds.retainAll(consumedIds);
+            if (!replayedIds.isEmpty()) {
+                log.debug("Ignoring previously consumed tool result IDs: {}", replayedIds);
+            }
+
+            List<Msg> cleaned = new ArrayList<>();
+            for (Msg msg : msgs) {
+                List<ContentBlock> content =
+                        msg.getContent().stream()
+                                .filter(
+                                        block ->
+                                                !(block instanceof ToolResultBlock result)
+                                                        || !consumedIds.contains(result.getId()))
+                                .toList();
+                if (content.size() == msg.getContent().size()) {
+                    cleaned.add(msg);
+                } else if (!content.isEmpty()
+                        || (msg.getMetadata() != null
+                                && msg.getMetadata().containsKey(Msg.METADATA_CONFIRM_RESULTS))) {
+                    cleaned.add(msg.withContent(content));
+                }
+            }
+            if (cleaned.isEmpty()) {
+                throw new IllegalStateException(
+                        "Input contains only previously consumed tool results. Provide new"
+                                + " messages or results for pending IDs: "
+                                + pendingIds);
+            }
+            return cleaned;
         }
 
         private void maybePatchPendingToolCalls(List<Msg> msgs, Set<String> pendingIds) {

@@ -334,6 +334,12 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
+## 服务端记忆与历史消息重放
+
+存在服务端记忆时，`AguiRequestProcessor` 会向 ReAct 类型的 agent 传入完整客户端历史，并设置 `RuntimeContext.REPLAYED_INPUT=true`。Agent 加载当前用户、会话的最新状态后，选取客户端最后一条 assistant 之后的消息，同时找回历史中匹配当前待处理工具调用的结果；其他早期历史不再追加。无状态输入和非 ReAct agent 保持原有行为。
+
+选中输入里已消费的工具结果会被移除。未知结果 ID、重复提交的 ID，以及“部分工具结果加文本”仍会报错；仅包含已消费结果的请求也会被拒绝。ReActAgent 在没有待处理调用时也会拒绝孤立的结果 ID；首次传入的客户端历史仍可包含与前序 assistant 工具调用配对的结果。清理后若只剩新指令、缺少当前工具结果，仍须启用 `enablePendingToolRecovery=true`，才能为遗留调用生成错误结果并继续处理。权限确认及官方 `resume[]` 契约继续生效，历史重放不会自动批准 ASKING 工具。
+
 ## 示例项目
 
 完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：

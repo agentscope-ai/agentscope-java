@@ -32,6 +32,15 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class RuntimeContext {
 
+    /**
+     * Boolean attribute indicating that input contains a replayed client transcript while the
+     * server owns conversation history. ReActAgent selects follow-up messages after the last
+     * client assistant turn, plus results for currently pending calls anywhere in the transcript.
+     * Selection happens after the authoritative session state is loaded. Omit this attribute for
+     * incremental input or stateless, client-owned history.
+     */
+    public static final String REPLAYED_INPUT = "agentscope_replayed_input";
+
     private static final String TYPED_DEFAULT_KEY = "";
 
     private final String sessionId;
