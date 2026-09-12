@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.model;
 
+import io.agentscope.core.message.ContentBlock;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,25 +113,88 @@ public final class ModelUtils {
                 if (retryOn == null) {
                     retryOn = error -> true; // retry all errors by default
                 }
+                // Lambda captures below require effectively final variables
+                final int retryCount = maxAttempts - 1;
+                final Duration effectiveInitialBackoff = initialBackoff;
+                final Duration effectiveMaxBackoff = maxBackoff;
+                final Predicate<Throwable> effectiveRetryOn = retryOn;
 
-                Retry retrySpec =
-                        Retry.backoff(maxAttempts - 1, initialBackoff)
-                                .maxBackoff(maxBackoff)
-                                .jitter(0.5)
-                                .filter(retryOn)
-                                .doBeforeRetry(
-                                        signal ->
-                                                LOG.warn(
-                                                        "Retrying model request (attempt {}/{}) due"
-                                                                + " to: {}",
-                                                        signal.totalRetriesInARow() + 1,
-                                                        maxAttempts - 1,
-                                                        signal.failure().getMessage(),
-                                                        signal.failure()));
-
-                responseFlux = responseFlux.retryWhen(retrySpec);
+                // Retrying is only safe before user-visible content is emitted: resubscribing
+                // after partial output would reissue the request and downstream would observe
+                // the first partial response followed by the retried one, duplicating content.
+                // The visibility flag is created inside defer so every subscription (model
+                // call) gets a fresh flag, while it persists across retry attempts of the same
+                // call. Role-only or usage-only chunks carry no content blocks and do not
+                // disable retries — nothing user-visible has been delivered yet.
+                final Flux<ChatResponse> source = responseFlux;
+                responseFlux =
+                        Flux.defer(
+                                () -> {
+                                    AtomicBoolean emittedVisibleContent = new AtomicBoolean(false);
+                                    return source.doOnNext(
+                                                    response -> {
+                                                        if (hasVisibleContent(response)) {
+                                                            emittedVisibleContent.set(true);
+                                                        }
+                                                    })
+                                            .retryWhen(
+                                                    Retry.backoff(
+                                                                    retryCount,
+                                                                    effectiveInitialBackoff)
+                                                            .maxBackoff(effectiveMaxBackoff)
+                                                            .jitter(0.5)
+                                                            .filter(
+                                                                    error -> {
+                                                                        if (emittedVisibleContent
+                                                                                .get()) {
+                                                                            if (effectiveRetryOn
+                                                                                    .test(error)) {
+                                                                                LOG.warn(
+                                                                                        "Skipping"
+                                                                                            + " retry"
+                                                                                            + " of retryable"
+                                                                                            + " error"
+                                                                                            + " because"
+                                                                                            + " visible"
+                                                                                            + " content"
+                                                                                            + " was already"
+                                                                                            + " emitted"
+                                                                                            + " (retrying"
+                                                                                            + " would"
+                                                                                            + " duplicate"
+                                                                                            + " it):"
+                                                                                            + " model={},"
+                                                                                            + " error={}",
+                                                                                        modelName,
+                                                                                        error
+                                                                                                .getMessage());
+                                                                            }
+                                                                            return false;
+                                                                        }
+                                                                        return effectiveRetryOn
+                                                                                .test(error);
+                                                                    })
+                                                            .doBeforeRetry(
+                                                                    signal ->
+                                                                            LOG.warn(
+                                                                                    "Retrying model"
+                                                                                        + " request"
+                                                                                        + " (attempt"
+                                                                                        + " {}/{})"
+                                                                                        + " due to:"
+                                                                                        + " {}",
+                                                                                    signal
+                                                                                                    .totalRetriesInARow()
+                                                                                            + 1,
+                                                                                    retryCount,
+                                                                                    signal.failure()
+                                                                                            .getMessage(),
+                                                                                    signal
+                                                                                            .failure())));
+                                });
                 LOG.debug(
-                        "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
+                        "Applied retry config: maxAttempts={}, initialBackoff={},"
+                                + " retryBeforeFirstResponse=true for model: {}",
                         maxAttempts,
                         initialBackoff,
                         modelName);
@@ -136,6 +202,20 @@ public final class ModelUtils {
         }
 
         return responseFlux;
+    }
+
+    /**
+     * Whether the response carries user-visible content (text, thinking or tool-call deltas).
+     *
+     * <p>Role-only or usage-only chunks carry no content blocks — nothing user-visible has
+     * been delivered, so retrying past them cannot duplicate content.</p>
+     *
+     * @param response the response chunk to inspect
+     * @return true if the chunk contains at least one content block
+     */
+    private static boolean hasVisibleContent(ChatResponse response) {
+        List<ContentBlock> content = response.getContent();
+        return content != null && !content.isEmpty();
     }
 
     /**
