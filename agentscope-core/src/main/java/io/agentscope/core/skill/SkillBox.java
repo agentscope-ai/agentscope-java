@@ -529,16 +529,9 @@ public class SkillBox {
             return;
         }
 
-        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
-            toolkit.createToolGroup(
-                    "skill-build-in-tools",
-                    "skill build in tools, could contain(load_skill_through_path)");
-        }
-
-        toolkit.registration()
-                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
-                .group("skill-build-in-tools")
-                .apply();
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement.
+        toolkit.registration().agentTool(skillToolFactory.createSkillAccessToolAgentTool()).apply();
 
         logger.info("Registered skill load tools to toolkit");
     }

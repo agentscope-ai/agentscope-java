@@ -402,7 +402,7 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) as an ungrouped, always-visible tool.
 - It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
 At runtime, the agent invokes the viewer with two required arguments:

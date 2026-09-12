@@ -96,15 +96,9 @@ class SkillToolFactory {
                             + " already present on this toolkit)");
             return;
         }
-        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
-            toolkit.createToolGroup(
-                    "skill-build-in-tools",
-                    "skill build in tools, could contain(load_skill_through_path)");
-        }
-        toolkit.registration()
-                .agentTool(createRuntimeLoadTool())
-                .group("skill-build-in-tools")
-                .apply();
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement (like reset_equipped_tools itself).
+        toolkit.registration().agentTool(createRuntimeLoadTool()).apply();
     }
 
     /**
