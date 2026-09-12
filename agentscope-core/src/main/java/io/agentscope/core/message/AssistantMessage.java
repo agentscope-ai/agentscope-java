@@ -72,7 +72,6 @@ public final class AssistantMessage extends Msg {
     private AssistantMessage(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("timestamp") String timestamp,
@@ -167,8 +166,7 @@ public final class AssistantMessage extends Msg {
 
         @Override
         public AssistantMessage build() {
-            return new AssistantMessage(
-                    id, name, MsgRole.ASSISTANT, content, metadata, timestamp, usage);
+            return new AssistantMessage(id, name, content, metadata, timestamp, usage);
         }
     }
 }
