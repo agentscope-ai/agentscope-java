@@ -72,21 +72,6 @@ public class AnthropicChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final AnthropicBaseFormatter formatter;
 
-    /**
-     * Creates a new Anthropic chat model instance.
-     *
-     * @param baseUrl        the base URL for Anthropic API (null for default)
-     * @param apiKey         the API key for authentication (null to load from
-     *                       ANTHROPIC_API_KEY env var)
-     * @param modelName      the model name to use (e.g.,
-     *                       "claude-sonnet-4-5-20250929")
-     * @param streamEnabled  whether streaming should be enabled
-     * @param defaultOptions default generation options
-     * @param formatter      the message formatter to use (null for default
-     *                       Anthropic formatter)
-     * @param proxyConfig    the proxy configuration (null for no proxy)
-     * @param cacheTtl       the TTL for prompt-caching markers (null for default 5m)
-     */
     public AnthropicChatModel(
             String baseUrl,
             String apiKey,
