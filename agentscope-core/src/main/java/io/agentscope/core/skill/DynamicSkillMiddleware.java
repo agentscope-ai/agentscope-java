@@ -27,11 +27,13 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -47,9 +49,10 @@ import reactor.core.publisher.Mono;
  *
  * <p>Rebuilding on every call is intentional: per-user namespaced repositories may return
  * different content under the same skill name as the {@link RuntimeContext} switches users, so
- * caching by skill id alone would mask those swaps. {@code bindToolkit} /
- * {@code registerSkillLoadTool} are idempotent on a fresh {@link SkillBox}, so the rebuild stays
- * cheap.
+ * caching by skill id alone would mask those swaps. A content-addressed cache keyed by the
+ * visible-view signature reuses an already-materialised (immutable) box when the visible content
+ * is unchanged, so {@code uploadSkillFiles} only re-runs when content actually changes. No tools
+ * are (re)registered on the shared toolkit.
  *
  * <p>Subclasses can plug runtime visibility logic (canary lists, environment gates, etc.) by
  * overriding {@link #filterVisible(List, RuntimeContext)} — the default implementation returns
@@ -59,6 +62,7 @@ import reactor.core.publisher.Mono;
 public class DynamicSkillMiddleware implements MiddlewareBase {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicSkillMiddleware.class);
+    private static final int MAX_CACHED_BOXES = 32;
 
     private final List<AgentSkillRepository> repositories;
     private final Toolkit toolkit;
@@ -72,10 +76,10 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      */
     private volatile Path stableWorkDir;
 
-    private volatile SkillBox currentSkillBox;
-
-    /** Hash of the last merged-and-filtered skill view; identical hash ⇒ reuse {@link #currentSkillBox}. */
-    private volatile String lastSignature;
+    /** Content-addressed cache of materialised {@link SkillBox}es, keyed by the visible-view
+     * signature. Boxes are immutable after build, so sharing them across sessions with identical
+     * content is safe and skips re-running {@code uploadSkillFiles}. */
+    private final Map<String, SkillBox> boxCache = new ConcurrentHashMap<>();
 
     public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
         this(repositories, toolkit, null, false, null);
@@ -105,29 +109,30 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             boolean codeExecutionEnabled,
             Path workDir) {
         this.repositories = repositories != null ? List.copyOf(repositories) : List.of();
+        if (toolkit != null) {
+            // Register the shared load_skill_through_path tool once at build time. It resolves the
+            // current per-call SkillBox from the RuntimeContext, so it is never re-registered and
+            // the shared toolkit is never mutated per call.
+            SkillToolFactory.registerRuntimeLoadTool(toolkit);
+        }
         this.toolkit = toolkit;
         this.builderFilter = builderFilter != null ? builderFilter : SkillFilter.all();
         this.codeExecutionEnabled = codeExecutionEnabled;
         this.stableWorkDir = workDir;
     }
 
-    /**
-     * Returns the most recently materialised {@link SkillBox}, or {@code null} when no skills
-     * are visible yet (e.g. before the first {@code call()}).
-     */
-    public SkillBox getCurrentSkillBox() {
-        return currentSkillBox;
-    }
-
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        reloadSkills(rc);
-        if (currentSkillBox == null) {
+        SkillBox box = reloadSkills(rc);
+        // Expose the current per-call SkillBox — or clear it when null — so the shared load tool
+        // resolves this call's skill view and a reused RuntimeContext never serves a stale box.
+        rc.put(SkillBox.class, box);
+        if (box == null) {
             return Mono.just(currentPrompt);
         }
         SkillFilter effectiveFilter = resolveFilter(rc);
-        String prompt = currentSkillBox.getSkillPrompt(effectiveFilter);
+        String prompt = box.getSkillPrompt(effectiveFilter);
         if (prompt == null || prompt.isEmpty()) {
             return Mono.just(currentPrompt);
         }
@@ -157,11 +162,9 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         return builderFilter.overlay(runtimeOverlay);
     }
 
-    private void reloadSkills(RuntimeContext ctx) {
+    private SkillBox reloadSkills(RuntimeContext ctx) {
         if (repositories.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
         Map<String, AgentSkill> skillsByName = new LinkedHashMap<>();
         for (AgentSkillRepository repo : repositories) {
@@ -186,9 +189,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             }
         }
         if (skillsByName.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
         // Apply subclass visibility hook before the SkillBox is rebuilt so the prompt only
         // sees skills the current ctx is allowed to see.
@@ -204,34 +205,31 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             visible = new ArrayList<>(skillsByName.values());
         }
         if (visible.isEmpty()) {
-            currentSkillBox = null;
-            lastSignature = null;
-            return;
+            return null;
         }
 
-        // Content-keyed short-circuit: if the (sorted) merged view hashes to the same value as
-        // the previous call AND we already have a SkillBox, skip the entire rebuild + upload.
-        // This is the common case once the agent has been running for a while — repos don't
-        // change between most turns.
         String signature = computeSignature(visible);
-        if (signature.equals(lastSignature) && currentSkillBox != null) {
-            return;
+        SkillBox box = boxCache.get(signature);
+        if (box == null) {
+            box = buildBox(visible);
+            if (boxCache.size() >= MAX_CACHED_BOXES) {
+                // The cache is keyed by distinct visible content, so it grows only when skills
+                // change or per-user namespaces produce new content; reset rather than grow
+                // unbounded.
+                boxCache.clear();
+            }
+            boxCache.put(signature, box);
         }
+        return box;
+    }
 
+    private SkillBox buildBox(List<AgentSkill> visible) {
         SkillBox box = new SkillBox(toolkit);
         // Hand it the stable workDir BEFORE uploadSkillFiles runs so the upload lands at a
         // predictable location and we don't mkdtemp per call.
         box.setWorkDir(ensureStableWorkDir());
         for (AgentSkill skill : visible) {
             box.registerSkill(skill);
-        }
-        if (toolkit != null) {
-            try {
-                box.bindToolkit(toolkit);
-                box.registerSkillLoadTool();
-            } catch (Exception e) {
-                log.warn("Failed to bind skill toolkit hooks: {}", e.getMessage());
-            }
         }
         if (box.isAutoUploadSkill()) {
             try {
@@ -245,8 +243,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         // originDir) or fall back to the single uploadDir template. Either way the LLM gets
         // an addressable path instead of staring at a `load_skill_through_path` blob.
         box.getSkillPromptProvider().setCodeExecutionEnable(codeExecutionEnabled);
-        currentSkillBox = box;
-        lastSignature = signature;
+        return box;
     }
 
     /**
@@ -301,12 +298,12 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     /**
-     * Build a deterministic SHA-256 over the merged skill view: per-skill {@code name +
-     * sha256(content) + sha256(sorted-resource-keys) + originDir}. Two reload calls with the
-     * same repository content produce the same signature, regardless of map iteration order.
+     * Build a deterministic SHA-256 over the merged visible skill view: per-skill {@code name +
+     * sha256(content) + sha256(sorted-resource-keys) + originDir}. Two reload calls with the same
+     * visible content produce the same signature, regardless of map iteration order, so the
+     * content-addressed {@link #boxCache} can reuse a box without re-uploading its files.
      */
     private static String computeSignature(List<AgentSkill> visible) {
-        // Use a sorted set so that LinkedHashMap insertion-order changes don't perturb the hash.
         Set<String> sortedNames = new TreeSet<>();
         for (AgentSkill s : visible) {
             sortedNames.add(s.getName());
@@ -322,12 +319,18 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                 md.update(name.getBytes(StandardCharsets.UTF_8));
                 md.update((byte) 0);
                 md.update(
+                        s.getSource() != null
+                                ? s.getSource().getBytes(StandardCharsets.UTF_8)
+                                : new byte[0]);
+                md.update((byte) 0);
+                hashMetadata(md, s.getMetadata());
+                md.update((byte) 0);
+                md.update(
                         s.getSkillContent() != null
                                 ? s.getSkillContent().getBytes(StandardCharsets.UTF_8)
                                 : new byte[0]);
                 md.update((byte) 0);
-                Set<String> sortedResources = new TreeSet<>(s.getResources().keySet());
-                for (String key : sortedResources) {
+                for (String key : new TreeSet<>(s.getResources().keySet())) {
                     md.update(key.getBytes(StandardCharsets.UTF_8));
                     String val = s.getResources().get(key);
                     if (val != null) {
@@ -342,11 +345,56 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             byte[] hash = md.digest();
             StringBuilder hex = new StringBuilder(hash.length * 2);
             for (byte b : hash) {
-                hex.append(String.format("%02x", b));
+                hex.append(String.format("%02x", b & 0xff));
             }
             return hex.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    /** Hashes a skill's full metadata (sorted keys, nested maps/lists recursively) so that custom
+     * fields rendered into the prompt (version/homepage/license/...) also participate in the
+     * content signature. */
+    private static void hashMetadata(MessageDigest md, Map<String, Object> metadata) {
+        if (metadata == null) {
+            return;
+        }
+        for (String key : new TreeSet<>(metadata.keySet())) {
+            md.update(key.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            hashMetadataValue(md, metadata.get(key));
+            md.update((byte) 0);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void hashMetadataValue(MessageDigest md, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String s) {
+            md.update(s.getBytes(StandardCharsets.UTF_8));
+        } else if (value instanceof Map<?, ?> rawMap) {
+            @SuppressWarnings("unchecked")
+            Map<Object, Object> map = (Map<Object, Object>) rawMap;
+            md.update((byte) '{');
+            List<Object> keys = new ArrayList<>(map.keySet());
+            keys.sort(Comparator.comparing(Object::toString));
+            for (Object key : keys) {
+                md.update(String.valueOf(key).getBytes(StandardCharsets.UTF_8));
+                md.update((byte) ':');
+                hashMetadataValue(md, map.get(key));
+            }
+            md.update((byte) '}');
+        } else if (value instanceof List<?> list) {
+            md.update((byte) '[');
+            for (Object element : list) {
+                hashMetadataValue(md, element);
+            }
+            md.update((byte) ']');
+        } else {
+            md.update(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
         }
     }
 }

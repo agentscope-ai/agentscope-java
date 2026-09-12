@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
@@ -164,21 +163,10 @@ class MetaToolFactory {
             return "Error: reset_equipped_tools requires a per-session runtime context";
         }
 
-        // Single source of truth: recompute the session's activation set without touching the
-        // shared group manager. Keep EXTERNAL-scoped groups, replace META-scoped ones.
-        Set<String> metaGroupNames = groupManager.getMetaGroupNames();
-        List<String> nextActivatedGroups = new ArrayList<>();
-        for (String g : tcs.getActivatedGroups()) {
-            if (!metaGroupNames.contains(g)) {
-                nextActivatedGroups.add(g);
-            }
-        }
-        for (String g : toActivate) {
-            if (!nextActivatedGroups.contains(g)) {
-                nextActivatedGroups.add(g);
-            }
-        }
-        tcs.setActivatedGroups(nextActivatedGroups);
+        // Single source of truth: atomically keep EXTERNAL-scoped groups and replace META-scoped
+        // ones,
+        // so a concurrent additive tool (skill activation) is not lost by this replace.
+        tcs.replaceActivatedGroups(groupManager.getMetaGroupNames(), toActivate);
 
         // Build response (aligned with Python format)
         if (toActivate.isEmpty()) {
