@@ -127,4 +127,25 @@ public interface AgentTool {
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> callAsync(ToolCallParam param);
+
+    /**
+     * Executes the tool through the framework's execution infrastructure.
+     *
+     * <p>Called by {@link ToolExecutor} when running a tool call through the scheduling, timeout,
+     * retry and shutdown layers; application code should keep using
+     * {@link #callAsync(ToolCallParam)}. Unlike {@link #callAsync(ToolCallParam)}, failures stay
+     * as reactive error signals so they can be retried; the executor converts the final error
+     * into an error result once retries are exhausted.
+     *
+     * <p>Each subscription must be a fresh attempt, business failures must stay completed
+     * {@link ToolResultBlock} error results, and {@link ToolSuspendException} must propagate as
+     * an error signal. The default implementation delegates to {@link #callAsync(ToolCallParam)};
+     * built-in tools override it to keep exceptions as error signals.
+     *
+     * @param param The tool call parameters
+     * @return Mono containing ToolResultBlock, or signalling an error on failure
+     */
+    default Mono<ToolResultBlock> callAsyncForExecution(ToolCallParam param) {
+        return callAsync(param);
+    }
 }

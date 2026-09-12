@@ -15,7 +15,11 @@
  */
 package io.agentscope.core.util;
 
+import io.agentscope.core.tool.ToolSuspendException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.IdentityHashMap;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Utility methods for exception handling.
@@ -78,5 +82,47 @@ public final class ExceptionUtils {
             current = current.getCause();
         }
         return false;
+    }
+
+    /**
+     * Unwraps {@link InvocationTargetException}, {@link ExecutionException} and
+     * {@link CompletionException} wrappers to expose the original failure.
+     *
+     * @param error the throwable to unwrap (may be {@code null})
+     * @return the innermost non-wrapper throwable, or {@code null} if the input is {@code null}
+     */
+    public static Throwable unwrapExecutionWrapper(Throwable error) {
+        Throwable current = error;
+        while (current instanceof InvocationTargetException
+                || current instanceof ExecutionException
+                || current instanceof CompletionException) {
+            Throwable cause = current.getCause();
+            if (cause == null) {
+                break;
+            }
+            current = cause;
+        }
+        return current;
+    }
+
+    /**
+     * Finds a {@link ToolSuspendException} anywhere in the given throwable's cause chain.
+     *
+     * <p>The cause chain is walked with an identity set guard so circular causes cannot cause an
+     * infinite loop.
+     *
+     * @param error the throwable to inspect (may be {@code null})
+     * @return the first {@link ToolSuspendException} found, or {@code null} if none is present
+     */
+    public static ToolSuspendException findToolSuspendException(Throwable error) {
+        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
+        Throwable current = error;
+        while (current != null && visited.put(current, Boolean.TRUE) == null) {
+            if (current instanceof ToolSuspendException suspendException) {
+                return suspendException;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 }
