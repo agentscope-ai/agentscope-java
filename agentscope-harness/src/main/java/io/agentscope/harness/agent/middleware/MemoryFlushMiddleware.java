@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -85,6 +86,13 @@ import reactor.core.scheduler.Schedulers;
 public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
+
+    /**
+     * Upper bound on the flush LLM call, so a hung model provider cannot pin the conversation's
+     * coalescing slot forever (every later flush of that conversation would queue behind it) or
+     * keep the JVM-wide quiescence count above zero for the rest of the process lifetime.
+     */
+    static final Duration FLUSH_TIMEOUT = Duration.ofMinutes(5);
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
@@ -149,6 +157,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
+    /** Timeout applied to the flush pipeline; production builds use {@link #FLUSH_TIMEOUT}. */
+    private Duration flushTimeout = FLUSH_TIMEOUT;
+
+    /** Test hook to shrink the flush timeout; keeps timeout behaviour unit-testable. */
+    void setFlushTimeoutForTests(Duration timeout) {
+        this.flushTimeout = timeout != null ? timeout : FLUSH_TIMEOUT;
+    }
+
     @Override
     public Flux<AgentEvent> onAgent(
             Agent agent,
@@ -203,6 +219,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private void runFlush(String key, Agent agent, RuntimeContext rc) {
         Mono.defer(() -> doFlush(agent, rc))
                 .subscribeOn(Schedulers.boundedElastic())
+                .timeout(flushTimeout)
                 .doFinally(
                         signal -> {
                             MemoryBackgroundTasks.end();
