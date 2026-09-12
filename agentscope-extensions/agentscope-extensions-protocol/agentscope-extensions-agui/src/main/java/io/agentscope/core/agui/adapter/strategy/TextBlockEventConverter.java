@@ -34,7 +34,9 @@ final class TextBlockEventConverter implements AgentEventConverter {
         if (event instanceof TextBlockDeltaEvent delta) {
             // AguiEvent.TextMessageStart delays sending when content arrives
             context.appendTextDelta(
-                    messageId(delta.getReplyId(), delta.getBlockId()), delta.getDelta());
+                    messageId(delta.getReplyId(), delta.getBlockId()),
+                    delta.getReplyId(),
+                    delta.getDelta());
         } else if (event instanceof TextBlockEndEvent end) {
             context.closeTextMessage(messageId(end.getReplyId(), end.getBlockId()));
         }

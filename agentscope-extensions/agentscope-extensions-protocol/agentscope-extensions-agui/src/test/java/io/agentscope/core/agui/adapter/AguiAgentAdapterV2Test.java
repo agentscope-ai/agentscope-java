@@ -665,15 +665,44 @@ class AguiAgentAdapterV2Test {
 
             assertEquals(finishedIndex - 1, snapshotIndex);
             assertEquals(
-                    List.of("session-user", "reply-final"),
+                    List.of("session-user", "reply-final", "msg-1"),
                     snapshot.messages().stream().map(AguiMessage::getId).toList());
-            AguiMessage resultMessage = snapshot.messages().get(1);
+            AguiMessage resultMessage =
+                    snapshot.messages().stream()
+                            .filter(message -> "reply-final".equals(message.getId()))
+                            .findFirst()
+                            .orElseThrow();
             assertEquals("canonical result", resultMessage.getTextContent());
             assertEquals(1, resultMessage.getToolCalls().size());
             assertFalse(
                     snapshot.messages().stream()
                             .map(AguiMessage::getId)
                             .anyMatch("reply-final-text-live"::equals));
+        }
+
+        @Test
+        void testFinalSnapshotKeepsSubmittedTurnWhenAgentStateDoesNotEchoIt() {
+            Msg assistantOnly =
+                    AssistantMessage.builder()
+                            .id("reply-previous")
+                            .content(TextBlock.builder().text("previous answer").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+            AgentState state = AgentState.builder().context(List.of(assistantOnly)).build();
+            RuntimeContext callerContext = RuntimeContext.builder().agentState(state).build();
+            Msg finalResult =
+                    AssistantMessage.builder()
+                            .id("reply-final")
+                            .content(TextBlock.builder().text("canonical result").build())
+                            .generateReason(GenerateReason.MODEL_STOP)
+                            .build();
+
+            List<AguiEvent> events = runTerminalDisposition(callerContext, finalResult);
+
+            assertEquals(
+                    List.of("reply-previous", "msg-1", "reply-final"),
+                    messageIds(snapshot(events)),
+                    "the submitted turn must survive a snapshot that does not echo it");
         }
 
         @Test
@@ -725,7 +754,7 @@ class AguiAgentAdapterV2Test {
                     runTerminalDisposition(GenerateReason.MODEL_STOP, callerContext);
 
             assertEquals(
-                    List.of("session-user", "order-text-1", "reply-final"),
+                    List.of("session-user", "order-text-1", "msg-1", "reply-final"),
                     messageIds(snapshot(events)));
         }
 
@@ -790,7 +819,7 @@ class AguiAgentAdapterV2Test {
 
             MessageContent.Blocks resultContent =
                     assertInstanceOf(
-                            MessageContent.Blocks.class, snapshot.messages().get(1).getContent());
+                            MessageContent.Blocks.class, snapshot.messages().get(2).getContent());
             assertEquals(
                     List.of(TextInputContent.class, VideoInputContent.class),
                     resultContent.parts().stream().map(Object::getClass).toList());

@@ -82,10 +82,8 @@ public class AguiStreamContext {
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
     private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
-    private String currentTextReplyId;
     private String currentReasoningMessageId;
     private final Map<String, List<String>> textMessageIdsByReply = new LinkedHashMap<>();
-    private final Map<String, String> activeTextMessageIdsByReply = new LinkedHashMap<>();
     private final Map<String, TextOutputDispositionState> textOutputDispositionsByReply =
             new LinkedHashMap<>();
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
@@ -186,25 +184,38 @@ public class AguiStreamContext {
         return tokenUsageAccumulator;
     }
 
+    /**
+     * Starts a live text message without naming the reply it belongs to. Callers that know the reply
+     * id should use {@link #startTextMessage(String, String)} instead: this overload has to recover
+     * it from the message id naming convention.
+     */
     public void startTextMessage(String messageId) {
-        String replyId = replyIdOf(messageId);
+        startTextMessage(messageId, replyIdOf(messageId));
+    }
+
+    /**
+     * Starts a live text message owned by {@code replyId}. The reply id is recorded explicitly so the
+     * correlation never depends on how the message id was named.
+     */
+    public void startTextMessage(String messageId, String replyId) {
+        String owner = replyId != null ? replyId : replyIdOf(messageId);
         if (startedTextMessages.add(messageId)) {
-            if (config.isTextOutputDispositionEnabled()) {
-                textMessageIdsByReply
-                        .computeIfAbsent(replyId, ignored -> new ArrayList<>())
-                        .add(messageId);
-                activeTextMessageIdsByReply.put(replyId, messageId);
-            }
+            textMessageIdsByReply
+                    .computeIfAbsent(owner, ignored -> new ArrayList<>())
+                    .add(messageId);
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
-            emitRememberedTextOutputDisposition(replyId);
+            emitRememberedTextOutputDisposition(owner);
         }
-        currentTextReplyId = replyId;
         currentTextMessageId = messageId;
     }
 
     public void appendTextDelta(String messageId, String delta) {
+        appendTextDelta(messageId, replyIdOf(messageId), delta);
+    }
+
+    public void appendTextDelta(String messageId, String replyId, String delta) {
         if (delta != null && !delta.isEmpty()) {
-            startTextMessage(messageId);
+            startTextMessage(messageId, replyId);
             emit(new AguiEvent.TextMessageContent(threadId, runId, currentTextMessageId, delta));
         }
     }
@@ -225,18 +236,16 @@ public class AguiStreamContext {
         endedTextMessages.add(messageId);
         if (Objects.equals(messageId, currentTextMessageId)) {
             currentTextMessageId = null;
-            currentTextReplyId = null;
-        }
-        if (config.isTextOutputDispositionEnabled()) {
-            activeTextMessageIdsByReply.remove(replyIdOf(messageId), messageId);
         }
         emit(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
     }
 
+    /**
+     * Returns the AG-UI text message ids that were started for {@code replyId}, in start order. Ids
+     * are recorded for every reply regardless of {@code textOutputDispositionEnabled}, so the answer
+     * does not depend on that flag; the list is empty when nothing was streamed for the reply.
+     */
     public List<String> getTextMessageIds(String replyId) {
-        if (!config.isTextOutputDispositionEnabled()) {
-            return startedTextMessages.contains(replyId) ? List.of(replyId) : List.of();
-        }
         return List.copyOf(textMessageIdsByReply.getOrDefault(replyId, List.of()));
     }
 
@@ -258,9 +267,7 @@ public class AguiStreamContext {
         }
         Map<String, AguiMessage> messagesById = new LinkedHashMap<>();
         List<Msg> authoritativeMessages = authoritativeMessagesSupplier.get();
-        boolean hasAuthoritativeMessages =
-                authoritativeMessages != null && !authoritativeMessages.isEmpty();
-        if (hasAuthoritativeMessages) {
+        if (authoritativeMessages != null) {
             for (Msg message : authoritativeMessages) {
                 if (message != null && !isGeneratedTextSegmentId(message.getId())) {
                     messagesById.put(message.getId(), messageConverter.toAguiMessage(message));
@@ -268,11 +275,10 @@ public class AguiStreamContext {
             }
         }
         if (runInput != null) {
+            // The submitted turn must survive the snapshot: agent state is not guaranteed to echo
+            // it, and consumers reconcile by replacing their streamed text with this snapshot.
             for (AguiMessage message : runInput.getMessages()) {
-                if (message != null
-                        && !isGeneratedTextSegmentId(message.getId())
-                        && (!hasAuthoritativeMessages
-                                || messagesById.containsKey(message.getId()))) {
+                if (message != null && !isGeneratedTextSegmentId(message.getId())) {
                     messagesById.put(message.getId(), message);
                 }
             }
@@ -462,8 +468,10 @@ public class AguiStreamContext {
     }
 
     /**
-     * Recovers the owning reply id from a live text-segment message id. Ids that are not segment ids
-     * (for example a single-block reply id) are their own reply id.
+     * Compatibility fallback that recovers the owning reply id from a live text-segment message id
+     * ({@code <replyId>-text[-N]}, {@code <replyId>-thinking[-N]}). The converters know the reply id
+     * they are streaming and pass it explicitly; ids that are not segment ids are treated as their
+     * own reply id, which is only correct when the producer really used the reply id as a message id.
      */
     private static String replyIdOf(String messageId) {
         if (messageId == null) {

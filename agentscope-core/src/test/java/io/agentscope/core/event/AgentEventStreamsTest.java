@@ -16,6 +16,7 @@
 package io.agentscope.core.event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -450,6 +451,99 @@ class AgentEventStreamsTest {
         assertEquals("worker", disposition.getSource());
         assertEquals("task-1", disposition.getMetadata().get(AgentEvent.METADATA_TASK_ID));
         assertSame(end, events.get(3));
+    }
+
+    @Test
+    void childDispositionCarriesCorrelationKeysOnly() {
+        List<AgentEvent> events =
+                AgentEventStreams.withTextOutputDisposition(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        successfulChildEnd("reply-1", "worker", "task-1")))
+                        .collectList()
+                        .block();
+
+        TextOutputDispositionEvent disposition =
+                assertInstanceOf(TextOutputDispositionEvent.class, events.get(2));
+        assertEquals("task-1", disposition.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertFalse(
+                disposition.getMetadata().containsKey(AgentEndEvent.METADATA_INVOCATION_OUTCOME),
+                "the trigger's invocation outcome describes the invocation, not the disposition");
+    }
+
+    @Test
+    void reclaimsEndedChildSources() {
+        AgentEventStreams.DispositionAnnotator annotator =
+                new AgentEventStreams.DispositionAnnotator();
+
+        List<AgentEvent> events =
+                annotator
+                        .apply(
+                                Flux.just(
+                                        tagged(
+                                                new ModelCallStartEvent("reply-1"),
+                                                "worker",
+                                                "task-1"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-1", "block-1", "answer"),
+                                                "worker",
+                                                "task-1"),
+                                        successfulChildEnd("reply-1", "worker", "task-1"),
+                                        tagged(
+                                                new ModelCallStartEvent("reply-2"),
+                                                "worker",
+                                                "task-2"),
+                                        tagged(
+                                                new TextBlockDeltaEvent(
+                                                        "reply-2", "block-2", "answer"),
+                                                "worker",
+                                                "task-2"),
+                                        successfulChildEnd("reply-2", "worker", "task-2"),
+                                        // A subagent that reports a result but never an end must
+                                        // not
+                                        // be retained either.
+                                        tagged(
+                                                result(GenerateReason.MODEL_STOP),
+                                                "worker",
+                                                "task-3")))
+                        .collectList()
+                        .block();
+
+        assertEquals(9, events.size());
+        assertEquals(
+                0,
+                annotator.retainedSourceCount(),
+                "child sources must not be retained after their end event or result");
+    }
+
+    @Test
+    void releasesTopLevelBookkeepingWhenTheNextInvocationStarts() {
+        AgentEventStreams.DispositionAnnotator annotator =
+                new AgentEventStreams.DispositionAnnotator();
+
+        List<AgentEvent> events =
+                annotator
+                        .apply(
+                                Flux.just(
+                                        new ModelCallStartEvent("reply-1"),
+                                        new TextBlockDeltaEvent("reply-1", "block-1", "answer"),
+                                        result(GenerateReason.MODEL_STOP),
+                                        new AgentEndEvent("reply-1"),
+                                        new ModelCallStartEvent("reply-2")))
+                        .collectList()
+                        .block();
+
+        assertEquals(6, events.size());
+        assertEquals(0, annotator.retainedSourceCount());
     }
 
     @Test

@@ -46,7 +46,8 @@ public final class AgentEventStreams {
      * <p>The wrapper is purely additive and never fails the source stream. An {@link
      * AgentEndEvent} is forwarded as soon as it is observed, preceded by the derived terminal
      * disposition when one applies, and any event that arrives after the end of a source is
-     * forwarded unchanged rather than rejected.
+     * forwarded unchanged rather than rejected. Per-source bookkeeping is reclaimed when the source
+     * ends, so a subscription that fans out to many subagents does not retain them.
      *
      * <p>A top-level terminal requires an authoritative {@link AgentResultEvent} for the same
      * source. A subagent terminal additionally requires a synthesized {@link AgentEndEvent} that
@@ -63,14 +64,22 @@ public final class AgentEventStreams {
 
     private static final Logger log = LoggerFactory.getLogger(AgentEventStreams.class);
 
-    private static final class DispositionAnnotator {
+    static final class DispositionAnnotator {
 
         private final ReplyLifecycleTracker tracker = new ReplyLifecycleTracker();
         private final Map<SourceKey, AgentResultEvent> authoritativeResults = new LinkedHashMap<>();
         private final Set<SourceKey> endedSources = new HashSet<>();
 
-        private Flux<AgentEvent> apply(Flux<AgentEvent> source) {
+        Flux<AgentEvent> apply(Flux<AgentEvent> source) {
             return source.concatMap(event -> Flux.fromIterable(process(event)), 1);
+        }
+
+        /**
+         * Number of sources whose per-subscription bookkeeping is still retained. Package private so
+         * regression tests can assert that ended sources are reclaimed.
+         */
+        int retainedSourceCount() {
+            return endedSources.size() + authoritativeResults.size();
         }
 
         private List<AgentEvent> process(AgentEvent event) {
@@ -103,7 +112,12 @@ public final class AgentEventStreams {
         }
 
         private List<AgentEvent> onAgentResult(AgentResultEvent event, Observation observation) {
-            authoritativeResults.put(observation.sourceKey(), event);
+            // Only the top-level terminal consults the authoritative result; a subagent terminal is
+            // derived from its own end event. Recording child results would retain every subagent
+            // that never reports an end for the life of the subscription.
+            if (observation.sourceKey().isTopLevel()) {
+                authoritativeResults.put(observation.sourceKey(), event);
+            }
             return List.of(event);
         }
 
@@ -152,7 +166,6 @@ public final class AgentEventStreams {
 
         private List<AgentEvent> onAgentEnd(AgentEndEvent event, Observation observation) {
             SourceKey sourceKey = observation.sourceKey();
-            endedSources.add(sourceKey);
 
             ReplySnapshot current = observation.after();
             AgentResultEvent result = authoritativeResults.remove(sourceKey);
@@ -184,6 +197,16 @@ public final class AgentEventStreams {
             }
             output.add(event);
             tracker.clearSource(sourceKey);
+            if (sourceKey.isTopLevel()) {
+                // The top-level key is reused by the next user turn, so one tombstone is enough:
+                // the next model call reopens it and trailing events stay gated until then.
+                endedSources.add(sourceKey);
+            } else {
+                // Child keys are minted per invocation, so a tombstone each would retain every
+                // subagent this subscription has ever seen. The reply state is reclaimed above and
+                // a reused key simply starts a fresh source.
+                endedSources.remove(sourceKey);
+            }
             return output;
         }
 
@@ -216,7 +239,15 @@ public final class AgentEventStreams {
                 AgentEvent trigger) {
             TextOutputDispositionEvent event =
                     new TextOutputDispositionEvent(replyId, disposition, generateReason);
-            event.withSource(trigger.getSource()).withMetadata(trigger.getMetadata());
+            event.withSource(trigger.getSource());
+            // Carry the correlation keys only: metadata on the trigger describes the triggering
+            // invocation (for example its outcome), not this derived classification.
+            if (trigger.getMetadata() != null) {
+                Object taskId = trigger.getMetadata().get(AgentEvent.METADATA_TASK_ID);
+                if (taskId != null) {
+                    event.withMetadataEntry(AgentEvent.METADATA_TASK_ID, taskId);
+                }
+            }
             return event;
         }
     }
