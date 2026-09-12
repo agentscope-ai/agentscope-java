@@ -35,14 +35,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TimeZone;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Flux;
@@ -87,47 +84,26 @@ class MemoryFlushManagerTest {
         assertTrue(model.inputs.isEmpty());
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // A/B tests for #3088 — memory flush header timestamp must be zone-aware.
-    //
-    // Group A pins the OLD behaviour (Instant.toString() always renders UTC, ignoring
-    // -Duser.timezone) as a control. Group B exercises the NEW behaviour (ZonedDateTime renders
-    // the clock's UTC offset) across multiple zones.
-    // ---------------------------------------------------------------------------------------------
-
-    /** A (old behaviour): {@code Instant.toString()} is always UTC and ignores the JVM time zone. */
-    @Test
-    void a_oldBehavior_instantToStringAlwaysUtc() {
-        Instant instant = Instant.parse("2026-09-10T08:05:32.309657400Z");
-        assertEquals("2026-09-10T08:05:32.309657400Z", instant.toString());
-    }
-
-    /**
-     * B (new behaviour): the rendered timestamp carries the clock zone's offset. {@code
-     * ISO_OFFSET_DATE_TIME} strips trailing zeros from the fractional second (e.g. {@code
-     * .309657400} -> {@code .3096574}); the offset and the parsed instant are unaffected.
-     */
-    @ParameterizedTest(name = "{0}: {1} -> {2}")
+    // ISO_OFFSET_DATE_TIME strips trailing zeros from the fractional second, so .309657400 is
+    // rendered as .3096574; the offset and the instant it parses back to are unaffected.
+    @ParameterizedTest
     @CsvSource({
         "UTC,              2026-09-10T08:05:32.309657400Z, 2026-09-10T08:05:32.3096574Z",
         "Asia/Shanghai,    2026-09-10T08:05:32.309657400Z, 2026-09-10T16:05:32.3096574+08:00",
         "America/New_York, 2026-09-10T08:05:32.309657400Z, 2026-09-10T04:05:32.3096574-04:00",
         "Asia/Shanghai,    2026-09-10T20:00:00Z,           2026-09-11T04:00:00+08:00"
     })
-    void b_newBehavior_timestampRespectsZone(String zoneId, String instantStr, String expected) {
+    void formatTimestamp_rendersClockZoneOffset(String zoneId, String instantStr, String expected) {
         Instant instant = Instant.parse(instantStr);
-        Clock clock = Clock.fixed(instant, ZoneId.of(zoneId));
 
-        String actual = MemoryFlushManager.formatTimestamp(clock);
+        String actual = MemoryFlushManager.formatTimestamp(Clock.fixed(instant, ZoneId.of(zoneId)));
 
         assertEquals(expected, actual);
         assertEquals(instant, OffsetDateTime.parse(actual).toInstant());
     }
 
-    /** B (new behaviour): the production default honours the JVM default zone. */
     @Test
-    @ResourceLock("timezone")
-    void b_newBehavior_systemDefaultZoneIsUsed() {
+    void formatTimestamp_honorsSystemDefaultZone() {
         TimeZone original = TimeZone.getDefault();
         try {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
@@ -138,23 +114,8 @@ class MemoryFlushManagerTest {
         }
     }
 
-    /** B (new behaviour): file name date and header share the same zoned instant. */
     @Test
-    void b_newBehavior_fileNameAndHeaderUseSameZone() {
-        Instant instant = Instant.parse("2026-09-10T20:00:00Z");
-        Clock clock = Clock.fixed(instant, ZoneId.of("Asia/Shanghai"));
-
-        ZonedDateTime now = ZonedDateTime.now(clock);
-        String headerTimestamp = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-        String fileNameDate = now.toLocalDate().toString();
-
-        assertEquals("2026-09-11", fileNameDate);
-        assertTrue(headerTimestamp.startsWith("2026-09-11T04:00:00+08:00"));
-    }
-
-    /** B (new behaviour) end-to-end: the flushed section and file name use the injected zone. */
-    @Test
-    void b_newBehavior_flushWritesZoneAwareHeaderAndMatchingFileName() throws Exception {
+    void flushMemories_writesZoneAwareHeaderAndMatchingFileName() throws Exception {
         Instant instant = Instant.parse("2026-09-10T20:00:00Z");
         Clock clock = Clock.fixed(instant, ZoneId.of("Asia/Shanghai"));
         RecordingModel model = new RecordingModel("- user prefers dark mode");
@@ -163,15 +124,16 @@ class MemoryFlushManagerTest {
         try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
             MemoryFlushManager flushManager =
                     new MemoryFlushManager(workspaceManager, model, null, clock);
+
             flushManager.flushMemories(rc, List.of(message(MsgRole.USER, "hi"))).block();
         }
 
         Path daily = workspace.resolve("memory/2026-09-11.md");
-        assertTrue(Files.exists(daily), "daily file should be named after the zone's local date");
+        assertTrue(Files.exists(daily), "daily file should follow the clock's local date");
         String content = Files.readString(daily);
         assertTrue(
                 content.contains("## Memory Flush — 2026-09-11T04:00:00+08:00"),
-                "header should use the zone's offset: " + content);
+                "header should carry the clock's offset: " + content);
         assertFalse(content.contains("2026-09-10T20:00:00Z"), content);
     }
 
