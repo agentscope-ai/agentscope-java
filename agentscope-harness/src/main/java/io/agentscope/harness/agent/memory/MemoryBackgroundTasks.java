@@ -20,7 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Tracks in-flight fire-and-forget memory background tasks (flush, maintenance) so
+ * Tracks in-flight fire-and-forget background tasks (transcript, flush, maintenance) so
  * {@code HarnessAgent.close()} can wait for them to quiesce before releasing resources.
  *
  * <p>The middleware instances that dispatch these tasks are created per agent call, so they
