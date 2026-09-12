@@ -1140,6 +1140,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a target class.
+     *
+     * <p>Semantically equivalent to {@code call(List, Class, RuntimeContext)}: the model's native
+     * {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback. The final {@link AgentResultEvent}
+     * carries a {@link Msg} whose {@code hasStructuredData()} is {@code true}.
+     *
+     * @param msgs input messages
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, structuredOutputClass));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a JSON schema.
+     *
+     * <p>Semantically equivalent to {@code call(List, JsonNode, RuntimeContext)}: the model's
+     * native {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback.
+     *
+     * @param msgs input messages
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, outputSchema));
+    }
+
+    /**
      * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
      * {@link RuntimeContext}.
      *
