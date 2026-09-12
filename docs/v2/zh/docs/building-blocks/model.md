@@ -30,6 +30,7 @@ CredentialBase/
 | 提供商 | Maven artifact | 主要包名 |
 |--------|----------------|----------|
 | OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `io.agentscope.extensions.model.openaiofficial` |
 | DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
 | Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
 | Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
@@ -46,7 +47,7 @@ CredentialBase/
 </dependency>
 ```
 
-其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
+其他模型扩展 artifact 遵循同样模式：`agentscope-extensions-model-openai`、`agentscope-extensions-model-openai-official`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-ollama`。
 
 2. 将模型提供商实现的 import 从 `io.agentscope.core.model.*` 改为 `io.agentscope.extensions.model.<provider>.*`。
 3. 将模型提供商 formatter import 从 `io.agentscope.core.formatter.<provider>.*` 改为 `io.agentscope.extensions.model.<provider>.formatter.*`。
@@ -211,12 +212,13 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 | 提供商 | 模型类 | 说明 |
 |--------|--------|------|
 | OpenAI | `OpenAIChatModel` | Chat Completions API，兼容 vLLM 与 OpenAI 兼容端点（含 DeepSeek、Kimi 等） |
+| OpenAI Official | `OpenAIResponsesChatModel` | Responses API（官方 SDK）；推理、结构化输出 |
 | Anthropic | `AnthropicChatModel` | Claude 模型，支持 prompt 缓存与 thinking |
 | DashScope | `DashScopeChatModel` | Qwen 模型，多模态（视觉/音频/视频）、推理 |
 | Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
 | Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
 
-模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
+模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`OpenAIOfficialCredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
 
 ### 创建 Chat Model
 
@@ -383,6 +385,7 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 | 模型提供商 | `supportsNativeStructuredOutput` | 说明 |
 |----------|----------------------------------|------|
 | OpenAI (GPT-4o 等) | `true` | 原生支持 `json_schema` |
+| OpenAI Official (Responses API) | `true` | 原生支持 `json_schema` |
 | OpenAI (DeepSeek/GLM formatter) | `false` | 不支持，自动走 fallback |
 | DashScope | `false` | DashScope 原生端点仅支持 `json_object`，不支持 `json_schema`；框架默认走 fallback |
 | Anthropic | `false`（默认） | — |
@@ -446,6 +449,7 @@ DashScopeChatModel model =
 |---|---|---|
 | DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
 | Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |

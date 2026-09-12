@@ -108,12 +108,12 @@
             <optional>true</optional>
         </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>io.agentscope</groupId>-->
-<!--            <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--            <optional>true</optional>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai-official</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -470,6 +470,9 @@
                                     <include>io.agentscope:agentscope-extensions-*</include>
                                 </includes>
                             </artifactSet>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>

@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +89,8 @@ public final class ModelUtils {
                                 Flux.error(
                                         new ModelException(
                                                 "Model request timeout after " + timeout,
+                                                new TimeoutException(
+                                                        "Model request timeout after " + timeout),
                                                 modelName,
                                                 provider)));
                 LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
