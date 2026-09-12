@@ -194,6 +194,29 @@ class ListHashUtilTest {
         assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
     }
 
+    /**
+     * Regression for the sampling-hash bug: a list larger than the old sampling threshold must
+     * reflect a modification at a non-sampled position. Under the previous (5-point sampling)
+     * implementation a 20-element list hashed only indices {0,5,10,15,19}, so changing index 3
+     * left the hash unchanged and the edit was silently dropped on save.
+     */
+    @Test
+    void testComputeHash_largeList_modifyNonSampledIndex_changesHash() {
+        List<Msg> list = createMsgList(20);
+        String hashBefore = ListHashUtil.computeHash(list);
+
+        // Index 3 is not one of the old sample points {0,5,10,15,19} for size 20.
+        list.set(
+                3,
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("changed at non-sampled index").build())
+                        .build());
+
+        String hashAfter = ListHashUtil.computeHash(list);
+        assertNotEquals(hashBefore, hashAfter);
+    }
+
     private List<Msg> createMsgList(int size) {
         List<Msg> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {
