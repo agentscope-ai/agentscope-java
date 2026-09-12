@@ -52,14 +52,13 @@ import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import java.time.Duration;
 import java.util.LinkedList;
@@ -428,7 +427,7 @@ class AgentScopeAgentExecutorTest {
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(Flux.error(new UnsupportedOperationException("not supported")));
             when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(mockFlux(false, true, false));
+                    .thenReturn(mockLegacyFlux());
 
             AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
@@ -802,5 +801,15 @@ class AgentScopeAgentExecutorTest {
                             Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
+    }
+
+    private Flux<Event> mockLegacyFlux() {
+        String resultMsgId = UUID.randomUUID().toString();
+        Msg firstChunk = Msg.builder().id(resultMsgId).textContent("streaming result 1").build();
+        Msg secondChunk = Msg.builder().id(resultMsgId).textContent(" 2").build();
+        return Flux.just(
+                        new Event(EventType.REASONING, firstChunk, false),
+                        new Event(EventType.REASONING, secondChunk, false))
+                .delayElements(Duration.ofMillis(10));
     }
 }

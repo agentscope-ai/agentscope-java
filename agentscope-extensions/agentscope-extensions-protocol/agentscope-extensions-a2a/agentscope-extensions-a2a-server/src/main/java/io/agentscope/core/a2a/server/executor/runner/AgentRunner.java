@@ -60,15 +60,6 @@ public interface AgentRunner {
     Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options);
 
     /**
-     * Start to handle agent request with the legacy coarse-grained streaming output.
-     *
-     * @param requestMessages the messages from a2a client
-     * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
-     * @return Flux of events emitted during execution
-     */
-    Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options);
-
-    /**
      * Start to handle an agent request with fine-grained lifecycle events.
      *
      * <p>Implementations that support the v2 event model should override this method. Existing

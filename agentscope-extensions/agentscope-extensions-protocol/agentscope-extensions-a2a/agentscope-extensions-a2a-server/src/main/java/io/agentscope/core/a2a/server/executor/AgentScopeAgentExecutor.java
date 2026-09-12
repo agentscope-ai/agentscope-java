@@ -603,7 +603,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             }
             List<Part<?>> responseParts =
                     MessageConvertUtil.convertFromContentBlocks(
-                    responseMessage, isStreamingChunk(output));
+                            responseMessage, isStreamingChunk(output));
             taskUpdater.addArtifact(
                     responseParts,
                     artifactId,
@@ -627,7 +627,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         if (output instanceof LegacyAgentEvent legacyEvent) {
             return !legacyEvent.legacyEvent.isLast();
         }
-        return !AgentEventType.AGENT_RESULT.equals(output.getType());
+        return output instanceof TextBlockDeltaEvent
+                || output instanceof ThinkingBlockDeltaEvent
+                || output instanceof ToolResultTextDeltaEvent
+                || output instanceof ToolResultDataDeltaEvent;
     }
 
     private static Msg convertToMsg(AgentEvent output) {
