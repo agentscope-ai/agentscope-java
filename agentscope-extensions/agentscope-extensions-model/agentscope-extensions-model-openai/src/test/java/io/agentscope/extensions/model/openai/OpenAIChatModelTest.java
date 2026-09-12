@@ -600,6 +600,9 @@ class OpenAIChatModelTest {
     @Test
     @DisplayName("Should enable parallel tool calls when set parallel_tool_calls to true")
     void testEnableParallelToolCalls() throws Exception {
+        // The response must carry content: a completion with no content-bearing chunk is
+        // rejected as an upstream anomaly (issue #2962), and this test asserts on the request,
+        // not the response
         String responseJson =
                 """
                 {
@@ -607,7 +610,14 @@ class OpenAIChatModelTest {
                     "object": "chat.completion",
                     "created": 1677652280,
                     "model": "gpt-4",
-                    "choices": []
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "ok"
+                        },
+                        "finish_reason": "stop"
+                    }]
                 }
                 """;
 

@@ -16,10 +16,14 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 /**
@@ -42,6 +46,17 @@ public final class ModelUtils {
      * <p>This method wraps the original Flux with timeout and retry operators based on the
      * configuration in GenerateOptions. Both timeout and retry are optional and only applied if
      * configured.
+     *
+     * <p><b>Empty-completion detection:</b> A stream that completes without any content-bearing
+     * {@code ChatResponse} (no chunk carries a non-null, non-empty content list) is converted to
+     * a {@code ModelException} after the timeout check and before retry. Contentless chunks are
+     * withheld until the first content-bearing chunk arrives (then released in order), so an
+     * empty completion surfaces the error as the first downstream signal and switchOnFirst-based
+     * fallback models engage. The check is deliberately type-agnostic: any content block counts,
+     * so multimodal completions carrying only image/video/audio blocks are not misclassified as
+     * empty. This detection is unconditional (applies regardless of retry configuration), since
+     * an empty completion is an upstream transport anomaly that should always surface as an
+     * error.
      *
      * <p><b>Timeout Behavior:</b>
      * <ul>
@@ -77,9 +92,11 @@ public final class ModelUtils {
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
 
         // Extract execution config
-        ExecutionConfig execConfig = effectiveOptions.getExecutionConfig();
+        ExecutionConfig execConfig =
+                effectiveOptions != null ? effectiveOptions.getExecutionConfig() : null;
+
+        // Apply timeout if configured
         if (execConfig != null) {
-            // Apply timeout if configured
             Duration timeout = execConfig.getTimeout();
             if (timeout != null) {
                 responseFlux =
@@ -92,8 +109,12 @@ public final class ModelUtils {
                                                 provider)));
                 LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
             }
+        }
 
-            // Apply retry if configured (maxAttempts > 1 means retry is enabled)
+        responseFlux = ensureNonEmptyCompletion(responseFlux, modelName, provider);
+
+        // Apply retry if configured
+        if (execConfig != null) {
             Integer maxAttempts = execConfig.getMaxAttempts();
             if (maxAttempts != null && maxAttempts > 1) {
                 Duration initialBackoff = execConfig.getInitialBackoff();
@@ -136,6 +157,83 @@ public final class ModelUtils {
         }
 
         return responseFlux;
+    }
+
+    /**
+     * Ensures the completion contains at least one content-bearing response.
+     *
+     * <p>Chunks that carry no content block are withheld until the first content-bearing chunk
+     * arrives (then released in order); a stream that completes without one — zero chunks, or
+     * only chunks whose {@code getContent()} is null/empty — is converted to a {@code
+     * ModelException}. Withholding is what keeps fallback effective: switchOnFirst-based
+     * fallback commits on the first downstream signal, so an empty completion must reach it as
+     * an error, not preceded by contentless chunks that would already commit the primary model.
+     * Any content block counts as content-bearing (multimodal blocks included). This detection
+     * sits after timeout (which would have already fired) and before retryWhen, so an empty
+     * completion triggers retry just like any other model error.
+     *
+     * @param responseFlux the response stream to guard
+     * @param modelName the model name for error messages
+     * @param provider the provider name for error messages
+     * @return guarded flux that errors on empty completions
+     */
+    private static Flux<ChatResponse> ensureNonEmptyCompletion(
+            Flux<ChatResponse> responseFlux, String modelName, String provider) {
+        // Per-subscription state: retryWhen resubscribes this chain on each attempt, so the
+        // withheld-chunk buffer and the released flag must be recreated per subscription —
+        // chunks withheld by an attempt that failed mid-stream must not leak into a later,
+        // empty attempt. Signals are delivered serially per subscriber, so unsynchronized state
+        // is safe.
+        return Flux.defer(
+                () -> {
+                    List<ChatResponse> withheld = new ArrayList<>();
+                    AtomicBoolean released = new AtomicBoolean(false);
+                    return responseFlux
+                            .concatMap(
+                                    chunk -> {
+                                        if (released.get()) {
+                                            return Flux.just(chunk);
+                                        }
+                                        withheld.add(chunk);
+                                        if (!isContentBearing(chunk)) {
+                                            return Flux.empty();
+                                        }
+                                        released.set(true);
+                                        return Flux.fromIterable(withheld);
+                                    })
+                            .concatWith(
+                                    Mono.defer(
+                                            () -> {
+                                                if (released.get()) {
+                                                    return Mono.empty();
+                                                }
+                                                LOG.warn(
+                                                        "Model {} ({}) returned an empty completion"
+                                                                + " (zero content-bearing chunks)",
+                                                        modelName,
+                                                        provider);
+                                                return Mono.error(
+                                                        new ModelException(
+                                                                "Model returned empty completion"
+                                                                        + " (zero content-bearing"
+                                                                        + " chunks)",
+                                                                modelName,
+                                                                provider));
+                                            }));
+                });
+    }
+
+    /**
+     * Returns whether the chunk carries any content block.
+     *
+     * <p>Type-agnostic by design: multimodal completions may carry only image/video/audio
+     * blocks, which are valid completions, not empty ones.
+     *
+     * @param chunk the response chunk to inspect
+     * @return true if the chunk carries at least one content block
+     */
+    private static boolean isContentBearing(ChatResponse chunk) {
+        return chunk.getContent() != null && !chunk.getContent().isEmpty();
     }
 
     /**
