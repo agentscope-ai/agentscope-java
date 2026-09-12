@@ -100,6 +100,7 @@ public final class GLMModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new GLMFormatter())
                         .nativeStructuredOutput(false)
+                        .supportsToolChoiceSpecific(false)
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.GLM));
 
