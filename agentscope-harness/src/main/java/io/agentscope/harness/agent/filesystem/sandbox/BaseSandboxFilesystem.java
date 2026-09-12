@@ -255,28 +255,45 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
+        // Edit script is assembled with real newlines, then base64-encoded and piped via stdin
+        // to `python3 -`; the payload is passed through heredoc stdin.
+        //
+        // Do NOT revert to `python3 -c "...\n..."` inline form: under `bash -lc`, \n inside
+        // double quotes is a literal backslash+n (not a newline), so the entire script collapses
+        // into one line and Python fails with:
+        //   SyntaxError: unexpected character after line continuation character
+        // This makes edit_file 100% non-functional in sandbox environments (the model falls back
+        // to write_file, which refuses to overwrite existing files, so no file can be modified).
+        // Using printf + heredoc avoids all quoting/escaping issues.
+        String script =
+                "import sys, os, base64, json\n"
                     + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
+                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\n"
+                    + "path, old, new = payload['path'], payload['old'], payload['new']\n"
+                    + "replace_all = payload.get('replace_all', False)\n"
+                    + "if not os.path.isfile(path):\n"
+                    + "    print(json.dumps({'error': 'file_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\n"
+                    + "count = text.count(old)\n"
+                    + "if count == 0:\n"
+                    + "    print(json.dumps({'error': 'string_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "if count > 1 and not replace_all:\n"
+                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\n"
+                    + "    sys.exit(0)\n"
                     + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
+                    + " 1)\n"
+                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\n"
+                    + "print(json.dumps({'count': count}))\n";
+        String scriptB64 =
+                Base64.getEncoder()
+                        .encodeToString(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        String cmd =
+                "printf '%s\n' "
+                        + scriptB64
+                        + " | base64 -d | python3 - 2>&1 <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n";
 
