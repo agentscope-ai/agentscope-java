@@ -217,6 +217,30 @@ class RemoteEventCodecPassthroughTest {
     }
 
     @Test
+    void userConfirmationReasonSurvivesTheRoundTrip() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("delete_file")
+                        .input(Map.of("path", "important.txt"))
+                        .build();
+        UserConfirmResultEvent original =
+                new UserConfirmResultEvent(
+                        "reply",
+                        List.of(
+                                new ConfirmResult(
+                                        false, toolUse, null, "The file is still needed.")));
+
+        RemoteAgentEvent dto = RemoteEventCodec.fromAgentEvent(original).orElseThrow();
+        UserConfirmResultEvent back =
+                assertInstanceOf(
+                        UserConfirmResultEvent.class,
+                        RemoteEventCodec.toAgentEvent(dto).orElseThrow());
+
+        assertEquals("The file is still needed.", back.getConfirmResults().get(0).getReason());
+    }
+
+    @Test
     void typedEventsAlsoDecodeFromPayloadWithoutLosingBlockIds() {
         TextBlockDeltaEvent original = new TextBlockDeltaEvent("reply-7", "block-9", "hello");
 
