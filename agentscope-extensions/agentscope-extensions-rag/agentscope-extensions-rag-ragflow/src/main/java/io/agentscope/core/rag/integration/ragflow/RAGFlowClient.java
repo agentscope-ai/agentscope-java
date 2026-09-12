@@ -20,7 +20,9 @@ import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowAuthException
 import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Interceptor;
@@ -102,6 +104,43 @@ public class RAGFlowClient {
             Double similarityThreshold,
             Map<String, Object> metadataCondition) {
 
+        return retrieve(question, topK, similarityThreshold, null, metadataCondition);
+    }
+
+    /**
+     * Retrieve documents with request-specific dataset IDs and metadata conditions.
+     *
+     * <p>Non-empty request parameters take precedence over values from {@link RAGFlowConfig}.
+     * When a request parameter is {@code null} or empty, the corresponding config value is used.
+     * The dataset ID list and top-level metadata condition map are copied when this method is
+     * called. Later changes to the list or top-level map entries therefore cannot affect the
+     * asynchronous request, but nested mutable metadata values are not deep-copied.
+     *
+     * @param question the query text (required)
+     * @param topK the number of documents to retrieve (optional, defaults to config value)
+     * @param similarityThreshold the minimum similarity threshold (optional, defaults to config
+     *     value)
+     * @param datasetIds dataset IDs for this request (optional, defaults to config value)
+     * @param metadataCondition metadata filtering conditions for this request (optional, defaults
+     *     to config value)
+     * @return a Mono emitting the retrieval response
+     */
+    public Mono<RAGFlowResponse> retrieve(
+            String question,
+            Integer topK,
+            Double similarityThreshold,
+            List<String> datasetIds,
+            Map<String, Object> metadataCondition) {
+
+        List<String> effectiveDatasetIds =
+                datasetIds != null && !datasetIds.isEmpty()
+                        ? new ArrayList<>(datasetIds)
+                        : copyList(config.getDatasetIds());
+        Map<String, Object> effectiveMetadataCondition =
+                metadataCondition != null && !metadataCondition.isEmpty()
+                        ? new HashMap<>(metadataCondition)
+                        : copyMap(config.getMetadataCondition());
+
         return Mono.fromCallable(
                 () -> {
                     if (question == null || question.trim().isEmpty()) {
@@ -113,8 +152,10 @@ public class RAGFlowClient {
                     // Required: question text
                     requestBody.put("question", question);
 
-                    // Required: dataset_ids (array)
-                    requestBody.put("dataset_ids", config.getDatasetIds());
+                    // Required unless document_ids is provided: dataset_ids (array)
+                    if (!effectiveDatasetIds.isEmpty()) {
+                        requestBody.put("dataset_ids", effectiveDatasetIds);
+                    }
 
                     // Optional: document_ids (filter to specific documents)
                     if (config.getDocumentIds() != null && !config.getDocumentIds().isEmpty()) {
@@ -185,11 +226,8 @@ public class RAGFlowClient {
                     }
 
                     // Optional: metadata_condition for filtering
-                    if (metadataCondition != null && !metadataCondition.isEmpty()) {
-                        requestBody.put("metadata_condition", metadataCondition);
-                    } else if (config.getMetadataCondition() != null
-                            && !config.getMetadataCondition().isEmpty()) {
-                        requestBody.put("metadata_condition", config.getMetadataCondition());
+                    if (!effectiveMetadataCondition.isEmpty()) {
+                        requestBody.put("metadata_condition", effectiveMetadataCondition);
                     }
 
                     String jsonBody = JsonUtils.getJsonCodec().toJson(requestBody);
@@ -260,6 +298,14 @@ public class RAGFlowClient {
                         return ragFlowResponse;
                     }
                 });
+    }
+
+    private static <T> List<T> copyList(List<T> values) {
+        return values == null ? new ArrayList<>() : new ArrayList<>(values);
+    }
+
+    private static <K, V> Map<K, V> copyMap(Map<K, V> values) {
+        return values == null ? new HashMap<>() : new HashMap<>(values);
     }
 
     private void handleErrorResponse(int statusCode, String responseBody) {
