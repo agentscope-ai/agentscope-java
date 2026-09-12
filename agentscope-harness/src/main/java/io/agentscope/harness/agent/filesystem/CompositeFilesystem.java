@@ -105,6 +105,12 @@ public class CompositeFilesystem implements AbstractFilesystem {
         return routeForPath(path).backend();
     }
 
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        RouteResult route = routeForPath(path);
+        return route.backend().storageKey(runtimeContext, route.backendPath());
+    }
+
     private RouteResult routeForPath(String path) {
         // Canonicalize both sides by stripping any leading slash before matching so callers can
         // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"

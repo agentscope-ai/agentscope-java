@@ -42,6 +42,7 @@ import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
+import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -491,6 +492,126 @@ public class WorkspaceManager implements AutoCloseable {
             record.touch();
             map.put(record.getTaskId(), record);
             persistTaskMap(rc, rel, map);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Returns the storage identity of a session's task-record store under the given context.
+     * This is the identity callers use to group per-record refreshes into one batched
+     * read-modify-write: keys that compare equal are guaranteed to hit the same physical
+     * storage.
+     *
+     * <p>The identity follows the routing the store IO actually takes: the host-disk fallback
+     * of the per-call sandbox route serves the workspace-relative path regardless of context,
+     * and every other backend is asked through
+     * {@link AbstractFilesystem#storageKey(RuntimeContext, String)}. A backend whose resolved
+     * storage location does not depend on the context batches every context of a session
+     * together (e.g. a {@code LocalFilesystem} without a {@code NamespaceFactory}); a backend
+     * that derives the location from the context splits per derived location, each batch
+     * written back under the context that produced it — a {@code RemoteFilesystem} with a
+     * per-user {@code NamespaceFactory}, or a {@code LocalFilesystem} configured with one,
+     * keeps per-user stores in separate batches.
+     *
+     * @param rc per-call agent runtime; {@link RuntimeContext#empty()} when none
+     * @param agentId the parent agent identifier
+     * @param sessionId the session identifier
+     * @return an object with value equality reflecting the store's storage identity
+     */
+    public Object taskRecordStoreKey(RuntimeContext rc, String agentId, String sessionId) {
+        String rel = taskRecordPath(agentId, sessionId);
+        if (taskRecordsRouteToLiveSandbox(rel)) {
+            return rel;
+        }
+        return filesystem != null ? filesystem.storageKey(rc, rel) : rel;
+    }
+
+    /**
+     * Refreshes the status of several {@link TaskRecord}s of one session store in a single
+     * read-modify-write cycle.
+     *
+     * <p>Batched sibling of {@link #writeTaskRecord} for callers that refresh many records of
+     * the same session — the heartbeat of
+     * {@link io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository} touches every
+     * running task every cycle. One lock acquisition, one parse and one whole-file persist
+     * regardless of how many records are refreshed, instead of a full cycle per record.
+     *
+     * <p>The per-record guards mirror {@code WorkspaceTaskRepository.updateStatus}: terminal
+     * records are immutable, and a record with a pending cancellation request refuses
+     * non-terminal refreshes. Unlike the single-record path they are evaluated against the same
+     * in-lock snapshot that is written back, so a terminal transition that landed earlier can
+     * never be clobbered by the batch.
+     *
+     * <p>Entries with a null or blank task ID or a null status are skipped, mirroring the
+     * defensive input handling of {@link #writeTaskRecord}.
+     *
+     * @param rc per-call agent runtime; {@link RuntimeContext#empty()} when none
+     * @param agentId the parent agent identifier
+     * @param sessionId the session identifier
+     * @param statusByTaskId the status to persist per task ID
+     */
+    public void updateTaskRecordStatuses(
+            RuntimeContext rc,
+            String agentId,
+            String sessionId,
+            Map<String, TaskStatus> statusByTaskId) {
+        if (agentId == null
+                || agentId.isBlank()
+                || sessionId == null
+                || sessionId.isBlank()
+                || statusByTaskId == null
+                || statusByTaskId.isEmpty()) {
+            return;
+        }
+        String rel = taskRecordPath(agentId, sessionId);
+        ReentrantLock lock = pathLocks.computeIfAbsent(rel, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            Map<String, TaskRecord> map;
+            try {
+                map = readTaskMap(rc, rel); // already holding lock
+            } catch (IOException e) {
+                // Never overwrite a malformed store with partial data from a failed parse.
+                log.error(
+                        "Failed to parse task record store {}, aborting batched status update to"
+                                + " avoid data loss.",
+                        rel,
+                        e);
+                return;
+            }
+            boolean changed = false;
+            for (Map.Entry<String, TaskStatus> entry : statusByTaskId.entrySet()) {
+                String taskId = entry.getKey();
+                if (taskId == null || taskId.isBlank() || entry.getValue() == null) {
+                    continue;
+                }
+                TaskRecord existing = map.get(taskId);
+                if (existing != null
+                        && existing.getStatus() != null
+                        && existing.getStatus().isTerminal()) {
+                    continue;
+                }
+                if (!entry.getValue().isTerminal()
+                        && existing != null
+                        && existing.isCancelRequested()) {
+                    continue;
+                }
+                TaskRecord record = existing;
+                if (record == null) {
+                    record = new TaskRecord();
+                    record.setTaskId(taskId);
+                    record.setParentAgentId(agentId);
+                    record.setParentSessionId(sessionId);
+                }
+                record.setStatus(entry.getValue());
+                record.touch();
+                map.put(taskId, record);
+                changed = true;
+            }
+            if (changed) {
+                persistTaskMap(rc, rel, map);
+            }
         } finally {
             lock.unlock();
         }

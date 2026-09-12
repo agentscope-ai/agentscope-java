@@ -110,4 +110,11 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
     public boolean exists(RuntimeContext runtimeContext, String path) {
         return delegate.exists(bakedRc, path);
     }
+
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        // Storage identity follows the substituted context, not the caller's: every delegated
+        // operation (and therefore its write target) is resolved under bakedRc.
+        return delegate.storageKey(bakedRc, path);
+    }
 }

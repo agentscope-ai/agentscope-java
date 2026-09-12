@@ -170,6 +170,26 @@ public interface AbstractFilesystem {
     // ==================== Path validation utility ====================
 
     /**
+     * Returns an identity object for the storage location that workspace IO for {@code path}
+     * under {@code rc} resolves to. Two operations whose keys compare equal are guaranteed to
+     * target the same physical storage, which lets callers safely batch them into one
+     * read-modify-write.
+     *
+     * <p>The conservative default isolates per context instance: it only reports equal keys for
+     * the very same {@code RuntimeContext} and path, which is always safe for backends whose
+     * routing may depend on the context. Backends that locate content purely by path should
+     * override this to return the normalized path, and backends that derive the location from
+     * the context (e.g. a per-user namespace) must include that derived location in the key.
+     *
+     * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
+     * @param path the workspace-relative path of the operation
+     * @return an object with value equality reflecting the storage identity
+     */
+    default Object storageKey(RuntimeContext runtimeContext, String path) {
+        return java.util.Arrays.asList(runtimeContext, path);
+    }
+
+    /**
      * Validates that {@code path} is safe (non-null, non-blank, no {@code ..} traversal).
      *
      * @param path the path to validate
