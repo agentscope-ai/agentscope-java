@@ -7,6 +7,16 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Compatibility
+
+- `GenerateReason` JSON readers now tolerate unknown future values by falling back to
+  `MODEL_STOP`. Older clients that parse this enum strictly must upgrade or explicitly handle
+  unsupported pause reasons before consuming mixed HITL events.
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05

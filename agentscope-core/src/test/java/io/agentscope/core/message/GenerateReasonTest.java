@@ -18,6 +18,7 @@ package io.agentscope.core.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -116,6 +117,19 @@ class GenerateReasonTest {
                         .build();
 
         assertEquals(GenerateReason.MODEL_STOP, msg.getGenerateReason());
+    }
+
+    @Test
+    @DisplayName("Should tolerate unknown GenerateReason values from JSON")
+    void testUnknownGenerateReasonFromJson() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertEquals(
+                GenerateReason.PERMISSION_AND_ASK_USER_ASKING,
+                mapper.readValue("\"PERMISSION_AND_ASK_USER_ASKING\"", GenerateReason.class));
+        assertEquals(
+                GenerateReason.MODEL_STOP,
+                mapper.readValue("\"FUTURE_PAUSE_REASON\"", GenerateReason.class));
     }
 
     @Test

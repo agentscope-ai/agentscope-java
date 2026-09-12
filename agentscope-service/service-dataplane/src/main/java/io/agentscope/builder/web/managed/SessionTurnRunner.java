@@ -527,6 +527,8 @@ public class SessionTurnRunner {
         Set<String> startedPreviews = ConcurrentHashMap.newKeySet();
         AtomicBoolean suspended = new AtomicBoolean(false);
         AtomicBoolean corePermissionAsking = new AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicReference<GenerateReason> corePermissionReason =
+                new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.atomic.AtomicReference<Throwable> errorRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -539,8 +541,10 @@ public class SessionTurnRunner {
 
                     @Override
                     protected void hookOnNext(AgentEvent event) {
-                        if (isCorePermissionAsking(event)) {
+                        GenerateReason permissionReason = corePermissionReason(event);
+                        if (permissionReason != null) {
                             corePermissionAsking.set(true);
+                            corePermissionReason.set(permissionReason);
                         }
                         if (handleAgentEvent(session.id(), event, executionScope)) {
                             suspended.set(true);
@@ -608,9 +612,11 @@ public class SessionTurnRunner {
             }
             if (corePermissionAsking.get()) {
                 throw new CorePermissionConfirmationException(
-                        "Core PermissionEngine returned PERMISSION_ASKING without a durable service"
-                            + " HITL ticket; configure the tool with permissionPolicy=always_ask to"
-                            + " use resumable AgentScope Service approval");
+                        "Core PermissionEngine returned "
+                                + corePermissionReason.get()
+                                + " without a durable service HITL ticket; configure the tool with"
+                                + " permissionPolicy=always_ask to use resumable AgentScope Service"
+                                + " approval");
             }
             if (suspended.get()) {
                 sessionService.updateStatus(
@@ -762,11 +768,17 @@ public class SessionTurnRunner {
     }
 
     static boolean isCorePermissionAsking(AgentEvent event) {
-        return event instanceof AgentResultEvent result
-                && result.getResult() != null
-                && (result.getResult().getGenerateReason() == GenerateReason.PERMISSION_ASKING
-                        || result.getResult().getGenerateReason()
-                                == GenerateReason.PERMISSION_AND_ASK_USER_ASKING);
+        return corePermissionReason(event) != null;
+    }
+
+    static GenerateReason corePermissionReason(AgentEvent event) {
+        return event instanceof AgentResultEvent result && result.getResult() != null
+                ? switch (result.getResult().getGenerateReason()) {
+                    case PERMISSION_ASKING, PERMISSION_AND_ASK_USER_ASKING ->
+                            result.getResult().getGenerateReason();
+                    default -> null;
+                }
+                : null;
     }
 
     private static final class CorePermissionConfirmationException extends RuntimeException {

@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -60,6 +61,15 @@ import reactor.core.publisher.Flux;
 class HarnessAgentAskUserTest {
 
     @TempDir Path workspace;
+    private final List<HarnessAgent> agents = new ArrayList<>();
+
+    @AfterEach
+    void closeAgents() {
+        for (HarnessAgent agent : agents) {
+            agent.close();
+        }
+        agents.clear();
+    }
 
     private static final class ScriptedModel extends ChatModelBase {
         private final List<Supplier<Flux<ChatResponse>>> scripts;
@@ -95,35 +105,41 @@ class HarnessAgentAskUserTest {
      * Builds a harness with every non-feature option constant across these tests, including a
      * process-local in-memory state store so runs never touch {@code ~/.agentscope} or disk.
      */
-    private static HarnessAgent build(String name, Path workspace, ChatModelBase model) {
-        return HarnessAgent.builder()
-                .name(name)
-                .description("ask user test")
-                .sysPrompt("You are a test agent.")
-                .model(model)
-                .workspace(workspace)
-                // Deterministic and quiet: no disk state, no background memory jobs.
-                .stateStore(new InMemoryAgentStateStore())
-                .disableCompaction()
-                .disableMemoryHooks()
-                .enableAskUser()
-                .build();
+    private HarnessAgent build(String name, Path workspace, ChatModelBase model) {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name(name)
+                        .description("ask user test")
+                        .sysPrompt("You are a test agent.")
+                        .model(model)
+                        .workspace(workspace)
+                        // Deterministic and quiet: no disk state, no background memory jobs.
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableCompaction()
+                        .disableMemoryHooks()
+                        .enableAskUser()
+                        .build();
+        agents.add(agent);
+        return agent;
     }
 
-    private static HarnessAgent buildWithPermissions(
+    private HarnessAgent buildWithPermissions(
             String name, Path workspace, ChatModelBase model, PermissionContextState permCtx) {
-        return HarnessAgent.builder()
-                .name(name)
-                .description("ask user test")
-                .sysPrompt("You are a test agent.")
-                .model(model)
-                .workspace(workspace)
-                .stateStore(new InMemoryAgentStateStore())
-                .disableCompaction()
-                .disableMemoryHooks()
-                .permissionContext(permCtx)
-                .enableAskUser()
-                .build();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name(name)
+                        .description("ask user test")
+                        .sysPrompt("You are a test agent.")
+                        .model(model)
+                        .workspace(workspace)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableCompaction()
+                        .disableMemoryHooks()
+                        .permissionContext(permCtx)
+                        .enableAskUser()
+                        .build();
+        agents.add(agent);
+        return agent;
     }
 
     private static ChatResponse textResponse(String text) {
