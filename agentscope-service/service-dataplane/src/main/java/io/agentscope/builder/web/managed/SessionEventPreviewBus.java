@@ -18,6 +18,7 @@ package io.agentscope.builder.web.managed;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -29,7 +30,8 @@ import reactor.core.publisher.Sinks;
 @Component
 public class SessionEventPreviewBus {
 
-    private final Sinks.Many<SessionEventDto> sink = Sinks.many().multicast().directBestEffort();
+    private final ConcurrentHashMap<String, Sinks.Many<SessionEventDto>> sinks =
+            new ConcurrentHashMap<>();
 
     /** Emits an {@code event_start} frame for a forthcoming persisted type. */
     public void emitStart(String sessionId, String targetType, String eventId) {
@@ -62,13 +64,18 @@ public class SessionEventPreviewBus {
     }
 
     public Flux<SessionEventDto> subscribe(String sessionId) {
-        return sink.asFlux().filter(dto -> sessionId.equals(dto.sessionId()));
+        return sinkFor(sessionId).asFlux();
     }
 
-    private synchronized void emit(String sessionId, String type, Map<String, Object> payload) {
+    private void emit(String sessionId, String type, Map<String, Object> payload) {
         SessionEventDto dto =
                 new SessionEventDto(
                         null, sessionId, -1L, type, payload, null, System.currentTimeMillis());
-        sink.tryEmitNext(dto);
+        sinkFor(sessionId).tryEmitNext(dto);
+    }
+
+    private Sinks.Many<SessionEventDto> sinkFor(String sessionId) {
+        return sinks.computeIfAbsent(
+                sessionId, ignored -> Sinks.many().multicast().onBackpressureBuffer(512, false));
     }
 }
