@@ -80,10 +80,26 @@ final class ResponsesResponseParser {
         // ── Assembly: ThinkingBlock -> TextBlock -> ToolUseBlock ──
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
-        // ThinkingBlock (when summary text is present)
+        // ThinkingBlock (when any reasoning data is present).
+        // All reasoning-level metadata (encrypted_content, summary, text) is
+        // stored on the ThinkingBlock for reasoning replay.
         String summaryText = summaryBuilder.toString();
-        if (!summaryText.isEmpty()) {
-            contentBlocks.add(ThinkingBlock.builder().thinking(summaryText).build());
+        String reasoningText = reasoningTextBuilder.toString();
+        if (!summaryText.isEmpty() || encryptedContent != null || !reasoningText.isEmpty()) {
+            ThinkingBlock.Builder thinkingBuilder = ThinkingBlock.builder();
+            if (!summaryText.isEmpty()) {
+                thinkingBuilder.thinking(summaryText);
+            }
+            Map<String, Object> thinkingMetadata = new HashMap<>();
+            if (encryptedContent != null) {
+                thinkingMetadata.put(
+                        OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT, encryptedContent);
+            }
+            if (!reasoningText.isEmpty()) {
+                thinkingMetadata.put(OpenAIOfficialConstants.MD_REASONING_TEXT, reasoningText);
+            }
+            thinkingBuilder.metadata(thinkingMetadata);
+            contentBlocks.add(thinkingBuilder.build());
         }
 
         // TextBlock
@@ -100,18 +116,6 @@ final class ResponsesResponseParser {
         Map<String, Object> metadata = ResponsesHelper.extractResponseMetadata(response);
         String finishReason = (String) metadata.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS);
         ChatUsage usage = ResponsesHelper.extractUsage(response, startTime, metadata);
-
-        // Reasoning metadata
-        if (encryptedContent != null) {
-            metadata.put(OpenAIOfficialConstants.MD_REASONING_ENCRYPTED_CONTENT, encryptedContent);
-        }
-        if (!summaryText.isEmpty()) {
-            metadata.put(OpenAIOfficialConstants.MD_REASONING_SUMMARY, summaryText);
-        }
-        String reasoningText = reasoningTextBuilder.toString();
-        if (!reasoningText.isEmpty()) {
-            metadata.put(OpenAIOfficialConstants.MD_REASONING_TEXT, reasoningText);
-        }
 
         return ChatResponse.builder()
                 .id(responseId)

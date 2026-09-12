@@ -660,6 +660,36 @@ class OpenAIResponsesChatModelTest {
         }
 
         @Test
+        void streamThrowsInAssembleClosesSdkStream() throws Exception {
+            OpenAIClient client = mockClientWithResponseService();
+            ResponseService svc = client.responses();
+
+            CountDownLatch closeLatch = new CountDownLatch(1);
+
+            StreamResponse<ResponseStreamEvent> streamResponse =
+                    new StreamResponse<ResponseStreamEvent>() {
+                        @Override
+                        public Stream<ResponseStreamEvent> stream() {
+                            throw new RuntimeException("stream() initialization failed");
+                        }
+
+                        @Override
+                        public void close() {
+                            closeLatch.countDown();
+                        }
+                    };
+            when(svc.createStreaming(any(ResponseCreateParams.class))).thenReturn(streamResponse);
+
+            OpenAIResponsesChatModel model = createModel(client, true);
+            model.stream(simpleMessages(), null, null).subscribe(chunk -> {}, error -> {});
+
+            assertTrue(
+                    closeLatch.await(5, TimeUnit.SECONDS),
+                    "StreamResponse should be closed when assemble throws before"
+                            + " doFinally is attached");
+        }
+
+        @Test
         void retryableErrorRetriedViaRetryWhen() {
             OpenAIClient client = mockClientWithResponseService();
             ResponseService svc = client.responses();

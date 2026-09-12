@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseInputContent;
 import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseReasoningItem;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
@@ -661,6 +662,86 @@ class ResponsesMultiAgentFormatterTest {
                                     tool(toolResult("call_2", "search", "result2"))));
             assertEquals(
                     2, result.stream().filter(ResponseInputItem::isFunctionCallOutput).count());
+        }
+    }
+
+    @Nested
+    @DisplayName("Encrypted reasoning replay")
+    class EncryptedReasoningReplay {
+
+        @Test
+        @DisplayName(
+                "Assistant with encrypted reasoning is passed through, not merged into history")
+        void encryptedReasoningNotMergedIntoHistory() {
+            Msg user1 = user("Alice", text("What is 2+2?"));
+            Msg assistant1 =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("Bob")
+                            .content(
+                                    List.of(
+                                            ThinkingBlock.builder()
+                                                    .thinking("Calculating...")
+                                                    .metadata(
+                                                            Map.of(
+                                                                    OpenAIOfficialConstants
+                                                                            .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                    "enc123"))
+                                                    .build(),
+                                            text("4")))
+                            .build();
+            Msg user2 = user("Alice", text("And 3+3?"));
+
+            List<ResponseInputItem> result =
+                    formatter.formatHistory(List.of(user1, assistant1, user2));
+
+            // A reasoning item must be present with the encrypted content
+            ResponseReasoningItem reasoning = null;
+            for (ResponseInputItem item : result) {
+                if (item.isReasoning()) {
+                    reasoning = item.asReasoning();
+                }
+            }
+            assertNotNull(reasoning, "Expected a reasoning replay item");
+            assertEquals("enc123", reasoning.encryptedContent().orElseThrow());
+
+            // The assistant text must NOT be inside a merged user history message
+            long userMsgCount = countRole(result, EasyInputMessage.Role.USER);
+            long assistantMsgCount = countRole(result, EasyInputMessage.Role.ASSISTANT);
+            assertTrue(assistantMsgCount >= 1, "Assistant message should be preserved as-is");
+            // The assistant text "4" must be in an assistant message, not inside a
+            // merged user <history> block
+            boolean assistantHasText4 = false;
+            for (ResponseInputItem item : result) {
+                if (item.isEasyInputMessage()) {
+                    EasyInputMessage m = item.asEasyInputMessage();
+                    if (m.role() == EasyInputMessage.Role.ASSISTANT
+                            && extractText(item).contains("4")) {
+                        assistantHasText4 = true;
+                    }
+                }
+            }
+            assertTrue(assistantHasText4, "Assistant text '4' should be in an assistant message");
+        }
+
+        @Test
+        @DisplayName("Assistant without encrypted reasoning is merged into history as before")
+        void plainAssistantStillMerged() {
+            Msg user1 = user("Alice", text("Hi"));
+            Msg assistant1 = assistant("Bob", text("Hello!"));
+            Msg user2 = user("Alice", text("Bye"));
+
+            List<ResponseInputItem> result =
+                    formatter.formatHistory(List.of(user1, assistant1, user2));
+
+            // No reasoning item should be emitted
+            boolean hasReasoning = result.stream().anyMatch(ResponseInputItem::isReasoning);
+            assertFalse(hasReasoning, "No reasoning item for plain assistant message");
+
+            // Messages should be merged into a single user history message
+            String allText = extractAllText(result);
+            assertTrue(allText.contains("<history>"));
+            assertTrue(allText.contains("Hello!"));
         }
     }
 

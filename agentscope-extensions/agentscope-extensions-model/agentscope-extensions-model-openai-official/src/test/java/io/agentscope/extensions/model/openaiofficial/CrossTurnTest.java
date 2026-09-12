@@ -356,13 +356,17 @@ class CrossTurnTest {
                     List.of(
                             UserMessage.builder().content(text("Hello")).build(),
                             AssistantMessage.builder()
-                                    .content(ThinkingBlock.builder().thinking("summary1").build())
-                                    .content(TextBlock.builder().text("I can help").build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "enc123"))
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("summary1")
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            OpenAIOfficialConstants
+                                                                                    .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                            "enc123"))
+                                                            .build(),
+                                                    TextBlock.builder().text("I can help").build()))
                                     .build(),
                             UserMessage.builder().content(text("Follow up")).build());
 
@@ -426,13 +430,17 @@ class CrossTurnTest {
                     List.of(
                             UserMessage.builder().content(text("Hello")).build(),
                             AssistantMessage.builder()
-                                    .content(ThinkingBlock.builder().thinking("summary1").build())
-                                    .content(TextBlock.builder().text("I can help").build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "enc123"))
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("summary1")
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            OpenAIOfficialConstants
+                                                                                    .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                            "enc123"))
+                                                            .build(),
+                                                    TextBlock.builder().text("I can help").build()))
                                     .build(),
                             UserMessage.builder().content(text("Follow up")).build());
 
@@ -492,13 +500,17 @@ class CrossTurnTest {
                     List.of(
                             UserMessage.builder().content(text("Hello")).build(),
                             AssistantMessage.builder()
-                                    .content(ThinkingBlock.builder().thinking("summary1").build())
-                                    .content(TextBlock.builder().text("response1").build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "enc123"))
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("summary1")
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            OpenAIOfficialConstants
+                                                                                    .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                            "enc123"))
+                                                            .build(),
+                                                    TextBlock.builder().text("response1").build()))
                                     .build(),
                             UserMessage.builder().content(text("Follow up")).build());
 
@@ -554,13 +566,17 @@ class CrossTurnTest {
                     List.of(
                             UserMessage.builder().content(text("Hello")).build(),
                             AssistantMessage.builder()
-                                    .content(ThinkingBlock.builder().thinking("summary1").build())
-                                    .content(TextBlock.builder().text("response1").build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "enc123"))
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("summary1")
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            OpenAIOfficialConstants
+                                                                                    .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                            "enc123"))
+                                                            .build(),
+                                                    TextBlock.builder().text("response1").build()))
                                     .build(),
                             UserMessage.builder().content(text("Follow up")).build());
 
@@ -592,13 +608,19 @@ class CrossTurnTest {
                     List.of(
                             UserMessage.builder().content(text("Hello")).build(),
                             AssistantMessage.builder()
-                                    .content(ThinkingBlock.builder().thinking("my summary").build())
-                                    .content(TextBlock.builder().text("my response").build())
-                                    .metadata(
-                                            Map.of(
-                                                    OpenAIOfficialConstants
-                                                            .MD_REASONING_ENCRYPTED_CONTENT,
-                                                    "enc_data"))
+                                    .content(
+                                            List.of(
+                                                    ThinkingBlock.builder()
+                                                            .thinking("my summary")
+                                                            .metadata(
+                                                                    Map.of(
+                                                                            OpenAIOfficialConstants
+                                                                                    .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                            "enc_data"))
+                                                            .build(),
+                                                    TextBlock.builder()
+                                                            .text("my response")
+                                                            .build()))
                                     .build(),
                             UserMessage.builder().content(text("Follow up")).build());
 

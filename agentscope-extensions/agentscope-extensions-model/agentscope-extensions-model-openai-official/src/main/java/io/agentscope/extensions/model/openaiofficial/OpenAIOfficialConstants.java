@@ -64,6 +64,5 @@ final class OpenAIOfficialConstants {
 
     // Reasoning-level (internal state, used for history replay)
     static final String MD_REASONING_ENCRYPTED_CONTENT = "openai.reasoning.encrypted_content";
-    static final String MD_REASONING_SUMMARY = "openai.reasoning.summary";
     static final String MD_REASONING_TEXT = "openai.reasoning.text";
 }
