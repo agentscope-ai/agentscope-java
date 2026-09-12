@@ -264,10 +264,21 @@ public final class AgentProtocolTaskStore {
                     .blockLast(Duration.ofHours(2));
 
             Msg reply = resultRef.get();
+            if (reply != null && isMixedPause(reply.getGenerateReason())) {
+                throw new IllegalStateException(
+                        "runtime stopped for both permission confirmation and ASK_USER input,"
+                                + " but this Agent Protocol adapter only supports permission"
+                                + " confirmations; refusing the mixed pause preserves both pending"
+                                + " subsets for a compatible adapter");
+            }
             if (reply != null
                     && reply.getGenerateReason() == GenerateReason.PERMISSION_ASKING
                     && properties.isHitlEnabled()) {
                 List<RemotePendingConfirm> pending = extractPendingConfirms(reply);
+                if (pending.isEmpty()) {
+                    throw new IllegalStateException(
+                            "permission pause response contains no confirmation tool calls");
+                }
                 markAwaitingConfirm(taskId, agentId, pending);
                 RemoteAgentEvent require = new RemoteAgentEvent();
                 require.setType(RemoteEventType.REQUIRE_CONFIRM);
@@ -276,6 +287,12 @@ public final class AgentProtocolTaskStore {
                 require.setStatus("awaiting_confirm");
                 eventBus.publish(taskId, require);
                 return AWAITING_CONFIRM_SENTINEL;
+            }
+
+            if (reply != null && isAskUserPause(reply.getGenerateReason())) {
+                throw new IllegalStateException(
+                        "runtime stopped for ASK_USER input, but this Agent Protocol adapter only"
+                                + " supports permission confirmations");
             }
 
             String text = reply != null ? reply.getTextContent() : "";
@@ -370,6 +387,14 @@ public final class AgentProtocolTaskStore {
             }
         }
         return pending;
+    }
+
+    private static boolean isMixedPause(GenerateReason reason) {
+        return reason == GenerateReason.PERMISSION_AND_ASK_USER_ASKING;
+    }
+
+    private static boolean isAskUserPause(GenerateReason reason) {
+        return reason == GenerateReason.ASK_USER_ASKING;
     }
 
     private static List<ConfirmResult> toConfirmResults(

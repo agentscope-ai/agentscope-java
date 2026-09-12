@@ -18,8 +18,10 @@ package io.agentscope.core.message;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -35,7 +37,7 @@ class GenerateReasonTest {
     @DisplayName("Should have all expected enum values")
     void testEnumValues() {
         GenerateReason[] values = GenerateReason.values();
-        assertEquals(11, values.length);
+        assertEquals(13, values.length);
 
         // Verify all expected values exist
         assertNotNull(GenerateReason.MODEL_STOP);
@@ -45,6 +47,8 @@ class GenerateReasonTest {
         assertNotNull(GenerateReason.REASONING_STOP_REQUESTED);
         assertNotNull(GenerateReason.ACTING_STOP_REQUESTED);
         assertNotNull(GenerateReason.PERMISSION_ASKING);
+        assertNotNull(GenerateReason.ASK_USER_ASKING);
+        assertNotNull(GenerateReason.PERMISSION_AND_ASK_USER_ASKING);
         assertNotNull(GenerateReason.MIDDLEWARE_STOP_REQUESTED);
         assertNotNull(GenerateReason.INTERRUPTED);
         assertNotNull(GenerateReason.MAX_ITERATIONS);
@@ -114,6 +118,76 @@ class GenerateReasonTest {
                         .build();
 
         assertEquals(GenerateReason.MODEL_STOP, msg.getGenerateReason());
+    }
+
+    @Test
+    @DisplayName("Should tolerate unknown GenerateReason values from JSON")
+    void testUnknownGenerateReasonFromJson() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertEquals(
+                GenerateReason.PERMISSION_AND_ASK_USER_ASKING,
+                mapper.readValue("\"PERMISSION_AND_ASK_USER_ASKING\"", GenerateReason.class));
+        assertEquals(
+                GenerateReason.MODEL_STOP,
+                mapper.readValue("\"FUTURE_PAUSE_REASON\"", GenerateReason.class));
+    }
+
+    @Test
+    @DisplayName("Should periodically report repeated unknown GenerateReason values")
+    void testUnknownGenerateReasonWarningState() {
+        String value = "TEST_UNKNOWN_GENERATE_REASON";
+        long firstReportNanos = 1_000_000_000L;
+
+        assertEquals(0L, GenerateReason.getUnknownValueSuppressedCount(value, firstReportNanos));
+        assertEquals(
+                -1L, GenerateReason.getUnknownValueSuppressedCount(value, firstReportNanos + 1));
+        assertEquals(
+                1L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        value, firstReportNanos + TimeUnit.MINUTES.toNanos(5)));
+
+        String longValuePrefix = "X".repeat(253);
+        assertEquals(
+                0L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        longValuePrefix + "first", firstReportNanos));
+        assertEquals(
+                -1L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        longValuePrefix + "second", firstReportNanos + 1));
+    }
+
+    @Test
+    @DisplayName("Should retain recently accessed values during warning state eviction")
+    void testUnknownGenerateReasonWarningStateUsesLruEviction() {
+        GenerateReason.clearUnknownValueWarningStatesForTest();
+        try {
+            long firstReportNanos = 2_000_000_000L;
+            String hotValue = "HOT_UNKNOWN_GENERATE_REASON";
+
+            assertEquals(
+                    0L, GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos));
+            for (int i = 0; i < 255; i++) {
+                assertEquals(
+                        0L,
+                        GenerateReason.getUnknownValueSuppressedCount(
+                                "FILLER_UNKNOWN_GENERATE_REASON_" + i, firstReportNanos));
+            }
+
+            assertEquals(
+                    -1L,
+                    GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos + 1));
+            assertEquals(
+                    0L,
+                    GenerateReason.getUnknownValueSuppressedCount(
+                            "NEW_UNKNOWN_GENERATE_REASON", firstReportNanos + 2));
+            assertEquals(
+                    -1L,
+                    GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos + 3));
+        } finally {
+            GenerateReason.clearUnknownValueWarningStatesForTest();
+        }
     }
 
     @Test

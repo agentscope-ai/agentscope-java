@@ -41,5 +41,9 @@ public record PermissionRule(
         Objects.requireNonNull(toolName, "toolName must not be null");
         Objects.requireNonNull(behavior, "behavior must not be null");
         Objects.requireNonNull(source, "source must not be null");
+        if (behavior == PermissionBehavior.ASK_USER) {
+            throw new IllegalArgumentException(
+                    "ASK_USER is only valid as a tool permission decision, not a rule");
+        }
     }
 }

@@ -87,7 +87,8 @@ public final class PermissionEngine {
      * Adds a rule to the engine's internal rule set.
      *
      * <p>The rule is routed by its {@link PermissionRule#behavior()}: ALLOW/DENY/ASK rules are
-     * appended to the engine's allow/deny/ask tables; PASSTHROUGH rules are ignored.
+     * appended to the engine's allow/deny/ask tables; PASSTHROUGH rules are ignored. ASK_USER is
+     * rejected because it is emitted only by a tool's own permission check.
      *
      * @param rule the rule to add; must be non-null
      */
@@ -102,6 +103,9 @@ public final class PermissionEngine {
             case PASSTHROUGH -> {
                 // PASSTHROUGH rules are not stored; they signal "defer to engine".
             }
+            case ASK_USER ->
+                    throw new IllegalArgumentException(
+                            "ASK_USER is only valid as a tool permission decision, not a rule");
         }
     }
 
@@ -156,6 +160,11 @@ public final class PermissionEngine {
         return toolCheckPermissions(tool, input)
                 .flatMap(
                         toolDecision -> {
+                            if (toolDecision.getBehavior() == PermissionBehavior.ASK_USER) {
+                                // Model-initiated question: pause and ask the user for input.
+                                // This is non-bypassable and short-circuits rule/BYPASS handling.
+                                return Mono.just(toolDecision);
+                            }
                             if (toolDecision.getBehavior() == PermissionBehavior.DENY) {
                                 return Mono.just(toolDecision);
                             }
@@ -204,26 +213,39 @@ public final class PermissionEngine {
     /**
      * Runs the tool-specific permission pipeline.
      *
-     * <p>EXPLORE / ACCEPT_EDITS read-only handling first, then the tool's own
-     * {@link ToolBase#checkPermissions}. Emits empty when the tool returns PASSTHROUGH.
+     * <p>The tool check runs before the mode shortcut so a tool-generated {@code ASK_USER}
+     * decision is never bypassed. Consequently, {@code checkPermissions()} is invoked even in
+     * EXPLORE / ACCEPT_EDITS before the mode result is applied; tool implementations should keep
+     * that check side-effect free. For all other decisions, EXPLORE / ACCEPT_EDITS retain their
+     * existing read-only semantics, including ACCEPT_EDITS overriding a read-only tool's own
+     * {@code DENY} with {@code ALLOW}. Emits empty when the tool returns PASSTHROUGH and the mode
+     * has no decision of its own.
      */
     private Mono<PermissionDecision> toolCheckPermissions(
             ToolBase tool, Map<String, Object> input) {
-        if (context.getMode() == PermissionMode.EXPLORE
-                || context.getMode() == PermissionMode.ACCEPT_EDITS) {
-            PermissionDecision modeDecision = checkExploreMode(tool);
-            if (modeDecision != null) {
-                return Mono.just(modeDecision);
-            }
-        }
         return tool.checkPermissions(input, context)
                 .flatMap(
                         decision -> {
+                            if (decision.getBehavior() == PermissionBehavior.ASK_USER) {
+                                return Mono.just(decision);
+                            }
+                            PermissionDecision modeDecision = checkExploreMode(tool);
+                            if (modeDecision != null) {
+                                return Mono.just(modeDecision);
+                            }
                             if (decision.getBehavior() == PermissionBehavior.PASSTHROUGH) {
                                 return Mono.empty();
                             }
                             return Mono.just(decision);
-                        });
+                        })
+                .switchIfEmpty(
+                        Mono.defer(
+                                () -> {
+                                    PermissionDecision modeDecision = checkExploreMode(tool);
+                                    return modeDecision == null
+                                            ? Mono.empty()
+                                            : Mono.just(modeDecision);
+                                }));
     }
 
     private PermissionDecision checkExploreMode(ToolBase tool) {
