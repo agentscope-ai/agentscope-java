@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.dashscope.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope content part DTO for multimodal messages.
@@ -78,6 +79,11 @@ public class DashScopeContentPart {
     /** Used to limit the total pixels of all frames extracted from the video (single image pixels × total frames). */
     @JsonProperty("total_pixels")
     private Integer totalPixels;
+
+    /** Cache control configuration for this content part. */
+    @JsonProperty("cache_control")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> cacheControl;
 
     public DashScopeContentPart() {}
 
@@ -151,6 +157,24 @@ public class DashScopeContentPart {
 
     public void setTotalPixels(Integer totalPixels) {
         this.totalPixels = totalPixels;
+    }
+
+    /**
+     * Get the cache control configuration.
+     *
+     * @return the cache control configuration, or null when not configured
+     */
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    /**
+     * Set the cache control configuration.
+     *
+     * @param cacheControl the cache control configuration
+     */
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -287,6 +311,17 @@ public class DashScopeContentPart {
 
         public Builder totalPixels(Integer totalPixels) {
             part.setTotalPixels(totalPixels);
+            return this;
+        }
+
+        /**
+         * Set the cache control configuration.
+         *
+         * @param cacheControl the cache control configuration
+         * @return this builder
+         */
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            part.setCacheControl(cacheControl);
             return this;
         }
 
