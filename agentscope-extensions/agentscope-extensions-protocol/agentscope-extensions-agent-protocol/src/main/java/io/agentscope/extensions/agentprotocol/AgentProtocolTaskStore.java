@@ -26,7 +26,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
@@ -265,8 +264,15 @@ public final class AgentProtocolTaskStore {
                     .blockLast(Duration.ofHours(2));
 
             Msg reply = resultRef.get();
+            if (reply != null && isMixedPause(reply.getGenerateReason())) {
+                throw new IllegalStateException(
+                        "runtime stopped for both permission confirmation and ASK_USER input,"
+                                + " but this Agent Protocol adapter only supports permission"
+                                + " confirmations; refusing the mixed pause preserves both pending"
+                                + " subsets for a compatible adapter");
+            }
             if (reply != null
-                    && isPermissionApprovalPause(reply.getGenerateReason())
+                    && reply.getGenerateReason() == GenerateReason.PERMISSION_ASKING
                     && properties.isHitlEnabled()) {
                 List<RemotePendingConfirm> pending = extractPendingConfirms(reply);
                 if (pending.isEmpty()) {
@@ -366,16 +372,13 @@ public final class AgentProtocolTaskStore {
     private static List<RemotePendingConfirm> extractPendingConfirms(Msg reply) {
         List<RemotePendingConfirm> pending = new ArrayList<>();
         for (ToolUseBlock block : reply.getContentBlocks(ToolUseBlock.class)) {
-            if (block.getState() == ToolCallState.ASKING
-                    && (reply.getGenerateReason() != GenerateReason.PERMISSION_AND_ASK_USER_ASKING
-                            || isPermissionConfirmationCall(block))) {
+            if (block.getState() == ToolCallState.ASKING) {
                 pending.add(
                         new RemotePendingConfirm(
                                 block.getId(), block.getName(), toJsonQuiet(block.getInput())));
             }
         }
-        if (pending.isEmpty()
-                && reply.getGenerateReason() != GenerateReason.PERMISSION_AND_ASK_USER_ASKING) {
+        if (pending.isEmpty()) {
             // Fall back to all tool uses if state wasn't stamped
             for (ToolUseBlock block : reply.getContentBlocks(ToolUseBlock.class)) {
                 pending.add(
@@ -386,32 +389,12 @@ public final class AgentProtocolTaskStore {
         return pending;
     }
 
-    private static boolean isPermissionApprovalPause(GenerateReason reason) {
-        return reason == GenerateReason.PERMISSION_ASKING
-                || reason == GenerateReason.PERMISSION_AND_ASK_USER_ASKING;
+    private static boolean isMixedPause(GenerateReason reason) {
+        return reason == GenerateReason.PERMISSION_AND_ASK_USER_ASKING;
     }
 
     private static boolean isAskUserPause(GenerateReason reason) {
-        return reason == GenerateReason.ASK_USER_ASKING
-                || reason == GenerateReason.PERMISSION_AND_ASK_USER_ASKING;
-    }
-
-    private static boolean isPermissionConfirmationCall(ToolUseBlock toolCall) {
-        Object raw =
-                toolCall == null || toolCall.getMetadata() == null
-                        ? null
-                        : toolCall.getMetadata().get(ToolUseBlock.METADATA_PERMISSION_BEHAVIOR);
-        if (raw instanceof PermissionBehavior behavior) {
-            return behavior == PermissionBehavior.ASK;
-        }
-        if (raw instanceof String value) {
-            try {
-                return PermissionBehavior.fromString(value) == PermissionBehavior.ASK;
-            } catch (IllegalArgumentException ignored) {
-                return false;
-            }
-        }
-        return false;
+        return reason == GenerateReason.ASK_USER_ASKING;
     }
 
     private static List<ConfirmResult> toConfirmResults(

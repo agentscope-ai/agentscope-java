@@ -148,7 +148,7 @@ class AgentProtocolTaskStoreHitlTest {
     }
 
     @Test
-    void mixedPermissionPauseOnlyPublishesPermissionCallsForConfirmation() throws Exception {
+    void mixedPermissionPauseFailsWithoutDroppingEitherPendingSubset() throws Exception {
         ToolUseBlock permissionCall =
                 ToolUseBlock.builder()
                         .id("tc-permission")
@@ -186,13 +186,11 @@ class AgentProtocolTaskStoreHitlTest {
 
         store.submit("mixed-1", "worker", "please continue", Map.of("detail", "full"));
 
-        awaitCondition(
-                () -> "awaiting_confirm".equals(store.snapshot("mixed-1").get("status")), 5_000);
-        @SuppressWarnings("unchecked")
-        List<RemotePendingConfirm> pending =
-                (List<RemotePendingConfirm>) store.snapshot("mixed-1").get("pending_confirms");
-        assertEquals(1, pending.size());
-        assertEquals("tc-permission", pending.get(0).getToolCallId());
+        awaitCondition(() -> "error".equals(store.snapshot("mixed-1").get("status")), 5_000);
+        Map<String, Object> snapshot = store.snapshot("mixed-1");
+        assertTrue(((String) snapshot.get("error")).contains("both permission confirmation"));
+        assertFalse(snapshot.containsKey("pending_confirms"));
+        assertFalse(store.hasSubmitContext("mixed-1"));
     }
 
     private static Msg askingMsg() {
