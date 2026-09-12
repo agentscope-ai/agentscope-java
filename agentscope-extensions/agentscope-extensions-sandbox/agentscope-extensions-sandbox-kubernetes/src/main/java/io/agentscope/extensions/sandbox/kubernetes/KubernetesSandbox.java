@@ -88,6 +88,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     @Override
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
+        requireActiveConnection();
         String wrapped = "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (" + command + ")";
         ExecutionResult result =
                 sdkSandbox.commands().run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
@@ -105,6 +106,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
+        requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
         StringBuilder tarArgs = new StringBuilder();
         // The temp archive may live inside the workspace when the file API is rooted there;
@@ -163,6 +165,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
+        requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
         sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
 
@@ -289,7 +292,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     private void requireActiveConnection() {
         if (!sdkSandbox.isActive()) {
             throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_STOP_ERROR,
+                    SandboxErrorCode.SANDBOX_CONNECTION_CLOSED,
                     "Kubernetes sandbox connection has been closed");
         }
     }

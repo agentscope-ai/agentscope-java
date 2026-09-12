@@ -569,6 +569,13 @@ public class SessionTree {
                     try {
                         store.appendSegment(ref, seqStart, seqEnd, wid, payload);
                     } catch (Exception e) {
+                        if (isReleasedSandbox(mirrorFs)) {
+                            log.debug(
+                                    "Skipping best-effort transcript segment mirror for {} because"
+                                            + " its sandbox has been released",
+                                    ref.prefix());
+                            return;
+                        }
                         log.warn(
                                 "Failed to append transcript segment for {}: {}",
                                 ref.prefix(),
@@ -732,6 +739,11 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
+        // The index describes the authoritative local file, not the best-effort remote mirror.
+        // Keep it current even when the sandbox has already been released or upload fails.
+        if (index != null) {
+            index.upsertFromLocalFile(relativePath, file);
+        }
         if (skipMirrorForReleasedSandbox(fs, relativePath)) {
             return;
         }
@@ -742,16 +754,26 @@ public class SessionTree {
             if (uploads.size() != 1 || !uploads.get(0).isSuccess()) {
                 String error =
                         uploads.size() == 1 ? uploads.get(0).error() : "missing upload response";
+                if (isReleasedSandbox(fs)) {
+                    log.debug(
+                            "Skipping best-effort session mirror for {} because its sandbox has"
+                                    + " been released",
+                            relativePath);
+                    return;
+                }
                 log.warn("Failed to mirror session file {} to filesystem: {}", file, error);
                 return;
-            }
-            // Best-effort: the local file already exists — update index with its current stats
-            if (index != null) {
-                index.upsertFromLocalFile(relativePath, file);
             }
         } catch (IOException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         } catch (RuntimeException e) {
+            if (isReleasedSandbox(fs)) {
+                log.debug(
+                        "Skipping best-effort session mirror for {} because its sandbox has been"
+                                + " released",
+                        relativePath);
+                return;
+            }
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }
     }
@@ -767,6 +789,10 @@ public class SessionTree {
             return true;
         }
         return false;
+    }
+
+    private static boolean isReleasedSandbox(AbstractFilesystem fs) {
+        return fs instanceof PinnedSandboxFilesystem pinned && pinned.isSandboxReleased();
     }
 
     /**

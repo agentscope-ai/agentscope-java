@@ -18,13 +18,17 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.WeakHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * {@link SandboxBackedFilesystem} that holds a fixed {@link Sandbox} reference for the lifetime of
@@ -41,8 +45,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
 
-    private static final Map<Sandbox, MirrorGate> MIRROR_GATES =
-            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Logger log = LoggerFactory.getLogger(PinnedSandboxFilesystem.class);
+    private static final long RELEASE_GATE_TIMEOUT_MILLIS = 1_000;
+    private static final ReferenceQueue<Sandbox> STALE_SANDBOXES = new ReferenceQueue<>();
+    private static final Map<IdentityWeakReference, MirrorGate> MIRROR_GATES = new HashMap<>();
 
     private final Sandbox pinnedSandbox;
     private final MirrorGate mirrorGate;
@@ -53,7 +59,24 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         super.setSandbox(sandbox);
     }
 
-    /** Prevents new mirror uploads and waits for any in-flight upload before sandbox shutdown. */
+    /**
+     * Starts a fresh mirror-gate generation for a newly acquired sandbox.
+     *
+     * <p>A manager may reuse the same {@link Sandbox} object for a later call. Replacing rather
+     * than reopening the old gate keeps mirrors from the previous call permanently released while
+     * ensuring they cannot attach themselves to the new call's lifecycle.
+     */
+    public static void markSandboxAcquired(Sandbox sandbox) {
+        if (sandbox == null) {
+            return;
+        }
+        synchronized (MIRROR_GATES) {
+            expungeStaleGates();
+            MIRROR_GATES.put(new IdentityWeakReference(sandbox, STALE_SANDBOXES), new MirrorGate());
+        }
+    }
+
+    /** Prevents new mirror uploads and briefly waits for an in-flight upload before shutdown. */
     public static void markSandboxReleased(Sandbox sandbox) {
         if (sandbox != null) {
             gateFor(sandbox).markReleased();
@@ -73,6 +96,11 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         } finally {
             mirrorGate.lock.readLock().unlock();
         }
+    }
+
+    /** Returns whether this pinned filesystem's call generation has been released. */
+    public boolean isSandboxReleased() {
+        return mirrorGate.released;
     }
 
     @Override
@@ -100,21 +128,83 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
 
     private static MirrorGate gateFor(Sandbox sandbox) {
         synchronized (MIRROR_GATES) {
-            return MIRROR_GATES.computeIfAbsent(sandbox, ignored -> new MirrorGate());
+            expungeStaleGates();
+            IdentityWeakReference lookup = new IdentityWeakReference(sandbox);
+            MirrorGate gate = MIRROR_GATES.get(lookup);
+            if (gate == null) {
+                gate = new MirrorGate();
+                MIRROR_GATES.put(new IdentityWeakReference(sandbox, STALE_SANDBOXES), gate);
+            }
+            return gate;
+        }
+    }
+
+    private static void expungeStaleGates() {
+        IdentityWeakReference stale;
+        while ((stale = (IdentityWeakReference) STALE_SANDBOXES.poll()) != null) {
+            MIRROR_GATES.remove(stale);
         }
     }
 
     private static final class MirrorGate {
         private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-        private boolean released;
+        private volatile boolean released;
 
         private void markReleased() {
-            lock.writeLock().lock();
+            // Publish the latch before waiting so new uploads are rejected even if an existing
+            // remote transfer is wedged. Release remains bounded because mirrors are best-effort.
+            released = true;
+            boolean acquired = false;
             try {
-                released = true;
+                acquired =
+                        lock.writeLock()
+                                .tryLock(RELEASE_GATE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                if (!acquired) {
+                    log.warn(
+                            "Mirror upload still in flight after {} ms; releasing sandbox",
+                            RELEASE_GATE_TIMEOUT_MILLIS);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for an in-flight sandbox mirror upload");
             } finally {
-                lock.writeLock().unlock();
+                if (acquired) {
+                    lock.writeLock().unlock();
+                }
             }
+        }
+    }
+
+    /** Weak key whose equality follows object identity rather than {@code equals/hashCode}. */
+    private static final class IdentityWeakReference extends WeakReference<Sandbox> {
+        private final int identityHash;
+
+        private IdentityWeakReference(Sandbox sandbox) {
+            super(sandbox);
+            this.identityHash = System.identityHashCode(sandbox);
+        }
+
+        private IdentityWeakReference(
+                Sandbox sandbox, ReferenceQueue<? super Sandbox> referenceQueue) {
+            super(sandbox, referenceQueue);
+            this.identityHash = System.identityHashCode(sandbox);
+        }
+
+        @Override
+        public int hashCode() {
+            return identityHash;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof IdentityWeakReference that)) {
+                return false;
+            }
+            Sandbox sandbox = get();
+            return sandbox != null && sandbox == that.get();
         }
     }
 }

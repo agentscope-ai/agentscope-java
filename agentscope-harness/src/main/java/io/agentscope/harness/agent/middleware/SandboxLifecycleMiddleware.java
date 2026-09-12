@@ -110,6 +110,7 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
+            PinnedSandboxFilesystem.markSandboxAcquired(sandbox);
             try {
                 sandbox.start();
                 // Bind the acquired sandbox per-call on this invocation's RuntimeContext rather

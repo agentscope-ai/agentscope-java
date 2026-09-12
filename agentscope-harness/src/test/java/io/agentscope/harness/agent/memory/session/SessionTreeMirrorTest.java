@@ -22,6 +22,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -31,6 +32,7 @@ import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
+import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -212,6 +214,7 @@ class SessionTreeMirrorTest {
     @Test
     void flush_skipsMirrorWhenPinnedSandboxWasReleased() throws Exception {
         StoppedTransferSandbox sandbox = new StoppedTransferSandbox();
+        PinnedSandboxFilesystem.markSandboxReleased(sandbox);
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         filesystem.setSandbox(sandbox);
         Path context = workspace.resolve("agents/agent-a/sessions/released.jsonl");
@@ -227,6 +230,7 @@ class SessionTreeMirrorTest {
     @Test
     void flush_skipsTranscriptSegmentWhenPinnedSandboxWasReleased() throws Exception {
         StoppedTransferSandbox sandbox = new StoppedTransferSandbox();
+        PinnedSandboxFilesystem.markSandboxReleased(sandbox);
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
         filesystem.setSandbox(sandbox);
         Path context = workspace.resolve("agents/agent-a/sessions/released-segment.jsonl");
@@ -239,6 +243,27 @@ class SessionTreeMirrorTest {
         tree.flush();
 
         assertTrue(SessionTree.awaitMirrorQuiescence(5, TimeUnit.SECONDS));
+        assertEquals(0, sandbox.uploadAttempts);
+    }
+
+    @Test
+    void flush_updatesLocalIndexWhenPinnedSandboxWasReleased() throws Exception {
+        StoppedTransferSandbox sandbox = new StoppedTransferSandbox();
+        PinnedSandboxFilesystem.markSandboxReleased(sandbox);
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        filesystem.setSandbox(sandbox);
+        Path context = workspace.resolve("agents/agent-a/sessions/released-index.jsonl");
+
+        try (WorkspaceIndex index = WorkspaceIndex.open(workspace)) {
+            assertTrue(index != null, "workspace index should be available for this test");
+            SessionTree tree = new SessionTree(context, workspace, filesystem, index);
+            tree.append(new SessionEntry.MessageEntry(null, null, null, "USER", "hello", null));
+            tree.flush();
+
+            assertTrue(SessionTree.awaitMirrorQuiescence(5, TimeUnit.SECONDS));
+            assertTrue(index.exists("agents/agent-a/sessions/released-index.jsonl"));
+            assertTrue(index.exists("agents/agent-a/sessions/released-index.log.jsonl"));
+        }
         assertEquals(0, sandbox.uploadAttempts);
     }
 
@@ -299,7 +324,7 @@ class SessionTreeMirrorTest {
 
         @Override
         public boolean isRunning() {
-            return false;
+            return true;
         }
 
         @Override
