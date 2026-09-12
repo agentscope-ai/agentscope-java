@@ -18,11 +18,13 @@ package io.agentscope.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +52,15 @@ class JsonSchemaUtilsTest {
         public String title;
         public SimpleModel author;
         public List<String> tags;
+    }
+
+    /** Holder for the type shapes a method signature can declare but no class does. */
+    static class GenericHolder<T> {
+        public T[] values;
+
+        public <R> R identity(R input) {
+            return input;
+        }
     }
 
     @Test
@@ -264,22 +275,63 @@ class JsonSchemaUtilsTest {
 
     @Test
     void testGenerateSchemaFromTypeNullThrows() {
-        // A null type has no raw class to cache under, so the NPE surfaces from the raw-class
-        // lookup, matching the pre-cache behavior for a null argument.
+        // The public entry point rejects null before it reaches the cache, matching the pre-cache
+        // behavior for a null argument.
         assertThrows(
                 NullPointerException.class, () -> JsonSchemaUtils.generateSchemaFromType(null));
     }
 
     @Test
-    void testGenerateSchemaFromTypeVariableStillGenerates() {
-        // A type variable has no raw class to hang an entry on, so it is generated without
-        // caching; that fallback must still yield a usable scheme.
+    void testGenerateSchemaFromTypeVariableIsCachedUnderItsDeclaringClass() {
+        // A type variable has no raw class, so it is cached under the class that declares it. Both
+        // calls must agree, whether the entry is served from the cache or generated again.
         Type typeVariable = List.class.getTypeParameters()[0];
 
         Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(typeVariable);
         Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(typeVariable);
 
         assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromMethodTypeVariableIsCachedUnderItsDeclaringClass() throws Exception {
+        // A type variable declared on a method has no raw class either, and its declaration is the
+        // method rather than a class, so it is cached under the method's declaring class.
+        Type typeVariable =
+                GenericHolder.class.getMethod("identity", Object.class).getTypeParameters()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromGenericArrayIsCachedUnderItsComponentClass() throws Exception {
+        // A generic array carries no raw class of its own; it resolves through its component type.
+        Type genericArray = GenericHolder.class.getField("values").getGenericType();
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(genericArray);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(genericArray);
+
+        assertNotNull(first);
+        assertEquals(first, second);
+    }
+
+    @Test
+    void testGenerateSchemaFromWildcardIsGeneratedWithoutCaching() {
+        // A wildcard is only ever a type argument, never a parameter or return type, so a
+        // reflective signature cannot produce one at the top level. Only a caller synthesizing one
+        // reaches the uncached path; both calls must still agree.
+        Type wildcard =
+                ((ParameterizedType) new TypeReference<List<?>>() {}.getType())
+                        .getActualTypeArguments()[0];
+
+        Map<String, Object> first = JsonSchemaUtils.generateSchemaFromType(wildcard);
+        Map<String, Object> second = JsonSchemaUtils.generateSchemaFromType(wildcard);
+
         assertEquals(first, second);
     }
 
@@ -322,10 +374,11 @@ class JsonSchemaUtilsTest {
 
     @Test
     void testGenerateSchemaFromTypeConcurrently() throws Exception {
-        List<Type> targetTypes =
-                List.of(
-                        new TypeReference<ConcurrentClassC>() {}.getType(),
-                        new TypeReference<List<ConcurrentClassD>>() {}.getType());
+        // Two variants of the same class. They share the per-class slot map, so concurrent calls
+        // exercise the structure the cache's correctness rests on.
+        Type listOfC = new TypeReference<List<ConcurrentClassC>>() {}.getType();
+        Type listOfD = new TypeReference<List<ConcurrentClassD>>() {}.getType();
+        List<Type> targetTypes = List.of(listOfC, listOfD);
 
         List<Map<String, Object>> schemas =
                 generateConcurrently(
@@ -336,8 +389,13 @@ class JsonSchemaUtilsTest {
         assertEquals(CONCURRENT_CALL_COUNT, schemas.size());
         for (Map<String, Object> schema : schemas) {
             assertNotNull(schema);
-            assertNotNull(schema.get("type"));
+            assertEquals("array", schema.get("type"));
         }
+
+        // Variants sharing one slot must stay independent of each other.
+        assertNotEquals(
+                JsonSchemaUtils.generateSchemaFromType(listOfC),
+                JsonSchemaUtils.generateSchemaFromType(listOfD));
     }
 
     /**
