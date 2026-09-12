@@ -367,7 +367,12 @@ class HarnessAgentSubagentStreamEventsTest {
                                         e.getType() == AgentEventType.AGENT_END
                                                 && e.getSource() != null)
                         .collect(Collectors.toList());
-        assertFalse(childEnds.isEmpty(), "expected child AGENT_END with source");
+        assertFalse(
+                childEnds.isEmpty(),
+                "expected child AGENT_END with source; events="
+                        + events.stream()
+                                .map(e -> e.getType() + "(src=" + e.getSource() + ")")
+                                .collect(Collectors.joining(", ")));
         assertTrue(childEnds.get(0).getSource().contains(childId));
     }
 
