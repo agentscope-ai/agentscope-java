@@ -130,6 +130,10 @@ If you have ideas for new features, improvements, or find bugs that aren't alrea
 - **Don't break existing APIs**: Maintain backward compatibility when possible, or clearly document breaking changes
 - **Don't add unnecessary dependencies**: Keep the core library lightweight
 
+## Community Roles & Governance 🤝
+
+For community roles, responsibilities, and growth path (Committer / PMC evaluation, etc.), see [COMMUNITY_zh.md](./COMMUNITY_zh.md).
+
 ## Getting Help
 
 If you need assistance or have questions:
