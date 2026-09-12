@@ -363,7 +363,6 @@ public class OpenAIMessageConverter {
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
-            List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
 
             // First pass: find any thought signature in the blocks
             String fallbackSignature = null;
@@ -396,13 +395,6 @@ public class OpenAIMessageConverter {
                     Object signatureObj =
                             toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
                     signature = toSignatureString(signatureObj);
-
-                    // Add reasoning detail if present
-                    Object detailObj = toolUse.getMetadata().get("reasoningDetail");
-                    OpenAIReasoningDetail detail = toReasoningDetail(detailObj);
-                    if (detail != null) {
-                        reasoningDetails.add(detail);
-                    }
                 }
 
                 // Fallback to shared signature if missing
@@ -427,10 +419,6 @@ public class OpenAIMessageConverter {
                         signature != null);
             }
             builder.toolCalls(toolCalls);
-
-            if (!reasoningDetails.isEmpty()) {
-                builder.reasoningDetails(reasoningDetails);
-            }
         }
 
         return builder.build();
