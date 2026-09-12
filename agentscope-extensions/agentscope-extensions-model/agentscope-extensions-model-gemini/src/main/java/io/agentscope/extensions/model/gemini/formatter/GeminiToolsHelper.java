@@ -51,6 +51,8 @@ import org.slf4j.LoggerFactory;
 public class GeminiToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiToolsHelper.class);
+    private static final String MULTI_TYPE_ANY_OF_ERROR =
+            "JSON Schema cannot combine a multi-type array with anyOf";
 
     /**
      * Creates a new GeminiToolsHelper.
@@ -116,15 +118,20 @@ public class GeminiToolsHelper {
      * @return Gemini Schema object
      */
     protected Schema convertParametersToSchema(Map<String, Object> parameters) {
+        // Normalize nullable unions before converting nested schema branches.
+        parameters = normalizeNullableAnyOf(parameters);
         Schema.Builder schemaBuilder = Schema.builder();
 
         // Set type (default to OBJECT)
+        boolean typeUsesAnyOf = false;
         if (parameters.containsKey("type")) {
-            String typeStr = (String) parameters.get("type");
-            Type type = convertJsonTypeToGeminiType(typeStr);
-            schemaBuilder.type(type);
-        } else {
+            typeUsesAnyOf = applyJsonType(schemaBuilder, parameters.get("type"));
+        } else if (!parameters.containsKey("anyOf")) {
             schemaBuilder.type(new Type(Type.Known.OBJECT));
+        }
+
+        if (Boolean.TRUE.equals(parameters.get("nullable"))) {
+            schemaBuilder.nullable(true);
         }
 
         // Set description
@@ -160,6 +167,20 @@ public class GeminiToolsHelper {
             schemaBuilder.items(convertParametersToSchema(itemsSchema));
         }
 
+        // Set anyOf schemas
+        if (parameters.containsKey("anyOf")) {
+            if (typeUsesAnyOf) {
+                throw new IllegalArgumentException(MULTI_TYPE_ANY_OF_ERROR);
+            }
+            List<Schema> anyOfSchemas = new ArrayList<>();
+            for (Object anyOfSchema : (List<?>) parameters.get("anyOf")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> anyOfSchemaMap = (Map<String, Object>) anyOfSchema;
+                anyOfSchemas.add(convertParametersToSchema(anyOfSchemaMap));
+            }
+            schemaBuilder.anyOf(anyOfSchemas);
+        }
+
         // Set enum values
         if (parameters.containsKey("enum")) {
             @SuppressWarnings("unchecked")
@@ -168,6 +189,132 @@ public class GeminiToolsHelper {
         }
 
         return schemaBuilder.build();
+    }
+
+    private Map<String, Object> normalizeNullableAnyOf(Map<String, Object> schema) {
+        Object rawAnyOf = schema.get("anyOf");
+        if (!(rawAnyOf instanceof List<?> anyOfSchemas)) {
+            return schema;
+        }
+
+        if (hasMultipleNonNullTypes(schema.get("type"))) {
+            throw new IllegalArgumentException(MULTI_TYPE_ANY_OF_ERROR);
+        }
+
+        List<Map<String, Object>> nonNullSchemas = new ArrayList<>();
+        for (Object anyOfSchema : anyOfSchemas) {
+            if (!(anyOfSchema instanceof Map<?, ?> schemaMap)) {
+                return schema;
+            }
+            if (!isNullSchema(schemaMap)) {
+                Map<String, Object> typedSchema = new HashMap<>();
+                for (Map.Entry<?, ?> entry : schemaMap.entrySet()) {
+                    if (entry.getKey() instanceof String key) {
+                        typedSchema.put(key, entry.getValue());
+                    }
+                }
+                nonNullSchemas.add(typedSchema);
+            }
+        }
+
+        if (nonNullSchemas.size() == anyOfSchemas.size()) {
+            return schema;
+        }
+
+        Map<String, Object> normalized = new HashMap<>(schema);
+        if (nonNullSchemas.isEmpty()) {
+            normalized.remove("anyOf");
+        } else if (nonNullSchemas.size() == 1) {
+            // Keep the non-null branch authoritative and fill in missing outer metadata.
+            Map<String, Object> merged = new HashMap<>(nonNullSchemas.get(0));
+            for (Map.Entry<String, Object> entry : schema.entrySet()) {
+                if (!"anyOf".equals(entry.getKey())) {
+                    merged.putIfAbsent(entry.getKey(), entry.getValue());
+                }
+            }
+            normalized = merged;
+        } else {
+            normalized.put("anyOf", nonNullSchemas);
+        }
+        normalized.put("nullable", true);
+        return normalized;
+    }
+
+    private boolean hasMultipleNonNullTypes(Object jsonType) {
+        if (!(jsonType instanceof List<?> typeValues)) {
+            return false;
+        }
+
+        int nonNullTypeCount = 0;
+        for (Object typeValue : typeValues) {
+            if (typeValue instanceof String typeString && !"null".equals(typeString)) {
+                nonNullTypeCount++;
+            }
+        }
+        return nonNullTypeCount > 1;
+    }
+
+    private boolean isNullSchema(Map<?, ?> schema) {
+        Object jsonType = schema.get("type");
+        if ("null".equals(jsonType)) {
+            return true;
+        }
+        return jsonType instanceof List<?> typeValues
+                && typeValues.size() == 1
+                && "null".equals(typeValues.get(0));
+    }
+
+    private boolean applyJsonType(Schema.Builder schemaBuilder, Object jsonType) {
+        if (jsonType instanceof String typeString) {
+            if ("null".equals(typeString)) {
+                // Gemini rejects standalone null function parameter types.
+                schemaBuilder.type(new Type(Type.Known.OBJECT));
+                return false;
+            }
+            schemaBuilder.type(convertJsonTypeToGeminiType(typeString));
+            return false;
+        }
+
+        if (!(jsonType instanceof List<?> typeValues)) {
+            throw new IllegalArgumentException("JSON Schema type must be a string or an array");
+        }
+
+        List<String> nonNullTypes = new ArrayList<>();
+        boolean nullable = false;
+        for (Object typeValue : typeValues) {
+            if (!(typeValue instanceof String typeString)) {
+                throw new IllegalArgumentException("JSON Schema type array must contain strings");
+            }
+            if ("null".equalsIgnoreCase(typeString)) {
+                nullable = true;
+            } else {
+                nonNullTypes.add(typeString);
+            }
+        }
+
+        if (nonNullTypes.isEmpty()) {
+            // Preserve the compatibility fallback for a null-only type array.
+            schemaBuilder.type(new Type(Type.Known.OBJECT));
+            if (nullable) {
+                schemaBuilder.nullable(true);
+            }
+            return false;
+        }
+
+        if (nonNullTypes.size() == 1) {
+            schemaBuilder.type(convertJsonTypeToGeminiType(nonNullTypes.get(0)));
+        } else {
+            List<Schema> schemas = new ArrayList<>();
+            for (String type : nonNullTypes) {
+                schemas.add(Schema.builder().type(convertJsonTypeToGeminiType(type)).build());
+            }
+            schemaBuilder.anyOf(schemas);
+        }
+
+        if (nullable) {
+            schemaBuilder.nullable(true);
+        }
+        return nonNullTypes.size() > 1;
     }
 
     /**
