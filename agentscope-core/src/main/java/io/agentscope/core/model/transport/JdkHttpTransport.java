@@ -15,10 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.Authenticator;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
@@ -29,6 +26,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.net.http.HttpResponse.BodySubscriber;
+import java.net.http.HttpResponse.BodySubscribers;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -49,6 +50,7 @@ import javax.net.ssl.X509TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -199,36 +201,33 @@ public class JdkHttpTransport implements HttpTransport {
 
         return Flux.defer(
                 () -> {
-                    AtomicReference<InputStream> responseBody = new AtomicReference<>();
                     long requestStartNanos = System.nanoTime();
-                    return sendInputStreamAsync(jdkRequest, responseBody)
+                    return sendPublisherAsync(jdkRequest)
                             .timeout(Mono.delay(streamResponseTimeout()))
                             .flatMapMany(
                                     response ->
                                             handleStreamResponse(
-                                                    response,
-                                                    request,
-                                                    responseBody,
-                                                    requestStartNanos))
-                            .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
+                                                    response, request, requestStartNanos))
                             .onErrorMap(this::mapStreamError);
                 });
     }
 
     /**
-     * Send a streaming request and propagate Reactor cancellation to the JDK future/socket.
+     * Send a streaming request and propagate Reactor cancellation to the JDK future/body publisher.
      */
-    private Mono<java.net.http.HttpResponse<InputStream>> sendInputStreamAsync(
-            java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
+    private Mono<java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>> sendPublisherAsync(
+            java.net.http.HttpRequest request) {
         return Mono.create(
                 sink -> {
                     AtomicBoolean cancelled = new AtomicBoolean(false);
-                    var future = client.sendAsync(request, BodyHandlers.ofInputStream());
+                    AtomicReference<Flow.Publisher<List<ByteBuffer>>> responseBody =
+                            new AtomicReference<>();
+                    var future = client.sendAsync(request, BodyHandlers.ofPublisher());
                     sink.onCancel(
                             () -> {
                                 cancelled.set(true);
                                 future.cancel(true);
-                                closeQuietly(responseBody.getAndSet(null));
+                                cancelBodyPublisher(responseBody.getAndSet(null));
                             });
                     future.whenComplete(
                             (response, error) -> {
@@ -241,7 +240,7 @@ public class JdkHttpTransport implements HttpTransport {
 
                                 responseBody.set(response.body());
                                 if (cancelled.get()) {
-                                    closeQuietly(responseBody.getAndSet(null));
+                                    cancelBodyPublisher(responseBody.getAndSet(null));
                                     return;
                                 }
                                 sink.success(response);
@@ -253,16 +252,14 @@ public class JdkHttpTransport implements HttpTransport {
      * Validate the streaming response and apply first-chunk and inter-chunk timeouts.
      */
     private Flux<String> handleStreamResponse(
-            java.net.http.HttpResponse<InputStream> response,
+            java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>> response,
             HttpRequest request,
-            AtomicReference<InputStream> responseBody,
             long requestStartNanos) {
-        InputStream inputStream = response.body();
-        responseBody.set(inputStream);
+        Flow.Publisher<List<ByteBuffer>> responseBody = response.body();
 
         int statusCode = response.statusCode();
         if (statusCode < 200 || statusCode >= 300) {
-            return readInputStreamAsync(inputStream)
+            return readBodyAsString(responseBody)
                     .timeout(streamResponseTimeout())
                     .onErrorReturn("")
                     .flatMapMany(
@@ -283,7 +280,7 @@ public class JdkHttpTransport implements HttpTransport {
                             });
         }
 
-        return processStreamResponse(inputStream, request)
+        return processStreamResponse(responseBody, request)
                 .timeout(
                         // Timeout strategy 1: Time To First Chunk.
                         // This uses the remaining response timeout budget from request start.
@@ -295,10 +292,11 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
+     * Decode and parse SSE or NDJSON lines without blocking a worker while waiting for bytes.
      */
-    private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
-        if (inputStream == null) {
+    private Flux<String> processStreamResponse(
+            Flow.Publisher<List<ByteBuffer>> responseBody, HttpRequest request) {
+        if (responseBody == null) {
             return Flux.empty();
         }
 
@@ -307,23 +305,15 @@ public class JdkHttpTransport implements HttpTransport {
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
 
-        // Use Flux.using to manage resource lifecycle
-        return Flux.using(
-                        () ->
-                                new BufferedReader(
-                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                        reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
-                        this::closeQuietly)
-                // reader.lines() uses blocking I/O internally
-                .subscribeOn(Schedulers.boundedElastic());
+        Flux<String> lines = readLinesAsync(responseBody);
+        return isNdjson ? readNdJsonLines(lines) : readSseLines(lines);
     }
 
     /**
      * Extract non-empty SSE data payloads and stop before the terminal marker.
      */
-    private Flux<String> readSseLines(BufferedReader reader) {
-        return Flux.fromStream(reader.lines())
-                .filter(line -> line.startsWith(SSE_DATA_PREFIX))
+    private Flux<String> readSseLines(Flux<String> lines) {
+        return lines.filter(line -> line.startsWith(SSE_DATA_PREFIX))
                 .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
                 .doOnNext(data -> log.debug("Received SSE data chunk"))
@@ -333,10 +323,40 @@ public class JdkHttpTransport implements HttpTransport {
     /**
      * Extract non-empty NDJSON records as already-delimited stream chunks.
      */
-    private Flux<String> readNdJsonLines(BufferedReader reader) {
-        return Flux.fromStream(reader.lines())
-                .doOnNext(line -> log.debug("Received NDJSON line"))
+    private Flux<String> readNdJsonLines(Flux<String> lines) {
+        return lines.doOnNext(line -> log.debug("Received NDJSON line"))
                 .filter(line -> !line.isEmpty());
+    }
+
+    /**
+     * Adapt the JDK response publisher to a demand-aware Flux of UTF-8 lines.
+     *
+     * <p>The JDK line subscriber owns incremental character decoding and recognizes the same line
+     * delimiters as {@link java.io.BufferedReader#readLine()}. The publishOn boundary prevents user
+     * callbacks from running on the HttpClient executor. Unlike the old blocking read, the bounded
+     * elastic worker is used only while dispatching a line and is not retained while the network is
+     * idle.
+     */
+    private Flux<String> readLinesAsync(Flow.Publisher<List<ByteBuffer>> responseBody) {
+        return Flux.<String>create(
+                        sink -> {
+                            LineSubscriber lineSubscriber = new LineSubscriber(sink);
+                            sink.onRequest(lineSubscriber::request);
+                            sink.onDispose(lineSubscriber::cancel);
+
+                            BodySubscriber<Void> bodySubscriber =
+                                    BodySubscribers.fromLineSubscriber(
+                                            lineSubscriber,
+                                            ignored -> null,
+                                            StandardCharsets.UTF_8,
+                                            null);
+                            try {
+                                responseBody.subscribe(bodySubscriber);
+                            } catch (Throwable error) {
+                                lineSubscriber.onError(error);
+                            }
+                        })
+                .publishOn(Schedulers.boundedElastic(), 1);
     }
 
     @Override
@@ -437,25 +457,38 @@ public class JdkHttpTransport implements HttpTransport {
         return builder.build();
     }
 
-    private String readInputStream(InputStream inputStream) {
-        if (inputStream == null) {
-            return null;
-        }
-        try (inputStream) {
-            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            log.warn("Failed to read response body: {}", e.getMessage());
-            return null;
-        }
-    }
-
     /**
-     * Read an error response body away from the JDK HTTP worker threads.
+     * Decode an error response without blocking a worker thread.
      */
-    private Mono<String> readInputStreamAsync(InputStream inputStream) {
-        return Mono.fromCallable(() -> readInputStream(inputStream))
-                .defaultIfEmpty("")
-                .subscribeOn(Schedulers.boundedElastic());
+    private Mono<String> readBodyAsString(Flow.Publisher<List<ByteBuffer>> responseBody) {
+        if (responseBody == null) {
+            return Mono.just("");
+        }
+
+        return Mono.<String>create(
+                        sink -> {
+                            BodySubscriber<String> delegate =
+                                    BodySubscribers.ofString(StandardCharsets.UTF_8);
+                            TrackingBodySubscriber<String> subscriber =
+                                    new TrackingBodySubscriber<>(delegate);
+                            sink.onCancel(subscriber::cancel);
+                            delegate.getBody()
+                                    .whenComplete(
+                                            (body, error) -> {
+                                                if (error != null) {
+                                                    sink.error(error);
+                                                } else {
+                                                    sink.success(body);
+                                                }
+                                            });
+
+                            try {
+                                responseBody.subscribe(subscriber);
+                            } catch (Throwable error) {
+                                sink.error(error);
+                            }
+                        })
+                .defaultIfEmpty("");
     }
 
     /**
@@ -502,12 +535,207 @@ public class JdkHttpTransport implements HttpTransport {
         return new HttpTransportException("SSE/NDJSON stream failed: " + e.getMessage(), e);
     }
 
-    private void closeQuietly(AutoCloseable closeable) {
-        if (closeable != null) {
-            try {
-                closeable.close();
-            } catch (Exception e) {
-                log.debug("Error closing resource: {}", e.getMessage());
+    /** Cancel a response publisher that arrived after the Reactor subscriber was cancelled. */
+    private void cancelBodyPublisher(Flow.Publisher<List<ByteBuffer>> responseBody) {
+        if (responseBody == null) {
+            return;
+        }
+
+        try {
+            responseBody.subscribe(
+                    new Flow.Subscriber<List<ByteBuffer>>() {
+                        @Override
+                        public void onSubscribe(Flow.Subscription subscription) {
+                            subscription.cancel();
+                        }
+
+                        @Override
+                        public void onNext(List<ByteBuffer> item) {
+                            // Cancellation happens in onSubscribe, so no item is expected.
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            log.debug(
+                                    "Error while cancelling streaming response body: {}",
+                                    throwable.getMessage());
+                        }
+
+                        @Override
+                        public void onComplete() {
+                            // Nothing to release after normal completion.
+                        }
+                    });
+        } catch (Throwable error) {
+            log.debug("Error while subscribing to cancel response body: {}", error.getMessage());
+        }
+    }
+
+    /** Bridge JDK line delivery and Reactor demand without unbounded buffering. */
+    private static final class LineSubscriber implements Flow.Subscriber<String> {
+
+        private final FluxSink<String> sink;
+        private Flow.Subscription subscription;
+        private long pendingDemand;
+        private volatile boolean cancelled;
+        private boolean terminated;
+
+        private LineSubscriber(FluxSink<String> sink) {
+            this.sink = sink;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription newSubscription) {
+            long demand;
+            synchronized (this) {
+                if (cancelled || terminated) {
+                    newSubscription.cancel();
+                    return;
+                }
+                if (subscription != null) {
+                    newSubscription.cancel();
+                    return;
+                }
+                subscription = newSubscription;
+                demand = pendingDemand;
+                pendingDemand = 0L;
+            }
+
+            if (demand > 0L) {
+                newSubscription.request(demand);
+            }
+        }
+
+        private void request(long demand) {
+            if (demand <= 0L) {
+                return;
+            }
+
+            Flow.Subscription current;
+            synchronized (this) {
+                if (cancelled || terminated) {
+                    return;
+                }
+                current = subscription;
+                if (current == null) {
+                    pendingDemand = addCap(pendingDemand, demand);
+                    return;
+                }
+            }
+            current.request(demand);
+        }
+
+        @Override
+        public void onNext(String line) {
+            if (!cancelled && !terminated && !sink.isCancelled()) {
+                sink.next(line);
+            }
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            synchronized (this) {
+                if (cancelled || terminated) {
+                    return;
+                }
+                terminated = true;
+            }
+            sink.error(error);
+        }
+
+        @Override
+        public void onComplete() {
+            synchronized (this) {
+                if (cancelled || terminated) {
+                    return;
+                }
+                terminated = true;
+            }
+            sink.complete();
+        }
+
+        private void cancel() {
+            Flow.Subscription current;
+            synchronized (this) {
+                if (cancelled) {
+                    return;
+                }
+                cancelled = true;
+                current = subscription;
+                subscription = null;
+            }
+            if (current != null) {
+                current.cancel();
+            }
+        }
+
+        private static long addCap(long current, long toAdd) {
+            long result = current + toAdd;
+            return result < 0L ? Long.MAX_VALUE : result;
+        }
+    }
+
+    /** Capture the body subscription so Reactor cancellation can stop the HTTP exchange. */
+    private static final class TrackingBodySubscriber<T> implements BodySubscriber<T> {
+
+        private final BodySubscriber<T> delegate;
+        private Flow.Subscription subscription;
+        private volatile boolean cancelled;
+
+        private TrackingBodySubscriber(BodySubscriber<T> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<T> getBody() {
+            return delegate.getBody();
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription newSubscription) {
+            synchronized (this) {
+                if (cancelled || subscription != null) {
+                    newSubscription.cancel();
+                    return;
+                }
+                subscription = newSubscription;
+            }
+            delegate.onSubscribe(newSubscription);
+        }
+
+        @Override
+        public void onNext(List<ByteBuffer> item) {
+            if (!cancelled) {
+                delegate.onNext(item);
+            }
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            if (!cancelled) {
+                delegate.onError(error);
+            }
+        }
+
+        @Override
+        public void onComplete() {
+            if (!cancelled) {
+                delegate.onComplete();
+            }
+        }
+
+        private void cancel() {
+            Flow.Subscription current;
+            synchronized (this) {
+                if (cancelled) {
+                    return;
+                }
+                cancelled = true;
+                current = subscription;
+                subscription = null;
+            }
+            if (current != null) {
+                current.cancel();
             }
         }
     }
