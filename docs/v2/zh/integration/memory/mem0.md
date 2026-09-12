@@ -1,4 +1,6 @@
-# Mem0
+---
+title: Mem0
+---
 
 `agentscope-extensions-mem0` 接入 [Mem0](https://mem0.ai/) 记忆服务，提供基于向量检索 + LLM 抽取的长期记忆能力，支持 Mem0 Platform、自托管以及本地部署三种模式。
 

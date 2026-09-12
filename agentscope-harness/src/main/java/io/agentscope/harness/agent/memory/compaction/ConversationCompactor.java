@@ -23,13 +23,13 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -139,7 +139,7 @@ public class ConversationCompactor {
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
-                                            if (containsInterruptedException(e)) {
+                                            if (ExceptionUtils.containsInterruptedException(e)) {
                                                 return Mono.error(e);
                                             }
                                             log.warn(
@@ -170,7 +170,7 @@ public class ConversationCompactor {
                                                     path))
                             .onErrorResume(
                                     e -> {
-                                        if (containsInterruptedException(e)) {
+                                        if (ExceptionUtils.containsInterruptedException(e)) {
                                             return Mono.error(e);
                                         }
                                         log.warn(
@@ -375,24 +375,12 @@ public class ConversationCompactor {
                 .defaultIfEmpty("(Summary unavailable)")
                 .onErrorResume(
                         e -> {
-                            if (containsInterruptedException(e)) {
+                            if (ExceptionUtils.containsInterruptedException(e)) {
                                 return Mono.error(e);
                             }
                             log.warn("Summarization LLM call failed: {}", e.getMessage());
                             return Mono.just("(Summarization failed: " + e.getMessage() + ")");
                         });
-    }
-
-    private static boolean containsInterruptedException(Throwable error) {
-        IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
-        Throwable current = error;
-        while (current != null && visited.put(current, Boolean.TRUE) == null) {
-            if (current instanceof InterruptedException) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     /**

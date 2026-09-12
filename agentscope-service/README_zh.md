@@ -1,5 +1,10 @@
 # AgentScope Service
 
+## 发布部署与文档
+
+发布版使用已构建镜像，参见 [Docker / Helm 部署](deploy/README.md) 和 [中文发布维护手册](release/README_zh.md)。完整用户文档位于 [AgentScope Service 专区](../docs/v2/zh/service/index.md)。以下本地启动流程用于开发，包含演示账号和可选数据库重置。
+
+
 > **基于 AgentScope Harness 构建的 Agent 管控与治理平台，为企业提供统一的控制面与编排中心。**
 
 [English](README.md)
@@ -17,7 +22,7 @@ AgentScope Service 的目标不是替换你现有的 Agent 框架，而是提供
 ## 产品能力
 
 ### Control Plane
-Control Plane（控制面，组件名称 Aistio）是 AgentScope Service 的核心组件，所有 Agent 应用都通过控制面进行统一注册，通过 SDK 或 Sidecar 方式支持主流 Agent Framework（AgentScope、LangChain、ADK）以及 Claude、Qoder 等注册与接入。
+Control Plane（控制面，组件名称 Aistio）是 AgentScope Service 的核心组件。Managed Agent、用户自部署的 External Application 与 Runtime Host 统一执行持久化的 `ExecutionAttempt` 契约。
 
 
 
@@ -63,12 +68,11 @@ Agent 定义总体围绕 AgentScope Harness 的核心设计理念设计，首先
 
 ### 基本工作原理
 
-Human 通过 Dashboard（浏览器）或 REST API（SDK / curl / 第三方系统集成）进入 Control Plane；控制面之下统一管理四类 Agent 接入方式：
+Human 通过 Dashboard（浏览器）或 REST API（SDK / curl / 第三方系统集成）进入 Control Plane；控制面统一管理三类数据面：
 
-- AgentScope 原生接入
-- LangChain 通过 `instrument()` 接入
-- Claude 通过 Sidecar 旁路接入
-- QwenPaw 通过 Sidecar 旁路接入
+- `managed`：AgentScope Harness 托管运行；
+- `external-application`：AgentScope、LangChain、Claude Agent SDK 等用户应用通过 Application SDK / ASDP 注册；
+- `hosted-runtime`：Runtime Host daemon 按任务拉起 Codex、Claude Code 等运行时；
 
 ![AgentScope Service](/docs/imgs/agentservice/agentscope-service-architecture.png)
 
@@ -93,7 +97,7 @@ Human 通过 Dashboard（浏览器）或 REST API（SDK / curl / 第三方系统
 AgentScope Service 同时服务两类用户：
 
 1. **平台服务型团队**：用 Console / API 创建 Managed Agent，快速构建托管智能体。
-2. **业务研发团队**：已有不同技术栈的 Agent 应用，希望纳入统一治理——通过扩展 / SDK / Sidecar 接入控制面。
+2. **业务研发团队**：已有不同技术栈的 Agent 应用，希望纳入统一治理——通过 Application SDK / ASDP 接入控制面。
 
 目前支持 Agent Framework、Coding Agent、
 
@@ -123,29 +127,64 @@ scripts/dev-down.sh && BUILDER_REBUILD=1 scripts/dev-up.sh
 ```
 
 脚本会启动 PostgreSQL、`aistiod`、Dataplane、Scheduler 和 Gateway。本地开发设置 `AISTIO_ENABLE_KUBERNETES=false`，Hosted Product 流程无需 CRD Reconciler 或 ASDP gRPC。
+项目尚未发布，v4 又明确替换了旧执行 schema，因此 `BUILDER_REBUILD=1` 会同时重建可丢弃的本地 `cp`、`rt`、`dp` schema。只有在需要保留已经是 v4 的本地数据时才设置 `BUILDER_RESET_DB=0`。启动脚本在报告成功前会检查三个 schema 和终态协作/编排 migration；执行 `scripts/smoke.sh` 可运行 API 级端到端验收。
 
 | 项目 | 值 |
 | --- | --- |
-| Console 与公共 API | http://localhost:8080 |
+| Console 与公共 API | http://localhost:18080 |
 | 默认账号 | `admin` / `admin` |
 | 其他种子账号 | `alice` / `alice`、`bob` / `bob` |
 | 日志与本地状态 | `.dev-stack/` |
 
 默认账号和开发密钥只能用于本地环境。
 
-### 2. 运行第一个 Session
+### 2. 连接本机 Coding Agent
 
-1. 打开 http://localhost:8080 并登录（`admin` / `admin`）。
+`agentscope` CLI 会自动发现 Codex、Claude Code 和 Qoder，签发仅限当前 Host 的运行凭证，
+并在后台启动 Runtime Host。开发环境可直接从源码安装两个相邻的可执行文件：
+
+```bash
+cd aistio
+make install-runtime-cli PREFIX="$HOME/.local"
+agentscope connect
+```
+
+`connect` 会自动发现本地服务并提示输入 AgentScope 用户名和密码；也可以为自动化设置
+`AGENTSCOPE_API_TOKEN`，或使用控制台生成的 `AGENTSCOPE_RUNTIME_TOKEN`。凭证、稳定 Host ID、
+PID 与日志保存在 `~/.agentscope/runtime-host/`，权限仅限当前用户。日常运维只需要：
+
+```bash
+agentscope runtime status
+agentscope runtime logs -f
+agentscope runtime restart
+agentscope runtime stop
+agentscope runtime probe
+```
+
+控制面会自动创建默认 Runtime Pool 和 `auto-<provider>` Runtime Profile；Host 在线后，创建
+Agent 时直接选择 `Codex (<host-key>)` 等本地 Runtime，无需手工填写 daemon 参数。
+
+执行任务时，Runtime Host 会同时为 Coding Agent 注入 `agentscope-collaboration` MCP 和
+task-scoped `agentscope` CLI。Agent 可以用 `agentscope task context` 读取当前任务，使用
+`agentscope task progress/respond --content-file ...` 写回进展或结果，通过
+`agentscope task child`、`agentscope task run graph/replan/node-complete` 参与 Team 协作。
+这些命令只持有当前 Attempt 的短期凭据，不能访问其他 Issue，也不会继承用户或 Runtime Host Token。
+
+### 3. 运行第一个 Session
+
+1. 打开 http://localhost:18080 并登录（`admin` / `admin`）。
 2. 在 **Managed Agents** 中创建 Agent。
-3. 创建一个 `local` Environment。
-4. 打开 **Sessions**，创建绑定 Agent 与 Environment 的 Session，并发送第一条消息。
+3. 本地开发栈会自动为新建的 Managed Agent 绑定共享的 `default-local` Environment；之后可在 Agent 设置中切换。
+4. 打开 **Sessions**，创建 Session 并发送第一条消息。
 5. 在 **Dashboard** 查看在线状态、事件与运行时信息。
-6. 如需协作，再进入 **Agent Teams** 创建团队并观察任务与成员状态。
+6. 如需协作，创建持久 **Team**、分配 Issue，并观察 discussion route 与 AgentTask。
 
-体验 BYO Agent 注册时，可使用仓库示例 `agentscope-samples/agents/agentscope-paw`；启动后即可在 Dashboard 中看到智能体注册成功。
+体验 BYO Agent 注册时，可使用仓库示例 `agentscope-examples/agents/agentscope-paw`；启动后即可在 Dashboard 中看到智能体注册成功。
+
+把 **DeepSeek Harness** 作为独立运行时接入时，使用 `agentscope-service/aistio/sdk/dsh`（`@agentscope/dsh-aistio`）Cordis 插件：向 aistiod 自注册、提供 `/agentscope/*` 契约、接收 AgentTask，并与其他 runtime 使用同一 Issue/Comment/Artifact 协议。安装与配置见该目录 [README_zh.md](aistio/sdk/dsh/README_zh.md)。
 
 
-### 3. 停止环境
+### 4. 停止环境
 
 ```bash
 scripts/dev-down.sh
@@ -188,7 +227,7 @@ docker compose -f agentscope-service/docker-compose.yml up --build
 
 | 服务 | 端口 | 暴露方式 |
 | --- | ---: | --- |
-| Gateway | 8080 | 对外 |
+| Gateway | 18080 | 对外（Docker Compose 容器内仍为 8080） |
 | `aistiod` | 8081 | 内部 |
 | Dataplane | 8082 | 内部 |
 | Scheduler | 8083 | 内部 |
@@ -207,9 +246,12 @@ Java Service 使用 `builder.*` 属性与 `BUILDER_*` 环境变量。各平面�
 | `BUILDER_DB_URL`、`BUILDER_DB_USER`、`BUILDER_DB_PASSWORD` | Java Dataplane 数据库 |
 | `BUILDER_CONTROL_URL`、`BUILDER_DATA_URL`、`BUILDER_SCHEDULER_URL` | 内部服务地址 |
 | `BUILDER_E2B_API_KEY` | `sandbox` Environment 的 E2B 凭据 |
+| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | 是否允许新的 `local` Environment 绑定。`aistiod` 默认 `false`，`scripts/dev-up.sh` 和开发用 Compose 显式开启；生产环境应保持关闭。 |
 | `AISTIO_PRODUCT_DSN` | `aistiod` 使用的产品数据库 |
 | `AISTIO_ENABLE_KUBERNETES` | 是否启用 Aistio CRD Reconciler 与 Kubernetes 集成 |
-| `BUILDER_REBUILD=1` | `dev-up` 前强制完整重建 |
+| `BUILDER_REBUILD=1` | 重建 Monorepo/aistiod，并默认重建可丢弃的本地 `cp`/`rt`/`dp` schema |
+| `BUILDER_RESET_DB=0` | 完整重建二进制时保留已经是 v4 的本地数据库 |
+| `BUILDER_SMOKE_TEST=1` | 健康检查和 SQL schema 校验通过后自动运行 `scripts/smoke.sh` |
 
 生产部署必须替换全部开发密钥，并使用持久化 PostgreSQL。
 
@@ -223,7 +265,7 @@ AgentScope Service 把不同模式构建的 Agent（Framework、Coding Agent、M
 1. **围绕 AgentScope Framework 原生能力持续迭代**
 2. **支持更多 Agent 框架与 Coding Agent 接入** — 补齐并深化 LangChain、ADK、Claude、Qoder、OpenAI Agents 等适配，降低 BYO 接入成本
 3. **Automation** — 围绕 Deployment、Cron、Webhook、Channel 扩展自动触发与闭环执行，让 Agent 走向事件驱动的任务处理
-4. **更多事件驱动集成** — 接入 GitHub / GitLab、钉钉、企微等入口，把代码变更、工单、群消息直接变成 Agent Turn 或 Team Task
+4. **更多事件驱动集成** — 接入 GitHub / GitLab、钉钉、企微等入口，把代码变更、工单、群消息直接变成 Issue、Comment 或 AgentTask
 
 企业级云产品亦可关注阿里云 [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview)、[Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html)。
 

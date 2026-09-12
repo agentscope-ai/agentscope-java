@@ -1,4 +1,6 @@
-# Agent 配置（Agent Configuration）
+---
+title: Agent 配置（Agent Configuration）
+---
 
 ## 概述
 

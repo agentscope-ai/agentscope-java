@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -24,8 +23,8 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
+import reactor.core.publisher.BaseSubscriber;
 
 /**
  * MVC controller for AG-UI protocol requests.
@@ -78,7 +78,6 @@ public class AguiMvcController {
     private final long sseTimeout;
     private final boolean interruptOnDisconnect;
     private final ExecutorService executorService;
-    private final AguiRuntimeContextResolver runtimeContextResolver;
 
     private AguiMvcController(Builder builder) {
         this.processor =
@@ -94,6 +93,7 @@ public class AguiMvcController {
                                         ? builder.config
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
+                        .runtimeContextResolver(builder.runtimeContextResolver)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -101,7 +101,6 @@ public class AguiMvcController {
         this.sseTimeout = builder.sseTimeout > 0 ? builder.sseTimeout : 600000L;
         this.interruptOnDisconnect = builder.interruptOnDisconnect;
         this.executorService = Executors.newCachedThreadPool();
-        this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
     /**
@@ -169,14 +168,37 @@ public class AguiMvcController {
 
         executorService.submit(
                 () -> {
-                    Disposable subscription = null;
                     try {
                         // Process request - returns both agent and event stream
-                        RuntimeContext runtimeContext =
-                                resolveRuntimeContext(input, headerAgentId, pathAgentId, request);
                         AguiRequestProcessor.ProcessResult result =
                                 processor.process(
-                                        input, headerAgentId, pathAgentId, runtimeContext);
+                                        runtimeContextRequest(
+                                                input, headerAgentId, pathAgentId, request));
+                        BaseSubscriber<AguiEvent> subscription =
+                                new BaseSubscriber<>() {
+                                    @Override
+                                    protected void hookOnNext(AguiEvent event) {
+                                        sendEvent(emitter, event);
+                                    }
+
+                                    @Override
+                                    protected void hookOnError(Throwable error) {
+                                        logger.error(
+                                                "Error during AG-UI run: {}", error.getMessage());
+                                        sendErrorAndComplete(
+                                                emitter, threadId, runId, error.getMessage());
+                                    }
+
+                                    @Override
+                                    protected void hookOnComplete() {
+                                        try {
+                                            emitter.complete();
+                                        } catch (Exception e) {
+                                            logger.debug(
+                                                    "Error completing emitter: {}", e.getMessage());
+                                        }
+                                    }
+                                };
 
                         // Set up callbacks for client disconnect handling
                         // using the same agent instance from the result
@@ -189,7 +211,7 @@ public class AguiMvcController {
                                                 "SSE connection timed out for run {}, interrupting"
                                                         + " agent",
                                                 runId);
-                                        result.interrupt(threadId, runtimeContext);
+                                        interruptAndCancel(result, threadId, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -205,7 +227,7 @@ public class AguiMvcController {
                                                         + " agent",
                                                 runId,
                                                 ex.getMessage());
-                                        result.interrupt(threadId, runtimeContext);
+                                        interruptAndCancel(result, threadId, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"
@@ -216,29 +238,9 @@ public class AguiMvcController {
                                 });
 
                         // Subscribe to event stream from the same result
-                        subscription =
-                                result.events()
-                                        .subscribe(
-                                                event -> sendEvent(emitter, event),
-                                                error -> {
-                                                    logger.error(
-                                                            "Error during AG-UI run: {}",
-                                                            error.getMessage());
-                                                    sendErrorAndComplete(
-                                                            emitter,
-                                                            threadId,
-                                                            runId,
-                                                            error.getMessage());
-                                                },
-                                                () -> {
-                                                    try {
-                                                        emitter.complete();
-                                                    } catch (Exception e) {
-                                                        logger.debug(
-                                                                "Error completing emitter: {}",
-                                                                e.getMessage());
-                                                    }
-                                                });
+                        // The subscriber is created before disconnect callbacks are registered so
+                        // cancellation is safe even if the client disconnects before subscribe().
+                        result.events().subscribe(subscription);
 
                     } catch (AguiException.AgentNotFoundException e) {
                         logger.error("Agent not found: {}", e.getMessage());
@@ -252,23 +254,21 @@ public class AguiMvcController {
         return emitter;
     }
 
-    private RuntimeContext resolveRuntimeContext(
-            RunAgentInput input,
-            String headerAgentId,
-            String pathAgentId,
-            HttpServletRequest request) {
-        return runtimeContextResolver != null
-                ? runtimeContextResolver.resolve(
-                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
-                : null;
+    private static void interruptAndCancel(
+            AguiRequestProcessor.ProcessResult result, String threadId, Disposable subscription) {
+        try {
+            result.interrupt(threadId);
+        } finally {
+            subscription.dispose();
+        }
     }
 
-    private AguiRuntimeContextRequest runtimeContextRequest(
+    private AguiRuntimeContextRequest<HttpServletRequest> runtimeContextRequest(
             RunAgentInput input,
             String headerAgentId,
             String pathAgentId,
             HttpServletRequest request) {
-        return AguiRuntimeContextRequest.builder()
+        return AguiRuntimeContextRequest.<HttpServletRequest>builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)

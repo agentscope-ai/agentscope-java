@@ -1,4 +1,6 @@
-# 工作区（Workspace）
+---
+title: 工作区
+---
 
 ## 作用
 
@@ -36,7 +38,7 @@ workspace/                           ← 默认 .agentscope/workspace
         └── <sessionId>.log.jsonl   ← 完整对话日志（追加）
 ```
 
-> 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](./subagent.md)。
+> 子 agent 三层模型（声明 / 定义 / 运行时）详见 [子 Agent](/v1/zh/docs/harness/subagent)。
 
 ## 关键逻辑
 
@@ -44,7 +46,7 @@ workspace/                           ← 默认 .agentscope/workspace
 
 `WorkspaceManager` 是无状态访问器，所有读写都遵循同一规约：
 
-```{mermaid}
+```mermaid
 graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read 优先| FS[AbstractFilesystem<br/>多租户 namespace 透明]
@@ -110,11 +112,11 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-`AGENTS.md` 缺失时 agent 仍可工作，只会丢失 persona 段，建议至少写一份最小骨架（参考 [overview.md](./overview.md) 的 quickstart）。
+`AGENTS.md` 缺失时 agent 仍可工作，只会丢失 persona 段，建议至少写一份最小骨架（参考 [overview.md](/v1/zh/docs/harness/overview) 的 quickstart）。
 
 ## 相关文档
 
-- [架构](./architecture.md) — `WorkspaceContextHook` 在 call() 生命周期里的位置
-- [文件系统](./filesystem.md) — 两层读路径中"上层"的实现
-- [记忆](./memory.md) — `MEMORY.md` / `memory/*.md` 怎么生成与维护
-- [会话](./session.md) — `agents/<agentId>/sessions/` 的细节
+- [架构](/v1/zh/docs/harness/architecture) — `WorkspaceContextHook` 在 call() 生命周期里的位置
+- [文件系统](/v1/zh/docs/harness/filesystem) — 两层读路径中"上层"的实现
+- [记忆](/v1/zh/docs/harness/memory) — `MEMORY.md` / `memory/*.md` 怎么生成与维护
+- [会话](/v1/zh/docs/harness/session) — `agents/<agentId>/sessions/` 的细节

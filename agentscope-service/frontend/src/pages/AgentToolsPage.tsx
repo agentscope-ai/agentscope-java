@@ -19,7 +19,10 @@ import { useOutletContext } from 'react-router-dom';
 import ToolsActivePanel from '../components/ToolsActivePanel';
 import ToolsCatalogPanel from '../components/ToolsCatalogPanel';
 import LinkedWorkspaceBanner from '../components/LinkedWorkspaceBanner';
+import McpConnectionsEditor from '../components/McpConnectionsEditor';
+import { getAgent, updateAgent } from '../api/agents';
 import type { AgentDefinition } from '../api/agents';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 
 const helpStyle: React.CSSProperties = {
   padding: '8px 24px',
@@ -29,95 +32,62 @@ const helpStyle: React.CSSProperties = {
   borderBottom: '1px solid #e2e8f0',
 };
 
-const modalOverlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(15,23,42,0.55)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 60,
-};
-const modalShellStyle: React.CSSProperties = {
-  background: '#ffffff',
-  borderRadius: 12,
-  width: 'min(820px, 92vw)',
-  height: 'min(640px, 86vh)',
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '0 24px 80px rgba(15,23,42,0.3)',
-  overflow: 'hidden',
-  position: 'relative',
-};
-const modalHeaderStyle: React.CSSProperties = {
-  padding: '14px 20px',
-  borderBottom: '1px solid #e2e8f0',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-};
-const closeButtonStyle: React.CSSProperties = {
-  padding: '6px 14px',
-  borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#ffffff',
-  color: '#475569',
-  fontSize: '0.85rem',
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
 export default function AgentToolsPage() {
-  const { agentId, agent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null }>();
+  const { agentId, agent, canEdit = false, refreshAgent } = useOutletContext<{ agentId: string; agent: AgentDefinition | null; canEdit?: boolean; refreshAgent?: () => Promise<unknown> }>();
   const [refreshKey, setRefreshKey] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
   const linked = agent?.workspaceId;
+  const toolsEditable = canEdit && (!linked || !!agent?.workspaceBinding?.overrides.includes('tools'));
+  const mcpEditable = toolsEditable && (!linked || !!agent?.workspaceBinding?.overrides.includes('mcpServers'));
 
-  const bumpRefresh = () => setRefreshKey(k => k + 1);
+  const bumpRefresh = () => { setRefreshKey(k => k + 1); void refreshAgent?.(); };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {linked ? (
-        <LinkedWorkspaceBanner workspaceId={linked} resource="tools" />
+        <LinkedWorkspaceBanner workspaceId={linked} resource="tools" hasOverrides={!!agent?.workspaceBinding?.overrides.includes('tools')} />
       ) : (
         <div style={helpStyle}>
-          Tools and MCP servers are stored on the Agent definition (<code>tools</code> /{' '}
-          <code>mcpServers</code>) and create a new agent version on save. Changes apply to
-          the next Session. Use <b>Ask</b> on a built-in tool to pause for confirmation
-          before that tool runs (HITL). Link a Workspace to author a shared toolset.
+          Choose the tools this Agent can use in new sessions, and select <b>Ask</b> when
+          a tool needs your approval before running.
         </div>
       )}
-      <div style={{ flex: 1, minHeight: 0 }}>
+      {agent?.runtimeKind === 'hosted-runtime' && <div role="note" style={helpStyle}>
+        Built-in tools in this catalog belong to Managed Agents. Hosted runtimes use their native tools;
+        supported mappings depend on the provider. Codex does not apply these built-in policies.
+        Use its Runtime Profile for sandbox and approval settings. MCP connections can be configured below.
+      </div>}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {agent && <McpConnectionsEditor servers={agent.mcpServers ?? []} tools={agent.tools ?? []} readOnly={!mcpEditable} canConnect={canEdit} onOAuthConnected={async vaultId => {
+          const latest = await getAgent(agentId);
+          if (!(latest.defaultVaultIds ?? []).includes(vaultId)) {
+            await updateAgent(agentId, { name: latest.name, version: latest.version, defaultVaultIds: [...(latest.defaultVaultIds ?? []), vaultId] });
+          }
+          await refreshAgent?.();
+        }} onSave={async (servers, tools) => {
+          await updateAgent(agentId, { name: agent.name, version: agent.version, mcpServers: servers, tools });
+          bumpRefresh();
+        }} />}
         <ToolsActivePanel
           agentId={agentId}
           refreshKey={refreshKey}
           onChange={bumpRefresh}
           onRequestBrowse={() => setBrowseOpen(true)}
-          readOnly={!!linked}
+          readOnly={!toolsEditable}
+          mcpReadOnly={!mcpEditable}
         />
       </div>
-      {browseOpen && !linked && (
-        <div style={modalOverlayStyle} onClick={() => setBrowseOpen(false)}>
-          <div style={modalShellStyle} onClick={e => e.stopPropagation()}>
-            <div style={modalHeaderStyle}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>
-                  Configure tools
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 2 }}>
-                  Enable / disable built-in tools or add an MCP server.
-                </div>
-              </div>
-              <button onClick={() => setBrowseOpen(false)} style={closeButtonStyle}>
-                Close
-              </button>
-            </div>
-            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
-              <ToolsCatalogPanel agentId={agentId} onSaved={bumpRefresh} />
-            </div>
+      <Dialog open={browseOpen && toolsEditable} onOpenChange={setBrowseOpen}>
+        <DialogContent className="h-[min(640px,86vh)] max-w-[820px]">
+          <DialogHeader>
+            <DialogTitle>Configure tools</DialogTitle>
+            <DialogDescription>Choose built-in tools and add MCP connections for this Agent.</DialogDescription>
+          </DialogHeader>
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <ToolsCatalogPanel agentId={agentId} onSaved={bumpRefresh} allowMcp={mcpEditable} />
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

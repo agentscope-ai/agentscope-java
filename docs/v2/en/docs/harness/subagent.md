@@ -1,6 +1,7 @@
 ---
-title: "Subagent"
-description: "Declare subagents, sync/background calls, auto push-back, remote subagents, streaming forwarding"
+title: Subagent
+description: Declare subagents, sync/background calls, auto push-back, remote subagents,
+  streaming forwarding
 ---
 
 ## Role
@@ -59,6 +60,7 @@ top_p: 0.95                   # optional
 hidden: false                 # true = not listed to the model (still callable programmatically)
 mode: subagent                # primary / subagent / all (default all); primary can't be spawned
 expose_to_user: true          # optional tri-state; force/forbid user exposure (omit = no opinion)
+enable_pending_tool_recovery: true # optional; omit to inherit the parent's recovery setting
 tools: [read_file, grep_files]   # optional; allowlist over inherited tools
 ---
 
@@ -91,6 +93,15 @@ HarnessAgent.builder()
 ```
 
 Three sources are mutually exclusive: `workspace(...)`, `inlineAgentsBody(...)`, `url(...)` — pick one.
+
+Automatically built local subagents, including `general-purpose`, inherit the parent's
+`HarnessAgent.Builder.enablePendingToolRecovery(...)` setting (default `false`). A declaration can
+override it with `.enablePendingToolRecovery(true)` or `.enablePendingToolRecovery(false)`; `null`
+inherits. Workspace specs accept `enable_pending_tool_recovery` (or `enablePendingToolRecovery`).
+When enabled, a new ordinary message repairs orphaned pending tool calls with synthetic error
+results, including calls loaded from a failed session. Pending permission confirmations still
+require confirmation; empty-input resume and caller-supplied tool results retain their existing
+behavior. Remote agents and custom factories configure recovery themselves.
 
 ### Built-in `general-purpose`
 
@@ -234,7 +245,7 @@ chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate
 chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
 ```
 
-This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](./channel.md#talking-to-exposed-subagents) for the full Channel-side API.
+This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](/v2/en/docs/harness/channel#talking-to-exposed-subagents) for the full Channel-side API.
 
 ### How to enable
 
@@ -250,7 +261,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());
 ```
 
-Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](./channel.md#thread-exposure-with-gatewaybootstrap).
+Without a Channel binding, `expose_to_user=true` in `agent_spawn` is silently ignored — the subagent still works normally, just not exposed to the user. For multi-agent setups with `GatewayBootstrap`, see [Channel — Thread exposure with GatewayBootstrap](/v2/en/docs/harness/channel#thread-exposure-with-gatewaybootstrap).
 
 ### Controlling exposure from code
 
@@ -306,7 +317,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // recovery wired automatically
 ```
 
-The `subagentId` is persisted in the store, and the subagent's own conversation is reloaded from the distributed `AgentStateStore` by session — so the user keeps talking to the *same* subagent even if a later message lands on a different node. For multi-agent `GatewayBootstrap`, pass `.distributedStore(...)` (otherwise it inherits the main agent's). Deployment guidance — including routing a `subagentId` back to its live node (sticky routing) — is in [Going to Production](../others/going-to-production.md).
+The `subagentId` is persisted in the store, and the subagent's own conversation is reloaded from the distributed `AgentStateStore` by session — so the user keeps talking to the *same* subagent even if a later message lands on a different node. For multi-agent `GatewayBootstrap`, pass `.distributedStore(...)` (otherwise it inherits the main agent's). Deployment guidance — including routing a `subagentId` back to its live node (sticky routing) — is in [Going to Production](/v2/en/docs/others/going-to-production).
 
 ## Let the agent author new subagent specs
 
@@ -353,7 +364,7 @@ Declaration knobs specific to remote mode:
 | `remoteStreaming` | `true` (when unset) | When the parent uses `streamEvents()`, forward remote task SSE events into the parent stream with a `source` tag plus `metadata.taskId` / `metadata.parentSessionId` (same ids as the harness `TaskRecord` / parent session) |
 | `remoteStreamDetail` | `FULL` | How much of the remote event stream to forward — see [Remote streaming detail](#remote-streaming-detail) |
 | `remoteAskPolicy` | `DENY` | How to resolve remote tool-confirmation (HITL) requests — see [Remote authorization](#remote-authorization) |
-| `remoteContextAttributes` | none | Static caller attributes sent as `context.attributes` on every submission. Merge per-call values by putting a map under `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` on the parent's `RuntimeContext`; see [Context attributes](../../integration/protocol/agent-protocol.md#context-attributes) |
+| `remoteContextAttributes` | none | Static caller attributes sent as `context.attributes` on every submission. Merge per-call values by putting a map under `AgentSpawnTool.CTX_REMOTE_CONTEXT_ATTRIBUTES` on the parent's `RuntimeContext`; see [Context attributes](/v2/en/integration/protocol/agent-protocol#context-attributes) |
 
 ### Remote streaming detail
 
@@ -375,7 +386,7 @@ Parent DENY permission rules are forwarded in the remote submit `context.deny_ru
 
 When the remote agent pauses for tool confirmation (`awaiting_confirm`):
 
-- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](../../integration/protocol/agent-protocol.md) with `decisions[{toolCallId, approved}]`.
+- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](/v2/en/integration/protocol/agent-protocol) with `decisions[{toolCallId, approved}]`.
 - **Non-streaming parent (`call`) or `remoteAskPolicy=DENY` (default)**: pending confirmations are auto-denied. The tool result includes a note: `remote tool confirmation(s) were auto-denied`.
 
 While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`). Barriers such as `wait_async_results` therefore keep waiting until the task is resumed and reaches a terminal status.
@@ -394,7 +405,7 @@ When the parent is in Plan Mode, spawned subagents **automatically inherit the r
 
 ## Subagent streaming
 
-> New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](../building-blocks/message-and-event.md) and [V1 Migration Guide B.4](../change-log.md).
+> New code should use `streamEvents()` (returns `Flux<AgentEvent>`). The legacy `stream()` family (`Flux<Event>`) is `@Deprecated(forRemoval = true)` since 2.0.0 — see [Message & Event](/v2/en/docs/building-blocks/message-and-event) and [V1 Migration Guide B.4](/v2/en/docs/change-log).
 
 When the parent calls a synchronous subagent via `agent_spawn` / `agent_send`, the child's intermediate events are **forwarded live** into the parent's `streamEvents()` stream. Each child event carries a `source` field (a `/`-separated path like `"main/researcher"`) so you can tell parent events (`source == null`) from child events. Remote Agent Protocol children additionally set `metadata.taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness task id and `metadata.parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session, so two concurrent / same-turn calls to the same remote agent remain distinguishable even when they share a `source` path.
 
@@ -496,10 +507,10 @@ When a child throws internally, the framework captures it and writes a `TOOL_RES
 
 ## Related pages
 
-- [Channel](./channel.md) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
-- [Workspace](./workspace.md) — `subagents/` and `agents/<id>/tasks/` layout
-- [Plan Mode](./plan-mode.md) — restrictions on subagents during the plan phase
-- [Architecture](./architecture.md) — how parent and child cooperate
-- [Agent Protocol](../../integration/protocol/agent-protocol.md) — remote task endpoints (SSE + HITL resume)
-- [Message & Event](../building-blocks/message-and-event.md) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
-- [V1 Migration Guide B.4](../change-log.md) — `stream()` → `streamEvents()` deprecation timeline
+- [Channel](/v2/en/docs/harness/channel) — `expose_to_user`, `SendOptions`, direct user-to-subagent messaging
+- [Workspace](/v2/en/docs/harness/workspace) — `subagents/` and `agents/<id>/tasks/` layout
+- [Plan Mode](/v2/en/docs/harness/plan-mode) — restrictions on subagents during the plan phase
+- [Architecture](/v2/en/docs/harness/architecture) — how parent and child cooperate
+- [Agent Protocol](/v2/en/integration/protocol/agent-protocol) — remote task endpoints (SSE + HITL resume)
+- [Message & Event](/v2/en/docs/building-blocks/message-and-event) — `AgentEvent` hierarchy (recommended) and the deprecated `Event` / `EventType` / `StreamOptions` types
+- [V1 Migration Guide B.4](/v2/en/docs/change-log) — `stream()` → `streamEvents()` deprecation timeline

@@ -1,14 +1,16 @@
-# Channel Adapters
+---
+title: Channel Adapters
+---
 
-These extensions connect your Agent to real-world messaging platforms through the Harness [Channel](../../docs/harness/channel.md) interface. Each adapter handles platform-specific authentication, webhook verification, message parsing, and reply delivery — so your Agent code stays platform-agnostic.
+These extensions connect your Agent to real-world messaging platforms through the Harness [Channel](/v2/en/docs/harness/channel) interface. Each adapter handles platform-specific authentication, webhook verification, message parsing, and reply delivery — so your Agent code stays platform-agnostic.
 
 | Extension | Platform | Transport |
 | --- | --- | --- |
-| [DingTalk](dingtalk.md) | DingTalk (钉钉) | Stream protocol (persistent WebSocket) |
-| [Feishu](feishu.md) | Feishu / Lark (飞书) | Event subscription callback (HTTP) |
-| [GitHub](github.md) | GitHub | Webhook (HTTP) |
-| [GitLab](gitlab.md) | GitLab | Webhook (HTTP) |
-| [WeCom](wecom.md) | WeCom (企业微信) | Encrypted callback (HTTP) |
+| [DingTalk](/v2/en/integration/channel/dingtalk) | DingTalk (钉钉) | Stream protocol (persistent WebSocket) |
+| [Feishu](/v2/en/integration/channel/feishu) | Feishu / Lark (飞书) | Event subscription callback (HTTP) |
+| [GitHub](/v2/en/integration/channel/github) | GitHub | Webhook (HTTP) |
+| [GitLab](/v2/en/integration/channel/gitlab) | GitLab | Webhook (HTTP) |
+| [WeCom](/v2/en/integration/channel/wecom) | WeCom (企业微信) | Encrypted callback (HTTP) |
 
 ## How it works
 

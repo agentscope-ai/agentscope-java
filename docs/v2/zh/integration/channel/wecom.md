@@ -1,4 +1,6 @@
-# 企业微信 Channel
+---
+title: 企业微信 Channel
+---
 
 `agentscope-extensions-channel-wecom` 通过**加密回调**机制将你的 Agent 接入企业微信（WeCom / WeChat Work）。一个 Spring `@RestController` 接收消息回调，解密后通过 Gateway 分发。
 
