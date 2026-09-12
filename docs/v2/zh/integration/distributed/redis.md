@@ -14,7 +14,17 @@ title: Redis
 </dependency>
 ```
 
-模块本身不强制依赖某一 Redis 客户端，按项目实际使用引入（Jedis / Lettuce / Redisson）。
+按项目需要选择 Jedis、Lettuce 或 Redisson。Redisson 状态存储集成要求使用 **Redisson 4.x API**（`RScript.ReturnType.LONG`），不兼容 Redisson 3.x。AgentScope 当前管理并测试的版本为 **4.2.0**。例如，可将直接引入的 Redisson 依赖对齐到该版本：
+
+```xml
+<dependency>
+    <groupId>org.redisson</groupId>
+    <artifactId>redisson</artifactId>
+    <version>4.2.0</version>
+</dependency>
+```
+
+如果自行管理 Redisson Spring Boot starter，3.x starter（例如 3.52.0）与此状态存储集成不兼容。请将 starter 及其 Redisson 依赖对齐到当前的 4.2.0 基线，并检查最终解析出的运行时依赖。当加载的 API 缺少 `LONG` 时，`RedisAgentStateStore.builder().redissonClient(...)` 和已弃用的 `RedissonAgentStateStore` 都会在构造阶段报错。此检查仅报告兼容性问题，不会修复依赖解析，也不会让 Redisson 3.x 支持状态持久化。
 
 ## 一键配置
 
