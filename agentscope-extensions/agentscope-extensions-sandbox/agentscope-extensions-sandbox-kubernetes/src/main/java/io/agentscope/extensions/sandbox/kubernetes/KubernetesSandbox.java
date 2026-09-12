@@ -262,6 +262,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     public void uploadFile(String absolutePath, byte[] content) throws Exception {
+        requireActiveConnection();
         String rel = requireFileApiRelative(absolutePath);
         int slash = absolutePath.lastIndexOf('/');
         if (slash > 0) {
@@ -281,7 +282,16 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     public byte[] downloadFile(String absolutePath) throws Exception {
+        requireActiveConnection();
         return sdkSandbox.files().read(requireFileApiRelative(absolutePath));
+    }
+
+    private void requireActiveConnection() {
+        if (!sdkSandbox.isActive()) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_STOP_ERROR,
+                    "Kubernetes sandbox connection has been closed");
+        }
     }
 
     /**

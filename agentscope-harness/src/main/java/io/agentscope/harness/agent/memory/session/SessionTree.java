@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.memory.session;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
@@ -562,6 +563,9 @@ public class SessionTree {
         String wid = writerId;
         MIRROR_EXECUTOR.execute(
                 () -> {
+                    if (skipMirrorForReleasedSandbox(mirrorFs, ref.prefix())) {
+                        return;
+                    }
                     try {
                         store.appendSegment(ref, seqStart, seqEnd, wid, payload);
                     } catch (Exception e) {
@@ -728,9 +732,19 @@ public class SessionTree {
         if (relativePath == null || relativePath.isBlank()) {
             return;
         }
+        if (skipMirrorForReleasedSandbox(fs, relativePath)) {
+            return;
+        }
         try {
             byte[] bytes = Files.readAllBytes(file);
-            fs.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
+            List<FileUploadResponse> uploads =
+                    fs.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
+            if (uploads.size() != 1 || !uploads.get(0).isSuccess()) {
+                String error =
+                        uploads.size() == 1 ? uploads.get(0).error() : "missing upload response";
+                log.warn("Failed to mirror session file {} to filesystem: {}", file, error);
+                return;
+            }
             // Best-effort: the local file already exists — update index with its current stats
             if (index != null) {
                 index.upsertFromLocalFile(relativePath, file);
@@ -740,6 +754,19 @@ public class SessionTree {
         } catch (RuntimeException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }
+    }
+
+    /** Returns true when an asynchronous mirror has outlived its self-managed sandbox. */
+    private static boolean skipMirrorForReleasedSandbox(
+            AbstractFilesystem fs, String mirrorTarget) {
+        if (fs instanceof PinnedSandboxFilesystem pinned && !pinned.isSandboxRunning()) {
+            log.debug(
+                    "Skipping best-effort session mirror for {} because its sandbox has been"
+                            + " released",
+                    mirrorTarget);
+            return true;
+        }
+        return false;
     }
 
     /**
