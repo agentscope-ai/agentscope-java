@@ -67,6 +67,7 @@ public final class AgentSpecCodec {
                             ts.defaultConfig() == null
                                     || ts.defaultConfig().enabled() == null
                                     || Boolean.TRUE.equals(ts.defaultConfig().enabled());
+                    cfg.setDefaultToolsEnabled(defaultEnabled);
                     if (ts.configs() != null && !ts.configs().isEmpty()) {
                         for (ToolConfigEntry c : ts.configs()) {
                             if (c == null || c.name() == null || c.name().isBlank()) {
@@ -74,9 +75,9 @@ public final class AgentSpecCodec {
                             }
                             boolean enabled = c.enabled() != null ? c.enabled() : defaultEnabled;
                             String harnessName = toHarnessToolName(c.name());
-                            if (enabled) {
+                            if (enabled && !defaultEnabled) {
                                 allow.add(harnessName);
-                            } else {
+                            } else if (!enabled) {
                                 deny.add(harnessName);
                             }
                         }
@@ -95,12 +96,60 @@ public final class AgentSpecCodec {
         Map<String, McpServerConfig> mcp = new LinkedHashMap<>();
         if (mcpServers != null) {
             for (McpServerSpec s : mcpServers) {
-                if (s == null || s.name() == null || s.name().isBlank()) {
-                    continue;
+                if (s == null
+                        || s.name() == null
+                        || !s.name().matches("[A-Za-z0-9_-]{1,64}")
+                        || s.name().contains("__")) {
+                    throw new IllegalArgumentException("Invalid MCP connection name");
                 }
-                mcp.put(s.name(), toMcpServerConfig(s));
+                if (mcp.containsKey(s.name())) {
+                    throw new IllegalArgumentException("Duplicate MCP server: " + s.name());
+                }
+                McpServerConfig server = toMcpServerConfig(s);
+                server.setPrefixToolNames(true);
+                server.setRequired(!Boolean.FALSE.equals(s.required()));
+                if (tools != null) {
+                    for (AgentToolset ts : tools) {
+                        if (ts == null
+                                || !AgentSpecTypes.TOOLSET_MCP.equals(ts.type())
+                                || !s.name().equals(ts.mcpServerName())) continue;
+                        boolean enabled =
+                                ts.defaultConfig() == null
+                                        || !Boolean.FALSE.equals(ts.defaultConfig().enabled());
+                        server.setDefaultToolsEnabled(enabled);
+                        List<String> include = new ArrayList<>();
+                        List<String> exclude =
+                                new ArrayList<>(
+                                        s.disableTools() == null ? List.of() : s.disableTools());
+                        if (ts.configs() != null)
+                            for (ToolConfigEntry entry : ts.configs()) {
+                                if (entry == null || entry.name() == null || entry.name().isBlank())
+                                    continue;
+                                boolean entryEnabled =
+                                        entry.enabled() == null ? enabled : entry.enabled();
+                                if (!entryEnabled) exclude.add(entry.name());
+                                else if (!enabled) include.add(entry.name());
+                            }
+                        if (!enabled) {
+                            if (s.enableTools() != null && !s.enableTools().isEmpty())
+                                include.retainAll(s.enableTools());
+                            server.setEnableTools(include);
+                        }
+                        server.setDisableTools(exclude);
+                    }
+                }
+                mcp.put(s.name(), server);
             }
         }
+        if (tools != null)
+            for (AgentToolset ts : tools) {
+                if (ts != null
+                        && AgentSpecTypes.TOOLSET_MCP.equals(ts.type())
+                        && !mcp.containsKey(ts.mcpServerName())) {
+                    throw new IllegalArgumentException(
+                            "Undeclared MCP server: " + ts.mcpServerName());
+                }
+            }
         if (!mcp.isEmpty()) {
             cfg.setMcpServers(mcp);
         }
@@ -114,10 +163,21 @@ public final class AgentSpecCodec {
             return out;
         }
         for (AgentToolset ts : tools) {
-            if (ts == null || !AgentSpecTypes.TOOLSET_AGENT.equals(ts.type())) {
-                continue;
-            }
+            if (ts == null) continue;
+            boolean isMcp = AgentSpecTypes.TOOLSET_MCP.equals(ts.type());
+            if (!isMcp && !AgentSpecTypes.TOOLSET_AGENT.equals(ts.type())) continue;
+            String prefix = isMcp ? ts.mcpServerName() + "__" : "";
             String defaultPolicy = policyType(ts.defaultConfig());
+            if (defaultPolicy == null)
+                defaultPolicy =
+                        isMcp
+                                ? AgentSpecTypes.POLICY_ALWAYS_ASK
+                                : AgentSpecTypes.POLICY_ALWAYS_ALLOW;
+            boolean defaultEnabled =
+                    ts.defaultConfig() == null
+                            || !Boolean.FALSE.equals(ts.defaultConfig().enabled());
+            if (isMcp)
+                out.put(prefix + "*", defaultEnabled ? defaultPolicy : AgentSpecTypes.POLICY_DENY);
             if (ts.configs() != null) {
                 for (ToolConfigEntry c : ts.configs()) {
                     if (c == null || c.name() == null || c.name().isBlank()) {
@@ -127,8 +187,10 @@ public final class AgentSpecCodec {
                             c.permissionPolicy() != null && c.permissionPolicy().type() != null
                                     ? c.permissionPolicy().type()
                                     : defaultPolicy;
+                    if (!(c.enabled() == null ? defaultEnabled : c.enabled()))
+                        p = AgentSpecTypes.POLICY_DENY;
                     if (p != null) {
-                        out.put(toHarnessToolName(c.name()), p);
+                        out.put(isMcp ? prefix + c.name() : toHarnessToolName(c.name()), p);
                     }
                 }
             }
@@ -284,6 +346,9 @@ public final class AgentSpecCodec {
         c.setHeaders(s.headers());
         c.setQueryParams(s.queryParams());
         c.setEnableTools(s.enableTools());
+        c.setDisableTools(s.disableTools());
+        if (s.initializationTimeout() != null && !s.initializationTimeout().isBlank())
+            c.setInitializationTimeout(java.time.Duration.parse(s.initializationTimeout()));
         if (s.timeout() != null && !s.timeout().isBlank()) {
             c.setTimeout(java.time.Duration.parse(s.timeout()));
         }

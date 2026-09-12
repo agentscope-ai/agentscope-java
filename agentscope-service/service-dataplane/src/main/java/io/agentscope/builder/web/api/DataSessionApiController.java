@@ -44,6 +44,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -164,6 +165,7 @@ public class DataSessionApiController {
                         () -> {
                             if (internal) {
                                 eventLog.purgeDeletedSession(id);
+                                confirmationCoordinator.deleteSessionTickets(id);
                                 turnRunner.releaseSession(id, userId);
                             } else {
                                 sessionService.get(userId, id);
@@ -200,6 +202,7 @@ public class DataSessionApiController {
             @PathVariable("id") String id,
             @RequestParam(value = "after", required = false) Long after,
             @RequestParam(value = "event_deltas", required = false) List<String> eventDeltas,
+            @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,
             Authentication auth) {
         String userId = (String) auth.getPrincipal();
         if (eventDeltas != null) {
@@ -221,7 +224,8 @@ public class DataSessionApiController {
             }
         }
 
-        long afterSeq = after != null ? after : 0L;
+        long afterSeq =
+                Math.max(after != null ? after : 0L, lastEventId != null ? lastEventId : 0L);
         return Mono.fromCallable(
                         () -> {
                             sessionService.get(userId, id);
@@ -295,10 +299,31 @@ public class DataSessionApiController {
                 }
                 boolean allow = Boolean.TRUE.equals(payload.get("allow"));
                 String denyMessage = stringValue(payload.get("denyMessage"));
-                confirmationCoordinator.resolve(toolUseId, allow, denyMessage);
-                sessionService.updateStatus(
-                        userId, sessionId, DataSessionService.STATUS_RUNNING, null);
-                yield eventLog.append(sessionId, type, payload);
+                ToolConfirmationCoordinator.DecisionResult result =
+                        confirmationCoordinator.resolvePersonal(
+                                sessionId, toolUseId, allow, denyMessage);
+                if (result == ToolConfirmationCoordinator.DecisionResult.NOT_FOUND) {
+                    throw new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Tool confirmation ticket not found");
+                }
+                if (result != ToolConfirmationCoordinator.DecisionResult.RESOLVED
+                        && result != ToolConfirmationCoordinator.DecisionResult.IDEMPOTENT) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            result
+                                            == ToolConfirmationCoordinator.DecisionResult
+                                                    .CONTROL_PLANE_REQUIRED
+                                    ? "Managed AgentTask confirmations must be decided through"
+                                            + " control-plane Approvals"
+                                    : "Tool confirmation is stale or already decided");
+                }
+                yield confirmationCoordinator
+                        .resolutionEvent(sessionId, toolUseId)
+                        .orElseThrow(
+                                () ->
+                                        new ResponseStatusException(
+                                                HttpStatus.CONFLICT,
+                                                "Tool confirmation decision event is unavailable"));
             }
             case SessionEventTypes.USER_CUSTOM_TOOL_RESULT -> {
                 SessionEventDto recorded = eventLog.append(sessionId, type, payload);
@@ -343,7 +368,11 @@ public class DataSessionApiController {
     private ServerSentEvent<String> toSse(SessionEventDto dto) {
         try {
             String json = objectMapper.writeValueAsString(dto);
-            return ServerSentEvent.<String>builder().event(dto.type()).data(json).build();
+            return ServerSentEvent.<String>builder()
+                    .id(dto.seq() > 0 ? String.valueOf(dto.seq()) : null)
+                    .event(dto.type())
+                    .data(json)
+                    .build();
         } catch (JsonProcessingException ex) {
             return ServerSentEvent.<String>builder().event("error").data("{}").build();
         }

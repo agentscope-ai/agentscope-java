@@ -19,6 +19,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -60,5 +64,38 @@ class KubernetesSandboxStateSerdeTest {
         Assertions.assertEquals("/workspace", k.getWorkspaceRoot());
         Assertions.assertEquals("/workspace", k.getFileApiBaseDir());
         Assertions.assertTrue(k.isClaimOwned());
+    }
+
+    @Test
+    void deserializationDoesNotReplaceLocalOrAbsentSnapshots() {
+        KubernetesSandboxClient client = new KubernetesSandboxClient();
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        RemoteSnapshotSpec remoteSpec = new RemoteSnapshotSpec(null);
+        Assertions.assertNull(
+                client.deserializeState(client.serializeState(state), remoteSpec).getSnapshot());
+
+        state.setSnapshot(new LocalSandboxSnapshot("saved-directory", "saved-id"));
+        SandboxState restored = client.deserializeState(client.serializeState(state), remoteSpec);
+        LocalSandboxSnapshot snapshot =
+                Assertions.assertInstanceOf(LocalSandboxSnapshot.class, restored.getSnapshot());
+        Assertions.assertEquals("saved-id", snapshot.getId());
+        Assertions.assertEquals("saved-directory", snapshot.getBasePath());
+    }
+
+    @Test
+    void deserializationWithoutRemoteSpecPreservesSnapshotMetadata() {
+        KubernetesSandboxClient client = new KubernetesSandboxClient();
+        KubernetesSandboxState state = new KubernetesSandboxState();
+        state.setSnapshot(new RemoteSandboxSnapshot("saved-id"));
+        String json = client.serializeState(state);
+        for (SandboxState restored :
+                new SandboxState[] {
+                    client.deserializeState(json),
+                    client.deserializeState(json, null),
+                    client.deserializeState(json, new LocalSnapshotSpec("current-directory"))
+                }) {
+            Assertions.assertInstanceOf(RemoteSandboxSnapshot.class, restored.getSnapshot());
+            Assertions.assertEquals("saved-id", restored.getSnapshot().getId());
+        }
     }
 }

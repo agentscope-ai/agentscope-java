@@ -1,4 +1,6 @@
-# GitLab Channel
+---
+title: GitLab Channel
+---
 
 `agentscope-extensions-channel-gitlab` connects your Agent to GitLab note (comment) hooks. When someone comments on an issue or merge request, the Agent replies as a new note.
 

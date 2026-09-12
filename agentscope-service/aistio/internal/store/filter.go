@@ -22,13 +22,16 @@ import (
 
 // SessionFilter selects sessions for List.
 type SessionFilter struct {
-	AgentName string
-	Namespace string
-	SessionID string
-	Phase     string
-	Framework string
-	TeamID    string
-	TeamRole  string
+	Tenant      string
+	AgentID     uuid.UUID
+	AgentName   string
+	Namespace   string
+	SessionID   string
+	Phase       string
+	Framework   string
+	AgentTaskID uuid.UUID
+	// PendingConversation selects admitted External turns awaiting a terminal report.
+	PendingConversation bool
 	// Limit / Offset for pagination. Zero Limit means no limit.
 	Limit  int
 	Offset int
@@ -36,6 +39,8 @@ type SessionFilter struct {
 
 // TokenFilter selects token-usage metrics for QueryTokenUsage.
 type TokenFilter struct {
+	Tenant    string
+	AgentID   uuid.UUID
 	AgentName string
 	Namespace string
 	Model     string
@@ -46,6 +51,8 @@ type TokenFilter struct {
 
 // AgentMetricFilter selects agent_metrics rows for QueryAgentMetrics.
 type AgentMetricFilter struct {
+	Tenant    string
+	AgentID   uuid.UUID
 	AgentName string
 	Namespace string
 	Since     *time.Time
@@ -72,6 +79,7 @@ type eventListOpts struct {
 	Until       *time.Time
 	Before      *time.Time // exclusive upper bound on occurred_at (reverse paging)
 	BeforeSeq   *int       // exclusive upper bound on seq (reverse paging)
+	AfterSeq    *int       // exclusive lower bound on seq (live stream resume)
 	Limit       int
 	Offset      int
 	NewestFirst bool // when Limit > 0, take the newest matching rows then return ASC
@@ -84,6 +92,7 @@ type EventListOpts struct {
 	Until       *time.Time
 	Before      *time.Time
 	BeforeSeq   *int
+	AfterSeq    *int
 	Limit       int
 	Offset      int
 	NewestFirst bool
@@ -120,6 +129,11 @@ func WithEventBeforeSeq(seq int) EventOption {
 	}
 }
 
+// WithEventAfterSeq filters events with seq strictly greater than seq.
+func WithEventAfterSeq(seq int) EventOption {
+	return func(o *eventListOpts) { o.AfterSeq = &seq }
+}
+
 // WithEventNewestFirst requests the newest matching rows when Limit is set
 // (first page of reverse paging without a before cursor).
 func WithEventNewestFirst() EventOption {
@@ -147,21 +161,21 @@ func applyEventOptions(opts []EventOption) eventListOpts {
 // RetentionConfig controls how long historical data is kept.
 // Note: dp_kv (hosted BaseStore) is user-persistent data and is NEVER purged.
 type RetentionConfig struct {
-	SessionEvents     time.Duration // default 7d
-	Snapshots         time.Duration // default 30d
-	ContextSnapshots  time.Duration // default 14d
-	Metrics           time.Duration // default 90d
-	BusQueue          time.Duration // default 7d — undrained queue entries
-	BusLog            time.Duration // default 3d — replay log entries
-	AsyncTools        time.Duration // default 7d — async tool records
-	SandboxSnapshots  time.Duration // default 7d — hosted sandbox blobs
-	Tasks             time.Duration // default 7d — terminal hosted subagent tasks
+	SessionEvents    time.Duration // default disabled; session history is durable
+	Snapshots        time.Duration // default 30d
+	ContextSnapshots time.Duration // default 14d
+	Metrics          time.Duration // default 90d
+	BusQueue         time.Duration // default 7d — undrained queue entries
+	BusLog           time.Duration // default 3d — replay log entries
+	AsyncTools       time.Duration // default 7d — async tool records
+	SandboxSnapshots time.Duration // default 7d — hosted sandbox blobs
+	Tasks            time.Duration // default 7d — terminal hosted subagent tasks
 }
 
 // DefaultRetention returns the retention defaults from the design doc.
 func DefaultRetention() RetentionConfig {
 	return RetentionConfig{
-		SessionEvents:    7 * 24 * time.Hour,
+		SessionEvents:    0,
 		Snapshots:        30 * 24 * time.Hour,
 		ContextSnapshots: 14 * 24 * time.Hour,
 		Metrics:          90 * 24 * time.Hour,
