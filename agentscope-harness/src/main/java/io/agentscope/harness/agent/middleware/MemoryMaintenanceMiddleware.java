@@ -139,9 +139,10 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Timeout applied to the maintenance pipeline; production uses {@link
-     * #MAINTENANCE_TIMEOUT}.
+     * #MAINTENANCE_TIMEOUT}. Volatile: written by the test hook from another thread, read on
+     * the dispatch thread.
      */
-    private Duration maintenanceTimeout = MAINTENANCE_TIMEOUT;
+    private volatile Duration maintenanceTimeout = MAINTENANCE_TIMEOUT;
 
     /** Test hook to shrink the maintenance timeout; keeps timeout behaviour unit-testable. */
     void setMaintenanceTimeoutForTests(Duration timeout) {
@@ -168,9 +169,12 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
+                            // The timeout bounds the work, not the scheduler wait (same
+                            // rationale as MemoryFlushMiddleware#runFlush): a budget that
+                            // starts at enqueue could elapse while the run is still queued
+                            // and cancel it before the worker ever picks it up.
+                            Mono.defer(() -> doMaintenance(rc).timeout(maintenanceTimeout))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .timeout(maintenanceTimeout)
                                     .doFinally(signal -> MemoryBackgroundTasks.end())
                                     .subscribe(
                                             null,
@@ -184,17 +188,30 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private Mono<Void> doMaintenance(RuntimeContext rc) {
         return Mono.defer(
                 () -> {
+                    // The gate is claimed before the stages run, so a run killed by the
+                    // timeout still consumes its slot: the throttle window is per attempt,
+                    // not per completion — refunding a claim under cancellation races would
+                    // let hung runs re-enter every cycle.
                     if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
                         // Throttled out; the in-flight slot acquired at dispatch is released
                         // when this Mono completes.
                         return Mono.empty();
                     }
-                    // The pipeline stays reactive end-to-end: the pipeline timeout's cancel
-                    // propagates into the consolidation model stream instead of stranding the
-                    // worker on an inner .block() that no outer dispose can reach.
+                    log.debug("Running memory maintenance...");
+                    // Cancellation reaches the consolidation model stream — the realistic
+                    // hang — instead of stranding the worker on an inner .block() no outer
+                    // dispose can reach. The retention sweeps themselves are short blocking
+                    // filesystem calls a cancel cannot interrupt mid-call; the worker
+                    // returns when the call returns. The prune stage re-pins itself to
+                    // boundedElastic because then(...) subscribes on the thread that
+                    // emitted the previous stage's terminal signal — the model client's I/O
+                    // thread — and blocking filesystem work must never run there.
                     return Mono.fromRunnable(() -> expireDailyFiles(rc))
                             .then(consolidateReactive(rc))
-                            .then(Mono.fromRunnable(() -> pruneOldSessions(rc)));
+                            .then(
+                                    Mono.<Void>fromRunnable(() -> pruneOldSessions(rc))
+                                            .subscribeOn(Schedulers.boundedElastic()))
+                            .doOnSuccess(v -> log.debug("Memory maintenance completed"));
                 });
     }
 

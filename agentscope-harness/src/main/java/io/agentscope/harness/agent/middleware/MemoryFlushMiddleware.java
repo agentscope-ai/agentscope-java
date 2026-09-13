@@ -157,8 +157,11 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
-    /** Timeout applied to the flush pipeline; production builds use {@link #FLUSH_TIMEOUT}. */
-    private Duration flushTimeout = FLUSH_TIMEOUT;
+    /**
+     * Timeout applied to the flush pipeline; production builds use {@link #FLUSH_TIMEOUT}.
+     * Volatile: written by the test hook from another thread, read on the dispatch thread.
+     */
+    private volatile Duration flushTimeout = FLUSH_TIMEOUT;
 
     /** Test hook to shrink the flush timeout; keeps timeout behaviour unit-testable. */
     void setFlushTimeoutForTests(Duration timeout) {
@@ -217,15 +220,31 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void runFlush(String key, Agent agent, RuntimeContext rc) {
-        Mono.defer(() -> doFlush(agent, rc))
+        // The timeout bounds the work, not the scheduler wait: applying it outside the
+        // subscribeOn scope would start the budget at enqueue, so under worker starvation the
+        // budget could elapse while the task is still QUEUED — cancelling a flush that never
+        // ran and silently dropping that conversation's extraction for the turn.
+        Mono.defer(() -> doFlush(agent, rc).timeout(flushTimeout))
                 .subscribeOn(Schedulers.boundedElastic())
-                .timeout(flushTimeout)
                 .doFinally(
                         signal -> {
                             MemoryBackgroundTasks.end();
                             drainFlushQueue(key);
                         })
-                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+                .subscribe(
+                        null,
+                        e -> {
+                            if (e instanceof java.util.concurrent.TimeoutException) {
+                                log.warn(
+                                        "Memory flush for {} timed out after {}; the"
+                                                + " conversation's extraction for this turn is"
+                                                + " dropped",
+                                        key,
+                                        flushTimeout);
+                            } else {
+                                log.warn("Memory flush failed: {}", e.getMessage());
+                            }
+                        });
     }
 
     private void drainFlushQueue(String key) {
