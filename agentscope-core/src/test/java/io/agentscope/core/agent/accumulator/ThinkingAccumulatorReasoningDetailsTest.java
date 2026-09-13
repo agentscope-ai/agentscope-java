@@ -29,6 +29,48 @@ import org.junit.jupiter.api.Test;
 class ThinkingAccumulatorReasoningDetailsTest {
 
     @Test
+    void snapshotsInitiallyEmptyLists() {
+        ThinkingAccumulator accumulator = new ThinkingAccumulator();
+        List<String> callerDetails = new ArrayList<>();
+        accumulator.add(block(callerDetails));
+        ThinkingBlock first = (ThinkingBlock) accumulator.buildAggregated();
+        callerDetails.add("late mutation");
+        assertEquals(List.of(), details(first));
+        assertEquals(List.of(), details(accumulator.buildAggregated()));
+        accumulator.add(block(List.of("received")));
+        assertEquals(List.of(), details(first));
+        assertEquals(List.of("received"), details(accumulator.buildAggregated()));
+    }
+
+    @Test
+    void malformedMetadataCannotReplaceAcceptedListsAndResetClearsListState() {
+        ThinkingAccumulator accumulator = new ThinkingAccumulator();
+        ThinkingBlock malformed =
+                ThinkingBlock.builder()
+                        .metadata(Map.of(ThinkingBlock.METADATA_REASONING_DETAILS, "not a list"))
+                        .build();
+        accumulator.add(malformed);
+        assertEquals(
+                "not a list",
+                ((ThinkingBlock) accumulator.buildAggregated())
+                        .getMetadata()
+                        .get(ThinkingBlock.METADATA_REASONING_DETAILS));
+        accumulator.add(block(List.of()));
+        accumulator.add(malformed);
+        assertEquals(List.of(), details(accumulator.buildAggregated()));
+        accumulator.add(block(List.of("received")));
+        accumulator.add(malformed);
+        assertEquals(List.of("received"), details(accumulator.buildAggregated()));
+        accumulator.reset();
+        accumulator.add(malformed);
+        assertEquals(
+                "not a list",
+                ((ThinkingBlock) accumulator.buildAggregated())
+                        .getMetadata()
+                        .get(ThinkingBlock.METADATA_REASONING_DETAILS));
+    }
+
+    @Test
     void preservesDetailsAcrossChunksWithoutChangingOtherMetadataSemantics() {
         ThinkingAccumulator accumulator = new ThinkingAccumulator();
         accumulator.add(
