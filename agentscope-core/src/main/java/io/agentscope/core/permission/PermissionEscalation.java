@@ -28,7 +28,9 @@ import java.util.Map;
  * effective mode; nothing escalates down, {@code read-only} is the floor):
  *
  * <ul>
- *   <li>{@code read-only} — read operations only (floor)
+ *   <li>{@code read-only} — read operations only (floor; a valid vocabulary entry for
+ *       validation completeness, but never requestable — it cannot be strictly wider than any
+ *       mode, and the tool schemas do not advertise it)
  *   <li>{@code workspace-write} — reads plus workspace modifications
  *   <li>{@code danger-full-access} — unrestricted (ceiling)
  * </ul>
@@ -168,16 +170,26 @@ public final class PermissionEscalation {
                     "Invalid escalation target '"
                             + target
                             + "': expected one of "
-                            + TARGET_READ_ONLY
-                            + ", "
                             + TARGET_WORKSPACE_WRITE
                             + ", "
                             + TARGET_DANGER_FULL_ACCESS
-                            + ".");
+                            + " (escalation can only widen).");
         }
         if (mode == PermissionMode.DONT_ASK) {
             return Outcome.deny(
                     "Permission escalation is unavailable: no user is available to approve it.");
+        }
+        if (TARGET_READ_ONLY.equals(target)) {
+            // The floor is a known vocabulary entry, so an unknown-target denial would teach
+            // the model to retry it — give the ladder-specific reason instead (from EXPLORE,
+            // the floor mode, the generic non-wider text reads like a format error).
+            return Outcome.deny(
+                    "Invalid escalation target 'read-only': read-only is the permission floor,"
+                            + " so it is not strictly wider than any mode; request "
+                            + TARGET_WORKSPACE_WRITE
+                            + " or "
+                            + TARGET_DANGER_FULL_ACCESS
+                            + ", or call the tool without escalation arguments.");
         }
         int modeRank = rankOfMode(mode);
         if (targetRank <= modeRank) {

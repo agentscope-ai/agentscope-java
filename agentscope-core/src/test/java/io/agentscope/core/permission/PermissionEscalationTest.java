@@ -96,14 +96,17 @@ class PermissionEscalationTest {
     }
 
     @Test
-    @DisplayName("unknown target -> DENY with the closed vocabulary")
+    @DisplayName("unknown target -> DENY naming only the requestable targets")
     void unknownTarget_deny() {
         PermissionEscalation.Outcome out =
                 PermissionEscalation.resolve(
                         args("root", "need root"), PermissionMode.DEFAULT, true);
         assertEquals(PermissionEscalation.Outcome.Type.DENY, out.type());
-        assertTrue(out.denialReason().contains("read-only"), out.denialReason());
+        assertTrue(out.denialReason().contains("workspace-write"), out.denialReason());
         assertTrue(out.denialReason().contains("danger-full-access"), out.denialReason());
+        // read-only is the floor and can never be requested: the denial must not teach the
+        // model to retry with it (a retry would only hit the not-strictly-wider denial).
+        assertFalse(out.denialReason().contains("read-only"), out.denialReason());
     }
 
     @Test
@@ -255,5 +258,12 @@ class PermissionEscalationTest {
                         args("read-only", "read"), PermissionMode.DEFAULT, true);
         assertEquals(PermissionEscalation.Outcome.Type.DENY, out.type());
         assertTrue(out.denialReason().contains("not strictly wider"), out.denialReason());
+        // The floor gets its own reason even from EXPLORE (the floor mode), where the plain
+        // rank comparison would read like a format error.
+        PermissionEscalation.Outcome explore =
+                PermissionEscalation.resolve(
+                        args("read-only", "reading only"), PermissionMode.EXPLORE, true);
+        assertEquals(PermissionEscalation.Outcome.Type.DENY, explore.type());
+        assertTrue(explore.denialReason().contains("permission floor"), explore.denialReason());
     }
 }
