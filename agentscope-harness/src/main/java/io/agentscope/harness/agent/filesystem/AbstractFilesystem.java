@@ -181,6 +181,13 @@ public interface AbstractFilesystem {
      * override this to return the normalized path, and backends that derive the location from
      * the context (e.g. a per-user namespace) must include that derived location in the key.
      *
+     * <p><b>Contract:</b> the returned object MUST have value equality (a {@code String},
+     * {@code List}, or record composed of value-equal parts — never an identity-equality
+     * type). The compiler cannot enforce this: an implementation that returns an
+     * identity-equal key silently degrades batching to one batch per key instance — every
+     * refresh pays its own full read-modify-write, exactly the pre-batching behaviour. No
+     * correctness is lost, only write coalescing.
+     *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param path the workspace-relative path of the operation
      * @return an object with value equality reflecting the storage identity

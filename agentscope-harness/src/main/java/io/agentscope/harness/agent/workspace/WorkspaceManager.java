@@ -514,6 +514,16 @@ public class WorkspaceManager implements AutoCloseable {
      * per-user {@code NamespaceFactory}, or a {@code LocalFilesystem} configured with one,
      * keeps per-user stores in separate batches.
      *
+     * <p><b>Stability invariant:</b> this key and the write-side routing of {@link
+     * #updateTaskRecordStatuses} / {@link #writeTaskRecord} MUST resolve the same way, or a
+     * batch formed under one routing would be persisted under another. Today that holds
+     * structurally: the manager's {@code filesystem} is fixed at construction (no setter),
+     * and a {@code RoutedSandboxFilesystem}'s route table is frozen when it is built — the
+     * sandbox lease coming and going changes whether {@code SandboxBackedFilesystem}
+     * operations succeed, never which backend serves which path. The grouping-time and
+     * write-time probes therefore cannot diverge; if routing ever becomes dynamic, the
+     * resolved key must travel with the batch instead of being re-derived.
+     *
      * @param rc per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param agentId the parent agent identifier
      * @param sessionId the session identifier

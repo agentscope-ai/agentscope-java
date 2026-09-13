@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.subagent.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -704,6 +705,66 @@ class WorkspaceTaskRepositoryHeartbeatBatchTest {
                 rc ->
                         java.util.List.of(
                                 "user-" + (rc.getUserId() == null ? "anon" : rc.getUserId())));
+    }
+
+    @Test
+    @DisplayName(
+            "an overlay store keys batching on both layers, so partitioned lower views never merge")
+    void heartbeat_overlayStore_lowerIdentityJoinsTheBatchKey() throws Exception {
+        // The overlay's write target is upper, but a batched refresh is a READ-modify-write:
+        // its snapshot reads through to lower while upper lacks the path, so two contexts
+        // whose lower views differ must not share a batch even on a context-free upper —
+        // a merged batch would snapshot only the first context's read view and persist the
+        // whole map to upper, shadowing the other context's lower-only records.
+        java.nio.file.Path upperDir =
+                java.nio.file.Files.createDirectories(tempDir.resolve("upper"));
+        java.nio.file.Path lowerDir =
+                java.nio.file.Files.createDirectories(tempDir.resolve("lower"));
+        io.agentscope.harness.agent.filesystem.OverlayFilesystem overlay =
+                new io.agentscope.harness.agent.filesystem.OverlayFilesystem(
+                        new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(
+                                upperDir,
+                                io.agentscope.harness.agent.workspace.LocalFsMode.ROOTED,
+                                io.agentscope.harness.agent.workspace.PathPolicy.empty(),
+                                10,
+                                null),
+                        userNamespacedLocal(lowerDir));
+        workspaceManager = new WorkspaceManager(tempDir.resolve("ws"), overlay);
+
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").build();
+
+        assertNotEquals(
+                workspaceManager.taskRecordStoreKey(alice, "test-agent", "sess"),
+                workspaceManager.taskRecordStoreKey(bob, "test-agent", "sess"),
+                "contexts whose lower read views differ must land in different batches");
+
+        // Context-free both layers: every context resolves the store to the same physical
+        // path in upper AND lower, the keys stay equal and batching keeps merging them.
+        java.nio.file.Path sharedUpper =
+                java.nio.file.Files.createDirectories(tempDir.resolve("shared-upper"));
+        java.nio.file.Path sharedLower =
+                java.nio.file.Files.createDirectories(tempDir.resolve("shared-lower"));
+        io.agentscope.harness.agent.filesystem.OverlayFilesystem plainOverlay =
+                new io.agentscope.harness.agent.filesystem.OverlayFilesystem(
+                        new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(
+                                sharedUpper,
+                                io.agentscope.harness.agent.workspace.LocalFsMode.ROOTED,
+                                io.agentscope.harness.agent.workspace.PathPolicy.empty(),
+                                10,
+                                null),
+                        new io.agentscope.harness.agent.filesystem.local.LocalFilesystem(
+                                sharedLower,
+                                io.agentscope.harness.agent.workspace.LocalFsMode.ROOTED,
+                                io.agentscope.harness.agent.workspace.PathPolicy.empty(),
+                                10,
+                                null));
+        try (WorkspaceManager plain = new WorkspaceManager(tempDir.resolve("ws2"), plainOverlay)) {
+            assertEquals(
+                    plain.taskRecordStoreKey(alice, "test-agent", "sess"),
+                    plain.taskRecordStoreKey(bob, "test-agent", "sess"),
+                    "a fully context-free overlay must keep one merged batch");
+        }
     }
 
     @Test
