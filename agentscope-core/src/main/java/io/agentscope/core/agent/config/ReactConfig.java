@@ -26,7 +26,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * back into the next reasoning round); {@link #maxToolErrorRecoveries()} caps the number of
  * consecutive recoveries from provider-level "unknown tool" streaming errors within a single
  * reply (each recovery lets the acting phase return "Tool not found" so the model can
- * self-correct).
+ * self-correct); {@code 0} disables recovery entirely so provider tool errors keep
+ * failing the turn out of the box for users who rely on fail-fast.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ReactConfig(
@@ -52,9 +53,10 @@ public record ReactConfig(
         if (maxIters <= 0) {
             throw new IllegalArgumentException("maxIters must be > 0: " + maxIters);
         }
-        if (maxToolErrorRecoveries <= 0) {
+        if (maxToolErrorRecoveries < 0) {
             throw new IllegalArgumentException(
-                    "maxToolErrorRecoveries must be > 0: " + maxToolErrorRecoveries);
+                    "maxToolErrorRecoveries must be >= 0 (0 disables recovery): "
+                            + maxToolErrorRecoveries);
         }
     }
 

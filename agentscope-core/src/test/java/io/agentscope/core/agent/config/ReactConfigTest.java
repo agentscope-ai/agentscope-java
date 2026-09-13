@@ -36,15 +36,25 @@ class ReactConfigTest {
     }
 
     @Test
+    void twoArgConstructorKeepsDefaultRecoveryCap() {
+        ReactConfig cfg = new ReactConfig(50, true);
+        assertEquals(3, cfg.maxToolErrorRecoveries());
+    }
+
+    @Test
     void rejectsNonPositiveMaxIters() {
         assertThrows(IllegalArgumentException.class, () -> new ReactConfig(0, false));
         assertThrows(IllegalArgumentException.class, () -> new ReactConfig(-5, false));
     }
 
     @Test
-    void rejectsNonPositiveMaxToolErrorRecoveries() {
-        assertThrows(IllegalArgumentException.class, () -> new ReactConfig(20, false, 0));
+    void rejectsNegativeMaxToolErrorRecoveries() {
         assertThrows(IllegalArgumentException.class, () -> new ReactConfig(20, false, -1));
+    }
+
+    @Test
+    void zeroMaxToolErrorRecoveriesDisablesRecovery() {
+        assertEquals(0, new ReactConfig(20, false, 0).maxToolErrorRecoveries());
     }
 
     @Test

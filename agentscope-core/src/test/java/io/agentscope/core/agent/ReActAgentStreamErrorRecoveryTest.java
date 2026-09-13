@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.config.ReactConfig;
+import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.message.Msg;
@@ -128,13 +130,13 @@ class ReActAgentStreamErrorRecoveryTest {
 
     /**
      * A model that always throws a non-tool-related {@link ModelHttpException} during
-     * streaming.
+     * streaming. The status code is nullable to also cover exceptions without one.
      */
     private static class NonRecoverableErrorModel implements Model {
         private final String errorMessage;
-        private final int statusCode;
+        private final Integer statusCode;
 
-        NonRecoverableErrorModel(String errorMessage, int statusCode) {
+        NonRecoverableErrorModel(String errorMessage, Integer statusCode) {
             this.errorMessage = errorMessage;
             this.statusCode = statusCode;
         }
@@ -254,13 +256,14 @@ class ReActAgentStreamErrorRecoveryTest {
     }
 
     /**
-     * Simple {@link ModelHttpException} implementation for testing.
+     * Simple {@link ModelHttpException} implementation for testing. The status code is
+     * nullable to also cover exceptions that carry no HTTP status at all.
      */
     private static class SimpleModelHttpException extends RuntimeException
             implements ModelHttpException {
-        private final int statusCode;
+        private final Integer statusCode;
 
-        SimpleModelHttpException(String message, int statusCode) {
+        SimpleModelHttpException(String message, Integer statusCode) {
             super(message);
             this.statusCode = statusCode;
         }
@@ -268,6 +271,50 @@ class ReActAgentStreamErrorRecoveryTest {
         @Override
         public Integer getStatusCode() {
             return statusCode;
+        }
+    }
+
+    /**
+     * A model that emits a tool call whose argument JSON is truncated mid-stream (the
+     * provider errored while the arguments were still streaming), followed by an
+     * unknown-tool error. Recovery must NOT fire for this shape — the acting phase
+     * would otherwise see a corrupt payload.
+     */
+    private static class TruncatedToolCallThenErrorModel implements Model {
+        private final AtomicInteger callCount = new AtomicInteger(0);
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            callCount.incrementAndGet();
+            ChatResponse truncatedCall =
+                    ChatResponse.builder()
+                            .id("msg_truncated")
+                            .content(
+                                    List.of(
+                                            ToolUseBlock.builder()
+                                                    .name("realTool")
+                                                    .id("call_truncated")
+                                                    .input(Map.of())
+                                                    // Argument JSON cut off mid-stream
+                                                    .content("{\"query\": \"val")
+                                                    .build()))
+                            .usage(new ChatUsage(10, 5, 15))
+                            .build();
+            return Flux.just(truncatedCall)
+                    .concatWith(
+                            Flux.error(
+                                    new SimpleModelHttpException(
+                                            "Provider rejected the request: unknown tool", 400)));
+        }
+
+        @Override
+        public String getModelName() {
+            return "test-model-truncated-args";
+        }
+
+        int getCallCount() {
+            return callCount.get();
         }
     }
 
@@ -435,10 +482,10 @@ class ReActAgentStreamErrorRecoveryTest {
         @Test
         @DisplayName("Should propagate error when no tool calls accumulated before error")
         void shouldPropagateWhenNoToolCallsAccumulated() {
-            // Error message contains "tool" but no tool calls were accumulated
-            // before the error
+            // Message matches the unknown-tool heuristic but no tool calls were
+            // accumulated before the error
             NonRecoverableErrorModel model =
-                    new NonRecoverableErrorModel("Tool configuration error", 400);
+                    new NonRecoverableErrorModel("Unknown tool requested", 400);
 
             ReActAgent agent =
                     ReActAgent.builder()
@@ -546,6 +593,138 @@ class ReActAgentStreamErrorRecoveryTest {
                     () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
             // 1 recovered iteration + 1 failing iteration = 2 model calls
             assertEquals(2, model.getCallCount());
+        }
+
+        @Test
+        @DisplayName("Should propagate immediately when recovery is disabled (cap = 0)")
+        void shouldPropagateImmediatelyWhenRecoveryDisabled() {
+            // Cap 0 disables recovery: the very first tool error propagates.
+            AlwaysToolCallThenErrorModel model = new AlwaysToolCallThenErrorModel();
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-disabled")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .maxToolErrorRecoveries(0)
+                            .build();
+
+            assertThrows(
+                    RuntimeException.class,
+                    () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
+            assertEquals(1, model.getCallCount(), "No recovery should happen when disabled");
+        }
+
+        @Test
+        @DisplayName("Should initialize the recovery cap from Builder.reactConfig(...)")
+        void shouldReadRecoveryCapFromReactConfig() {
+            ReactConfig config = new ReactConfig(15, true, 5);
+
+            ReActAgent fromConfig =
+                    ReActAgent.builder()
+                            .name("cfg-agent")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(new MockModel("hi"))
+                            .reactConfig(config)
+                            .build();
+            assertEquals(5, fromConfig.getReactConfig().maxToolErrorRecoveries());
+            assertEquals(15, fromConfig.getMaxIters());
+
+            // An explicit setter after reactConfig(...) takes precedence
+            ReActAgent overridden =
+                    ReActAgent.builder()
+                            .name("cfg-agent-2")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(new MockModel("hi"))
+                            .reactConfig(config)
+                            .maxToolErrorRecoveries(7)
+                            .build();
+            assertEquals(7, overridden.getReactConfig().maxToolErrorRecoveries());
+        }
+    }
+
+    @Nested
+    @DisplayName("Tightened error classification (review feedback)")
+    class TightenedClassificationTests {
+
+        @Test
+        @DisplayName("Should propagate an auth error even when the message mentions a tool")
+        void shouldPropagateAuthErrorWithToolKeyword() {
+            // 401 must never be swallowed even if the text contains "function"
+            NonRecoverableErrorModel model =
+                    new NonRecoverableErrorModel("Invalid function name: fakeFunction", 401);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-401")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            assertThrows(
+                    RuntimeException.class,
+                    () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
+        }
+
+        @Test
+        @DisplayName("Should propagate a schema validation error (422) even with tool keyword")
+        void shouldPropagateSchemaErrorWithToolKeyword() {
+            // 422 (schema validation) must fail fast per the issue discussion
+            NonRecoverableErrorModel model =
+                    new NonRecoverableErrorModel("Invalid tool call parameters", 422);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-422")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            assertThrows(
+                    RuntimeException.class,
+                    () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
+        }
+
+        @Test
+        @DisplayName("Should propagate when the exception carries no status code")
+        void shouldPropagateWhenStatusCodeMissing() {
+            // Without a status code fail-fast cannot be proven safe, so no recovery
+            NonRecoverableErrorModel model =
+                    new NonRecoverableErrorModel("Unknown tool: fakeTool", null);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-null-status")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            assertThrows(
+                    RuntimeException.class,
+                    () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
+        }
+
+        @Test
+        @DisplayName("Should propagate when the accumulated tool call is truncated mid-arguments")
+        void shouldPropagateWhenToolCallTruncatedMidArguments() {
+            // The error arrives while the argument JSON is still streaming: recovery
+            // must not fire, otherwise the acting phase would see a corrupt payload
+            TruncatedToolCallThenErrorModel model = new TruncatedToolCallThenErrorModel();
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-truncated")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            assertThrows(
+                    RuntimeException.class,
+                    () -> agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT));
+            assertEquals(
+                    1,
+                    model.getCallCount(),
+                    "No second model call should happen for a truncated call");
         }
     }
 }
