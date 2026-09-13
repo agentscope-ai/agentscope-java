@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -34,6 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
 
@@ -335,6 +338,92 @@ class JsonSchemaUtilsTest {
         assertEquals(first, second);
     }
 
+    @Test
+    void testGenerateSchemaFromParameterizedTypeIsHeldOnItsApplicationClass() throws Exception {
+        // List<TenantElement> mentions java.util.List, which is never unloaded, and TenantElement.
+        // The entry has to live on the application class: parked on List, it would keep the element
+        // class, and the classloader that defined it, reachable for the lifetime of the JVM.
+        Type parameterized = new TypeReference<List<TenantElement>>() {}.getType();
+
+        JsonSchemaUtils.generateSchemaFromType(parameterized);
+
+        assertTrue(typeSlot(TenantElement.class).containsKey(parameterized));
+        assertFalse(typeSlot(List.class).containsKey(parameterized));
+    }
+
+    @Test
+    void testGenerateSchemaFromBoundedWildcardIsHeldOnItsBoundClass() throws Exception {
+        // A wildcard is only ever a type argument, so the bound it declares decides which class the
+        // signature mentioning it belongs to.
+        Type boundedWildcard = new TypeReference<List<? extends TenantElement>>() {}.getType();
+
+        JsonSchemaUtils.generateSchemaFromType(boundedWildcard);
+
+        assertTrue(typeSlot(TenantElement.class).containsKey(boundedWildcard));
+        assertFalse(typeSlot(List.class).containsKey(boundedWildcard));
+    }
+
+    @Test
+    void testGenerateSchemaFromConstructorTypeVariableIsHeldOnItsDeclaringClass() throws Exception {
+        // A constructor declares type variables just as a method does, and it is a
+        // GenericDeclaration without being a Method. Matching only Method would send this type to
+        // the uncached path, which takes the global lock on every call.
+        Type typeVariable =
+                GenericConstructorHolder.class.getConstructor(Object.class).getTypeParameters()[0];
+
+        JsonSchemaUtils.generateSchemaFromType(typeVariable);
+
+        assertTrue(typeSlot(GenericConstructorHolder.class).containsKey(typeVariable));
+    }
+
+    @Test
+    void testGenerateSchemaFromBareClassIsHeldOnTheClassSlotOnly() throws Exception {
+        // Both entry points describe the same class, so they must share one slot rather than
+        // generating and storing the same schema twice.
+        JsonSchemaUtils.generateSchemaFromType(BareClassFixture.class);
+
+        assertNotNull(classSlot(BareClassFixture.class));
+        assertFalse(typeSlot(BareClassFixture.class).containsKey(BareClassFixture.class));
+    }
+
+    /**
+     * Reads the private type slot of a class. Asserting the slot directly is the only way to check
+     * which class a type is cached under: every schema the public API returns is a fresh copy, so
+     * the entry it came from is invisible in behaviour.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<Type, JsonNode> typeSlot(Class<?> scopeClass) throws Exception {
+        Field slot = JsonSchemaUtils.class.getDeclaredField("TYPE_SCHEMA_SLOT");
+        slot.setAccessible(true);
+        ClassValue<Map<Type, JsonNode>> slots = (ClassValue<Map<Type, JsonNode>>) slot.get(null);
+        return slots.get(scopeClass);
+    }
+
+    /** Reads the private class slot of a class. */
+    @SuppressWarnings("unchecked")
+    private static JsonNode classSlot(Class<?> clazz) throws Exception {
+        Field slot = JsonSchemaUtils.class.getDeclaredField("CLASS_SCHEMA_SLOT");
+        slot.setAccessible(true);
+        ClassValue<AtomicReference<JsonNode>> slots =
+                (ClassValue<AtomicReference<JsonNode>>) slot.get(null);
+        return slots.get(clazz).get();
+    }
+
+    /** Element class of the signatures used to check which class a type is cached under. */
+    static class TenantElement {
+        public String name;
+    }
+
+    /** Declares a type variable on a constructor, which is a GenericDeclaration but not a Method. */
+    static class GenericConstructorHolder {
+        public <T> GenericConstructorHolder(T value) {}
+    }
+
+    /** Reached as a bare class through {@code generateSchemaFromType}. */
+    static class BareClassFixture {
+        public String label;
+    }
+
     static class ConcurrentClassA {
         public String name;
         public int age;
@@ -374,11 +463,15 @@ class JsonSchemaUtilsTest {
 
     @Test
     void testGenerateSchemaFromTypeConcurrently() throws Exception {
-        // Two variants of the same class. They share the per-class slot map, so concurrent calls
-        // exercise the structure the cache's correctness rests on.
+        // The first two are variants of the same raw class and mention no application class, so
+        // both are held on java.util.List and share its slot map: they exercise the structure the
+        // cache's correctness rests on. The last two are held on the class each one mentions, so
+        // the scoped slots are stressed as well.
+        Type listOfString = new TypeReference<List<String>>() {}.getType();
+        Type listOfInteger = new TypeReference<List<Integer>>() {}.getType();
         Type listOfC = new TypeReference<List<ConcurrentClassC>>() {}.getType();
         Type listOfD = new TypeReference<List<ConcurrentClassD>>() {}.getType();
-        List<Type> targetTypes = List.of(listOfC, listOfD);
+        List<Type> targetTypes = List.of(listOfString, listOfInteger, listOfC, listOfD);
 
         List<Map<String, Object>> schemas =
                 generateConcurrently(
@@ -393,6 +486,11 @@ class JsonSchemaUtilsTest {
         }
 
         // Variants sharing one slot must stay independent of each other.
+        assertTrue(typeSlot(List.class).containsKey(listOfString));
+        assertTrue(typeSlot(List.class).containsKey(listOfInteger));
+        assertNotEquals(
+                JsonSchemaUtils.generateSchemaFromType(listOfString),
+                JsonSchemaUtils.generateSchemaFromType(listOfInteger));
         assertNotEquals(
                 JsonSchemaUtils.generateSchemaFromType(listOfC),
                 JsonSchemaUtils.generateSchemaFromType(listOfD));

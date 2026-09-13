@@ -27,12 +27,13 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import io.agentscope.core.tool.ToolSchemaModule;
+import java.lang.reflect.Executable;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.GenericDeclaration;
-import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -73,13 +74,25 @@ import java.util.concurrent.atomic.AtomicReference;
  * not always compile-time-fixed: extensions can load skills and tools at runtime, and
  * multi-tenant deployments may load classes per tenant.</p>
  *
+ * <p>A parameterized type is scoped to the deepest application class it mentions rather than to
+ * its raw class: {@code List<TenantDto>} is held on {@code TenantDto} and dies with it. Scoping
+ * such an entry to {@code java.util.List} instead would park it, and the {@code TenantDto} its key
+ * references, on a class the JVM never unloads, which is the same classloader pinning in a
+ * different place. See {@link #scopeClassOf} for how the class is picked.</p>
+ *
  * <p>The number of entries a single class's cache can hold is bounded by the distinct generic
  * signatures the code produces against it: every {@link Type} reaching this utility originates in
  * a {@link TypeReference} literal or a reflective method signature, and two structurally equal
  * signatures share one entry. Loading a class at runtime therefore adds a class with its own
  * cache rather than another entry on an existing one. A caller that synthesizes {@code Type}
  * instances at runtime can add entries beyond that bound, but those entries are released together
- * with the class that owns the cache.</p>
+ * with the class that owns the cache, which is the first application class the type mentions when
+ * it mentions more than one.</p>
+ *
+ * <p>One case is deliberately outside that bound: a signature built only from JDK classes, such as
+ * {@code List<String>}, has no application class to be scoped to, so it stays on its raw class
+ * ({@code java.util.List}), which the JVM never unloads. Those entries live as long as the JVM and
+ * cannot pin an application class, because no application class appears in them.</p>
  *
  * @hidden
  */
@@ -119,14 +132,16 @@ public class JsonSchemaUtils {
 
     /**
      * Schema cache slot of each class, keyed by generic {@link Type} to support parameterized
-     * structured-output and tool-parameter types. The variants of one class (e.g. {@code
-     * List<String>} versus {@code List<Integer>}, or a type variable that class declares) share the
-     * map held on that class, so these slots are scoped to a classloader in the same way as {@link
-     * #CLASS_SCHEMA_SLOT}.
+     * structured-output and tool-parameter types. The variants of one class (the type variables it
+     * declares, and every signature mentioning it) share the map held on that class, so these slots
+     * are scoped to a classloader in the same way as {@link #CLASS_SCHEMA_SLOT}. {@link
+     * #scopeClassOf} picks that class: the deepest application class the type mentions, which keeps
+     * {@code List<TenantDto>} on {@code TenantDto} instead of on {@code java.util.List}.
      *
      * <p>The map grows with the distinct generic signatures the code writes against that class,
      * not with anything a caller supplies at runtime, so it carries the same bound the previous
-     * static {@code Map<Type, JsonNode>} relied on. See the class javadoc for the full argument.
+     * static {@code Map<Type, JsonNode>} relied on. See the class javadoc for the full argument,
+     * including the signatures that stay on a JDK class because they mention no other.
      *
      * <p>Because unrelated classes never share a map, a miss takes {@link #SCHEMA_LOCK} without
      * grouping unrelated types behind the same lock.
@@ -203,12 +218,18 @@ public class JsonSchemaUtils {
     /**
      * Generate JSON Schema from a Java Type (supports Generics).
      *
+     * <p>A bare {@link Class} is delegated to {@link #generateSchemaFromClass(Class)}, so a class
+     * reached through either entry point is generated once and stored in one slot.
+     *
      * @param type The type to generate schema for
      * @return JSON Schema as a Map
      * @throws NullPointerException if the type is null
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         Objects.requireNonNull(type, "type");
+        if (type instanceof Class<?> clazz) {
+            return generateSchemaFromClass(clazz);
+        }
         try {
             JsonNode schemaNode = cachedSchemaNode(type);
             return JsonUtils.getJsonCodec()
@@ -283,12 +304,17 @@ public class JsonSchemaUtils {
      * Returns the class whose cache a type's schema belongs to, or {@code null} when the type
      * cannot be attributed to one.
      *
-     * <p>A parameterized type belongs to its raw class. The types with no raw class belong to the
-     * class that declares them: a type variable to its declaring class or to the class declaring
-     * its method, and a generic array to whichever class its component type resolves to. Caching
-     * those under a class rather than in a static map keyed by the type itself keeps the
-     * no-classloader-pinning property of {@link #CLASS_SCHEMA_SLOT}, since a type variable holds
-     * its declaration and would otherwise pin it.
+     * <p>A parameterized type belongs to the deepest application class it mentions, a type argument
+     * in preference to the raw type, so {@code List<TenantDto>} is held on {@code TenantDto}. Its
+     * raw class is the fallback for a signature built exclusively from JDK classes, such as {@code
+     * List<String>}: that entry is permanent, but it cannot pin an application class because none
+     * appears in it. See the class javadoc for the full argument.
+     *
+     * <p>The types with no raw class belong to the class that declares them: a type variable to its
+     * declaring class or to the class declaring its constructor or method, and a generic array to
+     * whichever class its component type resolves to. Caching those under a class rather than in a
+     * static map keyed by the type itself keeps the no-classloader-pinning property of {@link
+     * #CLASS_SCHEMA_SLOT}, since a type variable holds its declaration and would otherwise pin it.
      *
      * @param type the type to attribute; must not be {@code null}
      * @return the class to cache the schema under, or {@code null} if the type has none
@@ -297,21 +323,79 @@ public class JsonSchemaUtils {
         if (type instanceof Class<?> clazz) {
             return clazz;
         }
-        if (type instanceof ParameterizedType parameterizedType
-                && parameterizedType.getRawType() instanceof Class<?> rawClass) {
-            return rawClass;
+        if (type instanceof ParameterizedType parameterizedType) {
+            Class<?> applicationClass = applicationClassIn(parameterizedType);
+            if (applicationClass != null) {
+                return applicationClass;
+            }
+            return parameterizedType.getRawType() instanceof Class<?> rawClass ? rawClass : null;
         }
         if (type instanceof GenericArrayType arrayType) {
             return scopeClassOf(arrayType.getGenericComponentType());
         }
         if (type instanceof TypeVariable<?> typeVariable) {
-            GenericDeclaration declaration = typeVariable.getGenericDeclaration();
-            if (declaration instanceof Class<?> declaringClass) {
-                return declaringClass;
+            return declaringClassOf(typeVariable);
+        }
+        return null;
+    }
+
+    /**
+     * Returns the deepest class loaded by an application classloader that the given type mentions,
+     * or {@code null} when every class it mentions comes from the bootstrap loader. Only a class
+     * that can itself be unloaded may scope a cache entry: a slot on {@code java.util.List} is never
+     * released, so an entry there would keep the application classes named by its key reachable for
+     * the lifetime of the JVM.
+     */
+    private static Class<?> applicationClassIn(Type type) {
+        if (type instanceof Class<?> clazz) {
+            return clazz.getClassLoader() == null ? null : clazz;
+        }
+        if (type instanceof ParameterizedType parameterizedType) {
+            for (Type argument : parameterizedType.getActualTypeArguments()) {
+                Class<?> argumentClass = applicationClassIn(argument);
+                if (argumentClass != null) {
+                    return argumentClass;
+                }
             }
-            if (declaration instanceof Method method) {
-                return method.getDeclaringClass();
+            return applicationClassIn(parameterizedType.getRawType());
+        }
+        if (type instanceof GenericArrayType arrayType) {
+            return applicationClassIn(arrayType.getGenericComponentType());
+        }
+        if (type instanceof WildcardType wildcardType) {
+            for (Type bound : wildcardType.getUpperBounds()) {
+                Class<?> boundClass = applicationClassIn(bound);
+                if (boundClass != null) {
+                    return boundClass;
+                }
             }
+            for (Type bound : wildcardType.getLowerBounds()) {
+                Class<?> boundClass = applicationClassIn(bound);
+                if (boundClass != null) {
+                    return boundClass;
+                }
+            }
+            return null;
+        }
+        if (type instanceof TypeVariable<?> typeVariable) {
+            Class<?> declaringClass = declaringClassOf(typeVariable);
+            return declaringClass == null ? null : applicationClassIn(declaringClass);
+        }
+        return null;
+    }
+
+    /**
+     * Returns the class that declares the given type variable, or {@code null} when the declaration
+     * is neither a class, a method nor a constructor. A constructor declares type variables just as
+     * a method does, and both are {@link Executable} rather than {@code Method}.
+     */
+    private static Class<?> declaringClassOf(TypeVariable<?> typeVariable) {
+        GenericDeclaration declaration = typeVariable.getGenericDeclaration();
+        if (declaration instanceof Class<?> declaringClass) {
+            return declaringClass;
+        }
+        if (declaration instanceof Executable executable) {
+            return executable.getDeclaringClass();
         }
         return null;
     }
