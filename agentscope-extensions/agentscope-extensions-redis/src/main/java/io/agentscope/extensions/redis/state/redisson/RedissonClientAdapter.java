@@ -118,6 +118,13 @@ import org.redisson.client.codec.StringCodec;
  */
 public class RedissonClientAdapter implements RedisClientAdapter {
 
+    static final String INCOMPATIBLE_REDISSON_API =
+            "Redisson state-store integration requires the Redisson 4.x API"
+                    + " (RScript.ReturnType.LONG); Redisson 3.x is incompatible."
+                    + " Align your Redisson dependencies, including any starter, with"
+                    + " the Redisson version managed by agentscope-dependencies-bom."
+                    + " Loaded Redisson API implementation version: ";
+
     private final RedissonClient redissonClient;
     private final RScript.ReturnType scriptReturnType;
 
@@ -125,15 +132,13 @@ public class RedissonClientAdapter implements RedisClientAdapter {
         try {
             this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
         } catch (IllegalArgumentException e) {
-            String version = RScript.class.getPackage().getImplementationVersion();
-            throw new IllegalStateException(
-                    "Redisson state-store integration requires the Redisson 4.x API"
-                            + " (RScript.ReturnType.LONG); Redisson 3.x is incompatible."
-                            + " Align your Redisson dependencies, including any starter, with"
-                            + " the project's currently managed version 4.2.0."
-                            + " Loaded Redisson API implementation version: "
-                            + (version == null ? "unknown" : version),
-                    e);
+            Package apiPackage = RScript.class.getPackage();
+            String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+            if (version == null) {
+                // fall back to the code source so users can see which jar won
+                version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+            }
+            throw new IllegalStateException(INCOMPATIBLE_REDISSON_API + version, e);
         }
         this.redissonClient = redissonClient;
     }
@@ -146,6 +151,9 @@ public class RedissonClientAdapter implements RedisClientAdapter {
      *
      * @param redissonClient the RedissonClient instance
      * @return a new RedissonClientAdapter
+     * @throws IllegalStateException if the loaded Redisson API lacks {@code
+     *     RScript.ReturnType.LONG} (the Redisson 4.x baseline managed by
+     *     {@code agentscope-dependencies-bom})
      */
     public static RedissonClientAdapter of(RedissonClient redissonClient) {
         return new RedissonClientAdapter(redissonClient);

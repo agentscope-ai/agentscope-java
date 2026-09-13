@@ -91,13 +91,10 @@ class RedissonAgentStateStoreTest {
             assertTrue(
                     error.getMessage()
                             .contains("Align your Redisson dependencies, including any starter"));
-            assertTrue(error.getMessage().contains("4.2.0"));
-            String version = RScript.class.getPackage().getImplementationVersion();
-            assertTrue(
-                    error.getMessage()
-                            .contains(
-                                    "Loaded Redisson API implementation version: "
-                                            + (version == null ? "unknown" : version)));
+            assertTrue(error.getMessage().contains("agentscope-dependencies-bom"));
+            assertEquals(
+                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + loadedRedissonApiVersion(),
+                    error.getMessage());
             verifyNoInteractions(redissonClient);
         }
     }
@@ -222,5 +219,14 @@ class RedissonAgentStateStoreTest {
         // Regression: the UNVERSIONED path must not call getVersioned (which reads back as
         // State.class — a marker interface Jackson cannot instantiate).
         verify(redissonClient, never()).getBucket(any(), any());
+    }
+
+    private static String loadedRedissonApiVersion() {
+        Package apiPackage = RScript.class.getPackage();
+        String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+        if (version == null) {
+            version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+        }
+        return version;
     }
 }
