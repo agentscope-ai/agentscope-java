@@ -43,31 +43,37 @@ class ThinkingAccumulatorReasoningDetailsTest {
     }
 
     @Test
-    void malformedMetadataCannotReplaceAcceptedListsAndResetClearsListState() {
+    void scalarReplacesListAndResetClearsState() {
         ThinkingAccumulator accumulator = new ThinkingAccumulator();
-        ThinkingBlock malformed =
+        ThinkingBlock scalar =
                 ThinkingBlock.builder()
-                        .metadata(Map.of(ThinkingBlock.METADATA_REASONING_DETAILS, "not a list"))
+                        .metadata(Map.of(ThinkingBlock.METADATA_REASONING_DETAILS, "scalar"))
                         .build();
-        accumulator.add(malformed);
+
+        // Scalar before any list: scalar used
+        accumulator.add(scalar);
         assertEquals(
-                "not a list",
+                "scalar",
                 ((ThinkingBlock) accumulator.buildAggregated())
                         .getMetadata()
                         .get(ThinkingBlock.METADATA_REASONING_DETAILS));
-        accumulator.add(block(List.of()));
-        accumulator.add(malformed);
-        assertEquals(List.of(), details(accumulator.buildAggregated()));
-        accumulator.add(block(List.of("received")));
-        accumulator.add(malformed);
-        assertEquals(List.of("received"), details(accumulator.buildAggregated()));
+
+        // List after scalar: list replaces scalar
+        accumulator.add(block(List.of("a")));
+        assertEquals(List.of("a"), details(accumulator.buildAggregated()));
+
+        // Scalar after list: scalar replaces accumulated list (last-write-wins)
+        accumulator.add(scalar);
+        assertEquals(
+                "scalar",
+                ((ThinkingBlock) accumulator.buildAggregated())
+                        .getMetadata()
+                        .get(ThinkingBlock.METADATA_REASONING_DETAILS));
+
+        // Reset clears state
         accumulator.reset();
-        accumulator.add(malformed);
-        assertEquals(
-                "not a list",
-                ((ThinkingBlock) accumulator.buildAggregated())
-                        .getMetadata()
-                        .get(ThinkingBlock.METADATA_REASONING_DETAILS));
+        accumulator.add(block(List.of("fresh")));
+        assertEquals(List.of("fresh"), details(accumulator.buildAggregated()));
     }
 
     @Test

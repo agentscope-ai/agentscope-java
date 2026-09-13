@@ -28,20 +28,15 @@ import java.util.Map;
  * <p>This accumulator concatenates all thinking chunks in order to build the complete thinking
  * content.
  *
- * <p>Reasoning-details lists must contain incremental records for each chunk, not cumulative
- * snapshots. Records are appended in received order without identity-based deduplication: repeated
- * identifiers may represent distinct fragments. Providers emitting snapshots must normalize them
- * before accumulation. An empty list contributes no records. Once a list has been received, later
- * non-list values under the same key do not replace the accumulated records. Before any list is
- * received, non-list metadata retains the usual last-value behavior.
+ * <p>List-valued metadata (e.g. reasoning details) is accumulated in stream order: entries from
+ * each chunk are appended rather than replaced. Scalar metadata uses last-write-wins. List values
+ * are always copied to prevent caller mutation from affecting accumulator state.
  * @hidden
  */
 public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
     private final Map<String, Object> metadata = new HashMap<>();
-    private final List<Object> reasoningDetails = new ArrayList<>();
-    private boolean hasReasoningDetails;
 
     /**
      * @hidden
@@ -52,13 +47,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
             accumulated.append(block.getThinking());
         }
         if (block != null && block.getMetadata() != null && !block.getMetadata().isEmpty()) {
-            metadata.putAll(block.getMetadata());
-            Object details = block.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
-            if (details instanceof List<?> list) {
-                hasReasoningDetails = true;
-                // Each streaming chunk carries only its own reasoning details, not a snapshot.
-                reasoningDetails.addAll(list);
-            }
+            mergeMetadata(block.getMetadata());
         }
     }
 
@@ -80,13 +69,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         }
         ThinkingBlock.Builder builder = ThinkingBlock.builder().thinking(accumulated.toString());
         if (!metadata.isEmpty()) {
-            Map<String, Object> aggregatedMetadata = new HashMap<>(metadata);
-            if (hasReasoningDetails) {
-                aggregatedMetadata.put(
-                        ThinkingBlock.METADATA_REASONING_DETAILS,
-                        new ArrayList<>(reasoningDetails));
-            }
-            builder.metadata(aggregatedMetadata);
+            builder.metadata(new HashMap<>(metadata));
         }
         return builder.build();
     }
@@ -98,8 +81,32 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     public void reset() {
         accumulated.setLength(0);
         metadata.clear();
-        reasoningDetails.clear();
-        hasReasoningDetails = false;
+    }
+
+    /**
+     * Merges incoming metadata into the accumulator's metadata map.
+     *
+     * <p>List values are accumulated in stream order (entries appended, not replaced). Scalar
+     * values use last-write-wins. List values are always copied to prevent caller mutation.
+     */
+    private void mergeMetadata(Map<String, Object> incoming) {
+        for (Map.Entry<String, Object> entry : incoming.entrySet()) {
+            String key = entry.getKey();
+            Object newValue = entry.getValue();
+            Object existing = metadata.get(key);
+            if (existing instanceof List<?> existingList && newValue instanceof List<?> newList) {
+                // Both are lists: concatenate in stream order
+                List<Object> combined = new ArrayList<>(existingList);
+                combined.addAll(newList);
+                metadata.put(key, combined);
+            } else if (newValue instanceof List<?> newList) {
+                // First list for this key: copy to prevent caller mutation
+                metadata.put(key, new ArrayList<>(newList));
+            } else {
+                // Scalar value: last-write-wins
+                metadata.put(key, newValue);
+            }
+        }
     }
 
     /**
