@@ -168,7 +168,7 @@ class GenerateReasonTest {
 
             assertEquals(
                     0L, GenerateReason.getUnknownValueSuppressedCount(hotValue, firstReportNanos));
-            for (int i = 0; i < 255; i++) {
+            for (int i = 0; i < GenerateReason.MAX_REPORTED_UNKNOWN_VALUES - 1; i++) {
                 assertEquals(
                         0L,
                         GenerateReason.getUnknownValueSuppressedCount(

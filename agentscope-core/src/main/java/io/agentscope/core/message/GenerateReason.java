@@ -112,10 +112,11 @@ public enum GenerateReason {
     /** Maximum iterations reached. */
     MAX_ITERATIONS;
 
-    private static final int MAX_REPORTED_UNKNOWN_VALUES = 256;
+    static final int MAX_REPORTED_UNKNOWN_VALUES = 256;
     private static final int MAX_UNKNOWN_VALUE_LENGTH = 256;
     private static final long UNKNOWN_VALUE_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
+    // Access-ordered: all reads and writes must hold the map monitor.
     private static final Map<String, UnknownValueWarningState> unknownValueWarningStates =
             new LinkedHashMap<>(16, 0.75f, true);
 
