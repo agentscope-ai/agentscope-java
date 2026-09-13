@@ -56,6 +56,39 @@ import reactor.core.publisher.Flux;
 class AguiRequestProcessorTest {
 
     @Test
+    void processReleasesRunBeforeDownstreamStartsNextRun() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply")));
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        AtomicReference<List<AguiEvent>> nextEvents = new AtomicReference<>();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .doOnComplete(
+                        () ->
+                                nextEvents.set(
+                                        processor
+                                                .process(request(input("run-2")))
+                                                .events()
+                                                .collectList()
+                                                .block()))
+                .collectList()
+                .block();
+
+        List<AguiEvent> events = nextEvents.get();
+        assertNotNull(events);
+        assertEquals(0, events.stream().filter(AguiEvent.RunError.class::isInstance).count());
+        assertEquals(1, events.stream().filter(AguiEvent.RunFinished.class::isInstance).count());
+        verify(agent, times(2)).streamEvents(anyList(), any(RuntimeContext.class));
+    }
+
+    @Test
     void extractLatestUserMessagePreservesFullRunInputMetadata() {
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder().agentResolver(mock(AgentResolver.class)).build();
