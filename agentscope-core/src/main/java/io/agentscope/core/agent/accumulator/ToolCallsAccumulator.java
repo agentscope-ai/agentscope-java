@@ -151,15 +151,24 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         }
 
         /**
-         * Whether the accumulated argument payload is complete: either no argument
-         * content was streamed (an argument-less call) or the accumulated raw JSON
-         * parses as a JSON object. Arguments truncated mid-stream fail this check —
-         * note that {@link #build()} normalizes such payloads to an empty object, so
-         * this raw-state flag is the only reliable truncation signal.
+         * Whether the accumulated argument payload is complete: either no usable argument
+         * content was streamed (an argument-less call — blank whitespace or a literal
+         * JSON {@code null} both count, since some providers stream those for zero-arg
+         * calls) or the accumulated raw JSON parses as a JSON object. Arguments truncated
+         * mid-stream fail this check — note that {@link #build()} normalizes such payloads
+         * to an empty object, so this raw-state flag is the only reliable truncation
+         * signal.
          */
         boolean hasCompleteArguments() {
-            String raw = rawContent.toString();
-            return raw.isEmpty() || JsonUtils.isValidJsonObject(raw);
+            // Trim whitespace: a blank payload is a complete argument-less call,
+            // not a truncated one
+            String raw = rawContent.toString().trim();
+            if (raw.isEmpty() || "null".equals(raw)) {
+                // No payload at all, or a literal JSON null (which
+                // JsonUtils.isValidJsonObject rejects): the call has no arguments
+                return true;
+            }
+            return JsonUtils.isValidJsonObject(raw);
         }
     }
 

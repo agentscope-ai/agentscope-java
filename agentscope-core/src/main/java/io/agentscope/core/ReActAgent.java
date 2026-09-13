@@ -2649,8 +2649,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .onErrorResume(
                                     error -> {
                                         if (isRecoverableStreamError(error)
-                                                && !context.getAllAccumulatedToolCalls().isEmpty()
-                                                && !context.hasIncompleteToolCallArguments()) {
+                                                // Cheap raw-state scan first: it short-circuits
+                                                // truncated-argument calls without allocating
+                                                // the aggregated blocks (build() parses JSON)
+                                                && !context.hasIncompleteToolCallArguments()
+                                                && !context.getAllAccumulatedToolCalls()
+                                                        .isEmpty()) {
                                             if (streamToolErrorRecoveries.get()
                                                     >= maxToolErrorRecoveries) {
                                                 log.warn(
@@ -2663,10 +2667,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             }
                                             streamToolErrorRecoveries.incrementAndGet();
                                             recoveredThisCall.set(true);
-                                            log.debug(
-                                                    "Recoverable streaming error with pending"
-                                                            + " tool calls, letting acting phase"
-                                                            + " handle: {}",
+                                            // Info (not debug): a recovery silently burns an
+                                            // extra reasoning iteration, so it must stay
+                                            // diagnosable in production where debug is off;
+                                            // info keeps it visible without the warn-level
+                                            // noise a mis-classified error stream would cause.
+                                            log.info(
+                                                    "Recovered streaming tool error {}/{}"
+                                                            + " (consecutive), letting acting"
+                                                            + " phase handle: {}",
+                                                    streamToolErrorRecoveries.get(),
+                                                    maxToolErrorRecoveries,
                                                     sanitizeForLog(error.getMessage()));
                                             return Flux.empty();
                                         }
@@ -2840,16 +2851,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Compiled heuristic matching provider errors that explicitly indicate an unknown
          * tool/function name: a negation phrase ("non-existent", "not found", "does not
-         * exist", "unknown", "unavailable", "invalid") appearing next to "tool" or
-         * "function". A bare keyword match is deliberately not enough — an auth error whose
-         * text happens to contain "function" must still fail fast.
+         * exist", "no such", "unknown", "unavailable", "invalid") appearing next to "tool"
+         * or "function", in either order, with at most 24 separator characters (including
+         * quoting/backticks/punctuation — providers commonly emit
+         * {@code The tool `my_tool` does not exist}). A bare keyword match is deliberately
+         * not enough — an auth error whose text happens to contain "function" must still
+         * fail fast.
          */
         private static final Pattern UNKNOWN_TOOL_NAME_ERROR =
                 Pattern.compile(
-                        "(non-?exist|not\\s+found|does\\s+not\\s+exist|unknown|unavailable"
-                            + "|invalid)[\\w\\s-]{0,24}(tool|function)"
-                            + "|(tool|function)[\\w\\s-]{0,24}"
-                            + "(non-?exist|not\\s+found|does\\s+not\\s+exist|unknown|unavailable)",
+                        "(non-?exist|not\\s+found|does\\s+not\\s+exist|no\\s+such|unknown"
+                                + "|unavailable|invalid)[\\w\\s.,:;\"'()\\[\\]`-]{0,24}"
+                                + "(tool|function)"
+                                + "|(tool|function)[\\w\\s.,:;\"'()\\[\\]`-]{0,24}"
+                                + "(non-?exist|not\\s+found|does\\s+not\\s+exist|no\\s+such"
+                                + "|unknown|unavailable)",
                         Pattern.CASE_INSENSITIVE);
 
         /** Tokens that look like API keys and must not leak into logs. */
@@ -4906,12 +4922,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Sets the maximum number of consecutive recoveries from provider-level "unknown
          * tool" streaming errors within a single reply. Each recovery feeds a "Tool not
          * found" result back to the model so it can self-correct; once the budget is
-         * exhausted, further tool errors propagate and fail the turn.
+         * exhausted, further tool errors propagate and fail the turn. {@code 0} disables
+         * recovery entirely.
          *
-         * @param maxToolErrorRecoveries Maximum consecutive recoveries, must be positive
+         * @param maxToolErrorRecoveries Maximum consecutive recoveries, must not be negative
          * @return This builder instance for method chaining
+         * @throws IllegalArgumentException if the value is negative
          */
         public Builder maxToolErrorRecoveries(int maxToolErrorRecoveries) {
+            // Fail fast at the call site with the caller's context instead of
+            // deferring to the record validation during build()
+            if (maxToolErrorRecoveries < 0) {
+                throw new IllegalArgumentException(
+                        "maxToolErrorRecoveries must be >= 0 (0 disables recovery): "
+                                + maxToolErrorRecoveries);
+            }
             this.maxToolErrorRecoveries = maxToolErrorRecoveries;
             return this;
         }

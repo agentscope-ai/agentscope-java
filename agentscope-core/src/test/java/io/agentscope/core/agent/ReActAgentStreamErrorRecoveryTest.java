@@ -318,6 +318,61 @@ class ReActAgentStreamErrorRecoveryTest {
         }
     }
 
+    /**
+     * A model that emits an argument-less tool call whose argument payload is blank or a
+     * literal JSON {@code null} (some providers stream those for zero-arg calls),
+     * followed by an unknown-tool error. Recovery must still fire — issue #3102's
+     * hallucinated-name shape.
+     */
+    private static class BlankPayloadToolCallThenErrorModel implements Model {
+        private final String payload;
+        private final AtomicInteger callCount = new AtomicInteger(0);
+
+        BlankPayloadToolCallThenErrorModel(String payload) {
+            this.payload = payload;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            int call = callCount.getAndIncrement();
+            if (call == 0) {
+                // First call: argument-less tool call (blank/null payload) + error
+                ChatResponse chunk =
+                        ChatResponse.builder()
+                                .id("msg_blank_payload")
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .name("noArgTool")
+                                                        .id("call_blank")
+                                                        .input(Map.of())
+                                                        .content(payload)
+                                                        .build()))
+                                .usage(new ChatUsage(10, 5, 15))
+                                .build();
+                return Flux.just(chunk)
+                        .concatWith(
+                                Flux.error(
+                                        new SimpleModelHttpException(
+                                                "OpenAI API error in streaming response:"
+                                                        + " unknown tool: noArgTool",
+                                                400)));
+            }
+            // Subsequent calls: model self-corrected with a plain text response
+            return Flux.just(textChunk("Recovered successfully"));
+        }
+
+        @Override
+        public String getModelName() {
+            return "test-model-blank-payload";
+        }
+
+        int getCallCount() {
+            return callCount.get();
+        }
+    }
+
     // ==================== Helper methods ====================
 
     /**
@@ -641,6 +696,13 @@ class ReActAgentStreamErrorRecoveryTest {
                             .build();
             assertEquals(7, overridden.getReactConfig().maxToolErrorRecoveries());
         }
+
+        @Test
+        @DisplayName("Should reject a negative recovery cap at the builder call site")
+        void shouldRejectNegativeCapInSetter() {
+            ReActAgent.Builder builder = ReActAgent.builder();
+            assertThrows(IllegalArgumentException.class, () -> builder.maxToolErrorRecoveries(-1));
+        }
     }
 
     @Nested
@@ -725,6 +787,106 @@ class ReActAgentStreamErrorRecoveryTest {
                     1,
                     model.getCallCount(),
                     "No second model call should happen for a truncated call");
+        }
+
+        @Test
+        @DisplayName("Should recover on the exact error text reported in issue #3102")
+        void shouldRecoverOnIssueReportedMessage() {
+            // Regression guard: the pattern must keep matching the real provider
+            // payload from the issue, or recovery silently stops firing
+            ToolCallThenErrorModel model =
+                    new ToolCallThenErrorModel(
+                            "metric_condition_generation",
+                            "OpenAI API error in streaming response: LLM is trying to invoke"
+                                    + " a non-exist tool: \"metric_condition_generation\", you"
+                                    + " can add some few shots examples or adjust the prompt.",
+                            400);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-issue-msg")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            Msg response = agent.call(createUserMessage("Use that tool")).block(TEST_TIMEOUT);
+            assertNotNull(response, "Response should not be null after recovery");
+            assertTrue(model.getCallCount() >= 2, "Model should have been called again");
+        }
+
+        @Test
+        @DisplayName("Should recover when the negation follows a quoted tool name")
+        void shouldRecoverOnQuotedToolNameMessage() {
+            // Quoting/backticks between the tool name and the negation must not
+            // break the match ("The tool `my_tool` does not exist")
+            ToolCallThenErrorModel model =
+                    new ToolCallThenErrorModel("my_tool", "The tool `my_tool` does not exist", 400);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-quoted")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            Msg response = agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT);
+            assertNotNull(response, "Response should not be null after recovery");
+            assertTrue(model.getCallCount() >= 2, "Model should have been called again");
+        }
+
+        @Test
+        @DisplayName("Should recover on 'no such function/provider catalogue' phrasing")
+        void shouldRecoverOnNoSuchFunctionMessage() {
+            ToolCallThenErrorModel model =
+                    new ToolCallThenErrorModel("search", "No such function: search", 400);
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-no-such")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            Msg response = agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT);
+            assertNotNull(response, "Response should not be null after recovery");
+            assertTrue(model.getCallCount() >= 2, "Model should have been called again");
+        }
+
+        @Test
+        @DisplayName("Should recover when the argument payload is blank (argument-less call)")
+        void shouldRecoverOnBlankArgumentPayload() {
+            // Blank payloads are complete argument-less calls, not truncated ones
+            BlankPayloadToolCallThenErrorModel model = new BlankPayloadToolCallThenErrorModel("\n");
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-blank-payload")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            Msg response = agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT);
+            assertNotNull(response, "Response should not be null after recovery");
+            assertTrue(model.getCallCount() >= 2, "Model should have been called again");
+        }
+
+        @Test
+        @DisplayName("Should recover when the argument payload is a literal JSON null")
+        void shouldRecoverOnNullArgumentPayload() {
+            // Some providers stream "null" as the argument payload of zero-arg calls
+            BlankPayloadToolCallThenErrorModel model =
+                    new BlankPayloadToolCallThenErrorModel("null");
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent-null-payload")
+                            .sysPrompt("You are a helpful assistant.")
+                            .model(model)
+                            .build();
+
+            Msg response = agent.call(createUserMessage("Hello")).block(TEST_TIMEOUT);
+            assertNotNull(response, "Response should not be null after recovery");
+            assertTrue(model.getCallCount() >= 2, "Model should have been called again");
         }
     }
 }
