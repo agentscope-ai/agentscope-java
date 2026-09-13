@@ -168,7 +168,10 @@ class AguiResumeCoordinatorTest {
     void trackDoesNotClearPendingInterruptsAfterRunError() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
         track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
-        track(coordinator, "run-2", new AguiEvent.RunFinished("thread-1", "run-2"), true);
+        assertFalse(coordinator.beginRun(resumeInput("run-2", "interrupt-1")).isError());
+        coordinator.trackPendingInterrupts(
+                "thread-1", "run-2", new AguiEvent.RunFinished("thread-1", "run-2"), true);
+        coordinator.finishRun("thread-1", "run-2");
 
         AguiResumeCoordinator.ResumeContractResult result =
                 coordinator.validate(

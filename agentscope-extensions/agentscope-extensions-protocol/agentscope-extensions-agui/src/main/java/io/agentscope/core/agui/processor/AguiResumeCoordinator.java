@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Coordinates AG-UI interrupt resume contract state for request processing.
@@ -39,6 +41,8 @@ import java.util.Set;
  * resume contract.
  */
 final class AguiResumeCoordinator {
+
+    private static final Logger logger = LoggerFactory.getLogger(AguiResumeCoordinator.class);
 
     static final String CONTRACT_ERROR_CODE = "AGUI_INTERRUPT_CONTRACT_ERROR";
 
@@ -120,6 +124,35 @@ final class AguiResumeCoordinator {
      * @return A validation result describing whether the run can start
      */
     ResumeContractResult beginRun(RunAgentInput input) {
+        boolean[] claimed = {false};
+        ResumeContractResult result;
+        try {
+            result = beginRun(input, () -> claimed[0] = true);
+        } catch (RuntimeException | Error failure) {
+            if (claimed[0]) {
+                try {
+                    finishRun(input.getThreadId(), input.getRunId());
+                } catch (RuntimeException | Error cleanupError) {
+                    if (cleanupError != failure) {
+                        failure.addSuppressed(cleanupError);
+                    }
+                    logger.error(
+                            "AG-UI release failed: threadId={}, runId={}, phase=validation",
+                            input.getThreadId(),
+                            input.getRunId(),
+                            cleanupError);
+                }
+            }
+            throw failure;
+        }
+        if (claimed[0] && result.isError()) {
+            finishRun(input.getThreadId(), input.getRunId());
+        }
+        return result;
+    }
+
+    /** Begin a run whose caller owns cleanup, including failed validation and cancellation. */
+    ResumeContractResult beginRun(RunAgentInput input, Runnable onClaimed) {
         AguiResumeStateStore.RunClaim runClaim =
                 stateStore.claimRun(input.getThreadId(), input.getRunId());
         if (!runClaim.claimed()) {
@@ -129,21 +162,8 @@ final class AguiResumeCoordinator {
                             + " to finish before starting another run on the same thread");
         }
 
-        ResumeContractResult resumeContract;
-        try {
-            resumeContract = validate(input);
-        } catch (RuntimeException | Error failure) {
-            try {
-                stateStore.releaseRun(input.getThreadId(), input.getRunId());
-            } catch (RuntimeException | Error ignored) {
-                // Best-effort cleanup; preserve the original validation failure.
-            }
-            throw failure;
-        }
-        if (resumeContract.isError()) {
-            stateStore.releaseRun(input.getThreadId(), input.getRunId());
-        }
-        return resumeContract;
+        onClaimed.run();
+        return validate(input);
     }
 
     /**

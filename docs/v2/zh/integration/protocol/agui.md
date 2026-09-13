@@ -334,6 +334,38 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
+## 共享恢复状态与失败处理
+
+`AguiResumeStateStore` 协调活动 run 和待处理 interrupt。默认存储只在单个 processor 内有效。
+多副本部署时，通过 `AguiRequestProcessor.Builder.resumeStateStore(...)` 注入共享存储，或注册
+`AguiResumeStateStore` Spring Bean。`RedisAguiResumeStateStore` 使用调用方管理的 Jedis 客户端；
+请为客户端设置有限的连接、连接池等待和 socket 超时。
+
+processor 将同步存储调用放到 Reactor 的 `boundedElastic` 调度器，包括 pending 写入和断开连接后的
+清理。订阅与取消清理是异步的，`dispose()` 返回不代表 owner 已释放。清理前会向 Agent 传播取消，
+但忽略取消信号的工具仍可能继续执行。
+
+claim、校验、resume 注入和 pending 写入异常会转换为 `RUN_ERROR`。如果尚未发出 `RUN_STARTED`，
+processor 会先补上；是否追加 `RUN_FINISHED` 由 `emitRunFinishedAfterError` 决定。
+pending 写入失败时，不会转发代表成功的 `RUN_FINISHED`。存储异常不会被当成空 pending，也不会自动重跑 Agent。
+
+只有确认取得 owner 的请求才负责释放。正常完成、异常和取消均执行 owner 校验释放，最多尝试 3 次，
+两次重试分别等待 50 ms 和 100 ms。重试前记录 `WARN`，恢复后记录 `INFO`，耗尽后记录 `ERROR`，
+包含 `threadId`、`runId`、清理阶段、尝试次数和异常。请配置 SLF4J 日志实现，并对
+`AG-UI release exhausted` 建立告警。清理错误通过日志报告，不在已发出的终态事件后追加另一套生命周期，
+也不依赖 Reactor dropped error。若处理本身也失败，最终清理异常会作为 suppressed exception 附到原始异常。
+
+这是有限次数的尽力恢复，不提供租约或进程崩溃恢复。pending 和 owner 都没有 TTL。
+claim 响应丢失时，结果不确定：请求返回错误，但不会盲目释放或重试 claim。
+每次执行应使用新的 `runId`；它同时是 owner 标识，复用可能让迟到的释放影响后续执行。
+
+重试耗尽或进程退出后仍有 owner 时：
+
+1. 根据日志中的 thread/run ID 确认旧 Agent 和工具已经停止，并等待旧清理重试结束。客户端断开不能证明业务执行已停止。
+2. 确认后，通过管理入口调用 `sharedStore.releaseRun(threadId, oldRunId)`。该操作原子校验 owner 并保留 pending；
+   不要通过删除整个 Redis key 或清空 pending 来解锁。
+3. 检查待处理 interrupt，使用新的 run ID 和匹配的 `resume[]` 重试。外部副作用及中断的 pending 写入需要单独核对。
+
 ## 示例项目
 
 完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：

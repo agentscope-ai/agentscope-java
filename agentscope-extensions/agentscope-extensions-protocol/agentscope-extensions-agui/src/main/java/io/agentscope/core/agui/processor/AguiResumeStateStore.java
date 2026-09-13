@@ -28,6 +28,11 @@ import java.util.Map;
  *
  * <p>Storage failures should be propagated to the caller. Treating a failure as missing state can
  * incorrectly reject a valid resume or allow concurrent runs for one thread.
+ *
+ * <p>This is a synchronous SPI. The request processor schedules calls on blocking-capable workers;
+ * implementations must support concurrent requests and use finite I/O timeouts. A run ID is also
+ * its ownership token and must not be reused for a later execution while stale operations are
+ * possible.
  */
 public interface AguiResumeStateStore {
 
@@ -50,6 +55,9 @@ public interface AguiResumeStateStore {
 
     /**
      * Atomically release a thread only when {@code runId} is its current owner.
+     *
+     * <p>This operation must be idempotent and preserve pending interrupts. The request processor
+     * can retry it after a storage failure, including a lost reply after successful release.
      *
      * @param threadId the AG-UI thread ID
      * @param runId the run expected to own the thread

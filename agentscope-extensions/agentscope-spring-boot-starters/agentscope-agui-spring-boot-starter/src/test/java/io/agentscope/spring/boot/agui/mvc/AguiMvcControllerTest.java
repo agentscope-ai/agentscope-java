@@ -55,7 +55,7 @@ class AguiMvcControllerTest {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
             assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
-            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            awaitEmitterCompleted(emitter);
             assertEquals(1, fixture.runCount.get());
         } finally {
             fixture.executor.shutdownNow();
@@ -70,7 +70,7 @@ class AguiMvcControllerTest {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
             assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
-            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            awaitEmitterCompleted(emitter);
             assertEquals(1, fixture.runCount.get());
         } finally {
             fixture.executor.shutdownNow();
@@ -190,14 +190,23 @@ class AguiMvcControllerTest {
                 errorCallback, "accept", new IOException("client disconnected"));
     }
 
+    private static void awaitEmitterCompleted(SseEmitter emitter) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            // ResponseBodyEmitter.complete() updates this field while holding the same monitor.
+            synchronized (emitter) {
+                if (Boolean.TRUE.equals(ReflectionTestUtils.getField(emitter, "complete"))) {
+                    return;
+                }
+            }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+        }
+        throw new AssertionError("SSE emitter did not complete after run cleanup");
+    }
+
     /**
-     * Submits run-2 until it is accepted by the processor.
-     *
-     * <p>On disconnect the controller cancels run-1's subscription. Reactor's {@code doFinally}
-     * fires inner callbacks before outer ones on cancel, so the adapter's own teardown (which
-     * counts down {@code firstRunTerminated}) completes <em>before</em> {@code
-     * AguiResumeCoordinator.finishRun} releases the thread. Retrying run-2 therefore waits
-     * deterministically for the thread to actually become free instead of racing it.
+     * Wait for asynchronous cancellation cleanup before asserting that another run can start.
+     * Adapter termination alone does not establish that the resume owner has been released.
      */
     private static void awaitSecondRunAccepted(ControllerFixture fixture) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);

@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -346,35 +345,53 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void processRejectsConcurrentRunOnSameThreadUntilActiveRunFinishes() {
+    void processRejectsConcurrentRunOnSameThreadUntilActiveRunFinishes() throws Exception {
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch nextStarted = new CountDownLatch(1);
+        CountDownLatch released = new CountDownLatch(1);
+        AguiResumeStateStore store = org.mockito.Mockito.spy(new InMemoryAguiResumeStateStore());
+        org.mockito.Mockito.doAnswer(
+                        call -> {
+                            call.callRealMethod();
+                            released.countDown();
+                            return null;
+                        })
+                .when(store)
+                .releaseRun("thread-1", "run-1");
         AtomicInteger adapterCount = new AtomicInteger();
         AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(resolver)
+                        .resumeStateStore(store)
                         .adapterFactory(
                                 (resolvedAgent, config) -> {
-                                    adapterCount.incrementAndGet();
+                                    if (adapterCount.incrementAndGet() == 1) {
+                                        firstStarted.countDown();
+                                    } else {
+                                        nextStarted.countDown();
+                                    }
                                     return new NeverEndingAdapter(resolvedAgent, config);
                                 })
                         .build();
 
         Disposable activeRun = processor.process(request(input("run-1"))).events().subscribe();
         try {
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
             List<AguiEvent> rejectedEvents =
                     processor.process(request(input("run-2"))).events().collectList().block();
-
             assertEquals(1, adapterCount.get());
             assertResumeContractErrorLifecycle(rejectedEvents);
         } finally {
             activeRun.dispose();
         }
-
+        assertTrue(released.await(5, TimeUnit.SECONDS));
         Disposable nextRun = processor.process(request(input("run-3"))).events().subscribe();
         try {
+            assertTrue(nextStarted.await(5, TimeUnit.SECONDS));
             assertEquals(2, adapterCount.get());
         } finally {
             nextRun.dispose();
@@ -389,7 +406,7 @@ class AguiRequestProcessorTest {
         // and immediately started the next run on the same thread could therefore be
         // rejected with "Thread already has an active run". finishRun must happen
         // before the terminal signal reaches the caller; it is idempotent, and the
-        // doFinally hook still covers the cancellation path.
+        // usingWhen cleanup also covers the cancellation path.
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
@@ -448,7 +465,7 @@ class AguiRequestProcessorTest {
     void processClearsActiveRunWhenAdapterStreamFailsWithErrorSignal() {
         // Defense-in-depth contract for doOnError: if an adapter's stream fails with a
         // raw error signal (escaping the adapter's own error-to-RunError conversion),
-        // the marker must be cleared before the error reaches the caller, so an
+        // the marker must be cleared before the mapped error lifecycle reaches the caller, so an
         // immediate follow-up run on the same thread can start.
         AgentResolver resolver = mock(AgentResolver.class);
         ReActAgent agent = mock(ReActAgent.class);
@@ -472,9 +489,13 @@ class AguiRequestProcessorTest {
                         .adapterFactory((resolvedAgent, config) -> failingAdapter)
                         .build();
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> processor.process(request(input("run-1"))).events().collectList().block());
+        List<AguiEvent> failed =
+                processor
+                        .process(request(input("run-1")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+        assertProcessorErrorLifecycle(failed, "adapter stream failed", "INVALID_INPUT_ERROR");
 
         List<AguiEvent> followUp =
                 processor.process(request(input("run-2"))).events().collectList().block();

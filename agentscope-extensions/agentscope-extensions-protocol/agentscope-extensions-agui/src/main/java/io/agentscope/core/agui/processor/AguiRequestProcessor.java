@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Core processor for AG-UI requests.
@@ -156,87 +157,100 @@ public class AguiRequestProcessor {
         Flux<AguiEvent> events =
                 Flux.defer(
                         () -> {
-                            AguiResumeCoordinator.ResumeContractResult beginResult =
-                                    resumeCoordinator.beginRun(input);
-                            if (beginResult.isError()) {
-                                return Flux.fromIterable(
-                                        resumeCoordinator.contractErrorEvents(
-                                                input,
-                                                beginResult.message(),
-                                                config.isEmitRunFinishedAfterError()));
-                            }
-
-                            try {
-                                // Determine effective input based on server-side memory
-                                RunAgentInput effectiveInput = input;
-                                if (agentResolver.hasMemory(runtimeContext)) {
-                                    logger.debug(
-                                            "Using server-side memory for thread {} user {},"
-                                                    + " extracting follow-up messages",
-                                            threadId,
-                                            runtimeContext.getUserId());
-                                    effectiveInput = extractLatestUserMessage(input);
-                                }
-
-                                RuntimeContext effectiveRuntimeContext =
-                                        resumeCoordinator.addResumeInterrupts(
-                                                input, runtimeContext);
-
-                                // Create adapter and run
-                                AguiAgentAdapter adapter = adapterFactory.create(agent, config);
-                                AtomicBoolean runErrorSeen = new AtomicBoolean(false);
-                                return Objects.requireNonNull(
-                                                adapter.run(
-                                                        effectiveInput, effectiveRuntimeContext),
-                                                "adapter event stream is null")
-                                        .doOnNext(
-                                                event -> {
-                                                    if (event instanceof AguiEvent.RunError) {
-                                                        runErrorSeen.set(true);
-                                                    }
-                                                    resumeCoordinator.trackPendingInterrupts(
-                                                            threadId,
-                                                            runId,
-                                                            event,
-                                                            runErrorSeen.get());
-                                                })
-                                        // Finish the run before the terminal signal reaches
-                                        // the caller. doFinally runs after onComplete/onError
-                                        // is propagated, so a caller that collected this run's
-                                        // events and immediately started the next run on the
-                                        // same thread (the common resume flow) could observe
-                                        // the stale active-run marker and be rejected with
-                                        // AGUI_INTERRUPT_CONTRACT_ERROR. doOnComplete/doOnError
-                                        // run before propagation, giving a happens-before
-                                        // guarantee; finishRun is idempotent, and doFinally
-                                        // still covers the cancellation path.
-                                        .doOnComplete(
-                                                () -> resumeCoordinator.finishRun(threadId, runId))
-                                        .doOnError(
-                                                error ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId))
-                                        .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
-                            } catch (Throwable error) {
-                                try {
-                                    resumeCoordinator.finishRun(threadId, runId);
-                                } catch (RuntimeException ignored) {
-                                    // Best-effort cleanup; preserve the original processing error.
-                                }
-                                return processorErrorEvents(input, error);
-                            }
+                            AtomicBoolean started = new AtomicBoolean();
+                            AguiRunLifecycle lifecycle =
+                                    new AguiRunLifecycle(resumeCoordinator, input);
+                            // Async cleanup completes before terminal delivery, preserving the
+                            // immediate follow-up guarantee for both completion and error.
+                            return Flux.usingWhen(
+                                            Mono.just(lifecycle),
+                                            run ->
+                                                    run.call(
+                                                                    () ->
+                                                                            prepareRun(
+                                                                                    input,
+                                                                                    runtimeContext,
+                                                                                    agent,
+                                                                                    run))
+                                                            .flatMapMany(stream -> stream),
+                                            run -> run.finish("complete", null),
+                                            (run, error) -> run.finish("error", error),
+                                            run -> run.finish("cancel", null))
+                                    .doOnNext(
+                                            event -> {
+                                                if (event instanceof AguiEvent.RunStarted) {
+                                                    started.set(true);
+                                                }
+                                            })
+                                    .onErrorResume(
+                                            error -> {
+                                                logger.error(
+                                                        "AG-UI processing failed: threadId={},"
+                                                                + " runId={}",
+                                                        threadId,
+                                                        runId,
+                                                        error);
+                                                return processorErrorEvents(
+                                                        input, error, started.get());
+                                            });
                         });
         return new ProcessResult(agent, events, runtimeContext);
     }
 
-    private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
+    private Flux<AguiEvent> prepareRun(
+            RunAgentInput input, RuntimeContext runtimeContext, Agent agent, AguiRunLifecycle run) {
+        AguiResumeCoordinator.ResumeContractResult beginResult = run.begin();
+        if (beginResult.isError()) {
+            return Flux.fromIterable(
+                    resumeCoordinator.contractErrorEvents(
+                            input, beginResult.message(), config.isEmitRunFinishedAfterError()));
+        }
+
+        RunAgentInput effectiveInput = input;
+        if (agentResolver.hasMemory(runtimeContext)) {
+            logger.debug(
+                    "Using server-side memory for thread {} user {}, extracting follow-up messages",
+                    input.getThreadId(),
+                    runtimeContext.getUserId());
+            effectiveInput = extractLatestUserMessage(input);
+        }
+        RuntimeContext effectiveRuntimeContext =
+                resumeCoordinator.addResumeInterrupts(input, runtimeContext);
+        AguiAgentAdapter adapter = adapterFactory.create(agent, config);
+        AtomicBoolean runErrorSeen = new AtomicBoolean();
+        return Objects.requireNonNull(
+                        adapter.run(effectiveInput, effectiveRuntimeContext),
+                        "adapter event stream is null")
+                .concatMap(
+                        event -> {
+                            if (event instanceof AguiEvent.RunError) {
+                                runErrorSeen.set(true);
+                            }
+                            if (!(event instanceof AguiEvent.RunFinished)) {
+                                return Mono.just(event);
+                            }
+                            return run.call(
+                                    () -> {
+                                        resumeCoordinator.trackPendingInterrupts(
+                                                input.getThreadId(),
+                                                input.getRunId(),
+                                                event,
+                                                runErrorSeen.get());
+                                        return event;
+                                    });
+                        },
+                        1);
+    }
+
+    private Flux<AguiEvent> processorErrorEvents(
+            RunAgentInput input, Throwable error, boolean started) {
         String errorMessage =
                 error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
         List<AguiEvent> events = new ArrayList<>();
-        events.add(new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input));
+        if (!started) {
+            events.add(
+                    new AguiEvent.RunStarted(input.getThreadId(), input.getRunId(), null, input));
+        }
         events.add(
                 new AguiEvent.RunError(
                         input.getThreadId(),
