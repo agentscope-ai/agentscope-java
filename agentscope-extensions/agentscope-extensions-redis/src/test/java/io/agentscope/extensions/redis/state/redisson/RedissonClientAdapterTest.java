@@ -81,13 +81,10 @@ class RedissonClientAdapterTest {
             assertTrue(
                     error.getMessage()
                             .contains("Align your Redisson dependencies, including any starter"));
-            assertTrue(error.getMessage().contains("4.2.0"));
-            String version = RScript.class.getPackage().getImplementationVersion();
-            assertTrue(
-                    error.getMessage()
-                            .contains(
-                                    "Loaded Redisson API implementation version: "
-                                            + (version == null ? "unknown" : version)));
+            assertTrue(error.getMessage().contains("agentscope-dependencies-bom"));
+            assertEquals(
+                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + loadedRedissonApiVersion(),
+                    error.getMessage());
             verifyNoInteractions(redissonClient);
         }
     }
@@ -172,5 +169,14 @@ class RedissonClientAdapterTest {
                                         adapter.evalScript(
                                                 "return ARGV[1]", List.of("key"), List.of("arg")))
                         .getMessage());
+    }
+
+    private static String loadedRedissonApiVersion() {
+        Package apiPackage = RScript.class.getPackage();
+        String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+        if (version == null) {
+            version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+        }
+        return version;
     }
 }

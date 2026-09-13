@@ -79,15 +79,14 @@ public class RedissonAgentStateStore implements AgentStateStore {
         try {
             this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
         } catch (IllegalArgumentException e) {
-            String version = RScript.class.getPackage().getImplementationVersion();
+            Package apiPackage = RScript.class.getPackage();
+            String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+            if (version == null) {
+                // fall back to the code source so users can see which jar won
+                version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+            }
             throw new IllegalStateException(
-                    "Redisson state-store integration requires the Redisson 4.x API"
-                            + " (RScript.ReturnType.LONG); Redisson 3.x is incompatible."
-                            + " Align your Redisson dependencies, including any starter, with"
-                            + " the project's currently managed version 4.2.0."
-                            + " Loaded Redisson API implementation version: "
-                            + (version == null ? "unknown" : version),
-                    e);
+                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + version, e);
         }
         this.keyPrefix = builder.keyPrefix;
         this.redissonClient = builder.redissonClient;
