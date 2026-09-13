@@ -174,6 +174,15 @@ class SkillToolFactory {
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
+            // An LLM often calls load_skill_through_path for the same skill several
+            // times in one batch; re-sending the full SKILL.md burns tokens for
+            // content already in context (#1569). Once the skill is active, answer
+            // with a one-line notice. Specific resource paths below still return
+            // full content, so a model that lost the entry file to compaction can
+            // re-fetch individual resources.
+            if (skillRegistry.isSkillActive(skillId)) {
+                return "Skill '" + skillId + "' is already loaded and active.";
+            }
             activateSkill(skillId);
             return buildSkillMarkdownResponse(skillId, skill);
         }
