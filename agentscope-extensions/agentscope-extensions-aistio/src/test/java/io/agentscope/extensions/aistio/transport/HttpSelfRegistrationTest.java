@@ -93,7 +93,9 @@ class HttpSelfRegistrationTest {
                         List.of("sessions"),
                         20)) {
             registration.start();
-            assertTrue(heartbeat.await(Duration.ofSeconds(2).toMillis(), TimeUnit.MILLISECONDS));
+            // 10s latches: await returns immediately when the callback fires; the
+            // headroom only absorbs slow/loaded CI runners, not the happy path
+            assertTrue(heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
 
             assertEquals("tenant-a", registrationBody.get().path("tenant").asText());
             assertEquals("namespace-a", registrationBody.get().path("namespace").asText());
@@ -103,7 +105,7 @@ class HttpSelfRegistrationTest {
             assertEquals("secret-token", authHeader.get());
             assertEquals(7, heartbeatBody.get().path("generation").asLong());
         } finally {
-            assertTrue(deleted.await(Duration.ofSeconds(2).toMillis(), TimeUnit.MILLISECONDS));
+            assertTrue(deleted.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
             server.stop(0);
         }
         assertEquals(7, deleteBody.get().path("generation").asLong());

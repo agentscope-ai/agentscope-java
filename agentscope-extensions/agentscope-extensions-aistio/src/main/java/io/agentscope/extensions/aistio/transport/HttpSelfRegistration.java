@@ -140,11 +140,16 @@ public final class HttpSelfRegistration implements AutoCloseable {
             scheduler.shutdownNow();
             scheduler = null;
         }
-        if (!registered.get()) {
+        String id = registeredInstanceId.get();
+        // Best-effort unregister: a concurrent heartbeat re-register cycle may have
+        // cleared `registered` while an identity is still set (observed on loaded CI
+        // runners as a flaky HttpSelfRegistrationTest). Skipping the DELETE in that
+        // window would leak the instance on the control plane, so unregister whenever
+        // an identity exists; never-registered calls (no identity) remain a no-op.
+        if (!registered.get() && (id == null || id.isBlank())) {
             return;
         }
         try {
-            String id = registeredInstanceId.get();
             if (id != null && !id.isBlank()) {
                 request(
                         "DELETE",
