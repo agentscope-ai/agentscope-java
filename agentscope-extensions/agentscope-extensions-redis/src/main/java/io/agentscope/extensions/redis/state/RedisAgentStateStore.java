@@ -303,7 +303,7 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
-        RedisAgentStateKeyLayout keyLayout = v0KeyLayout(userId, sessionId);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
         String listKey = keyLayout.getListKey(key);
         String hashKey = listKey + HASH_SUFFIX;
         String keysKey = keyLayout.getKeysKey();
@@ -361,7 +361,7 @@ public class RedisAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        RedisAgentStateKeyLayout keyLayout = v0KeyLayout(userId, sessionId);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
         String redisKey = keyLayout.getListKey(key);
         try {
             List<String> jsonList = client.rangeList(redisKey, 0, -1);

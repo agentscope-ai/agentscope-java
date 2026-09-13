@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -37,6 +38,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -169,8 +171,10 @@ class RedisAgentStateStoreTest {
     }
 
     @Test
-    @DisplayName("list state uses the v0 non-hash-tagged layout for save and read")
+    @DisplayName("list state keeps v0 layout for existing v0 sessions")
     void listStateUsesLegacyLayoutForSaveAndRead() {
+        when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(true);
+
         store.save("user", "s1", "messages", List.of(new TestState("new-list")));
         when(client.rangeList("agentscope:session:user/s1:messages:list", 0, -1))
                 .thenReturn(List.of("{\"value\":\"legacy-list\"}"));
@@ -189,6 +193,38 @@ class RedisAgentStateStoreTest {
         assertEquals(List.of(new TestState("legacy-list")), loaded);
         verify(client).rangeList("agentscope:session:user/s1:messages:list", 0, -1);
         verify(client, never()).rangeList("agentscope:session:{user/s1}:messages:list", 0, -1);
+    }
+
+    @Test
+    @DisplayName("list save does not move an existing v1 session back to v0 layout")
+    void listSaveDoesNotMoveExistingClusterSafeSessionBackToLegacyLayout() {
+        AtomicBoolean v0MarkerCreated = new AtomicBoolean(false);
+        when(client.keyExists("agentscope:session:user/s1:_keys"))
+                .thenAnswer(invocation -> v0MarkerCreated.get());
+        when(client.evalScript(any(), anyList(), anyList())).thenReturn(1L);
+        when(client.get("agentscope:session:{user/s1}:agent_state"))
+                .thenReturn("{\"value\":\"cluster-safe\"}");
+        doAnswer(
+                        invocation -> {
+                            String keysKey = invocation.getArgument(0);
+                            if ("agentscope:session:user/s1:_keys".equals(keysKey)) {
+                                v0MarkerCreated.set(true);
+                            }
+                            return null;
+                        })
+                .when(client)
+                .addToSet(anyString(), anyString());
+
+        store.save("user", "s1", "agent_state", new TestState("cluster-safe"));
+        store.save("user", "s1", "messages", List.of(new TestState("message")));
+        VersionedState<TestState> loaded =
+                store.getVersioned("user", "s1", "agent_state", TestState.class);
+
+        assertEquals(new TestState("cluster-safe"), loaded.value());
+        verify(client).addToSet("agentscope:session:{user/s1}:_keys", "messages:list");
+        verify(client, never()).addToSet("agentscope:session:user/s1:_keys", "messages:list");
+        verify(client).get("agentscope:session:{user/s1}:agent_state");
+        verify(client, never()).get("agentscope:session:user/s1:agent_state");
     }
 
     @Test
