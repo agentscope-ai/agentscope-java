@@ -450,15 +450,17 @@ class ToolExecutor {
 
     /**
      * Execute a single tool call with infrastructure (scheduling, timeout, retry).
+     *
+     * <p>This overload is used by the batch path ({@code executeAll}) where only the tool use
+     * block, agent, and runtime context are available.
      */
-    private Mono<ToolResultBlock> executeWithInfrastructure(
+    Mono<ToolResultBlock> executeWithInfrastructure(
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-        // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
@@ -466,16 +468,43 @@ class ToolExecutor {
                         .runtimeContext(agentRuntimeContext)
                         .build();
 
-        // Get core execution
         Mono<ToolResultBlock> execution = execute(param, requestConfig, internalChunkCallback);
 
-        // Apply infrastructure layers
         execution = applyScheduling(execution);
         execution = applyTimeout(execution, executionConfig, toolCall);
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
-        // Add tool metadata and error handling
+        return execution
+                .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
+                .onErrorResume(
+                        e -> {
+                            logger.warn("Tool call failed: {}", toolCall.getName(), e);
+                            String errorMsg = ExceptionUtils.getErrorMessage(e);
+                            return Mono.just(
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg)
+                                            .withIdAndName(toolCall.getId(), toolCall.getName()));
+                        });
+    }
+
+    /**
+     * Execute a single tool call with full infrastructure, preserving all fields from the
+     * original {@link ToolCallParam} (including input).
+     *
+     * <p>This overload is used by {@code Toolkit.callTool} so that user-supplied fields on the
+     * param object are not silently discarded before reaching {@link #executeCore}.
+     */
+    Mono<ToolResultBlock> executeWithInfrastructure(
+            ToolCallParam param, ExecutionConfig executionConfig) {
+        ToolUseBlock toolCall = param.getToolUseBlock();
+
+        Mono<ToolResultBlock> execution = execute(param);
+
+        execution = applyScheduling(execution);
+        execution = applyTimeout(execution, executionConfig, toolCall);
+        execution = applyRetry(execution, executionConfig, toolCall);
+        execution = applyShutdownGuard(execution);
+
         return execution
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
