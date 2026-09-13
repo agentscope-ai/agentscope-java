@@ -17,7 +17,9 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,6 +33,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
     private final Map<String, Object> metadata = new HashMap<>();
+    private final List<Object> reasoningDetails = new ArrayList<>();
 
     /**
      * @hidden
@@ -42,6 +45,11 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         }
         if (block != null && block.getMetadata() != null && !block.getMetadata().isEmpty()) {
             metadata.putAll(block.getMetadata());
+            Object details = block.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
+            if (details instanceof List<?> list) {
+                // Each streaming chunk carries only its own reasoning details, not a snapshot.
+                reasoningDetails.addAll(list);
+            }
         }
     }
 
@@ -63,7 +71,13 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         }
         ThinkingBlock.Builder builder = ThinkingBlock.builder().thinking(accumulated.toString());
         if (!metadata.isEmpty()) {
-            builder.metadata(metadata);
+            Map<String, Object> aggregatedMetadata = new HashMap<>(metadata);
+            if (!reasoningDetails.isEmpty()) {
+                aggregatedMetadata.put(
+                        ThinkingBlock.METADATA_REASONING_DETAILS,
+                        new ArrayList<>(reasoningDetails));
+            }
+            builder.metadata(aggregatedMetadata);
         }
         return builder.build();
     }
@@ -75,6 +89,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     public void reset() {
         accumulated.setLength(0);
         metadata.clear();
+        reasoningDetails.clear();
     }
 
     /**
