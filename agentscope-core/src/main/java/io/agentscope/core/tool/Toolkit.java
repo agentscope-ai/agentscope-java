@@ -488,7 +488,11 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executor.execute(param);
+        ExecutionConfig effectiveConfig =
+                ExecutionConfig.mergeConfigs(
+                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+
+        return executor.executeWithInfrastructure(param, effectiveConfig);
     }
 
     /**
