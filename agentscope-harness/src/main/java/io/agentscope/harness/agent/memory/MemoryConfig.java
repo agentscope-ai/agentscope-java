@@ -42,6 +42,10 @@ import java.util.Objects;
  *       configure via {@code .compaction(CompactionConfig...)} rather than here.</li>
  * </ol>
  *
+ * <p>Flush and consolidation use independent throttle windows. A throttled policy allows the
+ * first eligible call immediately; its minimum gap applies only between subsequent runs and is
+ * not an initial delay. {@link FlushTrigger#never()} disables only the per-call flush.
+ *
  * <p>All fields have sensible defaults; {@link #defaults()} returns a config equivalent
  * to the harness's historical behavior so adopting this class is a no-op upgrade.
  */
@@ -71,6 +75,10 @@ public final class MemoryConfig {
 
     /**
      * Trigger policy for {@link io.agentscope.harness.agent.middleware.MemoryFlushMiddleware}.
+     *
+     * <p>A throttled trigger allows the first eligible call immediately. Its minimum gap is
+     * measured between subsequent per-call flushes, independently of consolidation maintenance.
+     * {@link #never()} disables only this per-call flush path.
      *
      * <p>{@code throttled(Duration.ZERO)} normalises to {@link #always()} so callers do not
      * need a special branch for the degenerate case.
@@ -190,6 +198,11 @@ public final class MemoryConfig {
         return consolidationMaxTokens;
     }
 
+    /**
+     * Minimum gap between consolidation/maintenance runs. The first eligible call runs
+     * immediately; this duration is not an initial delay and is independent of
+     * {@link #flushTrigger()}.
+     */
     public Duration consolidationMinGap() {
         return consolidationMinGap;
     }
@@ -290,7 +303,11 @@ public final class MemoryConfig {
             return this;
         }
 
-        /** Minimum gap between two consolidation/maintenance runs. Must not be null. */
+        /**
+         * Minimum gap between consolidation/maintenance runs. The first eligible call runs
+         * immediately; this duration is not an initial delay and is independent of
+         * {@link MemoryConfig#flushTrigger()}. Must not be null.
+         */
         public Builder consolidationMinGap(Duration consolidationMinGap) {
             if (consolidationMinGap == null) {
                 throw new IllegalArgumentException("consolidationMinGap must not be null");

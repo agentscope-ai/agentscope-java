@@ -1,4 +1,6 @@
-# Handoffs
+---
+title: Handoffs
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
@@ -252,9 +254,9 @@ Set `agentscope.runner.enabled=true` in `application.yml` to run the demo on sta
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [Supervisor](./supervisor.md) - Central supervisor with specialized agents as tools
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool for another agent
-- [Tool System](../task/tool.md) - AgentScope tools and Toolkit
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [Supervisor](/v1/en/docs/multi-agent/supervisor) - Central supervisor with specialized agents as tools
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Registering an agent as a tool for another agent
+- [Tool System](/v1/en/docs/task/tool) - AgentScope tools and Toolkit

@@ -82,6 +82,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		phase := strings.ToLower(firstNonEmpty(snap.Phase, store.SessionPhaseActive))
 		busy := deriveBusy(snap.Busy, phase)
 		sess := &store.Session{
+			Tenant:           e.Tenant,
 			SessionID:        snap.ID,
 			AgentName:        e.AgentName,
 			Namespace:        e.Namespace,
@@ -145,6 +146,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		_ = store.UpsertTranscriptIndexFromSnapshot(ctx, p.Store, stored.ID, snap.MessageCount, prompt, completion)
 		if dPrompt > 0 || dCompletion > 0 {
 			tok := &store.TokenUsageMetric{
+				Tenant:           e.Tenant,
 				SessionFK:        &stored.ID,
 				AgentName:        e.AgentName,
 				Namespace:        e.Namespace,
@@ -175,6 +177,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		avgPressure = pressureSum / float64(pressureN)
 	}
 	_ = p.Store.Metrics().RecordAgentMetric(ctx, &store.AgentMetric{
+		Tenant:             e.Tenant,
 		AgentName:          e.AgentName,
 		Namespace:          e.Namespace,
 		RecordedAt:         time.Now().UTC(),
@@ -188,7 +191,7 @@ func (p *Poller) pollOne(ctx context.Context, e *Entry) {
 		log.Printf("dataplane poller: skipping ArchiveMissing for %s/%s: probe returned %d sessions (truncated)",
 			e.Namespace, e.AgentName, len(snaps))
 	} else {
-		_, _ = p.Store.Sessions().ArchiveMissing(ctx, e.AgentName, e.Namespace, keep, 60*time.Second)
+		_, _ = p.Store.Sessions().ArchiveMissing(ctx, e.Tenant, e.AgentName, e.Namespace, keep, 60*time.Second)
 	}
 	// TTL archive: idle sessions with no activity for 7d move to History (archived).
 	_, _ = p.Store.Sessions().ArchiveIdleOlderThan(ctx, 7*24*time.Hour)

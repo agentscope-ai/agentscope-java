@@ -1,4 +1,6 @@
-# Create ReAct Agent
+---
+title: Agent
+---
 
 AgentScope provides an out-of-the-box ReAct agent `ReActAgent` for developers.
 
@@ -27,17 +29,17 @@ The `ReActAgent` class exposes the following parameters in its constructor:
 |-----------|-----------------|-------------|
 | `name` (required) | | Agent's name |
 | `sysPrompt` | | System prompt (recommended) |
-| `model` (required) | [Model Integration](../task/model.md) | Model for generating responses |
-| `toolkit` | [Tool System](../task/tool.md) | Module for registering/calling tool functions |
-| `memory` | [Memory Management](../task/memory.md) | Short-term memory for conversation history |
+| `model` (required) | [Model Integration](/v1/en/docs/task/model) | Model for generating responses |
+| `toolkit` | [Tool System](/v1/en/docs/task/tool) | Module for registering/calling tool functions |
+| `memory` | [Memory Management](/v1/en/docs/task/memory) | Short-term memory for conversation history |
 | `description` | | Agent description |
 | `generateOptions` | | LLM generation parameters (temperature, topP, maxTokens, etc.) |
-| `toolExecutionContext` | [Tool System](../task/tool.md) | Tool execution context for dependency injection into tools |
-| `planNotebook` | [Planning](../task/plan.md) | Plan manager |
-| `longTermMemory` | [Memory Management](../task/memory.md) | Long-term memory |
-| `longTermMemoryMode` | [Memory Management](../task/memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
+| `toolExecutionContext` | [Tool System](/v1/en/docs/task/tool) | Tool execution context for dependency injection into tools |
+| `planNotebook` | [Planning](/v1/en/docs/task/plan) | Plan manager |
+| `longTermMemory` | [Memory Management](/v1/en/docs/task/memory) | Long-term memory |
+| `longTermMemoryMode` | [Memory Management](/v1/en/docs/task/memory) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
 | `maxIters` | | Max iterations for generating response (default: 10) |
-| `hooks` | [Hook System](../task/hook.md) | Event hooks for customizing agent behavior |
+| `hooks` | [Hook System](/v1/en/docs/task/hook) | Event hooks for customizing agent behavior |
 | `modelExecutionConfig` | | Timeout/retry config for model calls |
 | `toolExecutionConfig` | | Timeout/retry config for tool calls |
 

@@ -39,6 +39,26 @@ class EnvironmentSpecFactoryE2bTest {
     }
 
     @Test
+    void unknownOrUnavailableBackendNeverFallsBackToLocal() {
+        var builder = io.agentscope.harness.agent.HarnessAgent.builder();
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        factory.applyEnvironment(
+                                builder,
+                                new EnvironmentDto(
+                                        "id", "bad", "typo", Map.of(), "owner", null, 0, 0, null)));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () ->
+                        factory.applyEnvironment(
+                                builder,
+                                new EnvironmentDto(
+                                        "id", "remote", "remote", Map.of(), "owner", null, 0, 0,
+                                        null)));
+    }
+
+    @Test
     void resolveApiKeyPrefersConfigOverProperties() {
         properties.setApiKey("from-props");
         assertThat(factory.resolveE2bApiKey(Map.of("apiKey", "from-config")))

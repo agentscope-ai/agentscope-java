@@ -1,4 +1,6 @@
-# 模型
+---
+title: 模型集成
+---
 
 本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。
 

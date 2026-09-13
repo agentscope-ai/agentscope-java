@@ -1,4 +1,6 @@
-# Higress AI 网关
+---
+title: Higress
+---
 
 `agentscope-extensions-higress` 把 [Higress](https://higress.io/) 上以 MCP（Model Context Protocol）方式发布的工具引入 AgentScope。Higress 在网关层做了工具搜索、鉴权、限流、可观测；Agent 这边只负责调用对应工具。
 

@@ -1,4 +1,6 @@
-# ReMe
+---
+title: ReMe
+---
 
 `agentscope-extensions-reme` integrates with the self-hosted ReMe memory service. Its distinguishing features are **trajectory-based** memory extraction and **workspace-level** isolation.
 

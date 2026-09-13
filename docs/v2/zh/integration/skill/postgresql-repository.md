@@ -1,4 +1,6 @@
-# PostgreSQL 技能仓库
+---
+title: PostgreSQL 技能仓库
+---
 
 `agentscope-extensions-skill-postgresql-repository` 把技能存到 PostgreSQL，提供完整的 CRUD：在控制台/业务系统里编辑保存，Agent 这边立即可读。
 

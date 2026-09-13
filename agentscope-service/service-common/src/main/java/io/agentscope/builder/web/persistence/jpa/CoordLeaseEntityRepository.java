@@ -15,9 +15,11 @@
  */
 package io.agentscope.builder.web.persistence.jpa;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,7 +28,25 @@ public interface CoordLeaseEntityRepository extends JpaRepository<CoordLeaseEnti
 
     Optional<CoordLeaseEntity> findByLeaseKindAndLeaseKey(String leaseKind, String leaseKey);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from CoordLeaseEntity e where e.leaseKind = :kind and e.leaseKey = :key")
+    Optional<CoordLeaseEntity> findByKindAndKeyForUpdate(
+            @Param("kind") String kind, @Param("key") String key);
+
+    @Modifying
+    @Query(
+            "update CoordLeaseEntity e set e.expiresAt = :expiresAt where e.leaseKind = :kind and"
+                    + " e.leaseKey = :key and e.instanceId = :instanceId")
+    int heartbeatIfOwned(
+            @Param("kind") String kind,
+            @Param("key") String key,
+            @Param("instanceId") String instanceId,
+            @Param("expiresAt") long expiresAt);
+
     List<CoordLeaseEntity> findByLeaseKindAndExpiresAtLessThan(String leaseKind, long expiresAt);
+
+    List<CoordLeaseEntity> findByLeaseKindAndLeaseKeyStartingWithOrderByAcquiredAtAsc(
+            String leaseKind, String leaseKeyPrefix);
 
     @Modifying
     @Query(

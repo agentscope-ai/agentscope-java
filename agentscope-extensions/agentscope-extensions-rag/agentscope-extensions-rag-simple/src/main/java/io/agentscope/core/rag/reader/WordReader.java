@@ -243,6 +243,15 @@ public class WordReader extends AbstractChunkingReader {
                             blocks.add(TextBlock.builder().text(text).build());
                         }
                         lastType = "text";
+                    } else if (!blocks.isEmpty() && "text".equals(lastType)) {
+                        // An empty <w:p> is a blank line the user typed in Word. Append a
+                        // line break so the paragraph boundary survives: the next paragraph
+                        // is merged with another "\n", which together form the blank line.
+                        int lastIndex = blocks.size() - 1;
+                        TextBlock lastBlock = (TextBlock) blocks.get(lastIndex);
+                        blocks.set(
+                                lastIndex,
+                                TextBlock.builder().text(lastBlock.getText() + "\n").build());
                     }
 
                 } else if (element.getElementType() == BodyElementType.TABLE) {

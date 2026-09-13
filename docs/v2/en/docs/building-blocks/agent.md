@@ -1,6 +1,6 @@
 ---
-title: "Agent"
-description: "Learn how to define and configure agents in AgentScope Java 2.0"
+title: Agent
+description: Learn how to define and configure agents in AgentScope Java 2.0
 ---
 
 ## Overview
@@ -30,7 +30,7 @@ The `Agent` interface composes three capability interfaces: `CallableAgent`, `St
 
 Each `call` runs through the reasoning-acting loop. The diagram below shows the main control flow:
 
-```{mermaid}
+```mermaid
 flowchart TD
     A([Input: messages / event]) --> B{Waiting on\nexternal event?}
     B -- yes --> C[Apply event\nupdate tool state]
@@ -61,8 +61,12 @@ flowchart TD
 
 Build an agent with `ReActAgent.builder()...build()`. `.model(...)` takes either a `ModelRegistry`-resolved string id (most common — picks up env vars automatically) or an explicit `Model` instance (when you need explicit control over timeouts / custom endpoints / etc.).
 
-::::{tab-set}
-:::{tab-item} String model id (recommended)
+
+<Tabs>
+
+
+<Tab title="String model id (recommended)">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -78,8 +82,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} Explicit Model builder
+
+</Tab>
+
+
+<Tab title="Explicit Model builder">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
@@ -100,8 +108,12 @@ ReActAgent agent =
                 .toolkit(new Toolkit())
                 .build();
 ```
-:::
-:::{tab-item} With Toolkit / MCP
+
+</Tab>
+
+
+<Tab title="With Toolkit / MCP">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
@@ -127,12 +139,20 @@ ReActAgent agent =
                 .toolkit(toolkit)
                 .build();
 ```
-:::
-::::
 
-:::{tip}
-The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](../harness/architecture.md) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
-:::
+</Tab>
+
+
+</Tabs>
+
+
+
+<Tip>
+
+The `ModelRegistry` string form (`<provider>:<model>`) requires the matching model extension module on the classpath. It supports `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama` and reads the matching API key (`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) from the environment. For long-running scenarios that also need a workspace, session persistence, memory compaction, subagents, and so on, use [`HarnessAgent`](/v2/en/docs/harness/architecture) — it is a thin wrapper around `ReActAgent` with a largely identical builder.
+
+</Tip>
+
 
 ### Builder fields
 
@@ -145,7 +165,7 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | Applied to agent / reasoning / acting / model call / system prompt hooks |
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
-| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](./permission-system.md) |
+| `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
 | `modelConfig` | `ModelConfig` | default | Model retries and fallback model |
 | `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
 | `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
@@ -180,9 +200,13 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 At the start of each `call()`, the agent automatically loads the `AgentState` (conversation context, permission rules, etc.) for the given `(userId, sessionId)`. When the call finishes, the state is saved back. Different sessions are completely isolated.
 
-:::{tip}
+
+<Tip>
+
 Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. Calls targeting different sessions run in parallel.
-:::
+
+</Tip>
+
 
 A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
 
@@ -262,7 +286,7 @@ agent.streamEvents(new UserMessage("Summarize the README."))
         .blockLast();
 ```
 
-Full event-type and field reference: [Message and event](./message-and-event.md).
+Full event-type and field reference: [Message and event](/v2/en/docs/building-blocks/message-and-event).
 
 ### observe
 
@@ -288,7 +312,7 @@ It is **not** persistent state — `AgentState` (conversation context, compresse
 | String attributes (free-form key-value) | `put(String key, Object value)` | `<T> T get(String key)` |
 | Typed attributes (inject business POJOs by `Class<T>`) | `put(Class<T> type, T value)` / `put(String key, Class<T> type, T value)` | `<T> T get(Class<T> type)` / `<T> T get(String key, Class<T> type)` |
 
-Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](./tool.md#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
+Typed attributes power tool injection — declare a parameter of the matching type on a `@Tool` method and the framework supplies the value. See [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context). String attributes are typically used for in-process coordination (e.g. middleware-to-middleware signalling). The two layers are isolated: typed values do not appear in `getExtra()` and vice-versa.
 
 ### Construct and pass
 
@@ -313,8 +337,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ### Who reads it
 
-- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](./tool.md#receiving-context).
-- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](./middleware.md#reading-runtimecontext).
+- **Tools** (`@Tool` methods and `ToolBase.callAsync`) — see [Tool — Receiving context](/v2/en/docs/building-blocks/tool#receiving-context).
+- **Middleware** (every `MiddlewareBase` hook) — received as the second parameter `ctx`. See [Middleware — Reading RuntimeContext](/v2/en/docs/building-blocks/middleware#reading-runtimecontext).
 - **All threads within the same call** — the internal maps are `ConcurrentMap`s, so hooks and tools can read/write the same instance to coordinate.
 
 ### Relation to persistence
@@ -324,9 +348,13 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 Runnable examples: `agentscope-examples/documentation/.../context/RuntimeContextExample.java`, `tool/ToolExecutionContextExample.java`.
 
-:::{note}
+
+<Note>
+
 A legacy `ToolExecutionContext` (`io.agentscope.core.tool`) is `@Deprecated`. New code should use `RuntimeContext`. The legacy type is bridged automatically via `RuntimeContext.asToolExecutionContext()`, so existing code keeps working.
-:::
+
+</Note>
+
 
 ## Human-in-the-loop
 
@@ -433,13 +461,17 @@ for (var tc : externalEvent.getToolCalls()) {
 
 **3. Resume the agent** — feed the results back as the next `call`'s input message. After the results are validated, they are injected into the agent context and the agent emits `ExternalExecutionResultEvent`; its `getReplyId()` matches the earlier `RequireExternalExecutionEvent#getReplyId()`. Reasoning then continues from where it paused.
 
-:::{tip}
+
+<Tip>
+
 Use `streamEvents` when building interactive UIs — it lets you detect pauses in real time and prompt the user immediately. Use `call` for programmatic flows that handle events automatically. Complete runnable examples: `agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`.
-:::
+
+</Tip>
+
 
 ## Configuring state persistence (AgentStateStore)
 
-`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](../../integration/session/index.md) is its storage abstraction.
+`AgentState` holds everything required to resume the agent — conversation context, compressed summaries, permission rules, tool state, and the current reply position. [`AgentStateStore`](/v2/en/integration/session/index) is its storage abstraction.
 
 **Set `stateStore(...)` on the builder and the agent persists and recovers automatically**: every `call` writes `AgentState` back; the next time you call with the same `(userId, sessionId)`, it loads. The agent instance is stateless with respect to sessions — the slot is chosen per-call from the `RuntimeContext` (falling back to `defaultSessionId`).
 
@@ -486,7 +518,7 @@ state.getContext().size();                  // current message count
 String json = state.toJson();               // serialize to JSON
 ```
 
-For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](context.md) and [Compaction](../harness/compaction.md).
+For full field-by-field details, cross-node continuation, and how the state store interacts with compaction / Plan Mode / subagents, see [Context & AgentState](/v2/en/docs/building-blocks/context) and [Compaction](/v2/en/docs/harness/compaction).
 
 ## Structured Output
 
@@ -603,18 +635,27 @@ ReActAgent.builder()
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Permission System
-:link: ./permission-system.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Permission System" href="/v2/en/docs/building-blocks/permission-system">
+
 
 Control which tools the agent can call, and under what conditions.
-:::
 
-:::{grid-item-card} Middleware
-:link: ./middleware.html
+</Card>
+
+
+
+<Card title="Middleware" href="/v2/en/docs/building-blocks/middleware">
+
 
 Intercept and modify agent behavior at the agent, reasoning, acting, and model-call hooks.
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>
