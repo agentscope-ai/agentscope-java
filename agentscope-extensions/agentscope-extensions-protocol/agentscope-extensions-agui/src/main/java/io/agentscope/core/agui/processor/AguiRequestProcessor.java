@@ -181,6 +181,13 @@ public class AguiRequestProcessor {
                                 // Create adapter and run
                                 AguiAgentAdapter adapter = adapterFactory.create(agent, config);
                                 AtomicBoolean runErrorSeen = new AtomicBoolean(false);
+                                AtomicBoolean runFinished = new AtomicBoolean(false);
+                                Runnable finishRun =
+                                        () -> {
+                                            if (runFinished.compareAndSet(false, true)) {
+                                                resumeCoordinator.finishRun(threadId, runId);
+                                            }
+                                        };
                                 return Objects.requireNonNull(
                                                 adapter.run(
                                                         effectiveInput, effectiveRuntimeContext),
@@ -196,10 +203,9 @@ public class AguiRequestProcessor {
                                                             event,
                                                             runErrorSeen.get());
                                                 })
-                                        .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
+                                        // Release before downstream completion can start a new run.
+                                        .doOnTerminate(finishRun)
+                                        .doFinally(signalType -> finishRun.run());
                             } catch (Throwable error) {
                                 resumeCoordinator.finishRun(threadId, runId);
                                 return processorErrorEvents(input, error);
