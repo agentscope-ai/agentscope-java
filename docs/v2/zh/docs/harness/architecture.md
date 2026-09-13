@@ -1,13 +1,13 @@
 ---
-title: "Harness 架构"
-description: "HarnessAgent 是什么、各能力如何协作、状态如何在一次 call() 中流转"
+title: Harness 架构
+description: HarnessAgent 是什么、各能力如何协作、状态如何在一次 call() 中流转
 ---
 
 `HarnessAgent` 是 `ReActAgent` 的一层薄包装，把长期运行 agent 必备的工程能力打包进单一 builder：工作区驱动的人格、长期记忆、子 agent 编排、沙箱隔离、技能装配、计划模式、Channel 路由。
 
 裸的 `ReActAgent` 只解决"一次请求 → 推理 → 工具 → 回复"。Harness 要回答的是另一组问题：下一轮怎么接着上一轮、上下文如何保持有界、多用户如何隔离、危险操作如何先 review 再执行、可复用能力如何沉淀。
 
-> 安装、依赖、跑通第一个 `HarnessAgent` 的端到端示例见 [快速开始](../quickstart.md)。本页只讲架构。
+> 安装、依赖、跑通第一个 `HarnessAgent` 的端到端示例见 [快速开始](/v2/zh/docs/quickstart)。本页只讲架构。
 
 ## 核心工作原理
 
@@ -32,18 +32,18 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 
 | 能力 | 解决什么问题 | Builder 入口 | 详细文档 |
 |---|---|---|---|
-| 工作区驱动的人格 | 人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在 | `.workspace(path)` | [工作区](./workspace.md) |
-| 状态持久化 | 同 `(userId, sessionId)` 跨请求、跨进程、跨副本恢复 | 默认开启；`.stateStore(...)` 替换实现 | [上下文与 AgentState](../building-blocks/context.md) |
-| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](./memory.md) |
-| 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文压缩](./compaction.md) |
-| 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文压缩](./compaction.md) |
-| 子 agent 编排 | 委派给子 agent，支持同步或后台，自动反向通知 | `.subagent(...)` 或 `workspace/subagents/` | [子 Agent](./subagent.md) |
-| 可插拔文件系统 | 本机 + shell / 共享存储 / 沙箱，不改代码切换 | `.filesystem(...)` | [文件系统](./filesystem.md) |
-| 沙箱隔离 | 文件与命令隔离，跨调用恢复，多副本部署 | `.filesystem(new DockerFilesystemSpec()...)` | [沙箱](./sandbox.md) |
-| 计划模式 | 只读思考阶段 + HITL 退出 | `.enablePlanMode()` | [计划模式](./plan-mode.md) |
-| 技能装配 | 来自 Git / Nacos / MySQL / classpath / 工作区 | `.skillRepository(...)` | [技能](./skill.md) |
-| MCP 集成与工具白名单 | 声明式 MCP server + 工具粒度允许 / 拒绝 | `workspace/tools.json` | [工作区](./workspace.md) |
-| Channel 路由 | 会话管理、per-session 并发控制、多 agent 路由、流式事件 | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel.md) |
+| 工作区驱动的人格 | 人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在 | `.workspace(path)` | [工作区](/v2/zh/docs/harness/workspace) |
+| 状态持久化 | 同 `(userId, sessionId)` 跨请求、跨进程、跨副本恢复 | 默认开启；`.stateStore(...)` 替换实现 | [上下文与 AgentState](/v2/zh/docs/building-blocks/context) |
+| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](/v2/zh/docs/harness/memory) |
+| 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文压缩](/v2/zh/docs/harness/compaction) |
+| 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文压缩](/v2/zh/docs/harness/compaction) |
+| 子 agent 编排 | 委派给子 agent，支持同步或后台，自动反向通知 | `.subagent(...)` 或 `workspace/subagents/` | [子 Agent](/v2/zh/docs/harness/subagent) |
+| 可插拔文件系统 | 本机 + shell / 共享存储 / 沙箱，不改代码切换 | `.filesystem(...)` | [文件系统](/v2/zh/docs/harness/filesystem) |
+| 沙箱隔离 | 文件与命令隔离，跨调用恢复，多副本部署 | `.filesystem(new DockerFilesystemSpec()...)` | [沙箱](/v2/zh/docs/harness/sandbox) |
+| 计划模式 | 只读思考阶段 + HITL 退出 | `.enablePlanMode()` | [计划模式](/v2/zh/docs/harness/plan-mode) |
+| 技能装配 | 来自 Git / Nacos / MySQL / classpath / 工作区 | `.skillRepository(...)` | [技能](/v2/zh/docs/harness/skill) |
+| MCP 集成与工具白名单 | 声明式 MCP server + 工具粒度允许 / 拒绝 | `workspace/tools.json` | [工作区](/v2/zh/docs/harness/workspace) |
+| Channel 路由 | 会话管理、per-session 并发控制、多 agent 路由、流式事件 | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/zh/docs/harness/channel) |
 
 ## 状态怎么流转
 
@@ -69,13 +69,13 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 
 ## 相关文档
 
-- [工作区](./workspace.md) — 目录结构、注入到 system prompt 的内容、`tools.json`
-- [上下文与 AgentState](../building-blocks/context.md) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
-- [记忆](./memory.md) — 两层记忆
-- [上下文压缩](./compaction.md) — 摘要压缩、大结果卸载、溢出兜底
-- [文件系统](./filesystem.md) — 本机 + shell / 共享存储 / 沙箱
-- [沙箱](./sandbox.md) — 隔离执行、跨调用恢复、分布式
-- [子 Agent](./subagent.md) — 声明、同步/后台、流式转发
-- [技能](./skill.md) — 四层合成、自学习闭环
-- [计划模式](./plan-mode.md) — 只读阶段 + HITL 退出
-- [Channel](./channel.md) — 会话管理、多 agent 路由、流式 SSE
+- [工作区](/v2/zh/docs/harness/workspace) — 目录结构、注入到 system prompt 的内容、`tools.json`
+- [上下文与 AgentState](/v2/zh/docs/building-blocks/context) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
+- [记忆](/v2/zh/docs/harness/memory) — 两层记忆
+- [上下文压缩](/v2/zh/docs/harness/compaction) — 摘要压缩、大结果卸载、溢出兜底
+- [文件系统](/v2/zh/docs/harness/filesystem) — 本机 + shell / 共享存储 / 沙箱
+- [沙箱](/v2/zh/docs/harness/sandbox) — 隔离执行、跨调用恢复、分布式
+- [子 Agent](/v2/zh/docs/harness/subagent) — 声明、同步/后台、流式转发
+- [技能](/v2/zh/docs/harness/skill) — 四层合成、自学习闭环
+- [计划模式](/v2/zh/docs/harness/plan-mode) — 只读阶段 + HITL 退出
+- [Channel](/v2/zh/docs/harness/channel) — 会话管理、多 agent 路由、流式 SSE

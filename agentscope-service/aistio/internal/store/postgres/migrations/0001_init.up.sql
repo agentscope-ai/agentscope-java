@@ -11,7 +11,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- Session 主表
 CREATE TABLE IF NOT EXISTS sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	 tenant              TEXT NOT NULL,
     session_id          TEXT NOT NULL,
+    agent_id            UUID,
+    binding_id          UUID,
+    agent_instance_id   UUID,
+    instance_generation BIGINT NOT NULL DEFAULT 0,
     agent_name          TEXT NOT NULL,
     namespace           TEXT NOT NULL,
     framework           TEXT NOT NULL DEFAULT '',
@@ -19,25 +24,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     phase               TEXT NOT NULL DEFAULT 'active',
     instance_ref        TEXT,
     instance_ip         TEXT,
-    team_id             TEXT,
-    team_role           TEXT,
-    team_context        JSONB,
+    agent_task_id       UUID,
+    origin_type         TEXT,
+    origin_ref          TEXT,
+    task_context        JSONB,
     started_at          TIMESTAMPTZ,
     last_active_at      TIMESTAMPTZ,
     terminated_at       TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(agent_name, namespace, session_id)
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_name, namespace);
-CREATE INDEX IF NOT EXISTS idx_sessions_phase ON sessions(phase) WHERE phase != 'terminated';
-CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id, namespace) WHERE team_id IS NOT NULL AND team_id != '';
 
 -- Session 快照（Level 1）
 CREATE TABLE IF NOT EXISTS session_snapshots (
     id                      BIGSERIAL PRIMARY KEY,
-    session_fk              UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_fk              UUID NOT NULL,
     captured_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     message_count           INT,
     prompt_tokens           BIGINT,
@@ -50,14 +52,11 @@ CREATE TABLE IF NOT EXISTS session_snapshots (
     task_summary            JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_snapshots_session_time ON session_snapshots(session_fk, captured_at DESC);
-CREATE INDEX IF NOT EXISTS idx_snapshots_pressure ON session_snapshots(captured_at, context_pressure)
-    WHERE context_pressure > 0.7;
 
 -- Session 事件流（Level 2）
 CREATE TABLE IF NOT EXISTS session_events (
     id              BIGSERIAL PRIMARY KEY,
-    session_fk      UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_fk      UUID NOT NULL,
     seq             INT NOT NULL,
     event_type      TEXT NOT NULL,
     role            TEXT,
@@ -69,17 +68,14 @@ CREATE TABLE IF NOT EXISTS session_events (
     tokens_out      INT,
     duration_ms     INT,
     framework_meta  JSONB,
-    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(session_fk, seq)
+    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_session_time ON session_events(session_fk, occurred_at);
-CREATE INDEX IF NOT EXISTS idx_events_type ON session_events(session_fk, event_type);
 
 -- Context 快照（Level 4）
 CREATE TABLE IF NOT EXISTS context_snapshots (
     id                      BIGSERIAL PRIMARY KEY,
-    session_fk              UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_fk              UUID NOT NULL,
     captured_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     context_hash            TEXT NOT NULL,
     system_prompt           TEXT,
@@ -95,13 +91,13 @@ CREATE TABLE IF NOT EXISTS context_snapshots (
     framework_state         JSONB
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ctx_dedup ON context_snapshots(session_fk, context_hash);
-CREATE INDEX IF NOT EXISTS idx_ctx_session_time ON context_snapshots(session_fk, captured_at DESC);
 
 -- Token 用量时序
 CREATE TABLE IF NOT EXISTS token_usage_metrics (
     id                  BIGSERIAL PRIMARY KEY,
-    session_fk          UUID REFERENCES sessions(id) ON DELETE SET NULL,
+	 tenant              TEXT NOT NULL,
+    session_fk          UUID,
+    agent_id            UUID,
     agent_name          TEXT NOT NULL,
     namespace           TEXT NOT NULL,
     model               TEXT,
@@ -112,67 +108,12 @@ CREATE TABLE IF NOT EXISTS token_usage_metrics (
     recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_token_agent_time ON token_usage_metrics(agent_name, namespace, recorded_at DESC);
-CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage_metrics(model, recorded_at DESC);
-
--- Team 消息（替代 TeamMessage CRD）
-CREATE TABLE IF NOT EXISTS team_messages (
-    id              BIGSERIAL PRIMARY KEY,
-    team_name       TEXT NOT NULL,
-    namespace       TEXT NOT NULL,
-    from_member     TEXT NOT NULL,
-    to_member       TEXT,
-    content         TEXT NOT NULL,
-    kind            TEXT DEFAULT 'message',
-    nonce           TEXT,
-    delivered       BOOLEAN NOT NULL DEFAULT false,
-    delivered_at    TIMESTAMPTZ,
-    attempts        INT NOT NULL DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_team_msg_pending ON team_messages(team_name, namespace, created_at)
-    WHERE delivered = false;
-CREATE INDEX IF NOT EXISTS idx_team_msg_history ON team_messages(team_name, namespace, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_team_msg_pending_all ON team_messages(created_at)
-    WHERE delivered = false;
-
--- Team 任务（替代 TeamTask CRD）
-CREATE TABLE IF NOT EXISTS team_tasks (
-    id              BIGSERIAL PRIMARY KEY,
-    task_id         TEXT NOT NULL,
-    team_name       TEXT NOT NULL,
-    namespace       TEXT NOT NULL,
-    subject         TEXT NOT NULL,
-    description     TEXT,
-    state           TEXT NOT NULL DEFAULT 'pending',
-    owner           TEXT,
-    blocked_by      JSONB,
-    result          TEXT,
-    version         BIGINT NOT NULL DEFAULT 1,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at    TIMESTAMPTZ,
-    UNIQUE(namespace, team_name, task_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_team_tasks_state ON team_tasks(team_name, namespace, state);
-
--- 任务状态变更审计
-CREATE TABLE IF NOT EXISTS team_task_history (
-    id              BIGSERIAL PRIMARY KEY,
-    task_fk         BIGINT REFERENCES team_tasks(id) ON DELETE CASCADE,
-    team_name       TEXT NOT NULL,
-    namespace       TEXT NOT NULL,
-    from_state      TEXT,
-    to_state        TEXT NOT NULL,
-    owner           TEXT,
-    transitioned_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 
 -- Agent 运行时指标
 CREATE TABLE IF NOT EXISTS agent_metrics (
     id                      BIGSERIAL PRIMARY KEY,
+	 tenant                  TEXT NOT NULL,
+    agent_id               UUID,
     agent_name              TEXT NOT NULL,
     namespace               TEXT NOT NULL,
     recorded_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -183,5 +124,3 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
     error_count             INT DEFAULT 0,
     uptime_seconds          BIGINT
 );
-
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_time ON agent_metrics(agent_name, namespace, recorded_at DESC);

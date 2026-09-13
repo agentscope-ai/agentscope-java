@@ -1,4 +1,6 @@
-# A2A（Agent-to-Agent）
+---
+title: A2A
+---
 
 `agentscope-extensions-a2a` 实现了 [A2A 协议](https://a2aproject.github.io/A2A/)，包含两个子模块：
 
@@ -100,8 +102,8 @@ server.postEndpointReady();   // Web 服务监听端口后再调用，触发注�
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。
 - `PushNotificationConfigStore` / `PushNotificationSender`：推送通知。
-- `AgentRegistry`：把 `AgentCard` 注册到外部注册中心（如 Nacos，见 [Nacos](../infrastructure/nacos.md)）。
+- `AgentRegistry`：把 `AgentCard` 注册到外部注册中心（如 Nacos，见 [Nacos](/v2/zh/integration/infrastructure/nacos)）。
 
 ## Spring Boot Starter
 
-如果你使用 Spring Boot，建议直接引入 `agentscope-spring-boot-starter-a2a-server`，自动装配上述 server 和控制器，详见[快速开始](../../docs/quickstart.md)。
+如果你使用 Spring Boot，建议直接引入 `agentscope-spring-boot-starter-a2a-server`，自动装配上述 server 和控制器，详见[快速开始](/v2/zh/docs/quickstart)。

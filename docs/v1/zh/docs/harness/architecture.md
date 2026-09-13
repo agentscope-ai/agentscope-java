@@ -1,6 +1,8 @@
-# Harness 架构
+---
+title: 架构
+---
 
-[概览](./overview.md) 从"解决什么问题"入手介绍 harness 的能力。本文换一个视角，**解释架构本身**：为什么这样设计、各层职责是什么、一次 `call()` 究竟经历了什么，以及状态如何在系统中流动。
+[概览](/v1/zh/docs/harness/overview) 从"解决什么问题"入手介绍 harness 的能力。本文换一个视角，**解释架构本身**：为什么这样设计、各层职责是什么、一次 `call()` 究竟经历了什么，以及状态如何在系统中流动。
 
 ---
 
@@ -41,7 +43,7 @@ Hook 之间**不持有彼此的引用**，只通过三个共享对象通信。�
 
 ## 2. 顶层架构图
 
-```{mermaid}
+```mermaid
 graph TD
     USER(["调用方\nagent.call(msg, ctx)"])
 
@@ -86,7 +88,7 @@ graph TD
 
 能力注入发生在**一次性**的构建阶段，构建完成后运行期不再改变 hook 链或 toolkit 组成：
 
-```{mermaid}
+```mermaid
 graph LR
     B["HarnessAgent.Builder.build()"]
 
@@ -133,7 +135,7 @@ priority 的排布体现了设计意图：
 
 ## 5. `call()` 生命周期时序
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     actor User
@@ -184,7 +186,7 @@ sequenceDiagram
 
 状态在 harness 里有三个层次，从短到长：
 
-```{mermaid}
+```mermaid
 graph LR
     subgraph INCALL["调用内 (in-call)\n随 call() 开始 ↔ 结束"]
         IM["Memory\n(InMemoryMemory)\n当次对话消息序列"]
@@ -226,7 +228,7 @@ graph LR
 
 ### 场景 A — 工作区文件如何变成模型看到的 system prompt
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant RA as ReActAgent
     participant Hook as WorkspaceContextHook(900)
@@ -252,7 +254,7 @@ sequenceDiagram
 
 ### 场景 B — 长会话里事实如何沉淀进 `MEMORY.md`
 
-```{mermaid}
+```mermaid
 graph TD
     A["对话累积 → CompactionHook 阈值触发"] --> B["ConversationCompactor.compactIfNeeded"]
     B --> C["MemoryFlushManager.flushMemories(prefix)\n→ LLM 提炼新事实"]
@@ -271,7 +273,7 @@ graph TD
 
 ### 场景 C — 同一 sessionId 如何跨调用"记住"历史
 
-```{mermaid}
+```mermaid
 graph LR
     subgraph T1["第一轮 call(msg1, ctx{sess=A})"]
         A1["bindRuntimeContext\nloadIfExists → Memory 为空（首次）"] --> B1["ReAct 循环"]
@@ -288,7 +290,7 @@ graph LR
 
 ### 场景 D — 主 agent 委派子 agent：同步与后台两条路径
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant Parent as 父 Agent
     participant Hook as SubagentsHook
@@ -323,9 +325,9 @@ sequenceDiagram
 
 ## 延伸阅读
 
-- [Workspace](./workspace.md) — 工作区目录结构、WorkspaceManager 两层读写细节
-- [Memory](./memory.md) — 双层记忆模型、压缩配置、FTS5 检索
-- [Filesystem](./filesystem.md) — AbstractFilesystem 三种模式与扩展方式
-- [Subagent](./subagent.md) — 子 agent 声明格式、TaskRepository、五行判定表
-- [Session](./session.md) — WorkspaceSession / JsonSession 序列化协议
-- [Tool](./tool.md) — 内置工具参考与注册方式
+- [Workspace](/v1/zh/docs/harness/workspace) — 工作区目录结构、WorkspaceManager 两层读写细节
+- [Memory](/v1/zh/docs/harness/memory) — 双层记忆模型、压缩配置、FTS5 检索
+- [Filesystem](/v1/zh/docs/harness/filesystem) — AbstractFilesystem 三种模式与扩展方式
+- [Subagent](/v1/zh/docs/harness/subagent) — 子 agent 声明格式、TaskRepository、五行判定表
+- [Session](/v1/zh/docs/harness/session) — WorkspaceSession / JsonSession 序列化协议
+- [Tool](/v1/zh/docs/harness/tool) — 内置工具参考与注册方式

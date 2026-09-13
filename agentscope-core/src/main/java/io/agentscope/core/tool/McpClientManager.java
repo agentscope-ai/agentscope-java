@@ -132,7 +132,22 @@ class McpClientManager {
             List<String> disableTools,
             String groupName,
             Map<String, Map<String, Object>> presetParametersMapping) {
+        return registerMcpClient(
+                mcpClientWrapper,
+                enableTools,
+                disableTools,
+                groupName,
+                presetParametersMapping,
+                "");
+    }
 
+    Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools,
+            String groupName,
+            Map<String, Map<String, Object>> presetParametersMapping,
+            String toolNamePrefix) {
         if (mcpClientWrapper == null) {
             return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
         }
@@ -174,6 +189,7 @@ class McpClientManager {
 
                             McpTool agentTool =
                                     new McpTool(
+                                            toolNamePrefix + mcpTool.name(),
                                             mcpTool.name(),
                                             mcpTool.description() != null
                                                     ? mcpTool.description()

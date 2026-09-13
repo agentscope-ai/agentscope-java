@@ -1,6 +1,6 @@
 ---
-title: "Tool"
-description: "Define, register, and manage the capabilities an agent can call"
+title: Tool
+description: Define, register, and manage the capabilities an agent can call
 ---
 
 ## Overview
@@ -70,9 +70,13 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
-:::{note}
+
+<Note>
+
 The `Toolkit` automatically registers the `reset_tools` meta tool and the `load_skill_through_path` skill viewer tool when extra tool groups or skills are present — you don't need to instantiate them manually. See [self-managed tools](#self-managed-tools) and [Skill](#skill).
-:::
+
+</Note>
+
 
 ### Custom tools (annotation-based)
 
@@ -175,7 +179,7 @@ public class WebSearchTool extends ToolBase {
 
 External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses. When the next call feeds back matching `ToolResultBlock`s, the agent emits `ExternalExecutionResultEvent` with the same `replyId` before continuing.
 
-This pattern is the foundation of [human-in-the-loop](./agent.md#human-in-the-loop) flows — some actions need human approval or human execution.
+This pattern is the foundation of [human-in-the-loop](/v2/en/docs/building-blocks/agent#human-in-the-loop) flows — some actions need human approval or human execution.
 
 To create an external tool, set `externalTool` to `true` and skip implementing `callAsync`:
 
@@ -217,7 +221,7 @@ Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.j
 
 ## Receiving context
 
-The [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
+The [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
 
 ### Automatic injection (`@Tool` methods)
 
@@ -313,8 +317,12 @@ MCP tools are exposed in the toolkit under the namespace `mcp__{server_name}__{t
 
 Use `McpClientBuilder` to build an `McpClientWrapper`, then register it on the `Toolkit`:
 
-::::{tab-set}
-:::{tab-item} STDIO
+
+<Tabs>
+
+
+<Tab title="STDIO">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
@@ -330,8 +338,12 @@ McpClientWrapper filesystem =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
 ```
-:::
-:::{tab-item} Streamable HTTP
+
+</Tab>
+
+
+<Tab title="Streamable HTTP">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
@@ -347,8 +359,12 @@ McpClientWrapper weather =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
 ```
-:::
-:::{tab-item} SSE
+
+</Tab>
+
+
+<Tab title="SSE">
+
 ```java
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -362,8 +378,12 @@ McpClientWrapper search =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.java`, `mcp/McpSseExample.java`, `mcp/McpStreamableHttpExample.java`.
 
@@ -426,9 +446,13 @@ Each successful call has two effects:
 1. Returns the requested content (the `SKILL.md` markdown, or the named resource file).
 2. **Activates the skill** — its associated tool group is enabled in the `Toolkit`, so any tools bundled with the skill become callable for the rest of the turn. If the requested `path` does not exist, the viewer returns an error that lists the available resource paths (with `SKILL.md` first) so the agent can retry.
 
-:::{note}
+
+<Note>
+
 A skill is not a tool — the agent cannot call it directly. The agent must read the instructions via `load_skill_through_path` first, then act on them with other tools.
-:::
+
+</Note>
+
 
 ### Skill script execution: configuring shell tools
 
@@ -558,33 +582,52 @@ Runtime behavior:
 - For each group that just became active, its description and (if provided) instructions are spliced into the meta tool's return value, telling the agent how to use it correctly.
 - Tools in inactive groups do not appear in the agent's tool schema, leaving more context for the active toolset.
 
-:::{warning}
+
+<Warning>
+
 The meta tool's input represents the **final state** of all groups, not a delta. Any group not explicitly set to `true` is deactivated regardless of previous state.
-:::
+
+</Warning>
+
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/en/docs/building-blocks/agent">
+
 
 How agents orchestrate tool calls in the ReAct loop
-:::
-  :::{grid-item-card} Permission System
-:link: ./permission-system.html
+
+</Card>
+
+
+<Card title="Permission System" href="/v2/en/docs/building-blocks/permission-system">
+
 
 Fine-grained control over which tools execute and when
-:::
-  :::{grid-item-card} Middleware
-:link: ./middleware.html
+
+</Card>
+
+
+<Card title="Middleware" href="/v2/en/docs/building-blocks/middleware">
+
 
 Use onion middlewares to intercept and rewrite tool calls
-:::
-  :::{grid-item-card} Human-in-the-Loop
-:link: ./agent.html#human-in-the-loop
+
+</Card>
+
+
+<Card title="Human-in-the-Loop" href="/v2/en/docs/building-blocks/agent#human-in-the-loop">
+
 
 External execution tools and approval workflows
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

@@ -1160,7 +1160,7 @@ func (s *Server) dpTaskPut(c *gin.Context) {
 		UserID:          req.UserID,
 		LastCheckedAt:   req.LastCheckedAt,
 	}
-	out, err := s.store.Tasks().Upsert(c.Request.Context(), task)
+	out, err := s.store.DPTasks().Upsert(c.Request.Context(), task)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		observeDPStore("tasks", "error", start)
@@ -1192,7 +1192,7 @@ func (s *Server) dpTaskGet(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	task, err := s.store.Tasks().Get(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id"))
+	task, err := s.store.DPTasks().Get(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
 		observeDPStore("tasks", "not_found", start)
@@ -1229,7 +1229,7 @@ func (s *Server) dpTaskList(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	tasks, err := s.store.Tasks().List(c.Request.Context(), tenant, agentName, parentSessionID, c.Query("status"))
+	tasks, err := s.store.DPTasks().List(c.Request.Context(), tenant, agentName, parentSessionID, c.Query("status"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		observeDPStore("tasks", "error", start)
@@ -1268,7 +1268,7 @@ func (s *Server) dpTaskHeartbeat(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	if err := s.store.Tasks().Heartbeat(c.Request.Context(), tenant, agentName, req.Tasks); err != nil {
+	if err := s.store.DPTasks().Heartbeat(c.Request.Context(), tenant, agentName, req.Tasks); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		observeDPStore("tasks", "error", start)
 		return
@@ -1307,7 +1307,7 @@ func (s *Server) dpTaskCancel(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	if err := s.store.Tasks().RequestCancel(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id")); err != nil {
+	if err := s.store.DPTasks().RequestCancel(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id")); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
 			observeDPStore("tasks", "not_found", start)
@@ -1351,7 +1351,7 @@ func (s *Server) dpTaskDelivered(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	written, err := s.store.Tasks().MarkDelivered(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id"))
+	written, err := s.store.DPTasks().MarkDelivered(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
 		observeDPStore("tasks", "not_found", start)
@@ -1388,7 +1388,7 @@ func (s *Server) dpTaskPendingDeliveries(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	tasks, err := s.store.Tasks().ListPendingDeliveries(c.Request.Context(), tenant, agentName, parentSessionID)
+	tasks, err := s.store.DPTasks().ListPendingDeliveries(c.Request.Context(), tenant, agentName, parentSessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		observeDPStore("tasks", "error", start)
@@ -1423,7 +1423,7 @@ func (s *Server) dpTaskDelete(c *gin.Context) {
 		observeDPStore("tasks", "error", start)
 		return
 	}
-	if err := s.store.Tasks().Delete(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id")); err != nil {
+	if err := s.store.DPTasks().Delete(c.Request.Context(), tenant, agentName, parentSessionID, c.Param("id")); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
 			observeDPStore("tasks", "not_found", start)

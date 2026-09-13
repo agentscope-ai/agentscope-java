@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -17,6 +18,8 @@
 import { getToken } from './auth';
 
 export interface ChannelInfo {
+  workEnabled?: boolean;
+  workTargets?: ChannelWorkTarget[];
   channelId: string;
   type?: string | null;
   dmScope: string | null;
@@ -115,7 +118,7 @@ export interface ChannelUpsertRequest {
   bindings?: BindingConfigEntry[] | null;
 }
 
-/** Presence API — anthropomorphic IM identity on an agent. */
+/** Agent-scoped convenience projection for channels whose default target is this Agent. */
 export interface AgentPresence {
   channelId: string;
   platform: string;
@@ -137,7 +140,7 @@ export interface PresenceUpsertRequest {
 
 function authHeaders(): Record<string, string> {
   const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...namespaceHeaders() } : {};
 }
 
 function jsonHeaders(): Record<string, string> {
@@ -337,3 +340,32 @@ export function resolveCallbackUrl(
   }
   return path;
 }
+
+export interface ChannelWorkTarget { targetType: 'agent' | 'team'; targetRef: string }
+export interface ChannelWorkRoute extends ChannelWorkTarget { restrictGroups?: boolean; allowedGroups?: string[]; accountId: string; peerKind: 'DIRECT' | 'GROUP'; peerId: string; threadId?: string }
+export interface ChannelWorkSettings {
+  enabled: boolean; defaultTarget: ChannelWorkTarget; routes: ChannelWorkRoute[];
+  allowGroupWork: boolean; notifyEvents: string[]; version: number;
+}
+export interface ChannelWorkActivity {
+  inbounds?: { id: string; state: string; attempts: number }[];
+  identities: { accountId: string; senderId: string }[];
+  deliveries: { id: string; issueId?: string; state: string; attempts: number; providerMessageId: string; lastError: string }[];
+  links: { id: string; issueId: string; active: boolean; address: { peerId: string; threadId?: string } }[];
+}
+async function channelWorkRequest<T>(channelId: string, path: string, method = 'GET', body?: unknown): Promise<T> {
+  const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/${path}`, {
+    method, headers: jsonHeaders(), ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) return failOn(res, 'Channel operation failed');
+  return res.status === 204 ? undefined as T : res.json();
+}
+export const getChannelWorkSettings = (id: string) => channelWorkRequest<ChannelWorkSettings>(id, 'collaboration');
+export const saveChannelWorkSettings = (id: string, value: ChannelWorkSettings) => channelWorkRequest<ChannelWorkSettings>(id, 'collaboration', 'PUT', value);
+export const createChannelPairing = (id: string) => channelWorkRequest<{ command: string; expiresInSeconds: number }>(id, 'pairing', 'POST');
+export const getChannelWorkActivity = (id: string) => channelWorkRequest<ChannelWorkActivity>(id, 'activity');
+export const unlinkChannelIdentity = (id: string) => channelWorkRequest<void>(id, 'identity', 'DELETE');
+export const retryChannelDelivery = (id: string, delivery: string) => channelWorkRequest<void>(id, `deliveries/${encodeURIComponent(delivery)}/retry`, 'POST');
+export const unsubscribeChannelWork = (id: string, link: string) => channelWorkRequest<void>(id, `links/${encodeURIComponent(link)}`, 'DELETE');
+
+export const retryChannelIntake = (id: string, message: string) => channelWorkRequest<void>(id, `messages/${encodeURIComponent(message)}/retry`, 'POST');

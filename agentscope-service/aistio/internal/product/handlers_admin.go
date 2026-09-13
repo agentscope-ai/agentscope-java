@@ -52,23 +52,12 @@ func (s *Server) adminListUsers(c *gin.Context) {
 	if !s.requireAdmin(c) {
 		return
 	}
-	rows, err := s.db.Pool.Query(c.Request.Context(),
-		`SELECT user_id, username, roles_csv FROM users ORDER BY username`)
+	items, err := s.LookupAccounts(c.Request.Context(), c.Query("q"), nil, 1000)
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, err.Error())
 		return
 	}
-	defer rows.Close()
-	list := []gin.H{}
-	for rows.Next() {
-		var id, username, rolesCSV string
-		if err := rows.Scan(&id, &username, &rolesCSV); err != nil {
-			writeErr(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		list = append(list, adminUserView(id, username, rolesCSV))
-	}
-	c.JSON(http.StatusOK, list)
+	c.JSON(200, items)
 }
 
 func (s *Server) adminCreateUser(c *gin.Context) {
@@ -85,12 +74,24 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		return
 	}
 	username := strings.TrimSpace(req.Username)
+	if len(username) > 100 {
+		writeErr(c, 400, "Username must be at most 100 characters")
+		return
+	}
 	roles := req.Roles
 	if len(roles) == 0 {
 		roles = []string{"user"}
 	}
+	if !validPlatformRoles(roles) {
+		writeErr(c, 400, "Unknown or duplicate platform role")
+		return
+	}
 	generated := strings.TrimSpace(req.InitialPassword) == ""
-	password := strings.TrimSpace(req.InitialPassword)
+	password := req.InitialPassword
+	if !generated && len(password) < 6 {
+		writeErr(c, 400, "Password must be at least six characters")
+		return
+	}
 	if generated {
 		password = generateTempPassword()
 	}
@@ -101,7 +102,13 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 	}
 	userID := makeUserID(username)
 	now := nowMillis()
-	_, err = s.db.Pool.Exec(c.Request.Context(),
+	tx, err := s.db.Pool.Begin(c.Request.Context())
+	if err != nil {
+		writeErr(c, 500, err.Error())
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	_, err = tx.Exec(c.Request.Context(),
 		`INSERT INTO users (user_id, username, password_hash, roles_csv, created_at)
 		 VALUES ($1,$2,$3,$4,$5)`,
 		userID, username, hash, strings.Join(roles, ","), now)
@@ -113,7 +120,21 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := gin.H{"user": adminUserView(userID, username, strings.Join(roles, ","))}
+	_, err = tx.Exec(c.Request.Context(), `INSERT INTO account_access_audit(user_id,actor,action,details) VALUES($1,$2,'account.created',$3)`, userID, currentUserID(c), mustJSON(gin.H{"roles": roles}))
+	if err != nil {
+		writeErr(c, 500, err.Error())
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
+		writeErr(c, 500, err.Error())
+		return
+	}
+	accounts, err := s.LookupAccounts(c.Request.Context(), "", []string{userID}, 1)
+	if err != nil || len(accounts) == 0 {
+		writeErr(c, 500, "Unable to load the created account")
+		return
+	}
+	out := gin.H{"user": accounts[0]}
 	if generated {
 		out["generatedPassword"] = password
 	}
@@ -124,82 +145,77 @@ func (s *Server) adminResetPassword(c *gin.Context) {
 	if !s.requireAdmin(c) {
 		return
 	}
-	var req struct {
+	var in struct {
 		NewPassword string `json:"newPassword"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.NewPassword) == "" {
-		writeTextErr(c, http.StatusBadRequest, "newPassword is required")
+	if c.ShouldBindJSON(&in) != nil || len(in.NewPassword) < 6 {
+		writeErr(c, 400, "Password must be at least six characters")
 		return
 	}
-	hash, err := hashPassword(req.NewPassword)
+	hash, err := hashPassword(in.NewPassword)
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, err.Error())
 		return
 	}
-	tag, err := s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE users SET password_hash=$1 WHERE user_id=$2`, hash, c.Param("id"))
+	tx, err := s.db.Pool.Begin(c.Request.Context())
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, err.Error())
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	tag, err := tx.Exec(c.Request.Context(), `UPDATE users SET password_hash=$1,auth_version=auth_version+1,version=version+1 WHERE user_id=$2`, hash, c.Param("id"))
+	if err != nil {
+		writeErr(c, 500, err.Error())
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeErr(c, http.StatusNotFound, "User not found: "+c.Param("id"))
+		writeErr(c, 404, "Account not found")
 		return
 	}
-	var username, rolesCSV string
-	_ = s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT username, roles_csv FROM users WHERE user_id=$1`, c.Param("id")).Scan(&username, &rolesCSV)
-	c.JSON(http.StatusOK, adminUserView(c.Param("id"), username, rolesCSV))
+	_, err = tx.Exec(c.Request.Context(), `UPDATE account_login_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, c.Param("id"))
+	if err == nil {
+		_, err = tx.Exec(c.Request.Context(), `INSERT INTO account_access_audit(user_id,actor,action) VALUES($1,$2,'password.reset')`, c.Param("id"), currentUserID(c))
+	}
+	if err != nil {
+		writeErr(c, 500, err.Error())
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
+		writeErr(c, 500, err.Error())
+		return
+	}
+	s.respondAccount(c, c.Param("id"))
 }
 
 func (s *Server) adminUpdateRoles(c *gin.Context) {
 	if !s.requireAdmin(c) {
 		return
 	}
-	var req struct {
-		Roles []string `json:"roles"`
+	var in struct {
+		Roles   []string `json:"roles"`
+		Version int64    `json:"version"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || len(req.Roles) == 0 {
-		writeTextErr(c, http.StatusBadRequest, "roles must contain at least one entry")
+	if c.ShouldBindJSON(&in) != nil || in.Version <= 0 || !validPlatformRoles(in.Roles) {
+		writeErr(c, 400, "Valid platform roles and expected version are required")
 		return
 	}
-	tag, err := s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE users SET roles_csv=$1 WHERE user_id=$2`, strings.Join(req.Roles, ","), c.Param("id"))
-	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if tag.RowsAffected() == 0 {
-		writeErr(c, http.StatusNotFound, "User not found: "+c.Param("id"))
-		return
-	}
-	var username, rolesCSV string
-	_ = s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT username, roles_csv FROM users WHERE user_id=$1`, c.Param("id")).Scan(&username, &rolesCSV)
-	c.JSON(http.StatusOK, adminUserView(c.Param("id"), username, rolesCSV))
+	s.mutateAccount(c, in.Version, in.Roles, nil)
 }
 
+// Keep account IDs in historical work; the legacy delete route now deactivates.
 func (s *Server) adminDeleteUser(c *gin.Context) {
 	if !s.requireAdmin(c) {
 		return
 	}
-	userID := c.Param("id")
-	if userID == currentUserID(c) {
-		writeTextErr(c, http.StatusConflict, "Cannot delete yourself")
+	var in struct {
+		Version int64 `json:"version"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.Version <= 0 {
+		writeErr(c, 400, "Expected version is required to deactivate an account")
 		return
 	}
-	tag, err := s.db.Pool.Exec(c.Request.Context(), `DELETE FROM users WHERE user_id=$1`, userID)
-	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if tag.RowsAffected() == 0 {
-		writeErr(c, http.StatusNotFound, "User not found: "+userID)
-		return
-	}
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
-		`DELETE FROM agent_shares WHERE grantee_type='USER' AND grantee_id=$1`, userID)
-	c.Status(http.StatusNoContent)
+	disabled := true
+	s.mutateAccount(c, in.Version, nil, &disabled)
 }
 
 func makeUserID(username string) string {

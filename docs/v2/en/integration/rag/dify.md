@@ -1,4 +1,6 @@
-# Dify Knowledge
+---
+title: Dify
+---
 
 `agentscope-extensions-rag-dify` integrates with [Dify](https://dify.ai/) datasets, reusing knowledge bases you already maintain in Dify.
 

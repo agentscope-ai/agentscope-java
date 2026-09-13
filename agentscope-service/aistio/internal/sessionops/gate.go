@@ -115,7 +115,7 @@ func resolveInstance(registry *dataplane.Registry, sess *store.Session) (*datapl
 		return nil, errUnreachable("session has no instanceRef while " + phase)
 	}
 
-	for _, entry := range registry.ListByAgent(sess.AgentName, sess.Namespace) {
+	for _, entry := range registry.ListByAgent(sess.Tenant, sess.AgentName, sess.Namespace) {
 		if entry != nil && entry.Healthy && entry.BaseURL != "" {
 			return entry, nil
 		}

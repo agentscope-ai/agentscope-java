@@ -83,7 +83,7 @@ running ──► idle
 
 ### SSE 语义（四层拆分后）
 
-- 持久化事件（含 control 写的 `session.status_*` / `session.updated`）经 **DB 游标轮询** fan-out，任意 data 副本上的 SSE 都能看到。
+- 持久化事件（含 control 写的 `session.status_*` / `session.updated`）在事务提交后发送通知；SSE 再按 DB 游标读取正文。PostgreSQL 通过 `LISTEN/NOTIFY` 跨副本唤醒，并以低频游标读兜底通知丢失。
 - 断线重连请带 `?after=<lastSeq>`，避免丢事件。
 - `event_deltas` 预览（流式 token，不落库）仍是进程内 best-effort：多副本时只有跑 turn 的实例能推预览，持久化事件不受影响。
 

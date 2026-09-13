@@ -1,8 +1,10 @@
-# Supervisor
+---
+title: Supervisor
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
-In the **supervisor** pattern, a central **supervisor** (main agent) coordinates specialized agents by calling them as **tools**. The supervisor receives user requests, decides which specialist(s) to call (e.g. calendar, email), and synthesizes their results into one reply. Specialized agents are **stateless** from the user’s perspective; the supervisor keeps the conversation and delegates one-off tasks. This pattern is implemented in AgentScope via **Agent as Tool** ([agent-as-tool.md](../task/agent-as-tool.md)): `Toolkit.registration().subAgent()`.
+In the **supervisor** pattern, a central **supervisor** (main agent) coordinates specialized agents by calling them as **tools**. The supervisor receives user requests, decides which specialist(s) to call (e.g. calendar, email), and synthesizes their results into one reply. Specialized agents are **stateless** from the user’s perspective; the supervisor keeps the conversation and delegates one-off tasks. This pattern is implemented in AgentScope via **Agent as Tool** ([agent-as-tool.md](/v1/en/docs/task/agent-as-tool)): `Toolkit.registration().subAgent()`.
 
 ## Overview
 
@@ -46,6 +48,6 @@ In the example, calendar and email “APIs” are **stubbed** (`CalendarStubTool
 
 ## Related Documentation
 
-- [Agent as Tool](../task/agent-as-tool.md) - Sub-agent registration and SubAgentConfig
-- [Subagents](./subagent.md) - Orchestrator with Task/TaskOutput and Markdown/API sub-agents
-- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Sub-agent registration and SubAgentConfig
+- [Subagents](/v1/en/docs/multi-agent/subagent) - Orchestrator with Task/TaskOutput and Markdown/API sub-agents
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent composition

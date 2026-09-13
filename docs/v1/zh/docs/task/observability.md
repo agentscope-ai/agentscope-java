@@ -1,4 +1,6 @@
-# 可观测与调试
+---
+title: 可观测与调试
+---
 
 AgentScope Java 提供了多种机制来观测和调试智能体的执行过程：
 
@@ -38,8 +40,8 @@ npm安装
 npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
-Studio 将运行在 http://localhost:5173（前端开发服务器）
-![Studio Server 页面](../../imgs/studioServer.png)
+Studio 将运行在 `http://localhost:5173`（前端开发服务器）
+![Studio Server 页面](/imgs/studioServer.png)
 
 
 #### 2. Java 应用集成
@@ -73,7 +75,7 @@ StudioManager.shutdown();
 
 #### 3. 在AgentScope Studio 查看Trace信息
 
-![Trace信息](../../imgs/studioServer-trace.png)
+![Trace信息](/imgs/studioServer-trace.png)
 
 
 
@@ -95,7 +97,7 @@ StudioUserAgent user = StudioUserAgent.builder()
 Msg userInput = user.call(null).block();
 ```
 您可以在Studio中的Projects中找到该Project，通过WebUI的方式进行调试
-![Studio Server Web UI 输入界面](../../imgs/studioServer-webUI.png)
+![Studio Server Web UI 输入界面](/imgs/studioServer-webUI.png)
 
 #### 对话循环
 
@@ -325,4 +327,4 @@ TracerRegistry.register(
 
 - **Studio 完整示例**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio 仓库**: https://github.com/agentscope-ai/agentscope-studio
-- **Hook 文档**: [hook.md](./hook.md)
+- **Hook 文档**: [hook.md](/v1/zh/docs/task/hook)

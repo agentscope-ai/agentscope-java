@@ -1,4 +1,6 @@
-# Routing（路由）
+---
+title: Routing
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
@@ -116,6 +118,6 @@
 
 ## 相关文档
 
-- [Pipeline](./pipeline.md) - 顺序与并行智能体组合
-- [MsgHub](../task/msghub.md) - 多智能体消息广播
-- [Agent as Tool](../task/agent-as-tool.md) - 将智能体注册为工具
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行智能体组合
+- [MsgHub](/v1/zh/docs/task/msghub) - 多智能体消息广播
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 将智能体注册为工具

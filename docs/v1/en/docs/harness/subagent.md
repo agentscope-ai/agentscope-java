@@ -1,4 +1,6 @@
-# Subagent
+---
+title: Subagent
+---
 
 ## Purpose
 
@@ -243,7 +245,7 @@ When a declaration has `url(...)` configured:
 
 ## Related Pages
 
-- [Tool](./tool.md)
-- [Workspace](./workspace.md)
-- [Architecture](./architecture.md)
-- [Subagent Streaming](./streaming.md)
+- [Tool](/v1/en/docs/harness/tool)
+- [Workspace](/v1/en/docs/harness/workspace)
+- [Architecture](/v1/en/docs/harness/architecture)
+- [Subagent Streaming](/v1/en/docs/harness/streaming)

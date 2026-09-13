@@ -1,3 +1,4 @@
+import { namespaceHeaders } from "@/lib/namespaceScope";
 /*
  * Copyright 2024-2026 the original author or authors.
  *
@@ -20,6 +21,7 @@ import type { AgentShareGrant, GranteeType, ShareTier } from './agents';
 function authHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
+    ...namespaceHeaders(),
     Authorization: `Bearer ${getToken()}`,
   };
 }

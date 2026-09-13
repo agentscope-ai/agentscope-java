@@ -1,12 +1,14 @@
-# 记忆（Memory）
+---
+title: 概览
+---
 
 `LongTermMemory` 是 AgentScope 用来在多轮、多会话之间持久化用户偏好、事实、要点的接口。`agentscope-extensions-*` 仓库下提供了对接主流记忆服务的开箱即用实现：
 
 | 扩展 | 后端 | 适合场景 |
 | --- | --- | --- |
-| [Mem0](mem0.md) | [Mem0](https://mem0.ai/) 平台 / 自托管 | 通用语义记忆，支持多租户隔离与自定义 metadata 过滤 |
-| [Bailian](bailian.md) | 阿里云百炼记忆服务 | 云上托管，支持 rerank / judge / rewrite 等高级特性 |
-| [ReMe](reme.md) | 自托管 ReMe 服务 | 工作区级别记忆，支持轨迹（trajectory）摘要 |
+| [Mem0](/v2/zh/integration/memory/mem0) | [Mem0](https://mem0.ai/) 平台 / 自托管 | 通用语义记忆，支持多租户隔离与自定义 metadata 过滤 |
+| [Bailian](/v2/zh/integration/memory/bailian) | 阿里云百炼记忆服务 | 云上托管，支持 rerank / judge / rewrite 等高级特性 |
+| [ReMe](/v2/zh/integration/memory/reme) | 自托管 ReMe 服务 | 工作区级别记忆，支持轨迹（trajectory）摘要 |
 
 三者都实现了同一个 `io.agentscope.core.memory.LongTermMemory` 接口，可通过 `ReActAgent.builder().longTermMemory(...)` 直接挂入 Agent，使用方式相同：
 

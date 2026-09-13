@@ -1,4 +1,6 @@
-# Core contributors
+---
+title: Contributors
+---
 
 Thanks to everyone who contributes code, docs, and feedback to AgentScope Java. This page highlights **recently active** contributors to the public repository (GitHub data; changes over time; bots excluded).
 
@@ -15,6 +17,9 @@ See the full history on [GitHub Contributors](https://github.com/agentscope-ai/a
 | ![jujn](https://avatars.githubusercontent.com/u/109072362?s=64&v=4) | [jujn](https://github.com/jujn) | [github.com/jujn](https://github.com/jujn) | Active contributor |
 | ![KomachiSion](https://avatars.githubusercontent.com/u/37170243?s=64&v=4) | [KomachiSion](https://github.com/KomachiSion) | [github.com/KomachiSion](https://github.com/KomachiSion) | Active contributor |
 
-```{note}
+
+<Note>
+
 Rows are curated from public contribution activity and **do not** represent official HR titles at Tongyi Lab or Alibaba. The “Notes” column is a short community-facing label—wording can be adjusted with maintainer agreement in a PR.
-```
+
+</Note>

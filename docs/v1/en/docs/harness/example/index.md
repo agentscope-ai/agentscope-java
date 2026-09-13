@@ -1,4 +1,6 @@
-# Examples
+---
+title: Examples
+---
 
 This section tracks runnable Harness examples and scenario walkthroughs.
 
@@ -8,6 +10,6 @@ Repository examples:
 
 Recommended reading order:
 
-1. [Harness Overview](../overview.md)
-2. [Quick Start](../quickstart/index.md)
-3. [Sandbox](../sandbox/index.md)
+1. [Harness Overview](/v1/en/docs/harness/overview)
+2. [Quick Start](/v1/en/docs/harness/quickstart/index)
+3. [Sandbox](/v1/en/docs/harness/sandbox/index)

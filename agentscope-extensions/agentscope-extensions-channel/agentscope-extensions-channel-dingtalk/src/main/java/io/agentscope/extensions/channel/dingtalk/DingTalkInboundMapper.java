@@ -92,7 +92,15 @@ public final class DingTalkInboundMapper {
             senderId = peerId;
         }
 
-        Msg msg = Msg.builder().role(MsgRole.USER).name(senderId).textContent(content).build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name(senderId)
+                        .textContent(content)
+                        .metadata(
+                                java.util.Map.of(
+                                        "channelMessageId", extractMsgId(payload).orElse("")))
+                        .build();
         return Optional.of(
                 InboundMessage.builder(channelId, peer, List.of(msg))
                         .accountId(accountId)
