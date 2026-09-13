@@ -196,10 +196,10 @@ public class AguiRequestProcessor {
                                                             event,
                                                             runErrorSeen.get());
                                                 })
-                                        .doFinally(
-                                                signalType ->
-                                                        resumeCoordinator.finishRun(
-                                                                threadId, runId));
+                                        .doOnTerminate(
+                                                () -> resumeCoordinator.finishRun(threadId, runId))
+                                        .doOnCancel(
+                                                () -> resumeCoordinator.finishRun(threadId, runId));
                             } catch (Throwable error) {
                                 resumeCoordinator.finishRun(threadId, runId);
                                 return processorErrorEvents(input, error);

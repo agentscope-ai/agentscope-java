@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -324,6 +325,45 @@ class AguiRequestProcessorTest {
         } finally {
             nextRun.dispose();
         }
+    }
+
+    @Test
+    void processReleasesActiveRunBeforeCompletionReachesDownstream() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class))).thenReturn(Flux.empty());
+        AtomicInteger adapterCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) -> {
+                                    adapterCount.incrementAndGet();
+                                    return new AguiAgentAdapter(resolvedAgent, config);
+                                })
+                        .build();
+
+        AtomicReference<List<AguiEvent>> nextRunEvents = new AtomicReference<>();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .doOnComplete(
+                        () ->
+                                nextRunEvents.set(
+                                        processor
+                                                .process(request(input("run-2")))
+                                                .events()
+                                                .collectList()
+                                                .block()))
+                .blockLast();
+
+        List<AguiEvent> events = nextRunEvents.get();
+        assertNotNull(events);
+        assertTrue(
+                events.stream().noneMatch(AguiEvent.RunError.class::isInstance), events.toString());
+        assertEquals(2, adapterCount.get());
     }
 
     @Test
