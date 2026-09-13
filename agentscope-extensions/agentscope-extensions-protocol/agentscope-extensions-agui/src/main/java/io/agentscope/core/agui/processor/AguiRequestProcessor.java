@@ -196,6 +196,10 @@ public class AguiRequestProcessor {
                                                             event,
                                                             runErrorSeen.get());
                                                 })
+                                        // doOnTerminate runs before completion/error reaches
+                                        // downstream. The conditional removal in finishRun also
+                                        // prevents an overlapping cancel hook from clearing a newer
+                                        // run.
                                         .doOnTerminate(
                                                 () -> resumeCoordinator.finishRun(threadId, runId))
                                         .doOnCancel(

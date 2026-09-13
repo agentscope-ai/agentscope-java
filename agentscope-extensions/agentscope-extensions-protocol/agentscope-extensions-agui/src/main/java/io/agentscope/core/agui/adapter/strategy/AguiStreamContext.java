@@ -183,6 +183,10 @@ public class AguiStreamContext {
     /**
      * Whether an event belongs to the parent invocation. A blank source with a task id still belongs
      * to a child source, matching the correlation key used by the core event stream.
+     *
+     * <p>Producers must leave {@link AgentEvent#METADATA_TASK_ID} unset on top-level events.
+     * Child-forwarding producers, currently {@code AgentSpawnTool} and
+     * {@code RemoteEventCodec}, stamp it on events forwarded from a child source.
      */
     boolean isTopLevelEvent(AgentEvent event) {
         Objects.requireNonNull(event, "event");
