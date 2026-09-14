@@ -2,7 +2,9 @@
 title: "Team collaboration: delegate, combine and extend"
 ---
 
-[简体中文](/v2/zh/service/team-collaboration)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Teams suit clear objectives whose implementation steps need adaptive decisions. The Lead chooses members, divides work and combines results. Workflows instead declare a fixed topology. Start with [Team configuration](/v2/en/service/teams).
 
@@ -47,3 +49,17 @@ Add a member for a specific missing capability, then check that the Lead selects
 Check that the Lead's final report incorporates necessary member results and identifies incomplete work. Run succeeded or partial_succeeded alone does not establish business completion. Human-review Issues still need acceptance in Inbox.
 
 For applications, publish a Team job [Endpoint](/v2/en/service/endpoints) and track its invocation status and result.
+
+## Handoff template for independent review
+
+The [engineering case](/v2/en/service/cases/sdlc-team) uses an all-Hosted Team. The Developer can use this structure with the PR and actual test records:
+
+```text
+Goal: implement order filtering and pagination; preserve checks and add boundary tests.
+Changes: identify modified files and rules.
+Validation: JDK, directory, command, exit code, logs, and CI links.
+Delivery: GitHub Issue, PR, head SHA, review, and Artifact identifiers.
+Open items: list unverified conditions, or state that none remain.
+```
+
+This is a delivery structure, not a record of execution. The Lead must open real Artifacts and inspect evidence before summarizing. Member working directories are not automatically shared; an absolute local path in a comment does not establish that another member can read it.
