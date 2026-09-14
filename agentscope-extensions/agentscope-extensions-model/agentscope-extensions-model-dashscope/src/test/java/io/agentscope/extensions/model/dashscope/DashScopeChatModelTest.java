@@ -605,19 +605,16 @@ class DashScopeChatModelTest {
         MockWebServer mockServer = new MockWebServer();
         mockServer.start();
 
+        // The response must carry content: contentless completions are rejected as upstream
+        // anomalies (issue #2962)
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
                         .setBody(
-                                """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
-                                            }
-                                        }
-                                """)
-                        .setHeader("Content-Type", "application/json"));
+                                "data:"
+                                    + " {\"request_id\":\"test\",\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}}\n\n"
+                                    + "data: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
 
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
@@ -658,17 +655,25 @@ class DashScopeChatModelTest {
         MockWebServer mockServer = new MockWebServer();
         mockServer.start();
 
+        // The response must carry content: contentless completions are rejected as upstream
+        // anomalies (issue #2962)
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
                         .setBody(
                                 """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
+                                {
+                                    "request_id": "test",
+                                    "output": {
+                                        "choices": [{
+                                            "finish_reason": "stop",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "ok"
                                             }
-                                        }
+                                        }]
+                                    }
+                                }
                                 """)
                         .setHeader("Content-Type", "application/json"));
 
@@ -989,12 +994,18 @@ class DashScopeChatModelTest {
                         .setResponseCode(200)
                         .setBody(
                                 """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
+                                {
+                                    "request_id": "test",
+                                    "output": {
+                                        "choices": [{
+                                            "finish_reason": "stop",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "ok"
                                             }
-                                        }
+                                        }]
+                                    }
+                                }
                                 """)
                         .setHeader("Content-Type", "application/json"));
 
@@ -1045,12 +1056,18 @@ class DashScopeChatModelTest {
                         .setResponseCode(200)
                         .setBody(
                                 """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
+                                {
+                                    "request_id": "test",
+                                    "output": {
+                                        "choices": [{
+                                            "finish_reason": "stop",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "ok"
                                             }
-                                        }
+                                        }]
+                                    }
+                                }
                                 """)
                         .setHeader("Content-Type", "application/json"));
 
@@ -1148,19 +1165,17 @@ class DashScopeChatModelTest {
         DashScopeParameters parameters =
                 DashScopeParameters.builder().searchOptions(searchOptions).build();
 
+        // enableThinking forces streaming regardless of stream(false), so the mock must be an
+        // SSE body carrying content — contentless completions are rejected as upstream
+        // anomalies (issue #2962)
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
                         .setBody(
-                                """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
-                                            }
-                                        }
-                                """)
-                        .setHeader("Content-Type", "application/json"));
+                                "data:"
+                                    + " {\"request_id\":\"test\",\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}}\n\n"
+                                    + "data: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
 
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
@@ -1219,12 +1234,18 @@ class DashScopeChatModelTest {
                         .setResponseCode(200)
                         .setBody(
                                 """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
+                                {
+                                    "request_id": "test",
+                                    "output": {
+                                        "choices": [{
+                                            "finish_reason": "stop",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "ok"
                                             }
-                                        }
+                                        }]
+                                    }
+                                }
                                 """)
                         .setHeader("Content-Type", "application/json"));
 
@@ -1275,12 +1296,18 @@ class DashScopeChatModelTest {
                         .setResponseCode(200)
                         .setBody(
                                 """
-                                        {
-                                            "request_id": "test",
-                                            "output": {
-                                                "choices": []
+                                {
+                                    "request_id": "test",
+                                    "output": {
+                                        "choices": [{
+                                            "finish_reason": "stop",
+                                            "message": {
+                                                "role": "assistant",
+                                                "content": "ok"
                                             }
-                                        }
+                                        }]
+                                    }
+                                }
                                 """)
                         .setHeader("Content-Type", "application/json"));
 

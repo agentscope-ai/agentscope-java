@@ -54,10 +54,15 @@ class DashScopeNonStreamingBlockingBehaviorTest {
     @Test
     @DisplayName("DashScopeChatModel - Should be NON-BLOCKING in non-streaming mode")
     void testDashScopeChatModelNonBlocking() throws Exception {
+        // The response must carry content: contentless completions are rejected as upstream
+        // anomalies (issue #2962), and this test needs an onNext to observe the delivering
+        // thread
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
-                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setBody(
+                                "{\"request_id\":\"test\",\"output\":{\"choices\":[{\"finish_reason\":"
+                                    + "\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}}")
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeChatModel model =
