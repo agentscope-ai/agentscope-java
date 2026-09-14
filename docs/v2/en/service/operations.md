@@ -2,7 +2,9 @@
 title: Backup, upgrade and recovery
 ---
 
-[简体中文](/v2/zh/service/operations)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
 
@@ -52,3 +54,17 @@ A backup is qualified only when database, files and keys recover together. Plan 
 ## Reopen service after recovery
 
 Keep scheduled rules and external traffic controlled while verifying login, history, files and credentials with test work. Confirm Runtime Hosts reconnect before restoring schedules and application traffic. Restoring a snapshot does not undo external messages or writes made after it; reconcile idempotency records and unfinished work before rerunning.
+
+## Use fixed cases for upgrade regression
+
+Before upgrading, retain the sample knowledge and acceptance results from the [presales team case](/v2/en/service/cases/presales-team). Ask the same questions in an isolated restored environment. Model wording may differ; compare these facts and persistent records:
+
+| Check | Evidence |
+| --- | --- |
+| Knowledge recovery | All three document bodies match the backup and the Agent actually reads them |
+| File recovery | Previous Artifacts download and match the recorded content |
+| New work | A new Invocation / Run completes with correct sources and no unsupported capability promises |
+| History | Pre-upgrade Issues, events, and acceptance states remain readable |
+| Host and automation, if used | Run the engineering and fulfillment cases against test targets and inspect linked records |
+
+Record versions, backup batch, inputs, execution IDs, and differences. Validate credentials through the integrations that use them; the knowledge-only case has no external credential and cannot establish that Vault decryption works.
