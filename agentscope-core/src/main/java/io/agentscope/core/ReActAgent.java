@@ -2110,15 +2110,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // not let those turns hide a result for a call the server is still waiting for.
             for (int i = 0; i <= lastAssistant; i++) {
                 Msg msg = msgs.get(i);
-                List<ContentBlock> results =
+                List<ContentBlock> replayContent =
                         msg.getContent().stream()
                                 .filter(
                                         block ->
-                                                block instanceof ToolResultBlock result
-                                                        && pendingIds.contains(result.getId()))
+                                                !(block instanceof ToolResultBlock result)
+                                                        || pendingIds.contains(result.getId()))
                                 .toList();
-                if (!results.isEmpty()) {
-                    selected.add(msg.withContent(results));
+                boolean hasPendingResult =
+                        replayContent.stream()
+                                .anyMatch(
+                                        block ->
+                                                block instanceof ToolResultBlock result
+                                                        && pendingIds.contains(result.getId()));
+                if (hasPendingResult) {
+                    selected.add(msg.withContent(replayContent));
                 }
             }
             selected.addAll(msgs.subList(lastAssistant + 1, msgs.size()));

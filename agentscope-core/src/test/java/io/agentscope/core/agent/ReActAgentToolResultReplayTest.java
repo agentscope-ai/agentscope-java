@@ -367,6 +367,38 @@ class ReActAgentToolResultReplayTest {
     }
 
     @Test
+    void replaySelectionPreservesTextAlongsidePendingResult() {
+        CapturingModel model = new CapturingModel();
+        try (ReActAgent agent = agent(model, false)) {
+            seed(agent, "pending");
+            RuntimeContext replay =
+                    RuntimeContext.builder(CONTEXT)
+                            .put(RuntimeContext.REPLAYED_INPUT, true)
+                            .build();
+            Msg mixed =
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    result("pending").getFirstContentBlock(ToolResultBlock.class),
+                                    TextBlock.builder().text("client explanation").build())
+                            .build();
+
+            agent.call(List.of(mixed, calls("client split turn")), replay).block();
+
+            Msg replayed =
+                    model.inputs.get(0).stream()
+                            .filter(m -> "client explanation".equals(m.getTextContent()))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(
+                    List.of("pending"),
+                    replayed.getContentBlocks(ToolResultBlock.class).stream()
+                            .map(ToolResultBlock::getId)
+                            .toList());
+        }
+    }
+
+    @Test
     void replayDoesNotBypassAskingToolWithAResultAndFreshText() {
         CapturingModel model = new CapturingModel();
         try (ReActAgent agent = agent(model, true)) {
