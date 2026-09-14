@@ -16,6 +16,7 @@
 package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +44,7 @@ class AgentStateTest {
         assertEquals("", s.getSummary());
         assertEquals(List.of(), s.getContext());
         assertEquals(0, s.getCurIter());
+        assertFalse(s.isSoToolActive());
         assertEquals(PermissionMode.DEFAULT, s.getPermissionContext().getMode());
         assertEquals(100, s.getToolContext().getMaxCacheFiles());
         assertEquals(List.of(), s.getTasksContext().getTasks());
@@ -70,6 +72,7 @@ class AgentStateTest {
                         .replyId("reply-1")
                         .summary("rolling summary")
                         .curIter(7)
+                        .soToolActive(true)
                         .context(List.of(msg))
                         .permissionContext(pc)
                         .toolContext(tc)
@@ -80,6 +83,7 @@ class AgentStateTest {
         assertEquals("reply-1", s.getReplyId());
         assertEquals("rolling summary", s.getSummary());
         assertEquals(7, s.getCurIter());
+        assertTrue(s.isSoToolActive());
         assertEquals(1, s.getContext().size());
         assertEquals(PermissionMode.BYPASS, s.getPermissionContext().getMode());
         assertEquals(5, s.getToolContext().getMaxCacheFiles());
@@ -117,6 +121,10 @@ class AgentStateTest {
         assertEquals("explicit", s.getReplyId());
         s.setReplyId(null);
         assertEquals(32, s.getReplyId().length());
+        s.setSoToolActive(true);
+        assertTrue(s.isSoToolActive());
+        s.setSoToolActive(false);
+        assertFalse(s.isSoToolActive());
     }
 
     @Test
@@ -137,6 +145,7 @@ class AgentStateTest {
                         .replyId("reply-9")
                         .summary("rolling")
                         .curIter(5)
+                        .soToolActive(true)
                         .permissionContext(
                                 PermissionContextState.builder()
                                         .mode(PermissionMode.EXPLORE)
@@ -147,11 +156,13 @@ class AgentStateTest {
         assertTrue(json.contains("\"reply_id\":\"reply-9\""), () -> json);
         assertTrue(json.contains("\"cur_iter\":5"), () -> json);
         assertTrue(json.contains("\"summary\":\"rolling\""), () -> json);
+        assertTrue(json.contains("\"so_tool_active\":true"), () -> json);
         AgentState decoded = mapper.readValue(json, AgentState.class);
         assertEquals(original.getSessionId(), decoded.getSessionId());
         assertEquals(original.getReplyId(), decoded.getReplyId());
         assertEquals(original.getCurIter(), decoded.getCurIter());
         assertEquals(original.getSummary(), decoded.getSummary());
+        assertTrue(decoded.isSoToolActive());
         assertEquals(
                 original.getPermissionContext().getMode(),
                 decoded.getPermissionContext().getMode());
@@ -163,6 +174,7 @@ class AgentStateTest {
         assertEquals("only-id", decoded.getSessionId());
         assertEquals("", decoded.getSummary());
         assertEquals(0, decoded.getCurIter());
+        assertFalse(decoded.isSoToolActive());
         assertNotNull(decoded.getReplyId());
     }
 }

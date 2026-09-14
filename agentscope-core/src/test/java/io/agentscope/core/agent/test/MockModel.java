@@ -192,6 +192,7 @@ public class MockModel implements Model {
         this.lastTools = null;
         this.lastOptions = null;
         this.shouldThrowError = false;
+        this.supportsToolChoiceSpecific = true;
     }
 
     @Override
