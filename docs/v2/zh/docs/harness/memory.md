@@ -79,7 +79,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 参数 | 默认 | 含义 |
 |------|------|------|
 | `triggerMessages` | `50` | 按条数触发（`0` 表示关闭） |
-| `triggerTokens` | `0` | 按 token 估算触发（`0` 表示关闭） |
+| `triggerTokens` | `0` | 按 token 估算触发（`0` 表示动态计算，基于模型上下文窗口减去 `reserved`） |
 | `keepMessages` | `20` | 保留尾部条数 |
 | `keepTokens` | `-1` | 非 0 时按 token 预算从尾部往前算，覆盖 `keepMessages` |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
