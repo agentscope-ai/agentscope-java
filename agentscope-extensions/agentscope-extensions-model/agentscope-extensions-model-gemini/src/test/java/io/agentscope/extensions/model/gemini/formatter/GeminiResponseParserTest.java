@@ -216,9 +216,9 @@ class GeminiResponseParserTest {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(100)
-                        .candidatesTokenCount(60) // Includes thinking
+                        .candidatesTokenCount(60)
                         .thoughtsTokenCount(10) // Thinking tokens
-                        .totalTokenCount(160)
+                        .totalTokenCount(170)
                         .build();
 
         GenerateContentResponse response =
@@ -238,11 +238,69 @@ class GeminiResponseParserTest {
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
 
-        // Output tokens = candidatesTokenCount - thoughtsTokenCount
-        assertEquals(50, usage.getOutputTokens());
+        // Output tokens include candidate and model-generated thinking tokens.
+        assertEquals(70, usage.getOutputTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);
+    }
+
+    @Test
+    void testParseUsageMetadataClassifiesToolUseTokensAsInput() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .candidatesTokenCount(120)
+                        .toolUsePromptTokenCount(300)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(130, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataUsesTotalWhenCandidateCountIsMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .toolUsePromptTokenCount(300)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(130, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataUsesThinkingWhenCandidateAndTotalCountsAreMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .thoughtsTokenCount(10)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(500, usage.getInputTokens());
+        assertEquals(10, usage.getOutputTokens());
     }
 
     @Test

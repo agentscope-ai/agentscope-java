@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
@@ -145,9 +146,24 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 if (msg.hasContentBlocks(ToolUseBlock.class)) {
                     yield MessageGroupType.TOOL_SEQUENCE;
                 }
+                if (msg.getRole() == MsgRole.ASSISTANT && hasReasoningDetails(msg)) {
+                    yield MessageGroupType.TOOL_SEQUENCE;
+                }
                 yield MessageGroupType.AGENT_CONVERSATION;
             }
         };
+    }
+
+    /**
+     * Check whether a message carries encrypted reasoning details that must be preserved
+     * on an individual assistant message (cannot be merged into a user history message).
+     */
+    private boolean hasReasoningDetails(Msg msg) {
+        ThinkingBlock tb = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (tb == null || tb.getMetadata() == null) {
+            return false;
+        }
+        return tb.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS);
     }
 
     /**
