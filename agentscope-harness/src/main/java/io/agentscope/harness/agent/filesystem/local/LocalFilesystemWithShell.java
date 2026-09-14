@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
@@ -261,7 +260,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
      * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
      * @param timeout default shell timeout (seconds, must be positive)
-     * @param maxOutputBytes nonnegative byte cap for captured shell output; zero disables capture
+     * @param maxOutputBytes nonnegative byte cap for captured stdout/stderr payload; diagnostic
+     *     trailers are excluded, and zero disables capture
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process environment
      * @param namespaceFactory optional per-user/session namespace factory
@@ -450,12 +450,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             String outputStr = hasOutput ? output.toString() : "<no output>";
             boolean truncated = stdoutBuf.truncated() || stderrBuf.truncated();
             if (maxOutputBytes == 0) {
-                outputStr = "<no output>";
+                outputStr = "<output capture disabled>";
                 truncated = false;
             } else {
-                if (hasOutput && outputStr.getBytes(outputCharset).length > maxOutputBytes) {
-                    outputStr = truncateToByteLimit(outputStr, outputCharset, maxOutputBytes);
-                    truncated = true;
+                if (hasOutput) {
+                    String limited = truncateToByteLimit(outputStr, outputCharset, maxOutputBytes);
+                    if (limited.length() < outputStr.length()) {
+                        truncated = true;
+                    }
+                    outputStr = limited;
                 }
                 if (truncated) {
                     outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
@@ -496,19 +499,20 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             return "";
         }
         CharBuffer input = CharBuffer.wrap(value);
-        ByteBuffer output = ByteBuffer.allocate(maxBytes);
-        try {
-            CoderResult result =
-                    charset.newEncoder()
-                            .onMalformedInput(CodingErrorAction.REPLACE)
-                            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                            .encode(input, output, true);
-            if (result.isError()) {
-                result.throwException();
-            }
-        } catch (CharacterCodingException e) {
-            throw new IllegalArgumentException("Unable to encode command output", e);
+        var encoder =
+                charset.newEncoder()
+                        .onMalformedInput(CodingErrorAction.REPLACE)
+                        .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        long encodedUpperBound =
+                (long) Math.ceil((double) encoder.maxBytesPerChar() * value.length());
+        int capacity = (int) Math.min(maxBytes, Math.min(Integer.MAX_VALUE, encodedUpperBound));
+        ByteBuffer output = ByteBuffer.allocate(capacity);
+        CoderResult result = encoder.encode(input, output, true);
+        if (result.isUnderflow()) {
+            return value;
         }
+        // OVERFLOW is expected when the payload reaches the byte cap; input.position() remains
+        // on a valid character boundary.
         return value.substring(0, input.position());
     }
 

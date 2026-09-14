@@ -80,15 +80,20 @@ class LocalFilesystemWithShellTest {
     }
 
     @Test
-    void execute_zeroMaxOutputBytesDisablesCaptureWithoutTruncation(@TempDir Path tempDir) {
+    void execute_zeroMaxOutputBytesReportsDisabledCapture(@TempDir Path tempDir) {
         LocalFilesystemWithShell fs =
                 new LocalFilesystemWithShell(tempDir, false, 60, 0, null, false);
 
         ExecuteResponse response = fs.execute(null, "echo output", 60);
 
         assertEquals(0, response.exitCode());
-        assertEquals("<no output>", response.output());
+        assertEquals("<output capture disabled>", response.output());
         assertFalse(response.truncated());
+
+        ExecuteResponse failed = fs.execute(null, isWindows() ? "exit /b 7" : "exit 7", 60);
+        assertEquals(7, failed.exitCode());
+        assertEquals("<output capture disabled>\n\nExit code: 7", failed.output());
+        assertFalse(failed.truncated());
     }
 
     @Test
@@ -100,6 +105,11 @@ class LocalFilesystemWithShellTest {
         assertEquals(
                 "中a",
                 LocalFilesystemWithShell.truncateToByteLimit("中a", StandardCharsets.UTF_8, 4));
+        String longValue = "中".repeat(100);
+        String limited =
+                LocalFilesystemWithShell.truncateToByteLimit(longValue, StandardCharsets.UTF_8, 31);
+        assertTrue(limited.getBytes(StandardCharsets.UTF_8).length <= 31);
+        assertEquals("中".repeat(10), limited);
     }
 
     @Test
