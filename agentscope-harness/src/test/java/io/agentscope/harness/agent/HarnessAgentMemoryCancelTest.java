@@ -154,6 +154,61 @@ class HarnessAgentMemoryCancelTest {
     }
 
     @Test
+    @Timeout(180)
+    void closeReleasesEveryQueuedFlushWhenTheQueueIsDeep() throws Exception {
+        // Once the first flush hangs, every later call of the same user queues one more flush
+        // behind it (distinct session ids, so they are not coalesced). Draining that queue by
+        // running the next task from inside the current one would recurse once per queued
+        // flush; with a queue this deep that risks a StackOverflowError inside close(), which
+        // would leave the agent half closed. Asserting on quiescence proves the queue was
+        // drained to the bottom.
+        final int queuedFlushes = 400;
+        Files.createDirectories(workspace);
+
+        CountDownLatch firstFlushStarted = new CountDownLatch(1);
+        HarnessAgent agent = buildAgent(hangingModel(firstFlushStarted));
+        boolean closed = false;
+        try {
+            agent.call(
+                            userMsg("remember: the first fact"),
+                            RuntimeContext.builder()
+                                    .userId("u-deep-queue")
+                                    .sessionId("s-deep-queue-0")
+                                    .build())
+                    .block();
+
+            assertTrue(
+                    firstFlushStarted.await(10, TimeUnit.SECONDS),
+                    "the first flush must be in flight before the queue can build up behind it");
+
+            for (int i = 1; i <= queuedFlushes; i++) {
+                agent.call(
+                                userMsg("remember: fact " + i),
+                                RuntimeContext.builder()
+                                        .userId("u-deep-queue")
+                                        .sessionId("s-deep-queue-" + i)
+                                        .build())
+                        .block();
+            }
+
+            agent.close();
+            closed = true;
+
+            assertTrue(
+                    MemoryBackgroundTasks.awaitQuiescence(15, TimeUnit.SECONDS),
+                    "closing must release the in-flight slot of every queued flush, however deep"
+                            + " the queue is");
+        } finally {
+            if (!closed) {
+                agent.close();
+            }
+            MemoryBackgroundTasks.cancelAll();
+            MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS);
+            LocalPeriodicGate.clearForTests();
+        }
+    }
+
+    @Test
     @Timeout(90)
     void closeOfOneAgentLeavesAnotherLiveAgentsTaskRunning() throws Exception {
         Path workspaceA = workspace.resolve("agent-a");

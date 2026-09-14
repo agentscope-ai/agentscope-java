@@ -235,9 +235,17 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             // The owning agent is already closed: drop this flush, release its in-flight slot,
             // and keep draining so every remaining queued task releases its slot too, instead
             // of starting a model call that would outlive the closed agent.
-            MemoryBackgroundTasks.end();
-            drainFlushQueue(key);
-            return;
+            //
+            // The drain is a loop rather than a call into drainFlushQueue: every queued task
+            // takes this same branch while the owner is shut down, so draining by running the
+            // next task would recurse once per queued flush and risk a StackOverflowError on a
+            // deep queue. Each iteration releases the slot of the task it skips.
+            while (true) {
+                MemoryBackgroundTasks.end();
+                if (takeNextQueuedFlush(key) == null) {
+                    return;
+                }
+            }
         }
         final Disposable[] holder = new Disposable[1];
         holder[0] =
@@ -253,7 +261,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         MemoryBackgroundTasks.register(taskOwner, holder[0]);
     }
 
-    private void drainFlushQueue(String key) {
+    /**
+     * Removes and returns the next queued flush for {@code key}, or {@code null} when the key
+     * has gone idle, in which case the key is evicted. The returned task is <em>not</em>
+     * executed: callers decide whether to run it or to release the in-flight slot it acquired at
+     * dispatch.
+     */
+    private static Runnable takeNextQueuedFlush(String key) {
         Runnable[] next = new Runnable[1];
         FLUSH_QUEUES.compute(
                 key,
@@ -271,8 +285,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                     }
                     return queue; // the dequeued task continues as the running flush
                 });
-        if (next[0] != null) {
-            next[0].run();
+        return next[0];
+    }
+
+    private void drainFlushQueue(String key) {
+        Runnable next = takeNextQueuedFlush(key);
+        if (next != null) {
+            next.run();
         }
     }
 

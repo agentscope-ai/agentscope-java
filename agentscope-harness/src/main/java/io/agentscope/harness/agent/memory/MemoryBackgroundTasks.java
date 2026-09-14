@@ -122,7 +122,7 @@ public final class MemoryBackgroundTasks {
         }
         Object effectiveOwner = owner != null ? owner : UNOWNED;
         if (isShutdown(effectiveOwner)) {
-            d.dispose();
+            disposeQuietly(d);
             return;
         }
         IN_FLIGHT_TASKS.put(d, effectiveOwner);
