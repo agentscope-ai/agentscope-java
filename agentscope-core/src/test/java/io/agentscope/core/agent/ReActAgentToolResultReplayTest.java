@@ -379,6 +379,7 @@ class ReActAgentToolResultReplayTest {
                     Msg.builder()
                             .role(MsgRole.TOOL)
                             .content(
+                                    result("old").getFirstContentBlock(ToolResultBlock.class),
                                     result("pending").getFirstContentBlock(ToolResultBlock.class),
                                     TextBlock.builder().text("client explanation").build())
                             .build();
