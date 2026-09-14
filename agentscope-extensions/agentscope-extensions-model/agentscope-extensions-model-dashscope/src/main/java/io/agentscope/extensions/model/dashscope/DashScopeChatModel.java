@@ -84,7 +84,7 @@ public class DashScopeChatModel extends ChatModelBase {
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param stream whether streaming should be enabled (independent of enableThinking)
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
      * @param enableSearch whether search enhancement should be enabled (null for disabled)
      * @param defaultOptions default generation options (null for defaults)
@@ -126,7 +126,7 @@ public class DashScopeChatModel extends ChatModelBase {
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param stream whether streaming should be enabled (independent of enableThinking)
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
      * @param enableSearch whether search enhancement should be enabled (null for disabled)
      * @param endpointType the endpoint type to use (null for AUTO detection)
@@ -151,13 +151,18 @@ public class DashScopeChatModel extends ChatModelBase {
             String publicKeyId,
             String publicKey) {
         this.modelName = modelName;
-        // Thinking mode requires streaming; override stream setting if needed
-        if (enableThinking != null && enableThinking && !stream) {
-            log.info(
-                    "Thinking mode is enabled but stream=false was specified. "
-                            + "Forcing stream=true as thinking mode requires streaming.");
+        // Streaming and thinking are independent options. DashScope only rejects the
+        // non-streaming + thinking combination for some open-source thinking models, and
+        // it reports that as a provider error, so the caller's explicit choice is kept
+        // as-is here rather than silently rewritten.
+        if (!stream && enableThinking != null && enableThinking) {
+            log.warn(
+                    "Thinking mode is enabled together with a non-streaming request. Some "
+                            + "open-source thinking models only accept this combination when "
+                            + "streaming is enabled; if the provider rejects the request, enable "
+                            + "streaming or use a model that supports non-streaming thinking.");
         }
-        this.stream = enableThinking != null && enableThinking ? true : stream;
+        this.stream = stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
         this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
@@ -401,7 +406,10 @@ public class DashScopeChatModel extends ChatModelBase {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private boolean stream = true;
+
+        /** Null means "not set by the caller"; resolved to {@code true} in {@link #build()}. */
+        private Boolean stream;
+
         private Boolean enableThinking;
         private Boolean enableSearch;
         private EndpointType endpointType;
@@ -443,8 +451,10 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets whether streaming should be enabled.
          *
-         * <p>This setting is ignored if enableThinking is set to true, as thinking mode
-         * automatically enables streaming.
+         * <p>Streaming and thinking mode are independent. If this is not called, streaming
+         * defaults to {@code true}. An explicit {@code false} is honored even when thinking
+         * mode is enabled; whether the model supports that combination is validated by the
+         * DashScope endpoint.
          *
          * @param stream true to enable streaming, false for non-streaming
          * @return this builder instance
@@ -457,8 +467,9 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets whether thinking mode should be enabled.
          *
-         * <p>When enabled, this automatically enables streaming and may override the stream setting.
-         * Thinking mode allows the model to show its reasoning process.
+         * <p>Thinking mode is independent of the streaming option. Some open-source thinking
+         * models only accept thinking when streaming is enabled; that constraint is validated
+         * by the DashScope endpoint and surfaced as a provider error.
          *
          * @param enableThinking true to enable thinking mode, false to disable, null for default
          * @return this builder instance
@@ -717,7 +728,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     new DashScopeChatModel(
                             apiKey,
                             modelName,
-                            stream,
+                            stream == null || stream,
                             enableThinking,
                             enableSearch,
                             endpointType,
