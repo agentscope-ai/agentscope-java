@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.local;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -94,6 +97,23 @@ class LocalFilesystemWithShellTest {
         assertEquals(7, failed.exitCode());
         assertEquals("<output capture disabled>\n\nExit code: 7", failed.output());
         assertFalse(failed.truncated());
+    }
+
+    @Test
+    void localFilesystemSpec_zeroMaxOutputBytesDisablesCapture(@TempDir Path tempDir) {
+        AbstractSandboxFilesystem fs =
+                assertInstanceOf(
+                        AbstractSandboxFilesystem.class,
+                        new LocalFilesystemSpec()
+                                .project(tempDir)
+                                .maxOutputBytes(0)
+                                .toFilesystem(tempDir, null));
+
+        ExecuteResponse response = fs.execute(null, "echo output", 60);
+
+        assertEquals(0, response.exitCode());
+        assertEquals("<output capture disabled>", response.output());
+        assertFalse(response.truncated());
     }
 
     @Test

@@ -509,6 +509,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         ByteBuffer output = ByteBuffer.allocate(capacity);
         CoderResult result = encoder.encode(input, output, true);
         if (result.isUnderflow()) {
+            // outputCharset() selects UTF-8 or a Windows native/default code-page charset. Those
+            // execution-path encoders are stateless, so they do not emit additional flush bytes.
             return value;
         }
         // OVERFLOW is expected when the payload reaches the byte cap; input.position() remains

@@ -326,7 +326,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `executeTimeoutSeconds(int)` | 单条 shell 命令超时（秒） | 120 |
-| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
+| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数；设为 `0` 时禁用捕获并返回 `<output capture disabled>` | 100,000 |
 | `env(String, String)` | 添加 shell 环境变量 | 无 |
 | `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
 | `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |

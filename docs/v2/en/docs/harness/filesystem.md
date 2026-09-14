@@ -328,7 +328,7 @@ guarantee that all such processes have stopped.
 | Method | Description | Default |
 |--------|-------------|---------|
 | `executeTimeoutSeconds(int)` | Shell command timeout (seconds) | 120 |
-| `maxOutputBytes(int)` | Max captured output bytes per command | 100,000 |
+| `maxOutputBytes(int)` | Max captured output bytes per command; `0` disables capture and returns `<output capture disabled>` | 100,000 |
 | `env(String, String)` | Add a shell environment variable | none |
 | `inheritEnv(boolean)` | Inherit parent process environment | `false` |
 | `mode(LocalFsMode)` | Path resolution policy | `ROOTED` |
