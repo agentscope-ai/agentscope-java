@@ -103,6 +103,11 @@ class SkillRegistry {
         RegisteredSkill registered = registeredSkills.get(skillId);
         if (registered != null) {
             registered.setActive(active);
+            if (!active) {
+                // Deactivation ends the "entry delivered" window: the next SKILL.md load
+                // is treated as a fresh load and re-sends the entry document.
+                registered.setEntryLoaded(false);
+            }
         }
     }
 

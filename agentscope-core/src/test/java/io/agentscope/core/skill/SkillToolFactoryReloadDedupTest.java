@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -59,6 +60,30 @@ class SkillToolFactoryReloadDedupTest {
         StringBuilder sb = new StringBuilder();
         result.getOutput().forEach(b -> sb.append(b.toString()));
         return sb.toString();
+    }
+
+    private static AgentTool dummyTool(String name) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public String getDescription() {
+                return "Dummy tool for testing";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                return Map.of("type", "object", "properties", Map.of());
+            }
+
+            @Override
+            public reactor.core.publisher.Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return reactor.core.publisher.Mono.just(ToolResultBlock.text("dummy result"));
+            }
+        };
     }
 
     @Test
@@ -125,6 +150,126 @@ class SkillToolFactoryReloadDedupTest {
         // And only from the second entry load onward does the notice appear.
         String repeat = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
         assertTrue(repeat.contains("is already loaded and active"));
+    }
+
+    @Test
+    @DisplayName("Deactivating the skill resets the dedup: the next SKILL.md load re-sends content")
+    void deactivationRecoversFullEntryLoad() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("delta")
+                        .description("delta skill")
+                        .skillContent("# Delta SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
+        assertTrue(
+                textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"))
+                        .contains("is already loaded and active"));
+
+        // Host-side recovery lever: deactivation ends the "entry delivered" window.
+        box.setSkillActive(skill.getSkillId(), false);
+
+        String reloaded = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(
+                reloaded.contains("Successfully loaded skill"),
+                "A load after deactivation returns the full markdown again");
+        assertTrue(reloaded.contains("# Delta SKILL body"));
+    }
+
+    @Test
+    @DisplayName("The dedup path still re-enables a tool group disabled behind its back")
+    void dedupPathResyncsExternallyDisabledToolGroup() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("epsilon")
+                        .description("epsilon skill")
+                        .skillContent("# Epsilon SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        // Register with a tool so the skill actually owns a tool group.
+        box.registration().skill(skill).agentTool(dummyTool("epsilon_tool")).apply();
+        box.registerSkillLoadTool();
+        String groupName = skill.getSkillId() + "_skill_tools";
+        assertNotNull(toolkit.getToolGroup(groupName), "Skill tool group should exist");
+
+        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
+        assertTrue(toolkit.getToolGroup(groupName).isActive());
+
+        // A host can disable the group through the public Toolkit API without touching
+        // SkillRegistry — the scenario the registry flag alone cannot see.
+        toolkit.updateToolGroups(java.util.List.of(groupName), false);
+        assertFalse(toolkit.getToolGroup(groupName).isActive());
+
+        // The deduplicated repeat load must reconcile the group, not just return the notice.
+        String repeat = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(repeat.contains("is already loaded and active"));
+        assertTrue(
+                toolkit.getToolGroup(groupName).isActive(),
+                "The dedup path re-enables the externally disabled tool group");
+    }
+
+    @Test
+    @DisplayName("The dedup notice enumerates resources so the model can re-fetch them")
+    void noticeListsAvailableResources() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("notes.md", "resource body");
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("zeta")
+                        .description("zeta skill")
+                        .skillContent("# Zeta SKILL body")
+                        .resources(resources)
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
+
+        String repeat = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(repeat.contains("is already loaded and active"));
+        assertTrue(repeat.contains("notes.md"), "The notice lists the skill's resources");
+    }
+
+    @Test
+    @DisplayName("A disk-fallback resource load does not suppress a later SKILL.md load")
+    void diskFallbackResourceFirstThenSkillMdStillReturnsFullEntry() throws Exception {
+        java.nio.file.Path skillDir = java.nio.file.Files.createTempDirectory("zeta-skill");
+        java.nio.file.Files.writeString(
+                skillDir.resolve("guide.txt"),
+                "from disk\n",
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("eta")
+                        .description("eta skill")
+                        .skillContent("# Eta SKILL body")
+                        .originDir(skillDir.toAbsolutePath().normalize())
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        // Resource served by the disk-fallback branch, which also calls activateSkill.
+        callLoadTool(toolkit, skill.getSkillId(), "guide.txt");
+
+        String entry = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(
+                entry.contains("Successfully loaded skill"),
+                "Disk-fallback resource activation must not suppress the entry load");
+        assertTrue(entry.contains("# Eta SKILL body"));
     }
 
     @Test

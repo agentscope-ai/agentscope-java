@@ -180,11 +180,15 @@ class SkillToolFactory {
             // content having actually been delivered — NOT on the skill being
             // active, because loading any resource activates the skill without
             // ever serving SKILL.md (the not-found message also enumerates resource
-            // paths, so a model can reach a resource first). Specific resource
-            // paths below always return full content, so a model that lost the
-            // entry file to compaction can still re-fetch individual resources.
+            // paths, so a model can reach a resource first).
             if (skillRegistry.isSkillEntryLoaded(skillId)) {
-                return "Skill '" + skillId + "' is already loaded and active.";
+                // Still reconcile tool-group state: the registry flag and the toolkit's
+                // group state are separate, and a host can disable groups via the public
+                // Toolkit API (or work through a deep copy). A plain re-load used to be
+                // the idempotent way to re-sync; keep that self-healing behavior while
+                // skipping only the re-send of the markdown.
+                ensureSkillToolGroupsActive(skillId);
+                return buildAlreadyLoadedNotice(skillId, skill);
             }
             activateSkill(skillId);
             skillRegistry.setSkillEntryLoaded(skillId, true);
@@ -282,6 +286,29 @@ class SkillToolFactory {
     }
 
     /**
+     * Builds the deduplication notice for a repeat {@code SKILL.md} load of an already-delivered
+     * skill.
+     *
+     * <p>The notice is actionable rather than terminal: it enumerates the skill's resources (each
+     * still returns full content) so a model that lost parts of the skill to context compaction
+     * can re-fetch what it needs, and documents the host-side recovery lever — deactivating the
+     * skill resets the dedup so the next load re-sends the entry document.
+     */
+    private String buildAlreadyLoadedNotice(String skillId, AgentSkill skill) {
+        StringBuilder notice = new StringBuilder();
+        notice.append("Skill '")
+                .append(skillId)
+                .append("' is already loaded and active; its SKILL.md was delivered by the")
+                .append(" earlier load and is not re-sent to save context.\n\n");
+        appendAvailableResources(notice, skill.getResources(), skill.getOriginDir().orElse(null));
+        notice.append("\nEach listed resource returns its full content on request. If the")
+                .append(" SKILL.md body itself is no longer in context, deactivating and")
+                .append(" reactivating the skill (e.g. via SkillBox.setSkillActive) resets this")
+                .append(" notice and re-sends the entry document.");
+        return notice.toString();
+    }
+
+    /**
      * Build response for regular resource content.
      *
      * @param skillId The skill ID
@@ -317,8 +344,17 @@ class SkillToolFactory {
                 .append(skillId)
                 .append("'.\n\n");
 
-        // Build a deduped list spanning in-memory keys and on-disk entries so the model can
-        // see both classes of resources in one place.
+        appendAvailableResources(message, resources, originDir);
+
+        return message.toString();
+    }
+
+    /**
+     * Appends a numbered, deduped listing of the skill's resources spanning in-memory keys and
+     * on-disk entries, so the model can see both classes of resources in one place.
+     */
+    private static void appendAvailableResources(
+            StringBuilder message, Map<String, String> resources, Path originDir) {
         Set<String> resourcePaths = new LinkedHashSet<>();
         resourcePaths.add("SKILL.md");
         if (resources != null) {
@@ -333,8 +369,6 @@ class SkillToolFactory {
         for (String entry : resourcePaths) {
             message.append(i++).append(". ").append(entry).append("\n");
         }
-
-        return message.toString();
     }
 
     private static List<String> listOriginDirEntries(Path originDir) {
@@ -383,7 +417,20 @@ class SkillToolFactory {
     private void activateSkill(String skillId) {
         skillRegistry.setSkillActive(skillId, true);
         logger.info("Activated skill: {}", skillId);
+        ensureSkillToolGroupsActive(skillId);
+    }
 
+    /**
+     * Re-enables the skill's own tool group and any {@code SkillToolGroup} bound via {@code
+     * activateOnSkill}.
+     *
+     * <p>Called on every {@code SKILL.md} load path — including the deduplicated repeat — because
+     * the registry's active flag and the toolkit's group state are two separate pieces of state:
+     * a host can disable a group through the public {@code Toolkit.updateToolGroups(..., false)}
+     * API (or operate on a deep copy of the toolkit) without touching {@code SkillRegistry}, and
+     * re-loading {@code SKILL.md} is the self-healing way for the model to reconcile them.
+     */
+    private void ensureSkillToolGroupsActive(String skillId) {
         String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
         if (toolkit.getToolGroup(toolsGroupName) != null) {
             toolkit.updateToolGroups(List.of(toolsGroupName), true);
