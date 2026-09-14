@@ -24,7 +24,12 @@ import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -441,15 +446,20 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 }
             }
 
-            String outputStr = output.isEmpty() ? "<no output>" : output.toString();
-
+            boolean hasOutput = !output.isEmpty();
+            String outputStr = hasOutput ? output.toString() : "<no output>";
             boolean truncated = stdoutBuf.truncated() || stderrBuf.truncated();
-            if (outputStr.length() > maxOutputBytes) {
-                outputStr = outputStr.substring(0, maxOutputBytes);
-                truncated = true;
-            }
-            if (truncated) {
-                outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
+            if (maxOutputBytes == 0) {
+                outputStr = "<no output>";
+                truncated = false;
+            } else {
+                if (hasOutput && outputStr.getBytes(outputCharset).length > maxOutputBytes) {
+                    outputStr = truncateToByteLimit(outputStr, outputCharset, maxOutputBytes);
+                    truncated = true;
+                }
+                if (truncated) {
+                    outputStr += "\n\n... Output truncated at " + maxOutputBytes + " bytes.";
+                }
             }
 
             int exitCode = proc.exitValue();
@@ -479,6 +489,27 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 drainExecutor.shutdownNow();
             }
         }
+    }
+
+    static String truncateToByteLimit(String value, Charset charset, int maxBytes) {
+        if (value == null || value.isEmpty() || maxBytes <= 0) {
+            return "";
+        }
+        CharBuffer input = CharBuffer.wrap(value);
+        ByteBuffer output = ByteBuffer.allocate(maxBytes);
+        try {
+            CoderResult result =
+                    charset.newEncoder()
+                            .onMalformedInput(CodingErrorAction.REPLACE)
+                            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                            .encode(input, output, true);
+            if (result.isError()) {
+                result.throwException();
+            }
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException("Unable to encode command output", e);
+        }
+        return value.substring(0, input.position());
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
