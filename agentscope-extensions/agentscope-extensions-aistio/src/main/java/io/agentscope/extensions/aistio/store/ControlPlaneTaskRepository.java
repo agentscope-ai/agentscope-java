@@ -839,7 +839,8 @@ public final class ControlPlaneTaskRepository implements TaskRepository {
     private void fireCompletionCallback(
             RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
         TaskCompletionCallback cb = this.completionCallback;
-        if (cb == null) {
+        if (cb == null
+                || (rc != null && Boolean.TRUE.equals(rc.get(SUPPRESS_COMPLETION_CALLBACK)))) {
             return;
         }
         try {

@@ -1,5 +1,5 @@
 ---
-hide-toc: true
+title: 基于 AgentScope 2.0 运行时的 Managed Agents
 ---
 
 Managed Agents 让 Agent 运行在云端环境中：一方面，推理、编排、Harness 管理等核心环节均由云端统一托管，架构稳定性与运行效果由平台保障；另一方面，长周期任务不再依赖本地设备持续在线——即使个人电脑关机，任务依然可以在云端持续运行。
@@ -65,28 +65,17 @@ AgentScope 2.0 的模型抽象、工具与 MCP、消息与事件、状态存储�
 #### 核心组件图
 1. **Control Plane**
 
-<!-- 这是一张图片，ocr 内容为：CONTROL PLANE ARCHITECTURE CLIENTS CLI CURL/SDK CONSOLE API GATEWAY ROUTE BY APL SURFACE CONTROL APIS DATA APLS CONTROL PLANE DATA PLANE DATA PLANE APLS(COLLAPSED) DEFINITIONS AGENT/ENV SESSION CREATE SESSIONS .EVENTS. SSE +MEMORY/VAULT SKILLSMCP VERSIONED AGENT HARNESS LOOP - STATE RESTORE READ AGENT/ENV FROM CP ENVIRONMENT ACL/SHARES RESOURCES.TOOLS DATA PLANE APIS CONTROL PLANE API GATEWAY AGENT VERSIONS,ENVIRONMENTS,MEMORY/ ALSO PUBLIC(SESSIONS/EVENTS/SSE); FRONT DOOR FOR CLI/ CONSOLE / CURL;ROUTES VAULT/ACL,SESSION CREATE. COLLAPSED HERE-SEE DIAGRAM 2. CONTROL VS DATA APLS. -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785141394899-a68e0d3b-e16b-44be-9a29-4e61f163463f.png)
 
 2. **Data Plane**
 
-<!-- 这是一张图片，ocr 内容为：DATA PLANE ARCHITECTURE HANDS-TOOL EXECUTION BOUNDARY BRAIN- REASONING & ORCHESTRATION CLOUD MANAGED SANDBOX SESSION/EVENTS API TYPESANDBOX .BRAIN INITIATES E2B/FC API USER.MESSAGE . INTERRUPT/HITL CLOUD SANDBOX E2BFILESYSTEMSPEC ISOLATED FS CREATE /TIMEOUT SESSIONTURNRUNNER TYPESANDBOX FS+SHELL CALLS WORKSPACE ROOT TURN LEASE `STATUS - BUILD/ CACHE BRAIN INITIATES AGENTSCOPE KERNEL MODEL HARNESSAGENT TOOL DECISIONS REACT/STREAMEVENTS SELF-HOSTED WORKER HOOKS.COMPACTION TEXT/THINKING TYPESELF_HOSTED OUTBOUND ONLY NO BRAIN INGRESS TYPE-SELF_HOSTED SCHEMAONLYTOOL WORK QUEUE OUTBOUND WORKER EVENTLOG AGENTSTATESTORE POLL/ACK/HEARTBEAT SUSPEND TURN RESTORE BY SESSION AGENT. PERSISTED AGENT.TOOL_USE CUSTOMER WORKER EXECUTE FS/SHELL POST USER.TOOL_RESULT.RESUME BRAIN CONTROL-PLANE REFS AGENT VERSION `ENVIRONMENT MEMORY / VAULT PATH CONTRAST SELF-HOSTED WORKER CLOUD MANAGED SANDBOX ENVIRONMENT TYPE-SELF HOSTED.TOOLS ARE SCHEMA-ONLY ON BRAIN;WORKER POLLS, ENVIRONMENT TYPE-SANDBOX.BRAIN CALLS E2B-COMPATIBLE APLS;PLATFORM OWNS SANDBOX LIFECYCLE.NO CUSTOMER WORKER. EXECUTES,POSTS USER.TOOL_RESULT TO RESUME. -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785141716807-8d15ef5f-4d56-4c24-958a-caf553476262.png)
 
 #### 核心数据流转
 客户端通过（session/event）接口发送任务请求到 Managed Data Plane（Brain），Brain 从共享状态恢复 Agent，进而执行整个推理、编排流程，如果中间有工具调用，Brain 再按 Environment 配置将工具调用请求路由到 Worker（可能是托管sandbox环境、用户自管理sandbox环境等）。
 
-<!-- 这是一个文本绘图，源码为：flowchart LR
-  C[Client / Console] -->|Session + Events + SSE| DP[Managed Data Plane]
-  CP[Control Plane<br/>Agent / Environment / ACL] -->|versioned references| DP
-  DP <--> DB[(JDBC<br/>events / state / leases)]
-  DP --> B[HarnessAgent Brain]
-  B --> M[Model]
-  B -->|local tools| L[Brain host FS / shell]
-  B -->|E2B-compatible API| S[Cloud Sandbox]
-  B -->|tool schema + queue| Q[Self-hosted Work Queue]
-  W[Customer Worker] -->|outbound poll / result| Q
-  W --> H[Customer-managed FS / sandbox] -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/cee93bfbfdd56bdf1526682edd6df433.svg)
 
 结合上面的架构分析与实现，可以把整套系统读成四层：
@@ -158,21 +147,6 @@ echo "AGENT_ID=$AGENT_ID"
 #### Worker in Local 模式
 Local 模式最适合开发联调。Session、Harness 推理、模型请求和工具执行都由 Managed 集群发起，文件与 shell 直接落在 Brain 进程可见的本地环境中。
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant LocalFS as Local_FS_Shell
-
-  Client->>API: POST sessions + user.message
-  API->>Brain: turn lease + build HarnessAgent
-  Brain->>Model: stream / tool decisions
-  Model-->>Brain: tool_use / text
-  Brain->>LocalFS: read_file / shell on host namespace
-  LocalFS-->>Brain: tool_result
-  Brain-->>API: agent.* + session.status_idle
-  API-->>Client: SSE / events -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/1216077e52ed0c4fd17a788f16bea26f.svg)
 
 在 **Local** 模式下，Environment `type=local`：文件系统与（若启用的）shell 都在托管集群宿主机命名空间内完成，没有独立 Hands 队列，也不调用云沙箱。适合开发联调与可信内网。
@@ -180,21 +154,6 @@ Local 模式最适合开发联调。Session、Harness 推理、模型请求和�
 #### Worker in Cloud Sandbox 模式
 Cloud Sandbox 保留托管 Brain，但把文件和 shell 移入独立沙箱。Harness 推理、模型请求以及工具调用的发起方仍在 Managed 集群；真正的命令执行和文件读写发生在 FC Sandbox / E2B 兼容环境中。
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant E2B as FC_Sandbox_E2B
-
-  Client->>API: user.message
-  API->>Brain: HarnessAgent + type=sandbox
-  Brain->>Model: reasoning
-  Model-->>Brain: tool_use
-  Note over Brain,E2B: Brain initiates sandbox lifecycle and tool calls
-  Brain->>E2B: E2B-compatible API FS/shell
-  E2B-->>Brain: tool_result
-  Brain-->>Client: SSE agent.* / status_idle -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/e286ba42310643e8e1a64e3db8b2417c.svg)
 
 Agent 通过 E2B 客户端协议申请容器，并在容器内执行 shell / FS 操作，**Brain 主动发起调用，Worker 不参与**。若使用兼容 E2B 协议的 Aliyun FC Sandbox，需要先准备服务地址、模板和 API Key。
@@ -204,25 +163,6 @@ Cloud Sandbox 的托管边界可以拆成三个动作：**创建沙箱、在沙�
 #### Worker in Self-hosted 模式
 Self-hosted 把 Hands 进一步移动到客户环境。Brain 仍在 Managed 集群中完成 Harness 推理，但工具任务进入队列，由客户侧 Worker 主动出站轮询、管理本地工作目录或沙箱，并把结果回传给 Brain。整个过程中，Brain 不需要进入客户网络。
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant Q as WorkQueue
-  participant Worker as Customer_Worker
-
-  Client->>API: user.message
-  API->>Brain: type=self_hosted
-  Brain->>Model: reasoning
-  Model-->>Brain: tool_use
-  Brain->>Q: enqueue work + persist agent.tool_use
-  Brain-->>Client: requires_action / suspended
-  Worker->>Q: poll with EnvKey
-  Worker->>Worker: work directory + local tool exec
-  Worker->>API: user.tool_result
-  API->>Brain: resume turn
-  Brain-->>Client: agent.message + status_idle -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/e2b1fc8dcc2e2f7c0aef1980ee91a93c.svg)
 
 在 Self-hosted 下，Brain **关闭本地 shell/FS 实执行**，把相关工具注册为外化 schema；模型一旦 `tool_use`，事件落库并进入挂起/排队，由用户侧 Worker 持 Environment Key **出站** poll → 管理本地工作目录并执行，或接入客户自有沙箱 → 回传 `user.tool_result` 续跑。这与 Cloud Sandbox「Brain 主动打沙箱 API」正好相反：**执行发起权在用户侧；是否使用以及如何管理沙箱，也由客户侧实现决定**。
@@ -413,4 +353,3 @@ AgentScope 2.0 定位面向企业级分布式场景，它既可以做分布式 A
 + 文档：[https://java.agentscope.io](https://java.agentscope.io)
 + GitHub：[https://github.com/agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
 + AgentScope Builder：[https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service)
-

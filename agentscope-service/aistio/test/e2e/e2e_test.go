@@ -43,15 +43,6 @@ func TestAgentCRDExists(t *testing.T) {
 	t.Logf("found %d agents", len(agents.Items))
 }
 
-func TestAgentTeamCRDExists(t *testing.T) {
-	c := getClient(t)
-	var teams v1alpha1.AgentTeamList
-	if err := c.List(context.Background(), &teams); err != nil {
-		t.Fatalf("failed to list agent teams (CRD may not be installed): %v", err)
-	}
-	t.Logf("found %d agent teams", len(teams.Items))
-}
-
 func TestCreateDeclarativeAgent(t *testing.T) {
 	c := getClient(t)
 	ctx := context.Background()

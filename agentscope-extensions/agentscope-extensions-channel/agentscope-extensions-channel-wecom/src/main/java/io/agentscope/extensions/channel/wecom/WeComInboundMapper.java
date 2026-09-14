@@ -68,7 +68,17 @@ public final class WeComInboundMapper {
             if (fromUser == null || fromUser.isBlank() || content == null) {
                 return Optional.empty();
             }
-            Msg msg = Msg.builder().role(MsgRole.USER).name(fromUser).textContent(content).build();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .name(fromUser)
+                            .textContent(content)
+                            .metadata(
+                                    java.util.Map.of(
+                                            "channelMessageId",
+                                            java.util.Objects.toString(
+                                                    textValue(root, "MsgId"), "")))
+                            .build();
             Peer peer = new Peer(PeerKind.DIRECT, fromUser);
             return Optional.of(
                     InboundMessage.builder(channelId, peer, List.of(msg))

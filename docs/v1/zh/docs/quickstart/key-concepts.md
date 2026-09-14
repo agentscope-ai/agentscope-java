@@ -1,4 +1,6 @@
-# 核心概念
+---
+title: 核心概念
+---
 
 本章从工程实践的角度介绍 AgentScope 中的核心概念，帮助你理解框架的设计理念。
 
@@ -189,7 +191,7 @@ ReActAgent agent = ReActAgent.builder()
 Msg response = agent.call(userMsg).block();
 ```
 
-> 详细配置请参考 [创建 ReAct 智能体](agent.md)。
+> 详细配置请参考 [创建 ReAct 智能体](/v1/zh/docs/quickstart/agent)。
 
 ---
 
@@ -233,7 +235,7 @@ Memory 管理对话历史，`ReActAgent` 会自动：
 - 将智能体响应加入记忆
 - 在推理时读取记忆作为上下文
 
-默认使用 `InMemoryMemory`（内存存储）。如需跨会话持久化，请参考 [状态管理](../task/state.md)。
+默认使用 `InMemoryMemory`（内存存储）。如需跨会话持久化，请参考 [状态管理](/v1/zh/docs/task/state)。
 
 ---
 
@@ -317,7 +319,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-> 详细用法请参考 [Hook 系统](../task/hook.md)。
+> 详细用法请参考 [Hook 系统](/v1/zh/docs/task/hook)。
 
 ---
 
@@ -373,7 +375,7 @@ responseMono.subscribe(response ->
 
 ## 下一步
 
-- [创建 ReAct 智能体](agent.md) - 完整的智能体创建教程
-- [工具系统](../task/tool.md) - 深入了解工具的高级用法
-- [Hook 系统](../task/hook.md) - 自定义智能体行为
-- [模型集成](../task/model.md) - 接入不同的 LLM 提供商
+- [创建 ReAct 智能体](/v1/zh/docs/quickstart/agent) - 完整的智能体创建教程
+- [工具系统](/v1/zh/docs/task/tool) - 深入了解工具的高级用法
+- [Hook 系统](/v1/zh/docs/task/hook) - 自定义智能体行为
+- [模型集成](/v1/zh/docs/task/model) - 接入不同的 LLM 提供商

@@ -123,8 +123,13 @@ class McpServerRegistrarTest {
         Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
         when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
         when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
+        var discoveredTool = mock(io.modelcontextprotocol.spec.McpSchema.Tool.class);
+        when(discoveredTool.name()).thenReturn("search");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(discoveredTool)));
         when(toolkit.registration()).thenReturn(registration);
         when(registration.mcpClient(wrapper)).thenReturn(registration);
+        when(registration.enableTools(List.of("search"))).thenReturn(registration);
         List<McpServerRegistrationResult> results = new ArrayList<>();
 
         try (MockedStatic<McpClientBuilder> builders = mockStatic(McpClientBuilder.class)) {
@@ -139,6 +144,7 @@ class McpServerRegistrarTest {
         assertEquals("healthy", result.serverName());
         assertEquals("stdio", result.transport());
         assertNull(result.cause());
+        verify(registration).enableTools(List.of("search"));
         verify(registration).apply();
         verify(wrapper, never()).close();
     }
@@ -157,8 +163,13 @@ class McpServerRegistrarTest {
         IllegalArgumentException closeFailure = new IllegalArgumentException("close failure");
         when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
         when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
+        var discoveredTool = mock(io.modelcontextprotocol.spec.McpSchema.Tool.class);
+        when(discoveredTool.name()).thenReturn("search");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(discoveredTool)));
         when(toolkit.registration()).thenReturn(registration);
         when(registration.mcpClient(wrapper)).thenReturn(registration);
+        when(registration.enableTools(List.of("search"))).thenReturn(registration);
         doThrow(registrationFailure).when(registration).apply();
         doThrow(closeFailure).when(wrapper).close();
         List<McpServerRegistrationResult> results = new ArrayList<>();
@@ -176,6 +187,24 @@ class McpServerRegistrarTest {
         assertEquals(1, registrationFailure.getSuppressed().length);
         assertSame(closeFailure, registrationFailure.getSuppressed()[0]);
         verify(wrapper).close();
+    }
+
+    @Test
+    void requiredFailure_reportsListenerBeforeAbortingBootstrap() {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("unsupported");
+        config.setRequired(true);
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                McpConnectionException.class,
+                () ->
+                        McpServerRegistrar.register(
+                                new Toolkit(), Map.of("required", config), results::add));
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.FAILED, results.get(0).status());
+        assertEquals("required", results.get(0).serverName());
     }
 
     @Test

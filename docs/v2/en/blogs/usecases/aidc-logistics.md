@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: 'AIDC Logistics: Enterprise Agent Development Practice'
 ---
-
-# From Configuration-Driven to Business-Native: Enterprise-Grade Agent Development Practices with AgentScope
 
 ## 01 Background
 
@@ -918,7 +916,7 @@ Beyond the lightweight-level creation design of `createAgent()`, the customizati
 
 The complete lifecycle performance profile table summarizes the latency and DB operations of each stage: `createAgent` → `hasMemory` → `onEnter` → `saveAgent` → `removeSession`.
 
-These four methods together constitute the lightweight runtime of the finance agent: `createAgent` solves lightweight creation (< 1ms, zero DB), `hasMemory` solves lightweight probing (index hit), `saveAgent` solves lightweight persistence (incremental writes), `removeSession` solves lightweight cleanup (batch deletion).
+These four methods together constitute the lightweight runtime of the finance agent: `createAgent` solves lightweight creation (&lt; 1ms, zero DB), `hasMemory` solves lightweight probing (index hit), `saveAgent` solves lightweight persistence (incremental writes), `removeSession` solves lightweight cleanup (batch deletion).
 
 ##### 5.1.4.3 Engineering-Grade Human in the Loop (SPI3)
 

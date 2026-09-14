@@ -44,10 +44,12 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -87,6 +89,13 @@ class ReActAgentPerSessionStateTest {
                 .model(new NoopModel())
                 .stateStore(store)
                 .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static int slotVersionCount(ReActAgent agent) throws Exception {
+        Field field = ReActAgent.class.getDeclaredField("slotVersions");
+        field.setAccessible(true);
+        return ((Map<String, Long>) field.get(agent)).size();
     }
 
     @Test
@@ -193,6 +202,22 @@ class ReActAgentPerSessionStateTest {
 
         assertNotSame(target, agent.getAgentState("u1", "sessA"));
         assertSame(other, agent.getAgentState("u1", "sessB"));
+    }
+
+    @Test
+    @DisplayName("clearStateCache evicts optimistic-concurrency versions with session caches")
+    void clearStateCacheEvictsSlotVersions() throws Exception {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+
+        agent.getAgentState("u1", "sessA");
+        agent.getAgentState("u1", "sessB");
+        assertEquals(2, slotVersionCount(agent));
+
+        agent.clearStateCache("u1", "sessA");
+        assertEquals(1, slotVersionCount(agent));
+
+        agent.clearStateCache();
+        assertEquals(0, slotVersionCount(agent));
     }
 
     @Test

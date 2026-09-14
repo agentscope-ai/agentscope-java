@@ -1,4 +1,6 @@
-# Text-to-Speech (TTS) 语音合成
+---
+title: Text-to-Speech (TTS) 语音合成
+---
 
 AgentScope Java 提供了完整的 TTS 能力支持，让 Agent 不仅能思考和回复，还能开口说话。相比于纯文本的场景，语音是更自然的交互方式，适用于 智能客服、车载助手，以及边生成边朗读的实时对话场景。
 
@@ -203,6 +205,6 @@ Msg response = agent.call(Msg.builder().textContent("请用语音说一句'欢�
 |------|------|--------|------|
 | ttsModel | DashScopeRealtimeTTSModel | - | TTS 模型（必需） |
 | audioPlayer | AudioPlayer | null | 本地播放器（可选） |
-| audioCallback | Consumer<AudioBlock> | null | 音频回调（可选） |
+| audioCallback | `Consumer<AudioBlock>` | null | 音频回调（可选） |
 | realtimeMode | boolean | true | 是否启用实时模式 |
 | autoStartPlayer | boolean | true | 是否自动启动播放器 |
