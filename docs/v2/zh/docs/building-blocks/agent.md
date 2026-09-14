@@ -613,8 +613,12 @@ ReActAgent.builder()
         .model("dashscope:qwen-plus")
         .maxRetries(3)                              // 模型调用失败时自动重试
         .fallbackModel("dashscope:qwen-max")        // 主模型连续失败后切换到备用模型
+        .failoverListener((primary, error) ->       // 观察切换：哪个模型失败、因何失败
+                metrics.recordFailover(primary.getModelName(), error))
         .build();
 ```
+
+failover 监听器在切换现场同步回调并携带原始错误——这是切换唯一的进程内信号，主模型的错误不会到达事件流或中间件。实现须非阻塞、线程安全；实现抛出的异常仅记录日志，不影响切换。
 
 ### 技能系统（Skills）
 
