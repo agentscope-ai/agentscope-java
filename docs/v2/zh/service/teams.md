@@ -1,10 +1,28 @@
 ---
-title: "Teams：组织协作角色"
+title: "Team：概览与创建"
 ---
 
-[English](/v2/en/service/teams)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 **DESIGN → Teams** 把多个 Agent 组织成一个可分派工作的团队。Lead 负责理解目标、选择成员和汇总结果；成员提供专项能力。需要固定顺序和分支规则时选择 [Workflow](/v2/zh/service/workflows)。
+
+首次使用请先按[操作指南](/v2/zh/service/create-team)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。
+
+## 本章节
+
+- [协作用法：委派与交付](/v2/zh/service/team-collaboration)
+- [角色、成员与策略参数](/v2/zh/service/team-configuration)
+- [工作原理与结果收敛](/v2/zh/service/team-execution)
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/teams.png" alt="创建 Team 时选择 Leader 和成员" />
+</Frame>
+
+填写职责后，在 **Leader Agent** 中选择统一接收任务的 Agent，在 **Additional members** 中选择可协作成员。需要进一步约束委派行为时，再展开 **Advanced coordination instructions**。
 
 ## 建立第一个团队
 
