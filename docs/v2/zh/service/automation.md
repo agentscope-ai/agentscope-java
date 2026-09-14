@@ -1,10 +1,27 @@
 ---
-title: "Automations：按计划与事件执行"
+title: "自动化任务：计划与 Webhook"
 ---
 
-[English](/v2/en/service/automation)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Automation 把“何时触发”和“执行什么工作”保存为一条可复用规则。适合日报、定期检查和外部事件处理。需要固定多步骤拓扑时使用 [Workflow](/v2/zh/service/workflows)；Automation 主要负责触发 Agent 或 Team。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/automation.png" alt="Automation 的执行说明和触发配置" />
+</Frame>
+
+在编辑窗口中先确认 **Runbook** 和执行 Agent，再选择输出方式、完成策略与触发时间。核对时区后保存；回到详情页使用 **Run now** 检查首次执行。
+
+### 核对触发计划
+
+<Frame caption="每周一上午 09:00，Asia/Shanghai；预览显示接下来的触发时间。">
+  <img src="/imgs/service/automation-schedule.png" alt="Automation 的 Cron、时区和下次触发预览" />
+</Frame>
+
 
 ## 创建工作日报
 
@@ -45,6 +62,10 @@ curl --fail-with-body "$AUTOMATION_WEBHOOK_URL" \
 这些环境变量由你填写为详情中的值。重传同一事件使用相同 key 和请求内容；不同事件使用新 key。事件筛选填写 `build.completed` 等名称，留空接受全部事件。JSON 内的 `event` 字段可以指定事件类型。
 
 轮换 secret 后同步更新发送方。标准第三方 webhook 不一定能发送该认证头，必要时使用你管理的适配服务转换请求。
+
+测试 webhook 前启用规则和对应 trigger；手工 Test run 可用于尚未启用的规则，两者的启用条件不同。事件载荷会作为 `Trigger data` 附到任务说明中，Runbook 应明确哪些字段是证据、缺少哪些资料时需要报告未知。载荷中的地址不会自动赋予 Agent 读取能力。
+
+需要把 CI 事件用于研发闭环时，参考[全 Hosted 团队案例](/v2/zh/service/cases/sdlc-team)的事件桥接扩展，明确仓库、PR、提交和原工作的关联；收到事件不等于原 Team 已恢复执行。
 
 ## 排查与重新执行
 

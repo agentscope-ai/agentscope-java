@@ -1,10 +1,22 @@
 ---
-title: "Inbox：通知、审批与验收"
+title: "控制台信箱：通知、审批与验收"
 ---
 
-[English](/v2/en/service/inbox)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Inbox 汇集与你相关的工作更新、审批和结果验收。每天先处理需要你作出决定的事项，再阅读普通通知。
+
+从[控制台 Issue](/v2/zh/service/issues)发起工作后，在这里处理与你相关的反馈。应用侧通过[SSE 与状态接口](/v2/zh/service/sse-events)接收执行反馈；需要人工验收的工作仍要按其完成策略处理。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/inbox.png" alt="Inbox 中的待验收通知与关联 Issue" />
+</Frame>
+
+先在通知列表中选择需要处理的条目，再在右侧阅读关联 Issue 的说明和交付结果。阅读通知与完成验收是两件事；检查结果后再使用验收操作。
 
 ## 找到需要处理的消息
 
@@ -36,3 +48,5 @@ Chat 内的工具确认由相应会话与运行时处理，不要假设所有交
 遇到无权限时联系该空间或工作的所有者。管理员账号也不应通过更换凭据绕过私有工作授权。
 
 下一步：[Automations](/v2/zh/service/automation) · [账号与权限](/v2/zh/service/access)。
+
+练习验收可使用[研发闭环案例](/v2/zh/service/cases/sdlc-team)：核对最终提交、实际测试、GitHub Review 和 CI，再决定是否接受交付。Service 验收与 GitHub Approve 分别记录。

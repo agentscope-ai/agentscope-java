@@ -1,10 +1,21 @@
 ---
-title: "Hosted Agents: connect your Coding Agent"
+title: "Hosted Agent: overview and usage"
 ---
 
-[简体中文](/v2/zh/service/hosted-agent)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 A Hosted Agent runs a Coding Agent installed on your machine or server. Service manages work, scheduling and collaboration records; Runtime Host starts the provider locally and reports results. You manage the provider account, models and tools.
+
+Start with the [practical guide](/v2/en/service/connect-hosted-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
+
+## In this chapter
+
+- [Install and connect Runtime Host](/v2/en/service/runtime-host)
+- [Host and Runtime settings](/v2/en/service/hosted-agent-configuration)
+- [Providers and capability differences](/v2/en/service/hosted-agent-providers)
+- [Execution and recovery](/v2/en/service/hosted-agent-execution)
 
 ## Prepare the machine
 
