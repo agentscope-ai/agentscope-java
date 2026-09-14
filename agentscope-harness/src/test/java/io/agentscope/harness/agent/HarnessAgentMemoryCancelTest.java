@@ -153,13 +153,94 @@ class HarnessAgentMemoryCancelTest {
         }
     }
 
+    @Test
+    @Timeout(90)
+    void closeOfOneAgentLeavesAnotherLiveAgentsTaskRunning() throws Exception {
+        Path workspaceA = workspace.resolve("agent-a");
+        Path workspaceB = workspace.resolve("agent-b");
+        Files.createDirectories(workspaceA);
+        Files.createDirectories(workspaceB);
+
+        CountDownLatch aStarted = new CountDownLatch(1);
+        CountDownLatch aCancelled = new CountDownLatch(1);
+        CountDownLatch bStarted = new CountDownLatch(1);
+        CountDownLatch bCancelled = new CountDownLatch(1);
+
+        HarnessAgent agentA = buildAgent(workspaceA, cancellingModel(aStarted, aCancelled));
+        HarnessAgent agentB = buildAgent(workspaceB, cancellingModel(bStarted, bCancelled));
+        boolean aClosed = false;
+        boolean bClosed = false;
+        try {
+            // Distinct user ids on purpose: with the default IsolationScope.USER, flushes of
+            // the same user are serialised, so the second agent's flush would otherwise queue
+            // behind the first agent's hung one and never start.
+            agentA.call(
+                            userMsg("remember: deploys happen on Fridays"),
+                            RuntimeContext.builder()
+                                    .userId("u-memory-live-a")
+                                    .sessionId("s-memory-live-a")
+                                    .build())
+                    .block();
+            agentB.call(
+                            userMsg("remember: releases happen on Mondays"),
+                            RuntimeContext.builder()
+                                    .userId("u-memory-live-b")
+                                    .sessionId("s-memory-live-b")
+                                    .build())
+                    .block();
+
+            assertTrue(
+                    aStarted.await(10, TimeUnit.SECONDS),
+                    "the first agent's background memory model call must have been started");
+            assertTrue(
+                    bStarted.await(10, TimeUnit.SECONDS),
+                    "the second agent's background memory model call must have been started");
+
+            agentA.close();
+            aClosed = true;
+
+            assertTrue(
+                    aCancelled.await(15, TimeUnit.SECONDS),
+                    "close() must cancel the closed agent's own in-flight memory task");
+            assertFalse(
+                    bCancelled.await(2, TimeUnit.SECONDS),
+                    "closing one agent must not cancel another live agent's in-flight memory"
+                            + " task; that is the scoping guarantee the per-agent owner exists"
+                            + " for");
+
+            agentB.close();
+            bClosed = true;
+
+            assertTrue(
+                    bCancelled.await(15, TimeUnit.SECONDS),
+                    "closing the second agent must cancel its own in-flight memory task");
+            assertTrue(
+                    MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS),
+                    "once both agents are closed no memory background task may remain in flight");
+        } finally {
+            if (!aClosed) {
+                agentA.close();
+            }
+            if (!bClosed) {
+                agentB.close();
+            }
+            MemoryBackgroundTasks.cancelAll();
+            MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS);
+            LocalPeriodicGate.clearForTests();
+        }
+    }
+
     private HarnessAgent buildAgent(Model memoryModel) {
+        return buildAgent(workspace, memoryModel);
+    }
+
+    private HarnessAgent buildAgent(Path agentWorkspace, Model memoryModel) {
         return HarnessAgent.builder()
                 .name("memory-agent")
                 .model(stubModel("ok"))
                 .memory(MemoryConfig.builder().model(memoryModel).build())
-                .workspace(workspace)
-                .abstractFilesystem(new LocalFilesystem(workspace))
+                .workspace(agentWorkspace)
+                .abstractFilesystem(new LocalFilesystem(agentWorkspace))
                 .build();
     }
 
@@ -176,6 +257,24 @@ class HarnessAgentMemoryCancelTest {
             @Override
             public String getModelName() {
                 return "hanging-memory-model";
+            }
+        };
+    }
+
+    private static Model cancellingModel(CountDownLatch started, CountDownLatch cancelled) {
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                started.countDown();
+                // Never emits [DONE]; counts down only when the subscription is cancelled, so
+                // the test can tell "still running" apart from "cancelled".
+                return Flux.<ChatResponse>never().doOnCancel(cancelled::countDown);
+            }
+
+            @Override
+            public String getModelName() {
+                return "cancelling-memory-model";
             }
         };
     }
