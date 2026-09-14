@@ -16,18 +16,23 @@
 package io.agentscope.extensions.aistio.transport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -117,6 +122,152 @@ class HttpSelfRegistrationTest {
             return ControlPlaneHttpClient.mapper().createObjectNode();
         }
         return ControlPlaneHttpClient.mapper().readTree(bytes);
+    }
+
+    /**
+     * Locks the close()-during-re-register-window branch: after a heartbeat failure
+     * clears {@code registered} (same as the 404 / exception paths inside
+     * heartbeatSafe), {@code close()} must still send the control-plane DELETE
+     * instead of skipping it and leaking the instance. The window is forced
+     * deterministically via reflection so the test does not depend on runner
+     * timing (which is what made it flaky on loaded CI runners).
+     */
+    @Test
+    void closeStillDeletesWhenHeartbeatCycleClearedRegisteredFlag() throws Exception {
+        String durableId = "50b14458-e59b-4f53-bf51-bb96b7e4a1af";
+        CountDownLatch heartbeat = new CountDownLatch(1);
+        CountDownLatch deleted = new CountDownLatch(1);
+        AtomicReference<JsonNode> deleteBody = new AtomicReference<>();
+
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/agent-registrations",
+                exchange -> {
+                    readJson(exchange);
+                    respond(
+                            exchange,
+                            201,
+                            "{\"agent\":{\"id\":\"11111111-1111-1111-1111-111111111111\"},"
+                                + "\"binding\":{\"id\":\"22222222-2222-2222-2222-222222222222\"},"
+                                + "\"instance\":{\"id\":\""
+                                    + durableId
+                                    + "\",\"generation\":7},"
+                                    + "\"registrationCredential\":\"asreg_test\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId + "/heartbeat",
+                exchange -> {
+                    readJson(exchange);
+                    heartbeat.countDown();
+                    respond(exchange, 200, "{\"generation\":7,\"status\":\"ok\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId,
+                exchange -> {
+                    deleteBody.set(readJson(exchange));
+                    deleted.countDown();
+                    respond(exchange, 204, "");
+                });
+        server.start();
+
+        try (HttpSelfRegistration registration = newRegistered(server)) {
+            registration.start();
+            assertTrue(heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
+
+            // Force the exact state heartbeatSafe() leaves behind on a failed
+            // heartbeat (404 / exception): registered cleared, identity still set.
+            Field registeredField = HttpSelfRegistration.class.getDeclaredField("registered");
+            registeredField.setAccessible(true);
+            ((AtomicBoolean) registeredField.get(registration)).set(false);
+
+            // close() must claim the surviving identity and DELETE it anyway
+            registration.close();
+        }
+        assertTrue(
+                deleted.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS),
+                "close() must not skip the DELETE when `registered` was cleared by a"
+                        + " heartbeat re-register cycle");
+        assertEquals(7, deleteBody.get().path("generation").asLong());
+        server.stop(0);
+    }
+
+    /**
+     * Lifecycle is single-valued: after {@code close()}, {@code start()} is refused
+     * (a restart would replay the registration credential of a deleted instance)
+     * and {@code identity()} no longer reports the forgotten identity.
+     */
+    @Test
+    void startAfterCloseIsRejectedAndIdentityIsCleared() throws Exception {
+        String durableId = "50b14458-e59b-4f53-bf51-bb96b7e4a1af";
+        CountDownLatch heartbeat = new CountDownLatch(1);
+        CountDownLatch deleted = new CountDownLatch(1);
+
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/api/v1/agent-registrations",
+                exchange -> {
+                    readJson(exchange);
+                    respond(
+                            exchange,
+                            201,
+                            "{\"agent\":{\"id\":\"11111111-1111-1111-1111-111111111111\"},"
+                                + "\"binding\":{\"id\":\"22222222-2222-2222-2222-222222222222\"},"
+                                + "\"instance\":{\"id\":\""
+                                    + durableId
+                                    + "\",\"generation\":7},"
+                                    + "\"registrationCredential\":\"asreg_test\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId + "/heartbeat",
+                exchange -> {
+                    readJson(exchange);
+                    heartbeat.countDown();
+                    respond(exchange, 200, "{\"generation\":7,\"status\":\"ok\"}");
+                });
+        server.createContext(
+                "/api/v1/dataplanes/" + durableId,
+                exchange -> {
+                    deleted.countDown();
+                    respond(exchange, 204, "");
+                });
+        server.start();
+
+        HttpSelfRegistration registration = newRegistered(server);
+        try {
+            registration.start();
+            assertTrue(heartbeat.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
+            assertNotNull(registration.identity(), "identity should be present while registered");
+        } finally {
+            registration.close();
+        }
+        assertTrue(
+                deleted.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS),
+                "close() must send the control-plane DELETE");
+        assertNull(registration.identity(), "identity must be cleared once the instance is closed");
+        assertThrows(
+                IllegalStateException.class,
+                registration::start,
+                "start() after close() must be refused, not replay the old credential");
+        server.stop(0);
+    }
+
+    /** Build a registration bound to the given local test server. */
+    private static HttpSelfRegistration newRegistered(HttpServer server) {
+        String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+        return new HttpSelfRegistration(
+                endpoint,
+                "secret-token",
+                "",
+                "reviewer",
+                "tenant-a",
+                "namespace-a",
+                "runtime-instance-key",
+                "http://127.0.0.1:9191",
+                "agentscope-java",
+                "agentscope",
+                3,
+                List.of("sessions"),
+                20);
     }
 
     private static void respond(HttpExchange exchange, int status, String body) throws IOException {
