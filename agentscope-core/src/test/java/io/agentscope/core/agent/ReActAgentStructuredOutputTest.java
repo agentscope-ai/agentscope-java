@@ -43,6 +43,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -864,6 +865,84 @@ class ReActAgentStructuredOutputTest {
 
         // The prompt strategy must NOT set tool_choice.
         assertNull(mockModel.getLastOptions().getToolChoice());
+    }
+
+    /** Strategy-B force reminders are replaced, not stacked, across forced retries. */
+    @Test
+    @DisplayName("Replaces the prompt force reminder on each retry instead of stacking copies")
+    void testStructuredOutputPromptReminderReplacedNotStacked() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+        List<Integer> reminderCounts = new CopyOnWriteArrayList<>();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            reminderCounts.add(
+                                    (int)
+                                            countTextOccurrences(
+                                                    msgs,
+                                                    "You MUST call the `generate_response`"
+                                                            + " tool"));
+                            if (n < 2) {
+                                return List.of(textResponse("msg_" + n, "Plain text answer."));
+                            }
+                            return List.of(structuredToolResponse("msg_" + n, toolInput));
+                        });
+        mockModel.setSupportsToolChoiceSpecific(false);
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getStructuredData(WeatherResponse.class));
+
+        // Round 0 sees no reminder; rounds 1-2 each see exactly one (replaced, not stacked).
+        assertEquals(3, mockModel.getCallCount());
+        assertEquals(List.of(0, 1, 1), reminderCounts);
+    }
+
+    /** After give-up, stale force reminders are stripped from durable context; banner stays. */
+    @Test
+    @DisplayName("Strips force reminders from durable context after giving up, keeps mode banner")
+    void testStructuredOutputGiveUpStripsForceReminders() {
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        textResponse(
+                                                "msg_" + calls.getAndIncrement(),
+                                                "I'll just answer in plain text.")));
+        mockModel.setSupportsToolChoiceSpecific(false);
+
+        ReActAgent agent = buildWeatherAgent(mockModel);
+
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        // No structured data; the loop gave up rather than deadlocking.
+        assertFalse(responseMsg.hasStructuredData());
+        // 1 initial round + 3 forced retries = 4 reasoning calls, then give up.
+        assertEquals(4, mockModel.getCallCount());
+
+        // Follow-up normal call: its input must contain no stale force reminder, while the
+        // persistent enter banner is kept and an exit banner closes the mode.
+        Msg followUp = agent.call(weatherInput()).block();
+        assertNotNull(followUp);
+        assertEquals(
+                0,
+                countTextOccurrences(
+                        mockModel.getLastMessages(), "You MUST call the `generate_response` tool"));
+        assertEquals(
+                1,
+                countTextOccurrences(
+                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode is now active"));
+        assertEquals(
+                1,
+                countTextOccurrences(
+                        mockModel.getLastMessages(), "STRUCTURED OUTPUT mode has ended"));
     }
 
     /** Injects enter/exit reminders once per mode transition, without duplication. */

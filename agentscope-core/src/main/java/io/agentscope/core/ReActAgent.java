@@ -1408,6 +1408,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedThinking);
                                             }
                                             scope.state.contextMutable().add(out);
+                                        } else if (scope.soTool != null) {
+                                            // Gave up: the model never called generate_response.
+                                            // The turn's interaction stays in durable state, so
+                                            // the persistent enter banner and mode flag are kept,
+                                            // but the transient force reminders are stripped —
+                                            // they direct the model to call a tool that is not
+                                            // registered on later normal-mode turns.
+                                            removeSoToolForceReminders(scope.state);
+                                            log.debug(
+                                                    "Structured output not completed; stripped"
+                                                            + " force reminders (agent={}#{})",
+                                                    getAgentId(),
+                                                    getName());
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
@@ -1479,6 +1492,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return !results.isEmpty()
                 && results.stream()
                         .allMatch(tr -> STRUCTURED_OUTPUT_TOOL_NAME.equals(tr.getName()));
+    }
+
+    /**
+     * Remove previously injected structured-output force reminders (messages marked with {@link
+     * MessageMetadataKeys#STRUCTURED_OUTPUT_REMINDER}) from the conversation context. Called
+     * before injecting a fresh one so forced retries replace — rather than stack on — earlier
+     * reminders, including leftovers persisted by a previous call that gave up.
+     */
+    private void removeSoToolForceReminders(AgentState agentState) {
+        agentState.contextMutable().removeIf(this::isSoToolForceReminder);
+    }
+
+    /** Whether the message is a transient force reminder built by {@link
+     * #buildSoToolForceReminder}. */
+    private boolean isSoToolForceReminder(Msg msg) {
+        Map<String, Object> metadata = msg.getMetadata();
+        return metadata != null
+                && Boolean.TRUE.equals(
+                        metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
     }
 
     private ChatUsage collectAggregatedUsage(AgentState agentState) {
@@ -2513,6 +2545,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (soForceToolChoiceCount > 0
                     && soTool != null
                     && !model.supportsToolChoiceSpecific()) {
+                // Replace instead of append: strip any earlier reminder (from a previous retry,
+                // or a previous call that gave up) so at most one is in context at a time.
+                removeSoToolForceReminders(state);
                 state.contextMutable().add(buildSoToolForceReminder());
                 log.debug(
                         "Forcing '{}' via prompt reminder (strategy B), retry {} (agent={}#{})",
