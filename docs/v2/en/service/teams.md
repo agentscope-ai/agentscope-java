@@ -1,10 +1,28 @@
 ---
-title: "Teams: organize collaborative roles"
+title: "Team: overview and creation"
 ---
 
-[简体中文](/v2/zh/service/teams)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 **DESIGN → Teams** groups Agents into an assignable team. The Lead interprets the objective, chooses members and combines results. Members contribute specialist capabilities. Choose a [Workflow](/v2/en/service/workflows) for fixed ordering and branching rules.
+
+Start with the [practical guide](/v2/en/service/create-team) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
+
+## In this chapter
+
+- [Collaboration: delegation and delivery](/v2/en/service/team-collaboration)
+- [Roles, members and policy](/v2/en/service/team-configuration)
+- [Coordination and completion](/v2/en/service/team-execution)
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/teams.png" alt="Team creation with leader and member selection" />
+</Frame>
+
+After describing the team’s purpose, select its entry point in **Leader Agent** and collaborators in **Additional members**. Expand **Advanced coordination instructions** when you need to define delegation rules.
 
 ## Create a team
 

@@ -2,30 +2,22 @@
 title: "场景案例"
 ---
 
-[English](/v2/en/service/usecases)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
-本栏目预留完整场景教程。以下案例正在规划，尚未提供端到端案例实现；每篇将包含样例输入、环境准备、配置步骤、交付物、验收标准与故障处理，便于完整复现。
+通过三个完整业务场景，学习如何把 Agent 创建、应用接入、Team 协作、任务反馈和人工验收连接起来。选择与你的使用方式接近的一条主线开始。
 
-## 软件研发协作
+| 场景 | 团队组成 | 完整交付 |
+| --- | --- | --- |
+| [从 GitHub Issue 到 PR 合并](/v2/zh/service/cases/sdlc-team) | 全 Hosted：Leader、开发、Review、QA | 需求分析、实现、PR、CI、返工、Approve 与合并记录 |
+| [订单履约异常处理](/v2/zh/service/cases/order-fulfillment) | 全 External：多个 AgentScope 业务应用 | 跨系统调查、处置方案、审批、执行与结果核对 |
+| [从客户需求到售前方案](/v2/zh/service/cases/presales-team) | Managed 起步，扩展 External 与 Hosted | 有来源的方案、PoC 计划、复核与混合实施 |
 
-计划使用 Hosted 实施者、Managed 审阅者与 Team Lead，从缺陷 Issue 开始，展示代码修改、检查结果、Artifact 与人工验收。验收重点是需求与修改可追溯、失败可恢复、审阅有证据。
+## 如何使用
 
-现在可以先实践：[Hosted Agent](/v2/zh/service/hosted-agent)、[Team 协作](/v2/zh/service/team-collaboration)。
+每篇都包含角色、准备条件、操作步骤、输入资料、失败分支和验收方法。研发案例提供 Java 起点、检查程序、Issue 和 CI 模板；订单案例提供固定业务数据和 SDK 接入片段，业务工具需要开发或对接；售前案例提供客户需求和可直接录入 Memory 的知识资料。
 
-## 资料调研与报告
+先按[快速开始](/v2/zh/service/first-session)验证 Service 和单个 Agent，再搭建完整团队。GitHub 命令会创建或修改练习仓库中的对象，执行前配置相应身份与授权范围；企业数据和客户资料使用虚构样例。
 
-计划提供一组公开样例资料，用 Memory 和 Workspace 支持检索、来源比对及报告汇总，展示不确定性和缺失材料处理。预期交付包括带来源的报告、证据索引和验收清单。
-
-现在可以先实践：[第一次交付](/v2/zh/service/first-session)、[Managed Agent](/v2/zh/service/managed-agent)。
-
-## 定时报表与事件响应
-
-计划以定时触发和 webhook 输入创建日报 Issue，覆盖去重、积压、失败重试、订阅和验收。验收重点是同一事件不重复产生副作用，异常时能找到 delivery 与 run。
-
-现在可以先实践：[Automations](/v2/zh/service/automation)、[Inbox](/v2/zh/service/inbox)。
-
-## 业务系统接入
-
-计划提供调用 Endpoint 的示例应用，覆盖异步 job、多轮 conversation、SSE、凭据轮换与版本切换。使用固定样例输入，明确成功与失败响应的处理方式。
-
-现在可以先实践：[Endpoint](/v2/zh/service/endpoints)、[API 参考](/v2/zh/service/api-reference)。
+Java 样例已验证修复前后检查结果。真实 GitHub、企业系统、模型与团队端到端执行仍需在你的环境验收；样例资料与预期结果不是实跑记录。保留版本、输入、Issue/Run/Invocation ID、代码提交与实际产物，作为后续升级回归依据。

@@ -1,0 +1,30 @@
+import java.util.List;
+
+public class OrderQueryTest {
+    private static int failures;
+    private static final List<OrderQuery.Order> ORDERS = List.of(
+            new OrderQuery.Order("O-1", "pending"),
+            new OrderQuery.Order("O-2", "shipped"),
+            new OrderQuery.Order("O-3", "pending"),
+            new OrderQuery.Order("O-4", "cancelled"));
+
+    private static void check(String name, boolean success) {
+        System.out.println((success ? "PASS " : "FAIL ") + name);
+        if (!success) failures++;
+    }
+
+    public static void main(String[] args) {
+        check("all orders", OrderQuery.query(ORDERS, null, 1, 20).equals(ORDERS));
+        check("filter pending", OrderQuery.query(ORDERS, "pending", 1, 20)
+                .equals(List.of(ORDERS.get(0), ORDERS.get(2))));
+        check("filter then page", OrderQuery.query(ORDERS, "pending", 2, 1)
+                .equals(List.of(ORDERS.get(2))));
+        check("past last page", OrderQuery.query(ORDERS, "pending", 3, 1).isEmpty());
+        boolean rejected = false;
+        try { OrderQuery.query(ORDERS, null, 0, 20); }
+        catch (IllegalArgumentException expected) { rejected = true; }
+        check("invalid page", rejected);
+        System.out.println("5 checks, " + failures + " failures");
+        if (failures != 0) System.exit(1);
+    }
+}
