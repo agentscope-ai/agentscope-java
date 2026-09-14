@@ -18,11 +18,14 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.formatter.StructuredOutputConfigurationException;
 import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
@@ -882,6 +885,70 @@ class ReActAgentStructuredOutputTest {
         MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
         assertNotNull(result);
         assertEquals(42, result.answer);
+    }
+
+    @Test
+    @DisplayName("configuration error (uncompilable schema) propagates without retries or fallback")
+    void testUncompilableSchemaPropagatesAsConfigurationError() {
+        // A schema that fails to compile is a configuration error, not a model-output
+        // problem: it must reach the caller as-is without burning the retry budget on
+        // model calls (previously: maxAttempts calls, then a misleading
+        // StructuredOutputValidationException) and without degrading to the synthetic
+        // tool path (which reuses the same broken schema and would fail the same way).
+        AtomicInteger calls = new AtomicInteger();
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            calls.incrementAndGet();
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_1")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        JsonNode brokenSchema =
+                JsonUtils.getJsonCodec()
+                        .fromJson(
+                                "{\"type\":\"object\",\"properties\":{\"answer\":"
+                                        + "{\"pattern\":\"[\"}}}",
+                                JsonNode.class);
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () -> agent.call(List.of(inputMsg), brokenSchema).block());
+        assertNotNull(ex.getCause(), "compilation failure must be preserved as the cause");
+        assertEquals(
+                1,
+                calls.get(),
+                "configuration error must not be retried and must not degrade to the tool"
+                        + " path");
     }
 
     @Test

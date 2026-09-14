@@ -58,6 +58,7 @@ import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.formatter.FailedAttempt;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.StructuredOutputConfigurationException;
 import io.agentscope.core.formatter.StructuredOutputParseException;
 import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
 import io.agentscope.core.formatter.StructuredOutputUtils;
@@ -1287,6 +1288,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // defeat the documented contract.
                                     return Mono.error(e);
                                 }
+                                if (e instanceof StructuredOutputConfigurationException) {
+                                    // Configuration errors (missing/uncompilable schema)
+                                    // are equally fatal on the synthetic tool path — it
+                                    // reuses the same schema and would fail the same way;
+                                    // degrading would only burn one more model call.
+                                    return Mono.error(e);
+                                }
                                 log.warn(
                                         "Native structured output failed ({}) — falling back to"
                                                 + " synthetic tool path",
@@ -2470,14 +2478,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             + parseFailure.getMessage()));
                             payload = null;
                         } catch (Exception extractionFailure) {
-                            parseErrorMessage = extractionFailure.getMessage();
-                            errors =
-                                    List.of(
-                                            new StructuredOutputValidator.ValidationError(
-                                                    "$",
-                                                    "output is not a valid JSON object: "
-                                                            + extractionFailure.getMessage()));
-                            payload = null;
+                            // Configuration/platform-domain failure (schema compilation,
+                            // registry misconfiguration, an unexpected bug) — not a
+                            // model-output problem: counting it against the retry budget
+                            // and asking the model to fix its answer would bill calls and
+                            // blame the wrong party. Propagate as-is; only failures with
+                            // recovery semantics (the parse path above) enter the retry
+                            // loop.
+                            log.error(
+                                    "Unexpected failure during structured output"
+                                            + " extraction/validation (agent={}, schema={})",
+                                    getName(),
+                                    schema.getName(),
+                                    extractionFailure);
+                            return Mono.error(extractionFailure);
                         }
                         if (errors.isEmpty()) {
                             // Record the guard id only after validation succeeds: a message

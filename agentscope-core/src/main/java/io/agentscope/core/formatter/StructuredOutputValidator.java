@@ -37,6 +37,15 @@ import java.util.List;
  */
 public final class StructuredOutputValidator {
 
+    // Deliberate divergence from ToolValidator's registry (which leaves format assertions
+    // off): the platform-side check on the native path promises strict schema conformance,
+    // so formats are enforced here — per review feedback on this PR. The synthetic-tool
+    // validation can adopt the same strictness in a follow-up; until then the native path
+    // is the stricter of the two by design.
+    //
+    // The registry's built-in cache is keyed by the serialized schema string and is bounded
+    // in practice by class-derived schemas (a small, fixed set per process). Reusing this
+    // helper for dynamically generated schemas would need an explicit cache bound first.
     private static final SchemaRegistry REGISTRY =
             SchemaRegistry.withDefaultDialect(
                     SpecificationVersion.DRAFT_2020_12,
@@ -54,20 +63,38 @@ public final class StructuredOutputValidator {
     /**
      * Validates a model output against a schema.
      *
+     * <p>Failure domains: an output/schema mismatch is reported as validation errors (model
+     * domain — the caller may retry); configuration problems (missing schema, schema
+     * compilation or registry failures) throw {@link StructuredOutputConfigurationException}
+     * instead, so callers never spend retries on a configuration fault.
+     *
      * @param output the parsed model output (JSON object)
      * @param schema the schema to validate against
      * @return the list of validation errors; empty when the output conforms
+     * @throws StructuredOutputConfigurationException when the schema is missing or cannot be
+     *     compiled (configuration error, fail-closed)
      */
     public static List<ValidationError> validate(JsonNode output, JsonSchema schema) {
         // Fail-closed: a missing schema is a configuration error, not a pass.
         if (schema == null || schema.getSchema() == null) {
-            throw new IllegalArgumentException(
+            throw new StructuredOutputConfigurationException(
                     "structured_output_schema_required: schema must not be null");
         }
         if (output == null) {
             return List.of(new ValidationError("$", "output is null"));
         }
-        Schema compiled = REGISTRY.getSchema(canonical(schema.getSchema()));
+        Schema compiled;
+        try {
+            compiled = REGISTRY.getSchema(canonical(schema.getSchema()));
+        } catch (Exception compileFailure) {
+            // A schema that fails to compile is a configuration error: surface it as such
+            // (with the original cause) instead of letting the caller treat it as a
+            // model-output problem.
+            throw new StructuredOutputConfigurationException(
+                    "structured_output_schema_invalid: schema failed to compile — "
+                            + compileFailure.getMessage(),
+                    compileFailure);
+        }
         List<Error> messages = compiled.validate(output);
         if (messages == null || messages.isEmpty()) {
             return List.of();

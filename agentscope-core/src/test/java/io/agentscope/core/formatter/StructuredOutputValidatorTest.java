@@ -17,6 +17,8 @@ package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -127,5 +129,38 @@ class StructuredOutputValidatorTest {
         assertEquals(errors.size(), ex.getErrors().size());
         assertTrue(ex.getMessage().contains("MathResponse"));
         assertTrue(ex.getMessage().contains("steps"));
+    }
+
+    @Test
+    void missingSchemaFailsClosedWithConfigurationException() {
+        // Configuration errors throw a dedicated type so callers can route by failure
+        // domain (never retry, never degrade) — see ReActAgent.reasoningWithOutputValidation.
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () -> StructuredOutputValidator.validate(null, null));
+        assertTrue(ex.getMessage().contains("structured_output_schema_required"));
+    }
+
+    @Test
+    void uncompilableSchemaSurfacesAsConfigurationException() throws Exception {
+        JsonSchema broken =
+                JsonSchema.builder()
+                        .name("broken")
+                        .schema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("answer", Map.of("pattern", "["))))
+                        .build();
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () ->
+                                StructuredOutputValidator.validate(
+                                        MAPPER.readTree("{\"answer\":\"x\"}"), broken));
+        assertTrue(ex.getMessage().contains("structured_output_schema_invalid"));
+        assertNotNull(ex.getCause(), "compilation failure must be preserved as the cause");
     }
 }
