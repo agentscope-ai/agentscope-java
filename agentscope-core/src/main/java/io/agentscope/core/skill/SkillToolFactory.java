@@ -176,14 +176,18 @@ class SkillToolFactory {
         if ("SKILL.md".equals(path)) {
             // An LLM often calls load_skill_through_path for the same skill several
             // times in one batch; re-sending the full SKILL.md burns tokens for
-            // content already in context (#1569). Once the skill is active, answer
-            // with a one-line notice. Specific resource paths below still return
-            // full content, so a model that lost the entry file to compaction can
-            // re-fetch individual resources.
-            if (skillRegistry.isSkillActive(skillId)) {
+            // content already in context (#1569). Key the short-circuit on the entry
+            // content having actually been delivered — NOT on the skill being
+            // active, because loading any resource activates the skill without
+            // ever serving SKILL.md (the not-found message also enumerates resource
+            // paths, so a model can reach a resource first). Specific resource
+            // paths below always return full content, so a model that lost the
+            // entry file to compaction can still re-fetch individual resources.
+            if (skillRegistry.isSkillEntryLoaded(skillId)) {
                 return "Skill '" + skillId + "' is already loaded and active.";
             }
             activateSkill(skillId);
+            skillRegistry.setSkillEntryLoaded(skillId, true);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 

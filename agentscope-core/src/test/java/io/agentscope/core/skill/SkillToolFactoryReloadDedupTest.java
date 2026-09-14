@@ -95,6 +95,39 @@ class SkillToolFactoryReloadDedupTest {
     }
 
     @Test
+    @DisplayName("Loading a resource first must not suppress a later SKILL.md load")
+    void resourceFirstThenSkillMdStillReturnsFullEntry() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("notes.md", "resource body");
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("gamma")
+                        .description("gamma skill")
+                        .skillContent("# Gamma SKILL body")
+                        .resources(resources)
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        // Resource load activates the skill but never delivers SKILL.md: a later
+        // entry load must still return full content, not the dedup notice.
+        callLoadTool(toolkit, skill.getSkillId(), "notes.md");
+
+        String entry = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(
+                entry.contains("Successfully loaded skill"),
+                "Entry load after a resource load returns the full markdown");
+        assertTrue(entry.contains("# Gamma SKILL body"));
+
+        // And only from the second entry load onward does the notice appear.
+        String repeat = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(repeat.contains("is already loaded and active"));
+    }
+
+    @Test
     @DisplayName("Resource paths still return full content once the skill is active")
     void resourcePathsAreNotDeduplicated() {
         Map<String, String> resources = new HashMap<>();

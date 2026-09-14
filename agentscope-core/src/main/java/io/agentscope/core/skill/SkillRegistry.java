@@ -70,6 +70,30 @@ class SkillRegistry {
     }
 
     /**
+     * Returns whether the SKILL.md entry content has been delivered for a skill.
+     *
+     * @param skillId The skill ID (must not be null)
+     * @return true if the entry content has been served to the model
+     */
+    boolean isSkillEntryLoaded(String skillId) {
+        RegisteredSkill registered = registeredSkills.get(skillId);
+        return registered != null && registered.isEntryLoaded();
+    }
+
+    /**
+     * Marks the SKILL.md entry content as delivered for a skill.
+     *
+     * @param skillId The skill ID (must not be null)
+     * @param entryLoaded whether the entry content has been served
+     */
+    void setSkillEntryLoaded(String skillId, boolean entryLoaded) {
+        RegisteredSkill registered = registeredSkills.get(skillId);
+        if (registered != null) {
+            registered.setEntryLoaded(entryLoaded);
+        }
+    }
+
+    /**
      * Sets the activation state of a skill.
      *
      * @param skillId The skill ID (must not be null)

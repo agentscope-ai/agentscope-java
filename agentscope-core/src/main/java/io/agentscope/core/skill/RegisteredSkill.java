@@ -25,6 +25,10 @@ package io.agentscope.core.skill;
 class RegisteredSkill {
     private final String skillId;
     private boolean active; // whether this skill is being used by llm, if using need activate the
+    // Whether the SKILL.md entry content has actually been delivered to the model.
+    // Distinct from `active`: loading any resource activates the skill (#1569), but
+    // only a served SKILL.md means its content is already in context.
+    private boolean entryLoaded;
 
     /**
      * Creates a registered skill.
@@ -34,6 +38,25 @@ class RegisteredSkill {
     public RegisteredSkill(String skillId) {
         this.skillId = skillId;
         this.active = false;
+        this.entryLoaded = false;
+    }
+
+    /**
+     * Marks the SKILL.md entry content as delivered.
+     *
+     * @param entryLoaded whether the entry content has been served
+     */
+    public void setEntryLoaded(boolean entryLoaded) {
+        this.entryLoaded = entryLoaded;
+    }
+
+    /**
+     * Gets whether the SKILL.md entry content has been delivered.
+     *
+     * @return true if the entry content has been served
+     */
+    public boolean isEntryLoaded() {
+        return entryLoaded;
     }
 
     /**
