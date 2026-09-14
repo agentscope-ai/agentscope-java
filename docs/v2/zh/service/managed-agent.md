@@ -1,14 +1,28 @@
 ---
-title: "Managed Agent：托管执行与能力扩展"
+title: "Managed Agent：概览与用法"
 ---
 
-[English](/v2/en/service/managed-agent)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Managed Agent 由 Service 管理 Harness、会话和模型执行。你配置职责、模型与资源，无需为每个 Agent 部署独立应用。适合知识问答、资料处理和使用平台工具完成的工作。
 
+首次使用请先按[操作指南](/v2/zh/service/create-managed-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。
+
+## 本章节
+
+- [参数与模型配置](/v2/zh/service/managed-agent-configuration)
+- [支持的能力与接入类型](/v2/zh/service/managed-agent-capabilities)
+- [工作原理](/v2/zh/service/managed-agent-execution)
+- [Workspace：共享能力定义](/v2/zh/service/workspaces)
+- [Environment：执行位置](/v2/zh/service/environments)
+- [Memory：共享知识](/v2/zh/service/memory)
+- [Vault：工具凭据](/v2/zh/service/vault)
+
 ## 准备并创建
 
-先完成[安装](/v2/zh/service/quickstart)，准备模型凭据和一个可用 [Environment](/v2/zh/service/environments)。创建 Agent 时选择 **AgentScope Managed**，填写 Instructions；Model 可使用默认模型或所配置 provider 的标识。在 Advanced settings 选择环境，保存后用 [Chat](/v2/zh/service/chat) 验证第一轮回复。
+先完成[安装](/v2/zh/service/quickstart)，准备模型凭据和一个可用 [Environment](/v2/zh/service/environments)。创建 Agent 时选择 **AgentScope Managed**，填写 Instructions；Model 可使用默认模型或所配置 provider 的标识。在 Advanced settings 选择环境，保存后用 [Chat](/v2/zh/service/issues#先对话再派发) 验证第一轮回复。
 
 Instructions 示例：
 

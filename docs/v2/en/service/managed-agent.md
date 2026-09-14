@@ -1,14 +1,28 @@
 ---
-title: "Managed Agents: hosted execution and extensions"
+title: "Managed Agent: overview and usage"
 ---
 
-[简体中文](/v2/zh/service/managed-agent)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Service manages a Managed Agent's Harness, Sessions and model execution. Configure its responsibilities, model and resources without deploying a separate application for each Agent. Use it for knowledge work, document processing and tasks supported by platform tools.
 
+Start with the [practical guide](/v2/en/service/create-managed-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
+
+## In this chapter
+
+- [Configuration and models](/v2/en/service/managed-agent-configuration)
+- [Capabilities and integration types](/v2/en/service/managed-agent-capabilities)
+- [Execution model](/v2/en/service/managed-agent-execution)
+- [Workspace: shared definitions](/v2/en/service/workspaces)
+- [Environment: execution location](/v2/en/service/environments)
+- [Memory: shared knowledge](/v2/en/service/memory)
+- [Vault: tool credentials](/v2/en/service/vault)
+
 ## Prepare and create
 
-Complete [installation](/v2/en/service/quickstart), provide model credentials and prepare an [Environment](/v2/en/service/environments). Choose **AgentScope Managed** when creating the Agent, enter Instructions and select a configured model or its default. Choose the Environment in Advanced settings, save and verify a first reply in [Chat](/v2/en/service/chat).
+Complete [installation](/v2/en/service/quickstart), provide model credentials and prepare an [Environment](/v2/en/service/environments). Choose **AgentScope Managed** when creating the Agent, enter Instructions and select a configured model or its default. Choose the Environment in Advanced settings, save and verify a first reply in [Chat](/v2/en/service/issues#discuss-before-assigning).
 
 Example Instructions:
 
