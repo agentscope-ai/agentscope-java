@@ -1,10 +1,20 @@
 ---
-title: "Workflows：设计可重复执行的流程"
+title: "Workflow：多 Agent 流程编排"
 ---
 
-[English](/v2/en/service/workflows)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 **DESIGN → Workflows** 用于有明确步骤、依赖和人工关口的工作。定义保存可编辑草稿；发布生成不可变 revision；每次执行固定一个 revision，因此后续编辑不会改变已有运行的拓扑。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/workflows.png" alt="Workflow 的 Design 页面与步骤关系" />
+</Frame>
+
+在 **Workflow Design** 中检查步骤和依赖，再编辑选中步骤的配置。保存草稿后先校验，再发布版本；**Run Workflow** 使用已发布版本，修改草稿不等于更新已运行的工作。
 
 ## 从一个 Agent 步骤开始
 
