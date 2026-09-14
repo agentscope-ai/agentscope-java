@@ -28,7 +28,6 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -156,7 +155,6 @@ public class MemoryFlushManager {
                         .build());
 
         return model.stream(flushInput, null, null)
-                .timeout(Duration.ofMinutes(2))
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {

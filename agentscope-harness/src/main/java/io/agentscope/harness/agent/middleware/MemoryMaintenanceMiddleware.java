@@ -81,6 +81,13 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
 
+    /**
+     * Owner (the {@code HarnessAgent} this middleware belongs to) used to scope task
+     * registration and cancellation in {@link MemoryBackgroundTasks}. {@code null} for legacy
+     * constructions: tasks are then only reachable via the global {@code cancelAll()}.
+     */
+    private final Object taskOwner;
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
             MemoryConsolidator consolidator,
@@ -94,7 +101,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 sessionRetentionDays,
                 minGap,
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryMaintenanceMiddleware(
@@ -111,7 +119,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 sessionRetentionDays,
                 minGap,
                 isolationScope,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryMaintenanceMiddleware(
@@ -122,6 +131,26 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             Duration minGap,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                consolidator,
+                dailyFileRetentionDays,
+                sessionRetentionDays,
+                minGap,
+                isolationScope,
+                periodicGate,
+                null);
+    }
+
+    public MemoryMaintenanceMiddleware(
+            WorkspaceManager workspaceManager,
+            MemoryConsolidator consolidator,
+            int dailyFileRetentionDays,
+            int sessionRetentionDays,
+            Duration minGap,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            Object taskOwner) {
         this.workspaceManager = workspaceManager;
         this.consolidator = consolidator;
         this.dailyFileRetentionDays = dailyFileRetentionDays;
@@ -129,6 +158,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.taskOwner = taskOwner;
     }
 
     public MemoryMaintenanceMiddleware(
@@ -151,6 +181,13 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
+                            if (MemoryBackgroundTasks.isShutdown(taskOwner)) {
+                                // The owning agent is already closed: release the in-flight
+                                // slot and skip — the maintenance model call must not start
+                                // after close().
+                                MemoryBackgroundTasks.end();
+                                return;
+                            }
                             final Disposable[] holder = new Disposable[1];
                             holder[0] =
                                     Mono.defer(() -> doMaintenance(rc))
@@ -166,7 +203,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                                                             log.warn(
                                                                     "Memory maintenance failed: {}",
                                                                     e.getMessage()));
-                            MemoryBackgroundTasks.register(holder[0]);
+                            MemoryBackgroundTasks.register(taskOwner, holder[0]);
                         });
     }
 

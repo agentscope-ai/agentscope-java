@@ -94,6 +94,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
 
+    /**
+     * Owner (the {@code HarnessAgent} this middleware belongs to) used to scope task
+     * registration and cancellation in {@link MemoryBackgroundTasks}. {@code null} for legacy
+     * constructions: tasks are then only reachable via the global {@code cancelAll()}.
+     */
+    private final Object taskOwner;
+
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
                 workspaceManager,
@@ -101,7 +108,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -115,7 +123,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushPrompt,
                 flushTrigger,
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -130,7 +139,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushPrompt,
                 flushTrigger,
                 isolationScope,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -140,6 +150,24 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                periodicGate,
+                null);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            Object taskOwner) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -148,6 +176,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.taskOwner = taskOwner;
     }
 
     @Override
@@ -202,6 +231,14 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void runFlush(String key, Agent agent, RuntimeContext rc) {
+        if (MemoryBackgroundTasks.isShutdown(taskOwner)) {
+            // The owning agent is already closed: drop this flush, release its in-flight slot,
+            // and keep draining so every remaining queued task releases its slot too, instead
+            // of starting a model call that would outlive the closed agent.
+            MemoryBackgroundTasks.end();
+            drainFlushQueue(key);
+            return;
+        }
         final Disposable[] holder = new Disposable[1];
         holder[0] =
                 Mono.defer(() -> doFlush(agent, rc))
@@ -213,7 +250,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                                     drainFlushQueue(key);
                                 })
                         .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
-        MemoryBackgroundTasks.register(holder[0]);
+        MemoryBackgroundTasks.register(taskOwner, holder[0]);
     }
 
     private void drainFlushQueue(String key) {

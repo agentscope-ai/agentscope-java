@@ -98,4 +98,82 @@ class MemoryBackgroundTasksCancelTest {
         // Must not throw when nothing is registered.
         MemoryBackgroundTasks.cancelAll();
     }
+
+    @Test
+    void ownerScopedCancelLeavesOtherOwnersRunning() {
+        Object agentA = new Object();
+        Object agentB = new Object();
+        AtomicBoolean disposedA = new AtomicBoolean();
+        AtomicBoolean disposedB = new AtomicBoolean();
+        Disposable taskA = trackingDisposable(disposedA);
+        Disposable taskB = trackingDisposable(disposedB);
+        try {
+            MemoryBackgroundTasks.register(agentA, taskA);
+            MemoryBackgroundTasks.register(agentB, taskB);
+            MemoryBackgroundTasks.cancelAll(agentA);
+            assertTrue(disposedA.get(), "closing agent A must cancel A's task");
+            assertFalse(disposedB.get(), "closing agent A must leave agent B's task running");
+        } finally {
+            MemoryBackgroundTasks.unregister(taskA);
+            MemoryBackgroundTasks.unregister(taskB);
+        }
+    }
+
+    @Test
+    void globalCancelAllDisposesOwnerTaggedTasks() {
+        Object agentA = new Object();
+        AtomicBoolean disposed = new AtomicBoolean();
+        Disposable task = trackingDisposable(disposed);
+        MemoryBackgroundTasks.register(agentA, task);
+        MemoryBackgroundTasks.cancelAll();
+        assertTrue(
+                disposed.get(),
+                "the no-arg global cancelAll must also dispose owner-tagged registrations");
+    }
+
+    @Test
+    void registerAfterShutdownDisposesImmediately() {
+        Object agentA = new Object();
+        MemoryBackgroundTasks.shutdown(agentA);
+        AtomicBoolean disposed = new AtomicBoolean();
+        MemoryBackgroundTasks.register(agentA, trackingDisposable(disposed));
+        assertTrue(
+                disposed.get(),
+                "a task registered after its owner shut down must be disposed immediately,"
+                        + " not started");
+    }
+
+    @Test
+    void registerAfterShutdownOfAnotherOwnerIsUnaffected() {
+        Object agentA = new Object();
+        Object agentB = new Object();
+        MemoryBackgroundTasks.shutdown(agentA);
+        AtomicBoolean disposedB = new AtomicBoolean();
+        Disposable taskB = trackingDisposable(disposedB);
+        try {
+            MemoryBackgroundTasks.register(agentB, taskB);
+            assertFalse(
+                    disposedB.get(),
+                    "shutting down agent A must not affect tasks registered by agent B");
+        } finally {
+            MemoryBackgroundTasks.unregister(taskB);
+        }
+    }
+
+    @Test
+    void shutdownAloneDoesNotCancelAlreadyRegisteredTasks() {
+        Object agentA = new Object();
+        AtomicBoolean disposed = new AtomicBoolean();
+        Disposable task = trackingDisposable(disposed);
+        try {
+            MemoryBackgroundTasks.register(agentA, task);
+            MemoryBackgroundTasks.shutdown(agentA);
+            assertFalse(
+                    disposed.get(),
+                    "shutdown only gates future registrations; cancelling in-flight tasks is"
+                            + " cancelAll(Object)'s job");
+        } finally {
+            MemoryBackgroundTasks.unregister(task);
+        }
+    }
 }

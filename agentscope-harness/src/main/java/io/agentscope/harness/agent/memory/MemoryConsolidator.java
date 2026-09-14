@@ -26,7 +26,6 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -191,7 +190,6 @@ public class MemoryConsolidator {
                         .build());
 
         return model.stream(messages, null, null)
-                .timeout(Duration.ofMinutes(2))
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {
