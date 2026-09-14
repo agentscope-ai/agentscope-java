@@ -177,9 +177,15 @@ public interface AbstractFilesystem {
      *
      * <p>The conservative default isolates per context instance: it only reports equal keys for
      * the very same {@code RuntimeContext} and path, which is always safe for backends whose
-     * routing may depend on the context. Backends that locate content purely by path should
-     * override this to return the normalized path, and backends that derive the location from
-     * the context (e.g. a per-user namespace) must include that derived location in the key.
+     * routing may depend on the context. This is identity-equal by construction — {@code
+     * RuntimeContext} overrides no {@code equals}/{@code hashCode} — and that is deliberate:
+     * a context-blind default (the bare path) would merge contexts a backend routes apart,
+     * and no proxy of context fields can stand in for the backend's own resolution (a {@code
+     * NamespaceFactory} may key on any context property). An implementation that inherits the
+     * default therefore degrades to one batch per key instance: correct, uncoalesced, exactly
+     * the pre-batching behaviour. Backends that locate content purely by path should override
+     * this to return the normalized path, and backends that derive the location from the
+     * context (e.g. a per-user namespace) must include that derived location in the key.
      *
      * <p><b>Contract:</b> the returned object MUST have value equality (a {@code String},
      * {@code List}, or record composed of value-equal parts — never an identity-equality
