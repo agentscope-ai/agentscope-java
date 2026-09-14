@@ -33,15 +33,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TimeZone;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import reactor.core.publisher.Flux;
 
 class MemoryFlushManagerTest {
@@ -84,36 +82,6 @@ class MemoryFlushManagerTest {
         assertTrue(model.inputs.isEmpty());
     }
 
-    // ISO_OFFSET_DATE_TIME strips trailing zeros from the fractional second, so .309657400 is
-    // rendered as .3096574; the offset and the instant it parses back to are unaffected.
-    @ParameterizedTest
-    @CsvSource({
-        "UTC,              2026-09-10T08:05:32.309657400Z, 2026-09-10T08:05:32.3096574Z",
-        "Asia/Shanghai,    2026-09-10T08:05:32.309657400Z, 2026-09-10T16:05:32.3096574+08:00",
-        "America/New_York, 2026-09-10T08:05:32.309657400Z, 2026-09-10T04:05:32.3096574-04:00",
-        "Asia/Shanghai,    2026-09-10T20:00:00Z,           2026-09-11T04:00:00+08:00"
-    })
-    void formatTimestamp_rendersClockZoneOffset(String zoneId, String instantStr, String expected) {
-        Instant instant = Instant.parse(instantStr);
-
-        String actual = MemoryFlushManager.formatTimestamp(Clock.fixed(instant, ZoneId.of(zoneId)));
-
-        assertEquals(expected, actual);
-        assertEquals(instant, OffsetDateTime.parse(actual).toInstant());
-    }
-
-    @Test
-    void formatTimestamp_honorsSystemDefaultZone() {
-        TimeZone original = TimeZone.getDefault();
-        try {
-            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
-            String timestamp = MemoryFlushManager.formatTimestamp(Clock.systemDefaultZone());
-            assertTrue(timestamp.endsWith("+08:00"), timestamp);
-        } finally {
-            TimeZone.setDefault(original);
-        }
-    }
-
     @Test
     void flushMemories_writesZoneAwareHeaderAndMatchingFileName() throws Exception {
         Instant instant = Instant.parse("2026-09-10T20:00:00Z");
@@ -135,6 +103,38 @@ class MemoryFlushManagerTest {
                 content.contains("## Memory Flush — 2026-09-11T04:00:00+08:00"),
                 "header should carry the clock's offset: " + content);
         assertFalse(content.contains("2026-09-10T20:00:00Z"), content);
+    }
+
+    // Regression for #3088: the production 2-arg constructor must honor the JVM default zone
+    // instead of silently falling back to UTC. The format contract itself is covered by
+    // MemoryTimestampsTest.
+    @Test
+    @ResourceLock("user.timezone")
+    void flushMemories_defaultConstructorHonorsSystemZone() throws Exception {
+        RecordingModel model = new RecordingModel("- user prefers dark mode");
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+        Path daily;
+        TimeZone original = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+
+            try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+                MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
+
+                flushManager.flushMemories(rc, List.of(message(MsgRole.USER, "hi"))).block();
+            }
+
+            try (var files = Files.list(workspace.resolve("memory"))) {
+                daily = files.findFirst().orElseThrow();
+            }
+        } finally {
+            TimeZone.setDefault(original);
+        }
+
+        String content = Files.readString(daily);
+        assertTrue(
+                content.contains("+08:00"),
+                "default constructor must render the JVM default zone offset: " + content);
     }
 
     private static Msg message(MsgRole role, String text) {

@@ -30,7 +30,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Clock;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -123,20 +122,6 @@ public class MemoryFlushManager {
     }
 
     /**
-     * Formats an instant as an ISO-8601 offset date-time in the clock's zone, e.g.
-     * {@code 2026-09-10T16:05:32.3096574+08:00}. Unlike {@code Instant.toString()} (which always
-     * renders {@code ...Z}), the offset is preserved so the value round-trips through
-     * {@link java.time.OffsetDateTime#parse(CharSequence)} back to the original instant.
-     */
-    static String formatTimestamp(Clock clock) {
-        return formatTimestamp(ZonedDateTime.now(clock));
-    }
-
-    private static String formatTimestamp(ZonedDateTime now) {
-        return now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-    }
-
-    /**
      * Extracts long-term memories from messages using the model and writes them to disk.
      *
      * <p>Provides existing MEMORY.md and today's daily file content to the extraction LLM
@@ -149,8 +134,8 @@ public class MemoryFlushManager {
         }
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
-        ZonedDateTime now = ZonedDateTime.now(clock);
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + now.toLocalDate() + ".md";
+        ZonedDateTime now = MemoryTimestamps.now(clock);
+        String dailyRelPath = MemoryTimestamps.dailyLedgerPath(now);
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
@@ -254,9 +239,10 @@ public class MemoryFlushManager {
      */
     private void writeMemoryFiles(RuntimeContext rc, String content, ZonedDateTime now) {
         String dailyEntry =
-                String.format("\n## Memory Flush — %s\n%s\n", formatTimestamp(now), content);
+                String.format(
+                        "\n## Memory Flush — %s\n%s\n", MemoryTimestamps.format(now), content);
 
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + now.toLocalDate() + ".md";
+        String dailyRelPath = MemoryTimestamps.dailyLedgerPath(now);
         workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
     }
 
