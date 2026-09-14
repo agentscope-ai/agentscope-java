@@ -35,6 +35,13 @@ public class OllamaMessage {
     @JsonProperty("content")
     private String content;
 
+    /**
+     * The model's reasoning content, returned by thinking models when the request enables the
+     * {@code think} option. Response-only: Ollama's request message schema does not accept it.
+     */
+    @JsonProperty("thinking")
+    private String thinking;
+
     /** List of base64-encoded images (optional). */
     @JsonProperty("images")
     private List<String> images;
@@ -72,6 +79,14 @@ public class OllamaMessage {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getThinking() {
+        return thinking;
+    }
+
+    public void setThinking(String thinking) {
+        this.thinking = thinking;
     }
 
     public List<String> getImages() {
