@@ -233,37 +233,40 @@ class MemoryBackgroundHardeningTest {
         WorkspaceManager wsm = mock(WorkspaceManager.class);
         when(wsm.getFilesystem()).thenReturn(fs);
         MemoryConsolidator consolidator = mock(MemoryConsolidator.class);
-        when(consolidator.consolidate(any()))
-                .thenAnswer(
-                        inv ->
-                                Mono.<Void>empty()
-                                        .subscribeOn(
-                                                reactor.core.scheduler.Schedulers.newSingle(
-                                                        "model-io")));
+        // One scheduler, disposed after the test — the assertion needs the completion
+        // thread only, never a fresh scheduler per invocation.
+        reactor.core.scheduler.Scheduler modelIo =
+                reactor.core.scheduler.Schedulers.newSingle("model-io");
+        try {
+            when(consolidator.consolidate(any()))
+                    .thenAnswer(inv -> Mono.<Void>empty().subscribeOn(modelIo));
 
-        MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
-        AgentInput input = new AgentInput(List.of(userMsg("hi")));
+            MemoryMaintenanceMiddleware mw = new MemoryMaintenanceMiddleware(wsm, consolidator);
+            AgentInput input = new AgentInput(List.of(userMsg("hi")));
 
-        mw.onAgent((Agent) null, RuntimeContext.empty(), input, in -> Flux.<AgentEvent>empty())
-                .collectList()
-                .block(Duration.ofSeconds(5));
+            mw.onAgent((Agent) null, RuntimeContext.empty(), input, in -> Flux.<AgentEvent>empty())
+                    .collectList()
+                    .block(Duration.ofSeconds(5));
 
-        assertTrue(fs.done.await(5, TimeUnit.SECONDS), "both retention sweeps must run");
-        assertTrue(
-                fs.expireThread != null && fs.pruneThread != null,
-                "both retention sweeps must run (expire on: "
-                        + fs.expireThread
-                        + ", prune on: "
-                        + fs.pruneThread
-                        + ")");
-        assertTrue(
-                fs.expireThread.startsWith("boundedElastic-"),
-                "the expire sweep must stay on boundedElastic, ran on: " + fs.expireThread);
-        assertTrue(
-                fs.pruneThread.startsWith("boundedElastic-"),
-                "the prune sweep must stay on boundedElastic even when consolidate() completes"
-                        + " on the model client's I/O thread, ran on: "
-                        + fs.pruneThread);
+            assertTrue(fs.done.await(5, TimeUnit.SECONDS), "both retention sweeps must run");
+            assertTrue(
+                    fs.expireThread != null && fs.pruneThread != null,
+                    "both retention sweeps must run (expire on: "
+                            + fs.expireThread
+                            + ", prune on: "
+                            + fs.pruneThread
+                            + ")");
+            assertTrue(
+                    fs.expireThread.startsWith("boundedElastic-"),
+                    "the expire sweep must stay on boundedElastic, ran on: " + fs.expireThread);
+            assertTrue(
+                    fs.pruneThread.startsWith("boundedElastic-"),
+                    "the prune sweep must stay on boundedElastic even when consolidate()"
+                            + " completes on the model client's I/O thread, ran on: "
+                            + fs.pruneThread);
+        } finally {
+            modelIo.dispose();
+        }
     }
 
     /** Records the calling thread of each retention glob; matches nothing, sweeps no files. */
