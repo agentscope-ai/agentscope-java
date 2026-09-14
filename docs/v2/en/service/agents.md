@@ -1,10 +1,28 @@
 ---
-title: "Agents: reusable capabilities"
+title: "Register or create an Agent"
 ---
 
-[简体中文](/v2/zh/service/agents)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 **DESIGN → Agents** manages identity, behavior and execution. Reuse an Agent in Chat, Issues, Teams and Endpoints. Saving its definition does not start work.
+
+## Choose an integration path
+
+- **Managed Agent**: create a cloud Agent in the console, then configure its model and resources.
+- **AgentScope framework**: register your own deployed application as an External Agent; task execution requires the corresponding adapter support.
+- **Hosted**: connect Runtime Host and select an installed, authenticated Coding Agent provider.
+
+The three submenus cover creation, registration and verification. Detailed parameters, resource configuration and execution principles are collected in Reference. After connecting an Agent, [submit work through an Endpoint](/v2/en/service/endpoints) or [create an Issue in the console](/v2/en/service/issues).
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/agents.png" alt="Agent catalog with Managed, Hosted and External filters" />
+</Frame>
+
+Use the filters to distinguish runtime types and the cards to identify each Agent’s purpose. Open a card to configure it, or choose **New agent** to add one. The example shows all three types; verify runtime availability for each Agent before using it.
 
 ## Choose an execution type
 

@@ -1,10 +1,20 @@
 ---
-title: "Workflows: repeatable processes"
+title: "Workflow: multi-Agent process orchestration"
 ---
 
-[简体中文](/v2/zh/service/workflows)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 **DESIGN → Workflows** is for work with explicit steps, dependencies and human gates. A definition has an editable draft; publishing creates an immutable revision. Each Run pins a revision, so later edits do not change its topology.
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/workflows.png" alt="Workflow Design tab and step dependencies" />
+</Frame>
+
+In **Workflow Design**, inspect steps and dependencies before editing a selected step. Save and validate the draft, then publish a version. **Run Workflow** uses a published version; changing a draft does not update work already running.
 
 ## Start with one Agent step
 
