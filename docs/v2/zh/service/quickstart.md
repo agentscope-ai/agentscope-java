@@ -2,6 +2,10 @@
 title: "本地安装"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 本页面向本地开发者，使用 Docker Compose 启动完整 AgentScope Service，无需从源码构建。正式安装包包含 Gateway、Control、Dataplane、Scheduler 和 PostgreSQL，适合本机体验、功能开发与联调。生产环境的 Kubernetes/Helm 部署见[生产安装](/v2/zh/service/kubernetes)。
 
 ## 准备

@@ -2,6 +2,10 @@
 title: "Hosted Agent：概览与用法"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Hosted Agent 使用你电脑或服务器上已经安装的 Coding Agent。Service 负责工作、调度和协作记录；Runtime Host 在本机启动 provider 并回传结果。模型、工具和 provider 账号由你管理。
 
 首次使用请先按[操作指南](/v2/zh/service/connect-hosted-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。

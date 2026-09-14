@@ -2,6 +2,10 @@
 title: "Application integration: Endpoint and SSE"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 An Endpoint exposes an Agent, Team or published Workflow revision through a stable interface with authentication, schemas and invocation records. Callers do not need internal runtime or scheduler addresses.
 
 Publish an entry point and submit work here, then use [SSE format and task feedback](/v2/en/service/sse-events) to consume events, reconnect and retrieve the final result.

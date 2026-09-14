@@ -2,6 +2,10 @@
 title: "How External registration and dispatch work"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 An External application runs independently. Its SDK bridge connects identity, sessions and implemented capabilities to Service. Registration does not transfer ownership of the framework process.
 
 ```mermaid

@@ -2,6 +2,10 @@
 title: "Team: overview and creation"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **DESIGN → Teams** groups Agents into an assignable team. The Lead interprets the objective, chooses members and combines results. Members contribute specialist capabilities. Choose a [Workflow](/v2/en/service/workflows) for fixed ordering and branching rules.
 
 Start with the [practical guide](/v2/en/service/create-team) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.

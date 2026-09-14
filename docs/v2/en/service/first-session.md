@@ -2,6 +2,10 @@
 title: "Quickstart"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Use a meeting-notes task to create a cloud Agent, publish an API, register a code application and orchestrate multiple Agents.
 
 You need access to a Service console and an account that can create Agents and publish Endpoints. An administrator must configure a working model and Environment. For a new deployment, follow [local installation](/v2/en/service/quickstart) or [production installation](/v2/en/service/kubernetes) first. The cloud Agent below runs in that Service deployment.

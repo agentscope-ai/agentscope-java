@@ -2,6 +2,10 @@
 title: "快速开始"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 本教程用“整理会议待办”串起云端 Agent、API 发布、代码应用注册和多 Agent 编排。
 
 开始前，你需要一个可登录的 Service 控制台，以及可以创建 Agent 和发布 Endpoint 的账号。管理员需已配置可用模型与 Environment；尚未安装时先按[本地安装](/v2/zh/service/quickstart)或[生产安装](/v2/zh/service/kubernetes) 完成部署。下面的云端 Agent 运行在该 Service 部署中。

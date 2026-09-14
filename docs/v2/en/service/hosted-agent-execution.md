@@ -2,6 +2,10 @@
 title: "How Hosted execution and recovery work"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Hosted provider processes run on the Runtime Host machine. Service stores work and scheduling records; Host manages provider processes, task directories and event reporting.
 
 ```mermaid

@@ -2,6 +2,10 @@
 title: "Hosted: connect and create an Agent"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Connect a computer or server with a Coding Agent so Service can dispatch work there. Install and authenticate the provider first, then install the `agentscope` CLI using the [Runtime Host guide](/v2/en/service/runtime-host).
 
 ## Connect the host

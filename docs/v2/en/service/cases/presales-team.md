@@ -3,6 +3,10 @@ title: "Managed and mixed Teams: from customer needs to a proposal"
 description: "Create a Managed Team for a proposal and PoC plan, then add External queries and Hosted implementation."
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A presales team needs to clarify customer requirements, verify product capabilities, design a solution, and plan a PoC. Create five Managed Agents directly in the console, bind knowledge, and form a Team. Then extend it with live capability queries and PoC implementation to combine Managed, External, and Hosted work around one deliverable.
 
 The baseline needs no custom Agent application. It produces downloadable, sourced files for human review.

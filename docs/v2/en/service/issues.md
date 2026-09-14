@@ -2,6 +2,10 @@
 title: "Create console Issues and assign tasks"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 An Issue holds a work objective, owner, discussion, execution records and deliverables. It remains traceable across failed executions and service restarts. Use Issues for work that must be completed and accepted, such as a report or a bug fix.
 
 ## Interface tour

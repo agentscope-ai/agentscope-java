@@ -2,6 +2,10 @@
 title: 备份、升级与恢复
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 一份可恢复的备份包括数据库、Workspace、Artifact 和解密这些数据所需的密钥。
 
 ## Docker 备份

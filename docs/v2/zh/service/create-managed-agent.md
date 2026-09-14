@@ -2,6 +2,10 @@
 title: "Managed Agent：创建与测试"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 在控制台创建由 Service 运行的 Agent，然后用一个小请求验证。管理员应已完成[本地安装](/v2/zh/service/quickstart)或[生产安装](/v2/zh/service/kubernetes)，并配置模型与可用 Environment。
 
 ## 创建资料助手

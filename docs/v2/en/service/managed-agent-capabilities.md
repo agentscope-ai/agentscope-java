@@ -2,6 +2,10 @@
 title: "Managed capabilities and integration types"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Managed Agents execute the platform Harness. Distinguish model connections, execution environments, tools and work entry points when extending an Agent.
 
 ## Model integrations

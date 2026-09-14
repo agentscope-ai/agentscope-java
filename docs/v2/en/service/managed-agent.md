@@ -2,6 +2,10 @@
 title: "Managed Agent: overview and usage"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Service manages a Managed Agent's Harness, Sessions and model execution. Configure its responsibilities, model and resources without deploying a separate application for each Agent. Use it for knowledge work, document processing and tasks supported by platform tools.
 
 Start with the [practical guide](/v2/en/service/create-managed-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.

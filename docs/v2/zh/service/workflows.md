@@ -2,6 +2,10 @@
 title: "Workflow：多 Agent 流程编排"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **DESIGN → Workflows** 用于有明确步骤、依赖和人工关口的工作。定义保存可编辑草稿；发布生成不可变 revision；每次执行固定一个 revision，因此后续编辑不会改变已有运行的拓扑。
 
 ## 界面导览

@@ -2,6 +2,10 @@
 title: "Environments：配置执行位置"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **Resources → Environments** 定义 Managed Agent 在哪里执行文件、Shell 等工具。它与保存定义的 Workspace 分工不同，也不是 Hosted Agent 的 Runtime Host。
 
 ## 界面导览

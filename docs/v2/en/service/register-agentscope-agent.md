@@ -2,6 +2,10 @@
 title: "AgentScope framework: register an application"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Register a running AgentScope application as an External Agent while retaining its deployment. Establish catalog and Session access first, then verify the task capabilities you need.
 
 ## Prepare registration details

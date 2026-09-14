@@ -2,6 +2,10 @@
 title: "External registration and connection settings"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 External applications keep their own processes and frameworks. These settings connect catalog identity, the HTTP contract and optional ASDP transport. See the [integration guide](/v2/en/service/external-agent) for Java and Python snippets.
 
 ## SDK settings

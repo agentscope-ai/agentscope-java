@@ -2,6 +2,10 @@
 title: "Memory：维护共享知识"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **Resources → Memory** 管理可绑定给 Managed Agent 的共享知识文档，适合产品术语、操作说明和稳定事实。它与 Chat 历史、Session 工作记忆及 Issue 评论不同。
 
 ## 界面导览

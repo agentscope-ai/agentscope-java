@@ -2,6 +2,10 @@
 title: "Register or create an Agent"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **DESIGN → Agents** manages identity, behavior and execution. Reuse an Agent in Chat, Issues, Teams and Endpoints. Saving its definition does not start work.
 
 ## Choose an integration path

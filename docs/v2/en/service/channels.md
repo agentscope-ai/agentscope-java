@@ -2,6 +2,10 @@
 title: "Message events: Channel integration and routing"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **DESIGN → Channels** connects messaging platforms to AgentScope Service. A Channel owns the connection and routing; an Agent executes work. Use an [Endpoint](/v2/en/service/endpoints) for a stable HTTP interface to your own application.
 
 ## Interface tour

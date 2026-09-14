@@ -2,6 +2,10 @@
 title: "Team 角色、成员与策略参数"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Team 由一个 Leader 和可委派的成员组成。先按[创建团队](/v2/zh/service/teams)准备成员，再在 Roles & members、协作策略和 Runtime policy 中细化配置。
 
 ## 团队和成员字段

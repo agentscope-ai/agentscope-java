@@ -2,6 +2,10 @@
 title: "Managed Agent：概览与用法"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Managed Agent 由 Service 管理 Harness、会话和模型执行。你配置职责、模型与资源，无需为每个 Agent 部署独立应用。适合知识问答、资料处理和使用平台工具完成的工作。
 
 首次使用请先按[操作指南](/v2/zh/service/create-managed-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。

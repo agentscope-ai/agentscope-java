@@ -2,6 +2,10 @@
 title: "Managed 工作原理与执行生命周期"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Managed 模式由 Service 持有 Agent 的运行生命周期。浏览器只提交工作和查看事件；模型循环在 Dataplane 中运行，文件与 Shell 工具按 Environment 路由。
 
 ```mermaid

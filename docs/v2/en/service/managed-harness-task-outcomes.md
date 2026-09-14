@@ -2,6 +2,10 @@
 title: "Managed task outcomes and failures"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A Managed durable task needs an explicit deliverable outcome, not merely the end of a model turn. Use this reference to decide what follows a wait, blockage or failure.
 
 ## Outcomes

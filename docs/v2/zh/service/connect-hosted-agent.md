@@ -2,6 +2,10 @@
 title: "Hosted：连接并创建 Agent"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 连接装有 Coding Agent 的电脑或服务器，让 Service 把工作派发到该主机。先在主机安装并登录要使用的 provider，再按[Runtime Host 安装指南](/v2/zh/service/runtime-host)准备 `agentscope` CLI。
 
 ## 连接主机

@@ -2,6 +2,10 @@
 title: Backup, upgrade and recovery
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A recoverable backup includes the database, workspaces, artifacts and the keys needed to decrypt stored credentials.
 
 ## Docker backup

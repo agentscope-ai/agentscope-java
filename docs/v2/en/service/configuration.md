@@ -2,6 +2,10 @@
 title: Configuration reference
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Use `.env` for Docker. On Kubernetes, keep sensitive settings in an existing Secret and configure ingress and storage through Chart values.
 
 | Setting | Purpose | Notes |

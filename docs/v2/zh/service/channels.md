@@ -2,6 +2,10 @@
 title: "消息事件：Channel 接入与路由"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **DESIGN → Channels** 把外部消息平台连接到 AgentScope Service。Channel 负责平台连接和消息路由，Agent 负责执行；需要面向你自己的应用提供稳定 HTTP 调用时，使用 [Endpoint](/v2/zh/service/endpoints)。
 
 ## 界面导览

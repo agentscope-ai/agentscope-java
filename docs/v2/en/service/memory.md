@@ -2,6 +2,10 @@
 title: "Memory: shared knowledge"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **Resources → Memory** manages shared documents for Managed Agents: terminology, operating guidance and durable facts. It is separate from Chat history, Session working memory and Issue comments.
 
 ## Interface tour

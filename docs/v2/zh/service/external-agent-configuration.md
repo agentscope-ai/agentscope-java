@@ -2,6 +2,10 @@
 title: "External 注册与连接参数"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 External 应用保留自己的进程与框架。下面的参数连接目录身份、HTTP 合约和可选 ASDP 事件通道。可直接嵌入应用的 Java/Python 代码见[接入用法](/v2/zh/service/external-agent)。
 
 ## SDK 参数对照

@@ -2,6 +2,10 @@
 title: "Workspaces: shared instructions and capabilities"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **Resources → Workspaces** stores reusable Agent material: `AGENTS.md`, skills, tools and subagent definitions. A Workspace is a resource, separate from an account Namespace and an execution's temporary directory.
 
 ## Interface tour

@@ -3,6 +3,10 @@ title: "托管与混合团队：从客户需求到售前方案"
 description: "直接创建 Managed Team 交付方案和 PoC 计划，再接入 External 查询与 Hosted 实施。"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 售前团队拿到一份客户需求，需要澄清问题、核对产品能力、设计方案并给出 PoC 计划。本案例先在控制台创建五个 Managed Agent，绑定知识并组成 Team；再扩展实时能力查询与 PoC 编码成员，展示 Managed、External、Hosted 如何围绕同一交付协作。
 
 基础流程不需要开发 Agent 应用，交付是可下载、可追溯、可人工复核的方案文件。

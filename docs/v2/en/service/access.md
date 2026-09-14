@@ -2,6 +2,10 @@
 title: Accounts, Namespaces and permissions
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Platform administrators manage accounts and spaces. Resource use and work visibility also depend on Namespace and work-specific permissions.
 
 ## Initialize accounts

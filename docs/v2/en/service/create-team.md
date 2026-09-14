@@ -2,6 +2,10 @@
 title: "Team: create and dispatch collaborative work"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Use a Team to let a Leader select members, delegate work and consolidate results. Verify each member can complete a small independent task before forming the Team.
 
 ## Create a review team

@@ -2,6 +2,10 @@
 title: "执行参考：Session、Run 与 Attempt"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 日常对话从 Chat 开始，工作从 Issue 开始。Sessions 和 Executions 提供执行诊断，入口是否可见取决于运维权限。
 
 ## 关联一项工作

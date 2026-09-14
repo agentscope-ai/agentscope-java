@@ -2,6 +2,10 @@
 title: "Team roles, members and policy settings"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A Team has one Leader and a roster of available members. [Create the Team](/v2/en/service/teams), then refine Roles & members, coordination policy and runtime policy.
 
 ## Team and member fields

@@ -2,6 +2,10 @@
 title: "SSE 格式与任务反馈"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 应用通过 Endpoint 提交工作后，使用返回的 `eventsUrl` 接收 SSE 事件，通过 `statusUrl` 查询结果。先按[Endpoint 接入](/v2/zh/service/endpoints)完成发布和请求提交；控制台用户通过[信箱](/v2/zh/service/inbox)处理通知、审批与验收。
 
 ## 提交、订阅和查询

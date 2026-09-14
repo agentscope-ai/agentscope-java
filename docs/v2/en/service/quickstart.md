@@ -2,6 +2,10 @@
 title: "Local installation"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 This guide is for local developers. Use Docker Compose to start the complete AgentScope Service without building source. The published package includes Gateway, Control, Dataplane, Scheduler and PostgreSQL for evaluation, feature development and integration work. For Kubernetes/Helm deployments, see [production installation](/v2/en/service/kubernetes).
 
 ## Prepare

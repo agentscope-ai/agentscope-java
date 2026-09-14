@@ -2,6 +2,10 @@
 title: "Managed 参数与模型配置"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Managed Agent 的配置分为 Agent 定义、会话资源和 Dataplane 部署配置。先完成[创建与首次对话](/v2/zh/service/managed-agent)，再按本页调整参数。
 
 ## Agent 定义参数

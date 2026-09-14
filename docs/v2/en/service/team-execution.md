@@ -2,6 +2,10 @@
 title: "How Team coordination and completion work"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A Team is a persistent definition. Each piece of Team work creates a Run and a Team snapshot, with the Leader driving coordination. It does not unconditionally run every member in parallel.
 
 ```mermaid

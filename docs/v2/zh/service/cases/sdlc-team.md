@@ -3,6 +3,10 @@ title: "研发提效：从 GitHub Issue 到 PR 合并"
 description: "使用全 Hosted Team 完成需求分析、实现、Review、CI、返工与审批。"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 让一个全 Hosted 团队完成“订单查询增加状态筛选与分页”：从 GitHub Issue 读取需求，开发、提交 PR、Review、运行 CI、修复问题，最后 Approve 并合并。Leader、Developer、Reviewer 和 QA 都运行在 Runtime Host 上，可使用同一种或不同的 Coding Agent provider。
 
 ## 目标与准备

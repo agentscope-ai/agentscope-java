@@ -2,6 +2,10 @@
 title: "External frameworks and custom adapters"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 External support depends on both the SDK adapter and the supplied framework object. Use these implemented integration paths to choose your target and acceptance scope.
 
 ## Java

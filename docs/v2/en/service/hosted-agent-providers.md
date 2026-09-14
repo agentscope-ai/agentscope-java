@@ -2,6 +2,10 @@
 title: "Hosted providers and capability differences"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Runtime Host includes five provider adapters. `runtime probe` checks executable discovery; real work also needs valid login, models and tools.
 
 ## Runtime types

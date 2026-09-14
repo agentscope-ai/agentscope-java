@@ -2,6 +2,10 @@
 title: "Execution reference: Sessions, Runs and Attempts"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Use Chat for conversation and Issues for work. Sessions and Executions are diagnostic views whose availability depends on operational permissions.
 
 ## Trace work

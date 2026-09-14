@@ -2,6 +2,10 @@
 title: "应用接入：Endpoint 与 SSE"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Endpoint 是提供给应用调用的稳定入口，将 Agent、Team 或已发布 Workflow revision 包装为具有认证、输入输出 schema 和调用记录的服务。调用方无需了解内部调度和运行时地址。
 
 本页介绍如何从应用发布入口并提交工作；收到调用标识后，按[SSE 格式与任务反馈](/v2/zh/service/sse-events)消费事件、恢复连接并读取最终结果。

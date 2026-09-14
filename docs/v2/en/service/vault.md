@@ -2,6 +2,10 @@
 title: "Vault: credentials for tools"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **Resources → Vault** stores credentials for Agent tool connections. Secrets are write-only in the UI; after saving, it shows metadata such as type, label and target.
 
 ## Interface tour

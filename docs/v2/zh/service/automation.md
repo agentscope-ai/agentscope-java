@@ -2,6 +2,10 @@
 title: "自动化任务：计划与 Webhook"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Automation 把“何时触发”和“执行什么工作”保存为一条可复用规则。适合日报、定期检查和外部事件处理。需要固定多步骤拓扑时使用 [Workflow](/v2/zh/service/workflows)；Automation 主要负责触发 Agent 或 Team。
 
 ## 界面导览

@@ -2,6 +2,10 @@
 title: 配置参考
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通过 Chart values 配置入口与存储。
 
 | 配置 | 用途 | 注意事项 |

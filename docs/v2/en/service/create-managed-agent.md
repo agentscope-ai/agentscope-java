@@ -2,6 +2,10 @@
 title: "Managed Agent: create and test"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Create an Agent operated by Service and verify it with a small request. An administrator should complete [local](/v2/en/service/quickstart) or [production installation](/v2/en/service/kubernetes), then configure a model and an available Environment.
 
 ## Create a notes assistant

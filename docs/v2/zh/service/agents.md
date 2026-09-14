@@ -2,6 +2,10 @@
 title: "注册或者创建 Agent"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **DESIGN → Agents** 管理 Agent 的身份、行为和执行方式。Agent 定义可以被 Chat、Issue、Team 和 Endpoint 复用；保存定义本身不会执行任务。
 
 ## 按运行方式接入

@@ -2,6 +2,10 @@
 title: "Managed configuration and models"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Managed configuration has three layers: the Agent definition, session resources and Dataplane deployment settings. Complete [creation and the first conversation](/v2/en/service/managed-agent) before tuning them.
 
 ## Agent definition fields

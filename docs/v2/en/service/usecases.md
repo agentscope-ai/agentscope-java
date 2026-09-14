@@ -2,6 +2,10 @@
 title: "Use cases"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Connect Agent creation, application integration, Team collaboration, task feedback, and human acceptance through three complete business scenarios. Start with the path closest to your deployment model.
 
 | Scenario | Team | Delivery |

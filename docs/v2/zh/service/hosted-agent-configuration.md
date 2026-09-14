@@ -2,6 +2,10 @@
 title: "Hosted 主机与 Runtime 参数"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Hosted 有三层配置：Host 的连接与容量、Runtime Profile 的 provider 参数、Agent 的职责与模型覆盖。先按[Runtime Host 安装连接](/v2/zh/service/runtime-host)建立在线主机。
 
 ## 连接参数

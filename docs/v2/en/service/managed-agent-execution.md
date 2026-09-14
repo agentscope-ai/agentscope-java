@@ -2,6 +2,10 @@
 title: "How Managed execution works"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Service owns the Managed runtime lifecycle. The browser submits work and reads events. The model loop runs in Dataplane; Environment routes file and Shell operations.
 
 ```mermaid

@@ -3,6 +3,10 @@ title: "Enterprise operations: resolve order fulfillment exceptions"
 description: "Coordinate independently deployed AgentScope applications across orders, inventory, logistics, and after-sales systems."
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 A customer asks why an order has not shipped and requests delivery tomorrow. Specialized Agents investigate orders, inventory, logistics, and service policy; a fulfillment Leader coordinates a resolution and verifies actual business outcomes. This reduces cross-system lookup and handoffs while retaining evidence, decisions, and execution history.
 
 All five Agents, including the Leader, are **AgentScope Java applications registered as External Agents**. Applications retain their deployment and tools. Service provides discovery, dispatch, collaboration, and observation; business systems retain their rules and data.

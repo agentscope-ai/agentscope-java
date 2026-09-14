@@ -2,6 +2,10 @@
 title: "External Agent：概览与接入用法"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 External Agent 保留你的应用进程、框架和部署方式，同时接入统一目录、会话诊断与工作协作。它不是由 Service 启动的 Managed Agent，也不要求把应用改造成 Runtime Host provider。
 
 首次使用请先按[操作指南](/v2/zh/service/register-agentscope-agent)完成创建或接入。本分类集中提供详细配置、支持能力和工作原理。

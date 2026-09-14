@@ -2,6 +2,10 @@
 title: "Hosted 支持的 Provider 与能力差异"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 当前 Runtime Host 包含以下五类 provider 适配器。`runtime probe` 验证可执行文件可探测，实际工作还需要 provider 登录、模型和工具可用。
 
 ## 选择运行类型

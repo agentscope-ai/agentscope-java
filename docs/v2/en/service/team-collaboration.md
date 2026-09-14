@@ -2,6 +2,10 @@
 title: "Team collaboration: delegate, combine and extend"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Teams suit clear objectives whose implementation steps need adaptive decisions. The Lead chooses members, divides work and combines results. Workflows instead declare a fixed topology. Start with [Team configuration](/v2/en/service/teams).
 
 ## Design useful roles

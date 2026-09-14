@@ -2,6 +2,10 @@
 title: "Workflow: multi-Agent process orchestration"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **DESIGN → Workflows** is for work with explicit steps, dependencies and human gates. A definition has an editable draft; publishing creates an immutable revision. Each Run pins a revision, so later edits do not change its topology.
 
 ## Interface tour

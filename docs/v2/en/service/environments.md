@@ -2,6 +2,10 @@
 title: "Environments: execution locations"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **Resources → Environments** defines where Managed Agents execute file, Shell and other tools. It is separate from a definition Workspace and from a Hosted Agent's Runtime Host.
 
 ## Interface tour

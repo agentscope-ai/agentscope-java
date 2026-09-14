@@ -2,6 +2,10 @@
 title: "SSE format and task feedback"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 After submitting work through an Endpoint, subscribe to the returned `eventsUrl` and query `statusUrl` for results. Follow [Endpoint integration](/v2/en/service/endpoints) to publish and submit requests. Console users handle notifications, approvals and acceptance in [Inbox](/v2/en/service/inbox).
 
 ## Submit, subscribe and query

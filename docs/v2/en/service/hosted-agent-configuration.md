@@ -2,6 +2,10 @@
 title: "Hosted host and Runtime settings"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Hosted configuration has three layers: Host connectivity/capacity, provider parameters in Runtime Profiles, and Agent instructions/model overrides. Start with [Runtime Host installation](/v2/en/service/runtime-host).
 
 ## Connection settings

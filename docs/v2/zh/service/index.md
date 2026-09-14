@@ -2,6 +2,10 @@
 title: "什么是 AgentScope Service"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **AgentScope Service 是面向 Agent 应用的运行、管理与编排平台，让你把单个 Agent 或多 Agent 协作发布成可调用、可追踪的服务。**
 
 你可以在控制台零代码创建云端 Agent，接入用 AgentScope 开发的应用，或使用 Codex 等 Coding Agent 执行工作。平台提供统一的对话、任务、协作与 API 入口，管理运行状态和交付结果，让不同运行方式的 Agent 在同一套工作流程中协作。

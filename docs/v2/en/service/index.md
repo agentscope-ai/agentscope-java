@@ -2,6 +2,10 @@
 title: "What is AgentScope Service?"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 **AgentScope Service is a platform for running, managing and orchestrating Agent applications, turning individual Agents and multi-Agent collaboration into callable, traceable services.**
 
 Create cloud Agents in the console without writing code, connect applications built with AgentScope, or use Coding Agents such as Codex. Shared conversation, task, collaboration and API entry points let you track execution and deliverables across these runtime models.

@@ -2,6 +2,10 @@
 title: "Hosted 工作原理与恢复"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Hosted 的执行进程位于 Runtime Host 所在电脑或服务器。Service 保存工作和调度记录，Host 管理 provider 进程、任务目录与事件回传。
 
 ```mermaid

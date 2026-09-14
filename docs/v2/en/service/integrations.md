@@ -2,6 +2,10 @@
 title: "SDK and component selection"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 Before selecting an SDK, distinguish invoking a capability from connecting a runtime. An application calling an Endpoint needs an HTTP client, not runtime instrumentation.
 
 | Goal | Component | Continue |

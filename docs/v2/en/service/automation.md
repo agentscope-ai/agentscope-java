@@ -2,6 +2,10 @@
 title: "Automated tasks: schedules and webhooks"
 ---
 
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
+
 An Automation saves when to trigger work and what an Agent or Team should do. Use it for digests, recurring checks and external events. Use a [Workflow](/v2/en/service/workflows) when you need a fixed multi-step topology.
 
 ## Interface tour

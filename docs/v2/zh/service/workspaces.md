@@ -2,6 +2,10 @@
 title: "Workspaces：共享指令与能力文件"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 **Resources → Workspaces** 保存可复用的 Agent 资料：`AGENTS.md`、技能、工具和子 Agent 定义。Workspace 是资源，不是账号的 Namespace，也不是一次执行的临时目录。
 
 ## 界面导览

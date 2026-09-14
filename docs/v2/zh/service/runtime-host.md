@@ -2,6 +2,10 @@
 title: 连接 Runtime Host
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 Runtime Host 运行在安装 Coding Agent 的电脑或服务器上。控制面负责派发和记录工作，Host 使用本地 provider 执行。
 
 ## 安装

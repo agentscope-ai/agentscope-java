@@ -2,6 +2,10 @@
 title: "External 工作原理与任务派发"
 ---
 
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
+
 External 应用独立运行，SDK bridge 将应用身份、会话与已实现能力接入 Service。Service 不会因为注册成功而接管你的框架进程。
 
 ```mermaid
