@@ -16,7 +16,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"net"
@@ -24,15 +24,17 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -40,18 +42,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
+	"github.com/spring-ai-alibaba/aistio/internal/artifact"
 	"github.com/spring-ai-alibaba/aistio/internal/asdp"
+	"github.com/spring-ai-alibaba/aistio/internal/automation"
 	"github.com/spring-ai-alibaba/aistio/internal/controller"
 	"github.com/spring-ai-alibaba/aistio/internal/dataplane"
 	"github.com/spring-ai-alibaba/aistio/internal/discovery"
+	"github.com/spring-ai-alibaba/aistio/internal/features"
 	"github.com/spring-ai-alibaba/aistio/internal/httpapi"
+	"github.com/spring-ai-alibaba/aistio/internal/orchestration"
 	"github.com/spring-ai-alibaba/aistio/internal/prober"
 	"github.com/spring-ai-alibaba/aistio/internal/product"
+	"github.com/spring-ai-alibaba/aistio/internal/realtime"
 	"github.com/spring-ai-alibaba/aistio/internal/sessionops"
 	"github.com/spring-ai-alibaba/aistio/internal/store"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/memory"
 	_ "github.com/spring-ai-alibaba/aistio/internal/store/postgres"
-	"github.com/spring-ai-alibaba/aistio/internal/team"
+	"github.com/spring-ai-alibaba/aistio/internal/taskauth"
 	"github.com/spring-ai-alibaba/aistio/internal/tracing"
 )
 
@@ -71,8 +78,8 @@ type distributorAdapter struct {
 	dist *asdp.Distributor
 }
 
-func (a *distributorAdapter) PushConfig(namespace, agentName string, configType int32, resources interface{}) error {
-	return a.dist.PushConfig(namespace, agentName, asdp.ConfigType(configType), resources)
+func (a *distributorAdapter) PushConfig(tenant, namespace, agentName string, configType int32, resources interface{}) error {
+	return a.dist.PushConfig(tenant, namespace, agentName, asdp.ConfigType(configType), resources)
 }
 
 func (a *distributorAdapter) ForgetAgent(namespace, agentName string) {
@@ -83,11 +90,19 @@ func (a *distributorAdapter) ForgetAgent(namespace, agentName string) {
 // controller.SessionEventSink (neutral types), so upstream gRPC reports reach
 // the runtime Store without coupling the controller package to asdp.
 type sessionSinkAdapter struct {
-	sink     *controller.SessionEventSink
-	teamSink *controller.TeamEventSink
+	sink *controller.SessionEventSink
 }
 
-func (a *sessionSinkAdapter) HandleSessionReport(namespace, agentName, instanceID string, report *asdp.SessionReport) {
+func (a *sessionSinkAdapter) HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
+	a.sink.ApplyInstanceConnect(context.Background(), tenant, namespace, agentID, bindingID, agentKey, instanceKey,
+		generation, runtimeName, sdkVersion, capabilities)
+}
+
+func (a *sessionSinkAdapter) HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64) {
+	a.sink.ApplyInstanceDisconnect(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, generation)
+}
+
+func (a *sessionSinkAdapter) HandleSessionReport(identity asdp.ReportIdentity, report *asdp.SessionReport) {
 	if report == nil {
 		return
 	}
@@ -103,8 +118,6 @@ func (a *sessionSinkAdapter) HandleSessionReport(namespace, agentName, instanceI
 			PromptTokens:          s.GetPromptTokens(),
 			CompletionTokens:      s.GetCompletionTokens(),
 			ContextPressure:       s.GetContextPressure(),
-			TeamID:                s.GetTeamId(),
-			TeamRole:              s.GetTeamRole(),
 			Framework:             s.GetFramework(),
 			FrameworkVersion:      s.GetFrameworkVersion(),
 			ContextHash:           s.GetContextHash(),
@@ -112,13 +125,18 @@ func (a *sessionSinkAdapter) HandleSessionReport(namespace, agentName, instanceI
 			EffectiveMessageCount: s.GetEffectiveMessageCount(),
 		})
 	}
-	a.sink.ApplySessionReport(context.Background(), namespace, agentName, instanceID, observed)
+	a.sink.ApplySessionReport(context.Background(), reportIdentity(identity), observed)
 }
 
 // HandleEventReport maps an ASDP Level-2 event batch to the store sink.
-func (a *sessionSinkAdapter) HandleEventReport(namespace, agentName, instanceID string, report *asdp.EventReport) {
-	if report == nil || len(report.Events) == 0 {
-		return
+func (a *sessionSinkAdapter) HandleEventReport(identity asdp.ReportIdentity, report *asdp.EventReport) *asdp.EventReportAck {
+	ack := &asdp.EventReportAck{}
+	if report == nil {
+		return ack
+	}
+	ack.ReportId = report.GetReportId()
+	if len(report.Events) == 0 {
+		return ack
 	}
 	events := make([]controller.ObservedEvent, 0, len(report.Events))
 	for _, e := range report.Events {
@@ -141,15 +159,22 @@ func (a *sessionSinkAdapter) HandleEventReport(namespace, agentName, instanceID 
 			FrameworkMeta: e.GetFrameworkMeta(),
 		})
 	}
-	a.sink.ApplyEventReport(context.Background(), namespace, agentName, instanceID, events)
+	committed, err := a.sink.ApplyEventReport(context.Background(), reportIdentity(identity), events)
+	if err != nil {
+		ack.Error = err.Error()
+	}
+	for sessionID, seq := range committed {
+		ack.Committed = append(ack.Committed, &asdp.SessionEventCursor{SessionId: sessionID, CommittedSeq: seq})
+	}
+	return ack
 }
 
 // HandleContextReport maps an ASDP Level-4 context report to the store sink.
-func (a *sessionSinkAdapter) HandleContextReport(namespace, agentName, instanceID string, report *asdp.ContextReport) {
+func (a *sessionSinkAdapter) HandleContextReport(identity asdp.ReportIdentity, report *asdp.ContextReport) {
 	if report == nil {
 		return
 	}
-	a.sink.ApplyContextReport(context.Background(), namespace, agentName, instanceID, controller.ObservedContext{
+	a.sink.ApplyContextReport(context.Background(), reportIdentity(identity), controller.ObservedContext{
 		SessionID:            report.GetSessionId(),
 		ContextHash:          report.GetContextHash(),
 		CapturedAt:           unixMsToTime(report.GetCapturedAt()),
@@ -168,7 +193,7 @@ func (a *sessionSinkAdapter) HandleContextReport(namespace, agentName, instanceI
 }
 
 // HandleInventoryReport maps an ASDP inventory report to the store sink.
-func (a *sessionSinkAdapter) HandleInventoryReport(namespace, agentName, instanceID string, report *asdp.InventoryReport) {
+func (a *sessionSinkAdapter) HandleInventoryReport(identity asdp.ReportIdentity, report *asdp.InventoryReport) {
 	if report == nil {
 		return
 	}
@@ -197,7 +222,63 @@ func (a *sessionSinkAdapter) HandleInventoryReport(namespace, agentName, instanc
 		inv.HealthReason = h.GetReason()
 		inv.ActiveSessions = h.GetActiveSessions()
 	}
-	a.sink.ApplyInventoryReport(context.Background(), namespace, agentName, instanceID, inv)
+	a.sink.ApplyInventoryReport(context.Background(), reportIdentity(identity), inv)
+}
+
+func reportIdentity(identity asdp.ReportIdentity) controller.RuntimeReportIdentity {
+	return controller.RuntimeReportIdentity{
+		Tenant:             identity.Tenant,
+		Namespace:          identity.Namespace,
+		AgentID:            identity.AgentID,
+		BindingID:          identity.BindingID,
+		AgentKey:           identity.AgentKey,
+		InstanceKey:        identity.InstanceKey,
+		InstanceGeneration: identity.InstanceGeneration,
+	}
+}
+
+func (a *sessionSinkAdapter) HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *asdp.ExecutionAttemptReport) {
+	if report == nil {
+		return
+	}
+	attemptID, err := uuid.Parse(report.GetAttemptId())
+	if err != nil {
+		return
+	}
+	taskID, err := uuid.Parse(report.GetAgentTaskId())
+	if err != nil {
+		return
+	}
+	runID, err := uuid.Parse(report.GetRunId())
+	if err != nil {
+		return
+	}
+	nodeID, err := uuid.Parse(report.GetNodeId())
+	if err != nil {
+		return
+	}
+	inputIDs := make([]uuid.UUID, 0, len(report.GetInputIds()))
+	for _, raw := range report.GetInputIds() {
+		if id, parseErr := uuid.Parse(raw); parseErr == nil {
+			inputIDs = append(inputIDs, id)
+		}
+	}
+	_ = a.sink.ApplyExecutionAttemptReport(context.Background(), tenant, namespace, agentID, bindingID, instanceKey, instanceGeneration,
+		attemptID, taskID, runID, nodeID, report.GetGeneration(), report.GetAction(), inputIDs,
+		report.GetContent(), report.GetResult(), report.GetCheckpoint(), report.GetUsage(),
+		report.GetErrorCode(), report.GetErrorMessage(), report.GetAttemptToken())
+}
+
+func (a *sessionSinkAdapter) HandleConversationTurnReport(identity asdp.ReportIdentity, report *asdp.ConversationTurnReport) {
+	if report == nil {
+		return
+	}
+	_ = a.sink.ApplyConversationTurnReport(context.Background(), reportIdentity(identity), controller.ObservedConversationTurn{
+		InvocationID: report.GetInvocationId(), ConversationID: report.GetConversationId(), TurnID: report.GetTurnId(),
+		SessionID: report.GetSessionId(), Generation: report.GetGeneration(), Action: report.GetAction(),
+		Sequence: report.GetSequence(), Payload: report.GetPayload(), ErrorCode: report.GetErrorCode(),
+		ErrorMessage: report.GetErrorMessage(),
+	})
 }
 
 // unixMsToTime converts unix milliseconds to UTC time; 0 yields the zero time.
@@ -214,19 +295,6 @@ func unixMsToTimePtr(ms int64) *time.Time {
 	}
 	t := time.UnixMilli(ms).UTC()
 	return &t
-}
-
-func (a *sessionSinkAdapter) HandleTeamEventReport(namespace, agentName string, report *asdp.TeamEventReport) {
-	if a.teamSink == nil || report == nil {
-		return
-	}
-	a.teamSink.HandleEvent(context.Background(), namespace, &controller.TeamEventReport{
-		TeamID:     report.GetTeamId(),
-		EventType:  report.GetEventType(),
-		MemberName: report.GetMemberName(),
-		TaskID:     report.GetTaskId(),
-		Detail:     controller.ParseDetail(report.GetDetail()),
-	})
 }
 
 func init() {
@@ -264,6 +332,7 @@ func main() {
 		productToken     string
 		workspaceRoot    string
 		staticDir        string
+		artifactRoot     string
 		seedUsers        bool
 
 		storageDriver          string
@@ -276,6 +345,7 @@ func main() {
 		retentionContexts      time.Duration
 		retentionMetrics       time.Duration
 		enableHostedStore      bool
+		enableRuntimeHost      bool
 		retentionBusQueue      time.Duration
 		retentionBusLog        time.Duration
 		retentionAsyncTools    time.Duration
@@ -283,6 +353,12 @@ func main() {
 		retentionTasks         time.Duration
 		taskSweepInterval      time.Duration
 		taskOrphanTimeout      time.Duration
+		runtimeSweepInterval   time.Duration
+		runtimeOfflineTimeout  time.Duration
+		scopeMode              string
+		defaultTenant          string
+		defaultNamespace       string
+		allowLocalEnvironment  bool
 	)
 
 	defaultRetention := store.DefaultRetention()
@@ -297,7 +373,7 @@ func main() {
 	flag.BoolVar(&enableASDP, "enable-asdp", true,
 		"Enable the ASDP data plane protocol (gRPC coordination, config push). On by default.")
 	flag.BoolVar(&enableExperimental, "enable-experimental", false,
-		"Enable experimental features (distributed AgentTeam, sandbox provisioning). Off by default.")
+		"Enable experimental sandbox provisioning. Off by default.")
 	flag.BoolVar(&enableWebhook, "enable-webhook", false, "Enable the Agent validating admission webhook (requires serving certs).")
 	flag.BoolVar(&showVersion, "version", false, "Print version information and exit.")
 	flag.StringVar(&apiAuthToken, "api-auth-token", os.Getenv("AGENTSCOPE_API_TOKEN"),
@@ -328,8 +404,18 @@ func main() {
 		"Filesystem root for agent workspaces.")
 	flag.StringVar(&staticDir, "static-dir", envOr("AISTIO_STATIC_DIR", ""),
 		"Directory holding the built console SPA. Empty disables static serving.")
+	flag.StringVar(&artifactRoot, "artifact-root", envOr("AISTIO_ARTIFACT_ROOT", "./data/artifacts"),
+		"Root for the local Artifact provider. Production deployments should mount durable shared object storage here.")
 	flag.BoolVar(&seedUsers, "seed-users", envBool("AISTIO_SEED_USERS", true),
 		"Seed default console users when the users table is empty.")
+	flag.BoolVar(&allowLocalEnvironment, "allow-local-environment", envBool("BUILDER_ALLOW_LOCAL_ENVIRONMENT", false),
+		"Allow Managed Agents to bind host-local filesystem and shell environments. Disabled by default; enable only for trusted development installations.")
+	flag.StringVar(&scopeMode, "scope-mode", envOr("AISTIO_SCOPE_MODE", httpapi.ScopeModeSingle),
+		"Scope selection mode: single fixes and hides tenant/namespace; multi allows explicit selection.")
+	flag.StringVar(&defaultTenant, "default-tenant", envOr("AISTIO_DEFAULT_TENANT", "default"),
+		"Authoritative tenant in single scope mode.")
+	flag.StringVar(&defaultNamespace, "default-namespace", envOr("AISTIO_DEFAULT_NAMESPACE", "default"),
+		"Authoritative namespace in single scope mode.")
 
 	flag.StringVar(&storageDriver, "storage-driver", store.DriverMemory,
 		"Runtime data storage driver: memory (dev/test, non-durable) or postgres (production).")
@@ -338,12 +424,14 @@ func main() {
 	flag.IntVar(&storageMaxOpenConns, "storage-max-open-conns", 20, "Maximum open connections to the storage backend.")
 	flag.IntVar(&storageMaxIdleConns, "storage-max-idle-conns", 5, "Maximum idle connections to the storage backend.")
 	flag.DurationVar(&storageConnMaxLifetime, "storage-conn-max-lifetime", 30*time.Minute, "Maximum lifetime of a storage backend connection.")
-	flag.DurationVar(&retentionSessionEvents, "retention-session-events", defaultRetention.SessionEvents, "Retention window for session events.")
+	flag.DurationVar(&retentionSessionEvents, "retention-session-events", defaultRetention.SessionEvents, "Retention window for session events; 0 keeps complete history.")
 	flag.DurationVar(&retentionSnapshots, "retention-snapshots", defaultRetention.Snapshots, "Retention window for session snapshots and metrics.")
 	flag.DurationVar(&retentionContexts, "retention-context-snapshots", defaultRetention.ContextSnapshots, "Retention window for full context snapshots.")
 	flag.DurationVar(&retentionMetrics, "retention-metrics", defaultRetention.Metrics, "Retention window for token/agent metrics.")
 	flag.BoolVar(&enableHostedStore, "enable-hosted-store", envBool("AISTIO_ENABLE_HOSTED_STORE", false),
 		"Enable the hosted DistributedStore API (/api/v1/dp/*) for data-plane coordination.")
+	flag.BoolVar(&enableRuntimeHost, "enable-runtime-host", envBool("AISTIO_ENABLE_RUNTIME_HOST", true),
+		"Enable the Runtime Host registration and execution protocol.")
 	flag.DurationVar(&retentionBusQueue, "retention-bus-queue", defaultRetention.BusQueue, "Retention window for undrained hosted bus queue entries.")
 	flag.DurationVar(&retentionBusLog, "retention-bus-log", defaultRetention.BusLog, "Retention window for hosted bus replay log entries.")
 	flag.DurationVar(&retentionAsyncTools, "retention-async-tools", defaultRetention.AsyncTools, "Retention window for hosted async tool records.")
@@ -351,7 +439,20 @@ func main() {
 	flag.DurationVar(&retentionTasks, "retention-tasks", defaultRetention.Tasks, "Retention window for terminal hosted subagent task records.")
 	flag.DurationVar(&taskSweepInterval, "task-sweep-interval", time.Minute, "Interval for hosted subagent task orphan sweeps.")
 	flag.DurationVar(&taskOrphanTimeout, "task-orphan-timeout", 10*time.Minute, "Mark non-terminal hosted tasks FAILED when last_updated_at is older than this.")
+	flag.DurationVar(&runtimeSweepInterval, "runtime-sweep-interval", 10*time.Second,
+		"Interval for Runtime Host health and execution lease convergence.")
+	flag.DurationVar(&runtimeOfflineTimeout, "runtime-offline-timeout", 45*time.Second,
+		"Mark Runtime Hosts and Agent instances offline after this heartbeat gap.")
 	flag.Parse()
+	scopeMode = strings.ToLower(strings.TrimSpace(scopeMode))
+	if scopeMode != httpapi.ScopeModeSingle && scopeMode != httpapi.ScopeModeMulti {
+		fmt.Fprintf(os.Stderr, "invalid --scope-mode %q: expected single or multi\n", scopeMode)
+		os.Exit(2)
+	}
+	if strings.TrimSpace(defaultTenant) == "" || strings.TrimSpace(defaultNamespace) == "" {
+		fmt.Fprintln(os.Stderr, "--default-tenant and --default-namespace must not be empty")
+		os.Exit(2)
+	}
 
 	if showVersion {
 		fmt.Printf("aistiod %s (commit: %s, built: %s)\n", version, gitCommit, buildDate)
@@ -389,7 +490,7 @@ func main() {
 	}
 
 	// Open the runtime data store (sessions, events, context snapshots,
-	// metrics, team messages/tasks). Memory is the default for local/dev use
+	// metrics, Issue collaboration, and AgentTasks). Memory is the default for local/dev use
 	// and unit tests; it is NOT durable across restarts.
 	storeCfg := store.Config{
 		Driver:          storageDriver,
@@ -428,20 +529,25 @@ func main() {
 		logger.Info("Managed Agents control plane not mounted: no --product-dsn configured")
 	default:
 		productSrv, err = product.Open(context.Background(), product.Config{
-			DSN:            productDSN,
-			JWTSecret:      productJWTSecret,
-			InternalToken:  productToken,
-			WorkspaceRoot:  workspaceRoot,
-			SeedUsers:      seedUsers,
-			DataURL:        os.Getenv("BUILDER_DATA_URL"),
-			VaultMasterKey: os.Getenv("BUILDER_VAULT_MASTER_KEY"),
+			DSN:                   productDSN,
+			JWTSecret:             productJWTSecret,
+			InternalToken:         productToken,
+			WorkspaceRoot:         workspaceRoot,
+			SeedUsers:             seedUsers,
+			BootstrapAdmin:        os.Getenv("AISTIO_BOOTSTRAP_ADMIN"),
+			BootstrapPassword:     os.Getenv("AISTIO_BOOTSTRAP_PASSWORD"),
+			AllowLocalEnvironment: allowLocalEnvironment,
+			DataURL:               os.Getenv("BUILDER_DATA_URL"),
+			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),
+			OAuthPublicURL:        os.Getenv("BUILDER_OAUTH_PUBLIC_URL"),
 		})
 		if err != nil {
 			logger.Error(err, "unable to open the Managed Agents control plane")
 			os.Exit(1)
 		}
 		defer productSrv.Close()
-		logger.Info("Managed Agents control plane enabled", "workspaceRoot", workspaceRoot, "staticDir", staticDir)
+		logger.Info("Managed Agents control plane enabled", "workspaceRoot", workspaceRoot, "staticDir", staticDir,
+			"allowLocalEnvironment", allowLocalEnvironment)
 	}
 
 	// Kubernetes is optional: without a reachable cluster aistiod still serves
@@ -473,12 +579,49 @@ func main() {
 
 	// Shared components
 	httpProber := prober.NewHTTPProber()
+	httpProber.InternalToken = productToken
 	dpRegistry := dataplane.NewRegistry()
 
 	var asdpServer *asdp.Server
-	var teamEventSinkHolder *sessionSinkAdapter
+	if enableASDP {
+		asdpServer, err = asdp.NewServer(asdp.ServerConfig{
+			Addr: grpcAddr, AuthToken: productToken, TLSCert: grpcTLSCert, TLSKey: grpcTLSKey, TLSCACert: grpcTLSCA,
+		})
+		if err != nil {
+			logger.Error(err, "unable to create ASDP gRPC server")
+			os.Exit(1)
+		}
+		attemptTokens := &taskauth.Manager{Secret: []byte(productJWTSecret), TTL: time.Hour}
+		sessionSink := &controller.SessionEventSink{Store: runtimeStore, AttemptTokens: attemptTokens}
+		if mgr != nil {
+			sessionSink.Client = mgr.GetClient()
+		}
+		asdpServer.SetIdentityValidator(func(ctx context.Context, meta *asdp.UpstreamMeta, credential string, trusted bool) error {
+			agentID, parseErr := uuid.Parse(meta.GetAgentId())
+			if parseErr != nil {
+				return store.ErrForbidden
+			}
+			bindingID, parseErr := uuid.Parse(meta.GetBindingId())
+			if parseErr != nil {
+				return store.ErrForbidden
+			}
+			var credentialHash []byte
+			if credential != "" && !trusted {
+				digest := sha256.Sum256([]byte(credential))
+				credentialHash = digest[:]
+			}
+			_, validateErr := runtimeStore.AgentCatalog().ValidateInstanceClaim(ctx, store.AgentInstanceClaim{
+				Tenant: meta.GetTenant(), Namespace: meta.GetNamespace(), AgentID: agentID, BindingID: bindingID,
+				AgentKey: meta.GetAgentKey(), InstanceKey: meta.GetInstanceKey(), Generation: meta.GetGeneration(),
+				CredentialHash: credentialHash, TrustedWorkloadIdentity: trusted,
+			})
+			return validateErr
+		})
+		asdpServer.SetEventSink(&sessionSinkAdapter{sink: sessionSink})
+		logger.Info("ASDP application protocol enabled", "kubernetes", mgr != nil)
+	}
 	if mgr != nil {
-		asdpServer, teamEventSinkHolder = setupKubernetes(kubeRuntime{
+		setupKubernetes(kubeRuntime{
 			mgr:                mgr,
 			logger:             logger,
 			store:              runtimeStore,
@@ -486,52 +629,13 @@ func main() {
 			prober:             httpProber,
 			registry:           dpRegistry,
 			product:            productSrv,
-			enableASDP:         enableASDP,
 			enableExperimental: enableExperimental,
 			enableWebhook:      enableWebhook,
 			enableHostedStore:  enableHostedStore,
-			grpcAddr:           grpcAddr,
-			grpcTLSCert:        grpcTLSCert,
-			grpcTLSKey:         grpcTLSKey,
-			grpcTLSCA:          grpcTLSCA,
+			asdpServer:         asdpServer,
 			taskSweepInterval:  taskSweepInterval,
 			taskOrphanTimeout:  taskOrphanTimeout,
 		})
-	} else if enableASDP {
-		logger.Info("ASDP disabled: the data plane protocol requires a Kubernetes connection")
-	}
-
-	// Shared Team runtime (one Lifecycle / MessageRouter / Activator tree).
-	// REST and kube adapters both use these; registry/K8s are sources only.
-	var teamLifecycle *team.Lifecycle
-	var teamTaskStore *team.TaskStore
-	var teamMsgRouter *team.MessageRouter
-	if runtimeStore != nil {
-		teamTaskStore = team.NewTaskStore(runtimeStore.TeamTasks())
-		teamMsgRouter = team.NewMessageRouter(runtimeStore.TeamMessages(), runtimeStore.Sessions())
-		spawner := team.NewSessionSpawner(runtimeStore)
-		teamLifecycle = team.NewLifecycle(runtimeStore, teamTaskStore, teamMsgRouter, spawner)
-		var commander team.SessionCommander
-		if asdpServer != nil {
-			commander = asdpServer.Distributor()
-		}
-		act := team.NewActivator(runtimeStore, dpRegistry, commander)
-		if productSrv != nil {
-			act.SetManagedSessionAPI(productSrv)
-			productSrv.SetTeamContextLookup(func(ctx context.Context, sessionID string) json.RawMessage {
-				list, err := runtimeStore.Sessions().List(ctx, store.SessionFilter{SessionID: sessionID, Limit: 1})
-				if err != nil || len(list) == 0 {
-					return nil
-				}
-				return list[0].TeamContext
-			})
-			productSrv.SetTeamMemberActivityHook(func(ctx context.Context, sessionID, status string) {
-				if err := team.SyncMemberPhaseFromSessionStatus(ctx, runtimeStore, sessionID, status); err != nil {
-					logger.Error(err, "team member phase sync failed", "session", sessionID, "status", status)
-				}
-			})
-		}
-		teamLifecycle.SetActivator(act)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -556,6 +660,39 @@ func main() {
 	}).Run(ctx)
 	logger.Info("data plane self-registration poller started")
 
+	go func() {
+		worker := &controller.RuntimeControlSweeper{
+			Store: runtimeStore, Interval: runtimeSweepInterval,
+			RuntimeTimeout: runtimeOfflineTimeout, Batch: 100,
+			ReconcileRun: func(sweepCtx context.Context, runID uuid.UUID) error {
+				return (&orchestration.Engine{Store: runtimeStore}).ReconcileRun(sweepCtx, runID)
+			},
+		}
+		if err := worker.Start(ctx); err != nil {
+			logger.Error(err, "runtime control sweeper stopped")
+		}
+	}()
+	logger.Info("runtime control sweeper started", "interval", runtimeSweepInterval,
+		"offlineTimeout", runtimeOfflineTimeout)
+
+	collaborationEvents := realtime.NewHub()
+
+	go func() {
+		worker := &automation.Worker{Service: &automation.Service{Store: runtimeStore}, Interval: 2 * time.Second, Batch: 100}
+		if err := worker.Start(ctx); err != nil {
+			logger.Error(err, "automation worker stopped")
+		}
+	}()
+	logger.Info("automation worker started", "interval", 2*time.Second)
+
+	go func() {
+		worker := &orchestration.Worker{Store: runtimeStore, Interval: time.Second, Batch: 200}
+		if err := worker.Start(ctx); err != nil {
+			logger.Error(err, "orchestration engine worker stopped")
+		}
+	}()
+	logger.Info("orchestration engine worker started", "interval", time.Second)
+
 	// Start the ASDP gRPC server.
 	// Multi-replica note: the gRPC server runs on ALL replicas, not just the
 	// leader. Each replica accepts data plane connections and pushes config to
@@ -577,21 +714,28 @@ func main() {
 	// Build REST API server options. One listener serves the Kubernetes-native
 	// API, the Managed Agents API, and the console SPA.
 	apiOpts := httpapi.ServerOptions{
-		Store:         runtimeStore,
-		Prober:        httpProber,
-		Addr:          httpAddr,
-		Experimental:  enableExperimental,
-		AuthToken:     apiAuthToken,
-		TLSCertFile:   apiTLSCert,
-		TLSKeyFile:    apiTLSKey,
-		Product:       productSrv,
-		StaticDir:     staticDir,
-		Registry:      dpRegistry,
-		InternalToken: productToken,
-		HostedStore:   enableHostedStore,
-		TeamLifecycle: teamLifecycle,
-		TeamTaskStore: teamTaskStore,
-		TeamRouter:    teamMsgRouter,
+		Store:                    runtimeStore,
+		Prober:                   httpProber,
+		Addr:                     httpAddr,
+		Experimental:             enableExperimental,
+		AuthToken:                apiAuthToken,
+		TLSCertFile:              apiTLSCert,
+		TLSKeyFile:               apiTLSKey,
+		Product:                  productSrv,
+		StaticDir:                staticDir,
+		Registry:                 dpRegistry,
+		InternalToken:            productToken,
+		TaskTokenSecret:          productJWTSecret,
+		EndpointCredentialSecret: envOr("AISTIO_ENDPOINT_CREDENTIAL_KEY", productJWTSecret),
+		HostedStore:              enableHostedStore,
+		ArtifactProvider:         &artifact.LocalProvider{Root: artifactRoot},
+		CollaborationEvents:      collaborationEvents,
+		Features: features.Gates{
+			RuntimeHost: enableRuntimeHost,
+		},
+		ScopeMode:        scopeMode,
+		DefaultTenant:    defaultTenant,
+		DefaultNamespace: defaultNamespace,
 	}
 	if mgr != nil {
 		apiOpts.Client = mgr.GetClient()
@@ -612,6 +756,26 @@ func main() {
 	}
 
 	apiServer := httpapi.NewServer(apiOpts)
+	outboxHandler := &controller.CollaborationOutboxHandler{
+		Store: runtimeStore, Sink: collaborationEvents, DispatchAgentTask: apiServer.DispatchAgentTask,
+		DispatchApprovalDecision: apiServer.DispatchApprovalDecision,
+		DispatchManagedAbort:     apiServer.DispatchManagedAttemptAbort,
+		ReconcileRun: func(eventCtx context.Context, runID uuid.UUID) error {
+			return (&orchestration.Engine{Store: runtimeStore}).ReconcileRun(eventCtx, runID)
+		},
+	}
+	hostname, _ := os.Hostname()
+	go func() {
+		worker := &controller.ControlOutboxDispatcher{
+			Store: runtimeStore, Handler: outboxHandler,
+			WorkerID:   fmt.Sprintf("%s/%d", hostname, os.Getpid()),
+			MaxBackoff: 5 * time.Second,
+		}
+		if err := worker.Start(ctx); err != nil {
+			logger.Error(err, "control outbox dispatcher stopped")
+		}
+	}()
+	logger.Info("control outbox dispatcher started")
 
 	if ops := apiServer.SessionOps(); ops != nil && runtimeStore != nil {
 		go (&sessionops.QueueWorker{
@@ -621,69 +785,6 @@ func main() {
 			Batch:    20,
 		}).Run(ctx)
 		logger.Info("session command queue worker started")
-	}
-
-	// Shared TeamRuntime loops: message delivery + lifecycle sweep.
-	// Independent of Kubernetes / --enable-experimental.
-	if runtimeStore != nil && teamLifecycle != nil {
-		var asdpDeliverer controller.TeamEventDeliverer
-		if asdpServer != nil {
-			asdpDeliverer = asdpServer.Distributor()
-		}
-		var managedWake controller.ManagedWakeAPI
-		if productSrv != nil {
-			managedWake = productSrv
-		}
-		dispatcher := &controller.TeamMessageDispatcher{
-			Store:       runtimeStore,
-			Deliverer:   asdpDeliverer,
-			ManagedWake: managedWake,
-		}
-		go func() {
-			if err := dispatcher.Start(ctx); err != nil {
-				logger.Error(err, "team message dispatcher stopped")
-			}
-		}()
-		logger.Info("team message dispatcher started")
-
-		sweeper := &controller.TeamSweeper{
-			Store:     runtimeStore,
-			Lifecycle: teamLifecycle,
-		}
-		if mgr != nil {
-			if err := mgr.Add(sweeper); err != nil {
-				logger.Error(err, "unable to add team sweeper")
-				os.Exit(1)
-			}
-		} else {
-			go func() {
-				if err := sweeper.Start(ctx); err != nil {
-					logger.Error(err, "team sweeper stopped")
-				}
-			}()
-		}
-		logger.Info("team sweeper started")
-	}
-
-	// Kube AgentTeam adapter: project CRD ↔ store using the shared Lifecycle.
-	if mgr != nil && enableExperimental && teamLifecycle != nil {
-		if teamEventSinkHolder != nil {
-			sink := controller.NewTeamEventSink(
-				mgr.GetClient(), teamTaskStore, mgr.GetEventRecorderFor("agentscope-controller"))
-			sink.SetMessageRouter(teamMsgRouter)
-			teamEventSinkHolder.teamSink = sink
-		}
-		if err := (&controller.AgentTeamReconciler{
-			Client:    mgr.GetClient(),
-			Scheme:    mgr.GetScheme(),
-			Recorder:  mgr.GetEventRecorderFor("agentscope-controller"),
-			Lifecycle: teamLifecycle,
-			Store:     runtimeStore,
-		}).SetupWithManager(mgr); err != nil {
-			logger.Error(err, "unable to create controller", "controller", "AgentTeam")
-			os.Exit(1)
-		}
-		logger.Info("AgentTeam CRD source adapter registered")
 	}
 
 	// Without a manager the REST server is the only long-running component,
@@ -723,50 +824,25 @@ type kubeRuntime struct {
 	prober             prober.DataPlaneProber
 	registry           *dataplane.Registry
 	product            *product.Server
-	enableASDP         bool
 	enableExperimental bool
 	enableWebhook      bool
 	enableHostedStore  bool
-	grpcAddr           string
-	grpcTLSCert        string
-	grpcTLSKey         string
-	grpcTLSCA          string
+	asdpServer         *asdp.Server
 	taskSweepInterval  time.Duration
 	taskOrphanTimeout  time.Duration
 }
 
 // setupKubernetes registers the reconcilers, config delivery, admission
-// webhooks, and health checks that require a cluster connection. It returns
-// the ASDP server when the data plane protocol is enabled, plus the session
-// sink adapter so the shared TeamRuntime can attach TeamEventSink later.
-func setupKubernetes(k kubeRuntime) (*asdp.Server, *sessionSinkAdapter) {
+// webhooks, and health checks that require a cluster connection. Application
+// ASDP is constructed by main and passed in only for Kubernetes config watches.
+func setupKubernetes(k kubeRuntime) {
 	mgr, logger, runtimeStore, httpProber := k.mgr, k.logger, k.store, k.prober
 
 	// Build ASDP server for data plane coordination.
 	// Created early so core controllers can receive the distributor.
 	var dist controller.ConfigDistributor
-	var asdpServer *asdp.Server
-	var sinkAdapter *sessionSinkAdapter
-	if k.enableASDP {
-		srv, err := asdp.NewServer(asdp.ServerConfig{
-			Addr:      k.grpcAddr,
-			TLSCert:   k.grpcTLSCert,
-			TLSKey:    k.grpcTLSKey,
-			TLSCACert: k.grpcTLSCA,
-		})
-		if err != nil {
-			logger.Error(err, "unable to create ASDP gRPC server")
-			os.Exit(1)
-		}
-		asdpServer = srv
-		dist = &distributorAdapter{dist: asdpServer.Distributor()}
-		// Wire upstream session reports through to the runtime Store.
-		// teamSink is attached later once the shared TeamRuntime exists.
-		sinkAdapter = &sessionSinkAdapter{
-			sink: &controller.SessionEventSink{Client: mgr.GetClient(), Store: runtimeStore},
-		}
-		asdpServer.SetEventSink(sinkAdapter)
-		logger.Info("ASDP data plane protocol enabled")
+	if k.asdpServer != nil {
+		dist = &distributorAdapter{dist: k.asdpServer.Distributor()}
 	}
 
 	enableExperimental := k.enableExperimental
@@ -876,10 +952,9 @@ func setupKubernetes(k kubeRuntime) (*asdp.Server, *sessionSinkAdapter) {
 	}
 
 	// ===== Experimental controllers (gated) =====
-	// Sandbox remains experimental. AgentTeam CRD adapter + shared TeamRuntime
-	// loops are wired in main() after the shared Lifecycle is constructed.
+	// Sandbox remains experimental.
 	if enableExperimental {
-		logger.Info("experimental features enabled (SandboxBroker; AgentTeam adapter wires later)")
+		logger.Info("experimental features enabled (SandboxBroker)")
 
 		if err := (&controller.SandboxBrokerReconciler{
 			Client:   mgr.GetClient(),
@@ -898,8 +973,6 @@ func setupKubernetes(k kubeRuntime) (*asdp.Server, *sessionSinkAdapter) {
 			&admission.Webhook{Handler: discovery.NewAgentValidator(decoder)})
 		mgr.GetWebhookServer().Register("/mutate-agentscope-io-v1alpha1-agent",
 			&admission.Webhook{Handler: discovery.NewAgentDefaulter(decoder)})
-		mgr.GetWebhookServer().Register("/validate-agentscope-io-v1alpha1-agentteam",
-			&admission.Webhook{Handler: discovery.NewAgentTeamValidator(decoder)})
 		mgr.GetWebhookServer().Register("/validate-agentscope-io-v1alpha1-modelconfig",
 			&admission.Webhook{Handler: discovery.NewModelConfigValidator(decoder)})
 		mgr.GetWebhookServer().Register("/validate-agentscope-io-v1alpha1-mcpserver",
@@ -922,8 +995,6 @@ func setupKubernetes(k kubeRuntime) (*asdp.Server, *sessionSinkAdapter) {
 		logger.Error(err, "unable to set up storage ready check")
 		os.Exit(1)
 	}
-
-	return asdpServer, sinkAdapter
 }
 
 // probeSelf calls /healthz on the local REST listener so container runtimes

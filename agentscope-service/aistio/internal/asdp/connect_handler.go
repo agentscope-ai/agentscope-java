@@ -45,10 +45,11 @@ func NewConnectHandler(server *Server) *ConnectHandler {
 func (h *ConnectHandler) HandleConnect(ctx context.Context, meta *UpstreamMeta, req *ConnectRequest) *ConnectResponse {
 	logger := log.Log.WithName("asdp-connect")
 
-	if meta.AgentName == "" || meta.InstanceId == "" || meta.Namespace == "" {
+	if meta.GetTenant() == "" || meta.GetAgentId() == "" || meta.GetAgentKey() == "" || meta.GetBindingId() == "" ||
+		meta.GetInstanceKey() == "" || meta.GetGeneration() <= 0 || meta.Namespace == "" {
 		return &ConnectResponse{
 			Accepted:     false,
-			RejectReason: "agentName, instanceId, and namespace are required",
+			RejectReason: "tenant, namespace, agentId, agentKey, bindingId, instanceKey, and generation are required",
 		}
 	}
 
@@ -56,7 +57,7 @@ func (h *ConnectHandler) HandleConnect(ctx context.Context, meta *UpstreamMeta, 
 	// to the claimed identity so an instance cannot impersonate another agent.
 	if err := verifyPeerIdentity(ctx, meta); err != nil {
 		logger.Info("rejecting handshake: client certificate identity mismatch",
-			"agent", meta.AgentName, "namespace", meta.Namespace, "instance", meta.InstanceId, "error", err.Error())
+			"agentId", meta.AgentId, "agentKey", meta.AgentKey, "namespace", meta.Namespace, "instance", meta.InstanceKey, "error", err.Error())
 		return &ConnectResponse{
 			Accepted:     false,
 			RejectReason: err.Error(),
@@ -65,17 +66,20 @@ func (h *ConnectHandler) HandleConnect(ctx context.Context, meta *UpstreamMeta, 
 
 	// Proactively tear down a stale connection for the same instance so its
 	// writer goroutine and stream are released before the new one registers.
-	if existing, ok := h.server.GetConnection(meta.Namespace, meta.InstanceId); ok {
+	if existing, ok := h.server.GetConnectionForAgentInstance(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey); ok {
 		logger.Info("reconnecting existing instance",
 			"agent", existing.AgentName,
-			"instance", meta.InstanceId,
+			"instance", meta.InstanceKey,
 		)
-		h.server.UnregisterConnection(meta.Namespace, meta.InstanceId)
+		h.server.UnregisterConnection(meta.GetTenant(), meta.Namespace, meta.AgentId, meta.InstanceKey)
 	}
 
 	logger.Info("handshake accepted",
-		"agent", meta.AgentName,
-		"instance", meta.InstanceId,
+		"agentId", meta.AgentId,
+		"agentKey", meta.AgentKey,
+		"bindingId", meta.BindingId,
+		"instance", meta.InstanceKey,
+		"generation", meta.Generation,
 		"runtime", req.Runtime,
 		"sdkVersion", req.SdkVersion,
 		"capabilities", req.Capabilities,
@@ -96,10 +100,10 @@ func verifyPeerIdentity(ctx context.Context, meta *UpstreamMeta) error {
 	if cert == nil {
 		return nil
 	}
-	if identityMatchesAgent(cert, meta.Namespace, meta.AgentName) {
+	if identityMatchesAgent(cert, meta.Namespace, meta.AgentKey) {
 		return nil
 	}
-	return fmt.Errorf("client certificate identity does not authorize agent %q in namespace %q", meta.AgentName, meta.Namespace)
+	return fmt.Errorf("client certificate identity does not authorize agent %q in namespace %q", meta.AgentKey, meta.Namespace)
 }
 
 // peerLeafCert extracts the verified leaf client certificate from the gRPC peer
@@ -155,13 +159,13 @@ func identityMatchesAgent(cert *x509.Certificate, namespace, agentName string) b
 }
 
 // HandleDisconnect handles a data plane instance disconnection (stream closed).
-func (h *ConnectHandler) HandleDisconnect(namespace, instanceID string) {
+func (h *ConnectHandler) HandleDisconnect(tenant, namespace, agentID, instanceID string) {
 	logger := log.Log.WithName("asdp-connect")
 	logger.Info("instance disconnected", "namespace", namespace, "instance", instanceID)
-	h.server.UnregisterConnection(namespace, instanceID)
+	h.server.UnregisterConnection(tenant, namespace, agentID, instanceID)
 }
 
-// GetInstanceKey returns the routing key for a namespace/instance pair.
-func GetInstanceKey(namespace, instanceID string) string {
-	return fmt.Sprintf("%s/%s", namespace, instanceID)
+// GetInstanceKey returns the routing key for a tenant/namespace/agent/instance tuple.
+func GetInstanceKey(tenant, namespace, agentID, instanceID string) string {
+	return fmt.Sprintf("%s/%s/%s/%s", tenant, namespace, agentID, instanceID)
 }

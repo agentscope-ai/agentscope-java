@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -37,6 +38,7 @@ import io.agentscope.extensions.aistio.model.ContextSnapshot;
 import io.agentscope.extensions.aistio.model.Inventory;
 import io.agentscope.extensions.aistio.model.MessagePage;
 import io.agentscope.extensions.aistio.model.SessionEvent;
+import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,7 +95,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     private final AistioObserverMiddleware middleware;
     private volatile SessionHistorySource historySource;
     private volatile AgentRuntimeSource runtimeSource;
-    private volatile TeamSessionStarter teamSessionStarter;
+    private volatile AgentTaskStarter agentTaskStarter;
 
     /** Sessions seen so far, mapped to the user slot their state lives in. */
     private final Map<String, String> sessionUsers = new ConcurrentHashMap<>();
@@ -134,12 +136,9 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         this.runtimeSource = runtimeSource;
     }
 
-    /**
-     * Optional host hook for {@code team_join} / {@code team_leave}. When set, this adapter
-     * advertises {@link FrameworkAdapter#CAP_TEAM_COORDINATION}.
-     */
-    public void setTeamSessionStarter(TeamSessionStarter teamSessionStarter) {
-        this.teamSessionStarter = teamSessionStarter;
+    /** Installs the host hook that materializes ASDP AgentTask deliveries. */
+    public void setAgentTaskStarter(AgentTaskStarter agentTaskStarter) {
+        this.agentTaskStarter = agentTaskStarter;
     }
 
     // ─── identity ───
@@ -169,14 +168,18 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         caps.add(CAP_SESSION_ABORT);
         caps.add(CAP_TASK_QUERY);
         caps.add(CAP_PLAN_MODE);
+        caps.add(CAP_EXPORT_TRANSCRIPT);
+        caps.add(CAP_CONVERSATION_INBOUND);
         if (runtimeSource != null) {
             caps.add(CAP_SUBAGENT_INVENTORY);
             caps.add(CAP_WORKSPACE_INVENTORY);
             caps.add(CAP_SUBAGENT_TASK_QUERY);
             caps.add(CAP_SUBAGENT_TASK_COMMAND);
         }
-        if (teamSessionStarter != null) {
-            caps.add(CAP_TEAM_COORDINATION);
+        if (agentTaskStarter != null) {
+            caps.add(CAP_AGENT_TASK);
+            if (agentTaskStarter instanceof HarnessAgentTaskStarter starter
+                    && starter.consumesWorkspaceDefinition()) caps.add("workspace-definition-v1");
         }
         return caps;
     }
@@ -519,25 +522,48 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
                                                                 .build()));
                     });
         }
-        if (COMMAND_TEAM_JOIN.equals(command)) {
-            TeamSessionStarter starter = teamSessionStarter;
-            if (starter == null) {
-                return Mono.error(
-                        new UnsupportedOperationException(
-                                "agentscope-java: team_join requires setTeamSessionStarter"));
-            }
-            return starter.join(sessionId, params == null ? new byte[0] : params);
-        }
-        if (COMMAND_TEAM_LEAVE.equals(command)) {
-            TeamSessionStarter starter = teamSessionStarter;
-            if (starter == null) {
-                return Mono.error(
-                        new UnsupportedOperationException(
-                                "agentscope-java: team_leave requires setTeamSessionStarter"));
-            }
-            return starter.leave(sessionId);
-        }
         return Mono.error(new IllegalArgumentException("unsupported command: " + command));
+    }
+
+    @Override
+    public Mono<Void> handleAgentTask(
+            io.agentscope.extensions.aistio.model.AgentTaskAssignment assignment) {
+        AgentTaskStarter starter = agentTaskStarter;
+        if (starter == null) {
+            return Mono.error(
+                    new UnsupportedOperationException(
+                            "agentscope-java: AgentTask requires setAgentTaskStarter"));
+        }
+        String sessionId = assignment.sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = assignment.agentTaskId();
+        }
+        rememberSession(sessionId, "", requireAgent());
+        return starter.start(assignment);
+    }
+
+    @Override
+    public Mono<Void> injectUserMessage(String sessionId, String content) {
+        return callUserMessage(sessionId, content).then();
+    }
+
+    @Override
+    public Mono<String> runConversationTurn(String sessionId, String content) {
+        return callUserMessage(sessionId, content).map(Msg::getTextContent);
+    }
+
+    private Mono<Msg> callUserMessage(String sessionId, String content) {
+        return Mono.defer(
+                () -> {
+                    Agent target = requireAgent();
+                    rememberSession(sessionId, sessionUsers.getOrDefault(sessionId, ""), target);
+                    Msg msg = Msg.builder().role(MsgRole.USER).textContent(content).build();
+                    if (target instanceof HarnessAgent harness) {
+                        RuntimeContext rc = RuntimeContext.builder().sessionId(sessionId).build();
+                        return harness.call(msg, rc);
+                    }
+                    return target.call(msg);
+                });
     }
 
     // ─── tasks ───

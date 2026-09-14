@@ -239,6 +239,8 @@ ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_started BOOLEAN NOT NULL D
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_error TEXT;
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS runtime_updated_at BIGINT;
 
+ALTER TABLE vault_credentials ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;
+
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS workspace_id TEXT;
 
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -288,15 +290,26 @@ CREATE INDEX IF NOT EXISTS idx_marketplaces_owner ON marketplaces (owner_id);
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_environment_id TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_vault_ids_json TEXT;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS default_memory_store_ids_json TEXT;
+
+-- Last accepted physical Managed AgentTask scope for monotonic runtime status
+-- projection. This lives with the product Session because the runtime Store may
+-- use a different PostgreSQL database or the in-memory development driver.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_agent_task_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_attempt_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_dispatch_generation BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS runtime_turn_id TEXT;
 `
 
 func migrate(ctx context.Context, db *DB) error {
 	log.Printf("running cp schema migration")
-	if _, err := db.Pool.Exec(ctx, migrationSQL); err != nil {
+	if _, err := db.Pool.Exec(ctx, migrationSQL+channelWorkMigrationSQL+oauthMigrationSQL+workspacePublicationMigration); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if _, err := db.Pool.Exec(ctx, migrationAlterSQL); err != nil {
 		return fmt.Errorf("migrate alter: %w", err)
+	}
+	if _, err := db.Pool.Exec(ctx, accountManagementSQL); err != nil {
+		return fmt.Errorf("migrate accounts: %w", err)
 	}
 	log.Printf("cp schema migration complete")
 	return nil

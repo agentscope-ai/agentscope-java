@@ -1,13 +1,14 @@
 ---
-title: "Harness Architecture"
-description: "What HarnessAgent is, how its capabilities cooperate, and how state flows during a call()"
+title: Harness Architecture
+description: What HarnessAgent is, how its capabilities cooperate, and how state flows
+  during a call()
 ---
 
 `HarnessAgent` is a thin wrapper around `ReActAgent` that packages the engineering capabilities long-running agents need — workspace-driven persona, long-term memory, subagent orchestration, sandbox isolation, skill composition, plan mode, channel routing — into a single builder.
 
 A bare `ReActAgent` only handles "one request → reason → tool → reply". Harness answers a different set of questions: how does the next turn pick up where the last left off, how does context stay bounded, how do users stay isolated, how do dangerous actions get reviewed, how do reusable capabilities accumulate.
 
-> Installation, dependency, and an end-to-end "first `HarnessAgent`" walkthrough live in [Quickstart](../quickstart.md). This page is architecture only.
+> Installation, dependency, and an end-to-end "first `HarnessAgent`" walkthrough live in [Quickstart](/v2/en/docs/quickstart). This page is architecture only.
 
 ## Core working principle
 
@@ -32,18 +33,18 @@ Each capability answers one problem; opt in on the builder.
 
 | Capability | What it solves | Builder hook | Detail |
 |---|---|---|---|
-| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](./workspace.md) |
-| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](../building-blocks/context.md) |
-| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](./memory.md) |
-| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](./compaction.md) |
-| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](./compaction.md) |
-| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](./subagent.md) |
-| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](./filesystem.md) |
-| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](./sandbox.md) |
-| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](./plan-mode.md) |
-| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](./skill.md) |
-| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](./workspace.md) |
-| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](./channel.md) |
+| Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](/v2/en/docs/harness/workspace) |
+| State persistence | Same `(userId, sessionId)` resumes across requests, processes, replicas | on by default; override with `.stateStore(...)` | [Context & AgentState](/v2/en/docs/building-blocks/context) |
+| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](/v2/en/docs/harness/memory) |
+| Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Compaction](/v2/en/docs/harness/compaction) |
+| Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Compaction](/v2/en/docs/harness/compaction) |
+| Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](/v2/en/docs/harness/subagent) |
+| Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](/v2/en/docs/harness/filesystem) |
+| Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](/v2/en/docs/harness/sandbox) |
+| Plan Mode | Read-only think-first phase with HITL exit | `.enablePlanMode()` | [Plan Mode](/v2/en/docs/harness/plan-mode) |
+| Skill composition | Skills from Git / Nacos / MySQL / classpath / workspace | `.skillRepository(...)` | [Skill](/v2/en/docs/harness/skill) |
+| MCP integration & tool allowlist | Declarative MCP servers + allow/deny per tool | `workspace/tools.json` | [Workspace](/v2/en/docs/harness/workspace) |
+| Channel routing | Session management, per-session concurrency, multi-agent routing, streaming events | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/en/docs/harness/channel) |
 
 ## How state flows
 
@@ -69,13 +70,13 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Related pages
 
-- [Workspace](./workspace.md) — directory layout, what gets injected into the system prompt, `tools.json`
-- [Context & AgentState](../building-blocks/context.md) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
-- [Memory](./memory.md) — two-layer memory
-- [Compaction](./compaction.md) — summary compaction, large-result offloading, overflow recovery
-- [Filesystem](./filesystem.md) — local + shell / shared store / sandbox
-- [Sandbox](./sandbox.md) — isolated execution, cross-call recovery, distributed
-- [Subagent](./subagent.md) — declarations, sync/background, streaming forwarding
-- [Skill](./skill.md) — four-layer composition, self-learning loop
-- [Plan Mode](./plan-mode.md) — read-only phase + HITL exit
-- [Channel](./channel.md) — session management, multi-agent routing, streaming SSE
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, what gets injected into the system prompt, `tools.json`
+- [Context & AgentState](/v2/en/docs/building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
+- [Memory](/v2/en/docs/harness/memory) — two-layer memory
+- [Compaction](/v2/en/docs/harness/compaction) — summary compaction, large-result offloading, overflow recovery
+- [Filesystem](/v2/en/docs/harness/filesystem) — local + shell / shared store / sandbox
+- [Sandbox](/v2/en/docs/harness/sandbox) — isolated execution, cross-call recovery, distributed
+- [Subagent](/v2/en/docs/harness/subagent) — declarations, sync/background, streaming forwarding
+- [Skill](/v2/en/docs/harness/skill) — four-layer composition, self-learning loop
+- [Plan Mode](/v2/en/docs/harness/plan-mode) — read-only phase + HITL exit
+- [Channel](/v2/en/docs/harness/channel) — session management, multi-agent routing, streaming SSE

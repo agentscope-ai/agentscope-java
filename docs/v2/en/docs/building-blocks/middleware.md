@@ -1,6 +1,6 @@
 ---
-title: "Middleware"
-description: "Intercept and extend agent behavior at key lifecycle points"
+title: Middleware
+description: Intercept and extend agent behavior at key lifecycle points
 ---
 
 ## Overview
@@ -33,9 +33,13 @@ onAgent/
     └── onActing (per tool call)
 ```
 
-:::{note}
+
+<Note>
+
 `onActing` only wraps tool executions inside the agent runtime. Tools executed outside the agent via external execution are not tracked by `onActing`.
-:::
+
+</Note>
+
 
 ## Equipping middleware
 
@@ -71,12 +75,67 @@ ReActAgent agent =
 
 When no OpenTelemetry SDK is configured (only the default no-op provider), every hook short-circuits to `next.apply(input)` — near-zero overhead.
 
-Initialise the OpenTelemetry SDK in your process (OTLP exporter, `SdkTracerProvider`, `OpenTelemetrySdk.builder().setTracerProvider(...).buildAndRegisterGlobal()`) and then equip the middleware:
+`OtelTracingMiddleware` reads the process-wide `GlobalOpenTelemetry` instance. Applications that export spans themselves need the OpenTelemetry SDK and OTLP exporter in addition to AgentScope. Keep their versions aligned through the OpenTelemetry BOM (the version below matches the one currently used by AgentScope):
+
+```xml
+<properties>
+    <opentelemetry.version>1.61.0</opentelemetry.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-bom</artifactId>
+            <version>${opentelemetry.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-sdk</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+</dependencies>
+```
+
+Build and register the SDK once per process before constructing the agent. The optional environment variable in this example can contain a value such as `Basic <base64-credentials>` for a backend that requires an `Authorization` header, including Langfuse:
 
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tracing.OtelTracingMiddleware;
-import java.util.List;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+
+String endpoint =
+        System.getenv().getOrDefault(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+String authorization = System.getenv("OTEL_EXPORTER_OTLP_AUTHORIZATION");
+
+var exporterBuilder = OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+if (authorization != null && !authorization.isBlank()) {
+    exporterBuilder.addHeader("Authorization", authorization);
+}
+
+SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+                .addSpanProcessor(
+                        BatchSpanProcessor.builder(exporterBuilder.build()).build())
+                .build();
+
+OpenTelemetrySdk.builder()
+        .setTracerProvider(tracerProvider)
+        .buildAndRegisterGlobal();
+Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
 
 ReActAgent agent =
         ReActAgent.builder()
@@ -84,9 +143,11 @@ ReActAgent agent =
                 .sysPrompt("You are a helpful assistant.")
                 .model(model)
                 .toolkit(toolkit)
-                .middlewares(List.of(new OtelTracingMiddleware()))
+                .middleware(new OtelTracingMiddleware())
                 .build();
 ```
+
+The SDK must be registered before the middleware is used. If your runtime (for example, Spring Boot OpenTelemetry auto-configuration) already registers `GlobalOpenTelemetry`, reuse it and only add the middleware. Do not call the deprecated `TracerRegistry.register(...)` in the new setup. Close the `SdkTracerProvider` during application shutdown so its batch processor can flush pending spans.
 
 Each reply produces a nested span tree with attributes such as agent name, session ID, model name, token counts, tool name, and inputs.
 
@@ -113,6 +174,24 @@ ReActAgent agent =
                 .enableTaskList(true)
                 .build();
 ```
+
+### FinalAnswerFilterMiddleware
+
+`FinalAnswerFilterMiddleware` exposes only the text from the final ReAct reasoning round. Text from rounds that produce tool calls is suppressed, while tool and other non-text events continue to stream normally.
+
+```java
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new FinalAnswerFilterMiddleware())
+                .build();
+```
+
+The middleware buffers each round's text until the model call ends, because it cannot know whether the round is final until no tool call is observed.
 
 ## Custom middleware
 
@@ -182,7 +261,7 @@ Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedM
 
 ### Reading RuntimeContext
 
-Every `MiddlewareBase` hook receives the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
+Every `MiddlewareBase` hook receives the [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -394,9 +473,13 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 }
 ```
 
-:::{tip}
+
+<Tip>
+
 For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed.
-:::
+
+</Tip>
+
 
 ### Stop agent when all tools are denied
 

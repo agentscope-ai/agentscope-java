@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.middleware.PlanModeMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /** Regression coverage for plan-mode capabilities inherited by automatic subagent factories. */
+@HarnessQuiescence
 class PlanModeSubagentPropagationTest {
 
     private static final String PLAN_DIR = "review-plans";

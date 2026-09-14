@@ -211,7 +211,7 @@ func (a *AgentScopeJavaAdapter) BuildConfigMap(agent *v1alpha1.Agent, tools []To
 	}
 
 	// RenderAgentConfig is the shared source of truth (also used by the ASDP
-	// hot-reload push) and covers systemMessage/model/tools/subagents/teamTemplates.
+	// hot-reload push) and covers systemMessage/model/tools/subagents.
 	config := RenderAgentConfig(agent, tools)
 	config["runtime"] = RuntimeAgentScopeJava
 	// Skills are delivered as their own config type over ASDP; for the startup

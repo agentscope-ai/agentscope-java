@@ -73,13 +73,14 @@
         <jackson.version>2.21.1</jackson.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
         <guava.version>33.7.1-jre</guava.version>
         <google-genai.version>1.45.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
         <bailian.version>2.8.2</bailian.version>
-        <openai-java.version>4.28.0</openai-java.version>
+        <openai-java.version>4.52.0</openai-java.version>
         <anthropic.version>2.14.0</anthropic.version>
-        <mcp.version>0.17.0</mcp.version>
+        <mcp.version>0.17.2</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.17</milvus.version>
@@ -100,6 +101,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
+        <mongodb-driver.version>5.3.1</mongodb-driver.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.7</spring.version>
@@ -193,6 +195,15 @@
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
                 <version>${junit-jupiter.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Testcontainers -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -403,6 +414,13 @@
                 <groupId>io.lettuce</groupId>
                 <artifactId>lettuce-core</artifactId>
                 <version>${lettuce.version}</version>
+            </dependency>
+
+            <!-- MongoDB Java Driver (sync) for MongoDB-based session implementation -->
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-sync</artifactId>
+                <version>${mongodb-driver.version}</version>
             </dependency>
 
             <!-- XXL-JOB Core -->
