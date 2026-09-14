@@ -256,7 +256,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
      * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
      * @param timeout default shell timeout (seconds, must be positive)
-     * @param maxOutputBytes byte cap for captured shell output
+     * @param maxOutputBytes nonnegative byte cap for captured shell output; zero disables capture
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process environment
      * @param namespaceFactory optional per-user/session namespace factory
@@ -278,9 +278,9 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         if (timeout <= 0) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
         }
-        if (maxOutputBytes <= 0) {
+        if (maxOutputBytes < 0) {
             throw new IllegalArgumentException(
-                    "maxOutputBytes must be positive, got " + maxOutputBytes);
+                    "maxOutputBytes must be nonnegative, got " + maxOutputBytes);
         }
 
         this.defaultTimeout = timeout;

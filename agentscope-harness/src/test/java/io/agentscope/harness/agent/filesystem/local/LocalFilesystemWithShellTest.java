@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.local;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -64,13 +65,18 @@ class LocalFilesystemWithShellTest {
     }
 
     @Test
-    void constructor_rejectsNonPositiveMaxOutputBytes(@TempDir Path tempDir) {
+    void constructor_acceptsZeroMaxOutputBytes(@TempDir Path tempDir) {
+        assertDoesNotThrow(() -> new LocalFilesystemWithShell(tempDir, false, 60, 0, null, false));
+    }
+
+    @Test
+    void constructor_rejectsNegativeMaxOutputBytes(@TempDir Path tempDir) {
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> new LocalFilesystemWithShell(tempDir, false, 60, 0, null, false));
+                        () -> new LocalFilesystemWithShell(tempDir, false, 60, -1, null, false));
 
-        assertTrue(error.getMessage().contains("maxOutputBytes must be positive"));
+        assertTrue(error.getMessage().contains("maxOutputBytes must be nonnegative"));
     }
 
     @Test
