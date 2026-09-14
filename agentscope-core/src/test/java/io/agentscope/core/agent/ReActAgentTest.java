@@ -19,10 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
@@ -40,9 +42,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -576,6 +580,143 @@ class ReActAgentTest {
         assertEquals("Fallback response", TestUtils.extractTextContent(response));
         assertEquals(1, primaryModel.getCallCount(), "Primary model should be tried once");
         assertEquals(1, fallbackModel.getCallCount(), "Fallback model should be called once");
+    }
+
+    @Test
+    @DisplayName("Should notify failover listener with primary model and original error on switch")
+    void testFailoverListenerNotifiedOnSwitch() {
+        String errorMessage = "Primary model unavailable";
+        MockModel primaryModel = new MockModel("").withError(errorMessage);
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        List<Model> capturedPrimaries = new ArrayList<>();
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener =
+                (primary, error) -> {
+                    capturedPrimaries.add(primary);
+                    capturedErrors.add(error);
+                };
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Fallback response", TestUtils.extractTextContent(response));
+        assertEquals(1, capturedErrors.size(), "Listener should be notified exactly once");
+        assertSame(
+                primaryModel,
+                capturedPrimaries.get(0),
+                "Listener should receive the primary model instance");
+        assertEquals(
+                errorMessage,
+                capturedErrors.get(0).getMessage(),
+                "Listener should receive the original error");
+    }
+
+    @Test
+    @DisplayName("Should keep fallback switching working when failover listener throws")
+    void testFailoverListenerThrowingDoesNotAffectSwitch() {
+        MockModel primaryModel = new MockModel("").withError("Primary model unavailable");
+        MockModel fallbackModel = new MockModel("Fallback response");
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(fallbackModel)
+                        .failoverListener(
+                                (primary, error) -> {
+                                    throw new IllegalStateException("listener failure");
+                                })
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals(
+                "Fallback response",
+                TestUtils.extractTextContent(response),
+                "Fallback should still serve the call despite the listener throwing");
+    }
+
+    @Test
+    @DisplayName("Should not notify failover listener when primary model succeeds")
+    void testFailoverListenerNotCalledWhenPrimarySucceeds() {
+        MockModel primaryModel = new MockModel("Primary response");
+
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener = (primary, error) -> capturedErrors.add(error);
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .fallbackModel(new MockModel("Fallback response"))
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("Primary response", TestUtils.extractTextContent(response));
+        assertTrue(
+                capturedErrors.isEmpty(), "Listener should not be notified when primary succeeds");
+    }
+
+    @Test
+    @DisplayName("Should not notify failover listener when no fallback is configured")
+    void testFailoverListenerNotCalledWithoutFallback() {
+        MockModel primaryModel = new MockModel("").withError("Primary model unavailable");
+
+        List<Throwable> capturedErrors = new ArrayList<>();
+        FailoverListener listener = (primary, error) -> capturedErrors.add(error);
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primaryModel)
+                        .failoverListener(listener)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+
+        try {
+            agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(
+                    e.getMessage().contains("Primary model unavailable")
+                            || (e.getCause() != null
+                                    && e.getCause()
+                                            .getMessage()
+                                            .contains("Primary model unavailable")),
+                    "Error should propagate when no fallback is configured");
+        }
+        assertTrue(capturedErrors.isEmpty(), "No switch happens, so no notification");
     }
 
     @Test
