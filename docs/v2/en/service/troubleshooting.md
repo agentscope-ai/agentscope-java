@@ -2,8 +2,6 @@
 title: Troubleshooting
 ---
 
-[简体中文](/v2/zh/service/troubleshooting)
-
 Start with the affected work record. Record the version, time and Session, Task, Attempt or Run IDs, then inspect the relevant component. Remove tokens, passwords and sensitive business data before sharing logs.
 
 | Symptom | Check first |

@@ -2,9 +2,7 @@
 title: 组件发布指南
 ---
 
-[English](/v2/en/service/releasing)
-
-本页面向发布维护者。构建和打包脚本位于 `agentscope-service/release/`，用户安装从[快速上手](/v2/zh/service/quickstart)开始。
+本页面向发布维护者。构建和打包脚本位于 `agentscope-service/release/`，用户安装从[本地安装](/v2/zh/service/quickstart)开始。
 
 ## 制品清单
 

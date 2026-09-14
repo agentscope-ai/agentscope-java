@@ -2,8 +2,6 @@
 title: 排障
 ---
 
-[English](/v2/en/service/troubleshooting)
-
 从发生问题的工作记录开始，记录版本、时间、Session / Task / Attempt / Run ID，再检查相关组件。共享日志前移除令牌、密码和业务敏感内容。
 
 | 现象 | 优先检查 |

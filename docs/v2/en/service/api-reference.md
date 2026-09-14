@@ -2,8 +2,6 @@
 title: "API reference: identity, resources and invocation"
 ---
 
-[简体中文](/v2/zh/service/api-reference)
-
 Use Gateway as the API base URL. Product management uses user identity; applications should generally invoke published capabilities through [Endpoints](/v2/en/service/endpoints).
 
 ## Authentication and scope
