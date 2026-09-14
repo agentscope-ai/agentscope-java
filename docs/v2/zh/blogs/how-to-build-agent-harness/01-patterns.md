@@ -1,5 +1,6 @@
 ---
 title: 如何构建 Agent Harness（一）：架构范式与责任边界
+author: 刘军
 ---
 
 这是“如何构建 Agent Harness”系列的第一篇。本文先建立 Model、Harness、Runtime、Sandbox 与 Agent Platform 的责任边界，再以 AgentScope Java 的 `HarnessAgent` 为统一入口，说明同一套 Harness 如何从本地工作区逐步演进为嵌入式服务、长任务 Worker 和多租户平台。
