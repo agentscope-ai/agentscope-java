@@ -2,7 +2,9 @@
 title: "Team 协作：委派、汇总与扩展"
 ---
 
-[English](/v2/en/service/team-collaboration)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Team 适合目标明确、实现步骤需要动态决定的工作。与 Workflow 的固定拓扑相比，Lead 根据上下文选择成员、拆分任务和汇总结果。配置入口见 [Teams](/v2/zh/service/teams)。
 
@@ -47,3 +49,17 @@ agentscope task run graph
 检查 Lead 最终汇总是否包含所有必要成员的结果，未完成的部分是否明确说明。Run succeeded 或 partial_succeeded 不能单独证明整个目标已达成。人工验收的 Issue 仍需在 Inbox 接受结果。
 
 用于应用集成时发布 Team job [Endpoint](/v2/zh/service/endpoints)，让调用方通过 invocation 状态与结果跟踪工作。
+
+## 交付模板：让另一个成员能够复核
+
+[研发闭环案例](/v2/zh/service/cases/sdlc-team)使用全 Hosted 团队。Developer 的交付评论建议包含以下内容，并附 PR 和实际测试记录：
+
+```text
+目标：实现订单筛选与分页；保留原验收检查并补充边界测试。
+修改：列出变更的文件与规则。
+验证：JDK 版本、执行目录、命令、退出码、测试日志和 CI 链接。
+交付：GitHub Issue、PR、head SHA、Review 与 Artifact 标识。
+未完成项：列出没有验证的条件；没有则明确说明。
+```
+
+模板只是交付结构，不能把其中的占位内容当作已发生的执行。Lead 打开真实 Artifact 并核对证据后再汇总；成员各自的工作目录不自动共享，评论中的本地绝对路径也不等于另一个成员可以读取的文件。
