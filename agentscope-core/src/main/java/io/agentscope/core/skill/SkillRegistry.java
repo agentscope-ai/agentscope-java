@@ -117,7 +117,11 @@ class SkillRegistry {
      * @param active Whether to activate all skills
      */
     void setAllSkillsActive(boolean active) {
-        registeredSkills.values().forEach(r -> r.setActive(active));
+        // Route through setSkillActive so the deactivation invariants (clearing the
+        // entry-delivered flag) hold for bulk deactivation too — deactivateAllSkills()
+        // runs at the start of each agent call, and a surviving entryLoaded flag would
+        // make the next SKILL.md load return only the dedup notice.
+        registeredSkills.keySet().forEach(id -> setSkillActive(id, active));
     }
 
     // ==================== Query Operations ====================

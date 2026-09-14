@@ -153,6 +153,38 @@ class SkillToolFactoryReloadDedupTest {
     }
 
     @Test
+    @DisplayName("Bulk deactivation also resets the dedup for every skill")
+    void bulkDeactivationRecoversFullEntryLoad() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("theta")
+                        .description("theta skill")
+                        .skillContent("# Theta SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
+        assertTrue(
+                textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"))
+                        .contains("is already loaded and active"));
+
+        // deactivateAllSkills() runs at the start of each agent call: the entry-delivered
+        // state must reset with it, or the next turn's first SKILL.md load returns only
+        // the notice for content the fresh context no longer has.
+        box.deactivateAllSkills();
+
+        String reloaded = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        assertTrue(
+                reloaded.contains("Successfully loaded skill"),
+                "A load after bulk deactivation returns the full markdown again");
+        assertTrue(reloaded.contains("# Theta SKILL body"));
+    }
+
+    @Test
     @DisplayName("Deactivating the skill resets the dedup: the next SKILL.md load re-sends content")
     void deactivationRecoversFullEntryLoad() {
         AgentSkill skill =
