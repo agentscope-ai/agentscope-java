@@ -188,7 +188,9 @@ public class A2aAgent extends AgentBase {
         ClientBuilder builder = Client.builder(this.agentCardResolver.getAgentCard(name));
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {
             // Default Add The Basic JSON-RPC Transport
-            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
+            builder.withTransport(
+                    JSONRPCTransport.class,
+                    new JSONRPCTransportConfig(new CancellationSuppressingA2aHttpClient()));
         } else {
             this.a2aAgentConfig.clientTransports().forEach(builder::withTransport);
         }
