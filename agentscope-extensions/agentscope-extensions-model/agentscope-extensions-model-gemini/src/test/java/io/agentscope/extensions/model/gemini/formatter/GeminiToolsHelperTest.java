@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.gemini.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.FunctionCallingConfig;
@@ -111,6 +113,217 @@ class GeminiToolsHelperTest {
         assertEquals(Type.Known.NUMBER, props.get("score").type().get().knownEnum());
         assertEquals(Type.Known.BOOLEAN, props.get("active").type().get().knownEnum());
         assertEquals(Type.Known.ARRAY, props.get("tags").type().get().knownEnum());
+    }
+
+    @Test
+    void testConvertNullableStringTypeArray() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("name", Map.of("type", List.of("string", "null"))));
+
+        ToolSchema toolSchema =
+                ToolSchema.builder()
+                        .name("lookup")
+                        .description("Lookup a name")
+                        .parameters(parameters)
+                        .build();
+
+        Tool tool = helper.convertToGeminiTool(List.of(toolSchema));
+
+        assertNotNull(tool);
+        Schema nameSchema =
+                tool.functionDeclarations()
+                        .get()
+                        .get(0)
+                        .parameters()
+                        .get()
+                        .properties()
+                        .get()
+                        .get("name");
+        assertEquals(Type.Known.STRING, nameSchema.type().get().knownEnum());
+        assertTrue(nameSchema.nullable().get());
+    }
+
+    @Test
+    void testConvertNullableIntegerTypeArray() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("age", Map.of("type", List.of("integer", "null"))));
+
+        Schema ageSchema =
+                helper.convertParametersToSchema(parameters).properties().get().get("age");
+
+        assertEquals(Type.Known.INTEGER, ageSchema.type().get().knownEnum());
+        assertTrue(ageSchema.nullable().get());
+    }
+
+    @Test
+    void testConvertMultiTypeNullableArrayToAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("value", Map.of("type", List.of("string", "integer", "null"))));
+
+        Schema valueSchema =
+                helper.convertParametersToSchema(parameters).properties().get().get("value");
+
+        assertTrue(valueSchema.nullable().orElse(false));
+        assertEquals(2, valueSchema.anyOf().get().size());
+        assertEquals(Type.Known.STRING, valueSchema.anyOf().get().get(0).type().get().knownEnum());
+        assertEquals(Type.Known.INTEGER, valueSchema.anyOf().get().get(1).type().get().knownEnum());
+    }
+
+    @Test
+    void testTypeArrayNullabilityCannotBeOverriddenByFalseMetadata() {
+        Map<String, Object> parameters =
+                Map.of("type", List.of("string", "null"), "nullable", false);
+
+        Schema schema = helper.convertParametersToSchema(parameters);
+
+        assertTrue(schema.nullable().orElse(false));
+    }
+
+    @Test
+    void testPreservesExistingAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "value",
+                                Map.of(
+                                        "anyOf",
+                                        List.of(
+                                                Map.of("type", "string"),
+                                                Map.of("type", "integer")))));
+
+        Schema valueSchema =
+                helper.convertParametersToSchema(parameters).properties().get().get("value");
+
+        assertTrue(valueSchema.type().isEmpty());
+        assertEquals(2, valueSchema.anyOf().get().size());
+        assertEquals(Type.Known.STRING, valueSchema.anyOf().get().get(0).type().get().knownEnum());
+        assertEquals(Type.Known.INTEGER, valueSchema.anyOf().get().get(1).type().get().knownEnum());
+    }
+
+    @Test
+    void testRemovesAnnotatedNullFromMultiBranchAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "value",
+                                Map.of(
+                                        "anyOf",
+                                        List.of(
+                                                Map.of("type", "string"),
+                                                Map.of("type", "null", "description", "No value"),
+                                                Map.of("type", "integer")))));
+
+        Schema valueSchema =
+                helper.convertParametersToSchema(parameters).properties().get().get("value");
+
+        assertTrue(valueSchema.type().isEmpty());
+        assertEquals(2, valueSchema.anyOf().get().size());
+        assertTrue(valueSchema.nullable().orElse(false));
+        assertEquals(Type.Known.STRING, valueSchema.anyOf().get().get(0).type().get().knownEnum());
+        assertEquals(Type.Known.INTEGER, valueSchema.anyOf().get().get(1).type().get().knownEnum());
+    }
+
+    @Test
+    void testRemovesAllNullBranchesFromAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "anyOf",
+                        List.of(
+                                Map.of("type", "null", "description", "No value"),
+                                Map.of("type", List.of("null"))));
+
+        Schema schema = helper.convertParametersToSchema(parameters);
+
+        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
+        assertTrue(schema.anyOf().isEmpty());
+        assertTrue(schema.nullable().orElse(false));
+    }
+
+    @Test
+    void testInlinesAnnotatedNullAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "value",
+                                Map.of(
+                                        "description",
+                                        "Optional value",
+                                        "anyOf",
+                                        List.of(
+                                                Map.of("type", "string"),
+                                                Map.of(
+                                                        "type",
+                                                        "null",
+                                                        "description",
+                                                        "No value")))));
+
+        Schema valueSchema =
+                helper.convertParametersToSchema(parameters).properties().get().get("value");
+
+        assertEquals(Type.Known.STRING, valueSchema.type().get().knownEnum());
+        assertTrue(valueSchema.anyOf().isEmpty());
+        assertTrue(valueSchema.nullable().orElse(false));
+        assertEquals("Optional value", valueSchema.description().get());
+    }
+
+    @Test
+    void testConvertsNullOnlyTypeArrayToObject() {
+        Schema schema =
+                assertDoesNotThrow(
+                        () -> helper.convertParametersToSchema(Map.of("type", List.of("null"))));
+
+        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
+        assertTrue(schema.nullable().orElse(false));
+    }
+
+    @Test
+    void testConvertsDirectNullTypeToObject() {
+        Schema schema =
+                assertDoesNotThrow(() -> helper.convertParametersToSchema(Map.of("type", "null")));
+
+        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
+    }
+
+    @Test
+    void testRejectsMultiTypeArrayCombinedWithAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        List.of("string", "integer", "null"),
+                        "anyOf",
+                        List.of(
+                                Map.of("type", "string", "enum", List.of("text")),
+                                Map.of("type", "integer", "enum", List.of("1")),
+                                Map.of("type", "null", "description", "No value")));
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> helper.convertParametersToSchema(parameters));
+
+        assertEquals(
+                "JSON Schema cannot combine a multi-type array with anyOf", exception.getMessage());
     }
 
     @Test
