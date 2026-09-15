@@ -123,10 +123,22 @@ public final class SkillFileSystemHelper {
     /**
      * Retrieves all skill names by parsing SKILL.md metadata in each skill folder.
      *
+     * <p>If {@code baseDir} itself contains a {@code SKILL.md} file, it is treated as a single
+     * skill directory and only that skill's name is returned. Otherwise, subdirectories are
+     * scanned for skills.
+     *
      * @param baseDir The base directory containing skill folders
      * @return A list of skill names sorted alphabetically
      */
     public static List<String> getAllSkillNames(Path baseDir) {
+        // If baseDir itself is a skill directory, return only that skill
+        if (hasSkillFile(baseDir)) {
+            List<String> names = new ArrayList<>();
+            readSkillName(baseDir).ifPresent(names::add);
+            names.sort(String::compareTo);
+            return names;
+        }
+
         List<String> skillNames = new ArrayList<>();
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
@@ -157,6 +169,10 @@ public final class SkillFileSystemHelper {
     /**
      * Retrieves all skills from the base directory.
      *
+     * <p>If {@code baseDir} itself contains a {@code SKILL.md} file, it is treated as a single
+     * skill directory and only that skill is returned. Otherwise, subdirectories are scanned for
+     * skills.
+     *
      * @param baseDir The base directory containing skill folders
      * @param source The source identifier for created skills
      * @param includeResources when {@code false}, each skill's resource map is left empty and
@@ -165,6 +181,17 @@ public final class SkillFileSystemHelper {
      */
     public static List<AgentSkill> getAllSkills(
             Path baseDir, String source, boolean includeResources) {
+        // If baseDir itself is a skill directory, return only that skill
+        if (hasSkillFile(baseDir)) {
+            List<AgentSkill> skills = new ArrayList<>();
+            try {
+                skills.add(loadSkillFromDirectory(baseDir, source, includeResources));
+            } catch (Exception e) {
+                logger.warn("Failed to load skill from '{}': {}", baseDir, e.getMessage(), e);
+            }
+            return skills;
+        }
+
         List<AgentSkill> skills = new ArrayList<>();
 
         try (Stream<Path> subdirs = Files.list(baseDir)) {
@@ -210,25 +237,59 @@ public final class SkillFileSystemHelper {
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
-                Path skillDir = validateAndResolvePath(baseDir, skillName);
 
-                if (Files.exists(skillDir)) {
-                    if (!force) {
-                        logger.info(
-                                "Skill directory already exists and force=false: {}", skillName);
-                        continue; // Skip to the next skill if force=false
-                    } else {
-                        logger.info("Overwriting existing skill directory: {}", skillName);
-                        deleteDirectory(skillDir);
+                Path skillDir;
+                Path skillFile;
+                // Root-level skill: baseDir itself contains SKILL.md
+                if (hasSkillFile(baseDir)) {
+                    skillDir = baseDir.toAbsolutePath().normalize();
+                    skillFile = skillDir.resolve(SKILL_FILE_NAME);
+                    if (Files.exists(skillFile)) {
+                        if (!force) {
+                            logger.info("Root skill already exists and force=false: {}", skillName);
+                            continue;
+                        } else {
+                            logger.info("Overwriting existing root skill: {}", skillName);
+                            // Delete all contents except baseDir itself
+                            try (Stream<Path> paths = Files.walk(skillDir)) {
+                                paths.sorted(Comparator.reverseOrder())
+                                        .filter(path -> !path.equals(skillDir))
+                                        .forEach(
+                                                path -> {
+                                                    try {
+                                                        Files.delete(path);
+                                                    } catch (IOException e) {
+                                                        throw new RuntimeException(
+                                                                "Failed to delete: " + path, e);
+                                                    }
+                                                });
+                            } catch (IOException e) {
+                                throw new RuntimeException(
+                                        "Failed to clean root skill directory", e);
+                            }
+                        }
                     }
+                } else {
+                    // Subdirectory skill: create a new subdirectory
+                    skillDir = validateAndResolvePath(baseDir, skillName);
+                    if (Files.exists(skillDir)) {
+                        if (!force) {
+                            logger.info(
+                                    "Skill directory already exists and force=false: {}",
+                                    skillName);
+                            continue; // Skip to the next skill if force=false
+                        } else {
+                            logger.info("Overwriting existing skill directory: {}", skillName);
+                            deleteDirectory(skillDir);
+                        }
+                    }
+                    Files.createDirectories(skillDir);
+                    skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 }
-
-                Files.createDirectories(skillDir);
 
                 String skillMdContent =
                         MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
 
-                Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 Files.writeString(skillFile, skillMdContent, StandardCharsets.UTF_8);
 
                 Map<String, String> resources = skill.getResources();
@@ -236,12 +297,14 @@ public final class SkillFileSystemHelper {
                     Path resourceFile = skillDir.resolve(entry.getKey());
                     Files.createDirectories(resourceFile.getParent());
                     String content = entry.getValue();
-                    if (content != null && content.startsWith("base64:")) {
-                        String base64 = content.substring("base64:".length());
-                        byte[] bytes = Base64.getDecoder().decode(base64);
-                        Files.write(resourceFile, bytes);
-                    } else {
-                        Files.writeString(resourceFile, content, StandardCharsets.UTF_8);
+                    if (content != null) {
+                        if (content.startsWith("base64:")) {
+                            String base64 = content.substring("base64:".length());
+                            byte[] bytes = Base64.getDecoder().decode(base64);
+                            Files.write(resourceFile, bytes);
+                        } else {
+                            Files.writeString(resourceFile, content, StandardCharsets.UTF_8);
+                        }
                     }
                 }
 
@@ -274,8 +337,16 @@ public final class SkillFileSystemHelper {
             return false;
         }
 
+        Path dirToDelete = skillDir.get().toAbsolutePath().normalize();
+        Path absoluteBaseDir = baseDir.toAbsolutePath().normalize();
+
         try {
-            deleteDirectory(skillDir.get());
+            if (dirToDelete.equals(absoluteBaseDir)) {
+                // Root-level skill: only remove SKILL.md, keep other files intact
+                Files.deleteIfExists(dirToDelete.resolve(SKILL_FILE_NAME));
+            } else {
+                deleteDirectory(dirToDelete);
+            }
             logger.info("Successfully deleted skill: {}", skillName);
             return true;
         } catch (IOException e) {
@@ -457,6 +528,16 @@ public final class SkillFileSystemHelper {
 
     private static Optional<Path> findSkillDirectoryByName(Path baseDir, String skillName) {
         if (skillName == null || skillName.isEmpty()) {
+            return Optional.empty();
+        }
+
+        // Check if baseDir itself is the skill
+        if (hasSkillFile(baseDir)) {
+            String rootName = readSkillName(baseDir).orElse(null);
+            if (skillName.equals(rootName)) {
+                return Optional.of(baseDir);
+            }
+            // baseDir is a single skill directory; no subdirectory skills to scan
             return Optional.empty();
         }
 
