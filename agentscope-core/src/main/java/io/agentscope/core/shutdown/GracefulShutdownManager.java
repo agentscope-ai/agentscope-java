@@ -18,6 +18,8 @@ package io.agentscope.core.shutdown;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.state.AgentState;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -57,7 +59,8 @@ public final class GracefulShutdownManager {
     private final ConcurrentHashMap<String, ActiveRequestContext> activeRequestsById =
             new ConcurrentHashMap<>();
 
-    private final ConcurrentHashMap<String, ShutdownStateSaver> stateSavers =
+    private final ReferenceQueue<Agent> collectedAgents = new ReferenceQueue<>();
+    private final ConcurrentHashMap<String, StateSaverRegistration> stateSavers =
             new ConcurrentHashMap<>();
     private final AtomicReference<Instant> shutdownStartedAt = new AtomicReference<>(null);
     private final AtomicBoolean monitorStarted = new AtomicBoolean(false);
@@ -107,12 +110,19 @@ public final class GracefulShutdownManager {
      *
      * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}
      * (with {@code shutdownInterrupted} set to {@code true}).
+     *
+     * <p>The registration weakly references its agent and is removed on subsequent registry
+     * access after the agent is collected. The saver itself is retained strongly so inline
+     * callbacks remain available while the agent is alive; it must not strongly capture the
+     * agent if collection without explicit {@link #unbindStateSaver(Agent)} is desired.
      */
     public void bindStateSaver(Agent agent, ShutdownStateSaver saver) {
         if (agent == null || saver == null) {
             return;
         }
-        stateSavers.put(agent.getAgentId(), saver);
+        removeCollectedStateSavers();
+        stateSavers.put(
+                agent.getAgentId(), new StateSaverRegistration(agent, saver, collectedAgents));
     }
 
     /**
@@ -128,7 +138,28 @@ public final class GracefulShutdownManager {
         if (agent == null) {
             return;
         }
+        removeCollectedStateSavers();
         stateSavers.remove(agent.getAgentId());
+    }
+
+    private void removeCollectedStateSavers() {
+        StateSaverRegistration registration;
+        while ((registration = (StateSaverRegistration) collectedAgents.poll()) != null) {
+            // An older queued registration must not remove a replacement for the same id.
+            stateSavers.remove(registration.agentId, registration);
+        }
+    }
+
+    private static final class StateSaverRegistration extends WeakReference<Agent> {
+        private final String agentId;
+        private final ShutdownStateSaver saver;
+
+        private StateSaverRegistration(
+                Agent agent, ShutdownStateSaver saver, ReferenceQueue<Agent> queue) {
+            super(agent, queue);
+            this.agentId = agent.getAgentId();
+            this.saver = saver;
+        }
     }
 
     /**
@@ -183,7 +214,9 @@ public final class GracefulShutdownManager {
         if (!(agent instanceof AgentBase agentBase)) {
             return "";
         }
-        ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
+        removeCollectedStateSavers();
+        StateSaverRegistration registration = stateSavers.get(agent.getAgentId());
+        ShutdownStateSaver saver = registration != null ? registration.saver : null;
         String requestId = UUID.randomUUID().toString();
         ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
         activeRequestsById.put(requestId, ctx);
@@ -354,6 +387,7 @@ public final class GracefulShutdownManager {
         state.set(ShutdownState.RUNNING);
         activeRequestsById.clear();
         stateSavers.clear();
+        removeCollectedStateSavers();
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());
