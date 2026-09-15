@@ -28,14 +28,22 @@ import java.util.Objects;
  * must not unpin this mirror filesystem.
  *
  * <p>Safe for DataAgent-style <em>user-managed</em> sandboxes that stay alive across
- * acquire/release. Self-managed sandboxes that stop on release may still fail if the async upload
- * races past shutdown.
+ * acquire/release. For self-managed sandboxes, pair with {@link
+ * io.agentscope.harness.agent.sandbox.SandboxMirrorReleaseCoordinator} so call teardown defers
+ * {@code stop}/{@code shutdown} until outstanding pinned mirror tasks finish.
  */
 public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
 
     public PinnedSandboxFilesystem(Sandbox sandbox) {
         Objects.requireNonNull(sandbox, "sandbox");
         super.setSandbox(sandbox);
+    }
+
+    @Override
+    protected boolean softFailWhenStopped() {
+        // Async mirrors must not crash the mirror thread when call teardown already stopped the
+        // sandbox; sync tool paths keep the hard-fail default on SandboxBackedFilesystem.
+        return true;
     }
 
     @Override
