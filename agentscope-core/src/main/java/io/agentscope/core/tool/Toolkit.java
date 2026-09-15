@@ -513,6 +513,16 @@ public class Toolkit {
             ExecutionConfig agentExecutionConfig,
             Agent agent,
             io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+        return callTools(toolCalls, agentExecutionConfig, agent, agentRuntimeContext, null);
+    }
+
+    /** Internal overload that carries a callback scoped to one agent call. */
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext,
+            java.util.function.BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -521,7 +531,12 @@ public class Toolkit {
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
         return executor.executeAll(
-                toolCalls, config.isParallel(), effectiveConfig, agent, agentRuntimeContext);
+                toolCalls,
+                config.isParallel(),
+                effectiveConfig,
+                agent,
+                agentRuntimeContext,
+                internalChunkCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
