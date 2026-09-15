@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model;
 
+import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.transport.HttpTransportException;
 import java.io.IOException;
@@ -23,7 +24,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -38,18 +38,25 @@ import reactor.core.publisher.Flux;
  * every candidate, so they are propagated immediately without consuming the fallback chain.
  *
  * <p>Each candidate keeps its own cooldown state: after a failure it is skipped for
- * {@code cooldown} (default {@link #DEFAULT_COOLDOWN}), then automatically
- * becomes eligible again (lazy recovery — no scheduler or background threads; recovery is
- * verified by real traffic). This prevents a persistently broken model from being hammered on
- * every request while keeping the implementation fully in-memory and side-effect free.
+ * {@code cooldown} (default {@link #DEFAULT_COOLDOWN}), then automatically becomes eligible
+ * again (lazy recovery — no scheduler or background threads; recovery is verified by real
+ * traffic). Cooldown entries are keyed by model identity (name + instance) and expired entries
+ * are evicted on write, so the table stays bounded and candidates that merely share a name do
+ * not cool each other down.
  *
  * <p>Mid-stream failures (after at least one chunk was delivered) are deliberately
  * <b>not</b> retried against a fallback: switching mid-response can duplicate already-delivered
  * content. Such a failure is recorded (cooldown is still applied) and propagated as-is.
  *
- * <p>Type-level capabilities ({@link #getModelName()}, {@link #supportsNativeStructuredOutput()},
- * {@link #supportsNativeStructuredOutputWithTools()}, {@link #getContextWindowSize()}) delegate to
- * the currently active candidate.
+ * <p>Switches are observable through an optional {@link FailoverListener} (same contract as
+ * {@code ReActAgent.Builder.failoverListener}): it is invoked synchronously at each switch site
+ * with the failed candidate and the triggering error. Because the chain may serve concurrent
+ * calls, this wrapper holds no per-call mutable state: capability queries
+ * ({@link #getModelName()}, {@link #supportsNativeStructuredOutput()},
+ * {@link #supportsNativeStructuredOutputWithTools()}, {@link #getContextWindowSize()}) report
+ * the primary model's values — the chain's stable identity — and the resolved active candidate
+ * never leaks across calls. Use the {@link FailoverListener} (or the warn logs) to observe
+ * which candidate served a particular call.
  *
  * <p>This class is the framework-side building block for multi-level model fallback. Users can
  * wire it directly via {@code ReActAgent.Builder.model(...)} or through the builder convenience
@@ -63,9 +70,10 @@ public class FallbackChainModel implements Model {
     private static final Logger LOG = LoggerFactory.getLogger(FallbackChainModel.class);
 
     private final List<Model> candidates;
+    private final Model primary;
     private final Duration cooldown;
     private final ConcurrentHashMap<String, Long> coolUntilMillis;
-    private final AtomicReference<Model> activeModel;
+    private final FailoverListener failoverListener;
 
     /**
      * Creates a fallback chain with the default cooldown.
@@ -88,7 +96,7 @@ public class FallbackChainModel implements Model {
      * @throws NullPointerException if {@code primary} is null
      */
     public FallbackChainModel(Model primary, List<Model> fallbacks, Duration cooldown) {
-        this(primary, fallbacks, cooldown, new ConcurrentHashMap<>());
+        this(primary, fallbacks, cooldown, new ConcurrentHashMap<>(), null);
     }
 
     /**
@@ -111,6 +119,26 @@ public class FallbackChainModel implements Model {
             List<Model> fallbacks,
             Duration cooldown,
             ConcurrentHashMap<String, Long> sharedCoolUntilMillis) {
+        this(primary, fallbacks, cooldown, sharedCoolUntilMillis, null);
+    }
+
+    /**
+     * Creates a fallback chain with a cooldown table and a failover listener.
+     *
+     * @param primary the primary model (must not be null)
+     * @param fallbacks ordered fallback models; may be null or empty
+     * @param cooldown cooldown applied to each candidate after a switchable failure; {@code null}
+     *     falls back to {@link #DEFAULT_COOLDOWN}
+     * @param sharedCoolUntilMillis shared cooldown table (modifiable, not null)
+     * @param failoverListener listener notified at each switch site (may be null)
+     * @throws NullPointerException if {@code primary} or {@code sharedCoolUntilMillis} is null
+     */
+    public FallbackChainModel(
+            Model primary,
+            List<Model> fallbacks,
+            Duration cooldown,
+            ConcurrentHashMap<String, Long> sharedCoolUntilMillis,
+            FailoverListener failoverListener) {
         if (primary == null) {
             throw new NullPointerException("primary model must not be null");
         }
@@ -127,20 +155,22 @@ public class FallbackChainModel implements Model {
             }
         }
         this.candidates = List.copyOf(chain);
+        this.primary = primary;
         this.cooldown = cooldown != null ? cooldown : DEFAULT_COOLDOWN;
         this.coolUntilMillis = sharedCoolUntilMillis;
-        this.activeModel = new AtomicReference<>(primary);
+        this.failoverListener = failoverListener;
     }
 
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return attempt(0, null, messages, tools, options);
+        return attempt(0, null, 0, messages, tools, options);
     }
 
     private Flux<ChatResponse> attempt(
             int index,
             Throwable lastFailure,
+            int cooldownSkips,
             List<Msg> messages,
             List<ToolSchema> tools,
             GenerateOptions options) {
@@ -149,18 +179,22 @@ public class FallbackChainModel implements Model {
                     lastFailure != null
                             ? lastFailure
                             : new ModelException(
-                                    "All model candidates in the fallback chain failed");
+                                    cooldownSkips > 0
+                                            ? "All "
+                                                    + cooldownSkips
+                                                    + " fallback candidates are in cooldown;"
+                                                    + " nothing was attempted this call"
+                                            : "All model candidates in the fallback chain failed");
             return Flux.error(error);
         }
 
         Model candidate = candidates.get(index);
-        String candidateName = candidate.getModelName();
+        String candidateKey = candidateKey(candidate);
 
-        if (isCooling(candidateName)) {
-            return attempt(index + 1, lastFailure, messages, tools, options);
+        if (isCooling(candidateKey)) {
+            return attempt(index + 1, lastFailure, cooldownSkips + 1, messages, tools, options);
         }
 
-        activeModel.set(candidate);
         Flux<ChatResponse> candidateFlux = candidate.stream(messages, tools, options);
 
         return candidateFlux.switchOnFirst(
@@ -173,16 +207,28 @@ public class FallbackChainModel implements Model {
                                 yield Flux.error(error);
                             }
                             case SWITCHABLE -> {
-                                recordFailure(candidateName);
-                                LOG.warn(
-                                        "Model {} failed ({}), switching to fallback candidate {}",
-                                        candidateName,
-                                        error.getMessage(),
-                                        candidates
-                                                .get(Math.min(index + 1, candidates.size() - 1))
-                                                .getModelName(),
-                                        error);
-                                yield attempt(index + 1, error, messages, tools, options);
+                                recordFailure(candidateKey);
+                                if (index + 1 < candidates.size()) {
+                                    Model next = candidates.get(index + 1);
+                                    LOG.warn(
+                                            "Model {} failed ({}), switching to fallback candidate"
+                                                    + " {}",
+                                            candidate.getModelName(),
+                                            error.getMessage(),
+                                            next.getModelName(),
+                                            error);
+                                    notifyFailover(candidate, error);
+                                } else {
+                                    LOG.warn(
+                                            "Fallback chain exhausted after candidate {} failed"
+                                                    + " ({})",
+                                            candidate.getModelName(),
+                                            error.getMessage(),
+                                            error);
+                                    notifyFailover(candidate, error);
+                                }
+                                yield attempt(
+                                        index + 1, error, cooldownSkips, messages, tools, options);
                             }
                         };
                     }
@@ -191,21 +237,53 @@ public class FallbackChainModel implements Model {
                             midStreamError -> {
                                 // Mid-stream failure: do not switch (content may already have
                                 // been delivered); record the cooldown and propagate as-is.
-                                recordFailure(candidateName);
+                                recordFailure(candidateKey);
                                 return Flux.error(midStreamError);
                             });
                 });
     }
 
     /** Skips candidates currently inside their cooldown window. */
-    private boolean isCooling(String modelName) {
-        Long coolUntil = coolUntilMillis.get(modelName);
+    private boolean isCooling(String key) {
+        Long coolUntil = coolUntilMillis.get(key);
         return coolUntil != null && coolUntil > System.currentTimeMillis();
     }
 
-    /** Marks a candidate as cooling for {@link #cooldown}. */
-    private void recordFailure(String modelName) {
-        coolUntilMillis.put(modelName, System.currentTimeMillis() + cooldown.toMillis());
+    /**
+     * Marks a candidate as cooling for {@link #cooldown}. Expired entries are evicted on write so
+     * the table stays bounded over the lifetime of a long-lived agent.
+     */
+    private void recordFailure(String key) {
+        long now = System.currentTimeMillis();
+        if (coolUntilMillis.size() > 0 && !coolUntilMillis.isEmpty()) {
+            coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
+        }
+        coolUntilMillis.put(key, now + cooldown.toMillis());
+    }
+
+    /**
+     * Notifies the failover listener at a switch site. An exception thrown by the listener is
+     * contained: it is logged and never affects the switch or the fallback call that follows
+     * (same contract as {@code ReActAgent}'s legacy failover path).
+     */
+    private void notifyFailover(Model failedCandidate, Throwable error) {
+        if (failoverListener == null) {
+            return;
+        }
+        try {
+            failoverListener.onFailover(failedCandidate, error);
+        } catch (Exception e) {
+            LOG.warn("Failover listener threw an exception, ignoring", e);
+        }
+    }
+
+    /**
+     * Cooldown key: model name plus instance identity. Two candidates that expose the same model
+     * name behind different endpoints/keys are distinct instances and must not cool each other
+     * down; the instance identity keeps their entries separate.
+     */
+    private static String candidateKey(Model model) {
+        return model.getModelName() + '@' + System.identityHashCode(model);
     }
 
     /**
@@ -258,22 +336,22 @@ public class FallbackChainModel implements Model {
 
     @Override
     public String getModelName() {
-        return activeModel.get().getModelName();
+        return primary.getModelName();
     }
 
     @Override
     public boolean supportsNativeStructuredOutput() {
-        return activeModel.get().supportsNativeStructuredOutput();
+        return primary.supportsNativeStructuredOutput();
     }
 
     @Override
     public boolean supportsNativeStructuredOutputWithTools() {
-        return activeModel.get().supportsNativeStructuredOutputWithTools();
+        return primary.supportsNativeStructuredOutputWithTools();
     }
 
     @Override
     public int getContextWindowSize() {
-        return activeModel.get().getContextWindowSize();
+        return primary.getContextWindowSize();
     }
 
     private enum FailureCategory {

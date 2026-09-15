@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -158,7 +159,53 @@ class ReActAgentFallbackChainTest {
         assertTrue(
                 TestUtils.extractTextContent(response).contains("fallback"),
                 "Direct wrapper wiring should fall back too");
-        assertEquals("fallback", wrapper.getModelName(), "Active model should be the fallback");
+        // The wrapper's identity is the primary's by design (see FallbackChainModel javadoc).
+        assertEquals("primary", wrapper.getModelName(), "Identity stays on the primary");
+    }
+
+    @Test
+    @DisplayName("fallbackModels combined with legacy fallbackModel is rejected")
+    void fallbackModelsRejectsLegacyFallbackCombination() {
+        SimpleModel primary = new SimpleModel("primary");
+        SimpleModel fallback = new SimpleModel("fallback");
+        SimpleModel legacy = new SimpleModel("legacy");
+
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        ReActAgent.builder()
+                                .name(TestConstants.TEST_REACT_AGENT_NAME)
+                                .model(primary)
+                                .fallbackModel(legacy)
+                                .fallbackModels(List.of(fallback))
+                                .build(),
+                "fallbackModels after fallbackModel must be rejected");
+    }
+
+    @Test
+    @DisplayName("fallbackModels(List) ignores null elements like the varargs overload")
+    void fallbackModelsListSkipsNulls() {
+        FailingModel primary =
+                new FailingModel("primary", new HttpTransportException("503", 503, ""));
+        SimpleModel fallback = new SimpleModel("fallback");
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(primary)
+                        .fallbackModels(java.util.Arrays.asList(null, fallback, null))
+                        .toolkit(new Toolkit())
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+        assertTrue(
+                TestUtils.extractTextContent(response).contains("fallback"),
+                "null elements in fallbackModels(List) must be skipped, not fail the build");
     }
 
     @Test

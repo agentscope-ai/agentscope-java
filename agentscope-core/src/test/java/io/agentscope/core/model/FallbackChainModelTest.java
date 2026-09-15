@@ -72,7 +72,10 @@ class FallbackChainModelTest {
 
         assertEquals(1, primary.callCount.get(), "primary should be attempted once");
         assertEquals(1, fallback.callCount.get(), "fallback should serve the request");
-        assertEquals("fallback", chain.getModelName(), "active model should be the fallback");
+        // Capability queries report the primary: the chain's stable identity. The active
+        // candidate is observable via FailoverListener and warn logs, never via getModelName()
+        // (which must not change under concurrent calls).
+        assertEquals("primary", chain.getModelName(), "identity stays on the primary");
     }
 
     @Test
@@ -283,10 +286,9 @@ class FallbackChainModelTest {
     }
 
     @Test
-    @DisplayName("Capability delegation reports the active candidate")
-    void capabilityDelegationFollowsActiveCandidate() {
-        CallRecordingModel primary =
-                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+    @DisplayName("Capability delegation reports the primary (stable identity)")
+    void capabilityDelegationStaysOnPrimary() {
+        CallRecordingModel primary = new CallRecordingModel("primary", null);
         CallRecordingModel fallback =
                 new CallRecordingModel("fallback", null) {
                     @Override
@@ -305,9 +307,121 @@ class FallbackChainModelTest {
                 .expectNextCount(1)
                 .verifyComplete();
 
-        assertEquals("fallback", chain.getModelName());
-        assertEquals(true, chain.supportsNativeStructuredOutput());
-        assertEquals(8192, chain.getContextWindowSize());
+        // The chain's capability surface is the primary's: it is the stable identity observed
+        // by compaction / structured-output decisions, and must not fluctuate with whichever
+        // candidate served the last concurrent call.
+        assertEquals("primary", chain.getModelName());
+        assertEquals(false, chain.supportsNativeStructuredOutput());
+        assertEquals(false, chain.supportsNativeStructuredOutputWithTools());
+        assertEquals(0, chain.getContextWindowSize());
+    }
+
+    @Test
+    @DisplayName("Every candidate cooling at once reports the cooldown message, not failure")
+    void allCandidatesCoolingReportsCooldownMessage() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+        CallRecordingModel fallback =
+                new CallRecordingModel(
+                        "fallback", new HttpTransportException("also down", 503, ""));
+
+        ConcurrentHashMap<String, Long> shared = new ConcurrentHashMap<>();
+        FallbackChainModel chain =
+                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60), shared);
+
+        // First call: both fail, both enter cooldown.
+        StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
+
+        // Second call inside the window: nothing is attempted; the error must say so.
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectErrorSatisfies(
+                        error -> {
+                            String message = error.getMessage();
+                            assertEquals(
+                                    true,
+                                    message != null
+                                            && message.contains("cooldown")
+                                            && message.contains("nothing was attempted"),
+                                    "all-cooling error must say nothing was attempted: " + message);
+                        })
+                .verify();
+    }
+
+    @Test
+    @DisplayName("REQUEST_SIDE failure after a SWITCHABLE one stops the chain immediately")
+    void requestSideAfterSwitchableStopsChain() {
+        // The chain walked past candidate 0 (switchable failure) to candidate 1, which then
+        // fails with a request-side error: the chain must stop there instead of walking on to
+        // candidate 2 (a request-side error repeats identically on every candidate).
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+        CallRecordingModel second =
+                new CallRecordingModel("second", new HttpTransportException("bad params", 400, ""));
+        CallRecordingModel third = new CallRecordingModel("third", null);
+
+        FallbackChainModel chain = new FallbackChainModel(primary, List.of(second, third));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectErrorSatisfies(
+                        error ->
+                                assertEquals(
+                                        Integer.valueOf(400),
+                                        ((HttpTransportException) error).getStatusCode()))
+                .verify();
+
+        assertEquals(1, primary.callCount.get(), "primary should be attempted once");
+        assertEquals(1, second.callCount.get(), "second should be attempted once");
+        assertEquals(0, third.callCount.get(), "third must never be attempted");
+    }
+
+    @Test
+    @DisplayName("FailoverListener is notified once per switch with the failed candidate")
+    void failoverListenerNotifiedPerSwitch() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        List<String> notified = new java.util.ArrayList<>();
+        FallbackChainModel chain =
+                new FallbackChainModel(
+                        primary,
+                        List.of(fallback),
+                        Duration.ofSeconds(30),
+                        new ConcurrentHashMap<>(),
+                        (failed, error) -> notified.add(failed.getModelName()));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        assertEquals(
+                List.of("primary"),
+                notified,
+                "listener should fire once with the failed candidate");
+    }
+
+    @Test
+    @DisplayName("FailoverListener exception is contained and does not break the switch")
+    void failoverListenerExceptionContained() {
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain =
+                new FallbackChainModel(
+                        primary,
+                        List.of(fallback),
+                        Duration.ofSeconds(30),
+                        new ConcurrentHashMap<>(),
+                        (failed, error) -> {
+                            throw new RuntimeException("listener boom");
+                        });
+
+        // Switch must still happen even though the listener throws.
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+        assertEquals(1, fallback.callCount.get(), "fallback must serve despite listener failure");
     }
 
     @Test
@@ -453,7 +567,7 @@ class FallbackChainModelTest {
     }
 
     @Test
-    @DisplayName("Capability delegation reports native structured output with tools")
+    @DisplayName("Capability delegation reports the primary's structured-output support")
     void capabilityDelegationIncludesWithTools() {
         CallRecordingModel primary =
                 new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
@@ -475,7 +589,9 @@ class FallbackChainModelTest {
                 .expectNextCount(1)
                 .verifyComplete();
 
-        assertEquals(true, chain.supportsNativeStructuredOutputWithTools());
+        // The capability surface stays on the primary even after a switch: it is the chain's
+        // stable identity observed by structured-output / compaction decisions.
+        assertEquals(false, chain.supportsNativeStructuredOutputWithTools());
     }
 
     @Test
