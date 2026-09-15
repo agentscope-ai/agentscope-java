@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +89,12 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
     public List<FileUploadResponse> uploadFiles(
             RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
         return delegate.uploadFiles(bakedRc, files);
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files, UploadMode mode) {
+        return delegate.uploadFiles(bakedRc, files, mode);
     }
 
     @Override
