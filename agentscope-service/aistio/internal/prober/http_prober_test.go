@@ -265,3 +265,42 @@ func TestToStoreContext(t *testing.T) {
 		t.Errorf("framework = %q", row.Framework)
 	}
 }
+
+func TestSendUserMessage_AcceptedAndToken(t *testing.T) {
+	var gotToken, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("X-Builder-Internal-Token")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"accepted":true}`))
+	}))
+	defer srv.Close()
+	p := NewHTTPProber()
+	p.InternalToken = "secret-token"
+	if err := p.SendUserMessage(context.Background(), srv.URL, "s1", "hello"); err != nil {
+		t.Fatalf("SendUserMessage: %v", err)
+	}
+	if gotPath != "/agentscope/sessions/s1/messages" {
+		t.Fatalf("path=%s", gotPath)
+	}
+	if gotToken != "secret-token" {
+		t.Fatalf("token=%s", gotToken)
+	}
+}
+
+func TestSendCompress_SendsInternalToken(t *testing.T) {
+	var gotToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get("X-Builder-Internal-Token")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	p := NewHTTPProber()
+	p.InternalToken = "secret-token"
+	if err := p.SendCompress(context.Background(), srv.URL, "s1"); err != nil {
+		t.Fatalf("SendCompress: %v", err)
+	}
+	if gotToken != "secret-token" {
+		t.Fatalf("token=%s", gotToken)
+	}
+}

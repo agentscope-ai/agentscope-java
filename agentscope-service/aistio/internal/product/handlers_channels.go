@@ -34,6 +34,7 @@ var channelSecretKeys = map[string]bool{
 const secretMask = "********"
 
 func (s *Server) registerChannels(r gin.IRouter) {
+	s.registerChannelWork(r)
 	r.GET("/api/channels", s.listChannels)
 	r.GET("/api/channels/types", s.listChannelTypes)
 	r.GET("/api/channels/:channelId", s.getChannel)
@@ -58,18 +59,18 @@ func (s *Server) registerChannels(r gin.IRouter) {
 }
 
 type channelRow struct {
-	ChannelID       string
-	OwnerID         string
-	Type            string
-	DmScope         *string
-	DefaultAgentID  *string
-	Disabled        bool
-	PropertiesJSON  *string
-	BindingsJSON    *string
-	RuntimeStarted  bool
-	RuntimeError    *string
-	CreatedAt       int64
-	UpdatedAt       int64
+	ChannelID      string
+	OwnerID        string
+	Type           string
+	DmScope        *string
+	DefaultAgentID *string
+	Disabled       bool
+	PropertiesJSON *string
+	BindingsJSON   *string
+	RuntimeStarted bool
+	RuntimeError   *string
+	CreatedAt      int64
+	UpdatedAt      int64
 }
 
 const channelSelect = `SELECT channel_id, owner_id, type, dm_scope, default_agent_id, disabled,
@@ -173,9 +174,10 @@ func maskChannelProperties(v any) any {
 }
 
 func (s *Server) listChannels(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
+	restricted, allowedIDs := resourceFilter(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
-		channelSelect+` WHERE owner_id=$1 ORDER BY channel_id`, owner)
+		channelSelect+` WHERE owner_id=$1 AND (NOT $2::boolean OR channel_id=ANY($3::text[])) ORDER BY channel_id`, owner, restricted, allowedIDs)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
 		return
@@ -188,7 +190,21 @@ func (s *Server) listChannels(c *gin.Context) {
 			writeErr(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-		list = append(list, ch.infoJSON())
+		info := ch.infoJSON()
+		cfg, configErr := s.loadChannelWorkSettings(c.Request.Context(), ch.ChannelID)
+		if configErr != nil {
+			writeErr(c, 500, "cannot read channel work settings")
+			return
+		}
+		targets := []ChannelTarget{}
+		if cfg.DefaultTarget.TargetRef != "" {
+			targets = append(targets, cfg.DefaultTarget)
+		}
+		for _, route := range cfg.Routes {
+			targets = append(targets, route.ChannelTarget)
+		}
+		info["workEnabled"], info["workTargets"] = cfg.Enabled, targets
+		list = append(list, info)
 	}
 	c.JSON(http.StatusOK, list)
 }
@@ -199,7 +215,7 @@ func (s *Server) listChannelTypes(c *gin.Context) {
 
 func (s *Server) getChannel(c *gin.Context) {
 	ch, err := s.loadChannel(c.Request.Context(), c.Param("channelId"))
-	if err != nil || ch.OwnerID != currentUserID(c) {
+	if err != nil || ch.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "Channel not found: "+c.Param("channelId"))
 		return
 	}
@@ -207,13 +223,13 @@ func (s *Server) getChannel(c *gin.Context) {
 }
 
 type channelUpsertReq struct {
-	ChannelID      string `json:"channelId"`
-	Type           string `json:"type"`
+	ChannelID      string  `json:"channelId"`
+	Type           string  `json:"type"`
 	DmScope        *string `json:"dmScope"`
 	DefaultAgentID *string `json:"defaultAgentId"`
-	Disabled       *bool  `json:"disabled"`
-	Properties     any    `json:"properties"`
-	Bindings       any    `json:"bindings"`
+	Disabled       *bool   `json:"disabled"`
+	Properties     any     `json:"properties"`
+	Bindings       any     `json:"bindings"`
 }
 
 func mergeChannelProperties(existingJSON *string, incoming any) string {
@@ -267,7 +283,7 @@ func (s *Server) createChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	disabled := false
 	if req.Disabled != nil {
 		disabled = *req.Disabled
@@ -323,7 +339,7 @@ func nullStrPtrVal(p *string) any {
 func (s *Server) updateChannel(c *gin.Context) {
 	channelID := c.Param("channelId")
 	ch, err := s.loadChannel(c.Request.Context(), channelID)
-	if err != nil || ch.OwnerID != currentUserID(c) {
+	if err != nil || ch.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "Channel not found: "+channelID)
 		return
 	}
@@ -397,7 +413,7 @@ func (s *Server) updateChannel(c *gin.Context) {
 }
 
 func (s *Server) deleteChannel(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	channelID := c.Param("channelId")
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM channels WHERE channel_id=$1 AND owner_id=$2`, channelID, owner)
@@ -423,7 +439,7 @@ func (s *Server) disableChannel(c *gin.Context) {
 }
 
 func (s *Server) setChannelDisabled(c *gin.Context, disabled bool) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	now := nowMillis()
 	tag, err := s.db.Pool.Exec(c.Request.Context(),
 		`UPDATE channels SET disabled=$1, updated_at=$2 WHERE channel_id=$3 AND owner_id=$4`,
@@ -440,7 +456,7 @@ func (s *Server) setChannelDisabled(c *gin.Context, disabled bool) {
 }
 
 func (s *Server) setChannelDefault(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Param("channelId")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
@@ -465,18 +481,18 @@ func (s *Server) setChannelDefault(c *gin.Context) {
 // --- agent bindings ---
 
 type bindingPayload struct {
-	ChannelID   string   `json:"channelId"`
-	Index       int      `json:"index"`
-	Tier        string   `json:"tier"`
-	Peer        string   `json:"peer"`
-	ParentPeer  string   `json:"parentPeer"`
-	Guild       string   `json:"guild"`
-	Roles       []string `json:"roles"`
-	Team        string   `json:"team"`
-	Account     string   `json:"account"`
-	Channel     string   `json:"channel"`
-	SessionScope string  `json:"sessionScope"`
-	AgentID     string   `json:"agentId"`
+	ChannelID    string   `json:"channelId"`
+	Index        int      `json:"index"`
+	Tier         string   `json:"tier"`
+	Peer         string   `json:"peer"`
+	ParentPeer   string   `json:"parentPeer"`
+	Guild        string   `json:"guild"`
+	Roles        []string `json:"roles"`
+	Team         string   `json:"team"`
+	Account      string   `json:"account"`
+	Channel      string   `json:"channel"`
+	SessionScope string   `json:"sessionScope"`
+	AgentID      string   `json:"agentId"`
 }
 
 func bindingView(channelID string, index int, tier string, p map[string]any) gin.H {
@@ -558,7 +574,7 @@ func deriveTier(p map[string]any) string {
 }
 
 func (s *Server) listAgentBindings(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -625,7 +641,7 @@ func (s *Server) collectAgentBindings(ctx context.Context, owner, agentID string
 }
 
 func (s *Server) replaceAgentBindings(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -703,7 +719,7 @@ func (s *Server) replaceAgentBindings(c *gin.Context) {
 }
 
 func (s *Server) addAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	if _, err := s.loadAgent(c.Request.Context(), owner, agentID); err != nil {
 		writeErr(c, http.StatusNotFound, "agent not found")
@@ -760,7 +776,7 @@ func (s *Server) addAgentBinding(c *gin.Context) {
 }
 
 func (s *Server) updateAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Query("channelId")
 	index, err := strconv.Atoi(c.Param("index"))
@@ -818,7 +834,7 @@ func (s *Server) updateAgentBinding(c *gin.Context) {
 }
 
 func (s *Server) deleteAgentBinding(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	agentID := c.Param("id")
 	channelID := c.Query("channelId")
 	index, err := strconv.Atoi(c.Param("index"))

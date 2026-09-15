@@ -1,4 +1,6 @@
-# Gemini 模型
+---
+title: Gemini
+---
 
 `agentscope-extensions-model-gemini` 接入 Google Gemini 模型。它支持 Gemini API，也可以通过显式配置走 Vertex AI 路径。
 
@@ -49,4 +51,4 @@ Spring Boot 应用可以使用 Gemini starter：
 </dependency>
 ```
 
-完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](../../docs/building-blocks/model.md)。
+完整 builder 选项、formatter、credential 和 registry context 细节见 [模型](/v2/zh/docs/building-blocks/model)。

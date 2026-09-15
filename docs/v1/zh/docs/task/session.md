@@ -1,4 +1,6 @@
-# Session（会话管理）
+---
+title: 会话管理
+---
 
 Session 支持 Agent 状态的持久化存储和恢复，让对话能够跨应用运行保持连续性。
 
@@ -472,5 +474,5 @@ redis-cli KEYS "agentscope:session:*" | xargs redis-cli DEL
 ## 更多资源
 
 - **完整示例**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
-- **State 文档**: [state.md](./state.md)
-- **Agent 配置**: [agent-config.md](./agent-config.md)
+- **State 文档**: [state.md](/v1/zh/docs/task/state)
+- **Agent 配置**: [agent-config.md](/v1/zh/docs/task/agent-config)

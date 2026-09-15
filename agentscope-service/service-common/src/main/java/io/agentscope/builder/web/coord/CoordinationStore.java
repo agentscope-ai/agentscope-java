@@ -60,11 +60,16 @@ public interface CoordinationStore {
      */
     void requestTurnInterrupt(String sessionId, String reason);
 
+    /** Records a managed-attempt interrupt that only the matching turn may consume. */
+    void requestFencedTurnInterrupt(String sessionId, String reason, String fenceToken);
+
     /**
      * Atomically consumes a pending interrupt for {@code sessionId}, returning the reason when one
      * was present.
      */
     Optional<String> consumeTurnInterrupt(String sessionId);
+
+    Optional<TurnInterruptRequest> consumeTurnInterruptRequest(String sessionId);
 
     // ---- Deployment cron fire lease ----
 
@@ -74,14 +79,38 @@ public interface CoordinationStore {
 
     // ---- HITL tickets ----
 
-    void putHitlTicket(HitlTicket ticket);
+    /** Inserts an immutable ticket or returns the identical existing ticket. */
+    HitlTicket putHitlTicket(HitlTicket ticket);
 
-    Optional<HitlTicket> getHitlTicket(String toolUseId);
+    /** Finds the newest ticket for direct-session routing; managed resolve uses fenced overload. */
+    Optional<HitlTicket> getHitlTicket(String sessionId, String toolUseId);
 
-    /** Sets allow/deny; returns updated ticket or empty if missing. */
-    Optional<HitlTicket> resolveHitlTicket(String toolUseId, boolean allow, String denyMessage);
+    Optional<HitlTicket> getHitlTicket(HitlDecisionFence fence);
 
-    void deleteHitlTicket(String toolUseId);
+    /**
+     * Sets allow/deny after validating the complete immutable execution fence. Returns the current
+     * ticket when it was resolved (including an idempotent replay), or empty when the ticket/fence
+     * did not match, expired, or a conflicting decision already won.
+     */
+    Optional<HitlResolution> resolveHitlTicket(
+            HitlDecisionFence fence,
+            String resolutionStatus,
+            long decisionVersion,
+            boolean allow,
+            String denyMessage,
+            long resolvedAt);
+
+    /** Atomically denies a still-pending ticket once its deadline has passed. */
+    Optional<HitlResolution> expireHitlTicket(String sessionId, String toolUseId, long expiredAt);
+
+    /** Marks side effects complete so a polling continuation may safely resume. */
+    boolean markHitlContinuationReady(HitlDecisionFence fence);
+
+    void deleteHitlTicket(String sessionId, String toolUseId);
+
+    void deleteHitlTicketsBySession(String sessionId);
+
+    long deleteResolvedHitlTicketsBefore(long expiresAtCutoff);
 
     List<HitlTicket> listExpiredHitlTickets(long nowMillis);
 
@@ -118,17 +147,47 @@ public interface CoordinationStore {
     record LeaseHandle(
             String sessionId, String ownerId, String instanceId, long acquiredAt, long expiresAt) {}
 
+    record TurnInterruptRequest(String reason, String fenceToken) {}
+
     /** HITL confirmation ticket shared across Brain replicas. */
     record HitlTicket(
             String toolUseId,
             String sessionId,
             String ownerId,
+            String approvalId,
+            String agentTaskId,
+            String attemptId,
+            long dispatchGeneration,
+            String turnId,
+            String continuationLeaseId,
             String toolName,
             String inputJson,
+            String resolutionStatus,
+            long decisionVersion,
             Boolean resolvedAllow,
             String denyMessage,
             long createdAt,
-            long expiresAt) {}
+            long expiresAt,
+            Long resolvedAt,
+            boolean continuationReady) {
+
+        public boolean managedTask() {
+            return agentTaskId != null && !agentTaskId.isBlank();
+        }
+    }
+
+    /** Full correlation fence required to decide a managed AgentTask confirmation. */
+    record HitlDecisionFence(
+            String sessionId,
+            String toolUseId,
+            String approvalId,
+            String agentTaskId,
+            String attemptId,
+            long dispatchGeneration,
+            String turnId) {}
+
+    /** Atomic decision result; {@code changed=false} identifies a safe idempotent replay. */
+    record HitlResolution(HitlTicket ticket, boolean changed) {}
 
     /** Durable hands work-queue row. */
     record WorkItemRecord(

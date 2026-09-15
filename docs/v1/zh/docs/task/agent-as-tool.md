@@ -1,10 +1,16 @@
-# Agent as Tool（子智能体工具）
+---
+title: Agent as Tool
+---
 
-```{admonition} 实验性功能
-:class: warning
+<Warning>
+
+**实验性功能**
+
 
 此功能目前处于实验阶段，API 可能会发生变化。如果您在使用过程中遇到问题，欢迎通过 [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues) 反馈。
-```
+
+</Warning>
+
 
 ## 概述
 

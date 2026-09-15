@@ -14,348 +14,71 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import {
-  AdminUserView,
-  CreateUserResponse,
-  createUser,
-  deleteUser,
-  listUsers,
-  resetPassword,
-  updateRoles,
-} from '../api/admin';
-import { isAdmin } from '../api/auth';
-
-const S: Record<string, React.CSSProperties> = {
-  page: { padding: '36px 40px', maxWidth: 1000 },
-  title: { margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' },
-  subtitle: { margin: '4px 0 28px', fontSize: '0.92rem', color: '#64748b' },
-  headerBar: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24 },
-  primaryBtn: {
-    padding: '10px 18px',
-    background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)',
-    color: '#ffffff', border: 'none', borderRadius: 9, cursor: 'pointer',
-    fontSize: '0.92rem', fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
-  },
-  card: {
-    background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14,
-    boxShadow: '0 1px 3px rgba(15,23,42,0.04)', overflow: 'hidden',
-  },
-  th: {
-    textAlign: 'left' as const, padding: '14px 20px', background: '#f8fafc',
-    fontSize: '0.78rem', color: '#64748b', fontWeight: 700,
-    textTransform: 'uppercase' as const, letterSpacing: '0.08em', borderBottom: '1px solid #e2e8f0',
-  },
-  td: { padding: '16px 20px', fontSize: '0.92rem', color: '#0f172a', borderBottom: '1px solid #f1f5f9' },
-  rowAction: {
-    padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#ffffff',
-    color: '#475569', fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
-    marginRight: 8,
-  },
-  rowActionDanger: {
-    padding: '6px 12px', borderRadius: 7, border: '1px solid #fecaca', background: '#ffffff',
-    color: '#dc2626', fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
-  },
-  badge: {
-    display: 'inline-block', padding: '3px 10px', borderRadius: 999,
-    fontSize: '0.76rem', fontWeight: 600, marginRight: 6,
-  },
-  modalBackdrop: {
-    position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
-  },
-  modal: {
-    background: '#ffffff', borderRadius: 14, padding: '28px 32px',
-    width: 'min(480px, 92vw)', boxShadow: '0 24px 60px rgba(15,23,42,0.32)',
-  },
-  modalTitle: { margin: '0 0 18px', fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' },
-  fieldLabel: { display: 'block', fontSize: '0.88rem', fontWeight: 500, color: '#475569', marginBottom: 6 },
-  input: {
-    width: '100%', boxSizing: 'border-box' as const, padding: '10px 14px',
-    background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 9,
-    color: '#0f172a', fontSize: '0.92rem', marginBottom: 14,
-  },
-  secondaryBtn: {
-    padding: '9px 16px', background: '#ffffff',
-    color: '#475569', border: '1px solid #cbd5e1', borderRadius: 9, cursor: 'pointer',
-    fontSize: '0.9rem', fontWeight: 500,
-  },
-  error: { color: '#dc2626', fontSize: '0.88rem', marginTop: 6, marginBottom: 6 },
-  callout: {
-    background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10,
-    padding: '14px 16px', marginTop: 14,
-  },
-  codeBlock: {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '0.95rem', color: '#065f46', fontWeight: 700, letterSpacing: '0.03em',
-  },
-};
-
-function roleBadge(role: string) {
-  const isA = role === 'admin';
-  return (
-    <span
-      key={role}
-      style={{
-        ...S.badge,
-        background: isA ? '#eef2ff' : '#f1f5f9',
-        color: isA ? '#4338ca' : '#64748b',
-        border: isA ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-      }}
-    >
-      {role}
-    </span>
-  );
-}
-
-function InviteModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (res: CreateUserResponse) => void;
-}) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [adminRole, setAdminRole] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit() {
-    setErr(null);
-    const u = username.trim();
-    if (!u) { setErr('Username is required'); return; }
-    setSubmitting(true);
-    try {
-      const roles = adminRole ? ['user', 'admin'] : ['user'];
-      const res = await createUser({
-        username: u,
-        initialPassword: password.trim() ? password : undefined,
-        roles,
-      });
-      onCreated(res);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div style={S.modalBackdrop} onClick={onClose}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={S.modalTitle}>Invite user</h3>
-        <label style={S.fieldLabel}>Username</label>
-        <input style={S.input} value={username} onChange={e => setUsername(e.target.value)} autoFocus />
-        <label style={S.fieldLabel}>Initial password <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional — leave blank to generate)</span></label>
-        <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.92rem', color: '#475569', marginBottom: 18 }}>
-          <input type="checkbox" checked={adminRole} onChange={e => setAdminRole(e.target.checked)} />
-          Grant <strong>admin</strong> role
-        </label>
-        {err && <p style={S.error}>{err}</p>}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>Cancel</button>
-          <button style={S.primaryBtn} onClick={submit} disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create user'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GeneratedPasswordModal({
-  username,
-  password,
-  onClose,
-}: {
-  username: string;
-  password: string;
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* ignore */ }
-  }
-  return (
-    <div style={S.modalBackdrop}>
-      <div style={S.modal}>
-        <h3 style={S.modalTitle}>User created — {username}</h3>
-        <p style={{ fontSize: '0.92rem', color: '#475569', margin: '0 0 10px' }}>
-          Share this temporary password with the user. It is shown only once —
-          you cannot retrieve it later.
-        </p>
-        <div style={S.callout}>
-          <div style={S.codeBlock}>{password}</div>
-          <button style={{ ...S.secondaryBtn, marginTop: 10 }} onClick={copy}>
-            {copied ? '✓ Copied' : 'Copy to clipboard'}
-          </button>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-          <button style={S.primaryBtn} onClick={onClose}>Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ResetPasswordModal({
-  user,
-  onClose,
-  onDone,
-}: {
-  user: AdminUserView;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [pwd, setPwd] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  async function submit() {
-    setErr(null);
-    if (pwd.length < 6) { setErr('Password must be ≥ 6 characters'); return; }
-    setSubmitting(true);
-    try {
-      await resetPassword(user.userId, pwd);
-      onDone();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-  return (
-    <div style={S.modalBackdrop} onClick={onClose}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={S.modalTitle}>Reset password — {user.username}</h3>
-        <label style={S.fieldLabel}>New password</label>
-        <input style={S.input} type="password" value={pwd} onChange={e => setPwd(e.target.value)} autoFocus />
-        {err && <p style={S.error}>{err}</p>}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={S.secondaryBtn} onClick={onClose} disabled={submitting}>Cancel</button>
-          <button style={S.primaryBtn} onClick={submit} disabled={submitting}>
-            {submitting ? 'Saving…' : 'Reset password'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus, UsersRound } from 'lucide-react';
+import { createUser, listUsers, resetPassword, setAccountDisabled, updateRoles, type AdminUserView } from '@/api/admin';
+import { getNamespace, listAccountNamespaces, listManagedNamespaces, updateNamespace } from '@/api/permissions';
+import { getUserId, isAdmin } from '@/api/auth';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { Page, PageHeader } from '@/components/Page';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody } from '@/components/ui/dialog';
+import { accountLabel, ErrorNotice, namespaceRoles, roleDescriptions, RoleBadges } from '@/features/settings/AccessComponents';
 
 export default function AdminUsersPage() {
-  const admin = isAdmin();
-  const [users, setUsers] = useState<AdminUserView[]>([]);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [showInvite, setShowInvite] = useState(false);
-  const [generated, setGenerated] = useState<{ username: string; password: string } | null>(null);
-  const [resetTarget, setResetTarget] = useState<AdminUserView | null>(null);
-
-  async function refresh() {
-    try {
-      setUsers(await listUsers());
-    } catch (e: unknown) {
-      setLoadErr(e instanceof Error ? e.message : 'Load failed');
-    }
-  }
-  useEffect(() => { if (admin) refresh(); }, [admin]);
-
-  if (!admin) {
-    return <Navigate to="/agents" replace />;
-  }
-
-  function toggleAdmin(u: AdminUserView) {
-    const hasAdmin = u.roles.includes('admin');
-    const next = hasAdmin ? u.roles.filter(r => r !== 'admin') : [...u.roles, 'admin'];
-    if (!next.includes('user')) next.push('user');
-    updateRoles(u.userId, next).then(refresh).catch(e => alert(e.message));
-  }
-
-  function doDelete(u: AdminUserView) {
-    if (!confirm(`Delete user "${u.username}"?\n\nAll shares granted to this user across every agent will be revoked. Workspace files are NOT deleted.`)) return;
-    deleteUser(u.userId).then(refresh).catch(e => alert(e.message));
-  }
-
-  return (
-    <div style={S.page}>
-      <div style={S.headerBar}>
-        <div>
-          <h2 style={S.title}>Users</h2>
-          <p style={S.subtitle}>Invite teammates and manage their roles.</p>
-        </div>
-        <button style={S.primaryBtn} onClick={() => setShowInvite(true)}>+ Invite user</button>
-      </div>
-
-      {loadErr && <p style={{ color: '#dc2626' }}>{loadErr}</p>}
-
-      <div style={S.card}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={S.th}>Username</th>
-              <th style={S.th}>User ID</th>
-              <th style={S.th}>Roles</th>
-              <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.userId}>
-                <td style={{ ...S.td, fontWeight: 600 }}>{u.username}</td>
-                <td style={{ ...S.td, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.85rem', color: '#64748b' }}>
-                  {u.userId}
-                </td>
-                <td style={S.td}>{u.roles.map(roleBadge)}</td>
-                <td style={{ ...S.td, textAlign: 'right' }}>
-                  <button style={S.rowAction} onClick={() => toggleAdmin(u)}>
-                    {u.roles.includes('admin') ? 'Demote' : 'Promote to admin'}
-                  </button>
-                  <button style={S.rowAction} onClick={() => setResetTarget(u)}>Reset password</button>
-                  <button style={S.rowActionDanger} onClick={() => doDelete(u)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && !loadErr && (
-              <tr>
-                <td style={{ ...S.td, textAlign: 'center', color: '#94a3b8' }} colSpan={4}>No users.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {showInvite && (
-        <InviteModal
-          onClose={() => setShowInvite(false)}
-          onCreated={res => {
-            setShowInvite(false);
-            refresh();
-            if (res.generatedPassword) {
-              setGenerated({ username: res.user.username, password: res.generatedPassword });
-            }
-          }}
-        />
-      )}
-      {generated && (
-        <GeneratedPasswordModal
-          username={generated.username}
-          password={generated.password}
-          onClose={() => setGenerated(null)}
-        />
-      )}
-      {resetTarget && (
-        <ResetPasswordModal
-          user={resetTarget}
-          onClose={() => setResetTarget(null)}
-          onDone={() => setResetTarget(null)}
-        />
-      )}
+  const admin = isAdmin(); const qc = useQueryClient(); const scope = useControlPlaneScope();
+  const [params, setParams] = useSearchParams(); const [search, setSearch] = useState(''); const [creating, setCreating] = useState(false); const [generated, setGenerated] = useState('');
+  const query = useQuery({ queryKey: ['admin-users'], queryFn: listUsers, enabled: admin });
+  const selected = query.data?.find(a => a.userId === params.get('user'));
+  const refresh = async () => { await qc.invalidateQueries({ queryKey: ['admin-users'] }); await qc.invalidateQueries({ queryKey: ['account-audit'] }); scope.refreshNamespaces(); };
+  if (!admin) return <Navigate to="/settings/namespaces" replace />;
+  const users = query.data?.filter(a => `${a.username} ${a.displayName} ${a.userId}`.toLowerCase().includes(search.toLowerCase())) || [];
+  return <Page><PageHeader title="Users" description="Manage platform accounts and each person's access to shared namespaces." actions={<Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" />Create user</Button>} />
+    <Input className="max-w-sm" aria-label="Search users" placeholder="Search by name or username" value={search} onChange={e => setSearch(e.target.value)} />
+    <ErrorNotice error={query.error} />
+    <div className={`grid items-start gap-6 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}`}><section className="overflow-x-auto rounded-xl border"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-4 font-medium">Account</th><th className="p-4 font-medium">Platform role</th><th className="p-4 font-medium">Status</th></tr></thead><tbody className="divide-y">{users.map(a => <tr key={a.userId} className={selected?.userId === a.userId ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}><td className="p-4"><button className="text-left font-medium text-slate-900 hover:text-indigo-600" onClick={() => { const next = new URLSearchParams(params); next.set('user', a.userId); setParams(next); }}>{accountLabel(a)}</button><p className="mt-1 break-all text-xs text-slate-400">{a.userId}</p></td><td className="p-4"><Badge>{a.roles.includes('admin') ? 'Platform admin' : 'User'}</Badge></td><td className="p-4"><Badge tone={a.disabled ? 'default' : 'success'}>{a.disabled ? 'Disabled' : 'Active'}</Badge></td></tr>)}</tbody></table>{query.isLoading ? <p className="p-6 text-sm text-slate-500">Loading accounts…</p> : users.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No matching accounts.</p>}</section>
+      {selected && <UserDetail key={selected.userId} user={selected} onChanged={refresh} />}
     </div>
-  );
+    <Dialog open={creating} onOpenChange={setCreating}><DialogContent size="md"><DialogHeader><DialogTitle>Create user</DialogTitle><DialogDescription>Create an account, then assign access to the namespaces they need.</DialogDescription></DialogHeader><DialogBody>{creating && <CreateUserForm onCreated={password => { setCreating(false); setGenerated(password || ''); void refresh(); }} />}</DialogBody></DialogContent></Dialog>
+    <Dialog open={!!generated} onOpenChange={open => { if (!open) setGenerated(''); }}><DialogContent size="md"><DialogHeader><DialogTitle>Account created</DialogTitle><DialogDescription>Share this initial password with the new user. It is only shown here once.</DialogDescription></DialogHeader><DialogBody><code className="block break-all rounded-lg bg-slate-50 p-4 text-lg">{generated}</code><Button className="mt-4" onClick={() => setGenerated('')}>Done</Button></DialogBody></DialogContent></Dialog>
+  </Page>;
+}
+
+function CreateUserForm({ onCreated }: { onCreated: (password?: string) => void }) {
+  const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [admin, setAdmin] = useState(false);
+  const create = useMutation({ mutationFn: () => createUser({ username: username.trim(), initialPassword: password || undefined, roles: admin ? ['user', 'admin'] : ['user'] }), onSuccess: r => onCreated(r.generatedPassword) });
+  return <form className="space-y-4" onSubmit={e => { e.preventDefault(); create.mutate(); }}><label className="block space-y-2 text-sm font-medium">Username<Input required maxLength={100} value={username} onChange={e => setUsername(e.target.value)} autoComplete="off" /></label><label className="block space-y-2 text-sm font-medium">Initial password<Input type="password" minLength={6} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" /><span className="block text-xs font-normal text-slate-500">Leave blank to generate a password.</span></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={admin} onChange={e => setAdmin(e.target.checked)} />Platform administrator</label><ErrorNotice error={create.error} /><Button type="submit" disabled={!username.trim() || create.isPending}>{create.isPending ? 'Creating…' : 'Create user'}</Button></form>;
+}
+
+function UserDetail({ user, onChanged }: { user: AdminUserView; onChanged: () => Promise<void> }) {
+  const [roles, setRoles] = useState(user.roles); const [dialog, setDialog] = useState<'status' | 'password' | null>(null); const [password, setPassword] = useState(''); const [notice, setNotice] = useState('');
+  useEffect(() => setRoles(user.roles), [user]);
+  const mutation = useMutation({ mutationFn: (action: 'roles' | 'status' | 'password') => action === 'roles' ? updateRoles(user.userId, roles, user.version) : action === 'status' ? setAccountDisabled(user.userId, !user.disabled, user.version) : resetPassword(user.userId, password), onSuccess: async () => { setDialog(null); setPassword(''); setNotice('Account updated.'); await onChanged(); } });
+  return <aside className="space-y-5"><section className="space-y-4 rounded-xl border p-5"><div className="flex items-center gap-3"><span className="rounded-xl bg-indigo-50 p-3 text-indigo-600"><UsersRound className="h-5 w-5" /></span><div><h2 className="font-semibold">{accountLabel(user)}</h2><p className="mt-1 text-xs text-slate-500">{user.createdAt ? `Joined ${new Date(user.createdAt).toLocaleDateString()}` : user.userId}</p></div></div><h3 className="text-sm font-medium">Platform roles</h3><p className="text-xs leading-5 text-slate-500">Platform administration manages accounts and namespace provisioning. Namespace roles and private-work access are assigned separately.</p><div className="space-y-2">{['user', 'admin', 'agent_developer', 'operator'].map(r => <label key={r} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={roles.includes(r)} onChange={e => setRoles(e.target.checked ? [...roles, r] : roles.filter(x => x !== r))} />{r === 'admin' ? 'Platform administrator' : r === 'user' ? 'Console user' : `${r} (legacy navigation)`}</label>)}</div><ErrorNotice error={mutation.error} />{notice && <p role="status" className="text-sm text-emerald-700">{notice}</p>}<Button disabled={!roles.length || mutation.isPending} onClick={() => mutation.mutate('roles')}>Save platform roles</Button><div className="flex flex-wrap gap-2 border-t pt-4"><Button variant="outline" onClick={() => setDialog('password')}>Reset password</Button><Button variant="outline" disabled={user.userId === getUserId()} onClick={() => setDialog('status')}>{user.disabled ? 'Enable account' : 'Disable account'}</Button></div></section>
+    <UserNamespaceAccess user={user} />
+    <Dialog open={dialog !== null} onOpenChange={open => { if (!open) setDialog(null); }}><DialogContent size="md"><DialogHeader><DialogTitle>{dialog === 'password' ? 'Reset password' : user.disabled ? 'Enable account' : 'Disable account'}</DialogTitle><DialogDescription>{dialog === 'password' ? `Set a new password for ${user.username}. Existing logins will be revoked.` : user.disabled ? 'This account can sign in again. Previous sessions remain revoked.' : 'Sign-in and existing sessions will be blocked. Historical work is retained. Transfer owned shared namespaces first.'}</DialogDescription></DialogHeader><DialogBody><div className="space-y-4">{dialog === 'password' && <Input aria-label="New account password" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />}<ErrorNotice error={mutation.error} /><Button disabled={mutation.isPending || dialog === 'password' && password.length < 6} onClick={() => mutation.mutate(dialog === 'password' ? 'password' : 'status')}>{dialog === 'password' ? 'Reset password' : user.disabled ? 'Enable account' : 'Disable account'}</Button></div></DialogBody></DialogContent></Dialog>
+  </aside>;
+}
+
+function UserNamespaceAccess({ user }: { user: AdminUserView }) {
+  const qc = useQueryClient(); const scope = useControlPlaneScope();
+  const memberships = useQuery({ queryKey: ['account-namespaces', user.userId], queryFn: () => listAccountNamespaces(user.userId) });
+  const all = useQuery({ queryKey: ['managed-namespaces'], queryFn: listManagedNamespaces });
+  const [name, setName] = useState(''); const [editing, setEditing] = useState('');
+  const assigned = memberships.data?.items || [];
+  const choices = all.data?.items.filter(n => n.kind === 'shared' && !n.archived && !assigned.some(a => a.name === n.name)) || [];
+  return <section className="space-y-4 rounded-xl border p-5"><h3 className="font-semibold">Namespace access</h3><ErrorNotice error={memberships.error || all.error} /><div className="divide-y">{assigned.map(n => <div key={n.name} className="space-y-2 py-3"><div className="flex items-center justify-between gap-2"><Link to={`/settings/namespaces/${encodeURIComponent(n.name)}`} className="text-sm font-medium hover:text-indigo-600">{n.displayName}</Link><Badge>{n.owner === user.userId ? 'Owner' : n.archived ? 'Archived' : 'Member'}</Badge></div><RoleBadges roles={n.roles || []} />{n.groups && n.groups.length > 0 && <Link className="block text-xs text-indigo-600" to={`/settings/namespaces/${encodeURIComponent(n.name)}?tab=user+groups`}>Via user groups: {n.groups.join(', ')}</Link>}{n.kind === 'shared' && !n.archived && <Button variant="ghost" size="sm" onClick={() => setEditing(n.name)}>Edit namespace access</Button>}</div>)}</div>{!memberships.isLoading && assigned.length === 0 && <p className="text-sm text-slate-500">No namespace memberships yet. A personal space is created when this user first signs in.</p>}<div className="flex flex-wrap gap-2"><select aria-label="Assign namespace" className="h-10 min-w-0 flex-1 rounded-lg border bg-white px-3 text-sm" value={name} onChange={e => setName(e.target.value)}><option value="">Choose a shared namespace</option>{choices.map(n => <option key={n.name} value={n.name}>{n.displayName}</option>)}</select><Button variant="outline" disabled={!name || user.disabled} onClick={() => setEditing(name)}>Assign access</Button></div><Dialog open={!!editing} onOpenChange={open => { if (!open) setEditing(''); }}><DialogContent size="md"><DialogHeader><DialogTitle>Namespace access · {editing}</DialogTitle><DialogDescription>Set {user.username}'s direct roles. User group grants are managed in Namespace user groups.</DialogDescription></DialogHeader><DialogBody>{editing && <UserGrantEditor key={editing} name={editing} user={user} onSaved={async () => { setEditing(''); setName(''); await qc.invalidateQueries({ queryKey: ['account-namespaces'] }); await qc.invalidateQueries({ queryKey: ['namespace-detail'] }); await qc.invalidateQueries({ queryKey: ['managed-namespaces'] }); scope.refreshNamespaces(); }} />}</DialogBody></DialogContent></Dialog></section>;
+}
+
+function UserGrantEditor({ name, user, onSaved }: { name: string; user: AdminUserView; onSaved: () => Promise<void> }) {
+  const query = useQuery({ queryKey: ['namespace-detail', name], queryFn: () => getNamespace(name) });
+  const [roles, setRoles] = useState<string[]>(['member']);
+  useEffect(() => { if (query.data) setRoles(query.data.namespace.members[user.userId] || ['member']); }, [query.data, user.userId]);
+  const owner = query.data?.namespace.owner === user.userId;
+  const save = useMutation({ mutationFn: (remove: boolean) => { const n = query.data!.namespace; const members = { ...n.members }; if (remove || owner && roles.length === 0) delete members[user.userId]; else members[user.userId] = roles; return updateNamespace({ ...n, members }); }, onSuccess: onSaved });
+  return <div className="space-y-4"><ErrorNotice error={query.error || save.error} />{query.isLoading ? <p className="text-sm text-slate-500">Loading access…</p> : query.data && <>{owner && <p className="text-sm text-slate-500">The owner has administration, development and operation access. Transfer ownership from Namespace settings to remove this access.</p>}<div className="space-y-3">{namespaceRoles.map(r => { const implicit = owner && ['admin', 'member', 'developer', 'operator'].includes(r); return <label key={r} className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={implicit || roles.includes(r)} disabled={(owner && r !== "auditor") || user.disabled} onChange={e => setRoles(e.target.checked ? [...roles, r] : roles.filter(v => v !== r))} /><span><span className="capitalize font-medium">{r}</span><span className="mt-1 block text-xs text-slate-500">{roleDescriptions[r]}</span></span></label>; })}</div><div className="flex gap-2"><Button disabled={save.isPending || !owner && !roles.length || user.disabled} onClick={() => save.mutate(false)}>Save access</Button>{!owner && query.data.namespace.members[user.userId] && <Button variant="outline" disabled={save.isPending} onClick={() => save.mutate(true)}>Remove direct access</Button>}</div></>}</div>;
 }

@@ -1,13 +1,15 @@
-# Agent Protocol
+---
+title: Agent Protocol
+---
 
-`agentscope-extensions-agent-protocol` 把 AgentScope 的 [Harness Agent](../../docs/harness/architecture.md) 暴露为 [Agent Protocol](https://agentprotocol.ai/) 标准 HTTP 接口，让外部系统（CI、其他 Agent 平台、自动化任务）可以用统一的方式提交"任务"，无需关心你的 Agent 实现细节。
+`agentscope-extensions-agent-protocol` 把 AgentScope 的 [Harness Agent](/v2/zh/docs/harness/architecture) 暴露为 [Agent Protocol](https://agentprotocol.ai/) 标准 HTTP 接口，让外部系统（CI、其他 Agent 平台、自动化任务）可以用统一的方式提交"任务"，无需关心你的 Agent 实现细节。
 
 ## 何时使用
 
 - 想让 Agent 像云函数一样被远程调度。
 - 已有团队在用 Agent Protocol 客户端，想直接接进去。
 - 把 AgentScope Harness Agent 嵌进 Spring Boot 服务，自动暴露 `/tasks` REST 端点。
-- 作为 [远程子 agent](../../docs/harness/subagent.md#远程子-agent) 的托管端，供另一个 Harness 父代理通过 HTTP 调用。
+- 作为 [远程子 agent](/v2/zh/docs/harness/subagent#远程子-agent) 的托管端，供另一个 Harness 父代理通过 HTTP 调用。
 
 ## 协议分层
 
@@ -271,7 +273,7 @@ RuntimeContext.builder()
 
 `tool_call_id` 也可作为 `toolCallId` 的别名。需要 `agentscope.agent-protocol.hitl-enabled=true`（默认开启）。成功响应：`{ "task_id", "status": "running" }`。
 
-与调用方父 harness 的 HITL 交互见 [远程授权](../../docs/harness/subagent.md#远程授权)。
+与调用方父 harness 的 HITL 交互见 [远程授权](/v2/zh/docs/harness/subagent#远程授权)。
 
 ## 配置项
 

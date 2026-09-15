@@ -1,4 +1,6 @@
-# 自定义工作流（Custom Workflow）
+---
+title: 自定义工作流
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
@@ -78,6 +80,6 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 ## 相关文档
 
-- [Pipeline](pipeline.md) - 预定义流程（顺序、并行、循环）
-- [Routing](routing.md) - 分类 → 专家 → 综合
-- [概览](overview.md) - 多智能体模式总览
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 预定义流程（顺序、并行、循环）
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类 → 专家 → 综合
+- [概览](/v1/zh/docs/multi-agent/overview) - 多智能体模式总览

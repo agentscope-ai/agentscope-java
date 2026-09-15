@@ -1,4 +1,6 @@
-# MsgHub（消息中心）
+---
+title: MsgHub
+---
 
 MsgHub 是 AgentScope 中用于多智能体对话的消息广播中心。它管理一组智能体之间的消息分发，无需手动编写消息传递代码。
 
@@ -305,5 +307,5 @@ hub.enter()
 
 ## 相关文档
 
-- [Pipeline](../multi-agent/pipeline.md) - 顺序和并行智能体执行
-- [多智能体辩论](../multi-agent/multiagent-debate.md) - 辩论工作流模式
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序和并行智能体执行
+- [多智能体辩论](/v1/zh/docs/multi-agent/multiagent-debate) - 辩论工作流模式
