@@ -47,8 +47,12 @@ import java.util.List;
  * </ul>
  *
  * <p><b>Concurrency note:</b> for sandbox mode this is sequential-reuse sharing, not
- * live-instance sharing. Concurrent calls at the same scope each get their own running container;
- * they converge on the last persisted snapshot at the end of the call.
+ * live-instance sharing. By default a JVM-local
+ * {@link io.agentscope.harness.agent.sandbox.SandboxExecutionGuard#inProcess() execution guard}
+ * serialises concurrent calls that resolve to the same scope key, so each call resumes the
+ * snapshot the previous one persisted rather than racing on it. Configure a distributed guard for
+ * multi-instance deployments, or {@link
+ * io.agentscope.harness.agent.sandbox.SandboxExecutionGuard#noop()} to opt out.
  */
 public enum IsolationScope {
 

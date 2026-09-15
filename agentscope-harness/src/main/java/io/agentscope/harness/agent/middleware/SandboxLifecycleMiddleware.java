@@ -124,20 +124,31 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                         sandbox.getState() != null ? sandbox.getState().getSessionId() : "?");
             } catch (Exception e) {
                 ctx.put(SandboxAcquireResult.class, null);
-                filesystemProxy.clearSandboxIfCurrent(sandbox);
+                // Release the guard lease no matter what the rollback below throws, otherwise the
+                // per-key permit leaks and future same-slot calls block forever (issue #2800).
                 try {
-                    sandboxManager.release(result);
-                } catch (Exception releaseErr) {
-                    log.warn(
-                            "[sandbox-mw] Failed to release session after pre-call failure: {}",
-                            releaseErr.getMessage(),
-                            releaseErr);
+                    filesystemProxy.clearSandboxIfCurrent(sandbox);
+                    try {
+                        sandboxManager.release(result);
+                    } catch (Exception releaseErr) {
+                        log.warn(
+                                "[sandbox-mw] Failed to release session after pre-call failure: {}",
+                                releaseErr.getMessage(),
+                                releaseErr);
+                    }
+                } finally {
+                    result.getLease().close();
                 }
-                result.getLease().close();
                 throw e;
             }
         } catch (Exception e) {
             log.error("[sandbox-mw] Failed to acquire/start sandbox", e);
+            // Throwing InterruptedException clears the thread's interrupt flag; restore it so
+            // callers up the stack can still observe the interrupt (the guard's tryEnter blocks
+            // interruptibly while waiting for a busy slot — issue #2800).
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             throw new RuntimeException(e);
         }
     }
@@ -159,20 +170,26 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
         ctx.put(SandboxAcquireResult.class, null);
-        // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
-        // sibling's binding (issue #2490); it only clears the field when it still points here.
-        filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
-        SandboxContext sandboxContext = ctx.get(SandboxContext.class);
+        // The guard lease must be released no matter what fails above it, otherwise the per-key
+        // permit leaks and every future same-slot call blocks forever on the guard (issue #2800).
+        // Hence the finally: clear-binding, persist and release are all best-effort inside the try.
         try {
-            sandboxManager.persistState(result, sandboxContext, ctx);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
+            // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
+            // sibling's binding (issue #2490); it only clears the field when it still points here.
+            filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
+            SandboxContext sandboxContext = ctx.get(SandboxContext.class);
+            try {
+                sandboxManager.persistState(result, sandboxContext, ctx);
+            } catch (Exception e) {
+                log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
+            }
+            try {
+                sandboxManager.release(result);
+            } catch (Exception e) {
+                log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
+            }
+        } finally {
+            result.getLease().close();
         }
-        try {
-            sandboxManager.release(result);
-        } catch (Exception e) {
-            log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
-        }
-        result.getLease().close();
     }
 }
