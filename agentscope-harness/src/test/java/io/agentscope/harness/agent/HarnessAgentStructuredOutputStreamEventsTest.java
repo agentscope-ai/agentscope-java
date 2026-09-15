@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.stubbing.OngoingStubbing;
 import reactor.core.publisher.Flux;
 
 /**
@@ -174,6 +175,100 @@ class HarnessAgentStructuredOutputStreamEventsTest {
             assertEquals("San Francisco", data.get("location"));
             assertEquals("72°F", data.get("temperature"));
             assertEquals("Sunny", data.get("condition"));
+        }
+    }
+
+    /**
+     * Model driving the fallback path for {@code cycles} consecutive streamEvents invocations:
+     * each invocation needs exactly two model calls (tool use, then terminating text).
+     */
+    private static Model repeatedFallbackModel(int cycles) {
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location", "San Francisco",
+                                "temperature", "72°F",
+                                "condition", "Sunny"));
+        ChatResponse toolUse =
+                new ChatResponse(
+                        "c1",
+                        List.of(
+                                ToolUseBlock.builder()
+                                        .id("tc-r")
+                                        .name("generate_response")
+                                        .input(toolInput)
+                                        .content(JsonUtils.getJsonCodec().toJson(toolInput))
+                                        .build()),
+                        null,
+                        Map.of(),
+                        "tool_use");
+        ChatResponse done =
+                new ChatResponse(
+                        "c2",
+                        List.of(TextBlock.builder().text("Done").build()),
+                        null,
+                        Map.of(),
+                        "stop");
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        OngoingStubbing<Flux<ChatResponse>> stubbing = when(model.stream(anyList(), any(), any()));
+        for (int i = 0; i < cycles; i++) {
+            stubbing = stubbing.thenReturn(Flux.just(toolUse)).thenReturn(Flux.just(done));
+        }
+        return model;
+    }
+
+    @Test
+    void msgAndStringConvenienceOverloads_delegateStructuredOutput() {
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("weather-agent")
+                        .model(repeatedFallbackModel(4))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+
+            List<AgentEvent> msgClassEvents =
+                    agent.streamEvents(userMsg(), WeatherResponse.class, RuntimeContext.empty())
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(msgClassEvents);
+            assertTrue(
+                    lastResult(msgClassEvents).getResult().hasStructuredData(),
+                    "Msg + Class overload should yield a structured result");
+
+            List<AgentEvent> msgSchemaEvents =
+                    agent.streamEvents(userMsg(), weatherSchema(), RuntimeContext.empty())
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(msgSchemaEvents);
+            assertTrue(
+                    lastResult(msgSchemaEvents).getResult().hasStructuredData(),
+                    "Msg + JsonNode overload should yield a structured result");
+
+            List<AgentEvent> textClassEvents =
+                    agent.streamEvents(
+                                    "What's the weather?",
+                                    WeatherResponse.class,
+                                    RuntimeContext.empty())
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(textClassEvents);
+            assertTrue(
+                    lastResult(textClassEvents).getResult().hasStructuredData(),
+                    "String + Class overload should yield a structured result");
+
+            List<AgentEvent> textSchemaEvents =
+                    agent.streamEvents(
+                                    "What's the weather?", weatherSchema(), RuntimeContext.empty())
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(textSchemaEvents);
+            assertTrue(
+                    lastResult(textSchemaEvents).getResult().hasStructuredData(),
+                    "String + JsonNode overload should yield a structured result");
         }
     }
 }
