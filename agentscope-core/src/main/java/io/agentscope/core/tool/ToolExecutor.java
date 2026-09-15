@@ -183,6 +183,28 @@ class ToolExecutor {
      */
     private Mono<ToolResultBlock> executeCore(ToolCallParam param) {
         ToolUseBlock toolCall = param.getToolUseBlock();
+
+        // A model may emit a syntactically partial tool call before reporting "length". The
+        // accumulator intentionally keeps the historical "{}" fallback for compatibility, so
+        // schema validation alone cannot distinguish this case from a genuine empty argument
+        // object. The paired metadata markers provide that evidence and ensure that no tool with
+        // potentially destructive side effects is invoked from a truncated argument stream. The
+        // error result is returned through the normal execution path, which preserves the tool
+        // call ID and prevents the ReAct state from retaining an unmatched pending tool call.
+        if (Boolean.TRUE.equals(
+                toolCall.getMetadata().get(ToolUseBlock.METADATA_OUTPUT_LENGTH_LIMIT))) {
+            String errorMsg =
+                    "Tool arguments were incomplete because the model output reached its length"
+                            + " limit. The tool was not executed. Do not retry this call unchanged."
+                            + " Reduce the argument payload and complete the work with multiple"
+                            + " smaller calls or an available incremental update tool.";
+            logger.warn(
+                    "Blocked incomplete length-limited tool call: name={}, id={}",
+                    toolCall.getName(),
+                    toolCall.getId());
+            return Mono.just(ToolResultBlock.error(errorMsg));
+        }
+
         AgentTool tool = toolRegistry.getTool(toolCall.getName());
 
         if (tool == null) {
