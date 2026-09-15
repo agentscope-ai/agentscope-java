@@ -256,8 +256,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         // Edit script is assembled with real newlines, then base64-encoded and piped via stdin
-        // to `python3 -`; the payload is written to a temp file first (to avoid ARG_MAX limits),
-        // then passed as argv[1].
+        // to `python3 -`; the payload is written to a unique mktemp file first (to avoid ARG_MAX
+        // limits), then passed as argv[1].
         //
         // Do NOT revert to `python3 -c "...\n..."` inline form: under `bash -lc`, \n inside
         // double quotes is a literal backslash+n (not a newline), so the entire script collapses
@@ -291,17 +291,37 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
+        // mktemp yields a unique 0600 file per call. This avoids two hazards of a predictable
+        // /tmp/.agentscope-edit-$$ name: the payload (which can contain secrets copied out of the
+        // edited file) being world-readable under the default umask, and two concurrent edits
+        // clobbering each other when a backend reuses a single shell session (where $$ is
+        // constant across calls).
         String cmd =
-                "cat > /tmp/.agentscope-edit-$$ <<'__EDIT_EOF__'\n"
+                "T=$(mktemp /tmp/.agentscope-edit.XXXXXX) || exit 1\n"
+                        + "cat > \"$T\" <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n"
                         + "printf '%s\\n' "
                         + scriptB64
-                        + " | base64 -d | python3 - /tmp/.agentscope-edit-$$ 2>&1\n"
-                        + "rm -f /tmp/.agentscope-edit-$$";
+                        + " | base64 -d | python3 - \"$T\" 2>&1\n"
+                        + "rm -f \"$T\"";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
+
+        // The edit script only ever prints a JSON object on stdout ({"error":...} or
+        // {"count":...}). A Python traceback or shell error in the captured output means the
+        // command failed to run at all (missing temp file, base64 decode failure, or a
+        // regression to a broken command shape). Surface that as an execution failure instead of
+        // letting it fall through to the opaque "unexpected server response" branch below — that
+        // opacity is exactly how the earlier bash -lc breakage stayed mysterious.
+        if (looksLikeExecutionFailure(output)) {
+            return EditResult.fail(
+                    "Error editing file '"
+                            + filePath
+                            + "': edit command failed to execute: "
+                            + output.substring(0, Math.min(200, output.length())));
+        }
 
         if (output.contains("\"error\"")) {
             if (output.contains("file_not_found")) {
@@ -510,6 +530,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     private static long parseEpochSeconds(String s) {
         long epochSec = parseLongSafe(s);
         return epochSec * 1000;
+    }
+
+    private static boolean looksLikeExecutionFailure(String output) {
+        return output.contains("Traceback (most recent call last)")
+                || output.contains("SyntaxError")
+                || output.contains("No such file or directory");
     }
 
     private static String jsonEscape(String s) {

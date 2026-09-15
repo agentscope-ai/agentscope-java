@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
@@ -274,16 +275,23 @@ class BaseSandboxFilesystemTest {
             // return an error result, but we only care about verifying the command shape.
             var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
 
-            // Verify command uses temp file + printf + base64 pipe (not echo/argv)
+            // Verify command uses a unique mktemp file + printf + base64 pipe (not echo/argv,
+            // not a predictable $$ name)
             assertTrue(
-                    fs.lastCommand.contains("cat > /tmp/.agentscope-edit-$$"),
-                    "edit should write payload to temp file, got: " + fs.lastCommand);
+                    fs.lastCommand.contains("mktemp /tmp/.agentscope-edit.XXXXXX"),
+                    "edit should create a unique temp file via mktemp, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("cat > \"$T\""),
+                    "edit should write payload to the mktemp file, got: " + fs.lastCommand);
             assertTrue(
                     fs.lastCommand.contains("printf '%s\\n'"),
                     "edit should use printf for script base64, got: " + fs.lastCommand);
             assertTrue(
-                    fs.lastCommand.contains("base64 -d | python3 - /tmp/.agentscope-edit-$$"),
+                    fs.lastCommand.contains("base64 -d | python3 - \"$T\""),
                     "edit should pipe script and pass temp file as argv, got: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("/tmp/.agentscope-edit-$$"),
+                    "edit should NOT use a predictable $$ temp name, got: " + fs.lastCommand);
             assertTrue(
                     fs.lastCommand.contains("<<'__EDIT_EOF__'"),
                     "edit should use heredoc to write payload, got: " + fs.lastCommand);
@@ -408,6 +416,98 @@ class BaseSandboxFilesystemTest {
             LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
             LsResult r = fs.ls(RT, file.toAbsolutePath().toString());
             assertFalse(r.isSuccess(), "ls on a file path should fail");
+        }
+
+        // ==================== edit() end-to-end through a real shell (#3084) ====================
+        // String-shape assertions cannot tell a working command from one that eats its own
+        // stdin — that ambiguity broke this method twice. These run the assembled command
+        // through a real shell and assert the file content actually changes.
+
+        @Test
+        void edit_singleOccurrence_appliesToRealFile() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("edit.txt");
+            Files.writeString(file, "line one\nUNIQUE_TOKEN here\nline three\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "UNIQUE_TOKEN", "REPLACED", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertEquals("line one\nREPLACED here\nline three\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multiLineReplacement_survivesShell() throws IOException {
+            // The original bug: a multi-line payload collapsed to one line under bash -lc.
+            // A newline-containing replacement must land intact.
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "start\nPLACEHOLDER\nend\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "PLACEHOLDER", "a\nb\nc", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals("start\na\nb\nc\nend\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_largePayload_appliesToRealFile() throws IOException {
+            // Multi-KB payload: proves the temp-file transport avoids ARG_MAX end to end,
+            // which a command-string assertion cannot demonstrate.
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("large.txt");
+            Files.writeString(file, "BEGIN\nMARK\nEND\n");
+            String large = "L".repeat(50_000);
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "MARK", large, false);
+
+            assertTrue(result.isSuccess(), "large edit should succeed, got: " + result.error());
+            assertEquals("BEGIN\n" + large + "\nEND\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll_failsCleanly() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("dup.txt");
+            Files.writeString(file, "dup\ndup\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "dup", "x", false);
+
+            assertFalse(result.isSuccess(), "ambiguous edit should fail");
+            assertTrue(
+                    result.error().contains("multiple times"),
+                    "should report multiple occurrences, got: " + result.error());
+            assertEquals("dup\ndup\n", Files.readString(file), "file must be untouched on failure");
+        }
+
+        @Test
+        void edit_replaceAll_appliesToRealFile() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("all.txt");
+            Files.writeString(file, "dup\ndup\ndup\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "dup", "x", true);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals(3, result.occurrences());
+            assertEquals("x\nx\nx\n", Files.readString(file));
+        }
+
+        private static boolean python3Available() {
+            try {
+                Process p =
+                        new ProcessBuilder("sh", "-c", "command -v python3")
+                                .redirectErrorStream(true)
+                                .start();
+                return p.waitFor() == 0;
+            } catch (Exception e) {
+                return false;
+            }
         }
     }
 
