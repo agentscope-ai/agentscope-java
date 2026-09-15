@@ -62,7 +62,7 @@ public class MemoryGetTool {
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        String text = workspaceManager.readManagedWorkspaceFileUtf8(rc, path);
+        String text = workspaceManager.readMemoryFileUtf8(rc, path);
         if (text == null || text.isBlank()) {
             return "Error: file not found: " + path;
         }
