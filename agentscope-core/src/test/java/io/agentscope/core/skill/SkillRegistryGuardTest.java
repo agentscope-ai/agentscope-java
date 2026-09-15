@@ -21,8 +21,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the unknown-skill guards of the registry accessors used by the SKILL.md dedup (#1569):
- * an id with no registration must yield safe defaults and must not throw.
+ * Covers the unknown-skill guard of the registry accessor used by the SKILL.md dedup (#1569):
+ * an id with no registration must yield a safe default and must not throw.
  */
 class SkillRegistryGuardTest {
 
@@ -32,14 +32,11 @@ class SkillRegistryGuardTest {
         SkillRegistry registry = new SkillRegistry();
 
         assertFalse(registry.isSkillActive("never_registered"), "unknown id is not active");
-        assertFalse(registry.isSkillEntryLoaded("never_registered"), "unknown id has no entry");
 
-        // Both setters tolerate an unknown id instead of throwing (mirrors setSkillActive).
-        registry.setSkillEntryLoaded("never_registered", true);
+        // Both mutators tolerate an unknown id instead of throwing.
         registry.setSkillActive("never_registered", false);
         registry.setAllSkillsActive(false);
 
         assertFalse(registry.isSkillActive("never_registered"));
-        assertFalse(registry.isSkillEntryLoaded("never_registered"));
     }
 }

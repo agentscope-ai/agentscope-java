@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -45,6 +47,21 @@ class SkillToolFactory {
 
     private final SkillRegistry skillRegistry;
     private Toolkit toolkit;
+
+    /**
+     * Skills whose SKILL.md entry content has been delivered, keyed by (userId, sessionId) scope.
+     *
+     * <p>One agent (and therefore one {@code SkillBox} / factory) can serve multiple
+     * {@code (userId, sessionId)} pairs, so "the model has already seen this entry" must not be
+     * agent-global state: session A's load must not suppress the first entry load of session B,
+     * whose context never received it. The runtime context of each tool call supplies the scope;
+     * calls without a runtime context (direct tool use in tests) share the {@link
+     * #NO_CONTEXT_SCOPE} fallback bucket.
+     */
+    private final Map<String, Set<String>> entryDeliveredByScope = new ConcurrentHashMap<>();
+
+    /** Fallback scope for tool calls that carry no runtime context. */
+    private static final String NO_CONTEXT_SCOPE = "<no-context>";
 
     SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
         this.skillRegistry = skillRegistry;
@@ -148,7 +165,7 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    String result = loadSkillResourceImpl(skillId, path);
+                    String result = loadSkillResourceImpl(skillId, path, scopeOf(param));
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
                     logger.error("Error loading skill resource", e);
@@ -162,14 +179,47 @@ class SkillToolFactory {
     }
 
     /**
+     * Derives the entry-delivery scope from a tool call's runtime context.
+     *
+     * <p>The scope is {@code userId::sessionId} when the call carries a runtime context, so entry
+     * delivery is tracked per conversation; calls without a runtime context share one fallback
+     * bucket, matching the direct-tool-use case.
+     */
+    private static String scopeOf(ToolCallParam param) {
+        RuntimeContext context = param.getRuntimeContext();
+        if (context == null) {
+            return NO_CONTEXT_SCOPE;
+        }
+        String userId = context.getUserId();
+        String sessionId = context.getSessionId();
+        if (userId == null && sessionId == null) {
+            return NO_CONTEXT_SCOPE;
+        }
+        return (userId == null ? "*" : userId) + "::" + (sessionId == null ? "*" : sessionId);
+    }
+
+    private boolean isEntryDelivered(String scope, String skillId) {
+        Set<String> delivered = entryDeliveredByScope.get(scope);
+        return delivered != null && delivered.contains(skillId);
+    }
+
+    private void markEntryDelivered(String scope, String skillId) {
+        entryDeliveredByScope
+                .computeIfAbsent(scope, k -> ConcurrentHashMap.newKeySet())
+                .add(skillId);
+    }
+
+    /**
      * Implementation of skill resource loading logic.
      *
      * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
+     * @param scope the per-call (userId, sessionId) scope of this load, used to track entry
+     *     delivery without leaking state across sessions
      * @return The formatted resource content or error message with available resources
      * @throws IllegalArgumentException if skill doesn't exist or resource not found
      */
-    private String loadSkillResourceImpl(String skillId, String path) {
+    private String loadSkillResourceImpl(String skillId, String path, String scope) {
         AgentSkill skill = validateSkillExists(skillId);
 
         // Special handling for SKILL.md - return the skill's markdown content
@@ -177,11 +227,12 @@ class SkillToolFactory {
             // An LLM often calls load_skill_through_path for the same skill several
             // times in one batch; re-sending the full SKILL.md burns tokens for
             // content already in context (#1569). Key the short-circuit on the entry
-            // content having actually been delivered — NOT on the skill being
-            // active, because loading any resource activates the skill without
-            // ever serving SKILL.md (the not-found message also enumerates resource
-            // paths, so a model can reach a resource first).
-            if (skillRegistry.isSkillEntryLoaded(skillId)) {
+            // content having actually been delivered *in this session's context* —
+            // NOT on the skill being active, because loading any resource activates
+            // the skill without ever serving SKILL.md (the not-found message also
+            // enumerates resource paths, so a model can reach a resource first), and
+            // NOT on agent-global state, because one agent serves many sessions.
+            if (isEntryDelivered(scope, skillId)) {
                 // Still reconcile tool-group state: the registry flag and the toolkit's
                 // group state are separate, and a host can disable groups via the public
                 // Toolkit API (or work through a deep copy). A plain re-load used to be
@@ -191,7 +242,7 @@ class SkillToolFactory {
                 return buildAlreadyLoadedNotice(skillId, skill);
             }
             activateSkill(skillId);
-            skillRegistry.setSkillEntryLoaded(skillId, true);
+            markEntryDelivered(scope, skillId);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
@@ -287,24 +338,22 @@ class SkillToolFactory {
 
     /**
      * Builds the deduplication notice for a repeat {@code SKILL.md} load of an already-delivered
-     * skill.
+     * skill in the same session scope.
      *
      * <p>The notice is actionable rather than terminal: it enumerates the skill's resources (each
      * still returns full content) so a model that lost parts of the skill to context compaction
-     * can re-fetch what it needs, and documents the host-side recovery lever — deactivating the
-     * skill resets the dedup so the next load re-sends the entry document.
+     * can re-fetch what it needs. Delivery tracking is per (userId, sessionId) scope, so a fresh
+     * session always receives the full entry document on its first load.
      */
     private String buildAlreadyLoadedNotice(String skillId, AgentSkill skill) {
         StringBuilder notice = new StringBuilder();
         notice.append("Skill '")
                 .append(skillId)
-                .append("' is already loaded and active; its SKILL.md was delivered by the")
-                .append(" earlier load and is not re-sent to save context.\n\n");
+                .append("' is already loaded and active; its SKILL.md was delivered to this")
+                .append(" session by the earlier load and is not re-sent to save context.\n\n");
         appendAvailableResources(notice, skill.getResources(), skill.getOriginDir().orElse(null));
-        notice.append("\nEach listed resource returns its full content on request. If the")
-                .append(" SKILL.md body itself is no longer in context, deactivating and")
-                .append(" reactivating the skill (e.g. via SkillBox.setSkillActive) resets this")
-                .append(" notice and re-sends the entry document.");
+        notice.append("\nEach listed resource returns its full content on request, and a new")
+                .append(" session receives the full SKILL.md on its first load.");
         return notice.toString();
     }
 

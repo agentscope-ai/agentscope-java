@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
@@ -32,9 +33,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Verifies that a repeat {@code load_skill_through_path} call for the SKILL.md of an
- * already-active skill returns a one-line notice instead of re-sending the full markdown
- * (#1569), while the first load and specific resource paths keep returning full content.
+ * Verifies the SKILL.md deduplication added for #1569: a repeat load within the same session
+ * returns a notice instead of re-sending the full markdown, while first loads, other sessions,
+ * and specific resource paths always receive full content.
  */
 class SkillToolFactoryReloadDedupTest {
 
@@ -153,68 +154,6 @@ class SkillToolFactoryReloadDedupTest {
     }
 
     @Test
-    @DisplayName("Bulk deactivation also resets the dedup for every skill")
-    void bulkDeactivationRecoversFullEntryLoad() {
-        AgentSkill skill =
-                AgentSkill.builder()
-                        .name("theta")
-                        .description("theta skill")
-                        .skillContent("# Theta SKILL body")
-                        .build();
-
-        Toolkit toolkit = new Toolkit();
-        SkillBox box = new SkillBox(toolkit);
-        box.registerSkill(skill);
-        box.registerSkillLoadTool();
-
-        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
-        assertTrue(
-                textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"))
-                        .contains("is already loaded and active"));
-
-        // deactivateAllSkills() runs at the start of each agent call: the entry-delivered
-        // state must reset with it, or the next turn's first SKILL.md load returns only
-        // the notice for content the fresh context no longer has.
-        box.deactivateAllSkills();
-
-        String reloaded = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
-        assertTrue(
-                reloaded.contains("Successfully loaded skill"),
-                "A load after bulk deactivation returns the full markdown again");
-        assertTrue(reloaded.contains("# Theta SKILL body"));
-    }
-
-    @Test
-    @DisplayName("Deactivating the skill resets the dedup: the next SKILL.md load re-sends content")
-    void deactivationRecoversFullEntryLoad() {
-        AgentSkill skill =
-                AgentSkill.builder()
-                        .name("delta")
-                        .description("delta skill")
-                        .skillContent("# Delta SKILL body")
-                        .build();
-
-        Toolkit toolkit = new Toolkit();
-        SkillBox box = new SkillBox(toolkit);
-        box.registerSkill(skill);
-        box.registerSkillLoadTool();
-
-        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
-        assertTrue(
-                textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"))
-                        .contains("is already loaded and active"));
-
-        // Host-side recovery lever: deactivation ends the "entry delivered" window.
-        box.setSkillActive(skill.getSkillId(), false);
-
-        String reloaded = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
-        assertTrue(
-                reloaded.contains("Successfully loaded skill"),
-                "A load after deactivation returns the full markdown again");
-        assertTrue(reloaded.contains("# Delta SKILL body"));
-    }
-
-    @Test
     @DisplayName("The dedup path still re-enables a tool group disabled behind its back")
     void dedupPathResyncsExternallyDisabledToolGroup() {
         AgentSkill skill =
@@ -329,5 +268,74 @@ class SkillToolFactoryReloadDedupTest {
                 resource.contains("resource body"),
                 "Specific resource paths keep returning full content after activation");
         assertEquals(1, resource.split("resource body", -1).length - 1);
+    }
+
+    @Test
+    @DisplayName("A session's entry load must not suppress another session's first load")
+    void sessionsDoNotShareEntryDelivery() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("iota")
+                        .description("iota skill")
+                        .skillContent("# Iota SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        // Session A loads the entry; session B (same agent, different context) has
+        // never seen it and must still receive the full document on its first load.
+        String sessionA =
+                textOf(
+                        callInSession(
+                                toolkit,
+                                skill.getSkillId(),
+                                "SKILL.md",
+                                RuntimeContext.builder().userId("u1").sessionId("s1").build()));
+        String sessionARepeat =
+                textOf(
+                        callInSession(
+                                toolkit,
+                                skill.getSkillId(),
+                                "SKILL.md",
+                                RuntimeContext.builder().userId("u1").sessionId("s1").build()));
+        String sessionB =
+                textOf(
+                        callInSession(
+                                toolkit,
+                                skill.getSkillId(),
+                                "SKILL.md",
+                                RuntimeContext.builder().userId("u1").sessionId("s2").build()));
+
+        assertTrue(sessionA.contains("# Iota SKILL body"), "session A first load is full");
+        assertTrue(
+                sessionARepeat.contains("is already loaded and active"), "session A repeat dedups");
+        assertTrue(
+                sessionB.contains("# Iota SKILL body"),
+                "session B first load must NOT be suppressed by session A");
+    }
+
+    private ToolResultBlock callInSession(
+            Toolkit toolkit, String skillId, String path, RuntimeContext ctx) {
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        assertNotNull(tool);
+        Map<String, Object> input = new HashMap<>();
+        input.put("skillId", skillId);
+        input.put("path", path);
+        ToolUseBlock useBlock =
+                ToolUseBlock.builder()
+                        .id("cross-" + System.nanoTime())
+                        .name("load_skill_through_path")
+                        .input(input)
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(useBlock)
+                        .input(input)
+                        .runtimeContext(ctx)
+                        .build();
+        return tool.callAsync(param).block(TIMEOUT);
     }
 }

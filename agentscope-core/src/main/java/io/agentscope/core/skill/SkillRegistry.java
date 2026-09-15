@@ -70,30 +70,6 @@ class SkillRegistry {
     }
 
     /**
-     * Returns whether the SKILL.md entry content has been delivered for a skill.
-     *
-     * @param skillId The skill ID (must not be null)
-     * @return true if the entry content has been served to the model
-     */
-    boolean isSkillEntryLoaded(String skillId) {
-        RegisteredSkill registered = registeredSkills.get(skillId);
-        return registered != null && registered.isEntryLoaded();
-    }
-
-    /**
-     * Marks the SKILL.md entry content as delivered for a skill.
-     *
-     * @param skillId The skill ID (must not be null)
-     * @param entryLoaded whether the entry content has been served
-     */
-    void setSkillEntryLoaded(String skillId, boolean entryLoaded) {
-        RegisteredSkill registered = registeredSkills.get(skillId);
-        if (registered != null) {
-            registered.setEntryLoaded(entryLoaded);
-        }
-    }
-
-    /**
      * Sets the activation state of a skill.
      *
      * @param skillId The skill ID (must not be null)
@@ -103,11 +79,6 @@ class SkillRegistry {
         RegisteredSkill registered = registeredSkills.get(skillId);
         if (registered != null) {
             registered.setActive(active);
-            if (!active) {
-                // Deactivation ends the "entry delivered" window: the next SKILL.md load
-                // is treated as a fresh load and re-sends the entry document.
-                registered.setEntryLoaded(false);
-            }
         }
     }
 
@@ -117,11 +88,7 @@ class SkillRegistry {
      * @param active Whether to activate all skills
      */
     void setAllSkillsActive(boolean active) {
-        // Route through setSkillActive so the deactivation invariants (clearing the
-        // entry-delivered flag) hold for bulk deactivation too — deactivateAllSkills()
-        // runs at the start of each agent call, and a surviving entryLoaded flag would
-        // make the next SKILL.md load return only the dedup notice.
-        registeredSkills.keySet().forEach(id -> setSkillActive(id, active));
+        registeredSkills.values().forEach(r -> r.setActive(active));
     }
 
     // ==================== Query Operations ====================
