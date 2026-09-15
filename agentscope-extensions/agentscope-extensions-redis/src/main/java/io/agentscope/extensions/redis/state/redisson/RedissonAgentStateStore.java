@@ -66,6 +66,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
     private static final String LIST_SUFFIX = ":list";
 
     private final RedissonClient redissonClient;
+    private final RScript.ReturnType scriptReturnType;
     private final String keyPrefix;
 
     private RedissonAgentStateStore(Builder builder) {
@@ -74,6 +75,18 @@ public class RedissonAgentStateStore implements AgentStateStore {
         }
         if (builder.redissonClient == null) {
             throw new IllegalArgumentException("RedissonClient cannot be null");
+        }
+        try {
+            this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
+        } catch (IllegalArgumentException e) {
+            Package apiPackage = RScript.class.getPackage();
+            String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+            if (version == null) {
+                // fall back to the code source so users can see which jar won
+                version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+            }
+            throw new IllegalStateException(
+                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + version, e);
         }
         this.keyPrefix = builder.keyPrefix;
         this.redissonClient = builder.redissonClient;
@@ -150,7 +163,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
                             .eval(
                                     RScript.Mode.READ_WRITE,
                                     RedisStateVersionSupport.SAVE_SCRIPT,
-                                    RScript.ReturnType.LONG,
+                                    scriptReturnType,
                                     new ArrayList<>(scriptKeys),
                                     scriptArgs.toArray());
             long newVersion = ((Number) result).longValue();

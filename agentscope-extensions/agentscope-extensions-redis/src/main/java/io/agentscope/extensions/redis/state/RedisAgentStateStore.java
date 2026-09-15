@@ -548,6 +548,18 @@ public class RedisAgentStateStore implements AgentStateStore {
             return this;
         }
 
+        /**
+         * Configure the store with a Redisson client.
+         *
+         * <p>This setter eagerly constructs {@link RedissonClientAdapter}, so Redisson API
+         * incompatibility is reported here rather than from {@link #build()}.
+         *
+         * @param redissonClient the RedissonClient instance
+         * @return this builder
+         * @throws IllegalStateException if the loaded Redisson API lacks {@code
+         *     RScript.ReturnType.LONG} (the Redisson 4.x baseline managed by
+         *     {@code agentscope-dependencies-bom})
+         */
         public Builder redissonClient(RedissonClient redissonClient) {
             this.client = RedissonClientAdapter.of(redissonClient);
             return this;
