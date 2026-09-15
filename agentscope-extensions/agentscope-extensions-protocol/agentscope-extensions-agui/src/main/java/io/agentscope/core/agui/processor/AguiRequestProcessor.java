@@ -163,6 +163,9 @@ public class AguiRequestProcessor {
                             }
 
                             try {
+                                RuntimeContext effectiveRuntimeContext =
+                                        resumeCoordinator.addResumeInterrupts(
+                                                input, runtimeContext);
                                 // Determine effective input based on server-side memory
                                 RunAgentInput effectiveInput = input;
                                 if (agentResolver.hasMemory(runtimeContext)) {
@@ -171,12 +174,18 @@ public class AguiRequestProcessor {
                                                     + " extracting follow-up messages",
                                             threadId,
                                             runtimeContext.getUserId());
-                                    effectiveInput = extractLatestUserMessage(input);
+                                    if (AguiUtil.asReActAgent(agent) != null) {
+                                        // The authoritative state is reloaded under the agent's
+                                        // session lock. Keep the transcript until then so pending
+                                        // results in its middle cannot be lost to a stale cache.
+                                        effectiveRuntimeContext =
+                                                RuntimeContext.builder(effectiveRuntimeContext)
+                                                        .put(RuntimeContext.REPLAYED_INPUT, true)
+                                                        .build();
+                                    } else {
+                                        effectiveInput = extractLatestUserMessage(input);
+                                    }
                                 }
-
-                                RuntimeContext effectiveRuntimeContext =
-                                        resumeCoordinator.addResumeInterrupts(
-                                                input, runtimeContext);
 
                                 // Create adapter and run
                                 AguiAgentAdapter adapter = adapterFactory.create(agent, config);

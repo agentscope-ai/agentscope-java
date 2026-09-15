@@ -307,18 +307,19 @@ public abstract class AgentBase implements Agent {
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        List<Msg> preparedMsgs = prepareInputMessages(msgs, scope);
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
-                                msgs,
+                                preparedMsgs,
                                 () ->
-                                        notifyPreCall(msgs, scope)
+                                        notifyPreCall(preparedMsgs, scope)
                                                 .flatMap(doCallFn)
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(
-                                                                msgs.toArray(new Msg[0]))));
+                                                                preparedMsgs.toArray(new Msg[0]))));
         return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
     }
 
@@ -334,6 +335,19 @@ public abstract class AgentBase implements Agent {
      */
     protected Object callSerializationKey(RuntimeContext rc) {
         return null;
+    }
+
+    /**
+     * Prepares caller input after session activation and before tracing and pre-call hooks.
+     * Subclasses can reconcile replayed input against the call-scoped state while holding the
+     * session serialization gate. The default preserves the original input.
+     *
+     * @param msgs caller input
+     * @param callScope the scope returned by {@code beforeAgentExecution}
+     * @return the messages to process
+     */
+    protected List<Msg> prepareInputMessages(List<Msg> msgs, Object callScope) {
+        return msgs;
     }
 
     /**

@@ -335,6 +335,12 @@ For permission confirmations, `payload.approved` must be the boolean `true` to a
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 
+## Replayed Transcripts With Server-Side Memory
+
+When server-side memory is present, `AguiRequestProcessor` passes ReAct-backed agents the full client transcript with `RuntimeContext.REPLAYED_INPUT=true`. After loading the current user/session state, the agent selects messages after the last client assistant turn and any earlier tool results matching pending calls. Other earlier history is not appended again. Stateless input and non-ReAct agents retain their existing behavior.
+
+Previously consumed results in the selected input are removed. Unknown result IDs and duplicate submitted IDs remain errors, as does partial tool completion combined with text. A request containing only consumed results is rejected. ReActAgent also rejects orphan result IDs when no calls are pending; an initial, client-owned transcript can still contain results paired with preceding assistant tool calls. If cleaning leaves a new instruction without current tool results, `enablePendingToolRecovery=true` is still required to cancel abandoned calls with error results. Permission confirmation and the official `resume[]` contract remain required; replay handling does not approve ASKING tools.
+
 ## Example Project
 
 See the complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
