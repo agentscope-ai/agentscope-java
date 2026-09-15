@@ -136,6 +136,15 @@ public interface AbstractFilesystem {
      * this method to support other byte sequences in create-only mode. Atomic creation depends on
      * the backend; this default does not add locking or a transaction.
      *
+     * <p>Built-in raw-byte support for {@code CREATE_NEW} is provided by {@link LocalFilesystem}
+     * (including {@link LocalFilesystemWithShell}) and
+     * {@link io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem}.
+     * {@link CompositeFilesystem}, {@link BakedContextFilesystem}, and {@link RoutedSandboxFilesystem}
+     * forward this capability to their selected backend. {@link OverlayFilesystem} and
+     * {@link io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem} (including
+     * {@link io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem}) currently use
+     * the UTF-8-only default.
+     *
      * @param runtimeContext per-call agent runtime
      * @param files path-to-content mappings; an empty byte array represents an empty file
      * @param mode destination write policy
