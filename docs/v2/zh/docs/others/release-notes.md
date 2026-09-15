@@ -7,6 +7,10 @@ description: AgentScope Java 各版本变更记录
 
 ---
 
+## 未发布
+
+- Harness 上下文压缩现在更保守地估算非 ASCII 文本，并将系统提示词、工具定义和响应 schema 纳入输入预算。显式设置 `triggerTokens` 时，压缩可能比此前更早触发，尤其是中文较多的会话。Token 数仍为启发式估算，请继续为模型特有的开销预留余量。 ([#2990](https://github.com/agentscope-ai/agentscope-java/pull/2990), [#2985](https://github.com/agentscope-ai/agentscope-java/issues/2985))
+
 ## 2.0.1
 
 > 发布日期：2026-08-05

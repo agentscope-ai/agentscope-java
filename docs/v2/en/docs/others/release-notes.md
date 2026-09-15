@@ -7,6 +7,10 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+- Harness compaction now counts non-ASCII text more conservatively and includes system prompts, tool definitions and response schemas in the input budget. With an explicit `triggerTokens`, compaction may run earlier, especially for Chinese-heavy conversations. Token counts remain heuristic estimates; retain headroom for model-specific overhead. ([#2990](https://github.com/agentscope-ai/agentscope-java/pull/2990), [#2985](https://github.com/agentscope-ai/agentscope-java/issues/2985))
+
 ## 2.0.1
 
 > Released: 2026-08-05
