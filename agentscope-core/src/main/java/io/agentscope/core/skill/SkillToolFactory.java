@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -45,6 +46,24 @@ class SkillToolFactory {
 
     private final SkillRegistry skillRegistry;
     private Toolkit toolkit;
+
+    /**
+     * Entry-delivery tracking, scoped per conversation (see {@link EntryDeliveryTracker}).
+     *
+     * <p>One agent (and therefore one {@code SkillBox} / factory) can serve multiple
+     * {@code (userId, sessionId)} pairs, so "the model has already seen this entry" must not be
+     * agent-global state: session A's load must not suppress the first entry load of session B,
+     * whose context never received it. The tracker bounds the number of remembered scopes (LRU)
+     * and claims atomically, so overlapping same-batch loads dedup correctly.
+     */
+    private final EntryDeliveryTracker entryDelivery = new EntryDeliveryTracker();
+
+    /**
+     * Fallback scope for tool calls that carry no runtime context at all (direct tool use).
+     * A context with a user but no session id gets {@code null} instead — an unidentifiable
+     * conversation never dedups, so its sessions cannot suppress each other.
+     */
+    private static final String NO_CONTEXT_SCOPE = "<no-context>";
 
     SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
         this.skillRegistry = skillRegistry;
@@ -95,6 +114,9 @@ class SkillToolFactory {
                         + " (name, description, usage instructions).\n"
                         + "- Use exact resource paths listed by the skill, such as"
                         + " \"references/guide.md\" or \"scripts/run.py\".\n"
+                        + "- Set reload=true on a SKILL.md load to receive the full document"
+                        + " again, e.g. after context compaction removed it from the"
+                        + " conversation.\n"
                         + "- Do not use '.', './', the skill directory, or an absolute path.";
             }
 
@@ -125,7 +147,17 @@ class SkillToolFactory {
                                                                 + " Use 'SKILL.md' to load the"
                                                                 + " skill instructions. Do not use"
                                                                 + " '.', './', directories, or"
-                                                                + " absolute paths.")),
+                                                                + " absolute paths."),
+                                        "reload",
+                                                Map.of(
+                                                        "type",
+                                                        "boolean",
+                                                        "description",
+                                                        "Optional. Set true to re-receive the full"
+                                                            + " SKILL.md even if it was already"
+                                                            + " delivered to this session (e.g."
+                                                            + " after context compaction removed"
+                                                            + " it).")),
                         "required", List.of("skillId", "path"));
             }
 
@@ -148,7 +180,8 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    String result = loadSkillResourceImpl(skillId, path);
+                    boolean reload = lenientBoolean(input.get("reload"));
+                    String result = loadSkillResourceImpl(skillId, path, scopeOf(param), reload);
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
                     logger.error("Error loading skill resource", e);
@@ -162,18 +195,89 @@ class SkillToolFactory {
     }
 
     /**
+     * Parses an optional boolean tool argument leniently.
+     *
+     * <p>Models frequently send booleans as strings ({@code "true"}) or numbers ({@code 1}) when
+     * a parameter is optional; a strict {@code Boolean.TRUE.equals} would silently drop the
+     * reload lever exactly when the model asked for it.
+     */
+    private static boolean lenientBoolean(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue() != 0;
+        }
+        return value != null && Boolean.parseBoolean(value.toString().trim());
+    }
+
+    /**
+     * Derives the entry-delivery scope from a tool call's runtime context, or null when the
+     * conversation cannot be identified precisely enough to dedup safely.
+     *
+     * <ul>
+     *   <li>No context at all (direct tool use) — the shared {@link #NO_CONTEXT_SCOPE} bucket.
+     *   <li>A user without a session id — {@code null}: a null session must not collapse a
+     *       whole user's conversations into one dedup bucket, so such calls never dedup.
+     *   <li>A session without a user id (gateway shared rooms) — {@code *::sessionId}: one
+     *       stable scope per shared conversation, matching the state-slot identity.
+     * </ul>
+     */
+    private static String scopeOf(ToolCallParam param) {
+        RuntimeContext context = param.getRuntimeContext();
+        if (context == null) {
+            return NO_CONTEXT_SCOPE;
+        }
+        String userId = context.getUserId();
+        String sessionId = context.getSessionId();
+        if (sessionId == null) {
+            return userId == null ? NO_CONTEXT_SCOPE : null;
+        }
+        return (userId == null ? "*" : userId) + "::" + sessionId;
+    }
+
+    /**
      * Implementation of skill resource loading logic.
      *
      * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
+     * @param scope the per-call (userId, sessionId) scope of this load, used to track entry
+     *     delivery without leaking state across sessions
      * @return The formatted resource content or error message with available resources
      * @throws IllegalArgumentException if skill doesn't exist or resource not found
      */
-    private String loadSkillResourceImpl(String skillId, String path) {
+    private String loadSkillResourceImpl(
+            String skillId, String path, String scope, boolean reload) {
         AgentSkill skill = validateSkillExists(skillId);
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
+            // An LLM often calls load_skill_through_path for the same skill several
+            // times in one batch; re-sending the full SKILL.md burns tokens for
+            // content already in context (#1569). Key the short-circuit on the entry
+            // content having actually been delivered *in this session's context* —
+            // NOT on the skill being active, because loading any resource activates
+            // the skill without ever serving SKILL.md (the not-found message also
+            // enumerates resource paths, so a model can reach a resource first), and
+            // NOT on agent-global state, because one agent serves many sessions.
+            // scope == null means the conversation could not be identified precisely
+            // enough to dedup safely (user without a session): always deliver.
+            // tryClaim is atomic, so overlapping same-batch loads (parallel tool
+            // execution) still dedup: the first claim wins, the rest see the notice.
+            if (scope != null) {
+                if (reload) {
+                    // Explicit in-session recovery lever for content lost to compaction.
+                    entryDelivery.mark(scope, skillId);
+                } else if (!entryDelivery.tryClaim(scope, skillId)) {
+                    // Still reconcile tool-group state: the registry flag and the toolkit's
+                    // group state are separate, and a host can disable groups via the public
+                    // Toolkit API (or work through a deep copy). A plain re-load used to be
+                    // the idempotent way to re-sync; keep that self-healing behavior while
+                    // skipping only the re-send of the markdown.
+                    ensureSkillToolGroupsActive(skillId);
+                    return buildAlreadyLoadedNotice(skillId, skill);
+                }
+            }
             activateSkill(skillId);
             return buildSkillMarkdownResponse(skillId, skill);
         }
@@ -269,6 +373,28 @@ class SkillToolFactory {
     }
 
     /**
+     * Builds the deduplication notice for a repeat {@code SKILL.md} load of an already-delivered
+     * skill in the same session scope.
+     *
+     * <p>The notice is actionable rather than terminal: it enumerates the skill's resources (each
+     * still returns full content) so a model that lost parts of the skill to context compaction
+     * can re-fetch what it needs. Delivery tracking is per (userId, sessionId) scope, so a fresh
+     * session always receives the full entry document on its first load.
+     */
+    private String buildAlreadyLoadedNotice(String skillId, AgentSkill skill) {
+        StringBuilder notice = new StringBuilder();
+        notice.append("Skill '")
+                .append(skillId)
+                .append("' is already loaded and active; its SKILL.md was delivered to this")
+                .append(" session by the earlier load and is not re-sent to save context.\n\n");
+        appendAvailableResources(notice, skill.getResources(), skill.getOriginDir().orElse(null));
+        notice.append("\nEach listed resource returns its full content on request. Pass")
+                .append(" reload=true to receive the full SKILL.md again (e.g. after context")
+                .append(" compaction removed it); a new session receives it on first load.");
+        return notice.toString();
+    }
+
+    /**
      * Build response for regular resource content.
      *
      * @param skillId The skill ID
@@ -304,8 +430,17 @@ class SkillToolFactory {
                 .append(skillId)
                 .append("'.\n\n");
 
-        // Build a deduped list spanning in-memory keys and on-disk entries so the model can
-        // see both classes of resources in one place.
+        appendAvailableResources(message, resources, originDir);
+
+        return message.toString();
+    }
+
+    /**
+     * Appends a numbered, deduped listing of the skill's resources spanning in-memory keys and
+     * on-disk entries, so the model can see both classes of resources in one place.
+     */
+    private static void appendAvailableResources(
+            StringBuilder message, Map<String, String> resources, Path originDir) {
         Set<String> resourcePaths = new LinkedHashSet<>();
         resourcePaths.add("SKILL.md");
         if (resources != null) {
@@ -320,8 +455,6 @@ class SkillToolFactory {
         for (String entry : resourcePaths) {
             message.append(i++).append(". ").append(entry).append("\n");
         }
-
-        return message.toString();
     }
 
     private static List<String> listOriginDirEntries(Path originDir) {
@@ -370,7 +503,20 @@ class SkillToolFactory {
     private void activateSkill(String skillId) {
         skillRegistry.setSkillActive(skillId, true);
         logger.info("Activated skill: {}", skillId);
+        ensureSkillToolGroupsActive(skillId);
+    }
 
+    /**
+     * Re-enables the skill's own tool group and any {@code SkillToolGroup} bound via {@code
+     * activateOnSkill}.
+     *
+     * <p>Called on every {@code SKILL.md} load path — including the deduplicated repeat — because
+     * the registry's active flag and the toolkit's group state are two separate pieces of state:
+     * a host can disable a group through the public {@code Toolkit.updateToolGroups(..., false)}
+     * API (or operate on a deep copy of the toolkit) without touching {@code SkillRegistry}, and
+     * re-loading {@code SKILL.md} is the self-healing way for the model to reconcile them.
+     */
+    private void ensureSkillToolGroupsActive(String skillId) {
         String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
         if (toolkit.getToolGroup(toolsGroupName) != null) {
             toolkit.updateToolGroups(List.of(toolsGroupName), true);
