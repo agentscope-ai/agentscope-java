@@ -2340,6 +2340,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             ReasoningContext context = new ReasoningContext(getName());
+            AtomicBoolean retryEmptyResponse = new AtomicBoolean(false);
 
             return checkInterrupted()
                     .then(
@@ -2414,7 +2415,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     context.buildFinalMessage();
                                                             RequestStopEvent rs =
                                                                     stopRequested.get();
-                                                            if (rs != null && finalMsg != null) {
+                                                            if (rs != null) {
+                                                                if (finalMsg == null) {
+                                                                    return Mono.empty();
+                                                                }
                                                                 // Persist the reasoning message
                                                                 // before
                                                                 // returning so the next call can
@@ -2427,7 +2431,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 rs
                                                                                         .getGenerateReason()));
                                                             }
-                                                            return Mono.justOrEmpty(finalMsg);
+                                                            if (finalMsg == null) {
+                                                                retryEmptyResponse.set(true);
+                                                                return Mono.empty();
+                                                            }
+                                                            return Mono.just(finalMsg);
                                                         }));
                             })
                     .onErrorResume(
@@ -2461,7 +2469,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     return Mono.just(msg);
                                 }
                                 return runPostReasoningPipeline(msg, iter);
-                            });
+                            })
+                    .switchIfEmpty(
+                            Mono.defer(
+                                    () -> {
+                                        if (retryEmptyResponse.get()) {
+                                            return executeIteration(iter + 1);
+                                        }
+                                        return Mono.empty();
+                                    }));
         }
 
         @SuppressWarnings("deprecation")
@@ -2492,6 +2508,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
                                     return reasoning(iter + 1, true);
+                                }
+
+                                // Continue the bounded ReAct loop when the model produced only
+                                // blank text. The message has already been persisted above.
+                                if (hasBlankTextResponse(eventMsg)) {
+                                    return executeIteration(iter + 1);
                                 }
 
                                 // Check finish conditions
@@ -3869,6 +3891,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     Msg.METADATA_REMINDER_KIND,
                                     "empty_response"))
                     .build();
+        }
+
+        /**
+         * Check whether a model response contains only blank text and no tool calls.
+         *
+         * @param msg The reasoning message
+         * @return true if the response contains one or more blank text blocks
+         */
+        private boolean hasBlankTextResponse(Msg msg) {
+            if (msg == null || !msg.getContentBlocks(ToolUseBlock.class).isEmpty()) {
+                return false;
+            }
+
+            List<TextBlock> textBlocks = msg.getContentBlocks(TextBlock.class);
+            return !textBlocks.isEmpty()
+                    && textBlocks.stream()
+                            .map(TextBlock::getText)
+                            .noneMatch(text -> !text.isBlank());
         }
 
         /**
