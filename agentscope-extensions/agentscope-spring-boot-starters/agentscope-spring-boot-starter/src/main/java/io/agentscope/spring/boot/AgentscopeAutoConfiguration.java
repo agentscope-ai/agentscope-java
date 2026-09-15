@@ -18,10 +18,14 @@ package io.agentscope.spring.boot;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import io.agentscope.spring.boot.tool.ToolAutoRegistrationBeanPostProcessor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -51,6 +55,23 @@ import org.springframework.context.annotation.Scope;
  *     sys-prompt: "You are a helpful AI assistant."
  *     max-iters: 10
  * }</pre>
+ *
+ * <p>In addition to the core beans, this configuration provides the following
+ * conveniences when {@code agentscope.agent.enabled=true}:
+ *
+ * <ul>
+ *   <li><b>Tool auto-registration</b> — beans annotated with
+ *       {@link io.agentscope.spring.boot.tool.ToolBean @ToolBean} are
+ *       automatically registered into every {@link Toolkit} via a
+ *       {@link ToolAutoRegistrationBeanPostProcessor}.</li>
+ *   <li><b>Middleware auto-assembly</b> — every {@link MiddlewareBase} bean
+ *       is auto-injected into the agent builder via an
+ *       {@link AgentBuilderCustomizer}, ordered by
+ *       {@link org.springframework.core.annotation.Order @Order}.</li>
+ *   <li><b>PermissionContextState auto-injection</b> — if a
+ *       {@link PermissionContextState} bean exists in the context, it is
+ *       auto-applied to the agent builder.</li>
+ * </ul>
  */
 @AutoConfiguration
 @EnableConfigurationProperties(AgentscopeProperties.class)
@@ -105,14 +126,77 @@ public class AgentscopeAutoConfiguration {
     @ConditionalOnBean(Model.class)
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     public ReActAgent agentscopeReActAgent(
-            Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
+            Model model,
+            Memory memory,
+            Toolkit toolkit,
+            AgentscopeProperties properties,
+            ObjectProvider<AgentBuilderCustomizer> customizers) {
         AgentProperties config = properties.getAgent();
-        return ReActAgent.builder()
-                .name(config.getName())
-                .sysPrompt(config.getSysPrompt())
-                .model(model)
-                .toolkit(toolkit)
-                .maxIters(config.getMaxIters())
-                .build();
+        ReActAgent.Builder builder =
+                ReActAgent.builder()
+                        .name(config.getName())
+                        .sysPrompt(config.getSysPrompt())
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(config.getMaxIters());
+        customizers.orderedStream().forEach(c -> c.accept(builder));
+        return builder.build();
+    }
+
+    // ------------------------------------------------------------------
+    // Tool auto-registration
+    // ------------------------------------------------------------------
+
+    /**
+     * {@link org.springframework.beans.factory.config.BeanPostProcessor} that
+     * auto-registers {@link io.agentscope.spring.boot.tool.ToolBean @ToolBean}
+     * beans into every {@link Toolkit}.
+     *
+     * <p>Declared as {@code static} so that the configuration class is not
+     * instantiated prematurely.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean
+    public static ToolAutoRegistrationBeanPostProcessor toolAutoRegistrationBeanPostProcessor() {
+        return new ToolAutoRegistrationBeanPostProcessor();
+    }
+
+    // ------------------------------------------------------------------
+    // Middleware auto-assembly
+    // ------------------------------------------------------------------
+
+    /**
+     * Auto-injects all {@link MiddlewareBase} beans into the agent builder,
+     * ordered by {@link org.springframework.core.annotation.Order @Order}.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = "middlewareAutoCustomizer")
+    public AgentBuilderCustomizer middlewareAutoCustomizer(
+            ObjectProvider<MiddlewareBase> middlewares) {
+        return builder -> middlewares.orderedStream().forEach(builder::middleware);
+    }
+
+    // ------------------------------------------------------------------
+    // PermissionContextState auto-injection
+    // ------------------------------------------------------------------
+
+    /**
+     * If a {@link PermissionContextState} bean exists in the context,
+     * auto-applies it to the agent builder. No-op when no
+     * {@code PermissionContextState} bean is present.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = "permissionContextAutoCustomizer")
+    public AgentBuilderCustomizer permissionContextAutoCustomizer(
+            ObjectProvider<PermissionContextState> permissionContext) {
+        return builder -> {
+            PermissionContextState ctx = permissionContext.getIfAvailable();
+            if (ctx != null) {
+                builder.permissionContext(ctx);
+            }
+        };
     }
 }
