@@ -27,6 +27,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -265,34 +266,52 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        BoundSql boundSql =
-                                expectedVersion == 0L
-                                        ? dialect.sessionStateInsertIfAbsent(
-                                                slotId, key, SINGLE_STATE_INDEX, json)
-                                        : dialect.sessionStateUpdateIfVersion(
-                                                slotId,
-                                                key,
-                                                SINGLE_STATE_INDEX,
-                                                json,
-                                                expectedVersion);
-                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
-                            bindParams(stmt, boundSql.params());
-                            int affected = stmt.executeUpdate();
-                            result[0] =
-                                    expectedVersion == 0L
-                                            ? (affected == 1 ? 1L : UNVERSIONED)
-                                            : (affected == 1 ? expectedVersion + 1L : UNVERSIONED);
-                        } catch (SQLException e) {
-                            if (expectedVersion == 0L && isDuplicateKey(e)) {
+                        if (expectedVersion == 0L) {
+                            BoundSql insertSql =
+                                    dialect.sessionStateInsertIfAbsent(
+                                            slotId, key, SINGLE_STATE_INDEX, json);
+                            // Guard the INSERT with a savepoint: on vendors like Postgres a
+                            // failed statement aborts the whole transaction, which would
+                            // poison the fallback UPDATE below.
+                            Savepoint savepoint = conn.setSavepoint("cas_insert_if_absent");
+                            try (PreparedStatement stmt = conn.prepareStatement(insertSql.sql())) {
+                                bindParams(stmt, insertSql.params());
+                                result[0] = stmt.executeUpdate() == 1 ? 1L : UNVERSIONED;
+                            } catch (SQLException e) {
+                                if (!isDuplicateKey(e)) {
+                                    throw e;
+                                }
+                                conn.rollback(savepoint);
                                 result[0] = UNVERSIONED;
-                                return;
                             }
-                            throw e;
+                            if (result[0] == UNVERSIONED) {
+                                // The row already exists. If its stored version is still 0
+                                // (e.g. backfilled by an ALTER TABLE migration), that satisfies
+                                // the CAS — bump 0 -> 1. If a concurrent writer already moved it
+                                // past 0 this matches nothing and correctly reports UNVERSIONED.
+                                result[0] = executeUpdateIfVersion(conn, slotId, key, json, 0L);
+                            }
+                        } else {
+                            result[0] =
+                                    executeUpdateIfVersion(
+                                            conn, slotId, key, json, expectedVersion);
                         }
                     });
             return result[0];
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private long executeUpdateIfVersion(
+            Connection conn, String slotId, String key, String json, long expectedVersion)
+            throws SQLException {
+        BoundSql boundSql =
+                dialect.sessionStateUpdateIfVersion(
+                        slotId, key, SINGLE_STATE_INDEX, json, expectedVersion);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            return stmt.executeUpdate() == 1 ? expectedVersion + 1L : UNVERSIONED;
         }
     }
 
