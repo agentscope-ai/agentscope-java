@@ -130,6 +130,25 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
     }
 
+    /**
+     * Upper bound on the maintenance run (gate claim + retention sweep + consolidation LLM
+     * call), so a hung model cannot keep the JVM-wide quiescence count above zero for the rest
+     * of the process lifetime. Mirrors {@code MemoryFlushMiddleware#FLUSH_TIMEOUT}.
+     */
+    static final Duration MAINTENANCE_TIMEOUT = Duration.ofMinutes(5);
+
+    /**
+     * Timeout applied to the maintenance pipeline; production uses {@link
+     * #MAINTENANCE_TIMEOUT}. Volatile: written by the test hook from another thread, read on
+     * the dispatch thread.
+     */
+    private volatile Duration maintenanceTimeout = MAINTENANCE_TIMEOUT;
+
+    /** Test hook to shrink the maintenance timeout; keeps timeout behaviour unit-testable. */
+    void setMaintenanceTimeoutForTests(Duration timeout) {
+        this.maintenanceTimeout = timeout != null ? timeout : MAINTENANCE_TIMEOUT;
+    }
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager, MemoryConsolidator consolidator) {
         this(workspaceManager, consolidator, 90, 180, DEFAULT_MIN_GAP);
@@ -150,7 +169,11 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
+                            // The timeout bounds the work, not the scheduler wait (same
+                            // rationale as MemoryFlushMiddleware#runFlush): a budget that
+                            // starts at enqueue could elapse while the run is still queued
+                            // and cancel it before the worker ever picks it up.
+                            Mono.defer(() -> doMaintenance(rc).timeout(maintenanceTimeout))
                                     .subscribeOn(Schedulers.boundedElastic())
                                     .doFinally(signal -> MemoryBackgroundTasks.end())
                                     .subscribe(
@@ -163,12 +186,50 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private Mono<Void> doMaintenance(RuntimeContext rc) {
-        if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
-            // Throttled out; the in-flight slot acquired at dispatch is released when this
-            // Mono completes.
+        return Mono.defer(
+                () -> {
+                    // The gate is claimed before the stages run, so a run killed by the
+                    // timeout still consumes its slot: the throttle window is per attempt,
+                    // not per completion — refunding a claim under cancellation races would
+                    // let hung runs re-enter every cycle.
+                    if (!periodicGate.tryClaim(compositeTimerKey(rc), minGap)) {
+                        // Throttled out; the in-flight slot acquired at dispatch is released
+                        // when this Mono completes.
+                        return Mono.empty();
+                    }
+                    log.debug("Running memory maintenance...");
+                    // Cancellation reaches the consolidation model stream — the realistic
+                    // hang — instead of stranding the worker on an inner .block() no outer
+                    // dispose can reach. The retention sweeps themselves are short blocking
+                    // filesystem calls a cancel cannot interrupt mid-call; the worker
+                    // returns when the call returns. The prune stage re-pins itself to
+                    // boundedElastic because then(...) subscribes on the thread that
+                    // emitted the previous stage's terminal signal — the model client's I/O
+                    // thread — and blocking filesystem work must never run there.
+                    return Mono.fromRunnable(() -> expireDailyFiles(rc))
+                            .then(consolidateReactive(rc))
+                            .then(
+                                    Mono.<Void>fromRunnable(() -> pruneOldSessions(rc))
+                                            .subscribeOn(Schedulers.boundedElastic()))
+                            .doOnSuccess(v -> log.debug("Memory maintenance completed"));
+                });
+    }
+
+    /**
+     * Consolidation segment of the maintenance pipeline. Reactive so cancellation reaches the
+     * underlying model stream; a consolidation failure logs and lets the retention steps still
+     * run, matching the previous try/catch semantics around {@code consolidate().block()}.
+     */
+    private Mono<Void> consolidateReactive(RuntimeContext rc) {
+        if (consolidator == null) {
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return Mono.defer(() -> consolidator.consolidate(rc))
+                .onErrorResume(
+                        e -> {
+                            log.warn("Memory consolidation failed: {}", e.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     /**
@@ -194,14 +255,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                     MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
-    }
-
-    private void runMaintenance(RuntimeContext rc) {
-        log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        pruneOldSessions(rc);
-        log.debug("Memory maintenance completed");
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -238,17 +291,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             } catch (Exception e) {
                 // not a date-named file, skip
             }
-        }
-    }
-
-    private void consolidateMemory(RuntimeContext rc) {
-        if (consolidator == null) {
-            return;
-        }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
         }
     }
 
