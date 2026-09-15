@@ -338,4 +338,80 @@ class SkillToolFactoryReloadDedupTest {
                         .build();
         return tool.callAsync(param).block(TIMEOUT);
     }
+
+    @Test
+    @DisplayName("reload=true re-delivers the full entry within the same session")
+    void reloadArgumentReDeliversFullEntry() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("kappa")
+                        .description("kappa skill")
+                        .skillContent("# Kappa SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        RuntimeContext s1 = RuntimeContext.builder().userId("u1").sessionId("s1").build();
+        callInSession(toolkit, skill.getSkillId(), "SKILL.md", s1);
+        assertTrue(
+                textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", s1))
+                        .contains("is already loaded and active"));
+
+        // In-session recovery lever for content lost to compaction.
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        Map<String, Object> input = new HashMap<>();
+        input.put("skillId", skill.getSkillId());
+        input.put("path", "SKILL.md");
+        input.put("reload", true);
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("reload-1")
+                        .name("load_skill_through_path")
+                        .input(input)
+                        .build();
+        ToolResultBlock reloaded =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(use)
+                                        .input(input)
+                                        .runtimeContext(s1)
+                                        .build())
+                        .block(TIMEOUT);
+        assertTrue(
+                textOf(reloaded).contains("# Kappa SKILL body"),
+                "reload=true re-sends the full entry in the same session");
+
+        // And the dedup remains armed afterwards.
+        assertTrue(
+                textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", s1))
+                        .contains("is already loaded and active"));
+    }
+
+    @Test
+    @DisplayName("A user with no session id never dedups (unidentifiable conversation)")
+    void userWithoutSessionNeverDedups() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("lambda")
+                        .description("lambda skill")
+                        .skillContent("# Lambda SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+
+        RuntimeContext noSession = RuntimeContext.builder().userId("u1").build();
+        String first = textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", noSession));
+        String second = textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", noSession));
+
+        assertTrue(first.contains("# Lambda SKILL body"));
+        assertTrue(
+                second.contains("# Lambda SKILL body"),
+                "null sessionId must not collapse a user's conversations into one dedup bucket");
+    }
 }
