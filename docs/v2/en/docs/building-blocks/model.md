@@ -418,6 +418,21 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 `DashScopeChatModel` supports this option as well. For native OpenAI models (GPT-4o, etc.) the default behavior handles both correctly — no configuration needed.
 
+#### Providers without specific `tool_choice` support
+
+When the structured-output fallback path needs to force the `generate_response` tool, providers that honour `tool_choice` with a specific function name get a hard constraint, while providers that do not (only `tool_choice: auto` or nothing — GLM / MiniMax style endpoints) get a prompt reminder instead. This capability is declared via `supportsToolChoiceSpecific`, which defaults to `true`. If you point the generic OpenAI provider at a gateway that silently ignores specific tool choices, set it to `false` — otherwise the agent retries a constraint the gateway never applies and may loop until it gives up without structured data:
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey("...")
+        .baseUrl("https://your-gateway.example.com/v1")
+        .modelName("your-model")
+        .supportsToolChoiceSpecific(false)
+        .build();
+```
+
+The dedicated GLM and MiniMax providers already set this to `false`; the option matters for custom OpenAI-compatible endpoints. It is also available as a provider-config advanced option (`.option("supportsToolChoiceSpecific", false)`).
+
 ### Formatter
 
 A **Formatter** converts AgentScope `Msg` objects into the request payload each provider's API expects. It is configured via the chat model builder's `formatter(...)`. Each provider ships two formatters:
