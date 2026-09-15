@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -213,7 +214,7 @@ import reactor.util.context.Context;
  * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends AgentBase implements AutoCloseable {
+public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
@@ -1111,6 +1112,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msgs input messages
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         return streamEvents(msgs, (RuntimeContext) null);
     }
@@ -1121,6 +1123,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msg input message
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
     }
@@ -1136,6 +1139,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
         return buildAgentStream(msgs, context, this::doCall);
     }
@@ -1148,6 +1152,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
         return streamEvents(List.of(msg), context);
     }
