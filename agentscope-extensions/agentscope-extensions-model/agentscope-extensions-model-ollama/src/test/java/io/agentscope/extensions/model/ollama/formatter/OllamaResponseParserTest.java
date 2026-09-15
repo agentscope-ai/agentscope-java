@@ -21,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.ollama.dto.OllamaFunction;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import io.agentscope.extensions.model.ollama.dto.OllamaResponse;
@@ -52,6 +54,72 @@ class OllamaResponseParserTest {
     @DisplayName("Should create parser successfully")
     void testConstructor() {
         assertNotNull(parser);
+    }
+
+    @Test
+    @DisplayName("Should emit a ThinkingBlock before the text block")
+    void testParseResponseWithThinkingBeforeText() {
+        OllamaResponse response = new OllamaResponse();
+        OllamaMessage message = new OllamaMessage("assistant", "2 + 2 = 4");
+        message.setThinking("Okay, the user wants 2+2. That's basic arithmetic...");
+        response.setMessage(message);
+
+        ChatResponse chatResponse = parser.parseResponse(response);
+
+        List<ContentBlock> content = chatResponse.getContent();
+        assertEquals(2, content.size());
+        assertTrue(content.get(0) instanceof ThinkingBlock);
+        assertEquals(
+                "Okay, the user wants 2+2. That's basic arithmetic...",
+                ((ThinkingBlock) content.get(0)).getThinking());
+        assertTrue(content.get(1) instanceof TextBlock);
+        assertEquals("2 + 2 = 4", ((TextBlock) content.get(1)).getText());
+    }
+
+    @Test
+    @DisplayName("Should emit only a ThinkingBlock when the thinking chunk carries no content")
+    void testParseResponseWithThinkingOnly() {
+        OllamaResponse response = new OllamaResponse();
+        OllamaMessage message = new OllamaMessage("assistant", "");
+        message.setThinking("still reasoning");
+        response.setMessage(message);
+
+        ChatResponse chatResponse = parser.parseResponse(response);
+
+        List<ContentBlock> content = chatResponse.getContent();
+        assertEquals(1, content.size());
+        assertTrue(content.get(0) instanceof ThinkingBlock);
+    }
+
+    @Test
+    @DisplayName("Should not emit a ThinkingBlock when the model returns no thinking")
+    void testParseResponseWithoutThinking() {
+        OllamaResponse response = new OllamaResponse();
+        OllamaMessage message = new OllamaMessage("assistant", "plain answer");
+        response.setMessage(message);
+
+        ChatResponse chatResponse = parser.parseResponse(response);
+
+        assertEquals(1, chatResponse.getContent().size());
+        assertTrue(chatResponse.getContent().get(0) instanceof TextBlock);
+    }
+
+    @Test
+    @DisplayName("Should surface thinking from the raw Ollama JSON payload as a ThinkingBlock")
+    void testThinkingSurvivesJsonDeserialization() {
+        String json =
+                "{\"model\":\"deepseek-r1:8b\",\"message\":{\"role\":\"assistant\","
+                        + "\"thinking\":\"Okay, the user wants 2+2...\",\"content\":\"2 + 2 = 4\"},"
+                        + "\"done\":true}";
+
+        OllamaResponse response = JsonUtils.getJsonCodec().fromJson(json, OllamaResponse.class);
+        ChatResponse chatResponse = parser.parseResponse(response);
+
+        List<ContentBlock> content = chatResponse.getContent();
+        assertEquals(2, content.size());
+        assertTrue(content.get(0) instanceof ThinkingBlock);
+        assertEquals("Okay, the user wants 2+2...", ((ThinkingBlock) content.get(0)).getThinking());
+        assertEquals("2 + 2 = 4", ((TextBlock) content.get(1)).getText());
     }
 
     @Test
