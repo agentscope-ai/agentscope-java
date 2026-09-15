@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -41,6 +42,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +53,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.scheduler.Schedulers;
@@ -63,6 +67,105 @@ class AguiResumeLifecycleTest {
                     "I",
                     new AguiEvent.Interrupt(
                             "I", "tool_call", "approve", "tool-1", null, null, null));
+
+    @Test
+    void contractErrorReleasesOwnershipWithoutDemand() throws Exception {
+        AguiResumeStateStore store = spy(new InMemoryAguiResumeStateStore());
+        seed(store);
+        CountDownLatch validated = new CountDownLatch(1);
+        CountDownLatch released = new CountDownLatch(1);
+        AtomicInteger acquired = new AtomicInteger();
+        AtomicInteger executed = new AtomicInteger();
+        doAnswer(
+                        call -> {
+                            AguiResumeStateStore.RunClaim claim =
+                                    (AguiResumeStateStore.RunClaim) call.callRealMethod();
+                            if (claim.claimed()) {
+                                acquired.incrementAndGet();
+                            }
+                            return claim;
+                        })
+                .when(store)
+                .claimRun("T", "A");
+        doAnswer(
+                        call -> {
+                            call.callRealMethod();
+                            released.countDown();
+                            return null;
+                        })
+                .when(store)
+                .releaseRun("T", "A");
+        AguiRequestProcessor processor =
+                processor(
+                        store,
+                        Flux.defer(
+                                () -> {
+                                    executed.incrementAndGet();
+                                    return Flux.never();
+                                }),
+                        false);
+        // Observe the real validation result without subscribing to or requesting error events.
+        Field field = AguiRequestProcessor.class.getDeclaredField("resumeCoordinator");
+        field.setAccessible(true);
+        AguiResumeCoordinator coordinator = spy((AguiResumeCoordinator) field.get(processor));
+        doAnswer(
+                        call -> {
+                            AguiResumeCoordinator.ResumeContractResult result =
+                                    (AguiResumeCoordinator.ResumeContractResult)
+                                            call.callRealMethod();
+                            assertTrue(result.isError());
+                            assertTrue(result.message().contains("unresolved interrupts"));
+                            validated.countDown();
+                            return result;
+                        })
+                .when(coordinator)
+                .validate(any(RunAgentInput.class));
+        field.set(processor, coordinator);
+        List<AguiEvent> events = new CopyOnWriteArrayList<>();
+        BaseSubscriber<AguiEvent> subscriber =
+                new BaseSubscriber<>() {
+                    @Override
+                    protected void hookOnSubscribe(Subscription subscription) {
+                        // Deliberately keep initial demand at zero.
+                    }
+
+                    @Override
+                    protected void hookOnNext(AguiEvent event) {
+                        events.add(event);
+                    }
+                };
+        processor.process(request(input(false))).events().subscribe(subscriber);
+        try {
+            await(validated);
+            assertEquals(1, acquired.get(), "the real claim must have succeeded");
+            boolean cleanupObserved = released.await(1, TimeUnit.SECONDS);
+            assertTrue(events.isEmpty());
+            assertFalse(
+                    subscriber.isDisposed(), "no cancellation or terminal delivery before check");
+            assertEquals(0, executed.get());
+            assertEquals(PENDING, store.getPendingInterrupts("T"));
+            AguiResumeStateStore.RunClaim next = store.claimRun("T", "B");
+            System.out.println(
+                    "C01: acquired="
+                            + acquired.get()
+                            + ", validation=contract-error, consumed="
+                            + events.size()
+                            + ", disposed="
+                            + subscriber.isDisposed()
+                            + ", cleanup="
+                            + cleanupObserved
+                            + ", nextClaim="
+                            + next);
+            assertTrue(
+                    next.claimed(),
+                    "after confirmed claim and validation error, zero-demand A"
+                            + " still owns the thread: "
+                            + next.activeRunId());
+            assertTrue(cleanupObserved);
+        } finally {
+            subscriber.cancel();
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})

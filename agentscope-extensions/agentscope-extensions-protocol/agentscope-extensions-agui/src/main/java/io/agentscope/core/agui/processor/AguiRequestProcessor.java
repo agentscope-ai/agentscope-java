@@ -73,6 +73,7 @@ public class AguiRequestProcessor {
     private final AguiAgentAdapterFactory adapterFactory;
     private final AguiResumeCoordinator resumeCoordinator;
     private final AguiRuntimeContextResolver runtimeContextResolver;
+    private final boolean interruptOnCancel;
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -88,6 +89,7 @@ public class AguiRequestProcessor {
                                 ? builder.resumeStateStore
                                 : new InMemoryAguiResumeStateStore());
         this.runtimeContextResolver = builder.runtimeContextResolver;
+        this.interruptOnCancel = builder.interruptOnCancel;
     }
 
     /**
@@ -110,17 +112,23 @@ public class AguiRequestProcessor {
          * invoking the deprecated no-argument interrupt method, which always targets the default
          * session.
          *
+         * <p>This is an explicit session-wide interrupt, not an ownership-checked cancellation.
+         * Transports should cancel the event subscription with {@link Builder#interruptOnCancel(boolean)}
+         * enabled instead.
+         *
          * @param threadId The AG-UI thread id for this request
          */
         public void interrupt(String threadId) {
-            ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
-            if (reActAgent != null) {
-                RuntimeContext interruptContext =
-                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
-                reActAgent.interrupt(interruptContext);
-            } else {
-                agent.interrupt();
-            }
+            interruptAgent(agent, runtimeContext, threadId);
+        }
+    }
+
+    private static void interruptAgent(Agent agent, RuntimeContext context, String threadId) {
+        ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
+        if (reActAgent != null) {
+            reActAgent.interrupt(RuntimeContext.builder(context).sessionId(threadId).build());
+        } else {
+            agent.interrupt();
         }
     }
 
@@ -201,9 +209,13 @@ public class AguiRequestProcessor {
             RunAgentInput input, RuntimeContext runtimeContext, Agent agent, AguiRunLifecycle run) {
         AguiResumeCoordinator.ResumeContractResult beginResult = run.begin();
         if (beginResult.isError()) {
-            return Flux.fromIterable(
-                    resumeCoordinator.contractErrorEvents(
-                            input, beginResult.message(), config.isEmitRunFinishedAfterError()));
+            return run.finish("validation", null)
+                    .thenMany(
+                            Flux.fromIterable(
+                                    resumeCoordinator.contractErrorEvents(
+                                            input,
+                                            beginResult.message(),
+                                            config.isEmitRunFinishedAfterError())));
         }
 
         RunAgentInput effectiveInput = input;
@@ -218,6 +230,9 @@ public class AguiRequestProcessor {
                 resumeCoordinator.addResumeInterrupts(input, runtimeContext);
         AguiAgentAdapter adapter = adapterFactory.create(agent, config);
         AtomicBoolean runErrorSeen = new AtomicBoolean();
+        if (interruptOnCancel) {
+            run.setCancelAction(() -> interruptAgent(agent, runtimeContext, input.getThreadId()));
+        }
         return Objects.requireNonNull(
                         adapter.run(effectiveInput, effectiveRuntimeContext),
                         "adapter event stream is null")
@@ -402,6 +417,23 @@ public class AguiRequestProcessor {
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiResumeStateStore resumeStateStore;
+        private boolean interruptOnCancel;
+
+        /**
+         * Interrupt this subscription's execution when its event stream is cancelled.
+         *
+         * <p>Defaults to false. When enabled, a successfully claimed and validated execution is
+         * interrupted asynchronously before its ownership is released. Invalid, rejected and
+         * indeterminate claims never interrupt another execution. A late cancellation cannot
+         * interrupt a newer owner after this subscription has started terminal cleanup.
+         *
+         * @param interruptOnCancel whether cancellation should also interrupt the agent
+         * @return This builder
+         */
+        public Builder interruptOnCancel(boolean interruptOnCancel) {
+            this.interruptOnCancel = interruptOnCancel;
+            return this;
+        }
 
         /**
          * Set the agent resolver.

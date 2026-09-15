@@ -99,6 +99,7 @@ public class AguiWebFluxHandler {
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
                         .resumeStateStore(builder.resumeStateStore)
+                        .interruptOnCancel(builder.interruptOnDisconnect)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.requestBodyParser =
@@ -168,15 +169,11 @@ public class AguiWebFluxHandler {
                                             ServerSentEvent.<String>builder()
                                                     .data(encoder.encodeToJson(event).trim())
                                                     .build())
-                            // When the client closes the connection, optionally interrupt the agent
+                            // The subscription lifecycle interrupts before releasing its owner.
                             .doOnCancel(
                                     () -> {
                                         if (interruptOnDisconnect) {
-                                            logger.info(
-                                                    "SSE stream cancelled for run {}, interrupting"
-                                                            + " agent",
-                                                    runId);
-                                            result.interrupt(threadId);
+                                            logger.info("SSE stream cancelled for run {}", runId);
                                         } else {
                                             logger.info(
                                                     "SSE stream cancelled for run {}, agent"

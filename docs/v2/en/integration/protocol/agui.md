@@ -345,16 +345,27 @@ and socket timeouts on that client.
 
 The processor runs synchronous store calls on Reactor's `boundedElastic` scheduler, including
 pending writes and cleanup after disconnect. Subscription and cancellation cleanup are asynchronous;
-`dispose()` does not mean ownership has already been released. Agent cancellation is requested before
-cleanup, but a tool that ignores cancellation can continue executing.
+`dispose()` does not mean ownership has already been released. When `interruptOnDisconnect` is enabled,
+the Spring transports cancel the subscription and its lifecycle interrupts the validated execution on
+`boundedElastic` before releasing ownership. Invalid, rejected or indeterminate requests cannot interrupt
+another execution, and late disconnects cannot interrupt a newer owner. Interruption runs once, outside
+the release retry budget; an interruption failure is logged and ownership release still proceeds.
+A tool that ignores cancellation can continue executing.
+
+Direct processor users can enable this behavior with `Builder.interruptOnCancel(true)` (default false).
+The explicit `ProcessResult.interrupt(threadId)` method remains a session-wide administrative operation;
+it does not provide the ownership protection of cancelling the configured subscription.
 
 Claim, validation, resume injection, and pending-write failures become `RUN_ERROR`. The processor emits
 `RUN_STARTED` first if needed and follows `emitRunFinishedAfterError` for the optional final event.
 A failed pending write does not forward the successful `RUN_FINISHED` event. Storage failures are not
 interpreted as empty pending state and do not automatically rerun the agent.
 
-For a confirmed claim, completion, error, and cancellation each trigger owner-checked release. Release
-has at most three attempts, with 50 ms and 100 ms backoffs. Failed attempts log `WARN`; recovery logs
+For a confirmed claim, a resume contract error starts owner-checked cleanup before its error events
+are delivered, even when the subscriber requests no events. Pending interrupts remain available for
+a later valid resume. Early cleanup, completion, error, and cancellation share one cleanup process
+per subscription, including a total limit of three attempts with 50 ms and 100 ms backoffs. Delayed
+error consumption or cancellation does not restart that budget. Failed attempts log `WARN`; recovery logs
 `INFO`; exhaustion logs `ERROR` with `threadId`, `runId`, phase, attempt count, and the exception.
 Configure an SLF4J logging provider and alert on `AG-UI release exhausted`. Cleanup errors are logged
 rather than appended after a terminal event or delivered as Reactor dropped errors. If processing also

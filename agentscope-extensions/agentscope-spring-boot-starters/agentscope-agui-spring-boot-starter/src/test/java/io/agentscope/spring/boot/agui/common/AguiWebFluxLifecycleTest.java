@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -34,22 +36,29 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.processor.AgentResolver;
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.processor.AguiResumeStateStore;
 import io.agentscope.core.agui.processor.InMemoryAguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.reactivestreams.Subscription;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.server.reactive.ReactorHttpHandlerAdapter;
 import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
@@ -60,6 +69,113 @@ import reactor.netty.resources.LoopResources;
 
 /** Runs the production WebFlux handler on an actual HTTP event loop. */
 class AguiWebFluxLifecycleTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void contractErrorCleanupExhaustionIsLoggedOnceWithoutDemand(boolean cancel) throws Exception {
+        AguiResumeStateStore store = spy(new InMemoryAguiResumeStateStore());
+        Map<String, AguiEvent.Interrupt> pending =
+                Map.of(
+                        "I",
+                        new AguiEvent.Interrupt(
+                                "I", "tool_call", "approve", "tool-1", null, null, null));
+        assertTrue(store.claimRun("T", "seed").claimed());
+        assertTrue(store.replacePendingInterrupts("T", "seed", pending));
+        store.releaseRun("T", "seed");
+        doThrow(new IllegalStateException("release unavailable")).when(store).releaseRun("T", "A");
+        List<ILoggingEvent> logs = new CopyOnWriteArrayList<>();
+        List<Throwable> dropped = new CopyOnWriteArrayList<>();
+        List<AguiEvent> events = new CopyOnWriteArrayList<>();
+        CountDownLatch exhausted = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        Logger logger =
+                (Logger)
+                        LoggerFactory.getLogger(
+                                "io.agentscope.core.agui.processor.AguiRunLifecycle");
+        AppenderBase<ILoggingEvent> appender =
+                new AppenderBase<>() {
+                    @Override
+                    protected void append(ILoggingEvent event) {
+                        logs.add(event);
+                        if (event.getFormattedMessage().contains("release exhausted")) {
+                            exhausted.countDown();
+                        }
+                    }
+                };
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(anyString(), anyString(), nullable(String.class)))
+                .thenReturn(agent);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .resumeStateStore(store)
+                        .adapterFactory(
+                                (a, c) -> {
+                                    throw new AssertionError("invalid run started adapter");
+                                })
+                        .build();
+        BaseSubscriber<AguiEvent> subscriber =
+                new BaseSubscriber<>() {
+                    @Override
+                    protected void hookOnSubscribe(Subscription subscription) {}
+
+                    @Override
+                    protected void hookOnNext(AguiEvent event) {
+                        events.add(event);
+                    }
+
+                    @Override
+                    protected void hookOnComplete() {
+                        completed.countDown();
+                    }
+                };
+        appender.start();
+        logger.addAppender(appender);
+        Hooks.onErrorDropped(dropped::add);
+        try {
+            processor
+                    .process(
+                            AguiRuntimeContextRequest.builder()
+                                    .input(RunAgentInput.builder().threadId("T").runId("A").build())
+                                    .build())
+                    .events()
+                    .subscribe(subscriber);
+            assertTrue(exhausted.await(5, TimeUnit.SECONDS));
+            assertTrue(events.isEmpty());
+            assertFalse(subscriber.isDisposed());
+            assertEquals("A", store.claimRun("T", "probe").activeRunId());
+            assertEquals(pending, store.getPendingInterrupts("T"));
+            if (cancel) {
+                subscriber.cancel();
+            } else {
+                subscriber.request(2);
+                assertTrue(completed.await(5, TimeUnit.SECONDS));
+                assertEquals(2, events.size());
+                assertEquals(
+                        "AGUI_INTERRUPT_CONTRACT_ERROR",
+                        ((AguiEvent.RunError) events.get(1)).code());
+            }
+            verify(store, times(3)).releaseRun("T", "A");
+            assertEquals(
+                    1,
+                    logs.stream()
+                            .filter(e -> e.getFormattedMessage().contains("release exhausted"))
+                            .count());
+            ILoggingEvent terminal = logs.get(logs.size() - 1);
+            assertTrue(
+                    terminal.getFormattedMessage()
+                            .contains("threadId=T, runId=A, phase=validation, attempts=3"));
+            assertNotNull(terminal.getThrowableProxy());
+            assertEquals("release unavailable", terminal.getThrowableProxy().getMessage());
+            assertTrue(dropped.isEmpty());
+        } finally {
+            subscriber.cancel();
+            Hooks.resetOnErrorDropped();
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
     @Test
     void productionHandlerOffloadsSynchronousStoreFromHttpEventLoop() throws Exception {
         AguiResumeStateStore store = spy(new InMemoryAguiResumeStateStore());
@@ -102,7 +218,7 @@ class AguiWebFluxLifecycleTest {
             assertEquals(List.of(false), nonblocking);
             assertTrue(threads.get(0).startsWith("boundedElastic"));
         } finally {
-            server.disposeNow();
+            server.disposeNow(Duration.ofSeconds(5));
             loops.disposeLater().block(Duration.ofSeconds(5));
         }
     }
@@ -160,7 +276,7 @@ class AguiWebFluxLifecycleTest {
             }
         } finally {
             finish.tryEmitEmpty();
-            server.disposeNow();
+            server.disposeNow(Duration.ofSeconds(5));
             loops.disposeLater().block(Duration.ofSeconds(5));
         }
     }
@@ -206,7 +322,7 @@ class AguiWebFluxLifecycleTest {
             assertTrue(body.contains("INTERNAL_ERROR"));
             assertTrue(body.contains("store unavailable"));
         } finally {
-            server.disposeNow();
+            server.disposeNow(Duration.ofSeconds(5));
             loops.disposeLater().block(Duration.ofSeconds(5));
         }
     }
@@ -275,7 +391,7 @@ class AguiWebFluxLifecycleTest {
             assertEquals("release unavailable", terminal.getThrowableProxy().getMessage());
             assertEquals("A", store.claimRun("T", "B").activeRunId());
         } finally {
-            server.disposeNow();
+            server.disposeNow(Duration.ofSeconds(5));
             loops.disposeLater().block(Duration.ofSeconds(5));
             logger.detachAppender(appender);
             appender.stop();
@@ -323,6 +439,6 @@ class AguiWebFluxLifecycleTest {
                 .runOn(loops)
                 .doOnConnection(connection -> connection.onDispose(disconnect::countDown))
                 .handle(new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(routes)))
-                .bindNow();
+                .bindNow(Duration.ofSeconds(5));
     }
 }

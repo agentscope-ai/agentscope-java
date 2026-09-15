@@ -40,7 +40,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
 import reactor.core.publisher.BaseSubscriber;
 
 /**
@@ -96,6 +95,7 @@ public class AguiMvcController {
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
                         .resumeStateStore(builder.resumeStateStore)
+                        .interruptOnCancel(builder.interruptOnDisconnect)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
@@ -210,10 +210,10 @@ public class AguiMvcController {
                                 () -> {
                                     if (interruptOnDisconnect) {
                                         logger.info(
-                                                "SSE connection timed out for run {}, interrupting"
-                                                        + " agent",
+                                                "SSE connection timed out for run {}, cancelling"
+                                                        + " run",
                                                 runId);
-                                        interruptAndCancel(result, threadId, subscription);
+                                        subscription.dispose();
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -225,11 +225,11 @@ public class AguiMvcController {
                                 (ex) -> {
                                     if (interruptOnDisconnect) {
                                         logger.info(
-                                                "SSE connection error for run {}: {}, interrupting"
-                                                        + " agent",
+                                                "SSE connection error for run {}: {}, cancelling"
+                                                        + " run",
                                                 runId,
                                                 ex.getMessage());
-                                        interruptAndCancel(result, threadId, subscription);
+                                        subscription.dispose();
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"
@@ -254,15 +254,6 @@ public class AguiMvcController {
                 });
 
         return emitter;
-    }
-
-    private static void interruptAndCancel(
-            AguiRequestProcessor.ProcessResult result, String threadId, Disposable subscription) {
-        try {
-            result.interrupt(threadId);
-        } finally {
-            subscription.dispose();
-        }
     }
 
     private AguiRuntimeContextRequest<HttpServletRequest> runtimeContextRequest(

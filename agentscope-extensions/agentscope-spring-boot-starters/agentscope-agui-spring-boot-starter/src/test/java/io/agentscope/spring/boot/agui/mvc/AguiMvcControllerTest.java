@@ -34,6 +34,7 @@ import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -113,7 +114,7 @@ class AguiMvcControllerTest {
                                             .build())
                             .events()
                             .collectList()
-                            .block();
+                            .block(Duration.ofSeconds(5));
 
             assertEquals(1, fixture.runCount.get());
             assertEquals(
@@ -215,7 +216,7 @@ class AguiMvcControllerTest {
                     .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())
                     .events()
                     .collectList()
-                    .block();
+                    .block(Duration.ofSeconds(5));
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
         }
     }

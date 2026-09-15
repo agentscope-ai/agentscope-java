@@ -44,6 +44,7 @@ import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -171,7 +172,11 @@ class AguiRequestProcessorTest {
                         .build();
 
         List<AguiEvent> events =
-                processor.process(request(input("run-1"))).events().collectList().block();
+                processor
+                        .process(request(input("run-1")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
 
         assertNotNull(events);
     }
@@ -203,7 +208,7 @@ class AguiRequestProcessorTest {
                         .runtimeContextResolver(request -> callerContext)
                         .build();
 
-        processor.process(request(input)).events().collectList().block();
+        processor.process(request(input)).events().collectList().block(Duration.ofSeconds(5));
 
         RuntimeContext context = contextCaptor.getValue();
         assertEquals("thread-1", context.getSessionId());
@@ -235,7 +240,11 @@ class AguiRequestProcessorTest {
                                                 : new AguiAgentAdapter(resolvedAgent, config))
                         .build();
 
-        processor.process(request(input("run-1"))).events().collectList().block();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         RunAgentInput resumeInput =
                 RunAgentInput.builder()
                         .threadId("thread-1")
@@ -248,7 +257,7 @@ class AguiRequestProcessorTest {
                                                 Map.of("approved", true))))
                         .build();
 
-        processor.process(request(resumeInput)).events().collectList().block();
+        processor.process(request(resumeInput)).events().collectList().block(Duration.ofSeconds(5));
 
         ToolResultBlock result =
                 msgsCaptor.getValue().get(0).getFirstContentBlock(ToolResultBlock.class);
@@ -280,7 +289,11 @@ class AguiRequestProcessorTest {
                         .resumeStateStore(sharedStore)
                         .build();
 
-        firstProcessor.process(request(input("run-1"))).events().collectList().block();
+        firstProcessor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         List<AguiEvent> resumeEvents =
                 secondProcessor
                         .process(
@@ -297,7 +310,7 @@ class AguiRequestProcessorTest {
                                                 .build()))
                         .events()
                         .collectList()
-                        .block();
+                        .block(Duration.ofSeconds(5));
 
         assertTrue(resumeEvents.stream().noneMatch(event -> event instanceof AguiEvent.RunError));
         ToolResultBlock result =
@@ -323,7 +336,11 @@ class AguiRequestProcessorTest {
                                 })
                         .build();
 
-        processor.process(request(input("run-1"))).events().collectList().block();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         List<AguiEvent> events =
                 processor
                         .process(
@@ -338,7 +355,7 @@ class AguiRequestProcessorTest {
                                                 .build()))
                         .events()
                         .collectList()
-                        .block();
+                        .block(Duration.ofSeconds(5));
 
         assertEquals(1, adapterCount.get());
         assertResumeContractErrorLifecycle(events);
@@ -382,7 +399,11 @@ class AguiRequestProcessorTest {
         try {
             assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
             List<AguiEvent> rejectedEvents =
-                    processor.process(request(input("run-2"))).events().collectList().block();
+                    processor
+                            .process(request(input("run-2")))
+                            .events()
+                            .collectList()
+                            .block(Duration.ofSeconds(5));
             assertEquals(1, adapterCount.get());
             assertResumeContractErrorLifecycle(rejectedEvents);
         } finally {
@@ -418,7 +439,11 @@ class AguiRequestProcessorTest {
 
         for (int i = 0; i < 20; i++) {
             List<AguiEvent> events =
-                    processor.process(request(input("run-" + i))).events().collectList().block();
+                    processor
+                            .process(request(input("run-" + i)))
+                            .events()
+                            .collectList()
+                            .block(Duration.ofSeconds(5));
             assertNotNull(events);
             assertTrue(
                     events.stream().noneMatch(AguiEvent.RunError.class::isInstance),
@@ -447,14 +472,22 @@ class AguiRequestProcessorTest {
                 AguiRequestProcessor.builder().agentResolver(resolver).build();
 
         List<AguiEvent> failed =
-                processor.process(request(input("run-0"))).events().collectList().block();
+                processor
+                        .process(request(input("run-0")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
         assertNotNull(failed);
         assertTrue(
                 failed.stream().anyMatch(AguiEvent.RunError.class::isInstance),
                 () -> "expected an in-stream RunError: " + failed);
 
         List<AguiEvent> followUp =
-                processor.process(request(input("run-1"))).events().collectList().block();
+                processor
+                        .process(request(input("run-1")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
         assertNotNull(followUp);
         assertTrue(
                 followUp.stream().noneMatch(AguiEvent.RunError.class::isInstance),
@@ -498,7 +531,11 @@ class AguiRequestProcessorTest {
         assertProcessorErrorLifecycle(failed, "adapter stream failed", "INVALID_INPUT_ERROR");
 
         List<AguiEvent> followUp =
-                processor.process(request(input("run-2"))).events().collectList().block();
+                processor
+                        .process(request(input("run-2")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
         assertNotNull(followUp);
         assertTrue(
                 followUp.stream().noneMatch(AguiEvent.RunError.class::isInstance),
@@ -539,10 +576,14 @@ class AguiRequestProcessorTest {
                                         .process(request(firstInput))
                                         .events()
                                         .collectList()
-                                        .block());
+                                        .block(Duration.ofSeconds(5)));
         sharedStore.awaitBlockedClaim();
         try {
-            processor.process(request(secondInput)).events().collectList().block();
+            processor
+                    .process(request(secondInput))
+                    .events()
+                    .collectList()
+                    .block(Duration.ofSeconds(5));
         } finally {
             sharedStore.allowBlockedClaim();
         }
@@ -563,7 +604,11 @@ class AguiRequestProcessorTest {
                 AguiRequestProcessor.builder().agentResolver(resolver).build();
 
         processor.process(request(input("run-1")));
-        processor.process(request(input("run-2"))).events().collectList().block();
+        processor
+                .process(request(input("run-2")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
 
         verify(agent, times(1)).streamEvents(anyList(), any(RuntimeContext.class));
     }
@@ -581,8 +626,8 @@ class AguiRequestProcessorTest {
                         .build()
                         .process(request(input("run-1")));
 
-        result.events().collectList().block();
-        result.events().collectList().block();
+        result.events().collectList().block(Duration.ofSeconds(5));
+        result.events().collectList().block(Duration.ofSeconds(5));
 
         verify(agent, times(2)).streamEvents(anyList(), any(RuntimeContext.class));
     }
@@ -608,9 +653,17 @@ class AguiRequestProcessorTest {
                         .build();
 
         List<AguiEvent> setupErrorEvents =
-                processor.process(request(input("run-1"))).events().collectList().block();
+                processor
+                        .process(request(input("run-1")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
         List<AguiEvent> nextRunEvents =
-                processor.process(request(input("run-2"))).events().collectList().block();
+                processor
+                        .process(request(input("run-2")))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
 
         assertProcessorErrorLifecycle(
                 setupErrorEvents, "adapter setup failed", "INVALID_INPUT_ERROR");
@@ -637,7 +690,11 @@ class AguiRequestProcessorTest {
                                                         interrupt("interrupt-2", "tool-call-2"))))
                         .build();
 
-        processor.process(request(input("run-1"))).events().collectList().block();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         List<AguiEvent> events =
                 processor
                         .process(
@@ -654,7 +711,7 @@ class AguiRequestProcessorTest {
                                                 .build()))
                         .events()
                         .collectList()
-                        .block();
+                        .block(Duration.ofSeconds(5));
 
         assertResumeContractErrorLifecycle(events);
     }
@@ -671,7 +728,11 @@ class AguiRequestProcessorTest {
                         .adapterFactory(InterruptingAdapter::new)
                         .build();
 
-        processor.process(request(input("run-1"))).events().collectList().block();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         List<AguiEvent> events =
                 processor
                         .process(
@@ -688,7 +749,7 @@ class AguiRequestProcessorTest {
                                                 .build()))
                         .events()
                         .collectList()
-                        .block();
+                        .block(Duration.ofSeconds(5));
 
         assertResumeContractErrorLifecycle(events);
     }
@@ -722,7 +783,11 @@ class AguiRequestProcessorTest {
                                                 : new AguiAgentAdapter(resolvedAgent, config))
                         .build();
 
-        processor.process(request(input("run-1"))).events().collectList().block();
+        processor
+                .process(request(input("run-1")))
+                .events()
+                .collectList()
+                .block(Duration.ofSeconds(5));
         processor
                 .process(
                         request(
@@ -742,7 +807,7 @@ class AguiRequestProcessorTest {
                                         .build()))
                 .events()
                 .collectList()
-                .block();
+                .block(Duration.ofSeconds(5));
 
         List<Msg> msgs = msgsCaptor.getValue();
         assertEquals(
@@ -772,7 +837,11 @@ class AguiRequestProcessorTest {
                         .build();
 
         List<AguiEvent> events =
-                processor.process(request(resumeInput)).events().collectList().block();
+                processor
+                        .process(request(resumeInput))
+                        .events()
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
 
         assertResumeContractErrorLifecycle(events);
     }
@@ -798,7 +867,7 @@ class AguiRequestProcessorTest {
                         .adapterFactory(CustomAdapter::new)
                         .build();
 
-        processor.process(request(input)).events().collectList().block();
+        processor.process(request(input)).events().collectList().block(Duration.ofSeconds(5));
 
         RuntimeContext context = contextCaptor.getValue();
         assertEquals("custom-adapter", context.get("adapter"));
@@ -835,7 +904,7 @@ class AguiRequestProcessorTest {
                                         new RecordingAdapter(resolvedAgent, config, seenInput))
                         .build();
 
-        processor.process(request(input)).events().collectList().block();
+        processor.process(request(input)).events().collectList().block(Duration.ofSeconds(5));
 
         verify(resolver).hasMemory(any(RuntimeContext.class));
         assertEquals(List.of(tool, followUp), seenInput.get().getMessages());

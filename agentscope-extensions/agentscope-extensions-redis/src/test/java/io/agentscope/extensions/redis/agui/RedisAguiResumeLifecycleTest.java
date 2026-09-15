@@ -27,6 +27,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +45,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +55,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.reactivestreams.Subscription;
+import reactor.core.Disposable;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import redis.clients.jedis.JedisPooled;
@@ -78,7 +85,7 @@ class RedisAguiResumeLifecycleTest {
         String prefix = "agui-recovery-test:" + UUID.randomUUID() + ":";
         key = prefix + "T";
         store = spy(new RedisAguiResumeStateStore(first, prefix));
-        replica = new RedisAguiResumeStateStore(second, prefix);
+        replica = spy(new RedisAguiResumeStateStore(second, prefix));
         assertTrue(replica.claimRun("T", "seed").claimed());
         assertTrue(replica.replacePendingInterrupts("T", "seed", PENDING));
         replica.releaseRun("T", "seed");
@@ -191,41 +198,196 @@ class RedisAguiResumeLifecycleTest {
         List<AguiEvent> events = run(store, "A", Flux.never());
         assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         verify(store, never()).releaseRun("T", "A");
+        verify(store, times(1)).claimRun("T", "A");
         assertEquals("A", second.hget(key, "activeRunId"));
         assertEquals(PENDING, replica.getPendingInterrupts("T"));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void zeroDemandContractErrorAllowsReplicaResumeAndPreservesNewOwner(boolean cancel)
+            throws Exception {
+        CountDownLatch released = new CountDownLatch(1);
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        CountDownLatch ownerReleased = new CountDownLatch(1);
+        doAnswer(
+                        call -> {
+                            call.callRealMethod();
+                            ownerReleased.countDown();
+                            return null;
+                        })
+                .when(replica)
+                .releaseRun("T", "B");
+        AtomicInteger invalidExecutions = new AtomicInteger();
+        doAnswer(
+                        call -> {
+                            assertFalse(Schedulers.isInNonBlockingThread());
+                            call.callRealMethod();
+                            released.countDown();
+                            return null;
+                        })
+                .when(store)
+                .releaseRun("T", "A");
+        AguiRequestProcessor firstProcessor =
+                processor(
+                        store,
+                        Flux.defer(
+                                () -> {
+                                    invalidExecutions.incrementAndGet();
+                                    return Flux.never();
+                                }));
+        AguiRequestProcessor secondProcessor =
+                processor(replica, Flux.<AguiEvent>never().doOnSubscribe(s -> running.countDown()));
+        List<AguiEvent> events = new CopyOnWriteArrayList<>();
+        BaseSubscriber<AguiEvent> subscriber =
+                new BaseSubscriber<>() {
+                    @Override
+                    protected void hookOnSubscribe(Subscription subscription) {}
+
+                    @Override
+                    protected void hookOnNext(AguiEvent event) {
+                        events.add(event);
+                    }
+
+                    @Override
+                    protected void hookOnComplete() {
+                        completed.countDown();
+                    }
+                };
+        Disposable owner = null;
+        firstProcessor
+                .process(
+                        AguiRuntimeContextRequest.builder()
+                                .input(RunAgentInput.builder().threadId("T").runId("A").build())
+                                .build())
+                .events()
+                .subscribe(subscriber);
+        try {
+            assertTrue(released.await(5, TimeUnit.SECONDS));
+            assertNull(second.hget(key, "activeRunId"));
+            assertTrue(events.isEmpty());
+            assertFalse(subscriber.isDisposed());
+            assertEquals(0, invalidExecutions.get());
+            assertEquals(PENDING, replica.getPendingInterrupts("T"));
+            verify(store, times(1)).claimRun("T", "A");
+            verify(store, times(1)).getPendingInterrupts("T");
+            owner =
+                    secondProcessor
+                            .process(
+                                    AguiRuntimeContextRequest.builder()
+                                            .input(resumeInput("B"))
+                                            .build())
+                            .events()
+                            .subscribe();
+            assertTrue(running.await(5, TimeUnit.SECONDS));
+            assertEquals("B", first.hget(key, "activeRunId"));
+            Map<String, AguiEvent.Interrupt> nextPending =
+                    Map.of(
+                            "J",
+                            new AguiEvent.Interrupt(
+                                    "J", "tool_call", "next", "tool-2", null, null, null));
+            assertTrue(replica.replacePendingInterrupts("T", "B", nextPending));
+            if (cancel) {
+                subscriber.cancel();
+            } else {
+                subscriber.request(2);
+                assertTrue(completed.await(5, TimeUnit.SECONDS));
+                assertEquals(2, events.size());
+                assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+                assertEquals(
+                        "AGUI_INTERRUPT_CONTRACT_ERROR",
+                        ((AguiEvent.RunError) events.get(1)).code());
+            }
+            assertEquals("B", second.hget(key, "activeRunId"));
+            assertEquals(nextPending, replica.getPendingInterrupts("T"));
+            verify(store, times(1)).releaseRun("T", "A");
+        } finally {
+            subscriber.cancel();
+            if (owner != null) {
+                owner.dispose();
+                assertTrue(ownerReleased.await(5, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    @Test
+    void lostEarlyReleaseReplyCannotReleaseReplicaOwner() throws Exception {
+        CountDownLatch released = new CountDownLatch(1);
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(
+                        call -> {
+                            call.callRealMethod();
+                            if (attempts.incrementAndGet() == 1) {
+                                assertNull(second.hget(key, "activeRunId"));
+                                assertTrue(replica.claimRun("T", "B").claimed());
+                                throw new JedisConnectionException(
+                                        "release reply lost after Redis commit");
+                            }
+                            released.countDown();
+                            return null;
+                        })
+                .when(store)
+                .releaseRun("T", "A");
+        BaseSubscriber<AguiEvent> subscriber =
+                new BaseSubscriber<>() {
+                    @Override
+                    protected void hookOnSubscribe(Subscription subscription) {}
+                };
+        processor(store, Flux.never())
+                .process(
+                        AguiRuntimeContextRequest.builder()
+                                .input(RunAgentInput.builder().threadId("T").runId("A").build())
+                                .build())
+                .events()
+                .subscribe(subscriber);
+        try {
+            assertTrue(released.await(5, TimeUnit.SECONDS));
+            assertFalse(subscriber.isDisposed());
+            assertEquals(2, attempts.get());
+            assertEquals("B", second.hget(key, "activeRunId"));
+            assertEquals(PENDING, replica.getPendingInterrupts("T"));
+        } finally {
+            subscriber.cancel();
+        }
+    }
+
     private static List<AguiEvent> run(
             AguiResumeStateStore store, String runId, Flux<AguiEvent> upstream) {
-        AgentResolver resolver = mock(AgentResolver.class);
-        Agent agent = mock(Agent.class);
-        when(resolver.resolveAgent(anyString(), anyString(), nullable(String.class)))
-                .thenReturn(agent);
-        AguiRequestProcessor processor =
-                AguiRequestProcessor.builder()
-                        .agentResolver(resolver)
-                        .resumeStateStore(store)
-                        .adapterFactory(
-                                (a, c) ->
-                                        new AguiAgentAdapter(a, c) {
-                                            @Override
-                                            public Flux<AguiEvent> run(
-                                                    RunAgentInput input, RuntimeContext context) {
-                                                return upstream.publishOn(Schedulers.parallel());
-                                            }
-                                        })
-                        .build();
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("T")
-                        .runId(runId)
-                        .resume(List.of(new AguiResume("I", AguiResume.STATUS_RESOLVED, true)))
-                        .build();
-        return processor
-                .process(AguiRuntimeContextRequest.builder().input(input).build())
+        return processor(store, upstream)
+                .process(AguiRuntimeContextRequest.builder().input(resumeInput(runId)).build())
                 .events()
                 .subscribeOn(Schedulers.parallel())
                 .collectList()
                 .block(Duration.ofSeconds(5));
+    }
+
+    private static AguiRequestProcessor processor(
+            AguiResumeStateStore store, Flux<AguiEvent> upstream) {
+        AgentResolver resolver = mock(AgentResolver.class);
+        Agent agent = mock(Agent.class);
+        when(resolver.resolveAgent(anyString(), anyString(), nullable(String.class)))
+                .thenReturn(agent);
+        return AguiRequestProcessor.builder()
+                .agentResolver(resolver)
+                .resumeStateStore(store)
+                .adapterFactory(
+                        (a, c) ->
+                                new AguiAgentAdapter(a, c) {
+                                    @Override
+                                    public Flux<AguiEvent> run(
+                                            RunAgentInput input, RuntimeContext context) {
+                                        return upstream.publishOn(Schedulers.parallel());
+                                    }
+                                })
+                .build();
+    }
+
+    private static RunAgentInput resumeInput(String runId) {
+        return RunAgentInput.builder()
+                .threadId("T")
+                .runId(runId)
+                .resume(List.of(new AguiResume("I", AguiResume.STATUS_RESOLVED, true)))
+                .build();
     }
 }

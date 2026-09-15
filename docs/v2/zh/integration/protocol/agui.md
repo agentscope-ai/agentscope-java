@@ -342,15 +342,25 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 请为客户端设置有限的连接、连接池等待和 socket 超时。
 
 processor 将同步存储调用放到 Reactor 的 `boundedElastic` 调度器，包括 pending 写入和断开连接后的
-清理。订阅与取消清理是异步的，`dispose()` 返回不代表 owner 已释放。清理前会向 Agent 传播取消，
-但忽略取消信号的工具仍可能继续执行。
+清理。订阅与取消清理是异步的，`dispose()` 返回不代表 owner 已释放。启用 `interruptOnDisconnect`
+时，Spring 接入层取消订阅，由其生命周期在 `boundedElastic` 上中断已通过校验的执行，再释放 owner。
+无效、被拒绝或 claim 结果未知的请求不会中断其他执行，迟到断连也不会中断新 owner。
+中断只执行一次，不参与 release 重试；中断异常会记录日志，之后仍继续释放 ownership。
+忽略取消信号的工具仍可能继续执行。
+
+直接使用 processor 时，可通过 `Builder.interruptOnCancel(true)` 启用此行为，默认关闭。
+显式调用 `ProcessResult.interrupt(threadId)` 仍是面向整个 session 的管理操作，
+不具备取消已配置订阅时的 ownership 保护。
 
 claim、校验、resume 注入和 pending 写入异常会转换为 `RUN_ERROR`。如果尚未发出 `RUN_STARTED`，
 processor 会先补上；是否追加 `RUN_FINISHED` 由 `emitRunFinishedAfterError` 决定。
 pending 写入失败时，不会转发代表成功的 `RUN_FINISHED`。存储异常不会被当成空 pending，也不会自动重跑 Agent。
 
-只有确认取得 owner 的请求才负责释放。正常完成、异常和取消均执行 owner 校验释放，最多尝试 3 次，
-两次重试分别等待 50 ms 和 100 ms。重试前记录 `WARN`，恢复后记录 `INFO`，耗尽后记录 `ERROR`，
+只有确认取得 owner 的请求才负责释放。resume contract 校验失败后，会在发送错误事件前启动 owner 校验清理，
+即使订阅者尚未请求任何事件，也不会阻止清理；pending interrupts 保留供后续合法 resume 使用。
+同一次订阅的提前清理、正常完成、异常和取消共享一次清理过程，总共最多尝试 3 次，
+两次重试分别等待 50 ms 和 100 ms。迟到的错误事件消费或取消不会重启重试预算。
+重试前记录 `WARN`，恢复后记录 `INFO`，耗尽后记录 `ERROR`，
 包含 `threadId`、`runId`、清理阶段、尝试次数和异常。请配置 SLF4J 日志实现，并对
 `AG-UI release exhausted` 建立告警。清理错误通过日志报告，不在已发出的终态事件后追加另一套生命周期，
 也不依赖 Reactor dropped error。若处理本身也失败，最终清理异常会作为 suppressed exception 附到原始异常。
