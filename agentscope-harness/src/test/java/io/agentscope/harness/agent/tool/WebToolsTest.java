@@ -18,13 +18,20 @@ package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -63,5 +70,64 @@ class WebToolsTest {
                 call(new WebTools.WebSearchTool(), "web_search", Map.of("query", "industry"));
         assertNotNull(result);
         assertEquals(ToolResultState.ERROR, result.getState());
+    }
+
+    @Test
+    void defaultClientUsesJdkVersionNegotiation() {
+        HttpClient client = WebTools.createDefaultHttpClient();
+        // No version pinned: JDK default HTTP/2 preferred, automatic HTTP/1.1 fallback.
+        assertEquals(HttpClient.Version.HTTP_2, client.version());
+    }
+
+    @Test
+    void defaultClientFetchesFromHttp11Server() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "hello from http/1.1".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            String out = new WebTools.WebFetchTool().webFetch(url, null);
+            assertTrue(out.contains("hello from http/1.1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void nullClientIsRejected() {
+        assertThrows(NullPointerException.class, () -> new WebTools.WebFetchTool(null));
+        assertThrows(NullPointerException.class, () -> new WebTools.WebSearchTool(null));
+    }
+
+    @Test
+    void customHttpClientIsUsed() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    byte[] body = "custom client hit".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            HttpClient custom =
+                    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
+            String out = new WebTools.WebFetchTool(custom).webFetch(url, null);
+            assertTrue(out.contains("custom client hit"));
+        } finally {
+            server.stop(0);
+        }
     }
 }

@@ -240,7 +240,7 @@ scripts/smoke.sh
 2. HITL：触发 Ask Policy，确认后续跑，历史完整；
 3. `self_hosted`：Worker poll / ack / heartbeat / 回传 `tool_result`，Turn 正确恢复。
 
-详见 [`docs/guide/14-validation.md`](/v2/zh/service/first-session) 与架构说明 [`docs/guide/02-architecture.md`](/v2/zh/service/concepts)。
+详见 [`docs/guide/14-validation.md`](/v2/zh/service/first-session) 与架构说明 [`docs/guide/02-architecture.md`](/v2/zh/service/index)。
 
 ## 几个值得提前避开的实现误区
 

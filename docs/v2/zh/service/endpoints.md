@@ -1,10 +1,14 @@
 ---
-title: "Endpoint：把 Agent 能力接入应用"
+title: "应用接入：Endpoint 与 SSE"
 ---
 
-[English](/v2/en/service/endpoints)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Endpoint 是提供给应用调用的稳定入口，将 Agent、Team 或已发布 Workflow revision 包装为具有认证、输入输出 schema 和调用记录的服务。调用方无需了解内部调度和运行时地址。
+
+本页介绍如何从应用发布入口并提交工作；收到调用标识后，按[SSE 格式与任务反馈](/v2/zh/service/sse-events)消费事件、恢复连接并读取最终结果。
 
 ## 选择调用形式
 
@@ -59,3 +63,5 @@ SSE 断开不代表任务失败，先按 statusUrl 查询。遇到 401/403 检�
 发布新的 Endpoint release 切换目标版本，保留发布记录。Rollback 用于把入口指回此前 release，不回滚数据库或已经执行的外部操作。Disable 停止新的使用；需要取消某次工作时查看具体 invocation/执行状态。
 
 相关：[API 参考](/v2/zh/service/api-reference) · [Workflow](/v2/zh/service/workflows)。
+
+完整业务接入见[订单履约案例](/v2/zh/service/cases/order-fulfillment)：发布 Team Job、约束输入、展示调查进度，再用 Workflow 衔接业务审批和执行。

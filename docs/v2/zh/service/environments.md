@@ -2,9 +2,19 @@
 title: "Environments：配置执行位置"
 ---
 
-[English](/v2/en/service/environments)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 **Resources → Environments** 定义 Managed Agent 在哪里执行文件、Shell 等工具。它与保存定义的 Workspace 分工不同，也不是 Hosted Agent 的 Runtime Host。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/environments.png" alt="Local 与 self_hosted Environment 示例" />
+</Frame>
+
+先按执行位置区分环境，再进入对应配置。图中 **Local development** 用于本机开发，**Research worker** 是 self_hosted 配置示例；创建环境记录后仍需启动并连接对应 Worker。
 
 ## 选择类型
 
@@ -21,7 +31,9 @@ Docker 下 Local 指 Dataplane 容器内部，并不是宿主机的任意目录�
 
 在 Environments 创建名称和类型，随后在详情配置该类型所需的 JSON 连接参数。类型创建后只读。后端所需凭据和能力必须与所选 provider 匹配；不要把 Runtime Host 的 enrollment 凭据用于 Worker。
 
-在 Agent 的 Advanced settings 或环境绑定中选择这个 Environment。用只读文件操作验证连接、工作目录和权限，再启用需要写入或执行命令的工具。
+在 **DESIGN → Agents** 打开 Managed Agent，在 **Runtime → Session defaults → Default environment** 选择环境，保存为 `defaultEnvironmentId`。创建页也可以通过 Advanced settings 选择环境。Session API 的 `environmentId` 可以为该会话指定环境。
+
+保存后建立新 Chat，用只读文件操作验证连接、工作目录和权限，再验证写入或执行命令的工具。该绑定选择工具执行位置；即使使用 self_hosted，Managed 的模型推理仍在 Dataplane 中运行。
 
 ## Self-hosted 接入
 
@@ -46,6 +58,22 @@ Self-hosted Worker 使用 Environment 的 API key 建立连接。创建 key 时�
 ```
 
 需要额外程序时选择包含这些依赖的自定义 E2B template。`workspaceRoot` 设置沙箱工作路径；`persistenceMode` 可选择 `TAR` 或 `NATIVE_SNAPSHOT`，按模板与后端能力验证保存和恢复。remote 类型只有文件系统能力，不能作为远程 Shell Worker 使用。
+
+### Sandbox 参数
+
+下列字段填写在 Environment 的 Config 中；未填写的 E2B 连接项沿用管理员的部署配置。
+
+| 字段 | 含义与缺省行为 |
+| --- | --- |
+| `templateId` | E2B 模板；没有部署覆盖时使用 `base` |
+| `workspaceRoot` | 沙箱工作路径；没有部署覆盖时使用 `/home/user` |
+| `sandboxTimeoutSeconds` | 沙箱存活超时秒数；没有部署覆盖时使用 300 |
+| `isolationScope` | Harness 文件系统隔离范围，默认 `SESSION` |
+| `persistenceMode` | `TAR` 或 `NATIVE_SNAPSHOT`；默认 TAR，可由部署覆盖 |
+| `apiBaseUrl` / `domain` | 自定义 E2B 接入地址；通常沿用部署配置 |
+| `apiKey` | 按环境覆盖 E2B 认证；通常由管理员统一配置 |
+
+Config 中填写 `packages`、Docker 镜像或网络参数不会自动安装依赖或落实网络限制。所需程序应准备在 E2B template 中，网络策略由实际后端配置。这些 sandbox 参数不用于配置 local 或 self_hosted 的容器。
 
 ## 从发布镜像运行 self-hosted Worker
 
