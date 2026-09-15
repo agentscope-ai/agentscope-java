@@ -22,11 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.SystemMessage;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class AgentStateTest {
@@ -176,5 +180,36 @@ class AgentStateTest {
         assertEquals(0, decoded.getCurIter());
         assertFalse(decoded.isSoToolActive());
         assertNotNull(decoded.getReplyId());
+    }
+
+    @Test
+    void jsonRoundTripPreservesReminderMetadataTypes() throws Exception {
+        // Mirrors ReActAgent's force-reminder message. The give-up cleanup matches the
+        // STRUCTURED_OUTPUT_REMINDER flag via Boolean.TRUE.equals on metadata that may have
+        // been persisted by a previous call, so the flag must survive the durable round-trip
+        // as a Boolean rather than a widened String/Number. The TYPE marker is informational
+        // only (never read for cleanup), so widening it to String is acceptable.
+        Msg reminder =
+                SystemMessage.builder()
+                        .name("system")
+                        .content(TextBlock.builder().text("forced").build())
+                        .metadata(
+                                Map.of(
+                                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
+                                        true,
+                                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
+                                        "PROMPT",
+                                        MessageMetadataKeys.CACHE_CONTROL,
+                                        false))
+                        .build();
+        AgentState original = AgentState.builder().context(List.of(reminder)).build();
+        AgentState decoded =
+                mapper.readValue(mapper.writeValueAsString(original), AgentState.class);
+
+        assertEquals(1, decoded.getContext().size());
+        Map<String, Object> metadata = decoded.getContext().get(0).getMetadata();
+        assertEquals(Boolean.TRUE, metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
+        assertEquals(Boolean.FALSE, metadata.get(MessageMetadataKeys.CACHE_CONTROL));
+        assertEquals("PROMPT", metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE));
     }
 }

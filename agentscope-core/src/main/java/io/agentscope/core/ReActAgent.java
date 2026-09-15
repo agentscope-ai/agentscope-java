@@ -1415,7 +1415,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             // the persistent enter banner and mode flag are kept,
                                             // but the transient force reminders are stripped —
                                             // they direct the model to call a tool that is not
-                                            // registered on later normal-mode turns.
+                                            // registered on later normal-mode turns. The enter
+                                            // banner carries a similar directive yet is kept on
+                                            // purpose: it is the persistent mode marker that
+                                            // keeps prompt-cache prefixes stable across calls,
+                                            // and the exit banner injected by the next normal
+                                            // call closes the mode — do not extend this cleanup
+                                            // to it.
                                             removeSoToolForceReminders(scope.state);
                                             log.debug(
                                                     "Structured output not completed; stripped"
