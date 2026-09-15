@@ -28,8 +28,8 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.Clock;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -91,6 +91,7 @@ public class MemoryFlushManager {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final String flushPrompt;
+    private final Clock clock;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
         this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
@@ -101,9 +102,23 @@ public class MemoryFlushManager {
      *     {@link #DEFAULT_FLUSH_PROMPT}.
      */
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
+        this(workspaceManager, model, flushPrompt, Clock.systemDefaultZone());
+    }
+
+    /**
+     * @param flushPrompt SYSTEM prompt for the extraction LLM call. {@code null} falls back to
+     *     {@link #DEFAULT_FLUSH_PROMPT}.
+     * @param clock time source used for the daily file name and the flushed section header. The
+     *     zone of this clock determines the rendered UTC offset, so {@code -Duser.timezone} is
+     *     honored by the production default ({@link Clock#systemDefaultZone()}). Tests can inject
+     *     {@link Clock#fixed} to pin an instant.
+     */
+    public MemoryFlushManager(
+            WorkspaceManager workspaceManager, Model model, String flushPrompt, Clock clock) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
+        this.clock = clock != null ? clock : Clock.systemDefaultZone();
     }
 
     /**
@@ -119,8 +134,8 @@ public class MemoryFlushManager {
         }
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        ZonedDateTime now = MemoryTimestamps.now(clock);
+        String dailyRelPath = MemoryTimestamps.dailyLedgerPath(now);
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
         StringBuilder userPrompt = new StringBuilder();
@@ -178,7 +193,7 @@ public class MemoryFlushManager {
                                 log.debug("No memories to flush");
                                 return Mono.empty();
                             }
-                            writeMemoryFiles(rc, extracted);
+                            writeMemoryFiles(rc, extracted, now);
                             return Mono.empty();
                         });
     }
@@ -222,15 +237,12 @@ public class MemoryFlushManager {
      * {@link MemoryConsolidator}, which periodically merges the daily ledgers into a
      * curated, size-bounded MEMORY.md.
      */
-    private void writeMemoryFiles(RuntimeContext rc, String content) {
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-
+    private void writeMemoryFiles(RuntimeContext rc, String content, ZonedDateTime now) {
         String dailyEntry =
                 String.format(
-                        "\n## Memory Flush — %s\n%s\n",
-                        java.time.Instant.now().toString(), content);
+                        "\n## Memory Flush — %s\n%s\n", MemoryTimestamps.format(now), content);
 
-        String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
+        String dailyRelPath = MemoryTimestamps.dailyLedgerPath(now);
         workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
     }
 
