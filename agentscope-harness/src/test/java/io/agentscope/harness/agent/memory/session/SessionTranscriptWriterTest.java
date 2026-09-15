@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.memory.session;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -36,6 +37,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -176,6 +182,105 @@ class SessionTranscriptWriterTest {
             }
         }
         assertTrue(totalLines >= 2, "segments should contain both entries across flushes");
+    }
+
+    @Test
+    void concurrentAppendsForSameSessionAreSerialized() throws Exception {
+        CountDownLatch firstUpdateStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstUpdate = new CountDownLatch(1);
+        CountDownLatch secondUpdateStarted = new CountDownLatch(1);
+        AtomicInteger updateCount = new AtomicInteger();
+        WorkspaceManager workspaceManager =
+                new WorkspaceManager(workspace) {
+                    @Override
+                    public void updateSessionIndex(
+                            RuntimeContext rc, String agentId, String sessionId, String summary) {
+                        if (updateCount.incrementAndGet() == 1) {
+                            firstUpdateStarted.countDown();
+                            await(releaseFirstUpdate);
+                        } else {
+                            secondUpdateStarted.countDown();
+                        }
+                    }
+                };
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+        SessionTranscriptWriter writer = new SessionTranscriptWriter(workspaceManager);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            executor.submit(
+                    () ->
+                            writer.appendMessages(
+                                    rc,
+                                    List.of(text("m1", MsgRole.USER, "first")),
+                                    "agent-a",
+                                    "session-1"));
+            assertTrue(firstUpdateStarted.await(5, TimeUnit.SECONDS));
+
+            executor.submit(
+                    () ->
+                            writer.appendMessages(
+                                    rc,
+                                    List.of(text("m2", MsgRole.ASSISTANT, "second")),
+                                    "agent-a",
+                                    "session-1"));
+            assertFalse(
+                    secondUpdateStarted.await(500, TimeUnit.MILLISECONDS),
+                    "same-session transcript writes must not overlap");
+
+            releaseFirstUpdate.countDown();
+            assertTrue(secondUpdateStarted.await(5, TimeUnit.SECONDS));
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        } finally {
+            releaseFirstUpdate.countDown();
+            executor.shutdownNow();
+            workspaceManager.close();
+        }
+
+        Path context = workspace.resolve("agents/agent-a/sessions/session-1.jsonl");
+        assertEquals(2, Files.readAllLines(context).size());
+        String transcript = Files.readString(context);
+        assertTrue(transcript.contains("\"id\":\"m1\""));
+        assertTrue(transcript.contains("\"id\":\"m2\""));
+        assertTrue(transcript.indexOf("\"id\":\"m1\"") < transcript.indexOf("\"id\":\"m2\""));
+    }
+
+    @Test
+    void appendMessagesSwallowsWorkspaceResolutionFailure() {
+        WorkspaceManager workspaceManager =
+                new WorkspaceManager(workspace) {
+                    @Override
+                    public Path resolveSessionContextFile(
+                            RuntimeContext rc, String agentId, String sessionId) {
+                        throw new IllegalStateException("workspace unavailable");
+                    }
+                };
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        try {
+            SessionTranscriptWriter writer = new SessionTranscriptWriter(workspaceManager);
+            assertDoesNotThrow(
+                    () ->
+                            writer.appendMessages(
+                                    rc,
+                                    List.of(text("m1", MsgRole.USER, "hello")),
+                                    "agent-a",
+                                    "session-1"));
+        } finally {
+            workspaceManager.close();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("timed out waiting for latch");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted while waiting for latch", e);
+        }
     }
 
     private static Msg text(String id, MsgRole role, String text) {
