@@ -25,6 +25,9 @@ import io.agentscope.core.agent.RuntimeContext;
  * file bytes from the filesystem and delegates the actual transport to the configured
  * {@code ArtifactDeliveryTarget}, which the application implements.
  *
+ * <p>For sandbox-side upload without downloading bytes into the host JVM, implement
+ * {@link DirectArtifactDeliveryTarget} instead.
+ *
  * <p>Configure on {@link
  * io.agentscope.harness.agent.HarnessAgent.Builder#artifactDeliveryTarget(ArtifactDeliveryTarget)}.
  * When set, the {@code deliver_artifact} tool is registered and the sandbox system prompt instructs

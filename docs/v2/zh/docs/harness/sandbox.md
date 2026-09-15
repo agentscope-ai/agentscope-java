@@ -235,6 +235,24 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 **从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
 
+对于大型产物，可以配置 `DirectArtifactDeliveryTarget`，跳过宿主 JVM 的文件字节下载：
+
+```java
+DirectArtifactDeliveryTarget target = (runtimeContext, filesystem, source) -> {
+    // Application-owned uploader: resolve the source in this filesystem/runtime,
+    // then upload inside the sandbox using its SDK or shell and return the result.
+    return sandboxUploader.upload(runtimeContext, filesystem, source.filePath(),
+            source.fileName(), source.description(), source.force());
+};
+HarnessAgent agent = HarnessAgent.builder()
+        // ... model and workspace configuration ...
+        .artifactDeliveryTarget(target)
+        .build();
+```
+
+`sandboxUploader` 是应用自行实现的上传器，并非内置 API。直传 target 只接收元数据：工具不会调用 `downloadFiles`，失败后也不会自动回退下载。target 负责检查源文件、实现 `force`/重名冲突语义并返回上传错误。请结合传入的文件系统和运行时上下文解析规范化路径；overlay/路由文件系统中的路径不一定是沙箱原生路径。通过 shell 上传时，必须安全引用路径，避免在工具输出中泄露凭据。现有 `ArtifactDeliveryTarget` lambda 仍使用字节下载方式。
+
+
 ## Kubernetes 后端的状态保存：PVC 是第一层
 
 Kubernetes 后端完全基于 agent-sandbox：沙箱 pod 由 agent-sandbox 控制器管理，镜像、资源、存储都声明在集群侧的 `SandboxTemplate` / `SandboxWarmPool` 里，Java 侧只负责领取（`SandboxClaim`）和连接。这带来一个和其他后端不同的点——**工作区数据的持久化主要靠 PVC，而不是 Harness 快照**，两层机制各管一事：

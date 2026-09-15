@@ -236,6 +236,24 @@ The `Sandbox` abstraction's primary data-plane entry point is `exec(command)`. T
 
 **Crossing the boundary from the model's point of view.** The file API (upload/download) above is an internal mechanism — invisible to the LLM, and `FilesystemTool` exposes no transfer tools. The supported way for a sandboxed agent to hand an artifact it produced to a destination outside the sandbox is the generic **`deliver_artifact`** tool. It is registered only when you configure an `ArtifactDeliveryTarget` via `HarnessAgent.builder().artifactDeliveryTarget(...)`. The SPI stays business-agnostic — `deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult` — so destination logic (e.g. WebDAV upload) lives in your application. The tool downloads the file bytes from the sandbox workspace and delegates the transport to the target. Without a configured target, the sandbox workspace prompt states plainly that files cannot leave the container.
 
+For large artifacts, configure a `DirectArtifactDeliveryTarget` to bypass the host JVM byte download:
+
+```java
+DirectArtifactDeliveryTarget target = (runtimeContext, filesystem, source) -> {
+    // Application-owned uploader: resolve the source in this filesystem/runtime,
+    // then upload inside the sandbox using its SDK or shell and return the result.
+    return sandboxUploader.upload(runtimeContext, filesystem, source.filePath(),
+            source.fileName(), source.description(), source.force());
+};
+HarnessAgent agent = HarnessAgent.builder()
+        // ... model and workspace configuration ...
+        .artifactDeliveryTarget(target)
+        .build();
+```
+
+`sandboxUploader` above is application code, not a built-in uploader. Direct targets receive metadata only: the tool never calls `downloadFiles`, including after a failure. The target must check source existence, enforce `force`/conflict behavior, and report upload errors. Resolve the normalized path against the supplied filesystem and runtime context; overlays/routed filesystems may not map it directly to a sandbox-native path. For shell-based uploads, quote paths safely and keep credentials out of tool output. Existing `ArtifactDeliveryTarget` lambdas keep the byte-based behavior.
+
+
 ## Kubernetes state persistence: PVC is the first layer
 
 The Kubernetes store is fully based on agent-sandbox: sandbox pods are managed by the agent-sandbox controller, and image, resources, and storage are all declared cluster-side in a `SandboxTemplate` / `SandboxWarmPool` — the Java side only claims instances (`SandboxClaim`) and connects. This makes it different from other stores in one important way: **workspace data persistence is primarily the PVC's job, not the Harness snapshot's**. The two layers each own one thing:
