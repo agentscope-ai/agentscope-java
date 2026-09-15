@@ -29,6 +29,8 @@ import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.processor.AguiResumeStateStore;
+import io.agentscope.core.agui.processor.InMemoryAguiResumeStateStore;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
@@ -271,6 +273,30 @@ class AguiAdapterConfigAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("Should register resume state store bean for MVC")
+    void testMvcRegistersResumeStateStore() {
+        mvcContextRunner
+                .withUserConfiguration(ResumeStateStoreConfig.class)
+                .run(
+                        ctx ->
+                                assertSame(
+                                        ResumeStateStoreConfig.STORE,
+                                        resumeStateStore(ctx.getBean(AguiMvcController.class))));
+    }
+
+    @Test
+    @DisplayName("Should register resume state store bean for WebFlux")
+    void testWebFluxRegistersResumeStateStore() {
+        webFluxContextRunner
+                .withUserConfiguration(ResumeStateStoreConfig.class)
+                .run(
+                        ctx ->
+                                assertSame(
+                                        ResumeStateStoreConfig.STORE,
+                                        resumeStateStore(ctx.getBean(AguiWebFluxHandler.class))));
+    }
+
+    @Test
     @DisplayName("Should expose servlet request context to MVC runtime context resolver")
     void testMvcRuntimeContextResolverReceivesServletRequestContext() {
         AtomicReference<AguiRuntimeContextRequest<?>> seenRequest = new AtomicReference<>();
@@ -411,6 +437,12 @@ class AguiAdapterConfigAutoConfigurationTest {
         return (boolean) ReflectionTestUtils.getField(handler, "interruptOnDisconnect");
     }
 
+    private static AguiResumeStateStore resumeStateStore(Object handler) {
+        Object processor = ReflectionTestUtils.getField(handler, "processor");
+        Object coordinator = ReflectionTestUtils.getField(processor, "resumeCoordinator");
+        return (AguiResumeStateStore) ReflectionTestUtils.getField(coordinator, "stateStore");
+    }
+
     private static AguiAgentAdapterFactory mvcAdapterFactory(AguiMvcController controller) {
         Object processor = ReflectionTestUtils.getField(controller, "processor");
         return (AguiAgentAdapterFactory) ReflectionTestUtils.getField(processor, "adapterFactory");
@@ -501,6 +533,17 @@ class AguiAdapterConfigAutoConfigurationTest {
         @Bean
         public AguiAgentAdapterFactory aguiAgentAdapterFactory() {
             return ADAPTER_FACTORY;
+        }
+    }
+
+    @Configuration
+    static class ResumeStateStoreConfig {
+
+        static final AguiResumeStateStore STORE = new InMemoryAguiResumeStateStore();
+
+        @Bean
+        public AguiResumeStateStore aguiResumeStateStore() {
+            return STORE;
         }
     }
 

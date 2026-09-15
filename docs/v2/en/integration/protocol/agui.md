@@ -335,6 +335,58 @@ For permission confirmations, `payload.approved` must be the boolean `true` to a
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 
+## Shared resume state and failure recovery
+
+`AguiResumeStateStore` coordinates active runs and pending interrupts. The default store is local to
+one processor. For multiple replicas, supply the same shared store through
+`AguiRequestProcessor.Builder.resumeStateStore(...)` or expose an `AguiResumeStateStore` Spring bean.
+`RedisAguiResumeStateStore` uses a caller-owned Jedis client; configure finite connection, pool-wait,
+and socket timeouts on that client.
+
+The processor runs synchronous store calls on Reactor's `boundedElastic` scheduler, including
+pending writes and cleanup after disconnect. Subscription and cancellation cleanup are asynchronous;
+`dispose()` does not mean ownership has already been released. When `interruptOnDisconnect` is enabled,
+the Spring transports cancel the subscription and its lifecycle interrupts the validated execution on
+`boundedElastic` before releasing ownership. Invalid, rejected or indeterminate requests cannot interrupt
+another execution, and late disconnects cannot interrupt a newer owner. Interruption runs once, outside
+the release retry budget; an interruption failure is logged and ownership release still proceeds.
+A tool that ignores cancellation can continue executing.
+
+Direct processor users can enable this behavior with `Builder.interruptOnCancel(true)` (default false).
+The explicit `ProcessResult.interrupt(threadId)` method remains a session-wide administrative operation;
+it does not provide the ownership protection of cancelling the configured subscription.
+
+Claim, validation, resume injection, and pending-write failures become `RUN_ERROR`. The processor emits
+`RUN_STARTED` first if needed and follows `emitRunFinishedAfterError` for the optional final event.
+A failed pending write does not forward the successful `RUN_FINISHED` event. Storage failures are not
+interpreted as empty pending state and do not automatically rerun the agent.
+
+For a confirmed claim, a resume contract error starts owner-checked cleanup before its error events
+are delivered, even when the subscriber requests no events. Pending interrupts remain available for
+a later valid resume. Early cleanup, completion, error, and cancellation share one cleanup process
+per subscription, including a total limit of three attempts with 50 ms and 100 ms backoffs. Delayed
+error consumption or cancellation does not restart that budget. Failed attempts log `WARN`; recovery logs
+`INFO`; exhaustion logs `ERROR` with `threadId`, `runId`, phase, attempt count, and the exception.
+Configure an SLF4J logging provider and alert on `AG-UI release exhausted`. Cleanup errors are logged
+rather than appended after a terminal event or delivered as Reactor dropped errors. If processing also
+failed, the final cleanup error is attached to that original exception as a suppressed exception.
+
+This is bounded best-effort recovery, not a lease or crash-recovery mechanism. Pending state and owners
+have no TTL. A claim whose reply is lost has an unknown outcome: it produces an error but is not blindly
+released or retried. Use a fresh `runId` for each execution: it is the ownership token, and reusing it
+can allow a delayed release to affect a later execution.
+
+If an owner remains after retries or a process failure:
+
+1. Use the logged thread/run IDs to investigate the old execution. Stop or confirm termination of its
+   agent and tools, and wait for its cleanup attempts to end. A disconnected client is not proof that
+   business work has stopped.
+2. After that confirmation, call `sharedStore.releaseRun(threadId, oldRunId)` from an administrative
+   path. This performs an atomic owner check and preserves pending interrupts; do not delete the
+   entire Redis key or clear pending state to unlock the thread.
+3. Inspect pending interrupts and retry with a new run ID and a matching `resume[]`. Decide separately
+   how to reconcile external side effects or an interrupted pending-state write.
+
 ## Example Project
 
 See the complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
