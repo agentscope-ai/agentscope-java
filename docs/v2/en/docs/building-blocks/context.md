@@ -1,6 +1,7 @@
 ---
-title: "Context & AgentState"
-description: "Stateless agent engine, AgentState lifecycle, state persistence, and RuntimeContext"
+title: Context & AgentState
+description: Stateless agent engine, AgentState lifecycle, state persistence, and
+  RuntimeContext
 ---
 
 ## Stateless Agent Engine
@@ -32,7 +33,7 @@ description: "Stateless agent engine, AgentState lifecycle, state persistence, a
 
 ## AgentState
 
-An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
+An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
 
 | `AgentState` field | Content |
 |---|---|
@@ -40,7 +41,7 @@ An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentS
 | `getUserId()` | The user identifier (nullable for anonymous sessions) |
 | `getContext()` / `contextMutable()` | Current conversation history (user / assistant / tool calls / tool results) |
 | `getSummary()` | Compacted summary (when compaction is enabled) |
-| `getPermissionContext()` | Tool permission rules — see [Permissions](./permission-system.md) |
+| `getPermissionContext()` | Tool permission rules — see [Permissions](/v2/en/docs/building-blocks/permission-system) |
 | `getPlanModeContext()` | Whether Plan Mode is active, current plan file path |
 | `getTasksContext()` | The `todo_write` task list |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
@@ -109,9 +110,13 @@ HarnessAgent agent = HarnessAgent.builder()
         .build();
 ```
 
-:::{warning}
+
+<Warning>
+
 The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
-:::
+
+</Warning>
+
 
 ### Real-time resume across processes and machines
 
@@ -152,7 +157,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem.md).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](/v2/en/docs/harness/filesystem).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -205,9 +210,13 @@ agent.clearContext(RuntimeContext.builder()
 Call it after the session's current request has completed. It does not cancel an in-flight call;
 the next call starts with the cleared conversation context.
 
-:::{note}
+
+<Note>
+
 The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + an `AgentStateStore`; `Memory` remains only as a source-compat shim.
-:::
+
+</Note>
+
 
 ### Per-session interrupt
 
@@ -225,9 +234,13 @@ The reasoning loop checks `state.interruptControl().isInterrupted()` before each
 
 The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`.
 
-:::{note}
+
+<Note>
+
 `InterruptControl` is a runtime-only signal; it is never persisted. If a session resumes on a different node after failover, the interrupt flag starts cleared. The separate `AgentState.shutdownInterrupted` flag (which **is** persisted) records whether the session was interrupted by graceful shutdown — the agent can detect and recover from that on next load.
-:::
+
+</Note>
+
 
 ### Concurrent usage
 
@@ -264,9 +277,13 @@ Flux.merge(call1, call2).collectList().block();
 - **Same `(userId, sessionId)`** → per-session async gate serialises calls in FIFO order — state consistency guaranteed without external locking.
 - **`interrupt(userId, sessionId)`** → targets exactly one session, other in-flight calls unaffected.
 
-:::{tip}
+
+<Tip>
+
 The in-memory state cache grows with the number of distinct sessions a single agent instance has served. For most deployments (hundreds of sessions) this is negligible. For very large-scale scenarios (millions of sessions per process), consider an agent factory pattern with bounded instance pools — but this is rarely needed since `AgentState` objects are lightweight.
-:::
+
+</Tip>
+
 
 ---
 
@@ -299,19 +316,27 @@ Available accessors:
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
 
-:::{tip}
-**The `AgentStateStore` is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
-:::
 
-:::{tip}
+<Tip>
+
+**The `AgentStateStore` is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
+
+</Tip>
+
+
+
+<Tip>
+
 **Accessing `AgentState` from middleware and tools:** Always use `RuntimeContext.resolveAgentState(ctx, agent)` rather than `agent.getAgentState()` during call execution. Under concurrency, `agent.getAgentState()` returns the last-active session's state (an arbitrary choice when multiple calls are in flight), while `ctx.getAgentState()` returns the state for **this call's** session — which is what you almost always want.
-:::
+
+</Tip>
+
 
 ---
 
 ## Related pages
 
-- [Agent](./agent.md) — full `ReActAgent` API and builder fields
-- [Context Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
-- [Memory](../harness/memory.md) — long-term memory, background maintenance
-- [Permissions](./permission-system.md) — persistence of permission rules
+- [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API and builder fields
+- [Context Compaction](/v2/en/docs/harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](/v2/en/docs/harness/memory) — long-term memory, background maintenance
+- [Permissions](/v2/en/docs/building-blocks/permission-system) — persistence of permission rules

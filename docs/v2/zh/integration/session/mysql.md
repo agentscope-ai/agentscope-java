@@ -1,6 +1,13 @@
-```{note}
-本页面内容已迁移至 [分布式存储 — MySQL](../distributed/mysql.md)。以下内容保留作为参考，但建议使用新文档。
-```
+---
+title: MySQL 状态存储
+---
+
+<Note>
+
+本页面内容已迁移至 [分布式存储 — MySQL](/v2/zh/integration/distributed/mysql)。以下内容保留作为参考，但建议使用新文档。
+
+</Note>
+
 
 # MySQL 状态存储
 

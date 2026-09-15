@@ -1,4 +1,6 @@
-# Streaming
+---
+title: Streaming
+---
 
 `Agent.stream()` returns a reactive `Flux<Event>` that lets callers observe every reasoning step, tool-call result, and final reply **in real time**, rather than waiting for `call()` to return a single `Msg`.
 
@@ -145,7 +147,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message) {
 ```
 
 When using `HarnessAgent` and you need to forward child-agent source metadata to the frontend,
-serialize `event.getSource()` as well — see [Harness Subagent Streaming](../harness/streaming.md).
+serialize `event.getSource()` as well — see [Harness Subagent Streaming](/v1/en/docs/harness/streaming).
 
 ---
 
@@ -174,6 +176,6 @@ StreamOptions options = StreamOptions.builder()
 
 ## Related Documents
 
-- [Hook](./hook.md) — Insert custom logic at reasoning / tool-call lifecycle points
-- [Model](./model.md) — Underlying streaming model configuration
-- [Harness Subagent Streaming](../harness/streaming.md) — Child-agent event forwarding and `EventSource` fields when using `HarnessAgent`
+- [Hook](/v1/en/docs/task/hook) — Insert custom logic at reasoning / tool-call lifecycle points
+- [Model](/v1/en/docs/task/model) — Underlying streaming model configuration
+- [Harness Subagent Streaming](/v1/en/docs/harness/streaming) — Child-agent event forwarding and `EventSource` fields when using `HarnessAgent`

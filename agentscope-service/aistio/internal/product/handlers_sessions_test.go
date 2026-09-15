@@ -18,9 +18,9 @@ import "testing"
 
 func TestSessionListArchiveFilter(t *testing.T) {
 	cases := []struct {
-		in      string
-		want    string
-		wantOK  bool
+		in     string
+		want   string
+		wantOK bool
 	}{
 		{"", ` AND archived_at IS NULL`, true},
 		{"active", ` AND archived_at IS NULL`, true},

@@ -1,4 +1,6 @@
-# AG-UI
+---
+title: AG-UI
+---
 
 ## Compatibility Notes
 

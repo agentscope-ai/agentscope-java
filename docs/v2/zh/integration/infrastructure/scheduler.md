@@ -1,4 +1,6 @@
-# Scheduler（定时调度）
+---
+title: Scheduler
+---
 
 `agentscope-extensions-scheduler` 让 Agent 可以按调度器配置周期性执行——比如"每天 8 点跑一次日报 Agent"、"每 5 秒做一次健康巡检"。模块抽出统一的 `AgentScheduler` 接口，提供两个实现：
 

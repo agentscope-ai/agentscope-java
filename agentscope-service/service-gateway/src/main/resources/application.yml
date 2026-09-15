@@ -1,5 +1,5 @@
 server:
-  port: ${BUILDER_GATEWAY_PORT:8080}
+  port: ${BUILDER_GATEWAY_PORT:18080}
 
 spring:
   application:
@@ -74,6 +74,19 @@ spring:
               predicates:
                 - Path=/api/channels/feishu/**,/api/channels/wecom/**,/api/channels/github/**,/api/channels/gitlab/**
 
+            # Public Endpoint invocation API. Keep this route explicit so
+            # streaming, auth and rate policies never depend on the SPA
+            # catch-all route below.
+            - id: endpoint-invocation
+              uri: ${builder.control-plane-url}
+              order: 8
+              predicates:
+                - Path=/invoke/v1/**
+              filters:
+                - RemoveRequestHeader=X-Builder-Environment-Key
+                - RemoveRequestHeader=X-Builder-Internal-Token
+                - RemoveRequestHeader=X-Builder-Internal-User
+
             # ------------------------------------------------------------------
             # Control plane (aistiod) — Managed Agents APIs, the /api/v1
             # management API, and the console SPA, all on one upstream port.
@@ -82,7 +95,7 @@ spring:
               uri: ${builder.control-plane-url}
               order: 10
               predicates:
-                - Path=/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
+                - Path=/hooks/v1/automations/**,/api/auth/**,/api/user/**,/api/admin/**,/api/agents/**,/api/workspaces/**,/api/marketplaces/**,/api/toolsets/**,/api/environments/**,/api/sessions,/api/sessions/**,/api/memory-stores/**,/api/vaults/**,/api/deployments/**,/api/channels/**,/api/files,/api/files/**,/api/v1/**
               filters:
                 # Env-key auth is data-plane only; strip if a client spoofs it toward control.
                 - RemoveRequestHeader=X-Builder-Environment-Key

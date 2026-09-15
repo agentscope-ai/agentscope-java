@@ -1,4 +1,6 @@
-# 工具
+---
+title: 工具系统
+---
 
 工具系统让智能体能够执行 API 调用、数据库查询、文件操作等外部操作。
 
@@ -198,7 +200,7 @@ public String query(
 }
 ```
 
-> 详细配置参见 [智能体](../quickstart/agent.md) 文档。
+> 详细配置参见 [智能体](/v1/zh/docs/quickstart/agent) 文档。
 
 ## 内置工具
 
@@ -256,7 +258,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### 子智能体工具
 
-可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](agent-as-tool.md)。
+可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](/v1/zh/docs/task/agent-as-tool)。
 
 ## AgentTool 接口
 

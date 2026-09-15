@@ -16,9 +16,7 @@ package product
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -78,7 +76,7 @@ func (s *Server) loadMarketplace(ctx context.Context, owner, id string) (marketp
 }
 
 func (s *Server) listMarketplaces(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	rows, err := s.db.Pool.Query(c.Request.Context(),
 		`SELECT owner_id, marketplace_id, name, type, config_json, enabled, created_at, updated_at
 		 FROM marketplaces WHERE owner_id=$1 ORDER BY updated_at DESC`, owner)
@@ -115,7 +113,7 @@ func (s *Server) createMarketplace(c *gin.Context) {
 		writeErr(c, http.StatusBadRequest, "type must be git or nacos")
 		return
 	}
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	id := shortID("mkt_")
 	now := nowMillis()
 	_, err := s.db.Pool.Exec(c.Request.Context(),
@@ -131,7 +129,7 @@ func (s *Server) createMarketplace(c *gin.Context) {
 }
 
 func (s *Server) getMarketplace(c *gin.Context) {
-	m, err := s.loadMarketplace(c.Request.Context(), currentUserID(c), c.Param("id"))
+	m, err := s.loadMarketplace(c.Request.Context(), currentResourceOwner(c), c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "marketplace not found")
 		return
@@ -140,7 +138,7 @@ func (s *Server) getMarketplace(c *gin.Context) {
 }
 
 func (s *Server) deleteMarketplace(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	_, err := s.db.Pool.Exec(c.Request.Context(),
 		`DELETE FROM marketplaces WHERE owner_id=$1 AND marketplace_id=$2`,
 		owner, c.Param("id"))
@@ -152,7 +150,7 @@ func (s *Server) deleteMarketplace(c *gin.Context) {
 }
 
 func (s *Server) browseMarketplaceSkills(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	m, err := s.loadMarketplace(c.Request.Context(), owner, c.Param("id"))
 	if err != nil {
 		writeErr(c, http.StatusNotFound, "marketplace not found")
@@ -167,7 +165,7 @@ func (s *Server) browseMarketplaceSkills(c *gin.Context) {
 }
 
 func (s *Server) wsMarketplaceInstall(c *gin.Context) {
-	owner := currentUserID(c)
+	owner := currentResourceOwner(c)
 	wsID := c.Param("id")
 	if _, err := s.loadWorkspace(c.Request.Context(), owner, wsID); err != nil {
 		writeErr(c, http.StatusNotFound, "workspace not found")
@@ -180,17 +178,9 @@ func (s *Server) wsMarketplaceInstall(c *gin.Context) {
 	}
 	disk := s.workspaceDiskRoot(owner, wsID)
 	if err := s.installMarketplaceSkill(c.Request.Context(), owner, scopeTypeWorkspace, wsID, disk, req); err != nil {
-		writeErr(c, http.StatusBadRequest, err.Error())
+		writeErr(c, marketplaceInstallStatus(err), err.Error())
 		return
 	}
-	// Add skill ref on workspace.
-	w, _ := s.loadWorkspace(c.Request.Context(), owner, wsID)
-	arr, _ := parseJSONRaw(deref(w.SkillsJSON)).([]any)
-	arr = append(arr, gin.H{"type": "marketplace", "name": req.SkillName, "id": req.SkillName, "version": req.Version})
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE workspaces SET skills_json=$1, head_version=head_version+1, updated_at=$2
-		 WHERE owner_id=$3 AND workspace_id=$4`,
-		mustJSON(arr), nowMillis(), owner, wsID)
 	s.rematerializeLinkedAgents(c.Request.Context(), owner, wsID)
 	c.JSON(http.StatusOK, gin.H{"installed": req.SkillName, "origin": "marketplace"})
 }
@@ -203,14 +193,17 @@ func (s *Server) installMarketplaceSkill(ctx context.Context, owner, scopeType, 
 	if !m.Enabled {
 		return fmt.Errorf("marketplace disabled")
 	}
-	switch m.Type {
-	case "git":
-		return s.installGitMarketplaceSkill(ctx, owner, scopeType, scopeID, diskRoot, m, req.SkillName)
-	case "nacos":
-		return s.installNacosMarketplaceSkill(ctx, owner, scopeType, scopeID, diskRoot, m, req.SkillName)
-	default:
-		return fmt.Errorf("unsupported marketplace type: %s", m.Type)
+	if !validSkillDirectory(req.SkillName) {
+		return fmt.Errorf("invalid skill name")
 	}
+	files, version, err := s.marketplaceSkillContents(ctx, m, req.SkillName)
+	if err != nil {
+		return err
+	}
+	if req.Version != "" && req.Version != version {
+		return fmt.Errorf("requested skill version is unavailable; refresh the marketplace before installing")
+	}
+	return s.persistMarketplaceSkill(ctx, owner, scopeType, scopeID, diskRoot, m, req.SkillName, version, files)
 }
 
 func marketplaceConfigMap(m marketplaceRow) map[string]any {
@@ -282,72 +275,17 @@ func (s *Server) ensureGitMarketplaceClone(ctx context.Context, m marketplaceRow
 	cache := filepath.Join(s.cfg.WorkspaceRoot, "_marketplaces", m.OwnerID, m.MarketplaceID)
 	if fileExists(filepath.Join(cache, ".git")) {
 		cmd := exec.CommandContext(ctx, "git", "-C", cache, "pull", "--ff-only")
-		_ = cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("marketplace refresh failed; check source access and branch: %w", err)
+		}
 		return cache, nil
 	}
 	_ = os.MkdirAll(filepath.Dir(cache), 0o755)
 	args := []string{"clone", "--depth", "1", "--branch", branch, remote, cache}
 	cmd := exec.CommandContext(ctx, "git", args...)
-	out, err := cmd.CombinedOutput()
+	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("git clone failed: %s (%w)", strings.TrimSpace(string(out)), err)
+		return "", fmt.Errorf("marketplace clone failed; check source access and branch: %w", err)
 	}
 	return cache, nil
-}
-
-func (s *Server) installGitMarketplaceSkill(ctx context.Context, owner, scopeType, scopeID, diskRoot string, m marketplaceRow, skillName string) error {
-	cfg := marketplaceConfigMap(m)
-	root, err := s.ensureGitMarketplaceClone(ctx, m, cfg)
-	if err != nil {
-		return err
-	}
-	skillsRoot := "skills"
-	if v, ok := cfg["skillsRoot"].(string); ok && v != "" {
-		skillsRoot = v
-	}
-	src := filepath.Join(root, skillsRoot, skillName)
-	mdPath := filepath.Join(src, "SKILL.md")
-	b, err := os.ReadFile(mdPath)
-	if err != nil {
-		return fmt.Errorf("skill %s not found in marketplace", skillName)
-	}
-	if err := s.putWorkspaceFile(ctx, owner, scopeType, scopeID, "skills/"+skillName+"/SKILL.md", string(b), diskRoot); err != nil {
-		return err
-	}
-	_ = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		rel, _ := filepath.Rel(src, path)
-		rel = filepath.ToSlash(rel)
-		if rel == "SKILL.md" {
-			return nil
-		}
-		content, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return nil
-		}
-		_ = s.putWorkspaceFile(ctx, owner, scopeType, scopeID, "skills/"+skillName+"/"+rel, string(content), diskRoot)
-		return nil
-	})
-	return nil
-}
-
-func (s *Server) installNacosMarketplaceSkill(ctx context.Context, owner, scopeType, scopeID, diskRoot string, m marketplaceRow, skillName string) error {
-	cfg := marketplaceConfigMap(m)
-	// Prefer inline skillBodies map in config for control-plane install without Java Nacos client.
-	if bodies, ok := cfg["skillBodies"].(map[string]any); ok {
-		if body, ok := bodies[skillName].(string); ok && body != "" {
-			return s.putWorkspaceFile(ctx, owner, scopeType, scopeID, "skills/"+skillName+"/SKILL.md", body, diskRoot)
-		}
-	}
-	// Placeholder SKILL.md documenting nacos coordinates for DP-side NacosSkillRepository resolve.
-	serverAddr, _ := cfg["serverAddr"].(string)
-	dataID, _ := cfg["dataId"].(string)
-	group, _ := cfg["group"].(string)
-	md := fmt.Sprintf("---\nname: %s\ndescription: Installed from Nacos marketplace\n---\n\n# %s\n\nSource: nacos serverAddr=%s dataId=%s group=%s\n",
-		skillName, skillName, serverAddr, dataID, group)
-	meta, _ := json.Marshal(gin.H{"marketplaceId": m.MarketplaceID, "type": "nacos", "skillName": skillName, "config": cfg})
-	_ = s.putWorkspaceFile(ctx, owner, scopeType, scopeID, "skills/"+skillName+"/.marketplace.json", string(meta), diskRoot)
-	return s.putWorkspaceFile(ctx, owner, scopeType, scopeID, "skills/"+skillName+"/SKILL.md", md, diskRoot)
 }

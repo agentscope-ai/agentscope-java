@@ -1,6 +1,6 @@
 ---
-title: "Permission System"
-description: "精细控制 agent 可以执行哪些 tool、何时执行"
+title: Permission System
+description: 精细控制 agent 可以执行哪些 tool、何时执行
 ---
 
 ## 概述
@@ -13,7 +13,7 @@ Permission system（`io.agentscope.core.permission`）拦截 agent 的每一次�
 - **Mode** —— 配置阶段设定的全局静态策略；决定所有不命中任何规则的调用的默认行为（例如 `EXPLORE` 让 agent 进入只读；`DONT_ASK` 静默拒绝未命中的调用）。
 - **Built-in Checks** —— 由 tool 自身在运行时基于真实输入做的动态分析（在 `ToolBase#checkPermissions` 中实现）。这些是运行时检查而非预配置模式，因此**不可绕过**，不受 mode 或 rules 覆盖。
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -41,8 +41,10 @@ sequenceDiagram
     end
 ```
 
-:::{dropdown} 详细决策流程
-```{mermaid}
+
+<Accordion title="详细决策流程">
+
+```mermaid
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])
@@ -75,11 +77,17 @@ flowchart TD
     style ASK2 fill:#ffd43b,color:#333
     style ASK3 fill:#ffd43b,color:#333
 ```
-:::
 
-:::{note}
+</Accordion>
+
+
+
+<Note>
+
 Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS` 模式下也照常生效。
-:::
+
+</Note>
+
 
 ## Permission Mode
 
@@ -95,8 +103,12 @@ Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS`
 
 可以在创建 agent 时通过 `permissionContext(...)` 设置 mode：
 
-::::{tab-set}
-:::{tab-item} 初始化时配置
+
+<Tabs>
+
+
+<Tab title="初始化时配置">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.permission.PermissionContextState;
@@ -115,8 +127,12 @@ ReActAgent agent =
                 .permissionContext(permCtx)
                 .build();
 ```
-:::
-:::{tab-item} ACCEPT_EDITS 配合工作目录
+
+</Tab>
+
+
+<Tab title="ACCEPT_EDITS 配合工作目录">
+
 ```java
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionContextState;
@@ -130,8 +146,12 @@ PermissionContextState permCtx =
                         new AdditionalWorkingDirectory("/my/project", "userSettings"))
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 ## Permission Rule
 
@@ -341,7 +361,7 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 
 如果需要在这种场景下停止 agent，可以装备一个 `onActing` middleware 观察 `AllToolsDeniedEvent` 并发出 `RequestStopEvent`。停止后 `Msg.getGenerateReason()` 返回 `ALL_TOOLS_DENIED`。
 
-具体实现参见 [Middleware — 全部工具被拒绝时停止 agent](./middleware.md#全部工具被拒绝时停止-agent)。
+具体实现参见 [Middleware — 全部工具被拒绝时停止 agent](/v2/zh/docs/building-blocks/middleware#全部工具被拒绝时停止-agent)。
 ### Streaming 模式
 
 使用 `streamEvents()` 时，不需要从返回的 `Msg` 提取 `ToolUseBlock` —— 通过事件流直接获得 `RequireUserConfirmEvent`，它携带了待确认的工具调用列表：
@@ -423,8 +443,12 @@ PermissionContextState headless =
 
 下面的示例展示了如何为常见部署场景配置 `permissionContext`。每个配方把一种 mode 与一组规则结合，匹配特定的使用场景。
 
-::::{tab-set}
-:::{tab-item} 只读探索
+
+<Tabs>
+
+
+<Tab title="只读探索">
+
 ```java
 // EXPLORE 模式：agent 可以自由调用只读工具，所有写工具会被自动拒绝。
 PermissionContextState explore =
@@ -440,8 +464,12 @@ ReActAgent explorer =
                 .permissionContext(explore)
                 .build();
 ```
-:::
-:::{tab-item} 无人值守自动化
+
+</Tab>
+
+
+<Tab title="无人值守自动化">
+
 ```java
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
@@ -468,8 +496,12 @@ ReActAgent ciAgent =
                 .build();
 // 只有显式放行的命令会执行；其余调用被静默拒绝
 ```
-:::
-:::{tab-item} 阻止危险命令
+
+</Tab>
+
+
+<Tab title="阻止危险命令">
+
 ```java
 PermissionContextState bypassWithDeny =
         PermissionContextState.builder()
@@ -485,5 +517,8 @@ PermissionContextState bypassWithDeny =
                 .build();
 // 除显式拒绝的工具外，其余均放行（deny 规则不可绕过）
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>

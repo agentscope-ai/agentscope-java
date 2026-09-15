@@ -1,6 +1,6 @@
 ---
-title: "Tool"
-description: "定义、注册并管理 agent 可调用的能力"
+title: Tool
+description: 定义、注册并管理 agent 可调用的能力
 ---
 
 ## 概述
@@ -70,9 +70,13 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
 ```
 
-:::{note}
+
+<Note>
+
 Toolkit 在出现额外 tool group 或 skill 时会自动注册 `reset_tools` meta tool 与 skill 查看器工具 `load_skill_through_path`，开发者无需手动实例化。详见 [自我管理 Tool](#自我管理-tool) 与 [Skill](#skill)。
-:::
+
+</Note>
+
 
 ### 自定义 Tool（注解式）
 
@@ -175,7 +179,7 @@ public class WebSearchTool extends ToolBase {
 
 外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停。下一次调用回传匹配的 `ToolResultBlock` 后，agent 会发出带有相同 `replyId` 的 `ExternalExecutionResultEvent`，然后继续执行。
 
-这种模式是 [human-in-the-loop](./agent.md) 工作流的基础 —— 某些动作需要人工确认或人工执行。
+这种模式是 [human-in-the-loop](/v2/zh/docs/building-blocks/agent) 工作流的基础 —— 某些动作需要人工确认或人工执行。
 
 创建外部执行 tool 只需把 `externalTool` 设为 `true`，不必实现 `callAsync`：
 
@@ -217,7 +221,7 @@ public class HumanApprovalTool extends ToolBase {
 
 ## 接收 Context
 
-每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](./agent.md#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。
+每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。
 
 ### 自动注入（`@Tool` 方法）
 
@@ -313,8 +317,12 @@ MCP tool 在 toolkit 中以 `mcp__{server_name}__{tool_name}` 命名，避免冲
 
 通过 `McpClientBuilder` 构建 `McpClientWrapper`，再注册到 `Toolkit`：
 
-::::{tab-set}
-:::{tab-item} STDIO
+
+<Tabs>
+
+
+<Tab title="STDIO">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
@@ -330,8 +338,12 @@ McpClientWrapper filesystem =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
 ```
-:::
-:::{tab-item} Streamable HTTP
+
+</Tab>
+
+
+<Tab title="Streamable HTTP">
+
 ```java
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
@@ -347,8 +359,12 @@ McpClientWrapper weather =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
 ```
-:::
-:::{tab-item} SSE
+
+</Tab>
+
+
+<Tab title="SSE">
+
 ```java
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -362,8 +378,12 @@ McpClientWrapper search =
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 完整运行示例：`agentscope-examples/documentation/.../mcp/McpStdioExample.java`、`mcp/McpSseExample.java`、`mcp/McpStreamableHttpExample.java`。
 
@@ -426,9 +446,13 @@ ReActAgent agent =
 1. 返回请求的内容（`SKILL.md` markdown，或指定的资源文件）。
 2. **激活该 skill** —— Toolkit 中与之绑定的 tool group 被启用，本轮对话余下时段都可调用 skill 自带的工具。如果 `path` 不存在，查看器会返回错误并列出可用资源路径（`SKILL.md` 始终排在第一位），便于 agent 重试。
 
-:::{note}
+
+<Note>
+
 Skill 不是 tool —— agent 不能直接调用 skill。它必须先用 `load_skill_through_path` 读取指令，再用其他 tool 按描述的步骤执行。
-:::
+
+</Note>
+
 
 ### Skill 执行脚本：配置 Shell 工具
 
@@ -558,33 +582,52 @@ ReActAgent agent =
 - 对每个本次切换为激活的 group，其 description 与（若提供的）使用说明会被拼接进 meta tool 的返回值，告诉 agent 如何正确使用该组。
 - 未激活 group 中的 tool 不会出现在 agent 的工具 schema 中，从而把上下文留给当前激活的工具集。
 
-:::{warning}
+
+<Warning>
+
 Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何未显式置为 `true` 的 group 都会被停用，无论之前的状态如何。
-:::
+
+</Warning>
+
 
 ## 延伸阅读
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/zh/docs/building-blocks/agent">
+
 
 Agent 如何在 ReAct 循环中编排 tool 调用
-:::
-  :::{grid-item-card} Permission System
-:link: ./permission-system.html
+
+</Card>
+
+
+<Card title="Permission System" href="/v2/zh/docs/building-blocks/permission-system">
+
 
 精细控制哪个 tool 可以执行、何时执行
-:::
-  :::{grid-item-card} Middleware
-:link: ./middleware.html
+
+</Card>
+
+
+<Card title="Middleware" href="/v2/zh/docs/building-blocks/middleware">
+
 
 用洋葱式 middleware 拦截并改写 tool 调用
-:::
-  :::{grid-item-card} Human-in-the-Loop
-:link: ./agent.html
+
+</Card>
+
+
+<Card title="Human-in-the-Loop" href="/v2/zh/docs/building-blocks/agent">
+
 
 外部执行 tool 与人工审批工作流
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

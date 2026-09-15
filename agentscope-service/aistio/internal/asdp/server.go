@@ -34,8 +34,12 @@ import (
 
 // Connection represents a connected data plane instance with its gRPC stream.
 type Connection struct {
+	Tenant          string
+	AgentID         string
+	BindingID       string
 	AgentName       string
 	InstanceID      string
+	Generation      int64
 	Namespace       string
 	Runtime         string
 	SDKVersion      string
@@ -77,34 +81,62 @@ type Server struct {
 	inventory   map[string]*InstanceInventory
 	grpcServer  *grpc.Server
 	addr        string
+	authToken   string
 
 	connectHandler *ConnectHandler
 	distributor    *Distributor
 
-	// EventSink receives upstream events (SessionReport, TeamEvent) for processing
+	// EventSink receives upstream reports for processing
 	// by controllers. Set after construction via SetEventSink.
-	eventSink EventSink
+	eventSink         EventSink
+	identityValidator IdentityValidator
+}
+
+// IdentityValidator authenticates the stable Catalog identity carried by an
+// ASDP stream. trustedWorkloadIdentity is true only for the configured internal
+// workload token; external applications must present their registration token.
+type IdentityValidator func(ctx context.Context, meta *UpstreamMeta, credential string, trustedWorkloadIdentity bool) error
+
+// ReportIdentity is the authenticated runtime identity attached to every
+// report. Report payloads never get to select their logical Agent identity.
+type ReportIdentity struct {
+	Tenant             string
+	Namespace          string
+	AgentID            string
+	BindingID          string
+	AgentKey           string
+	InstanceKey        string
+	InstanceGeneration int64
 }
 
 // EventSink processes upstream events from data plane instances.
 type EventSink interface {
-	HandleSessionReport(namespace, agentName, instanceID string, report *SessionReport)
-	HandleTeamEventReport(namespace, agentName string, report *TeamEventReport)
+	HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtime, sdkVersion string, capabilities []string)
+	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
+	HandleSessionReport(identity ReportIdentity, report *SessionReport)
+	HandleExecutionAttemptReport(tenant, namespace, agentID, bindingID, instanceKey string, instanceGeneration int64, report *ExecutionAttemptReport)
+	HandleConversationTurnReport(identity ReportIdentity, report *ConversationTurnReport)
 	// HandleEventReport processes a Level-2 event stream batch (session_events).
-	HandleEventReport(namespace, agentName, instanceID string, report *EventReport)
+	// HandleEventReport returns durable per-session commit watermarks. The
+	// transport must not acknowledge an event that has not reached the Store.
+	HandleEventReport(identity ReportIdentity, report *EventReport) *EventReportAck
 	// HandleContextReport processes a Level-4 effective-context report (context_snapshots).
-	HandleContextReport(namespace, agentName, instanceID string, report *ContextReport)
+	HandleContextReport(identity ReportIdentity, report *ContextReport)
 	// HandleInventoryReport processes an instance inventory report. The latest
 	// report is also kept in the server connection registry (see GetInventory*).
-	HandleInventoryReport(namespace, agentName, instanceID string, report *InventoryReport)
+	HandleInventoryReport(identity ReportIdentity, report *InventoryReport)
 }
 
 // InstanceInventory couples the latest InventoryReport from a connected
 // instance with the time it was received.
 type InstanceInventory struct {
+	Tenant     string
 	Namespace  string
+	AgentID    string
+	BindingID  string
 	AgentName  string
 	InstanceID string
+	Generation int64
 	Report     *InventoryReport
 	UpdatedAt  time.Time
 }
@@ -112,6 +144,7 @@ type InstanceInventory struct {
 // ServerConfig holds configuration for the ASDP gRPC server.
 type ServerConfig struct {
 	Addr      string
+	AuthToken string
 	TLSCert   string
 	TLSKey    string
 	TLSCACert string
@@ -169,6 +202,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		inventory:   make(map[string]*InstanceInventory),
 		grpcServer:  grpc.NewServer(opts...),
 		addr:        cfg.Addr,
+		authToken:   cfg.AuthToken,
 	}
 	s.connectHandler = NewConnectHandler(s)
 
@@ -182,6 +216,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 // SetEventSink sets the handler for upstream events.
 func (s *Server) SetEventSink(sink EventSink) {
 	s.eventSink = sink
+}
+
+func (s *Server) SetIdentityValidator(validator IdentityValidator) {
+	s.identityValidator = validator
 }
 
 // Distributor returns the server's config distributor.
@@ -218,11 +256,14 @@ func (s *Server) Stop() {
 // RegisterConnection registers a new data plane connection after handshake.
 func (s *Server) RegisterConnection(conn *Connection) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := GetInstanceKey(conn.Namespace, conn.InstanceID)
+	key := GetInstanceKey(conn.Tenant, conn.Namespace, conn.AgentID, conn.InstanceID)
 	s.connections[key] = conn
 	metrics.RecordGRPCConnection(1)
+	s.mu.Unlock()
+	if s.eventSink != nil {
+		s.eventSink.HandleConnect(conn.Tenant, conn.Namespace, conn.AgentID, conn.BindingID, conn.AgentName,
+			conn.InstanceID, conn.Generation, conn.Runtime, conn.SDKVersion, append([]string(nil), conn.Capabilities...))
+	}
 
 	logger := log.Log.WithName("asdp")
 	logger.Info("data plane connected",
@@ -234,29 +275,68 @@ func (s *Server) RegisterConnection(conn *Connection) {
 }
 
 // UnregisterConnection removes a data plane connection.
-func (s *Server) UnregisterConnection(namespace, instanceID string) {
+func (s *Server) UnregisterConnection(tenant, namespace, agentID, instanceID string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := GetInstanceKey(namespace, instanceID)
+	key := GetInstanceKey(tenant, namespace, agentID, instanceID)
+	var disconnected *Connection
 	if conn, ok := s.connections[key]; ok {
+		disconnected = conn
 		conn.Close()
 		delete(s.connections, key)
 		metrics.RecordGRPCConnection(-1)
 	}
 	delete(s.inventory, key)
+	s.mu.Unlock()
+	if disconnected != nil && s.eventSink != nil {
+		s.eventSink.HandleDisconnect(disconnected.Tenant, disconnected.Namespace, disconnected.AgentID,
+			disconnected.BindingID, disconnected.InstanceID, disconnected.Generation)
+	}
 
 	logger := log.Log.WithName("asdp")
 	logger.Info("data plane disconnected", "instance", instanceID, "namespace", namespace)
 }
 
-// GetConnection retrieves a connection by instance key.
+// GetConnection retrieves an unambiguous connection by namespace and instance.
+// Tenant-aware task routing must use GetConnectionForTenant.
 func (s *Server) GetConnection(namespace, instanceID string) (*Connection, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	var found *Connection
+	for _, conn := range s.connections {
+		if conn.Namespace != namespace || conn.InstanceID != instanceID {
+			continue
+		}
+		if found != nil {
+			return nil, false
+		}
+		found = conn
+	}
+	return found, found != nil
+}
 
-	key := GetInstanceKey(namespace, instanceID)
-	conn, ok := s.connections[key]
+// GetConnectionForTenant retrieves a connection without crossing a tenant boundary.
+func (s *Server) GetConnectionForTenant(tenant, namespace, instanceID string) (*Connection, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var found *Connection
+	for _, conn := range s.connections {
+		if conn.Tenant != tenant || conn.Namespace != namespace || conn.InstanceID != instanceID {
+			continue
+		}
+		if found != nil {
+			return nil, false
+		}
+		found = conn
+	}
+	return found, found != nil
+}
+
+// GetConnectionForAgentInstance retrieves the exact Agent connection without assuming that an
+// instance key is globally unique across different Agents running on the same host.
+func (s *Server) GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID string) (*Connection, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conn, ok := s.connections[GetInstanceKey(tenant, namespace, agentID, instanceID)]
 	return conn, ok
 }
 
@@ -268,6 +348,19 @@ func (s *Server) GetConnectionsForAgent(namespace, agentName string) []*Connecti
 	var conns []*Connection
 	for _, conn := range s.connections {
 		if conn.Namespace == namespace && conn.AgentName == agentName {
+			conns = append(conns, conn)
+		}
+	}
+	return conns
+}
+
+// GetConnectionsForAgentForTenant returns connections in one collaboration scope.
+func (s *Server) GetConnectionsForAgentForTenant(tenant, namespace, agentName string) []*Connection {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var conns []*Connection
+	for _, conn := range s.connections {
+		if conn.Tenant == tenant && conn.Namespace == namespace && conn.AgentName == agentName {
 			conns = append(conns, conn)
 		}
 	}
@@ -294,19 +387,23 @@ func (s *Server) ConnectionCount() int {
 }
 
 // UpdateInventory records the latest inventory report for a connected instance.
-func (s *Server) UpdateInventory(namespace, instanceID string, report *InventoryReport) {
+func (s *Server) UpdateInventory(tenant, namespace, agentID, instanceID string, report *InventoryReport) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := GetInstanceKey(namespace, instanceID)
+	key := GetInstanceKey(tenant, namespace, agentID, instanceID)
 	conn, ok := s.connections[key]
 	if !ok {
 		return
 	}
 	s.inventory[key] = &InstanceInventory{
+		Tenant:     tenant,
 		Namespace:  namespace,
+		AgentID:    conn.AgentID,
+		BindingID:  conn.BindingID,
 		AgentName:  conn.AgentName,
 		InstanceID: instanceID,
+		Generation: conn.Generation,
 		Report:     report,
 		UpdatedAt:  time.Now().UTC(),
 	}
@@ -317,19 +414,28 @@ func (s *Server) GetInventory(namespace, instanceID string) (*InstanceInventory,
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	inv, ok := s.inventory[GetInstanceKey(namespace, instanceID)]
-	return inv, ok
+	var found *InstanceInventory
+	for _, inv := range s.inventory {
+		if inv.Namespace != namespace || inv.InstanceID != instanceID {
+			continue
+		}
+		if found != nil {
+			return nil, false
+		}
+		found = inv
+	}
+	return found, found != nil
 }
 
 // GetInventoriesForAgent returns the latest inventories of every connected
-// instance of the given agent.
-func (s *Server) GetInventoriesForAgent(namespace, agentName string) []*InstanceInventory {
+// instance of the given agent in one tenant/namespace boundary.
+func (s *Server) GetInventoriesForAgent(tenant, namespace, agentName string) []*InstanceInventory {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var out []*InstanceInventory
 	for _, inv := range s.inventory {
-		if inv.Namespace == namespace && inv.AgentName == agentName {
+		if inv.Tenant == tenant && inv.Namespace == namespace && inv.AgentName == agentName {
 			out = append(out, inv)
 		}
 	}

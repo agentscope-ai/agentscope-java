@@ -1,4 +1,6 @@
-# Harness Overview
+---
+title: Overview
+---
 
 `agentscope-harness` builds a production-grade runtime infrastructure on top of `agentscope-core`'s `ReActAgent`, through two extension channels: **Hooks** and **Toolkits**. Your entry point is one class: `HarnessAgent`.
 
@@ -87,7 +89,7 @@ public class QuickstartExample {
 }
 ```
 
-Full runnable version: [`agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](../../../agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
+Full runnable version: [`agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/agents/harness-examples/harness-quickstart/src/main/java/io/agentscope/harness/example/QuickstartExample.java)
 
 Run:
 
@@ -113,7 +115,7 @@ mvn -pl agentscope-examples/agents/harness-examples/harness-quickstart exec:java
 
 **About `RuntimeContext`**: it is the identity carrier for the current `call()`. `sessionId` determines the storage path and log archive location; `userId` determines the default filesystem namespace (natural multi-tenant isolation). It is **not persisted** — it is only shared between hooks and tools within the current call.
 
-**Extension directions**: place `KNOWLEDGE.md`, `skills/*/SKILL.md`, or `subagents/*.md` in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add `.toolResultEviction(ToolResultEvictionConfig.defaults())` to enable large-result offloading. Use [Filesystem — Three Declarative Modes](./filesystem.md) to choose between **shared storage, sandbox, or local+shell** for where files and commands land. For isolated execution prefer `filesystem(SandboxFilesystemSpec)` (see [Sandbox](./sandbox/index.md)); `abstractFilesystem` is only an escape hatch for self-managed stores.
+**Extension directions**: place `KNOWLEDGE.md`, `skills/*/SKILL.md`, or `subagents/*.md` in the workspace to enable domain knowledge injection, skill loading, and subagent orchestration respectively. Add `.toolResultEviction(ToolResultEvictionConfig.defaults())` to enable large-result offloading. Use [Filesystem — Three Declarative Modes](/v1/en/docs/harness/filesystem) to choose between **shared storage, sandbox, or local+shell** for where files and commands land. For isolated execution prefer `filesystem(SandboxFilesystemSpec)` (see [Sandbox](/v1/en/docs/harness/sandbox/index)); `abstractFilesystem` is only an escape hatch for self-managed stores.
 
 ## Core Capabilities
 
@@ -125,7 +127,7 @@ Each capability answers **one problem → one component**:
 - **Large tool result offloading** — answers *what to do when a single tool call returns too much*. `ToolResultEvictionHook` writes oversized results to the filesystem and keeps only a head+tail preview with a placeholder in context; the agent can re-read on demand.
 - **Session persistence** — answers *how to preserve state across processes*. `SessionPersistenceHook` writes agent state to the workspace by `sessionId`; the next call automatically resumes from where it left off.
 - **Subagent orchestration** — answers *how to decompose complex tasks*. `SubagentsHook` injects `task` / `task_output` tools; the parent agent can delegate synchronously or in the background. Subagents can be declared via workspace spec files, programmatic specs, or custom factories.
-- **Pluggable filesystem** — answers *how to isolate and control the agent's environment*. All file tools go through `AbstractFilesystem`. Choose from [three declarative modes](./filesystem.md) (local+shell, composite+store, sandbox) or `abstractFilesystem` for self-managed stores. Multi-tenant / session-level isolation is handled via `RuntimeContext.userId` and `IsolationScope`.
+- **Pluggable filesystem** — answers *how to isolate and control the agent's environment*. All file tools go through `AbstractFilesystem`. Choose from [three declarative modes](/v1/en/docs/harness/filesystem) (local+shell, composite+store, sandbox) or `abstractFilesystem` for self-managed stores. Multi-tenant / session-level isolation is handled via `RuntimeContext.userId` and `IsolationScope`.
 
 Additionally, several infrastructure components support the above: `RuntimeContext` threads through the entire call, `MemoryMaintenanceScheduler` runs background merges and index maintenance, `AgentTraceHook` provides unified trace logging, and `AgentSkillRepository` auto-wires `SkillBox`.
 
@@ -143,22 +145,22 @@ The three pillars are connected by three shared objects: `WorkspaceManager` (who
 
 `HarnessAgent` is a thin wrapper around `Agent` + `StateModule`, internally holding a `ReActAgent delegate`. All capability injection happens in `HarnessAgent.Builder.build()`:
 
-- **Hook channel**: hooks are assembled in `priority` order and passed to `ReActAgent` (including `SandboxLifecycleHook` in sandbox mode, see [Architecture](./architecture.md))
+- **Hook channel**: hooks are assembled in `priority` order and passed to `ReActAgent` (including `SandboxLifecycleHook` in sandbox mode, see [Architecture](/v1/en/docs/harness/architecture))
 - **Toolkit channel**: `filesystem`, `memory_search`, `memory_get`, `session_search` are appended to the user's `Toolkit`; sandbox stores additionally add `shell_execute`; `SubagentsHook` itself registers `task` / `task_output`
 - **SkillBox channel**: `SkillBox` is auto-constructed from `workspace/skills/` or a custom `AgentSkillRepository`
 
 At the start of each `call()`, `bindRuntimeContext` distributes the current `RuntimeContext` to all hooks implementing `RuntimeContextAwareHook`, and restores state from `Session` as needed.
 
-> Detailed behavior, trigger timing, and sequence diagrams for each component are in [Architecture](./architecture.md).
+> Detailed behavior, trigger timing, and sequence diagrams for each component are in [Architecture](/v1/en/docs/harness/architecture).
 
 ## Related Pages
 
-- [Architecture](./architecture.md) — component definitions, lifecycle sequence diagrams, collaboration relationships
-- [Workspace](./workspace.md) — workspace directory structure and context injection
-- [Memory](./memory.md) — two-layer memory, compaction configuration, and full-text search
-- [Filesystem](./filesystem.md) — three declarative modes and the `AbstractFilesystem` hierarchy
-- [Sandbox](./sandbox/index.md) — isolated execution, sandbox state, and distributed options
-- [Subagent](./subagent.md) — subagent specs and orchestration
-- [Subagent Streaming](./streaming.md) — `stream()` mode child-agent event forwarding, `EventSource` fields, and multi-level nesting
-- [Tooling](./tool.md) — built-in tool reference
-- [Session](./session.md) — session persistence and state recovery
+- [Architecture](/v1/en/docs/harness/architecture) — component definitions, lifecycle sequence diagrams, collaboration relationships
+- [Workspace](/v1/en/docs/harness/workspace) — workspace directory structure and context injection
+- [Memory](/v1/en/docs/harness/memory) — two-layer memory, compaction configuration, and full-text search
+- [Filesystem](/v1/en/docs/harness/filesystem) — three declarative modes and the `AbstractFilesystem` hierarchy
+- [Sandbox](/v1/en/docs/harness/sandbox/index) — isolated execution, sandbox state, and distributed options
+- [Subagent](/v1/en/docs/harness/subagent) — subagent specs and orchestration
+- [Subagent Streaming](/v1/en/docs/harness/streaming) — `stream()` mode child-agent event forwarding, `EventSource` fields, and multi-level nesting
+- [Tooling](/v1/en/docs/harness/tool) — built-in tool reference
+- [Session](/v1/en/docs/harness/session) — session persistence and state recovery

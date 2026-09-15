@@ -1,4 +1,6 @@
-# Tooling
+---
+title: Tooling
+---
 
 ## Purpose
 
@@ -6,7 +8,7 @@ The Harness layer provides a default set of built-in tools sufficient to complet
 
 ## Registration Path
 
-```{mermaid}
+```mermaid
 graph LR
     Build[HarnessAgent.build] --> R1[FilesystemTool]
     Build --> R2[MemorySearchTool]
@@ -88,7 +90,7 @@ Only registered when the backend is `AbstractSandboxFilesystem` (which includes 
 |------|---------|------------|
 | `execute` | Calls backend `execute()`, returns stdout + exit code | `command`, `working_directory` (optional, prepended as `cd <dir> && <cmd>`), `timeout` (seconds, default 30) |
 
-> **Note**: `@Tool` has no explicit `name` set, so the tool name defaults to the method name, meaning the LLM sees `execute`. A future rename to `shell_execute` is a small refactor — see [roadmap](./roadmap.md).
+> **Note**: `@Tool` has no explicit `name` set, so the tool name defaults to the method name, meaning the LLM sees `execute`. A future rename to `shell_execute` is a small refactor — see [roadmap](/v1/en/docs/harness/overview).
 
 ```
 execute command="find . -name '*.java' | wc -l"
@@ -98,7 +100,7 @@ execute command="git status" working_directory="app"   # becomes: cd app && git 
 
 ## Related Pages
 
-- [Filesystem](./filesystem.md) — backend implementations and sandbox interface
-- [Memory](./memory.md) — FTS5 and the two-layer memory behind `memory_search` / `memory_get`
-- [Session](./session.md) — `WorkspaceSession` / `SessionTree` dual-track behind `session_*` tools
-- [Subagent](./subagent.md) — scheduling and lifecycle of `agent_spawn` / `agent_send` / `task_*`
+- [Filesystem](/v1/en/docs/harness/filesystem) — backend implementations and sandbox interface
+- [Memory](/v1/en/docs/harness/memory) — FTS5 and the two-layer memory behind `memory_search` / `memory_get`
+- [Session](/v1/en/docs/harness/session) — `WorkspaceSession` / `SessionTree` dual-track behind `session_*` tools
+- [Subagent](/v1/en/docs/harness/subagent) — scheduling and lifecycle of `agent_spawn` / `agent_send` / `task_*`

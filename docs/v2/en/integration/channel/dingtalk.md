@@ -1,4 +1,6 @@
-# DingTalk Channel
+---
+title: DingTalk Channel
+---
 
 `agentscope-extensions-channel-dingtalk` connects your Agent to DingTalk (钉钉) using the **Stream protocol** — a persistent WebSocket that receives bot messages in real time without exposing a public webhook endpoint.
 

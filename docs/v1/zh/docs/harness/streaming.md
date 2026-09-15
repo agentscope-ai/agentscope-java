@@ -1,6 +1,8 @@
-# 子 Agent 流式输出
+---
+title: 子 Agent 流式
+---
 
-> **前置阅读**：[流式输出基础用法](../task/streaming.md) — `stream()` API、`EventType`、`StreamOptions`、SSE 集成。本页专注 `HarnessAgent` 的**子 agent 事件转发**机制。
+> **前置阅读**：[流式输出基础用法](/v1/zh/docs/task/streaming) — `stream()` API、`EventType`、`StreamOptions`、SSE 集成。本页专注 `HarnessAgent` 的**子 agent 事件转发**机制。
 
 当父 `HarnessAgent.stream()` 期间调用了 `agent_spawn` 或 `agent_send`，子 agent 产生的**所有中间事件**会被实时注入父 `Flux<Event>`，并携带 `EventSource` 标识来源，无需任何额外配置。
 
@@ -215,6 +217,6 @@ events.onErrorResume(e -> {
 
 ## 相关文档
 
-- [流式输出基础](../task/streaming.md) — `stream()` API、`EventType`、`StreamOptions` 完整参数
-- [子 Agent（Subagent）](./subagent.md) — 子 agent 声明、`agent_spawn` / `agent_send` 参数
-- [架构（Architecture）](./architecture.md) — `SubagentEventBus`、Reactor Context 注入与 `StreamingHook` 时序
+- [流式输出基础](/v1/zh/docs/task/streaming) — `stream()` API、`EventType`、`StreamOptions` 完整参数
+- [子 Agent（Subagent）](/v1/zh/docs/harness/subagent) — 子 agent 声明、`agent_spawn` / `agent_send` 参数
+- [架构（Architecture）](/v1/zh/docs/harness/architecture) — `SubagentEventBus`、Reactor Context 注入与 `StreamingHook` 时序
