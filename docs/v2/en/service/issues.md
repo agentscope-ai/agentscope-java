@@ -1,10 +1,20 @@
 ---
-title: "Issues: deliver and accept work"
+title: "Create console Issues and assign tasks"
 ---
 
-[简体中文](/v2/zh/service/issues)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 An Issue holds a work objective, owner, discussion, execution records and deliverables. It remains traceable across failed executions and service restarts. Use Issues for work that must be completed and accepted, such as a report or a bug fix.
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/issues.png" alt="Issue list with priority, owner and status" />
+</Frame>
+
+Filter with **Active**, **In review** or **Done**, then compare priority, owner and status in each row. Open an issue title for its discussion and result. Start a new piece of work with **New issue** at the top right.
 
 ## Create work
 
@@ -51,4 +61,53 @@ In **Inbox → Review result**, inspect the latest result, files and child Issue
 
 When execution fails, inspect the node, Attempt and error before retrying. A new execution preserves earlier failure evidence. Completed work can be reopened when needed; archive it to organize history.
 
+## Discuss before assigning
+
+Use Chat to clarify a request, then use an Issue for ownership, collaboration and acceptance. The full conversation workflow follows; you can also create an Issue directly using the steps above.
+
+### Chat interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/chat.png" alt="Chat conversation and the Create issue action" />
+</Frame>
+
+Use the list on the left to reopen conversations. Read replies in **Conversation** and inspect execution events in **Events**. Use **Create issue** at the top right when the discussion is ready for an owner, a deliverable and acceptance criteria.
+
+### Start a conversation
+
+1. Open **WORK → Chat** and select **New chat**.
+2. Choose an Agent. The picker reflects conversation availability; capability messages explain why a runtime cannot currently participate.
+3. Send a small request such as “Describe your responsibilities before changing any files.”
+4. Continue in the same Chat. Refresh and reopen it from the list to confirm that history is available.
+
+The Agent uses its assigned execution environment. A path on your browser's computer is not automatically accessible to the Agent. Put required material in a Workspace the Agent can access.
+
+### Follow execution
+
+The conversation displays replies and tool events supplied by the runtime. For a confirmation request, review the operation and its arguments before deciding. If streaming disconnects, reopen the existing Chat and check its state before sending the same work again.
+
+A Chat is the user conversation; a Session holds its runtime context. Operators can use Session diagnostics when needed. Conversation persistence, recovery and tool confirmation depend on the selected Agent's capabilities.
+
+### Turn a discussion into an Issue
+
+Select **Create issue**, review the suggested title and description, and add the objective, deliverables and acceptance requirements. Choose an owner and sharing scope before creating it. The Issue records its Chat source; write the relevant conclusions into the description rather than assuming that collaborators can read the entire private conversation.
+
+For example, after discussing release-note structure, create an Issue with the input versions, expected output file and fact-checking requirements.
+
+### Organize history
+
+| Action | Effect |
+| --- | --- |
+| Pin / Unpin | Keep a frequent conversation easy to find |
+| Archive | Move it to Archived; restore it to continue |
+| Delete chat | Move it to Deleted; Restore chat remains available and execution diagnostics are retained |
+
+Archiving or deleting history is not a cancellation operation for running work.
+
+### If no reply appears
+
+Check Agent availability, model credentials, the Environment and Runtime Host status. Check your account and scope when an existing Chat is inaccessible. Use a new Chat to verify configuration changes. Give an administrator the Chat ID, time and visible error without sharing credentials.
+
 Next: [Team collaboration](/v2/en/service/team-collaboration) · [Execution reference](/v2/en/service/sessions).
+
+The [engineering case](/v2/en/service/cases/sdlc-team) ties GitHub requirements, base branch, tests, PR, and merge scope to one work item.
