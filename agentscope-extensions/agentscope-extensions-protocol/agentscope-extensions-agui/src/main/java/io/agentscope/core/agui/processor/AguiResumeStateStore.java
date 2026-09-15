@@ -29,6 +29,11 @@ import java.util.Map;
  * <p>Storage failures should be propagated to the caller. Treating a failure as missing state can
  * incorrectly reject a valid resume or allow concurrent runs for one thread.
  *
+ * <p>Thread and run identifiers must be non-null and non-blank, as defined by {@link
+ * String#isBlank()}. Implementations must validate identifiers before accessing or changing stored
+ * state. Valid identifiers are used unchanged, including their case and leading or trailing
+ * whitespace; they must not be trimmed or otherwise normalized.
+ *
  * <p>This is a synchronous SPI. The request processor schedules calls on blocking-capable workers;
  * implementations must support concurrent requests and use finite I/O timeouts. A run ID is also
  * its ownership token and must not be reused for a later execution while stale operations are
@@ -41,6 +46,8 @@ public interface AguiResumeStateStore {
      *
      * @param threadId the AG-UI thread ID
      * @return an immutable snapshot, or an empty map when the thread has no pending interrupts
+     * @throws NullPointerException if {@code threadId} is null
+     * @throws IllegalArgumentException if {@code threadId} is blank
      */
     Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId);
 
@@ -50,6 +57,8 @@ public interface AguiResumeStateStore {
      * @param threadId the AG-UI thread ID
      * @param runId the run attempting to claim the thread
      * @return the claim result, including the current owner when the claim is rejected
+     * @throws NullPointerException if {@code threadId} or {@code runId} is null
+     * @throws IllegalArgumentException if {@code threadId} or {@code runId} is blank
      */
     RunClaim claimRun(String threadId, String runId);
 
@@ -61,6 +70,8 @@ public interface AguiResumeStateStore {
      *
      * @param threadId the AG-UI thread ID
      * @param runId the run expected to own the thread
+     * @throws NullPointerException if {@code threadId} or {@code runId} is null
+     * @throws IllegalArgumentException if {@code threadId} or {@code runId} is blank
      */
     void releaseRun(String threadId, String runId);
 
@@ -73,6 +84,9 @@ public interface AguiResumeStateStore {
      * @param pendingInterrupts the complete new pending interrupt set
      * @return {@code true} when the state was replaced, or {@code false} when the run was not the
      *     current owner
+     * @throws NullPointerException if {@code threadId}, {@code runId}, or {@code pendingInterrupts}
+     *     is null
+     * @throws IllegalArgumentException if {@code threadId} or {@code runId} is blank
      */
     boolean replacePendingInterrupts(
             String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts);

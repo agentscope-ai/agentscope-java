@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agui.event.AguiEvent;
@@ -34,10 +35,87 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import redis.clients.jedis.UnifiedJedis;
 
 class RedisAguiResumeStateStoreTest {
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t", "\n"})
+    void invalidThreadIdIsRejectedBeforeRedisAccess(String threadId) {
+        UnifiedJedis jedis = mock(UnifiedJedis.class);
+        RedisAguiResumeStateStore store = new RedisAguiResumeStateStore(jedis, "test:");
+        List<Executable> calls =
+                List.of(
+                        () -> store.getPendingInterrupts(threadId),
+                        () -> store.claimRun(threadId, "owner"),
+                        () -> store.releaseRun(threadId, "owner"),
+                        () -> store.replacePendingInterrupts(threadId, "owner", Map.of()));
+        Class<? extends RuntimeException> expected =
+                threadId == null ? NullPointerException.class : IllegalArgumentException.class;
+        for (Executable call : calls) {
+            assertThrows(expected, call);
+            // No reads or writes can disturb any existing Redis owner or pending interrupts.
+            verifyNoInteractions(jedis);
+        }
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t", "\n"})
+    void invalidRunIdIsRejectedBeforeRedisAccess(String runId) {
+        UnifiedJedis jedis = mock(UnifiedJedis.class);
+        RedisAguiResumeStateStore store = new RedisAguiResumeStateStore(jedis, "test:");
+        List<Executable> calls =
+                List.of(
+                        () -> store.claimRun("thread", runId),
+                        () -> store.releaseRun("thread", runId),
+                        () -> store.replacePendingInterrupts("thread", runId, Map.of()));
+        Class<? extends RuntimeException> expected =
+                runId == null ? NullPointerException.class : IllegalArgumentException.class;
+        for (Executable call : calls) {
+            assertThrows(expected, call);
+            verifyNoInteractions(jedis);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"thread", " thread "})
+    void validThreadIdIsUsedWithoutNormalization(String threadId) {
+        assertRawIdentifiers(threadId, "owner");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"owner", " owner "})
+    void validRunIdIsUsedWithoutNormalization(String runId) {
+        assertRawIdentifiers("thread", runId);
+    }
+
+    private static void assertRawIdentifiers(String threadId, String runId) {
+        UnifiedJedis jedis = mock(UnifiedJedis.class);
+        when(jedis.eval(anyString(), anyList(), anyList())).thenReturn(null, 1L, 1L);
+        RedisAguiResumeStateStore store = new RedisAguiResumeStateStore(jedis, "test:");
+        assertTrue(store.getPendingInterrupts(threadId).isEmpty());
+        assertTrue(store.claimRun(threadId, runId).claimed());
+        assertTrue(store.replacePendingInterrupts(threadId, runId, Map.of()));
+        store.releaseRun(threadId, runId);
+        verify(jedis).hget("test:" + threadId, "pendingInterrupts");
+        verify(jedis, times(2))
+                .eval(
+                        anyString(),
+                        eq(List.of("test:" + threadId)),
+                        eq(List.of("activeRunId", runId)));
+        verify(jedis)
+                .eval(
+                        anyString(),
+                        eq(List.of("test:" + threadId)),
+                        eq(List.of("activeRunId", runId, "pendingInterrupts", "1", "")));
+    }
 
     @Test
     void readsPendingInterruptsFromSharedState() {

@@ -145,17 +145,6 @@ class AguiResumeLifecycleTest {
             assertEquals(0, executed.get());
             assertEquals(PENDING, store.getPendingInterrupts("T"));
             AguiResumeStateStore.RunClaim next = store.claimRun("T", "B");
-            System.out.println(
-                    "C01: acquired="
-                            + acquired.get()
-                            + ", validation=contract-error, consumed="
-                            + events.size()
-                            + ", disposed="
-                            + subscriber.isDisposed()
-                            + ", cleanup="
-                            + cleanupObserved
-                            + ", nextClaim="
-                            + next);
             assertTrue(
                     next.claimed(),
                     "after confirmed claim and validation error, zero-demand A"

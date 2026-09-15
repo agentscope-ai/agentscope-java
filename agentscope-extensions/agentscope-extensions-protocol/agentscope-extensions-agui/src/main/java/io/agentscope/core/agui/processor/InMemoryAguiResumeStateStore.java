@@ -30,14 +30,15 @@ public final class InMemoryAguiResumeStateStore implements AguiResumeStateStore 
 
     @Override
     public Map<String, AguiEvent.Interrupt> getPendingInterrupts(String threadId) {
-        ThreadState state = states.get(Objects.requireNonNull(threadId, "threadId"));
+        requireIdentifier(threadId, "threadId");
+        ThreadState state = states.get(threadId);
         return state != null ? state.pendingInterrupts() : Map.of();
     }
 
     @Override
     public RunClaim claimRun(String threadId, String runId) {
-        Objects.requireNonNull(threadId, "threadId");
-        Objects.requireNonNull(runId, "runId");
+        requireIdentifier(threadId, "threadId");
+        requireIdentifier(runId, "runId");
         AtomicReference<RunClaim> result = new AtomicReference<>();
         states.compute(
                 threadId,
@@ -55,8 +56,8 @@ public final class InMemoryAguiResumeStateStore implements AguiResumeStateStore 
 
     @Override
     public void releaseRun(String threadId, String runId) {
-        Objects.requireNonNull(threadId, "threadId");
-        Objects.requireNonNull(runId, "runId");
+        requireIdentifier(threadId, "threadId");
+        requireIdentifier(runId, "runId");
         states.computeIfPresent(
                 threadId,
                 (ignored, state) -> {
@@ -73,8 +74,8 @@ public final class InMemoryAguiResumeStateStore implements AguiResumeStateStore 
     @Override
     public boolean replacePendingInterrupts(
             String threadId, String runId, Map<String, AguiEvent.Interrupt> pendingInterrupts) {
-        Objects.requireNonNull(threadId, "threadId");
-        Objects.requireNonNull(runId, "runId");
+        requireIdentifier(threadId, "threadId");
+        requireIdentifier(runId, "runId");
         Map<String, AguiEvent.Interrupt> snapshot =
                 Map.copyOf(Objects.requireNonNull(pendingInterrupts, "pendingInterrupts"));
         AtomicBoolean replaced = new AtomicBoolean(false);
@@ -88,6 +89,13 @@ public final class InMemoryAguiResumeStateStore implements AguiResumeStateStore 
                     return new ThreadState(state.activeRunId(), snapshot);
                 });
         return replaced.get();
+    }
+
+    private static void requireIdentifier(String value, String name) {
+        Objects.requireNonNull(value, name);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
     }
 
     private record ThreadState(
