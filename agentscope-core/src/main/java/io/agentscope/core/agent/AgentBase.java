@@ -243,6 +243,8 @@ public abstract class AgentBase implements Agent {
     public static final String SHUTDOWN_REQUEST_ID_KEY =
             "io.agentscope.core.agent.AgentBase.shutdownRequestId";
 
+    private record PreparedExecution(Object scope) {}
+
     /**
      * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
      * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
@@ -302,24 +304,39 @@ public abstract class AgentBase implements Agent {
             RuntimeContext rc,
             Function<List<Msg>, Mono<Msg>> doCallFn,
             String requestId) {
-        Object scope = beforeAgentExecution(msgs, rc);
-        // Bind this call's resolved per-session state to the tracked shutdown request so graceful
-        // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
-        // no-arg "most-recently-active" accessors.
-        GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
-        Mono<Msg> body =
-                TracerRegistry.get()
-                        .callAgent(
-                                this,
-                                msgs,
-                                () ->
-                                        notifyPreCall(msgs, scope)
-                                                .flatMap(doCallFn)
-                                                .flatMap(this::notifyPostCall)
-                                                .onErrorResume(
-                                                        createErrorHandler(
-                                                                msgs.toArray(new Msg[0]))));
-        return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+        return Mono.fromCallable(
+                        () -> {
+                            Object scope = beforeAgentExecution(msgs, rc);
+                            // Bind this call's resolved per-session state to the tracked shutdown
+                            // request so graceful shutdown interrupts / saves the exact (userId,
+                            // sessionId) session rather than the agent's no-arg
+                            // "most-recently-active" accessors.
+                            GracefulShutdownManager.getInstance()
+                                    .bindRequestState(requestId, stateForCall(scope));
+                            return new PreparedExecution(scope);
+                        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(
+                        prepared -> {
+                            Object scope = prepared.scope();
+                            Mono<Msg> body =
+                                    TracerRegistry.get()
+                                            .callAgent(
+                                                    this,
+                                                    msgs,
+                                                    () ->
+                                                            notifyPreCall(msgs, scope)
+                                                                    .flatMap(doCallFn)
+                                                                    .flatMap(this::notifyPostCall)
+                                                                    .onErrorResume(
+                                                                            createErrorHandler(
+                                                                                    msgs.toArray(
+                                                                                            new Msg
+                                                                                                    [0]))));
+                            return scope == null
+                                    ? body
+                                    : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+                        });
     }
 
     /**
