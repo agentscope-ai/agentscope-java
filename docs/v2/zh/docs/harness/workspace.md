@@ -383,7 +383,7 @@ workspace/
 skills/code-reviewer/
 ├── SKILL.md               ← YAML frontmatter (name + description) + 指令
 ├── references/style-guide.md   ← 可选，agent 按需 read_file
-└── scripts/run-checks.sh       ← 可选，agent 通过 execute_shell_command 调
+└── scripts/run-checks.sh       ← 可选，agent 通过 execute 调
 ```
 
 注册路径有四层（低 → 高优先级）：
