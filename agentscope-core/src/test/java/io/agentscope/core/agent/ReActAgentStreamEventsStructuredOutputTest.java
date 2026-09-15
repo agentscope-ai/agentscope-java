@@ -280,4 +280,47 @@ class ReActAgentStreamEventsStructuredOutputTest {
                 called.getStructuredData(false),
                 "streamEvents(...) should yield the same structured result as call(...)");
     }
+
+    @Test
+    void msgAndStringConvenienceOverloadsYieldStructuredResults() {
+        ReActAgent agent = agent(fallbackModel());
+
+        List<AgentEvent> msgClassEvents =
+                agent.streamEvents(userMsg(), WeatherResponse.class, RuntimeContext.empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(msgClassEvents);
+        assertWeather(lastResult(msgClassEvents).getResult());
+
+        List<AgentEvent> msgSchemaEvents =
+                agent.streamEvents(userMsg(), weatherSchema(), RuntimeContext.empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(msgSchemaEvents);
+        assertEquals(
+                "Sunny",
+                lastResult(msgSchemaEvents).getResult().getStructuredData(false).get("condition"));
+
+        List<AgentEvent> textClassEvents =
+                agent.streamEvents(
+                                "What's the weather in San Francisco?",
+                                WeatherResponse.class,
+                                RuntimeContext.empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(textClassEvents);
+        assertWeather(lastResult(textClassEvents).getResult());
+
+        List<AgentEvent> textSchemaEvents =
+                agent.streamEvents(
+                                "What's the weather in San Francisco?",
+                                weatherSchema(),
+                                RuntimeContext.empty())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(textSchemaEvents);
+        assertTrue(
+                lastResult(textSchemaEvents).getResult().hasStructuredData(),
+                "String + JsonNode overload should yield a structured result");
+    }
 }
