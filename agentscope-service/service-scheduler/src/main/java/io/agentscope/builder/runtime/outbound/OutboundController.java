@@ -37,7 +37,9 @@ import reactor.core.publisher.Mono;
  *   "agentId": "support", "markdown": "..." }
  * </pre>
  *
- * <p>When {@code agentId} is set on the payload, the caller must hold at least {@link Tier#RUN}
+ * <p>This primitive is restricted to the internal service identity. Console users publish
+ * through authorized work subscriptions; the 202 response only confirms local submission.
+ * When {@code agentId} is set on the payload, the caller must hold at least {@link Tier#RUN}
  * on that agent — otherwise the request is rejected with 403 before reaching the channel.
  * {@link OutboundService} performs a second, channel-routing-based check that prevents one
  * agent from posting through a binding owned by a different agent.
@@ -59,6 +61,17 @@ public class OutboundController {
             @RequestBody OutboundRequest req, Authentication auth) {
         return Mono.fromRunnable(
                         () -> {
+                            if (auth == null
+                                    || auth.getAuthorities().stream()
+                                            .noneMatch(
+                                                    a ->
+                                                            a.getAuthority()
+                                                                    .equals("ROLE_INTERNAL"))) {
+                                throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "Use authorized Channel work subscriptions for outbound"
+                                                + " delivery");
+                            }
                             String agentId = req != null ? req.agentId() : null;
                             if (agentId != null && !agentId.isBlank()) {
                                 String userId = (String) auth.getPrincipal();
@@ -66,7 +79,9 @@ public class OutboundController {
                             }
                             outboundService.send(req);
                         })
-                .thenReturn(ResponseEntity.ok(Map.<String, Object>of("status", "ok")))
+                .thenReturn(
+                        ResponseEntity.accepted()
+                                .body(Map.<String, Object>of("status", "submitted")))
                 .onErrorResume(
                         ResponseStatusException.class,
                         e ->

@@ -17,7 +17,7 @@ package controller
 // ConfigDistributor pushes config updates to connected data plane instances.
 // Nil-safe: callers check for nil before calling.
 type ConfigDistributor interface {
-	PushConfig(namespace, agentName string, configType int32, resources interface{}) error
+	PushConfig(tenant, namespace, agentName string, configType int32, resources interface{}) error
 	// ForgetAgent drops all cached config snapshots for a deleted agent so that
 	// versions/nonces do not leak or get reused for a recreated agent.
 	ForgetAgent(namespace, agentName string)

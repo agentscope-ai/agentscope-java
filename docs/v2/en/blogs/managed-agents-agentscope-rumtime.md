@@ -1,5 +1,5 @@
 ---
-hide-toc: true
+title: Managed Agents on the AgentScope 2.0 Runtime
 ---
 
 Managed Agents let agents run in a cloud environment: on the one hand, core stages such as inference, orchestration, and Harness management are uniformly hosted by the cloud, so architecture stability and runtime quality are guaranteed by the platform; on the other hand, long-running tasks no longer depend on the local device staying online—even if a personal computer is shut down, tasks can keep running in the cloud.
@@ -70,29 +70,18 @@ Thus, the complete form of Managed Agents is: a SaaS Control Plane responsible f
 
 1. **Control Plane**
 
-<!-- 这是一张图片，ocr 内容为：CONTROL PLANE ARCHITECTURE CLIENTS CLI CURL/SDK CONSOLE API GATEWAY ROUTE BY APL SURFACE CONTROL APIS DATA APLS CONTROL PLANE DATA PLANE DATA PLANE APLS(COLLAPSED) DEFINITIONS AGENT/ENV SESSION CREATE SESSIONS .EVENTS. SSE +MEMORY/VAULT SKILLSMCP VERSIONED AGENT HARNESS LOOP - STATE RESTORE READ AGENT/ENV FROM CP ENVIRONMENT ACL/SHARES RESOURCES.TOOLS DATA PLANE APIS CONTROL PLANE API GATEWAY AGENT VERSIONS,ENVIRONMENTS,MEMORY/ ALSO PUBLIC(SESSIONS/EVENTS/SSE); FRONT DOOR FOR CLI/ CONSOLE / CURL;ROUTES VAULT/ACL,SESSION CREATE. COLLAPSED HERE-SEE DIAGRAM 2. CONTROL VS DATA APLS. -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785141394899-a68e0d3b-e16b-44be-9a29-4e61f163463f.png)
 
 2. **Data Plane**
 
-<!-- 这是一张图片，ocr 内容为：DATA PLANE ARCHITECTURE HANDS-TOOL EXECUTION BOUNDARY BRAIN- REASONING & ORCHESTRATION CLOUD MANAGED SANDBOX SESSION/EVENTS API TYPESANDBOX .BRAIN INITIATES E2B/FC API USER.MESSAGE . INTERRUPT/HITL CLOUD SANDBOX E2BFILESYSTEMSPEC ISOLATED FS CREATE /TIMEOUT SESSIONTURNRUNNER TYPESANDBOX FS+SHELL CALLS WORKSPACE ROOT TURN LEASE `STATUS - BUILD/ CACHE BRAIN INITIATES AGENTSCOPE KERNEL MODEL HARNESSAGENT TOOL DECISIONS REACT/STREAMEVENTS SELF-HOSTED WORKER HOOKS.COMPACTION TEXT/THINKING TYPESELF_HOSTED OUTBOUND ONLY NO BRAIN INGRESS TYPE-SELF_HOSTED SCHEMAONLYTOOL WORK QUEUE OUTBOUND WORKER EVENTLOG AGENTSTATESTORE POLL/ACK/HEARTBEAT SUSPEND TURN RESTORE BY SESSION AGENT. PERSISTED AGENT.TOOL_USE CUSTOMER WORKER EXECUTE FS/SHELL POST USER.TOOL_RESULT.RESUME BRAIN CONTROL-PLANE REFS AGENT VERSION `ENVIRONMENT MEMORY / VAULT PATH CONTRAST SELF-HOSTED WORKER CLOUD MANAGED SANDBOX ENVIRONMENT TYPE-SELF HOSTED.TOOLS ARE SCHEMA-ONLY ON BRAIN;WORKER POLLS, ENVIRONMENT TYPE-SANDBOX.BRAIN CALLS E2B-COMPATIBLE APLS;PLATFORM OWNS SANDBOX LIFECYCLE.NO CUSTOMER WORKER. EXECUTES,POSTS USER.TOOL_RESULT TO RESUME. -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1785141716807-8d15ef5f-4d56-4c24-958a-caf553476262.png)
 
 #### Core Data Flow
 
 The client sends a task request to the Managed Data Plane (Brain) through the (session/event) interface. The Brain restores the Agent from shared state and then executes the entire reasoning and orchestration flow. If there are tool calls in the middle, the Brain routes the tool-call request to the Worker according to the Environment configuration (which may be a managed sandbox environment, a user-managed sandbox environment, etc.).
 
-<!-- 这是一个文本绘图，源码为：flowchart LR
-  C[Client / Console] -->|Session + Events + SSE| DP[Managed Data Plane]
-  CP[Control Plane<br/>Agent / Environment / ACL] -->|versioned references| DP
-  DP <--> DB[(JDBC<br/>events / state / leases)]
-  DP --> B[HarnessAgent Brain]
-  B --> M[Model]
-  B -->|local tools| L[Brain host FS / shell]
-  B -->|E2B-compatible API| S[Cloud Sandbox]
-  B -->|tool schema + queue| Q[Self-hosted Work Queue]
-  W[Customer Worker] -->|outbound poll / result| Q
-  W --> H[Customer-managed FS / sandbox] -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/cee93bfbfdd56bdf1526682edd6df433.svg)
 
 Combining the architecture analysis and implementation above, the whole system can be read as four layers:
@@ -166,21 +155,6 @@ An existing Session does not support switching the worker execution environment 
 
 Local mode is best for development and debugging. Session, Harness inference, model requests, and tool execution are all initiated by the Managed cluster, and files and shell directly land in the local environment visible to the Brain process.
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant LocalFS as Local_FS_Shell
-
-  Client->>API: POST sessions + user.message
-  API->>Brain: turn lease + build HarnessAgent
-  Brain->>Model: stream / tool decisions
-  Model-->>Brain: tool_use / text
-  Brain->>LocalFS: read_file / shell on host namespace
-  LocalFS-->>Brain: tool_result
-  Brain-->>API: agent.* + session.status_idle
-  API-->>Client: SSE / events -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/1216077e52ed0c4fd17a788f16bea26f.svg)
 
 In **Local** mode, the Environment `type=local`: the filesystem and (if enabled) shell are completed inside the host namespace of the managed cluster, there is no independent Hands queue, and no cloud sandbox is called. Suitable for development debugging and trusted internal networks.
@@ -189,21 +163,6 @@ In **Local** mode, the Environment `type=local`: the filesystem and (if enabled)
 
 Cloud Sandbox keeps the hosted Brain but moves files and shell into an isolated sandbox. Harness inference, model requests, and the initiator of tool calls still sit in the Managed cluster; actual command execution and file I/O happen in the FC Sandbox / E2B-compatible environment.
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant E2B as FC_Sandbox_E2B
-
-  Client->>API: user.message
-  API->>Brain: HarnessAgent + type=sandbox
-  Brain->>Model: reasoning
-  Model-->>Brain: tool_use
-  Note over Brain,E2B: Brain initiates sandbox lifecycle and tool calls
-  Brain->>E2B: E2B-compatible API FS/shell
-  E2B-->>Brain: tool_result
-  Brain-->>Client: SSE agent.* / status_idle -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/e286ba42310643e8e1a64e3db8b2417c.svg)
 
 The Agent requests a container through the E2B client protocol and executes shell / FS operations inside it. **The Brain actively initiates the calls; the Worker is not involved.** If you use an Aliyun FC Sandbox compatible with the E2B protocol, you need to prepare the service address, template, and API Key first.
@@ -214,25 +173,6 @@ The managed boundary of Cloud Sandbox can be broken down into three actions: **c
 
 Self-hosted moves Hands further into the customer environment. The Brain still completes Harness inference in the Managed cluster, but tool tasks enter a queue and are actively polled outbound by the customer-side Worker, which manages the local workspace or sandbox and returns results to the Brain. Throughout the process, the Brain does not need to enter the customer network.
 
-<!-- 这是一个文本绘图，源码为：sequenceDiagram
-  participant Client as Client
-  participant API as Managed_API
-  participant Brain as HarnessAgent_Brain
-  participant Model as Model
-  participant Q as WorkQueue
-  participant Worker as Customer_Worker
-
-  Client->>API: user.message
-  API->>Brain: type=self_hosted
-  Brain->>Model: reasoning
-  Model-->>Brain: tool_use
-  Brain->>Q: enqueue work + persist agent.tool_use
-  Brain-->>Client: requires_action / suspended
-  Worker->>Q: poll with EnvKey
-  Worker->>Worker: work directory + local tool exec
-  Worker->>API: user.tool_result
-  API->>Brain: resume turn
-  Brain-->>Client: agent.message + status_idle -->
 ![](https://intranetproxy.alipay.com/skylark/lark/__mermaid_v3/e2b1fc8dcc2e2f7c0aef1980ee91a93c.svg)
 
 In Self-hosted mode, the Brain **disables local shell/FS execution**, registering the relevant tools as externalized schema; once the model emits a `tool_use`, the event is persisted and the turn enters pending/queued, and the user-side Worker holds the Environment Key to **outbound** poll → manage the local workspace and execute, or connect to the customer’s own sandbox → return a `user.tool_result` to resume. This is exactly the opposite of Cloud Sandbox, where “the Brain actively calls the sandbox API”: **the execution initiative is on the user side; whether and how to manage the sandbox is also decided by the customer-side implementation.**
@@ -431,4 +371,3 @@ AgentScope 2.0 is positioned for enterprise-grade distributed scenarios. It can 
 + Docs: [https://java.agentscope.io](https://java.agentscope.io)
 + GitHub: [https://github.com/agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
 + AgentScope Builder: [https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service)
-

@@ -21,6 +21,7 @@ import (
 )
 
 func (s *Server) registerAuth(r gin.IRouter) {
+	s.registerAccountManagement(r)
 	r.POST("/api/auth/login", s.login)
 	r.GET("/api/auth/me", s.me)
 	r.GET("/api/user/profile", s.profile)
@@ -38,24 +39,42 @@ func (s *Server) login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password required"})
 		return
 	}
-	var userID, hash, rolesCSV string
+	var userID, hash, rolesCSV, username string
+	var disabled bool
+	var version int64
 	err := s.db.Pool.QueryRow(c.Request.Context(),
-		`SELECT user_id, password_hash, roles_csv FROM users WHERE LOWER(username)=LOWER($1)`,
-		req.Username).Scan(&userID, &hash, &rolesCSV)
-	if err != nil || !checkPassword(hash, req.Password) {
+		`SELECT user_id, password_hash, roles_csv, username, disabled, auth_version FROM users WHERE LOWER(username)=LOWER($1)`,
+		req.Username).Scan(&userID, &hash, &rolesCSV, &username, &disabled, &version)
+	if err != nil || disabled || !checkPassword(hash, req.Password) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 	roles := splitRoles(rolesCSV)
-	token, err := issueToken(s.cfg.JWTSecret, userID, req.Username, roles)
+	token, err := issueAccountToken(s.cfg.JWTSecret, userID, username, roles, version)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	claims, err := s.VerifyToken(token)
+	if err == nil {
+		_, err = s.db.Pool.Exec(c.Request.Context(), `INSERT INTO account_login_sessions(id,user_id,created_at,expires_at,user_agent) VALUES($1,$2,$3,$4,$5)`, sessionFingerprint(token), userID, claims.IssuedAt.Time, claims.ExpiresAt.Time, c.Request.UserAgent())
+	}
+	if err == nil {
+		_, err = s.VerifyAccountToken(c.Request.Context(), token)
+	}
+	if err != nil {
+		writeErr(c, 500, "Unable to create login session")
+		return
+	}
+	_, err = s.db.Pool.Exec(c.Request.Context(), `UPDATE account_login_sessions SET user_agent=$2 WHERE id=$1`, sessionFingerprint(token), c.Request.UserAgent())
+	if err != nil {
+		writeErr(c, 500, "Unable to create login session")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"token":    token,
 		"userId":   userID,
-		"username": req.Username,
+		"username": username,
 		"roles":    roles,
 	})
 }
@@ -71,13 +90,7 @@ func (s *Server) me(c *gin.Context) {
 	})
 }
 
-func (s *Server) profile(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"userId":   currentUserID(c),
-		"username": currentUsername(c),
-		"roles":    currentRoles(c),
-	})
-}
+func (s *Server) profile(c *gin.Context) { s.respondAccount(c, currentUserID(c)) }
 
 type changePasswordReq struct {
 	CurrentPassword string `json:"currentPassword"`
@@ -86,7 +99,7 @@ type changePasswordReq struct {
 
 func (s *Server) changePassword(c *gin.Context) {
 	var req changePasswordReq
-	if err := c.ShouldBindJSON(&req); err != nil || req.NewPassword == "" {
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.NewPassword) < 6 {
 		c.String(http.StatusBadRequest, "currentPassword and newPassword required")
 		return
 	}
@@ -103,10 +116,25 @@ func (s *Server) changePassword(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	_, err = s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE users SET password_hash=$1 WHERE user_id=$2`, newHash, userID)
+	tx, err := s.db.Pool.Begin(c.Request.Context())
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, "Unable to change password")
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	_, err = tx.Exec(c.Request.Context(), `UPDATE users SET password_hash=$1,version=version+1,legacy_sessions_closed=true WHERE user_id=$2`, newHash, userID)
+	if err == nil {
+		_, err = tx.Exec(c.Request.Context(), `UPDATE account_login_sessions SET revoked_at=now() WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`, userID, requestSession(c))
+	}
+	if err == nil {
+		_, err = tx.Exec(c.Request.Context(), `INSERT INTO account_access_audit(user_id,actor,action) VALUES($1,$1,'password.changed')`, userID)
+	}
+	if err != nil {
+		writeErr(c, 500, "Unable to change password")
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
+		writeErr(c, 500, "Unable to change password")
 		return
 	}
 	c.Status(http.StatusNoContent)

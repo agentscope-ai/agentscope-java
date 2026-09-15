@@ -40,8 +40,6 @@ import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.TaskRepository;
-import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -614,8 +612,6 @@ public final class ClawBootstrap implements AutoCloseable {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
-            SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
             OutboundTool outboundTool = new OutboundTool(channelMgr);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----
@@ -639,7 +635,10 @@ public final class ClawBootstrap implements AutoCloseable {
                 if (model != null) {
                     b.model(model);
                 }
-                b.externalSubagentTool(sessionsTool);
+                java.util.concurrent.atomic.AtomicReference<HarnessAgent> owner =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+                b.externalSubagentTool(
+                        new SessionsTool(sam, () -> owner.get().getTaskRepository()));
 
                 // Pre-populate this agent's toolkit with the outbound-send tool so the agent can
                 // proactively push messages into any registered IM channel. Done before the
@@ -656,7 +655,9 @@ public final class ClawBootstrap implements AutoCloseable {
                     gc.accept(b);
                 }
 
-                built.put(id, b.build());
+                HarnessAgent builtAgent = b.build();
+                owner.set(builtAgent);
+                built.put(id, builtAgent);
             }
 
             if (!built.containsKey(main)) {

@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: AgentScope Java 1.1 · Harness
 ---
-
-# First Harness Framework Release — Bringing OpenClaw's "Continuous Evolution" Experience Inside Enterprise-Grade Security Boundaries
 
 Picking up from where I left off, in a previous article I took a deep dive into OpenClaw and the Harness Engineering practices behind it, and sketched out a "Harness Framework" to explain how that philosophy could be applied to enterprise agent development.
 
@@ -47,7 +45,7 @@ This is not a new idea — OpenClaw and Hermes both discovered in practice that 
 
 In actual operation, before each reasoning turn, `WorkspaceContextHook` automatically injects key files such as `AGENTS.md`, `MEMORY.md`, and `knowledge/` into the system prompt, ensuring the agent's persona and knowledge are fully presented in every turn. After the agent run ends, `MemoryFlushHook` extracts new facts from the conversation and writes them to the memory file; then the background `MemoryConsolidator` periodically merges the running log into refined long-term memory. The workspace evolves continuously through conversations, and every run "knows more" about the user and task than the last.
 
-<!-- 这是一张图片，ocr 内容为： -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1777338565508-2d485103-d3b6-4c8f-830b-7ee6e783cda3.png)
 
 ### Core Pillar 2: AbstractFilesystem Lets the Workspace Run in Any Environment
@@ -56,7 +54,7 @@ The workspace idea is appealing, but it has a practical constraint: local disk d
 
 AgentScope Harness solves this problem with the **AbstractFilesystem** abstraction layer. For the upper layer, the agent only needs to call unified interfaces such as `read/write/ls/grep`, without caring where the "files" actually land. For the lower layer, it can be adapted to local disk, remote object storage (OSS), KV databases (Redis), sandbox filesystems, or any other medium, and can even route different paths to different backends through `CompositeFilesystem`.
 
-<!-- 这是一张图片，ocr 内容为：ABSTRACTFILESYTEM 继承 继承 继承 继承 继承 SANDBOXFILESYSTEM REMOTEFILESYSTEM LOCALFILESYSTEM LOCALFILESYSTEMWITHSHELL COMPOSITEFILESYSTEM -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218615934-eec5c4c7-4a9c-44c2-84cb-56688f64d7f0.png)
 
 As shown in the figure, based on the AbstractFilesystem interface, AgentScope provides three built-in extension implementations, corresponding to three usage modes.
@@ -66,7 +64,7 @@ As shown in the figure, based on the AbstractFilesystem interface, AgentScope pr
 
 In AgentScope 1.1, workspace is the core abstraction of the agent, and AbstractFilesystem is the physical implementation carrier of the workspace. All file operations, command execution, and memory management tools use AbstractFilesystem as the standard operation entry.
 
-<!-- 这是一张图片，ocr 内容为：FILESYSTEMTOOL SHELLEXECUTETOOL MEMORY 命令 记忆 读写 搜索 执行 管理 WORKSPACE BASED ON ABSTRACTFILESYSTEM -->
+
 ![](https://intranetproxy.alipay.com/skylark/lark/0/2026/png/54037/1778218989236-658ff65d-94ae-42e6-a004-4fe7b223a52a.png)
 
 
@@ -366,7 +364,7 @@ In sandbox mode, skill files are synchronized into the sandbox along with worksp
 
 AgentScope Java 1.1 converges the set of capabilities everyone wants from Harness Engineering but is hardest to assemble on your own into **`HarnessAgent` + workspace conventions + pluggable filesystem + hook pipeline**: in personal scenarios, it is a memory-enabled, compaction-enabled, subtask-enabled enhanced ReAct Agent; in enterprise scenarios, it is infrastructure that turns **isolation, multi-tenancy, distributed memory, and subagent orchestration** into configuration items.
 
-If you are evaluating the evolution from a personal-assistant prototype to a production-ready enterprise agent, we recommend starting with the quick start in the [Harness Overview](../overview.md), then choosing a declarative mode from [Filesystem](../filesystem.md), and then enabling compaction, sandbox, and subagents as needed — every step has corresponding documentation and example modules to follow, without having to invent a "workspace-as-truth" runtime from scratch.
+If you are evaluating the evolution from a personal-assistant prototype to a production-ready enterprise agent, we recommend starting with the quick start in the [Harness Overview](/v1/en/docs/harness/overview), then choosing a declarative mode from [Filesystem](/v1/en/docs/harness/filesystem), and then enabling compaction, sandbox, and subagents as needed — every step has corresponding documentation and example modules to follow, without having to invent a "workspace-as-truth" runtime from scratch.
 
 
 

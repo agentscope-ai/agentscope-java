@@ -1,6 +1,6 @@
 ---
-title: "记忆（Memory）"
-description: "双层长期记忆、对话压缩、大工具结果卸载，prompt 与触发策略均可定制"
+title: 记忆（Memory）
+description: 双层长期记忆、对话压缩、大工具结果卸载，prompt 与触发策略均可定制
 ---
 
 ## 作用
@@ -30,7 +30,7 @@ description: "双层长期记忆、对话压缩、大工具结果卸载，prompt
 
 ## 两层记忆是怎么工作的
 
-```{mermaid}
+```mermaid
 graph LR
     Conv["对话 messages"]
     Conv -->|每次调用结束 / 可节流| Flush["Flush LLM 调用"]
@@ -268,6 +268,6 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [工作区](./workspace.md) — `MEMORY.md` / `memory/` 在工作区的位置
-- [Context](../building-blocks/context.md) — 永不压缩的对话日志 `*.log.jsonl`
-- [架构](./architecture.md) — 长会话事实如何沉淀进 `MEMORY.md`
+- [工作区](/v2/zh/docs/harness/workspace) — `MEMORY.md` / `memory/` 在工作区的位置
+- [Context](/v2/zh/docs/building-blocks/context) — 永不压缩的对话日志 `*.log.jsonl`
+- [架构](/v2/zh/docs/harness/architecture) — 长会话事实如何沉淀进 `MEMORY.md`

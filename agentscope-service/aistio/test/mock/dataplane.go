@@ -42,9 +42,9 @@ type MockDataPlane struct {
 	AbortCalls     []string
 
 	// Fault injection.
-	fault501       map[string]bool // capability name -> return 501 on related endpoints
+	fault501         map[string]bool // capability name -> return 501 on related endpoints
 	fault409Compress bool
-	stale          bool // health returns 503 (simulates no heartbeat)
+	stale            bool // health returns 503 (simulates no heartbeat)
 
 	mu sync.Mutex
 }

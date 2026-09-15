@@ -30,6 +30,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.extensions.aistio.FrameworkAdapter;
 import io.agentscope.extensions.aistio.StubAgent;
+import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.model.ContextSnapshot;
 import io.agentscope.extensions.aistio.model.MessagePage;
 import io.agentscope.extensions.aistio.model.SessionEvent;
@@ -71,6 +72,32 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void agentTaskRegistersTheAssignedRuntimeSessionOnly() {
+        AgentScopeAdapter adapter = new AgentScopeAdapter();
+        adapter.attach(agentWith(List.of()), event -> {});
+        adapter.setAgentTaskStarter(assignment -> Mono.empty());
+        AgentTaskAssignment assignment =
+                new AgentTaskAssignment(
+                        "attempt-1",
+                        "task-1",
+                        "run-1",
+                        "node-1",
+                        1,
+                        "start",
+                        "/context",
+                        "task-token",
+                        "attempt-token",
+                        "session-1",
+                        new byte[0],
+                        1);
+
+        adapter.handleAgentTask(assignment).block();
+
+        assertTrue(adapter.isKnownSession("session-1"));
+        assertFalse(adapter.isKnownSession("task-1"));
+    }
+
+    @Test
     void advertisesContextMessageCommandAbortAndTaskCapabilities() {
         assertEquals(
                 java.util.Set.of(
@@ -79,7 +106,9 @@ class AgentScopeAdapterTest {
                         FrameworkAdapter.CAP_SESSION_COMMAND,
                         FrameworkAdapter.CAP_SESSION_ABORT,
                         FrameworkAdapter.CAP_TASK_QUERY,
-                        FrameworkAdapter.CAP_PLAN_MODE),
+                        FrameworkAdapter.CAP_PLAN_MODE,
+                        FrameworkAdapter.CAP_CONVERSATION_INBOUND,
+                        FrameworkAdapter.CAP_EXPORT_TRANSCRIPT),
                 new AgentScopeAdapter().capabilities());
     }
 

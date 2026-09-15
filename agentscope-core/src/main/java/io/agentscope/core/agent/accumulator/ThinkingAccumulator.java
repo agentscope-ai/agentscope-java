@@ -17,17 +17,26 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Thinking content accumulator for accumulating streaming thinking chunks.
  *
  * <p>This accumulator concatenates all thinking chunks in order to build the complete thinking
  * content.
+ *
+ * <p>List-valued metadata (e.g. reasoning details) is accumulated in stream order: entries from
+ * each chunk are appended rather than replaced. Scalar metadata uses last-write-wins. List values
+ * are always copied to prevent caller mutation from affecting accumulator state.
  * @hidden
  */
 public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
+    private final Map<String, Object> metadata = new HashMap<>();
 
     /**
      * @hidden
@@ -37,6 +46,9 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (block != null && block.getThinking() != null) {
             accumulated.append(block.getThinking());
         }
+        if (block != null && block.getMetadata() != null && !block.getMetadata().isEmpty()) {
+            mergeMetadata(block.getMetadata());
+        }
     }
 
     /**
@@ -44,7 +56,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return accumulated.length() > 0 || !metadata.isEmpty();
     }
 
     /**
@@ -55,7 +67,11 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (!hasContent()) {
             return null;
         }
-        return ThinkingBlock.builder().thinking(accumulated.toString()).build();
+        ThinkingBlock.Builder builder = ThinkingBlock.builder().thinking(accumulated.toString());
+        if (!metadata.isEmpty()) {
+            builder.metadata(new HashMap<>(metadata));
+        }
+        return builder.build();
     }
 
     /**
@@ -64,6 +80,33 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        metadata.clear();
+    }
+
+    /**
+     * Merges incoming metadata into the accumulator's metadata map.
+     *
+     * <p>List values are accumulated in stream order (entries appended, not replaced). Scalar
+     * values use last-write-wins. List values are always copied to prevent caller mutation.
+     */
+    private void mergeMetadata(Map<String, Object> incoming) {
+        for (Map.Entry<String, Object> entry : incoming.entrySet()) {
+            String key = entry.getKey();
+            Object newValue = entry.getValue();
+            Object existing = metadata.get(key);
+            if (existing instanceof List<?> existingList && newValue instanceof List<?> newList) {
+                // Both are lists: concatenate in stream order
+                List<Object> combined = new ArrayList<>(existingList);
+                combined.addAll(newList);
+                metadata.put(key, combined);
+            } else if (newValue instanceof List<?> newList) {
+                // First list for this key: copy to prevent caller mutation
+                metadata.put(key, new ArrayList<>(newList));
+            } else {
+                // Scalar value: last-write-wins
+                metadata.put(key, newValue);
+            }
+        }
     }
 
     /**

@@ -1,4 +1,6 @@
-# RAGFlow Knowledge
+---
+title: RAGFlow
+---
 
 `agentscope-extensions-rag-ragflow` integrates with [RAGFlow](https://ragflow.io/). RAGFlow is strong on document parsing (OCR, table extraction, knowledge graph augmentation) and shines for unstructured-heavy KBs.
 

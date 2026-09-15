@@ -1,0 +1,11 @@
+README.md
+scripts/**
+node_modules/**
+_build/**
+_extra/**
+_sphinx_extensions/**
+_static/**
+_templates/**
+__pycache__/**
+package.json
+package-lock.json

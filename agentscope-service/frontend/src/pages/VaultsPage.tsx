@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { ResourceConsumers } from '../components/ResourceConsumers';
 import React, { useEffect, useState } from 'react';
 import {
   Vault,
@@ -86,7 +87,7 @@ export default function VaultsPage() {
   const [creatingVault, setCreatingVault] = useState(false);
   const [addingCred, setAddingCred] = useState(false);
   const [vaultName, setVaultName] = useState('');
-  const [credType, setCredType] = useState('api_key');
+  const [credType, setCredType] = useState('static_bearer');
   const [credLabel, setCredLabel] = useState('');
   const [credTarget, setCredTarget] = useState('');
   const [credSecret, setCredSecret] = useState('');
@@ -212,8 +213,14 @@ export default function VaultsPage() {
     if (!selected || !credLabel.trim() || !credSecret.trim()) return;
     setBusyId('cred');
     try {
+      if (!credTarget.trim()) throw new Error('Enter a connection name, endpoint URL, or environment variable name.');
+      if (credType === 'environment_variable' && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credTarget.trim())) throw new Error('Enter a valid environment variable name.');
+      if (credType === 'mcp_oauth') {
+        const value = JSON.parse(credSecret);
+        if (typeof value.access_token !== 'string' || !value.access_token) throw new Error('OAuth credentials require an access_token.');
+      }
       await addCredential(selected.id, {
-        type: credType.trim() || 'api_key',
+        type: credType,
         label: credLabel.trim(),
         target: credTarget.trim(),
         secret: credSecret,
@@ -244,19 +251,19 @@ export default function VaultsPage() {
   }
 
   return (
-    <div style={S.root}>
+    <div className="console-page-legacy" style={S.root}>
       <div style={S.header}>
         <h1 style={S.title}>Vaults</h1>
         <button type="button" style={S.primaryBtn} onClick={() => setCreatingVault(true)}>＋ New vault</button>
       </div>
       <p style={S.blurb}>
-        Encrypted credential vaults mountable on managed sessions. Secrets are never displayed after creation.
+        Manage credentials that Agents can use through their configured Vault bindings. Each credential’s target identifies the connection or environment variable it serves.
       </p>
       <div style={S.notice}>🔒 Secret values are write-only — only metadata (type, label, target) is shown after add.</div>
       {err && <div style={S.err}>{err}</div>}
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(0,2fr)', gap: 24 }}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(260px,1fr)_minmax(0,2fr)]">
         <div>
           {vaults.map(v => (
             <div
@@ -304,6 +311,7 @@ export default function VaultsPage() {
         <div>
           {selected ? (
             <div style={S.card}>
+              <ResourceConsumers kind="vault" id={selected.id} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{selected.displayName} — credentials</h2>
                 <button type="button" style={S.rowBtn} onClick={() => setAddingCred(true)}>＋ Add credential</button>
@@ -366,12 +374,19 @@ export default function VaultsPage() {
             <h2 style={{ margin: '0 0 18px', fontSize: '1.2rem' }}>Add credential</h2>
             <form onSubmit={handleAddCredential}>
               <label style={S.formField}>Type</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={credType} onChange={e => setCredType(e.target.value)} placeholder="api_key" />
+              <select style={{ ...S.input, marginBottom: 14 }} value={credType} onChange={e => setCredType(e.target.value)}>
+                <option value="static_bearer">MCP bearer token</option>
+                <option value="mcp_oauth">MCP OAuth token with optional refresh</option>
+                <option value="environment_variable">Explicit environment placeholder</option>
+                <option value="api_key">Generic secret (storage only)</option>
+              </select>
               <label style={S.formField}>Label</label>
               <input style={{ ...S.input, marginBottom: 14 }} value={credLabel} onChange={e => setCredLabel(e.target.value)} autoFocus />
               <label style={S.formField}>Target</label>
-              <input style={{ ...S.input, marginBottom: 14 }} value={credTarget} onChange={e => setCredTarget(e.target.value)} placeholder="api.openai.com" />
-              <label style={S.formField}>Secret (shown once)</label>
+              <input style={{ ...S.input, marginBottom: 14 }} value={credTarget} onChange={e => setCredTarget(e.target.value)} placeholder={credType === 'environment_variable' ? 'CRM_TOKEN' : 'crm or https://crm.example/mcp'} />
+              <p style={{ fontSize: 12, color: '#64748b' }}>{credType === 'environment_variable' ? 'Only explicitly referenced ${VARIABLE} values are substituted into MCP headers, environment or query parameters.' : 'Bearer and OAuth credentials match a connection name or its complete endpoint URL, including the path.'}</p>
+              {credType === 'mcp_oauth' && <p style={{ fontSize: 12, color: '#64748b' }}>Enter JSON with access_token and optional expires_at. Automatic renewal also requires refresh.token_endpoint, client_id and refresh_token. Client authentication can be configured under refresh.token_endpoint_auth. Refresh credentials stay in the control plane.</p>}
+              <label style={S.formField}>Secret (write-only)</label>
               <input style={{ ...S.input, marginBottom: 20 }} type="password" value={credSecret} onChange={e => setCredSecret(e.target.value)} />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button type="button" style={S.rowBtn} onClick={() => setAddingCred(false)}>Cancel</button>

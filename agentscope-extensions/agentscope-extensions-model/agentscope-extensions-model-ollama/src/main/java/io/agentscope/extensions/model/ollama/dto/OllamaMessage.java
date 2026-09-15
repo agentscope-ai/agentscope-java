@@ -48,7 +48,7 @@ public class OllamaMessage {
     private String toolCallId;
 
     /** The name of the tool/function (optional/required for tool messages). */
-    @JsonProperty("name")
+    @JsonProperty("tool_name")
     private String name;
 
     public OllamaMessage() {}

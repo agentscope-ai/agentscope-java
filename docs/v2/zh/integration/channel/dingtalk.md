@@ -1,4 +1,6 @@
-# 钉钉 Channel
+---
+title: 钉钉 Channel
+---
 
 `agentscope-extensions-channel-dingtalk` 通过 **Stream 协议**（持久 WebSocket）将你的 Agent 接入钉钉，无需暴露公网 webhook 端点即可实时接收机器人消息。
 

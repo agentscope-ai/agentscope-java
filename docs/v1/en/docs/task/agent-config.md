@@ -1,4 +1,6 @@
-# Agent Configuration
+---
+title: Agent Configuration
+---
 
 ## Overview
 
@@ -773,4 +775,3 @@ public class ComprehensiveAgentExample {
 ---
 
 For detailed parameter configuration, please refer to the corresponding documentation.
-
