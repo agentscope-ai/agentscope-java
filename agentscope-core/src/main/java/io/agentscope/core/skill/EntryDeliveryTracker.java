@@ -73,6 +73,9 @@ class EntryDeliveryTracker {
         Set<String> skills =
                 deliveredByScope.computeIfAbsent(
                         scope, k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
+        // computeIfAbsent on an existing key is not an access for an access-ordered
+        // LinkedHashMap; promote explicitly so reload-heavy scopes keep their recency.
+        deliveredByScope.get(scope);
         skills.add(skillId);
         evictIfNeeded();
     }

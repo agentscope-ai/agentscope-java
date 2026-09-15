@@ -414,4 +414,54 @@ class SkillToolFactoryReloadDedupTest {
                 second.contains("# Lambda SKILL body"),
                 "null sessionId must not collapse a user's conversations into one dedup bucket");
     }
+
+    @Test
+    @DisplayName("reload accepts lenient forms: string \"true\" and numeric 1")
+    void reloadAcceptsLenientForms() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("mu")
+                        .description("mu skill")
+                        .skillContent("# Mu SKILL body")
+                        .build();
+
+        Toolkit toolkit = new Toolkit();
+        SkillBox box = new SkillBox(toolkit);
+        box.registerSkill(skill);
+        box.registerSkillLoadTool();
+        RuntimeContext s1 = RuntimeContext.builder().userId("u1").sessionId("s1").build();
+        callInSession(toolkit, skill.getSkillId(), "SKILL.md", s1);
+        assertTrue(
+                textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", s1))
+                        .contains("is already loaded and active"));
+
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
+        for (Object lenientValue : java.util.List.of("true", 1)) {
+            Map<String, Object> input = new HashMap<>();
+            input.put("skillId", skill.getSkillId());
+            input.put("path", "SKILL.md");
+            input.put("reload", lenientValue);
+            ToolUseBlock use =
+                    ToolUseBlock.builder()
+                            .id("lenient-" + System.nanoTime())
+                            .name("load_skill_through_path")
+                            .input(input)
+                            .build();
+            ToolResultBlock result =
+                    tool.callAsync(
+                                    ToolCallParam.builder()
+                                            .toolUseBlock(use)
+                                            .input(input)
+                                            .runtimeContext(s1)
+                                            .build())
+                            .block(TIMEOUT);
+            assertTrue(
+                    textOf(result).contains("# Mu SKILL body"),
+                    "reload="
+                            + lenientValue
+                            + " ("
+                            + lenientValue.getClass().getSimpleName()
+                            + ") must re-deliver the full entry");
+        }
+    }
 }

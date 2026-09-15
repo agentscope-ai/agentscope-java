@@ -147,7 +147,17 @@ class SkillToolFactory {
                                                                 + " Use 'SKILL.md' to load the"
                                                                 + " skill instructions. Do not use"
                                                                 + " '.', './', directories, or"
-                                                                + " absolute paths.")),
+                                                                + " absolute paths."),
+                                        "reload",
+                                                Map.of(
+                                                        "type",
+                                                        "boolean",
+                                                        "description",
+                                                        "Optional. Set true to re-receive the full"
+                                                            + " SKILL.md even if it was already"
+                                                            + " delivered to this session (e.g."
+                                                            + " after context compaction removed"
+                                                            + " it).")),
                         "required", List.of("skillId", "path"));
             }
 
@@ -170,7 +180,7 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    boolean reload = Boolean.TRUE.equals(input.get("reload"));
+                    boolean reload = lenientBoolean(input.get("reload"));
                     String result = loadSkillResourceImpl(skillId, path, scopeOf(param), reload);
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
@@ -185,12 +195,22 @@ class SkillToolFactory {
     }
 
     /**
-     * Derives the entry-delivery scope from a tool call's runtime context.
+     * Parses an optional boolean tool argument leniently.
      *
-     * <p>The scope is {@code userId::sessionId} when the call carries a runtime context, so entry
-     * delivery is tracked per conversation; calls without a runtime context share one fallback
-     * bucket, matching the direct-tool-use case.
+     * <p>Models frequently send booleans as strings ({@code "true"}) or numbers ({@code 1}) when
+     * a parameter is optional; a strict {@code Boolean.TRUE.equals} would silently drop the
+     * reload lever exactly when the model asked for it.
      */
+    private static boolean lenientBoolean(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue() != 0;
+        }
+        return value != null && Boolean.parseBoolean(value.toString().trim());
+    }
+
     /**
      * Derives the entry-delivery scope from a tool call's runtime context, or null when the
      * conversation cannot be identified precisely enough to dedup safely.
