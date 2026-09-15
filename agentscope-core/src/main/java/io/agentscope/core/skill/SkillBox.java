@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
@@ -26,7 +27,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +48,7 @@ public class SkillBox {
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
-    private Toolkit toolkit;
+    private volatile Toolkit toolkit;
     private Path workDir;
     private Path uploadDir;
     private SkillFileFilter fileFilter;
@@ -131,14 +131,7 @@ public class SkillBox {
     }
 
     /**
-     * Binds a toolkit to the skill box.
-     *
-     * <p>
-     * This method binds the toolkit to both the skill box and its internal skill
-     * tool factory.
-     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
-     * ensure the
-     * skill tool factory references the correct toolkit instance.
+     * Binds the shared toolkit to this skill box and its internal skill tool factory.
      *
      * @param toolkit The toolkit to bind to the skill box
      * @throws IllegalArgumentException if the toolkit is null
@@ -148,69 +141,7 @@ public class SkillBox {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
         this.toolkit = toolkit;
-        // ReActAgent uses a deep copy of Toolkit, so we need to rebind it here
         this.skillToolFactory.bindToolkit(toolkit);
-    }
-
-    /**
-     * Synchronize tool group states based on skill activation status with a specific toolkit.
-     *
-     * <p>Updates the toolkit's tool groups to reflect the current activation state of skills.
-     * Active skills will have their tool groups enabled, inactive skills will have their
-     * tool groups disabled.
-     */
-    public void syncToolGroupStates() {
-        if (toolkit == null) {
-            return;
-        }
-        List<String> inactiveSkillToolGroups = new ArrayList<>();
-        List<String> activeSkillToolGroups = new ArrayList<>();
-
-        // Dynamically update active/inactive tool groups based on skills' states
-        for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            // Name-convention path: skillId + "_skill_tools"
-            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) != null) {
-                if (!registeredSkill.isActive()) {
-                    inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                } else {
-                    activeSkillToolGroups.add(registeredSkill.getToolsGroupName());
-                }
-            }
-
-            // activateOnSkill path: scan SkillToolGroups bound to this skill's name
-            AgentSkill agentSkill = skillRegistry.getSkill(registeredSkill.getSkillId());
-            if (agentSkill != null) {
-                List<String> boundGroups =
-                        toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-                for (String group : boundGroups) {
-                    if (!registeredSkill.isActive()) {
-                        inactiveSkillToolGroups.add(group);
-                    } else {
-                        activeSkillToolGroups.add(group);
-                    }
-                }
-            }
-        }
-        toolkit.updateToolGroups(inactiveSkillToolGroups, false);
-        toolkit.updateToolGroups(activeSkillToolGroups, true);
-        logger.debug(
-                "Active Skill Tool Groups updated {}, inactive Skill Tool Groups updated {}",
-                activeSkillToolGroups,
-                inactiveSkillToolGroups);
-    }
-
-    /**
-     * Where the skill is active. If a skill is active, this means skill is being using by LLM.
-     * LLM use load tool activate the skill.
-     * @param skillId
-     * @return true if the skill is active
-     */
-    public boolean isSkillActive(String skillId) {
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill == null) {
-            return false;
-        }
-        return registeredSkill.isActive();
     }
 
     // ==================== Skill Management ====================
@@ -219,7 +150,8 @@ public class SkillBox {
      * Registers an agent skill.
      *
      * <p>Skills can be dynamically loaded by agents using skill access tools.
-     * When a skill is loaded, its associated tools become available to the agent.
+     * Loading a skill returns its content; activation of its tool groups is reflected in the
+     * per-session activated-groups state, not on this box.
      *
      * <p><b>Version Management:</b>
      * <ul>
@@ -245,13 +177,7 @@ public class SkillBox {
         }
 
         String skillId = skill.getSkillId();
-
-        // Create registered wrapper
-        RegisteredSkill registered = new RegisteredSkill(skillId);
-
-        // Register in skillRegistry
-        skillRegistry.registerSkill(skillId, skill, registered);
-
+        skillRegistry.registerSkill(skillId, skill);
         logger.info("Registered skill '{}'", skillId);
     }
 
@@ -261,6 +187,28 @@ public class SkillBox {
      */
     public Set<String> getAllSkillIds() {
         return skillRegistry.getSkillIds();
+    }
+
+    /**
+     * Loads the skill resource identified by the given tool-call parameters. Package-private entry
+     * point used by the shared {@code load_skill_through_path} tool: skill activation is written to
+     * the per-session tool context, never to the shared group manager.
+     *
+     * @param param the tool call parameters carrying {@code skillId} and {@code path}
+     * @return the formatted resource content, or a message describing the failure
+     */
+    String loadSkillResource(ToolCallParam param) {
+        Map<String, Object> input = param.getInput();
+        String skillId = (String) input.get("skillId");
+        if (skillId == null || skillId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: skillId");
+        }
+        String path = (String) input.get("path");
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing or empty required parameter: path");
+        }
+        return skillToolFactory.loadSkillResourceImpl(
+                skillId, path, skillToolFactory.resolveToolContext(param));
     }
 
     /**
@@ -303,73 +251,6 @@ public class SkillBox {
             throw new IllegalArgumentException("Skill ID cannot be null");
         }
         return skillRegistry.exists(skillId);
-    }
-
-    /**
-     * Sets the activation state of a specific skill.
-     *
-     * <p>When a skill is set to inactive, its associated tool group will be disabled
-     * in the underlying toolkit, preventing the agent from accessing its tools until
-     * it is activated again.
-     *
-     * <p>This method automatically synchronizes the state change with the bound toolkit.
-     *
-     * <p><b>Warning on Deactivation:</b> Setting a skill to inactive only unbinds its associated
-     * tool group. It does not automatically remove the skill's context or prompt instructions
-     * from the agent's memory. This is a risky operation, as the agent might still attempt to
-     * invoke the inactive tool based on its retained memory context, leading to execution failures.
-     * For a complete and ideal deactivation, it is recommended to implement custom hooks to unbind
-     * both the tool group and its associated context from memory.
-     *
-     * @param skillId The ID of the skill to modify
-     * @param active  true to activate the skill, false to deactivate
-     * @throws IllegalArgumentException if skillId is null or the skill does not exist
-     */
-    public void setSkillActive(String skillId, boolean active) {
-        if (skillId == null) {
-            throw new IllegalArgumentException("Skill ID cannot be null");
-        }
-
-        if (!exists(skillId)) {
-            throw new IllegalArgumentException("Skill ID does not exist: " + skillId);
-        }
-
-        skillRegistry.setSkillActive(skillId, active);
-
-        // sync ToolGroup state — name-convention path
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill != null) {
-            String toolGroupName = registeredSkill.getToolsGroupName();
-            if (this.toolkit.getToolGroup(toolGroupName) != null) {
-                this.toolkit.updateToolGroups(List.of(toolGroupName), active);
-            }
-        }
-
-        // sync ToolGroup state — activateOnSkill path
-        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
-        if (agentSkill != null && this.toolkit != null) {
-            List<String> boundGroups =
-                    this.toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-            if (!boundGroups.isEmpty()) {
-                this.toolkit.updateToolGroups(boundGroups, active);
-            }
-        }
-
-        logger.debug("Skill '{}' active state set to {}", skillId, active);
-    }
-
-    /**
-     * Deactivates all skills.
-     *
-     * <p>This method sets all registered skills to inactive state, which means their associated
-     * tool groups will not be available to the agent until the skills are accessed again
-     * via skill access tools.
-     *
-     * <p>This is typically called at the start of each agent call to ensure a clean state.
-     */
-    public void deactivateAllSkills() {
-        skillRegistry.setAllSkillsActive(false);
-        logger.debug("Deactivated all skills");
     }
 
     /**
@@ -638,16 +519,19 @@ public class SkillBox {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
 
-        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
-            toolkit.createToolGroup(
-                    "skill-build-in-tools",
-                    "skill build-in tools, could contain(load_skill_through_path)");
+        if (toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME) != null) {
+            // Already registered by another path (e.g. the dynamic-skill middleware); avoid
+            // silently overwriting it. Mixing static skillBox() with dynamic skillRepositories()
+            // is not supported, so surface it for diagnosis.
+            logger.warn(
+                    "load_skill_through_path already registered; skipping (a same-named tool is"
+                            + " already present on this toolkit)");
+            return;
         }
 
-        toolkit.registration()
-                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
-                .group("skill-build-in-tools")
-                .apply();
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement.
+        toolkit.registration().agentTool(skillToolFactory.createSkillAccessToolAgentTool()).apply();
 
         logger.info("Registered skill load tools to toolkit");
     }

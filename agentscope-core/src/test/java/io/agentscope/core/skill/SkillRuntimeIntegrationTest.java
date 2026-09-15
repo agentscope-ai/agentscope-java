@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
@@ -30,6 +31,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -61,6 +64,7 @@ class SkillRuntimeIntegrationTest {
     private Toolkit toolkit;
     private Agent testAgent;
     private Hook skillHook;
+    private ToolContextState toolContext;
 
     @BeforeEach
     void setUp() {
@@ -69,6 +73,13 @@ class SkillRuntimeIntegrationTest {
         skillHook = new SkillHook(skillBox);
         skillBox.registerSkillLoadTool();
         testAgent = new TestAgent("test-agent");
+        toolContext = ToolContextState.builder().build();
+    }
+
+    private RuntimeContext sessionContext() {
+        return RuntimeContext.builder()
+                .agentState(AgentState.builder().toolContext(toolContext).build())
+                .build();
     }
 
     // ==================== Simulated Integration Tests ====================
@@ -95,7 +106,6 @@ class SkillRuntimeIntegrationTest {
         String toolGroupName = skillId + "_skill_tools";
 
         // Step 2: Verify initial state - skill and tool group inactive
-        assertFalse(skillBox.isSkillActive(skillId), "Skill should be inactive initially");
         assertNotNull(toolkit.getToolGroup(toolGroupName), "ToolGroup should exist");
         assertFalse(
                 toolkit.getToolGroup(toolGroupName).isActive(),
@@ -116,6 +126,7 @@ class SkillRuntimeIntegrationTest {
                                         .input(loadParams)
                                         .build())
                         .input(loadParams)
+                        .runtimeContext(sessionContext())
                         .build();
 
         ToolResultBlock loadResult = skillLoader.callAsync(callParam).block();
@@ -123,10 +134,12 @@ class SkillRuntimeIntegrationTest {
         // Step 4: Verify skill and tool group are both activated
         assertNotNull(loadResult, "Load result should not be null");
         assertFalse(loadResult.getOutput().isEmpty(), "Load should succeed");
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated after loading");
         assertTrue(
+                toolContext.getActivatedGroups().contains(toolGroupName),
+                "Per-session activated groups should include the tool group");
+        assertFalse(
                 toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be activated when skill is loaded");
+                "Shared toolkit group-manager flag must remain inactive");
 
         // Step 5: Verify tools are accessible
         assertNotNull(toolkit.getTool("calculator_add"), "calculator_add should be accessible");
@@ -157,9 +170,9 @@ class SkillRuntimeIntegrationTest {
                 "systemMsg should be SYSTEM role");
 
         // Step 8: Verify skill and tool group remain active
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should remain active");
         assertTrue(
-                toolkit.getToolGroup(toolGroupName).isActive(), "ToolGroup should remain active");
+                toolContext.getActivatedGroups().contains(toolGroupName),
+                "Per-session activation should be retained");
     }
 
     @Test
@@ -184,34 +197,29 @@ class SkillRuntimeIntegrationTest {
         loadSkill(mathSkillId);
 
         // Verify first skill activated
-        assertTrue(skillBox.isSkillActive(mathSkillId), "Math skill should be activated");
         assertTrue(
-                toolkit.getToolGroup(mathToolGroupName).isActive(),
+                toolContext.getActivatedGroups().contains(mathToolGroupName),
                 "Math tool group should be activated");
         assertFalse(
-                skillBox.isSkillActive(weatherSkillId), "Weather skill should still be inactive");
-        assertFalse(
-                toolkit.getToolGroup(weatherToolGroupName).isActive(),
+                toolContext.getActivatedGroups().contains(weatherToolGroupName),
                 "Weather tool group should still be inactive");
 
         // Load second skill
         loadSkill(weatherSkillId);
 
         // Verify both skills activated
-        assertTrue(skillBox.isSkillActive(mathSkillId), "Math skill should remain activated");
-        assertTrue(skillBox.isSkillActive(weatherSkillId), "Weather skill should be activated");
         assertTrue(
-                toolkit.getToolGroup(mathToolGroupName).isActive(),
+                toolContext.getActivatedGroups().contains(mathToolGroupName),
                 "Math tool group should remain activated");
         assertTrue(
+                toolContext.getActivatedGroups().contains(weatherToolGroupName),
+                "Weather tool group should be activated");
+        assertFalse(
+                toolkit.getToolGroup(mathToolGroupName).isActive(),
+                "Shared toolkit math group-manager flag must remain inactive");
+        assertFalse(
                 toolkit.getToolGroup(weatherToolGroupName).isActive(),
-                "Weather tool group should be activated");
-        assertTrue(
-                toolkit.getActiveGroups().contains(mathToolGroupName),
-                "Math tool group should be activated");
-        assertTrue(
-                toolkit.getActiveGroups().contains(weatherToolGroupName),
-                "Weather tool group should be activated");
+                "Shared toolkit weather group-manager flag must remain inactive");
     }
 
     @Test
@@ -253,8 +261,6 @@ class SkillRuntimeIntegrationTest {
         loadSkill(skillId);
 
         // Verify skill activated
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated");
-
         // Call the tool multiple times
         AgentTool tool = toolkit.getTool("increment_counter");
         assertNotNull(tool, "Tool should be accessible");
@@ -297,6 +303,7 @@ class SkillRuntimeIntegrationTest {
                                         .input(loadParams)
                                         .build())
                         .input(loadParams)
+                        .runtimeContext(sessionContext())
                         .build();
 
         skillLoader.callAsync(callParam).block();

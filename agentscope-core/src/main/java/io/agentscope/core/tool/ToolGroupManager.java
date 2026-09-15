@@ -316,6 +316,9 @@ class ToolGroupManager {
      *
      * <p>If the tool is not in any group, it is considered active by default.
      *
+     * <p><b>Legacy single-session API:</b> reads the shared activation flags. Per-call paths use
+     * {@link #isActiveTool(String, Collection)}.
+     *
      * @param toolName Tool name
      * @return true if ungrouped or in at least one active group
      */
@@ -329,6 +332,36 @@ class ToolGroupManager {
         }
         for (String groupName : groups) {
             if (isActiveGroup(groupName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a tool is in any of the explicitly supplied active groups.
+     *
+     * <p>Per-call / stateless variant of {@link #isActiveTool(String)}: callers that track
+     * activated groups in their own per-session state resolve availability against that set rather
+     * than the shared, concurrently-mutated activation flags. If {@code activeGroups} is {@code
+     * null}, this falls back to {@link #isActiveGroup(String)} for the shared flags.
+     *
+     * <p>If the tool is not in any group, it is considered active by default.
+     *
+     * @param toolName Tool name
+     * @param activeGroups the group names to treat as active (may be {@code null})
+     * @return true if ungrouped or in at least one supplied active group
+     */
+    public boolean isActiveTool(String toolName, Collection<String> activeGroups) {
+        if (toolName == null) {
+            return false;
+        }
+        Set<String> groups = tools.get(toolName);
+        if (groups == null || groups.isEmpty()) {
+            return true;
+        }
+        for (String g : groups) {
+            if (activeGroups != null ? activeGroups.contains(g) : isActiveGroup(g)) {
                 return true;
             }
         }
@@ -516,7 +549,10 @@ class ToolGroupManager {
     }
 
     /**
-     * Copy all tool groups from this manager to another manager.
+     * Copy all tool groups (and their activation state) from this manager to another manager.
+     *
+     * <p>Groups are deep-copied so the target has independent activation flags; used by {@link
+     * Toolkit#copy()} for build-time agent isolation.
      *
      * @param target The target manager to copy tool groups to
      */

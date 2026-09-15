@@ -16,7 +16,6 @@
 package io.agentscope.core.legacy.hook;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,7 +93,9 @@ class HookToolsRegistrationTest {
                         .build();
 
         assertNotNull(agent.getToolkit().getTool("hook_ping"));
-        assertFalse(builderToolkit.getToolNames().contains("hook_ping"));
+        // Build no longer copies the toolkit; the agent shares the builder's toolkit, so the
+        // hook-registered tool is visible on both.
+        assertTrue(builderToolkit.getToolNames().contains("hook_ping"));
     }
 
     @Test

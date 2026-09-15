@@ -20,9 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,11 +72,37 @@ class MetaToolFactoryTest {
         };
     }
 
+    /** Invokes the meta tool with a per-session runtime context + tool context state. */
     private ToolResultBlock callTool(AgentTool tool, Map<String, Object> input) {
+        return callTool(tool, input, ToolContextState.builder().build());
+    }
+
+    /** Invokes the meta tool against the given per-session tool context state. */
+    private ToolResultBlock callTool(
+            AgentTool tool, Map<String, Object> input, ToolContextState tcs) {
+        return callTool(tool, input, tcs != null ? runtimeContext(tcs) : null);
+    }
+
+    private ToolResultBlock callTool(
+            AgentTool tool, Map<String, Object> input, RuntimeContext runtimeContext) {
         ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", tool.getName(), input);
         ToolCallParam param =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .runtimeContext(runtimeContext)
+                        .build();
         return tool.callAsync(param).block();
+    }
+
+    private static RuntimeContext runtimeContext(ToolContextState tcs) {
+        return RuntimeContext.builder()
+                .agentState(AgentState.builder().toolContext(tcs).build())
+                .build();
+    }
+
+    private static String text(ToolResultBlock result) {
+        return ((TextBlock) result.getOutput().get(0)).getText();
     }
 
     @Test
@@ -196,30 +225,23 @@ class MetaToolFactoryTest {
         groupManager.createToolGroup("analytics", "Analytics tools", false);
         groupManager.createToolGroup("search", "Search tools", false);
 
-        AgentTool searchTool = createMockTool("search_tool", "Search function");
-        RegisteredToolFunction searchRegistered =
-                new RegisteredToolFunction(searchTool, null, null);
-        registry.registerTool("search_tool", searchTool, searchRegistered);
-        groupManager.addToolToGroup("search", "search_tool");
-
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        ToolContextState tcs = ToolContextState.builder().build();
 
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of("analytics", "search"));
 
         // Act
-        ToolResultBlock result = callTool(metaTool, input);
+        ToolResultBlock result = callTool(metaTool, input, tcs);
 
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        assertTrue(result.getOutput().get(0) instanceof TextBlock);
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("The currently activated tool group(s):"));
         assertTrue(resultText.contains("analytics"));
         assertTrue(resultText.contains("search"));
-        assertTrue(groupManager.getToolGroup("analytics").isActive());
-        assertTrue(groupManager.getToolGroup("search").isActive());
+        assertEquals(List.of("analytics", "search"), tcs.getActivatedGroups());
     }
 
     @Test
@@ -244,7 +266,7 @@ class MetaToolFactoryTest {
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("The currently activated tool group(s): search"));
         assertTrue(resultText.contains("Search tools"));
     }
@@ -261,7 +283,7 @@ class MetaToolFactoryTest {
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("Missing required parameter: to_activate"));
     }
@@ -281,7 +303,7 @@ class MetaToolFactoryTest {
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("does not exist"));
     }
@@ -301,7 +323,7 @@ class MetaToolFactoryTest {
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("does not exist"));
     }
@@ -313,19 +335,24 @@ class MetaToolFactoryTest {
         groupManager.createToolGroup("search", "Search tools", true);
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
 
+        ToolContextState tcs =
+                ToolContextState.builder()
+                        .addActivatedGroup("analytics")
+                        .addActivatedGroup("search")
+                        .build();
+
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of());
 
         // Act
-        ToolResultBlock result = callTool(metaTool, input);
+        ToolResultBlock result = callTool(metaTool, input, tcs);
 
-        // Assert - empty list deactivates all META groups
+        // Assert - empty list deactivates all META groups in the per-session state
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
-        assertTrue(resultText.contains("All tool groups are currently deactivated"));
-        assertFalse(groupManager.getToolGroup("analytics").isActive());
-        assertFalse(groupManager.getToolGroup("search").isActive());
+        String resultText = text(result);
+        assertTrue(resultText.contains("All META tool groups are currently deactivated"));
+        assertEquals(List.of(), tcs.getActivatedGroups());
     }
 
     @Test
@@ -336,17 +363,20 @@ class MetaToolFactoryTest {
         groupManager.createToolGroup("group3", "Group 3", false);
 
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        ToolContextState tcs =
+                ToolContextState.builder()
+                        .addActivatedGroup("group1")
+                        .addActivatedGroup("group2")
+                        .build();
 
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of("group3"));
 
         // Act
-        callTool(metaTool, input);
+        callTool(metaTool, input, tcs);
 
-        // Assert - replacement semantics: group1 and group2 should be DEACTIVATED
-        assertFalse(groupManager.getToolGroup("group1").isActive());
-        assertFalse(groupManager.getToolGroup("group2").isActive());
-        assertTrue(groupManager.getToolGroup("group3").isActive());
+        // Assert - replacement semantics: group1 and group2 replaced by group3
+        assertEquals(List.of("group3"), tcs.getActivatedGroups());
     }
 
     @Test
@@ -358,15 +388,17 @@ class MetaToolFactoryTest {
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of("analytics"));
 
+        ToolContextState tcs = ToolContextState.builder().addActivatedGroup("analytics").build();
+
         // Act
-        ToolResultBlock result = callTool(metaTool, input);
+        ToolResultBlock result = callTool(metaTool, input, tcs);
 
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("The currently activated tool group(s):"));
-        assertTrue(groupManager.getToolGroup("analytics").isActive());
+        assertEquals(List.of("analytics"), tcs.getActivatedGroups());
     }
 
     @Test
@@ -413,17 +445,16 @@ class MetaToolFactoryTest {
                 "external_group", "EXTERNAL group", true, ToolGroupScope.EXTERNAL);
 
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        ToolContextState tcs =
+                ToolContextState.builder().addActivatedGroup("external_group").build();
 
         // Act - activate only meta_group (replacement semantics)
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of("meta_group"));
-        callTool(metaTool, input);
+        callTool(metaTool, input, tcs);
 
-        // Assert - EXTERNAL group should NOT be affected
-        assertTrue(groupManager.getToolGroup("meta_group").isActive());
-        assertTrue(
-                groupManager.getToolGroup("external_group").isActive(),
-                "EXTERNAL group should remain active");
+        // Assert - EXTERNAL group preserved, META group activated
+        assertEquals(List.of("external_group", "meta_group"), tcs.getActivatedGroups());
     }
 
     @Test
@@ -441,7 +472,7 @@ class MetaToolFactoryTest {
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("not manageable"));
     }
@@ -475,22 +506,26 @@ class MetaToolFactoryTest {
 
     @Test
     void testMetaToolReplacementPreservesExternalDuringEmptyActivation() {
-        // Arrange - both META and EXTERNAL groups active
+        // Arrange - both META and EXTERNAL groups in the per-session state
         groupManager.createToolGroup("meta1", "META 1", true, ToolGroupScope.META);
         groupManager.createToolGroup("meta2", "META 2", true, ToolGroupScope.META);
         groupManager.createToolGroup("ext1", "EXTERNAL 1", true, ToolGroupScope.EXTERNAL);
 
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+        ToolContextState tcs =
+                ToolContextState.builder()
+                        .addActivatedGroup("meta1")
+                        .addActivatedGroup("meta2")
+                        .addActivatedGroup("ext1")
+                        .build();
 
         // Act - deactivate all (empty list)
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of());
-        callTool(metaTool, input);
+        callTool(metaTool, input, tcs);
 
         // Assert - META groups deactivated, EXTERNAL preserved
-        assertFalse(groupManager.getToolGroup("meta1").isActive());
-        assertFalse(groupManager.getToolGroup("meta2").isActive());
-        assertTrue(groupManager.getToolGroup("ext1").isActive());
+        assertEquals(List.of("ext1"), tcs.getActivatedGroups());
     }
 
     @Test
@@ -523,14 +558,14 @@ class MetaToolFactoryTest {
         // Assert
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("The currently activated tool group(s):"));
         assertTrue(resultText.contains("Group 1"));
         assertTrue(resultText.contains("Group 2"));
     }
 
     @Test
-    void testSkillToolGroupDescriptionInNotes() {
+    void testMetaToolSkillToolGroupDescriptionInNotes() {
         // Arrange
         groupManager.createSkillToolGroup("code_tools", "Code execution tools", false, "coding");
 
@@ -545,7 +580,7 @@ class MetaToolFactoryTest {
     }
 
     @Test
-    void testSkillToolGroupInToolInstructions() {
+    void testMetaToolSkillToolGroupInToolInstructions() {
         // Arrange
         groupManager.createSkillToolGroup("code_tools", "Code execution tools", false, "coding");
 
@@ -558,9 +593,29 @@ class MetaToolFactoryTest {
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert - tool-instructions should include the enhanced description
-        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
+        String resultText = text(result);
         assertTrue(resultText.contains("tool-instructions"));
         assertTrue(resultText.contains("MUST be activated"));
         assertTrue(resultText.contains("coding"));
+    }
+
+    @Test
+    void testMetaToolCallAsyncWithoutRuntimeContextFailsWithoutMutatingGroupManager() {
+        // Arrange
+        groupManager.createToolGroup("analytics", "Analytics tools", false);
+        AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("to_activate", List.of("analytics"));
+
+        // Act - no runtime context (rc == null → no per-session tool context)
+        ToolResultBlock result = callTool(metaTool, input, (RuntimeContext) null);
+
+        // Assert - fast fail, never mutate the shared group manager
+        assertNotNull(result);
+        String resultText = text(result);
+        assertTrue(resultText.contains("Error:"));
+        assertTrue(resultText.contains("requires a per-session runtime context"));
+        assertFalse(groupManager.getToolGroup("analytics").isActive());
     }
 }
