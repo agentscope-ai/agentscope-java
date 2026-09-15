@@ -57,6 +57,7 @@ public class OpenSandbox extends AbstractBaseSandbox implements SandboxFileTrans
         }
     }
 
+    /** Closes the SDK connection without destroying the sandbox. */
     @Override
     public void stop() throws Exception {
         try {
@@ -138,6 +139,10 @@ public class OpenSandbox extends AbstractBaseSandbox implements SandboxFileTrans
         checkedExec("mkdir -p " + shellQuote(getWorkspaceRoot()), getWorkspaceRoot(), 30);
     }
 
+    /**
+     * Removes the workspace directory for explicit cleanup only. Shutdown deliberately preserves
+     * externally managed sandboxes and destroys owned sandboxes through the control plane.
+     */
     @Override
     protected void doDestroyWorkspace() throws Exception {
         checkedExec("rm -rf " + shellQuote(getWorkspaceRoot()), "/", 30);
