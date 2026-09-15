@@ -35,6 +35,7 @@ import java.time.LocalDate;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -80,6 +81,13 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
 
+    /**
+     * Owner (the {@code HarnessAgent} this middleware belongs to) used to scope task
+     * registration and cancellation in {@link MemoryBackgroundTasks}. {@code null} for legacy
+     * constructions: tasks are then only reachable via the global {@code cancelAll()}.
+     */
+    private final Object taskOwner;
+
     public MemoryMaintenanceMiddleware(
             WorkspaceManager workspaceManager,
             MemoryConsolidator consolidator,
@@ -93,7 +101,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 sessionRetentionDays,
                 minGap,
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryMaintenanceMiddleware(
@@ -110,7 +119,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 sessionRetentionDays,
                 minGap,
                 isolationScope,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryMaintenanceMiddleware(
@@ -121,6 +131,26 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             Duration minGap,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                consolidator,
+                dailyFileRetentionDays,
+                sessionRetentionDays,
+                minGap,
+                isolationScope,
+                periodicGate,
+                null);
+    }
+
+    public MemoryMaintenanceMiddleware(
+            WorkspaceManager workspaceManager,
+            MemoryConsolidator consolidator,
+            int dailyFileRetentionDays,
+            int sessionRetentionDays,
+            Duration minGap,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            Object taskOwner) {
         this.workspaceManager = workspaceManager;
         this.consolidator = consolidator;
         this.dailyFileRetentionDays = dailyFileRetentionDays;
@@ -128,6 +158,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         this.minGap = minGap != null ? minGap : DEFAULT_MIN_GAP;
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.taskOwner = taskOwner;
     }
 
     public MemoryMaintenanceMiddleware(
@@ -150,15 +181,29 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .doOnComplete(
                         () -> {
                             MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
-                                    .subscribeOn(Schedulers.boundedElastic())
-                                    .doFinally(signal -> MemoryBackgroundTasks.end())
-                                    .subscribe(
-                                            null,
-                                            e ->
-                                                    log.warn(
-                                                            "Memory maintenance failed: {}",
-                                                            e.getMessage()));
+                            if (MemoryBackgroundTasks.isShutdown(taskOwner)) {
+                                // The owning agent is already closed: release the in-flight
+                                // slot and skip — the maintenance model call must not start
+                                // after close().
+                                MemoryBackgroundTasks.end();
+                                return;
+                            }
+                            final Disposable[] holder = new Disposable[1];
+                            holder[0] =
+                                    Mono.defer(() -> doMaintenance(rc))
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .doFinally(
+                                                    signal -> {
+                                                        MemoryBackgroundTasks.end();
+                                                        MemoryBackgroundTasks.unregister(holder[0]);
+                                                    })
+                                            .subscribe(
+                                                    null,
+                                                    e ->
+                                                            log.warn(
+                                                                    "Memory maintenance failed: {}",
+                                                                    e.getMessage()));
+                            MemoryBackgroundTasks.register(taskOwner, holder[0]);
                         });
     }
 
@@ -168,7 +213,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             // Mono completes.
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return runMaintenance(rc);
     }
 
     /**
@@ -196,12 +241,29 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private void runMaintenance(RuntimeContext rc) {
+    private Mono<Void> runMaintenance(RuntimeContext rc) {
         log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        pruneOldSessions(rc);
-        log.debug("Memory maintenance completed");
+        // NOTE: the consolidation step stays inside the reactive chain (no blocking .block()) so
+        // the
+        // Disposable registered by onAgent actually cancels the model call — otherwise a hung
+        // consolidation would leak its HTTP connection until the JVM exits.
+        Mono<Void> expire = Mono.fromRunnable(() -> expireDailyFiles(rc));
+        Mono<Void> consolidate =
+                consolidator != null
+                        ? consolidator
+                                .consolidate(rc)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Memory consolidation failed: {}",
+                                                    e.getMessage());
+                                            return Mono.empty();
+                                        })
+                        : Mono.empty();
+        Mono<Void> prune = Mono.fromRunnable(() -> pruneOldSessions(rc));
+        return expire.then(consolidate)
+                .then(prune)
+                .doFinally(signal -> log.debug("Memory maintenance completed"));
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -238,17 +300,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             } catch (Exception e) {
                 // not a date-named file, skip
             }
-        }
-    }
-
-    private void consolidateMemory(RuntimeContext rc) {
-        if (consolidator == null) {
-            return;
-        }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
         }
     }
 

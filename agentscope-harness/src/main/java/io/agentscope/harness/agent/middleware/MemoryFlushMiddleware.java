@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -93,6 +94,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
 
+    /**
+     * Owner (the {@code HarnessAgent} this middleware belongs to) used to scope task
+     * registration and cancellation in {@link MemoryBackgroundTasks}. {@code null} for legacy
+     * constructions: tasks are then only reachable via the global {@code cancelAll()}.
+     */
+    private final Object taskOwner;
+
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
                 workspaceManager,
@@ -100,7 +108,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 MemoryFlushManager.DEFAULT_FLUSH_PROMPT,
                 MemoryConfig.FlushTrigger.always(),
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -114,7 +123,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushPrompt,
                 flushTrigger,
                 IsolationScope.USER,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -129,7 +139,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushPrompt,
                 flushTrigger,
                 isolationScope,
-                new LocalPeriodicGate());
+                new LocalPeriodicGate(),
+                null);
     }
 
     public MemoryFlushMiddleware(
@@ -139,6 +150,24 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                periodicGate,
+                null);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            Object taskOwner) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt =
@@ -147,6 +176,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.taskOwner = taskOwner;
     }
 
     @Override
@@ -201,17 +231,43 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void runFlush(String key, Agent agent, RuntimeContext rc) {
-        Mono.defer(() -> doFlush(agent, rc))
-                .subscribeOn(Schedulers.boundedElastic())
-                .doFinally(
-                        signal -> {
-                            MemoryBackgroundTasks.end();
-                            drainFlushQueue(key);
-                        })
-                .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+        if (MemoryBackgroundTasks.isShutdown(taskOwner)) {
+            // The owning agent is already closed: drop this flush, release its in-flight slot,
+            // and keep draining so every remaining queued task releases its slot too, instead
+            // of starting a model call that would outlive the closed agent.
+            //
+            // The drain is a loop rather than a call into drainFlushQueue: every queued task
+            // takes this same branch while the owner is shut down, so draining by running the
+            // next task would recurse once per queued flush and risk a StackOverflowError on a
+            // deep queue. Each iteration releases the slot of the task it skips.
+            while (true) {
+                MemoryBackgroundTasks.end();
+                if (takeNextQueuedFlush(key) == null) {
+                    return;
+                }
+            }
+        }
+        final Disposable[] holder = new Disposable[1];
+        holder[0] =
+                Mono.defer(() -> doFlush(agent, rc))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .doFinally(
+                                signal -> {
+                                    MemoryBackgroundTasks.end();
+                                    MemoryBackgroundTasks.unregister(holder[0]);
+                                    drainFlushQueue(key);
+                                })
+                        .subscribe(null, e -> log.warn("Memory flush failed: {}", e.getMessage()));
+        MemoryBackgroundTasks.register(taskOwner, holder[0]);
     }
 
-    private void drainFlushQueue(String key) {
+    /**
+     * Removes and returns the next queued flush for {@code key}, or {@code null} when the key
+     * has gone idle, in which case the key is evicted. The returned task is <em>not</em>
+     * executed: callers decide whether to run it or to release the in-flight slot it acquired at
+     * dispatch.
+     */
+    private static Runnable takeNextQueuedFlush(String key) {
         Runnable[] next = new Runnable[1];
         FLUSH_QUEUES.compute(
                 key,
@@ -229,8 +285,13 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                     }
                     return queue; // the dequeued task continues as the running flush
                 });
-        if (next[0] != null) {
-            next[0].run();
+        return next[0];
+    }
+
+    private void drainFlushQueue(String key) {
+        Runnable next = takeNextQueuedFlush(key);
+        if (next != null) {
+            next.run();
         }
     }
 
