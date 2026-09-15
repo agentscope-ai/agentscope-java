@@ -285,7 +285,7 @@ final class HarnessAgentBuilderSupport {
         return entries;
     }
 
-    private static io.agentscope.harness.agent.tools.ToolsConfig childToolsConfig(
+    static io.agentscope.harness.agent.tools.ToolsConfig childToolsConfig(
             io.agentscope.harness.agent.tools.ToolsConfig parent, List<String> allow) {
         if (allow == null || allow.isEmpty()) return parent;
         var child = new io.agentscope.harness.agent.tools.ToolsConfig();
@@ -452,6 +452,7 @@ final class HarnessAgentBuilderSupport {
         final Toolkit capturedParentToolkit =
                 b.toolkit != null ? b.toolkit.copy() : HarnessAgent.Builder.newDefaultToolkit();
         final Function<String, Model> capturedResolver = b.modelResolver;
+        final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
@@ -541,7 +542,9 @@ final class HarnessAgentBuilderSupport {
             }
 
             var childTools = childToolsConfig(capturedToolsConfig, decl.getTools());
-            if (childTools != null) sub.toolsConfig(childTools);
+            // Without an explicit parent config, apply the declaration after the child loads
+            // its workspace policy; a synthetic override would hide workspace allow/deny rules.
+            if (capturedToolsConfig != null) sub.toolsConfig(childTools);
             capturedRoutes.forEach(sub::filesystemRoute);
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {
                 sub.abstractFilesystem(capturedSharedBackend);
@@ -592,7 +595,8 @@ final class HarnessAgentBuilderSupport {
             }
 
             sub.middlewares(capturedMiddlewares);
-            return sub.build();
+            sub.hooks(capturedHooks);
+            return sub.build(decl.getTools());
         };
     }
 
