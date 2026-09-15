@@ -27,6 +27,7 @@ import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
+import io.agentscope.core.event.AskUserResult;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.DataBlockDeltaEvent;
@@ -39,6 +40,7 @@ import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
+import io.agentscope.core.event.RequireUserAskEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -54,6 +56,7 @@ import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.UserAskResultEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -141,11 +144,18 @@ class RemoteEventCodecPassthroughTest {
                 AgentEventType.REQUIRE_USER_CONFIRM,
                 new RequireUserConfirmEvent("reply", List.of(toolUse)));
         events.put(
+                AgentEventType.REQUIRE_USER_ASK,
+                new RequireUserAskEvent("reply", List.of(toolUse)));
+        events.put(
                 AgentEventType.REQUIRE_EXTERNAL_EXECUTION,
                 new RequireExternalExecutionEvent("reply", List.of(toolUse)));
         events.put(
                 AgentEventType.USER_CONFIRM_RESULT,
                 new UserConfirmResultEvent("reply", List.of(new ConfirmResult(true, toolUse))));
+        events.put(
+                AgentEventType.USER_ASK_RESULT,
+                new UserAskResultEvent(
+                        "reply", List.of(new AskUserResult("call-1", Map.of("q_1", "premium")))));
         events.put(
                 AgentEventType.EXTERNAL_EXECUTION_RESULT,
                 new ExternalExecutionResultEvent("reply", List.of(toolResult)));

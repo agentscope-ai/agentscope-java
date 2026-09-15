@@ -57,10 +57,12 @@ import java.util.UUID;
     @JsonSubTypes.Type(value = ToolResultEndEvent.class, name = "TOOL_RESULT_END"),
     @JsonSubTypes.Type(value = ExceedMaxItersEvent.class, name = "EXCEED_MAX_ITERS"),
     @JsonSubTypes.Type(value = RequireUserConfirmEvent.class, name = "REQUIRE_USER_CONFIRM"),
+    @JsonSubTypes.Type(value = RequireUserAskEvent.class, name = "REQUIRE_USER_ASK"),
     @JsonSubTypes.Type(
             value = RequireExternalExecutionEvent.class,
             name = "REQUIRE_EXTERNAL_EXECUTION"),
     @JsonSubTypes.Type(value = UserConfirmResultEvent.class, name = "USER_CONFIRM_RESULT"),
+    @JsonSubTypes.Type(value = UserAskResultEvent.class, name = "USER_ASK_RESULT"),
     @JsonSubTypes.Type(
             value = ExternalExecutionResultEvent.class,
             name = "EXTERNAL_EXECUTION_RESULT"),

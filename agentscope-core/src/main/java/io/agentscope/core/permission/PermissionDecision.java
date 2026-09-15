@@ -106,6 +106,21 @@ public final class PermissionDecision {
         return builder().behavior(PermissionBehavior.ASK).message(message).build();
     }
 
+    /**
+     * Pauses the run to ask the user for <em>input</em> (model-initiated question).
+     *
+     * <p>Unlike {@link #ask(String)}, this decision is only meaningful when returned from a tool's
+     * own {@code checkPermissions()}; it interrupts the agent with a distinct
+     * {@code GenerateReason.ASK_USER_ASKING} in every {@code PermissionMode} (including
+     * {@code BYPASS}), and it is not registerable as a rule.
+     *
+     * @param message human-readable reason for the question
+     * @return an ASK_USER decision
+     */
+    public static PermissionDecision askUser(String message) {
+        return builder().behavior(PermissionBehavior.ASK_USER).message(message).build();
+    }
+
     public static PermissionDecision passthrough(String message) {
         return builder().behavior(PermissionBehavior.PASSTHROUGH).message(message).build();
     }

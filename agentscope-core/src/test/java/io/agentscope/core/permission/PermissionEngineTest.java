@@ -241,6 +241,39 @@ class PermissionEngineTest {
                             })
                     .verifyComplete();
         }
+
+        @Test
+        @DisplayName("EXPLORE does not bypass a tool-generated ASK_USER decision")
+        void explorePreservesToolAskUser() {
+            FakePermissionTool tool =
+                    new FakePermissionTool("ask_user", /* readOnly */ true)
+                            .withPermissionDecision(PermissionDecision.askUser("need input"));
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.EXPLORE));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of()))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(
+                                            PermissionBehavior.ASK_USER, decision.getBehavior()))
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("ACCEPT_EDITS does not bypass a tool-generated ASK_USER decision")
+        void acceptEditsPreservesToolAskUser() {
+            FakePermissionTool tool =
+                    new FakePermissionTool("ask_user", /* readOnly */ true)
+                            .withPermissionDecision(PermissionDecision.askUser("need input"));
+            PermissionEngine engine =
+                    new PermissionEngine(contextWithMode(PermissionMode.ACCEPT_EDITS));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of()))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(
+                                            PermissionBehavior.ASK_USER, decision.getBehavior()))
+                    .verifyComplete();
+        }
     }
 
     @Nested
