@@ -92,6 +92,7 @@ import reactor.core.scheduler.Schedulers;
 @SuppressWarnings("deprecation")
 public abstract class AgentBase implements Agent {
 
+    private final String id;
     private final String agentId;
     private final String name;
     private final String description;
@@ -118,7 +119,7 @@ public abstract class AgentBase implements Agent {
      * @param name Agent name
      */
     public AgentBase(String name) {
-        this(name, null, List.of());
+        this(null, name, null, List.of());
     }
 
     /**
@@ -128,7 +129,7 @@ public abstract class AgentBase implements Agent {
      * @param description Agent description
      */
     public AgentBase(String name, String description) {
-        this(name, description, List.of());
+        this(null, name, description, List.of());
     }
 
     /**
@@ -136,7 +137,7 @@ public abstract class AgentBase implements Agent {
      */
     @Deprecated
     public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
-        this(name, description, hooks);
+        this(null, name, description, hooks);
     }
 
     /**
@@ -147,7 +148,24 @@ public abstract class AgentBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, List<Hook> hooks) {
-        this.agentId = UUID.randomUUID().toString();
+        this(null, name, description, hooks);
+    }
+
+    /**
+     * Constructor for AgentBase with a caller-defined logical agent ID.
+     *
+     * <p>Every constructed instance receives an independent random {@link #getId() runtime ID}.
+     * When {@code agentId} is null or blank, the logical ID falls back to that runtime ID so
+     * existing construction paths retain their generated-ID behavior.
+     *
+     * @param agentId Logical agent ID, or null/blank to use the generated runtime ID
+     * @param name Agent name
+     * @param description Agent description
+     * @param hooks List of hooks for monitoring/intercepting execution
+     */
+    public AgentBase(String agentId, String name, String description, List<Hook> hooks) {
+        this.id = UUID.randomUUID().toString();
+        this.agentId = agentId != null && !agentId.isBlank() ? agentId : this.id;
         this.name = name;
         this.description = description;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
@@ -156,6 +174,11 @@ public abstract class AgentBase implements Agent {
         for (Hook h : this.hooks) {
             registerRuntimeContextHookIfNeeded(h);
         }
+    }
+
+    @Override
+    public final String getId() {
+        return id;
     }
 
     @Override
