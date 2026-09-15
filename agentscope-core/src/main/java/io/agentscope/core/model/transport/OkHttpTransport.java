@@ -307,6 +307,8 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
+                // The blocking reader occupies this worker until [DONE] or EOF. Scheduling
+                // incremental requests on the same worker would stall downstream delivery.
                 .subscribeOn(Schedulers.boundedElastic(), false);
     }
 
