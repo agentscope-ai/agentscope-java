@@ -5,6 +5,7 @@ title: Model Providers
 Model provider extensions connect AgentScope Java to hosted or local chat model APIs. Each provider can be selected through a `ModelRegistry` id when its extension module is on the classpath.
 
 - [OpenAI](/v2/en/integration/model/openai)
+- [OpenAI Official](/v2/en/integration/model/openai-official)
 - [DeepSeek](/v2/en/integration/model/deepseek)
 - [GLM](/v2/en/integration/model/glm)
 - [Kimi](/v2/en/integration/model/kimi)
