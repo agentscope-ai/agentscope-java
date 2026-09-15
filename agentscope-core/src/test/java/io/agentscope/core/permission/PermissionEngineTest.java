@@ -23,11 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -41,7 +44,7 @@ import reactor.test.StepVerifier;
  *
  * <ol>
  *   <li>Rule priority — deny &gt; ask &gt; allow
- *   <li>Modes — BYPASS / DONT_ASK / EXPLORE / DEFAULT
+ *   <li>Modes — BYPASS / DONT_ASK / EXPLORE / DEFAULT / ACCEPT_EDITS working directories
  *   <li>Tool-supplied decisions (ALLOW / DENY / ASK / PASSTHROUGH)
  *   <li>Default ASK with suggestions
  *   <li>Snapshot semantics
@@ -104,6 +107,28 @@ class PermissionEngineTest {
 
     private static PermissionContextState contextWithMode(PermissionMode mode) {
         return PermissionContextState.builder().mode(mode).build();
+    }
+
+    /**
+     * Minimal {@link ToolBase} declaring {@code path} as a file-path parameter. Does NOT override
+     * {@code checkPermissions}, so the path-aware default self-check in {@code ToolBase} runs.
+     */
+    private static final class FilePathTool extends ToolBase {
+        FilePathTool(String name) {
+            super(
+                    ToolBase.builder()
+                            .name(name)
+                            .description(name + " description")
+                            .inputSchema(Map.of("type", "object", "properties", Map.of()))
+                            .filePathParams(Set.of("path")));
+        }
+    }
+
+    private static PermissionContextState acceptEditsWithDir(String dir) {
+        return PermissionContextState.builder()
+                .mode(PermissionMode.ACCEPT_EDITS)
+                .addWorkingDirectory(dir, new AdditionalWorkingDirectory(dir, "test"))
+                .build();
     }
 
     private static PermissionRule rule(String tool, String content, PermissionBehavior behavior) {
@@ -238,6 +263,90 @@ class PermissionEngineTest {
                             decision -> {
                                 assertEquals(PermissionBehavior.DENY, decision.getBehavior());
                                 assertTrue(decision.getMessage().contains("explore"));
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("ACCEPT_EDITS working directories")
+    class AcceptEditsWorkingDir {
+
+        @Test
+        @DisplayName("ACCEPT_EDITS auto-allows edit tools inside a working directory")
+        void acceptEditsAutoAllowsInWorkingDir(@TempDir Path workDir) {
+            FilePathTool tool = new FilePathTool("edit_file");
+            PermissionEngine engine = new PermissionEngine(acceptEditsWithDir(workDir.toString()));
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    tool, Map.of("path", workDir.resolve("a.txt").toString())))
+                    .assertNext(
+                            decision -> {
+                                assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+                                assertTrue(
+                                        decision.getMessage().contains("accept edits"),
+                                        decision.getMessage());
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("ACCEPT_EDITS still asks for paths outside every working directory")
+        void acceptEditsAsksOutsideWorkingDir(@TempDir Path workDir) {
+            FilePathTool tool = new FilePathTool("edit_file");
+            PermissionEngine engine = new PermissionEngine(acceptEditsWithDir(workDir.toString()));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of("path", "/etc/passwd")))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Dangerous path inside a working directory still ASKs under BYPASS")
+        void acceptEditsDangerousPathSafetyAsk(@TempDir Path workDir) {
+            FilePathTool tool = new FilePathTool("edit_file");
+            PermissionContextState ctx =
+                    PermissionContextState.builder()
+                            .mode(PermissionMode.BYPASS)
+                            .addWorkingDirectory(
+                                    workDir.toString(),
+                                    new AdditionalWorkingDirectory(workDir.toString(), "test"))
+                            .build();
+            PermissionEngine engine = new PermissionEngine(ctx);
+
+            StepVerifier.create(
+                            engine.checkPermission(
+                                    tool, Map.of("path", workDir.resolve(".bashrc").toString())))
+                    .assertNext(
+                            decision -> {
+                                assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+                                assertNotNull(decision.getSuggestedRules());
+                                assertTrue(
+                                        decision.getDecisionReason()
+                                                .toLowerCase()
+                                                .contains("safety"),
+                                        decision.getDecisionReason());
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("ACCEPT_EDITS without working directories keeps asking")
+        void acceptEditsNoWorkDirAsks() {
+            FilePathTool tool = new FilePathTool("edit_file");
+            PermissionEngine engine =
+                    new PermissionEngine(contextWithMode(PermissionMode.ACCEPT_EDITS));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of("path", "/tmp/a.txt")))
+                    .assertNext(
+                            decision -> {
+                                assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+                                assertTrue(
+                                        decision.getMessage().contains("edit_file"),
+                                        decision.getMessage());
                             })
                     .verifyComplete();
         }
