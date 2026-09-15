@@ -273,14 +273,15 @@ public class DashScopeMessageConverter {
      * @param msg the source message with metadata
      * @param result the converted DashScope message
      */
-    private void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
+    void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
         if (msg.getMetadata() == null) {
             return;
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
             if (result.getCacheControl() == null || result.getCacheControl().isEmpty()) {
-                result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+                DashScopeChatFormatter.setCacheControlOnContent(
+                        result, DashScopeChatFormatter.getEphemeralCacheControl());
             }
         } else if (Boolean.FALSE.equals(cacheFlag)) {
             result.setCacheControl(DashScopeChatFormatter.getNoCacheControl());

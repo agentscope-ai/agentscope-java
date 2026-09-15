@@ -84,13 +84,11 @@ public class DashScopeMessage {
     private String reasoningContent;
 
     /**
-     * Cache control configuration for prompt caching.
+     * Legacy message-level cache control state.
      *
-     * <p>Tri-state: {@code null} means "not specified" (the automatic cache-control strategy may
-     * add {@code {"type": "ephemeral"}}); a non-empty map is an explicit {@code cache_control}
-     * value; an empty map is the explicit "no cache" sentinel — combined with
-     * {@link JsonInclude.Include#NON_EMPTY} it is serialized away, so the API receives no
-     * {@code cache_control} field and therefore performs no caching.
+     * <p>Non-empty legacy values are migrated to a content part by the formatter. {@code null}
+     * means "not specified"; an empty map is the explicit "no marker" sentinel and is serialized
+     * away by {@link JsonInclude.Include#NON_EMPTY} while still blocking the automatic strategy.
      */
     @JsonProperty("cache_control")
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

@@ -21,6 +21,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeInput;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
@@ -46,9 +47,9 @@ public class DashScopeChatFormatter
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
 
     /**
-     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
+     * Sentinel for an explicit "no marker" intent. An empty map is serialized away (via
      * {@code @JsonInclude(NON_EMPTY)} on {@link DashScopeMessage#cacheControl}), so the upstream
-     * API receives no {@code cache_control} field and therefore performs no caching.
+     * API receives no explicit {@code cache_control} marker.
      */
     private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
 
@@ -183,25 +184,69 @@ public class DashScopeChatFormatter
     /**
      * Apply cache control to DashScope messages.
      *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already carry a cache_control value (including the empty
-     * "no cache" sentinel) are left untouched.
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last content part of all
+     * system messages and the last message in the list. Legacy message-level values are migrated to
+     * the last content part. Messages explicitly excluded from caching are left untouched.
      *
      * @param messages the list of formatted DashScope messages
      */
     public void applyCacheControl(List<DashScopeMessage> messages) {
+        applyCacheControlToMessages(messages);
+    }
+
+    static void applyCacheControlToMessages(List<DashScopeMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
         for (DashScopeMessage msg : messages) {
+            migrateLegacyCacheControl(msg);
+        }
+        for (DashScopeMessage msg : messages) {
             if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+                setCacheControlOnContent(msg, EPHEMERAL_CACHE_CONTROL);
             }
         }
         DashScopeMessage lastMsg = messages.get(messages.size() - 1);
         if (shouldAutoCache(lastMsg)) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+            setCacheControlOnContent(lastMsg, EPHEMERAL_CACHE_CONTROL);
         }
+    }
+
+    static void setCacheControlOnContent(
+            DashScopeMessage message, Map<String, String> cacheControl) {
+        DashScopeContentPart lastPart = getOrCreateLastContentPart(message);
+        if (lastPart != null && lastPart.getCacheControl() == null) {
+            lastPart.setCacheControl(cacheControl);
+        }
+        message.setCacheControl(null);
+    }
+
+    private static void migrateLegacyCacheControl(DashScopeMessage message) {
+        Map<String, String> legacyCacheControl = message.getCacheControl();
+        if (legacyCacheControl != null && !legacyCacheControl.isEmpty()) {
+            setCacheControlOnContent(message, legacyCacheControl);
+        }
+    }
+
+    private static DashScopeContentPart getOrCreateLastContentPart(DashScopeMessage message) {
+        Object content = message.getContent();
+        if (content instanceof String text) {
+            DashScopeContentPart textPart = DashScopeContentPart.text(text);
+            message.setContent(List.of(textPart));
+            return textPart;
+        }
+        return findLastContentPart(content);
+    }
+
+    private static DashScopeContentPart findLastContentPart(Object content) {
+        if (content instanceof List<?> parts) {
+            for (int i = parts.size() - 1; i >= 0; i--) {
+                if (parts.get(i) instanceof DashScopeContentPart part) {
+                    return part;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -214,9 +259,9 @@ public class DashScopeChatFormatter
     }
 
     /**
-     * Get the "no cache" sentinel constant.
+     * Get the "no marker" sentinel constant.
      *
-     * @return unmodifiable empty map representing an explicit "no cache" intent
+     * @return unmodifiable empty map representing an explicit "no marker" intent
      */
     static Map<String, String> getNoCacheControl() {
         return NO_CACHE_CONTROL;
@@ -225,14 +270,18 @@ public class DashScopeChatFormatter
     /**
      * Whether the automatic cache-control strategy should mark a message as ephemeral.
      *
-     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
-     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
-     * sentinel — is left unchanged.
+     * <p>Returns {@code true} only when neither the legacy message-level state nor the last content
+     * part carries a cache-control value. The empty message-level "no marker" sentinel is therefore
+     * preserved across repeated automatic-strategy passes.
      *
      * @param message the message to inspect
      * @return {@code true} if the message should be auto-cached, {@code false} otherwise
      */
     static boolean shouldAutoCache(DashScopeMessage message) {
-        return message.getCacheControl() == null;
+        if (message.getCacheControl() != null) {
+            return false;
+        }
+        DashScopeContentPart lastPart = findLastContentPart(message.getContent());
+        return lastPart == null || lastPart.getCacheControl() == null;
     }
 }
