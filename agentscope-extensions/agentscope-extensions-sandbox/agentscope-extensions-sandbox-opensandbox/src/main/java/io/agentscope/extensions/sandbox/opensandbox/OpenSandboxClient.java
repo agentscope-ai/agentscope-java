@@ -126,15 +126,33 @@ public class OpenSandboxClient implements SandboxClient<OpenSandboxClientOptions
         if (call == null) {
             return merged;
         }
-        merged.setEndpoint(call.getEndpoint());
-        if (call.getApiKey() != null) merged.setApiKey(call.getApiKey());
-        merged.setImage(call.getImage());
-        merged.setEntrypoint(call.getEntrypoint());
-        merged.setResourceLimits(call.getResourceLimits());
-        merged.setSandboxTimeoutSeconds(call.getSandboxTimeoutSeconds());
-        merged.setReadyTimeoutSeconds(call.getReadyTimeoutSeconds());
-        merged.setRequestTimeoutSeconds(call.getRequestTimeoutSeconds());
-        merged.setUseServerProxy(call.isUseServerProxy());
+        if (call.isEndpointSet()) {
+            merged.setEndpoint(call.getEndpoint());
+        }
+        if (call.isApiKeySet()) {
+            merged.setApiKey(call.getApiKey());
+        }
+        if (call.isImageSet()) {
+            merged.setImage(call.getImage());
+        }
+        if (call.isEntrypointSet()) {
+            merged.setEntrypoint(call.getEntrypoint());
+        }
+        if (call.isResourceLimitsSet()) {
+            merged.setResourceLimits(call.getResourceLimits());
+        }
+        if (call.isSandboxTimeoutSecondsSet()) {
+            merged.setSandboxTimeoutSeconds(call.getSandboxTimeoutSeconds());
+        }
+        if (call.isReadyTimeoutSecondsSet()) {
+            merged.setReadyTimeoutSeconds(call.getReadyTimeoutSeconds());
+        }
+        if (call.isRequestTimeoutSecondsSet()) {
+            merged.setRequestTimeoutSeconds(call.getRequestTimeoutSeconds());
+        }
+        if (call.isUseServerProxySet()) {
+            merged.setUseServerProxy(call.isUseServerProxy());
+        }
         return merged;
     }
 }

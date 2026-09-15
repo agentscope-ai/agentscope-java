@@ -27,7 +27,12 @@ record OpenSandboxEndpoint(String protocol, String domain) {
         if (raw.isEmpty()) {
             throw new IllegalArgumentException("endpoint must not be blank");
         }
-        URI uri = URI.create(raw.contains("://") ? raw : "http://" + raw);
+        URI uri;
+        try {
+            uri = URI.create(raw.contains("://") ? raw : "http://" + raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid OpenSandbox endpoint: " + value, e);
+        }
         String path = uri.getPath();
         if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
                 || uri.getHost() == null

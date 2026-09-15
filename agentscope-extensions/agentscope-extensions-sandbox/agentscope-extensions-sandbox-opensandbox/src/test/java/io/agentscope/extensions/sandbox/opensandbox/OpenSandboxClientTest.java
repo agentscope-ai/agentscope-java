@@ -105,6 +105,27 @@ class OpenSandboxClientTest {
     }
 
     @Test
+    void callOptionsOverrideOnlyExplicitValues() throws Exception {
+        OpenSandboxClientOptions defaults = new OpenSandboxClientOptions();
+        defaults.setEndpoint("https://sandbox.example.com:8443");
+        defaults.setApiKey("default-key");
+        defaults.setImage("ubuntu:24.04");
+        defaults.setUseServerProxy(true);
+        RecordingSdk sdk = new RecordingSdk();
+        OpenSandboxClient client = new OpenSandboxClient(defaults, null, sdk);
+        OpenSandboxClientOptions call = new OpenSandboxClientOptions();
+        call.setApiKey("call-key");
+
+        OpenSandbox sandbox = (OpenSandbox) client.create(workspace("/workspace"), null, call);
+        sandbox.start();
+
+        assertEquals("https://sandbox.example.com:8443", sdk.lastOptions.getEndpoint());
+        assertEquals("call-key", sdk.lastOptions.getApiKey());
+        assertEquals("ubuntu:24.04", sdk.lastOptions.getImage());
+        assertTrue(sdk.lastOptions.isUseServerProxy());
+    }
+
+    @Test
     void createWithNullInputsUsesIndependentDefaults() {
         RecordingSdk sdk = new RecordingSdk();
         OpenSandboxClient client = new OpenSandboxClient(null, null, sdk);

@@ -32,6 +32,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class OpenSandboxTest {
@@ -218,9 +220,7 @@ class OpenSandboxTest {
     void persistDownloadsTarAndCleansTemporaryFile() throws Exception {
         Fixture fixture = fixture();
         byte[] archive = new byte[] {4, 5, 6};
-        String temp =
-                "/tmp/agentscope-persist-" + Integer.toHexString("session-1".hashCode()) + ".tar";
-        fixture.sdk.handle.files.put(temp, archive);
+        fixture.sdk.handle.defaultReadBytes = archive;
         fixture.sandbox.start();
 
         byte[] persisted;
@@ -231,6 +231,27 @@ class OpenSandboxTest {
         assertArrayEquals(archive, persisted);
         assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("tar -cf")));
         assertTrue(fixture.sdk.handle.commands.stream().anyMatch(c -> c.contains("rm -f")));
+    }
+
+    @Test
+    void persistUsesFreshTemporaryArchivePath() throws Exception {
+        Fixture fixture = fixture();
+        fixture.sandbox.start();
+
+        try (InputStream ignored = fixture.sandbox.persistWorkspace()) {
+            // Archive contents are irrelevant; the generated path is the contract under test.
+        }
+        String first = temporaryArchivePath(fixture.sdk.handle.commands);
+        fixture.sdk.handle.commands.clear();
+
+        try (InputStream ignored = fixture.sandbox.persistWorkspace()) {
+            // The second operation must not reuse the first operation's path.
+        }
+        String second = temporaryArchivePath(fixture.sdk.handle.commands);
+
+        assertFalse(first.equals(second));
+        assertTrue(first.startsWith("/tmp/agentscope-persist-"));
+        assertTrue(second.startsWith("/tmp/agentscope-persist-"));
     }
 
     @Test
@@ -333,6 +354,17 @@ class OpenSandboxTest {
         return state;
     }
 
+    private static String temporaryArchivePath(List<String> commands) {
+        Pattern pattern = Pattern.compile("-cf '([^']+)'");
+        for (int i = commands.size() - 1; i >= 0; i--) {
+            Matcher matcher = pattern.matcher(commands.get(i));
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        throw new AssertionError("No tar archive command found");
+    }
+
     private record Fixture(OpenSandboxState state, RecordingSdk sdk, OpenSandbox sandbox) {}
 
     private static final class NotFoundException extends Exception {}
@@ -374,6 +406,7 @@ class OpenSandboxTest {
         private final List<String> commands = new ArrayList<>();
         private final List<String> workingDirectories = new ArrayList<>();
         private final Map<String, byte[]> files = new HashMap<>();
+        private byte[] defaultReadBytes;
         private ExecResult nextResult = new ExecResult(0, "", "", false);
         private String failCommandContains;
         private Exception closeFailure;
@@ -400,7 +433,11 @@ class OpenSandboxTest {
 
         @Override
         public InputStream read(String absolutePath) {
-            return new ByteArrayInputStream(files.getOrDefault(absolutePath, new byte[0])) {
+            byte[] content =
+                    files.getOrDefault(
+                            absolutePath,
+                            defaultReadBytes == null ? new byte[0] : defaultReadBytes);
+            return new ByteArrayInputStream(content) {
                 @Override
                 public void close() throws IOException {
                     super.close();

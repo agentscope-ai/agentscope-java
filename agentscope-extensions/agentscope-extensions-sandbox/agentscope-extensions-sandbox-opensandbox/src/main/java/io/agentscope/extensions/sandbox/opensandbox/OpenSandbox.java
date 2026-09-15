@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Objects;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -239,12 +240,7 @@ public class OpenSandbox extends AbstractBaseSandbox implements SandboxFileTrans
     }
 
     private String tempArchive(String operation) {
-        String session = state.getSessionId() == null ? "unknown" : state.getSessionId();
-        return "/tmp/agentscope-"
-                + operation
-                + "-"
-                + Integer.toHexString(session.hashCode())
-                + ".tar";
+        return "/tmp/agentscope-" + operation + "-" + UUID.randomUUID() + ".tar";
     }
 
     private static void requireAbsolute(String path) {

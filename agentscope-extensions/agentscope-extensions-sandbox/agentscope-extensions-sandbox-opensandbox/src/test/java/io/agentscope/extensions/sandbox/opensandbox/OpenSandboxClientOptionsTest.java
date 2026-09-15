@@ -68,6 +68,19 @@ class OpenSandboxClientOptionsTest {
     }
 
     @Test
+    void malformedEndpointUsesFriendlyValidationMessage() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                OpenSandboxEndpoint.parse(
+                                        "http://example.com:8080/path with spaces"));
+
+        assertTrue(error.getMessage().startsWith("Invalid OpenSandbox endpoint:"));
+        assertInstanceOf(IllegalArgumentException.class, error.getCause());
+    }
+
+    @Test
     void defaultsMatchOpenSandboxRuntimeContract() {
         OpenSandboxClientOptions options = new OpenSandboxClientOptions();
 

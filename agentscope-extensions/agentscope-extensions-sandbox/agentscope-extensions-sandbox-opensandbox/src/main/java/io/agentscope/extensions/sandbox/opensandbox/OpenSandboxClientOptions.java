@@ -34,6 +34,15 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
     private int readyTimeoutSeconds = 30;
     private int requestTimeoutSeconds = 30;
     private boolean useServerProxy;
+    private boolean endpointSet;
+    private boolean apiKeySet;
+    private boolean imageSet;
+    private boolean entrypointSet;
+    private boolean resourceLimitsSet;
+    private boolean sandboxTimeoutSecondsSet;
+    private boolean readyTimeoutSecondsSet;
+    private boolean requestTimeoutSecondsSet;
+    private boolean useServerProxySet;
 
     @Override
     public String getType() {
@@ -52,6 +61,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
     public void setEndpoint(String endpoint) {
         OpenSandboxEndpoint.parse(endpoint);
         this.endpoint = endpoint.trim();
+        endpointSet = true;
     }
 
     public String getApiKey() {
@@ -60,6 +70,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+        apiKeySet = true;
     }
 
     public String getImage() {
@@ -71,6 +82,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
             throw new IllegalArgumentException("image must not be blank");
         }
         this.image = image;
+        imageSet = true;
     }
 
     public List<String> getEntrypoint() {
@@ -84,6 +96,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
             throw new IllegalArgumentException("entrypoint must contain at least one command");
         }
         this.entrypoint = List.copyOf(entrypoint);
+        entrypointSet = true;
     }
 
     public Map<String, String> getResourceLimits() {
@@ -104,6 +117,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
                     copy.put(key, value);
                 });
         this.resourceLimits = Map.copyOf(copy);
+        resourceLimitsSet = true;
     }
 
     public int getSandboxTimeoutSeconds() {
@@ -113,6 +127,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
     public void setSandboxTimeoutSeconds(int seconds) {
         requirePositive(seconds, "sandboxTimeoutSeconds");
         this.sandboxTimeoutSeconds = seconds;
+        sandboxTimeoutSecondsSet = true;
     }
 
     public int getReadyTimeoutSeconds() {
@@ -122,6 +137,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
     public void setReadyTimeoutSeconds(int seconds) {
         requirePositive(seconds, "readyTimeoutSeconds");
         this.readyTimeoutSeconds = seconds;
+        readyTimeoutSecondsSet = true;
     }
 
     public int getRequestTimeoutSeconds() {
@@ -131,6 +147,7 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
     public void setRequestTimeoutSeconds(int seconds) {
         requirePositive(seconds, "requestTimeoutSeconds");
         this.requestTimeoutSeconds = seconds;
+        requestTimeoutSecondsSet = true;
     }
 
     public boolean isUseServerProxy() {
@@ -139,6 +156,43 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
 
     public void setUseServerProxy(boolean useServerProxy) {
         this.useServerProxy = useServerProxy;
+        useServerProxySet = true;
+    }
+
+    boolean isEndpointSet() {
+        return endpointSet;
+    }
+
+    boolean isApiKeySet() {
+        return apiKeySet;
+    }
+
+    boolean isImageSet() {
+        return imageSet;
+    }
+
+    boolean isEntrypointSet() {
+        return entrypointSet;
+    }
+
+    boolean isResourceLimitsSet() {
+        return resourceLimitsSet;
+    }
+
+    boolean isSandboxTimeoutSecondsSet() {
+        return sandboxTimeoutSecondsSet;
+    }
+
+    boolean isReadyTimeoutSecondsSet() {
+        return readyTimeoutSecondsSet;
+    }
+
+    boolean isRequestTimeoutSecondsSet() {
+        return requestTimeoutSecondsSet;
+    }
+
+    boolean isUseServerProxySet() {
+        return useServerProxySet;
     }
 
     static OpenSandboxClientOptions copyOf(OpenSandboxClientOptions source) {
