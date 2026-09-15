@@ -75,18 +75,47 @@ public class WorkspaceSkillRepository
 
     private final AbstractFilesystem filesystem;
     private final String skillsRelativeDir;
-    private final Supplier<RuntimeContext> contextSupplier;
+
+    /** @deprecated context-less operations now resolve to {@link RuntimeContext#empty()} */
+    @Deprecated private final Supplier<RuntimeContext> contextSupplier;
+
     private final String source;
 
     private volatile boolean writable;
 
     /**
-     * Creates a read-only repository.
-     *
-     * @param filesystem        backing filesystem (non-null)
-     * @param skillsRelativeDir relative directory holding {@code <skill>/SKILL.md} (non-null)
-     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (non-null)
+     * Creates a read-only repository scoped to the default namespace; context-less operations
+     * resolve to {@link RuntimeContext#empty()} unless a request context is passed explicitly.
      */
+    public WorkspaceSkillRepository(AbstractFilesystem filesystem, String skillsRelativeDir) {
+        this(filesystem, skillsRelativeDir, null, null, false);
+    }
+
+    /**
+     * Creates a writable repository (matches the legacy
+     * {@code WritableFilesystemSkillRepository} default), scoped to the default namespace.
+     */
+    public WorkspaceSkillRepository(
+            AbstractFilesystem filesystem, String skillsRelativeDir, String source) {
+        this(filesystem, skillsRelativeDir, null, source, true);
+    }
+
+    /**
+     * Creates a repository with explicit source and writability, scoped to the default namespace.
+     */
+    public WorkspaceSkillRepository(
+            AbstractFilesystem filesystem,
+            String skillsRelativeDir,
+            String source,
+            boolean writable) {
+        this(filesystem, skillsRelativeDir, null, source, writable);
+    }
+
+    /**
+     * @deprecated pass the per-call {@link RuntimeContext} into the context-scoped methods instead
+     *     of binding a supplier at construction time.
+     */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -94,10 +123,8 @@ public class WorkspaceSkillRepository
         this(filesystem, skillsRelativeDir, contextSupplier, null, false);
     }
 
-    /**
-     * Creates a writable repository (matches the legacy
-     * {@code WritableFilesystemSkillRepository} default).
-     */
+    /** @deprecated use {@link #WorkspaceSkillRepository(AbstractFilesystem, String, String)} */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -111,11 +138,14 @@ public class WorkspaceSkillRepository
      *
      * @param filesystem        backing filesystem (non-null)
      * @param skillsRelativeDir relative directory holding {@code <skill>/SKILL.md} (non-null)
-     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (non-null)
+     * @param contextSupplier   supplies the {@link RuntimeContext} on each call (may be null)
      * @param source            source identifier attached to loaded skills; falls back to
      *                          {@code "workspace"} when null or blank
      * @param writable          whether {@link #save} and {@link #delete} are permitted
+     * @deprecated pass the per-call {@link RuntimeContext} into the context-scoped methods instead
+     *     of binding a supplier at construction time.
      */
+    @Deprecated
     public WorkspaceSkillRepository(
             AbstractFilesystem filesystem,
             String skillsRelativeDir,
@@ -124,7 +154,7 @@ public class WorkspaceSkillRepository
             boolean writable) {
         this.filesystem = Objects.requireNonNull(filesystem, "filesystem");
         this.skillsRelativeDir = Objects.requireNonNull(skillsRelativeDir, "skillsRelativeDir");
-        this.contextSupplier = Objects.requireNonNull(contextSupplier, "contextSupplier");
+        this.contextSupplier = contextSupplier;
         this.source = (source == null || source.isBlank()) ? DEFAULT_SOURCE : source;
         this.writable = writable;
     }
@@ -209,6 +239,11 @@ public class WorkspaceSkillRepository
         return getSkill(skillName) != null;
     }
 
+    /** Variant of {@link #skillExists(String)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public boolean skillExists(String skillName, RuntimeContext context) {
+        return getSkill(skillName, context != null ? context : currentContext()) != null;
+    }
+
     @Override
     public AgentSkillRepositoryInfo getRepositoryInfo() {
         return new AgentSkillRepositoryInfo("filesystem", skillsRelativeDir, writable);
@@ -248,6 +283,11 @@ public class WorkspaceSkillRepository
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {
+        return save(skills, force, null);
+    }
+
+    /** Variant of {@link #save(List, boolean)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public boolean save(List<AgentSkill> skills, boolean force, RuntimeContext context) {
         if (!writable) {
             log.warn("WorkspaceSkillRepository is currently read-only; save() ignored");
             return false;
@@ -255,19 +295,20 @@ public class WorkspaceSkillRepository
         if (skills == null || skills.isEmpty()) {
             return false;
         }
+        RuntimeContext ctx = context != null ? context : currentContext();
         boolean allOk = true;
         for (AgentSkill skill : skills) {
             if (skill == null || skill.getName() == null || skill.getName().isBlank()) {
                 allOk = false;
                 continue;
             }
-            if (!force && skillExists(skill.getName())) {
+            if (!force && getSkill(skill.getName(), ctx) != null) {
                 log.debug("Skill '{}' already exists; skipping (force=false)", skill.getName());
                 allOk = false;
                 continue;
             }
             try {
-                writeSkill(skill);
+                writeSkill(skill, ctx);
             } catch (Exception e) {
                 log.warn("Failed to save skill '{}': {}", skill.getName(), e.getMessage());
                 allOk = false;
@@ -278,6 +319,11 @@ public class WorkspaceSkillRepository
 
     @Override
     public boolean delete(String skillName) {
+        return delete(skillName, null);
+    }
+
+    /** Variant of {@link #delete(String)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public boolean delete(String skillName, RuntimeContext context) {
         if (!writable) {
             log.warn("WorkspaceSkillRepository is currently read-only; delete() ignored");
             return false;
@@ -285,11 +331,11 @@ public class WorkspaceSkillRepository
         if (skillName == null || skillName.isBlank()) {
             return false;
         }
-        AgentSkill existing = getSkill(skillName);
+        RuntimeContext ctx = context != null ? context : currentContext();
+        AgentSkill existing = getSkill(skillName, ctx);
         if (existing == null) {
             return false;
         }
-        RuntimeContext ctx = currentContext();
         String src = skillDirRelative(skillName);
         String archiveDest = archiveDestRelative(skillName);
         try {
@@ -319,12 +365,18 @@ public class WorkspaceSkillRepository
      * Returns {@code null} when the file does not exist or read fails.
      */
     public String readSkillFile(String skillName, String relPath) {
+        return readSkillFile(skillName, relPath, null);
+    }
+
+    /** Variant of {@link #readSkillFile(String, String)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public String readSkillFile(String skillName, String relPath, RuntimeContext context) {
         if (skillName == null || skillName.isBlank() || relPath == null || relPath.isBlank()) {
             return null;
         }
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
-            ReadResult rr = filesystem.read(currentContext(), path, 0, 0);
+            ReadResult rr =
+                    filesystem.read(context != null ? context : currentContext(), path, 0, 0);
             if (rr.isSuccess() && rr.fileData() != null) {
                 return rr.fileData().content();
             }
@@ -340,6 +392,12 @@ public class WorkspaceSkillRepository
      * size limits). Returns {@code true} on success.
      */
     public boolean writeSkillFile(String skillName, String relPath, String content) {
+        return writeSkillFile(skillName, relPath, content, null);
+    }
+
+    /** Variant of {@link #writeSkillFile(String, String, String)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public boolean writeSkillFile(
+            String skillName, String relPath, String content, RuntimeContext context) {
         if (!writable) {
             return false;
         }
@@ -353,7 +411,7 @@ public class WorkspaceSkillRepository
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
             filesystem.uploadFiles(
-                    currentContext(),
+                    context != null ? context : currentContext(),
                     List.of(
                             new AbstractMap.SimpleImmutableEntry<>(
                                     path, content.getBytes(StandardCharsets.UTF_8))));
@@ -369,6 +427,11 @@ public class WorkspaceSkillRepository
      * Idempotent: missing files are treated as success.
      */
     public boolean deleteSkillFile(String skillName, String relPath) {
+        return deleteSkillFile(skillName, relPath, null);
+    }
+
+    /** Variant of {@link #deleteSkillFile(String, String)} scoped to the supplied request context; {@code null} falls back to the shared supplier. */
+    public boolean deleteSkillFile(String skillName, String relPath, RuntimeContext context) {
         if (!writable) {
             return false;
         }
@@ -377,7 +440,7 @@ public class WorkspaceSkillRepository
         }
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
-            WriteResult r = filesystem.delete(currentContext(), path);
+            WriteResult r = filesystem.delete(context != null ? context : currentContext(), path);
             return r.isSuccess();
         } catch (Exception e) {
             log.warn("deleteSkillFile({}, {}) failed: {}", skillName, relPath, e.getMessage());
@@ -402,6 +465,8 @@ public class WorkspaceSkillRepository
         return skillsRelativeDir;
     }
 
+    /** @deprecated context-less operations resolve to {@link RuntimeContext#empty()}; do not use */
+    @Deprecated
     public RuntimeContext resolveContext() {
         return currentContext();
     }
@@ -410,8 +475,7 @@ public class WorkspaceSkillRepository
     //  Internals
     // =========================================================================
 
-    private void writeSkill(AgentSkill skill) {
-        RuntimeContext ctx = currentContext();
+    private void writeSkill(AgentSkill skill, RuntimeContext ctx) {
         String skillMd = toMarkdown(skill);
         String skillDir = skillDirRelative(skill.getName());
         String skillMdPath = skillDir + "/" + SKILL_FILE;
@@ -458,8 +522,10 @@ public class WorkspaceSkillRepository
         return skillsRelativeDir + "/" + ARCHIVE_PREFIX + "/" + name + "-" + ts;
     }
 
+    /** @deprecated context-less operations resolve to {@link RuntimeContext#empty()} */
+    @Deprecated
     private RuntimeContext currentContext() {
-        RuntimeContext ctx = contextSupplier.get();
+        RuntimeContext ctx = contextSupplier != null ? contextSupplier.get() : null;
         return ctx != null ? ctx : RuntimeContext.empty();
     }
 
