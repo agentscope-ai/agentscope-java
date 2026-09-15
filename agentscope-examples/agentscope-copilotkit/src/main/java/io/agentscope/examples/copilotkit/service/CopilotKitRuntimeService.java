@@ -19,22 +19,24 @@ import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.core.agui.store.AguiSnapshotHydrator;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.AguiThreadSnapshot;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.AgentInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.InfoResponse;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.Intelligence;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadEndpoints;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 /**
- * CopilotKit Runtime info and multi-route connect handshake with AgentEvent replay.
- *
- *
+ * CopilotKit Runtime info and multi-route connect hydrate backed by the framework presentation
+ * snapshot store.
  */
 @Service
 public final class CopilotKitRuntimeService {
@@ -47,13 +49,15 @@ public final class CopilotKitRuntimeService {
                     "humanInTheLoop", true);
 
     private final AguiAgentRegistry aguiAgentRegistry;
-    private final AgentEventAguiReplayer eventReplayer;
+    private final ObjectProvider<AguiSnapshotStore> snapshotStoreProvider;
+    private final AguiSnapshotHydrator hydrator = new AguiSnapshotHydrator();
     private final AguiEventEncoder encoder = new AguiEventEncoder();
 
     public CopilotKitRuntimeService(
-            AguiAgentRegistry aguiAgentRegistry, AgentEventAguiReplayer eventReplayer) {
+            AguiAgentRegistry aguiAgentRegistry,
+            ObjectProvider<AguiSnapshotStore> snapshotStoreProvider) {
         this.aguiAgentRegistry = aguiAgentRegistry;
-        this.eventReplayer = eventReplayer;
+        this.snapshotStoreProvider = snapshotStoreProvider;
     }
 
     public InfoResponse info() {
@@ -105,29 +109,22 @@ public final class CopilotKitRuntimeService {
     }
 
     /**
-     * AG-UI connect: replay persisted AgentEvents through converters, or emit an empty handshake.
+     * AG-UI connect: rebuild the visible conversation from the framework presentation snapshot
+     * store.
      *
-     * <p>History is stored as AgentScope {@code AgentEvent}s. On connect they are projected to
-     * AG-UI frames with the same converter registry used by {@code /run}, so CopilotKit can
-     * restore the conversation. Without history a minimal
-     * {@code RUN_STARTED → MESSAGES_SNAPSHOT([]) → RUN_FINISHED} handshake is returned.
+     * <p>Read-only: it looks up the stored snapshot for the thread and delegates to
+     * {@link AguiSnapshotHydrator}. When the snapshot store is disabled (or the thread has no
+     * history) the hydrator returns the minimal {@code RUN_STARTED → MESSAGES_SNAPSHOT([]) →
+     * RUN_FINISHED} handshake. Only the trailing unresolved interrupt is ever replayed, so a
+     * resolved historical interrupt can never reappear.
      */
     public Flux<ServerSentEvent<String>> connect(RunAgentInput input) {
         String threadId = input.getThreadId();
         String runId = input.getRunId();
-        List<AguiEvent> history = eventReplayer.replay(threadId, input);
-        if (history.isEmpty()) {
-            return Flux.fromIterable(emptyHandshake(threadId, runId)).map(this::sse);
-        }
-        return Flux.fromIterable(history).map(this::sse);
-    }
-
-    private List<AguiEvent> emptyHandshake(String threadId, String runId) {
-        List<AguiEvent> events = new ArrayList<>(3);
-        events.add(new AguiEvent.RunStarted(threadId, runId));
-        events.add(new AguiEvent.MessagesSnapshot(threadId, runId, List.of()));
-        events.add(new AguiEvent.RunFinished(threadId, runId));
-        return events;
+        AguiSnapshotStore store = snapshotStoreProvider.getIfAvailable();
+        AguiThreadSnapshot snapshot = store != null ? store.find(threadId).orElse(null) : null;
+        List<AguiEvent> frames = hydrator.hydrate(snapshot, threadId, runId);
+        return Flux.fromIterable(frames).map(this::sse);
     }
 
     private ServerSentEvent<String> sse(AguiEvent event) {

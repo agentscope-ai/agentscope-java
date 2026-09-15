@@ -26,6 +26,7 @@ import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.util.LinkedHashMap;
@@ -97,6 +98,7 @@ public class AguiWebFluxHandler {
                                         : AguiAdapterConfig.defaultConfig())
                         .adapterFactory(builder.adapterFactory)
                         .runtimeContextResolver(builder.runtimeContextResolver)
+                        .snapshotStore(builder.snapshotStore)
                         .build();
         this.encoder = new AguiEventEncoder();
         this.requestBodyParser =
@@ -139,6 +141,37 @@ public class AguiWebFluxHandler {
                 .map(requestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
+    }
+
+    /**
+     * Handle an AG-UI {@code /connect} hydrate request.
+     *
+     * <p>Parses the request body as {@link RunAgentInput} and returns a read-only SSE stream of
+     * frames reconstructed from the presentation snapshot store. No agent is invoked and there is
+     * no cancel-time interrupt, because hydrate has no live agent.
+     *
+     * @param request The server request
+     * @return A Mono containing the server response with the hydrate SSE stream
+     */
+    public Mono<ServerResponse> handleConnect(ServerRequest request) {
+        return request.bodyToMono(String.class)
+                .map(requestBodyParser::parse)
+                .flatMap(input -> hydrateInput(input, request))
+                .onErrorResume(this::handleParseError);
+    }
+
+    private Mono<ServerResponse> hydrateInput(RunAgentInput input, ServerRequest request) {
+        Flux<AguiEvent> events =
+                processor.hydrate(runtimeContextRequest(input, null, null, request));
+        Flux<ServerSentEvent<String>> sseStream =
+                events.map(
+                        event ->
+                                ServerSentEvent.<String>builder()
+                                        .data(encoder.encodeToJson(event).trim())
+                                        .build());
+        return ServerResponse.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(sseStream, ServerSentEvent.class);
     }
 
     private Mono<ServerResponse> processInput(
@@ -292,6 +325,7 @@ public class AguiWebFluxHandler {
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRequestBodyParser requestBodyParser;
+        private AguiSnapshotStore snapshotStore;
 
         /**
          * Set the agent registry.
@@ -389,6 +423,18 @@ public class AguiWebFluxHandler {
          */
         public Builder requestBodyParser(AguiRequestBodyParser requestBodyParser) {
             this.requestBodyParser = requestBodyParser;
+            return this;
+        }
+
+        /**
+         * Set the presentation snapshot store used for {@code /connect} hydrate and trailing
+         * interrupt clearing. Optional; only effective when the snapshot store is enabled.
+         *
+         * @param snapshotStore the snapshot store, or null
+         * @return This builder
+         */
+        public Builder snapshotStore(AguiSnapshotStore snapshotStore) {
+            this.snapshotStore = snapshotStore;
             return this;
         }
 
