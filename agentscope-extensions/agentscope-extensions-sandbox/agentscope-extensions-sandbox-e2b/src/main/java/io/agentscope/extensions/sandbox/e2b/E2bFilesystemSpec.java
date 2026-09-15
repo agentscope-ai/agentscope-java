@@ -95,7 +95,9 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    @Override
     public E2bFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+        super.snapshotSpec(snapshotSpec);
         this.snapshotSpec = snapshotSpec;
         return this;
     }
