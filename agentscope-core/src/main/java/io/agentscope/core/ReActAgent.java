@@ -2462,6 +2462,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             return Mono.just(msg);
                         }
                         String text = msg.getTextContent() == null ? "" : msg.getTextContent();
+                        // Original exception for unknown/transient failures, carried to the
+                        // exhaustion rethrow (see soFailedAttempts handling below).
+                        Exception unknownDomainFailure = null;
                         JsonNode payload;
                         List<StructuredOutputValidator.ValidationError> errors;
                         String parseErrorMessage = null;
@@ -2500,13 +2503,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     getName(),
                                     schema.getName(),
                                     extractionFailure);
-                            parseErrorMessage = extractionFailure.getMessage();
+                            // Neutral feedback: the model's output may have been valid,
+                            // so the correction turn must not blame the output. The raw
+                            // library detail goes into the FailedAttempt record (for
+                            // onFailedAttempt listeners and the exhaustion exception),
+                            // not into the model-visible message.
+                            unknownDomainFailure = extractionFailure;
+                            parseErrorMessage = StructuredOutputValidator.UNKNOWN_FAILURE_MARKER;
                             errors =
                                     List.of(
                                             new StructuredOutputValidator.ValidationError(
                                                     "$",
-                                                    "output is not a valid JSON object: "
-                                                            + extractionFailure.getMessage()));
+                                                    StructuredOutputValidator
+                                                            .UNKNOWN_FAILURE_MARKER));
                             payload = null;
                         }
                         if (errors.isEmpty()) {
@@ -2539,7 +2548,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 : (long) msg.getChatUsage().getInputTokens(),
                                         msg.getChatUsage() == null
                                                 ? null
-                                                : (long) msg.getChatUsage().getOutputTokens());
+                                                : (long) msg.getChatUsage().getOutputTokens(),
+                                        unknownDomainFailure);
                         soFailedAttempts.add(failed);
                         invokeFailedAttemptListener(policy, failed);
                         if (policy.emitAttemptEvents()) {
@@ -2577,6 +2587,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         policy.tokenBudget(),
                                         getName(),
                                         schema.getName());
+                            }
+                            if (soFailedAttempts.size() == 1
+                                    && soFailedAttempts.get(0).parseErrorMessage() != null
+                                    && StructuredOutputValidator.UNKNOWN_FAILURE_MARKER.equals(
+                                            soFailedAttempts.get(0).parseErrorMessage())
+                                    && soFailedAttempts.get(0).rawException() != null) {
+                                // The loop never actually touched a model-output problem:
+                                // surface the original internal fault instead of a
+                                // validation verdict that points at the model.
+                                log.error(
+                                        "Structured output validation failed on a"
+                                                + " non-model (unknown/transient) fault;"
+                                                + " rethrowing the original exception"
+                                                + " (agent={}, schema={})",
+                                        getName(),
+                                        schema.getName(),
+                                        soFailedAttempts.get(0).rawException());
+                                return Mono.error(soFailedAttempts.get(0).rawException());
                             }
                             return Mono.error(
                                     new StructuredOutputValidationException(

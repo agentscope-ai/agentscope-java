@@ -36,11 +36,32 @@ public record FailedAttempt(
         String parseErrorMessage,
         String rawOutput,
         Long promptTokens,
-        Long completionTokens) {
+        Long completionTokens,
+        Throwable rawException) {
 
     /** Normalizes a null error list to empty so consumers never see null. */
     public FailedAttempt {
         validationErrors = validationErrors == null ? List.of() : List.copyOf(validationErrors);
+    }
+
+    /** Backward-compatible constructor for callers recorded before rawException existed. */
+    public FailedAttempt(
+            int attemptNumber,
+            Kind kind,
+            List<StructuredOutputValidator.ValidationError> validationErrors,
+            String parseErrorMessage,
+            String rawOutput,
+            Long promptTokens,
+            Long completionTokens) {
+        this(
+                attemptNumber,
+                kind,
+                validationErrors,
+                parseErrorMessage,
+                rawOutput,
+                promptTokens,
+                completionTokens,
+                null);
     }
 
     /** Failure stage of an attempt. */

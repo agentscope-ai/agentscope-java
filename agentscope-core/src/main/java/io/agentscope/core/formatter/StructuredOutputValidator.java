@@ -60,6 +60,16 @@ public final class StructuredOutputValidator {
                                             .formatAssertionsEnabled(true)
                                             .build()));
 
+    /**
+     * Marker message used on the unknown/transient failure path: the retry feedback is
+     * deliberately neutral (the model's output may have been valid) instead of asserting a
+     * schema mismatch, and exhausted retries rethrow the original cause so internal faults
+     * surface instead of masquerading as model errors.
+     */
+    public static final String UNKNOWN_FAILURE_MARKER =
+            "internal validation error (transient) — original exception is attached to the"
+                    + " failed attempt";
+
     private StructuredOutputValidator() {}
 
     /**

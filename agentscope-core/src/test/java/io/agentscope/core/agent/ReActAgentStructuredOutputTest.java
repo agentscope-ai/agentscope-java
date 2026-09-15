@@ -952,6 +952,106 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
+    @DisplayName("unknown transient failure keeps limited recovery: retried, then succeeds")
+    void testUnknownTransientFailureIsRetriedAndRecovers() {
+        // Attempt 1: extraction hits an unexpected non-parse exception on the model's
+        // text (simulated by an exotic Unicode surrogate that defeats the codec —
+        // anything reaching the catch as a non-StructuredOutputParseException).
+        // Attempt 2: clean payload. The unknown branch must keep limited recovery — the
+        // call succeeds after exactly two model calls instead of failing on the hiccup.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel flakyModel =
+                new MockModel(
+                        msgs -> {
+                            String body =
+                                    calls.incrementAndGet() == 1
+                                            ? "{\"answer\": \"\ud83d\"}"
+                                            : "{\"answer\": 42}";
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_" + calls.get())
+                                            .content(
+                                                    List.of(TextBlock.builder().text(body).build()))
+                                            .usage(new ChatUsage(5, 10, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(flakyModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+        assertEquals(2, calls.get(), "transient failure must be retried, not fatal");
+        assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
+    }
+
+    @Test
+    @DisplayName("persistent unknown failure exhausts retries and rethrows the original fault")
+    void testPersistentUnknownFailureRethrowsOriginalException() {
+        // A persistent internal fault must not masquerade as a model-output verdict:
+        // every model response carries text that breaks the codec inside extraction
+        // (unknown domain, non-configuration), the retry loop runs to exhaustion, and
+        // the caller gets the ORIGINAL exception — not a StructuredOutputValidationException.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel brokenModel =
+                new MockModel(
+                        msgs -> {
+                            calls.incrementAndGet();
+                            throw new NullPointerException("validator path NPE");
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(brokenModel)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder().maxAttempts(2).build())
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        NullPointerException ex =
+                assertThrows(
+                        NullPointerException.class,
+                        () -> agent.call(inputMsg, MathAnswer.class).block());
+        assertEquals("validator path NPE", ex.getMessage());
+        assertEquals(
+                2,
+                calls.get(),
+                "unknown failures consume the retry budget (limited recovery), then"
+                        + " rethrow the original fault");
+    }
+
+    @Test
     @DisplayName(
             "error-feedback retry: invalid first attempt corrected, failed-turn thinking does not"
                     + " leak")
