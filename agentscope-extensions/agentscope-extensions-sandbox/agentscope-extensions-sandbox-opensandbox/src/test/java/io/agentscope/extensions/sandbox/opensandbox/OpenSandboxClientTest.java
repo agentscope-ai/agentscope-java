@@ -126,6 +126,21 @@ class OpenSandboxClientTest {
     }
 
     @Test
+    void nullApiKeyDoesNotOverrideConfiguredDefault() throws Exception {
+        OpenSandboxClientOptions defaults = new OpenSandboxClientOptions();
+        defaults.setApiKey("default-key");
+        RecordingSdk sdk = new RecordingSdk();
+        OpenSandboxClient client = new OpenSandboxClient(defaults, null, sdk);
+        OpenSandboxClientOptions call = new OpenSandboxClientOptions();
+        call.setApiKey(null);
+
+        OpenSandbox sandbox = (OpenSandbox) client.create(workspace("/workspace"), null, call);
+        sandbox.start();
+
+        assertEquals("default-key", sdk.lastOptions.getApiKey());
+    }
+
+    @Test
     void createWithNullInputsUsesIndependentDefaults() {
         RecordingSdk sdk = new RecordingSdk();
         OpenSandboxClient client = new OpenSandboxClient(null, null, sdk);

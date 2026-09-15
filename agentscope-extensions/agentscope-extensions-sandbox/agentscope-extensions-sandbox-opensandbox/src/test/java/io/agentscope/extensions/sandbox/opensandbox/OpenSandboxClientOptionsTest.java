@@ -16,6 +16,7 @@
 package io.agentscope.extensions.sandbox.opensandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -119,6 +120,9 @@ class OpenSandboxClientOptionsTest {
         Map<String, String> nullValue = new LinkedHashMap<>();
         nullValue.put("cpu", null);
         assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(nullValue));
+        options.setApiKey("secret");
+        options.setApiKey(null);
+        assertFalse(options.isApiKeySet());
     }
 
     @Test
@@ -151,5 +155,24 @@ class OpenSandboxClientOptionsTest {
         assertEquals(41, copy.getReadyTimeoutSeconds());
         assertEquals(42, copy.getRequestTimeoutSeconds());
         assertTrue(copy.isUseServerProxy());
+    }
+
+    @Test
+    void copyOfPreservesExplicitFieldFlags() {
+        OpenSandboxClientOptions source = new OpenSandboxClientOptions();
+        source.setEndpoint("https://sandbox.example.com:8443");
+        source.setApiKey("secret");
+
+        OpenSandboxClientOptions copy = OpenSandboxClientOptions.copyOf(source);
+
+        assertTrue(copy.isEndpointSet());
+        assertTrue(copy.isApiKeySet());
+        assertFalse(copy.isImageSet());
+        assertFalse(copy.isEntrypointSet());
+        assertFalse(copy.isResourceLimitsSet());
+        assertFalse(copy.isSandboxTimeoutSecondsSet());
+        assertFalse(copy.isReadyTimeoutSecondsSet());
+        assertFalse(copy.isRequestTimeoutSecondsSet());
+        assertFalse(copy.isUseServerProxySet());
     }
 }

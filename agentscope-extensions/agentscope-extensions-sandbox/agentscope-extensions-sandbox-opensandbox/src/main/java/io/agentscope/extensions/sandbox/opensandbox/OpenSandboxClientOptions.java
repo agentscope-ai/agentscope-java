@@ -17,7 +17,6 @@ package io.agentscope.extensions.sandbox.opensandbox;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,9 +67,13 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
         return apiKey;
     }
 
+    /**
+     * Sets the API key. A {@code null} value is treated as unset when call-level options are
+     * merged with client defaults.
+     */
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
-        apiKeySet = true;
+        apiKeySet = apiKey != null;
     }
 
     public String getImage() {
@@ -197,15 +200,24 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
 
     static OpenSandboxClientOptions copyOf(OpenSandboxClientOptions source) {
         OpenSandboxClientOptions copy = new OpenSandboxClientOptions();
-        copy.setEndpoint(source.getEndpoint());
-        copy.setApiKey(source.getApiKey());
-        copy.setImage(source.getImage());
-        copy.setEntrypoint(new ArrayList<>(source.getEntrypoint()));
-        copy.setResourceLimits(new LinkedHashMap<>(source.getResourceLimits()));
-        copy.setSandboxTimeoutSeconds(source.getSandboxTimeoutSeconds());
-        copy.setReadyTimeoutSeconds(source.getReadyTimeoutSeconds());
-        copy.setRequestTimeoutSeconds(source.getRequestTimeoutSeconds());
-        copy.setUseServerProxy(source.isUseServerProxy());
+        copy.endpoint = source.endpoint;
+        copy.apiKey = source.apiKey;
+        copy.image = source.image;
+        copy.entrypoint = source.entrypoint;
+        copy.resourceLimits = source.resourceLimits;
+        copy.sandboxTimeoutSeconds = source.sandboxTimeoutSeconds;
+        copy.readyTimeoutSeconds = source.readyTimeoutSeconds;
+        copy.requestTimeoutSeconds = source.requestTimeoutSeconds;
+        copy.useServerProxy = source.useServerProxy;
+        copy.endpointSet = source.endpointSet;
+        copy.apiKeySet = source.apiKeySet;
+        copy.imageSet = source.imageSet;
+        copy.entrypointSet = source.entrypointSet;
+        copy.resourceLimitsSet = source.resourceLimitsSet;
+        copy.sandboxTimeoutSecondsSet = source.sandboxTimeoutSecondsSet;
+        copy.readyTimeoutSecondsSet = source.readyTimeoutSecondsSet;
+        copy.requestTimeoutSecondsSet = source.requestTimeoutSecondsSet;
+        copy.useServerProxySet = source.useServerProxySet;
         return copy;
     }
 
