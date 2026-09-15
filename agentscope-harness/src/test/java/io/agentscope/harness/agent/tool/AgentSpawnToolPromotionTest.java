@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,6 +27,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -183,8 +185,10 @@ class AgentSpawnToolPromotionTest {
 
         // ---- Call agentSpawn with 1s timeout — agent takes ~2s+ to finish naturally ----
         String result =
-                tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
-                        .block(Duration.ofSeconds(10));
+                assertText(
+                        tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
+                                .block(Duration.ofSeconds(10)),
+                        ToolResultState.SUCCESS);
 
         // ===== Proof #1: tool returned the promotion message, not an error =====
         assertNotNull(result, "agentSpawn returned null");

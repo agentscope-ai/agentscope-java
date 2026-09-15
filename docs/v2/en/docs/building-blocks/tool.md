@@ -55,6 +55,14 @@ Methods that integrate with the execution flow and the permission system:
 | `generateSuggestions(toolInput)` | optional | Generate suggested rules from the current invocation; returns `List<PermissionRule>` |
 | `callAsync(param)` | optional | Tool execution; returns `Mono<ToolResultBlock>`. External tools do not implement this. |
 
+### Explicit result states
+
+Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Explicit states prevent successful content such as a log beginning with `[ERROR]` from being classified as a tool failure. `ToolResultBlock.text(text)` alone leaves the state as `RUNNING`; use `withState(...)` when preserving an existing JSON or multiline output format.
+
+The built-in `TodoTools` and the harness filesystem, web, memory, session, task, team, and subagent tools return structured results. Direct Java callers must receive `ToolResultBlock` (or `Mono<ToolResultBlock>` for `agentSpawn`, `agentSend`, and `agentGenerate`) instead of `String` / `Mono<String>`. Inspect `getState()` and read the text blocks from `getOutput()`. Registration through `Toolkit` is unchanged. Structured text is passed to the model without the JSON string quoting applied to plain `String` returns.
+
+Subagent background submission and timeout promotion return `SUCCESS` with a task handle. Synchronous execution failures and forced synchronous timeouts return `ERROR`; cancelled or interrupted remote waits return `INTERRUPTED`. The contents of a completed subagent reply do not determine the tool state.
+
 ### Built-in tools
 
 AgentScope currently ships these built-in tools:

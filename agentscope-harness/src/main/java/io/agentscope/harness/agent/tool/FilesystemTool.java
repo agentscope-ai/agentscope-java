@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
@@ -113,7 +114,7 @@ public class FilesystemTool {
             description =
                     "Read file content with line numbers. Supports pagination via offset and"
                             + " limit.")
-    public String readFile(
+    public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
             @ToolParam(
@@ -130,20 +131,22 @@ public class FilesystemTool {
         int lim = limit != null ? limit : 0;
         ReadResult r = abstractFilesystem.read(runtimeContext, norm(path), off, lim);
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
-        return r.fileData() != null ? r.fileData().content() : "";
+        return ToolResultBlock.success(r.fileData() != null ? r.fileData().content() : "");
     }
 
     @Tool(
             name = "write_file",
             description = "Write content to a new file, creating parent directories if needed.")
-    public String writeFile(
+    public ToolResultBlock writeFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
             @ToolParam(name = "content", description = "File content to write") String content) {
         WriteResult r = abstractFilesystem.write(runtimeContext, norm(path), content);
-        return r.isSuccess() ? "Written to " + r.path() : "Error: " + r.error();
+        return r.isSuccess()
+                ? ToolResultBlock.success("Written to " + r.path())
+                : ToolResultBlock.error(r.error());
     }
 
     @Tool(
@@ -151,7 +154,7 @@ public class FilesystemTool {
             description =
                     "Perform exact string replacement in a file. The old_string must be unique"
                             + " unless replace_all is true.")
-    public String editFile(
+    public ToolResultBlock editFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File to edit") String path,
             @ToolParam(name = "old_string", description = "Text to find") String oldString,
@@ -166,8 +169,9 @@ public class FilesystemTool {
                 abstractFilesystem.edit(
                         runtimeContext, norm(path), oldString, newString, shouldReplaceAll);
         return r.isSuccess()
-                ? "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))"
-                : "Error: " + r.error();
+                ? ToolResultBlock.success(
+                        "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))")
+                : ToolResultBlock.error(r.error());
     }
 
     @Tool(
@@ -176,7 +180,7 @@ public class FilesystemTool {
             description =
                     "Search file contents for a literal text pattern. Returns at most 100 matches"
                             + " by default to keep tool output bounded.")
-    public String grepFiles(
+    public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")
                     String pattern,
@@ -196,25 +200,26 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GREP_LIMIT);
         if (effectiveLimit < 1) {
-            return "Error: limit must be greater than 0";
+            return ToolResultBlock.error("limit must be greater than 0");
         }
         GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, norm(path), glob);
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<GrepMatch> matches = r.matches();
         if (matches == null || matches.isEmpty()) {
-            return "No matches found";
+            return ToolResultBlock.success("No matches found");
         }
-        return boundedListing(
-                matches.stream().map(m -> m.path() + ":" + m.line() + ":" + m.text()),
-                matches.size(),
-                effectiveLimit,
-                "matches");
+        return ToolResultBlock.success(
+                boundedListing(
+                        matches.stream().map(m -> m.path() + ":" + m.line() + ":" + m.text()),
+                        matches.size(),
+                        effectiveLimit,
+                        "matches"));
     }
 
     /** Search using the default result limit. */
-    public String grepFiles(
+    public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
         return grepFiles(runtimeContext, pattern, path, glob, null);
     }
@@ -225,7 +230,7 @@ public class FilesystemTool {
             description =
                     "Find files matching a glob pattern. Returns at most 200 files by default to"
                             + " keep tool output bounded.")
-    public String globFiles(
+    public ToolResultBlock globFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Glob pattern (e.g., **/*.java)")
                     String pattern,
@@ -243,26 +248,32 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GLOB_LIMIT);
         if (effectiveLimit < 1) {
-            return "Error: limit must be greater than 0";
+            return ToolResultBlock.error("limit must be greater than 0");
         }
         GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path));
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<FileInfo> files = r.matches();
         if (files == null || files.isEmpty()) {
-            return "No matching files found";
+            return ToolResultBlock.success("No matching files found");
         }
-        return boundedListing(
-                files.stream()
-                        .map(f -> f.path() + (f.isDirectory() ? "/" : " (" + f.size() + " bytes)")),
-                files.size(),
-                effectiveLimit,
-                "files");
+        return ToolResultBlock.success(
+                boundedListing(
+                        files.stream()
+                                .map(
+                                        f ->
+                                                f.path()
+                                                        + (f.isDirectory()
+                                                                ? "/"
+                                                                : " (" + f.size() + " bytes)")),
+                        files.size(),
+                        effectiveLimit,
+                        "files"));
     }
 
     /** Search using the default result limit. */
-    public String globFiles(RuntimeContext runtimeContext, String pattern, String path) {
+    public ToolResultBlock globFiles(RuntimeContext runtimeContext, String pattern, String path) {
         return globFiles(runtimeContext, pattern, path, null);
     }
 
@@ -277,28 +288,29 @@ public class FilesystemTool {
             name = "list_files",
             readOnly = true,
             description = "List files and directories at the given path.")
-    public String listFiles(
+    public ToolResultBlock listFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {
         LsResult r = abstractFilesystem.ls(runtimeContext, norm(path));
         if (!r.isSuccess()) {
-            return "Error: " + r.error();
+            return ToolResultBlock.error(r.error());
         }
         List<FileInfo> infos = r.entries();
         if (infos == null || infos.isEmpty()) {
-            return "Empty directory: " + path;
+            return ToolResultBlock.success("Empty directory: " + path);
         }
-        return boundedListing(
-                infos.stream()
-                        .map(
-                                f ->
-                                        (f.isDirectory() ? "[DIR]  " : "[FILE] ")
-                                                + f.path()
-                                                + (f.isDirectory()
-                                                        ? ""
-                                                        : " (" + f.size() + " bytes)")),
-                infos.size(),
-                MAX_LISTING_ENTRIES,
-                "entries");
+        return ToolResultBlock.success(
+                boundedListing(
+                        infos.stream()
+                                .map(
+                                        f ->
+                                                (f.isDirectory() ? "[DIR]  " : "[FILE] ")
+                                                        + f.path()
+                                                        + (f.isDirectory()
+                                                                ? ""
+                                                                : " (" + f.size() + " bytes)")),
+                        infos.size(),
+                        MAX_LISTING_ENTRIES,
+                        "entries"));
     }
 }
