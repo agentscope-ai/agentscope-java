@@ -2811,7 +2811,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         MiddlewareBase::onActing,
                                                         actingCore)
                                                 .apply(new ActingInput(toolCalls));
-                                return stream.doOnNext(
+                                return stream.doOnNext(this::publishEvent)
+                                        .doOnNext(
                                                 ev -> {
                                                     if (ev instanceof RequestStopEvent rs) {
                                                         actingStopRequested.compareAndSet(null, rs);
@@ -2951,8 +2952,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         new RequestStopEvent(
                                                 "permission asking",
                                                 GenerateReason.PERMISSION_ASKING));
-                            })
-                    .doOnNext(this::publishEvent);
+                            });
         }
 
         /**
@@ -3912,7 +3912,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     core)
                             .apply(new ActingInput(deniedToolCalls));
 
-            return stream.doOnNext(
+            return stream.doOnNext(this::publishEvent)
+                    .doOnNext(
                             ev -> {
                                 if (ev instanceof RequestStopEvent rs) {
                                     stopRef.compareAndSet(null, rs);

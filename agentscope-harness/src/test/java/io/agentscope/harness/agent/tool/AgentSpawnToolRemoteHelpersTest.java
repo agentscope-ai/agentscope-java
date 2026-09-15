@@ -82,6 +82,18 @@ class AgentSpawnToolRemoteHelpersTest {
     }
 
     @Test
+    void tagForwardedEvent_setsSourceAndTaskIdWithoutDiscardingMetadata() {
+        TextBlockDeltaEvent event = new TextBlockDeltaEvent(null, "b1", "hello");
+        event.withMetadataEntry("keep", "me");
+
+        AgentEvent tagged = AgentSpawnTool.tagForwardedEvent(event, "parent/worker", "task_abc");
+
+        assertEquals("parent/worker", tagged.getSource());
+        assertEquals("task_abc", tagged.getMetadata().get(AgentEvent.METADATA_TASK_ID));
+        assertEquals("me", tagged.getMetadata().get("keep"));
+    }
+
+    @Test
     void collectParentDenyRules_returnsEmptyWhenInheritDisabled() {
         AgentState parent =
                 AgentState.builder()

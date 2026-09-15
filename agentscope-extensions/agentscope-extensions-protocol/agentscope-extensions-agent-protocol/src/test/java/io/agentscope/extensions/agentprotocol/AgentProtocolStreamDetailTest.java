@@ -28,10 +28,13 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatUsage;
@@ -45,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,27 +65,39 @@ class AgentProtocolStreamDetailTest {
 
     private ProtocolTaskRepository taskRepository;
     private HarnessAgent agent;
+    private AtomicInteger agentStreamSubscriptions;
 
     @BeforeEach
     void setUp() {
         taskRepository = new WorkspaceProtocolTaskRepository(tempDir);
         agent = mock(HarnessAgent.class);
+        agentStreamSubscriptions = new AtomicInteger();
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
-                .thenReturn(Flux.fromIterable(agentRun()));
+                .thenReturn(
+                        Flux.defer(
+                                () -> {
+                                    agentStreamSubscriptions.incrementAndGet();
+                                    return Flux.fromIterable(agentRun());
+                                }));
     }
 
     /** A run touching a wire-typed event, a delta, and several passthrough-only events. */
     private static List<AgentEvent> agentRun() {
         return List.of(
-                new AgentStartEvent("sess", "reply", "worker"),
-                new TextBlockStartEvent("reply", "b1"),
-                new TextBlockDeltaEvent("reply", "b1", "hello"),
-                new TextBlockEndEvent("reply", "b1"),
-                new ToolResultTextDeltaEvent("reply", "call-1", "read_file", "file contents"),
-                new ModelCallEndEvent("reply", new ChatUsage(10, 20, 0, 0.5)),
+                new AgentStartEvent("sess", "invocation-reply", "worker"),
+                new ModelCallStartEvent("model-reply"),
+                new TextBlockStartEvent("model-reply", "b1"),
+                new TextBlockDeltaEvent("model-reply", "b1", "hello"),
+                new TextBlockEndEvent("model-reply", "b1"),
+                new ToolResultTextDeltaEvent("model-reply", "call-1", "read_file", "file contents"),
+                new ModelCallEndEvent("model-reply", new ChatUsage(10, 20, 0, 0.5)),
                 new AgentResultEvent(
-                        Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build()),
-                new AgentEndEvent("reply"));
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .textContent("done")
+                                .generateReason(GenerateReason.MODEL_STOP)
+                                .build()),
+                new AgentEndEvent("invocation-reply"));
     }
 
     @Test
@@ -95,13 +111,33 @@ class AgentProtocolStreamDetailTest {
     }
 
     @Test
-    void fullLevelAddsDeltasButNotPassthrough() {
-        Set<RemoteEventType> types = typesFor("full", "t-full");
+    void fullLevelAddsDeltasAndAuthoritativePassthroughEvents() {
+        List<RemoteAgentEvent> events = collect("full", "t-full");
+        Set<RemoteEventType> types =
+                events.stream()
+                        .map(RemoteAgentEvent::getType)
+                        .collect(Collectors.toUnmodifiableSet());
+        Set<String> eventTypes =
+                events.stream()
+                        .map(RemoteAgentEvent::getEventType)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toUnmodifiableSet());
 
         assertTrue(types.contains(RemoteEventType.TEXT_DELTA));
-        assertFalse(
-                types.contains(RemoteEventType.AGENT_EVENT),
-                "full keeps the pre-existing volume for deployments that never asked for more");
+        assertTrue(types.contains(RemoteEventType.AGENT_EVENT));
+        assertTrue(eventTypes.contains("TEXT_OUTPUT_DISPOSITION"), eventTypes.toString());
+        assertTrue(eventTypes.contains("AGENT_RESULT"), eventTypes.toString());
+        assertFalse(eventTypes.contains("TEXT_BLOCK_START"), eventTypes.toString());
+        assertFalse(eventTypes.contains("TOOL_RESULT_TEXT_DELTA"), eventTypes.toString());
+
+        TextOutputDispositionEvent disposition =
+                events.stream()
+                        .filter(event -> "TEXT_OUTPUT_DISPOSITION".equals(event.getEventType()))
+                        .findFirst()
+                        .flatMap(RemoteEventCodec::toAgentEvent)
+                        .map(TextOutputDispositionEvent.class::cast)
+                        .orElseThrow();
+        assertEquals("model-reply", disposition.getReplyId());
     }
 
     @Test
@@ -146,6 +182,9 @@ class AgentProtocolStreamDetailTest {
 
         Flux<RemoteAgentEvent> subscription = bus.subscribe(taskId, 0L);
         store.submit(taskId, "worker", "go", Map.of("detail", detail));
-        return subscription.take(Duration.ofSeconds(5)).collectList().block();
+        List<RemoteAgentEvent> events =
+                subscription.take(Duration.ofSeconds(5)).collectList().block();
+        assertEquals(1, agentStreamSubscriptions.get(), "the agent stream must execute once");
+        return events;
     }
 }
