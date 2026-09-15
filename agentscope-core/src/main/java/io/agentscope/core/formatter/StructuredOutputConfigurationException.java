@@ -20,6 +20,12 @@ package io.agentscope.core.formatter;
  * misconfigured validator registry) — not a model-output problem. Callers must propagate it
  * instead of retrying (which would bill model calls for a configuration fault) or degrading
  * to the synthetic-tool fallback (which reuses the same schema and fails the same way).
+ *
+ * <p>Call-contract note: {@code ReActAgent.call(...)} previously surfaced a broken schema as
+ * a {@link StructuredOutputValidationException} after exhausting its retry budget; it now
+ * fails fast with this exception on the first attempt. Downstream error mapping (AG-UI error
+ * surfaces, HTTP-status translation in starters) should account for the new type when
+ * upgrading.
  */
 public class StructuredOutputConfigurationException extends IllegalArgumentException {
 

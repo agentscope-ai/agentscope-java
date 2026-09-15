@@ -163,4 +163,29 @@ class StructuredOutputValidatorTest {
         assertTrue(ex.getMessage().contains("structured_output_schema_invalid"));
         assertNotNull(ex.getCause(), "compilation failure must be preserved as the cause");
     }
+
+    @Test
+    void danglingRefSurfacesAsConfigurationException() throws Exception {
+        // networknt resolves $ref lazily: an unresolvable reference fails during
+        // validation rather than compilation — still a configuration fault, and it must
+        // be classified as one instead of leaking the raw library exception.
+        JsonSchema danglingRef =
+                JsonSchema.builder()
+                        .name("dangling-ref")
+                        .schema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("answer", Map.of("$ref", "#/definitions/missing"))))
+                        .build();
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () ->
+                                StructuredOutputValidator.validate(
+                                        MAPPER.readTree("{\"answer\":\"x\"}"), danglingRef));
+        assertTrue(ex.getMessage().contains("failed during validation"));
+        assertNotNull(ex.getCause(), "the library failure must be preserved as the cause");
+    }
 }

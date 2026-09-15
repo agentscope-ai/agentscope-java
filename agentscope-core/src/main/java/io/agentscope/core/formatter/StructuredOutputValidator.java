@@ -18,6 +18,7 @@ package io.agentscope.core.formatter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.networknt.schema.Error;
 import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaException;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import java.util.ArrayList;
@@ -43,9 +44,10 @@ public final class StructuredOutputValidator {
     // validation can adopt the same strictness in a follow-up; until then the native path
     // is the stricter of the two by design.
     //
-    // The registry's built-in cache is keyed by the serialized schema string and is bounded
-    // in practice by class-derived schemas (a small, fixed set per process). Reusing this
-    // helper for dynamically generated schemas would need an explicit cache bound first.
+    // The registry's built-in cache is keyed by the serialized schema string. It is bounded
+    // only when callers pass class-derived schemas; per-request dynamic schemas (e.g. AG-UI /
+    // studio per-call structured output) would grow it without bound — do not route such
+    // schemas through this helper until the cache has an explicit bound.
     private static final SchemaRegistry REGISTRY =
             SchemaRegistry.withDefaultDialect(
                     SpecificationVersion.DRAFT_2020_12,
@@ -86,7 +88,7 @@ public final class StructuredOutputValidator {
         Schema compiled;
         try {
             compiled = REGISTRY.getSchema(canonical(schema.getSchema()));
-        } catch (Exception compileFailure) {
+        } catch (SchemaException compileFailure) {
             // A schema that fails to compile is a configuration error: surface it as such
             // (with the original cause) instead of letting the caller treat it as a
             // model-output problem.
@@ -95,7 +97,18 @@ public final class StructuredOutputValidator {
                             + compileFailure.getMessage(),
                     compileFailure);
         }
-        List<Error> messages = compiled.validate(output);
+        List<Error> messages;
+        try {
+            messages = compiled.validate(output);
+        } catch (SchemaException validationFailure) {
+            // networknt can also fail lazily at validation time (e.g. an unresolvable
+            // $ref): a schema/configuration fault, not a model-output mismatch —
+            // classify it accordingly instead of leaking the raw library exception.
+            throw new StructuredOutputConfigurationException(
+                    "structured_output_schema_invalid: schema failed during validation — "
+                            + validationFailure.getMessage(),
+                    validationFailure);
+        }
         if (messages == null || messages.isEmpty()) {
             return List.of();
         }

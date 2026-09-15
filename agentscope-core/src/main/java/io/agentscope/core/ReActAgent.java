@@ -2477,21 +2477,37 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "output is not a valid JSON object: "
                                                             + parseFailure.getMessage()));
                             payload = null;
-                        } catch (Exception extractionFailure) {
-                            // Configuration/platform-domain failure (schema compilation,
-                            // registry misconfiguration, an unexpected bug) — not a
-                            // model-output problem: counting it against the retry budget
-                            // and asking the model to fix its answer would bill calls and
-                            // blame the wrong party. Propagate as-is; only failures with
-                            // recovery semantics (the parse path above) enter the retry
-                            // loop.
+                        } catch (StructuredOutputConfigurationException configurationFailure) {
+                            // Configuration domain: fail fast — retrying cannot fix a
+                            // misconfigured schema, and asking the model to "fix its
+                            // answer" would bill calls and blame the wrong party.
                             log.error(
+                                    "Structured output configuration error"
+                                            + " (agent={}, schema={})",
+                                    getName(),
+                                    schema.getName(),
+                                    configurationFailure);
+                            return Mono.error(configurationFailure);
+                        } catch (Exception extractionFailure) {
+                            // Unknown/transient domain: preserve the limited recovery the
+                            // retry loop provides (a registry race, a validator hiccup) —
+                            // bounded by maxAttempts/tokenBudget, with a warn for
+                            // observability. Configuration errors never reach this branch.
+                            log.warn(
                                     "Unexpected failure during structured output"
-                                            + " extraction/validation (agent={}, schema={})",
+                                            + " extraction/validation; treating as retryable"
+                                            + " (agent={}, schema={})",
                                     getName(),
                                     schema.getName(),
                                     extractionFailure);
-                            return Mono.error(extractionFailure);
+                            parseErrorMessage = extractionFailure.getMessage();
+                            errors =
+                                    List.of(
+                                            new StructuredOutputValidator.ValidationError(
+                                                    "$",
+                                                    "output is not a valid JSON object: "
+                                                            + extractionFailure.getMessage()));
+                            payload = null;
                         }
                         if (errors.isEmpty()) {
                             // Record the guard id only after validation succeeds: a message
