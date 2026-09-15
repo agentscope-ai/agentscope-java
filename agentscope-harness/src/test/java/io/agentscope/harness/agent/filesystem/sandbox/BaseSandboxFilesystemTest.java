@@ -323,6 +323,62 @@ class BaseSandboxFilesystemTest {
             int editEofPos = fs.lastCommand.indexOf("__EDIT_EOF__", heredocPos + 1);
             assertTrue(editEofPos > heredocPos, "payload should be between heredoc markers");
         }
+
+        // The edit script only ever prints a JSON object on stdout. If the captured output looks
+        // like a Python traceback, a SyntaxError, or a missing-file error, the command failed to
+        // run at all — edit() must surface that as an execution failure instead of falling through
+        // to the opaque "unexpected server response" branch.
+        @Test
+        void edit_pythonTraceback_reportedAsExecutionFailure() {
+            String traceback =
+                    "Traceback (most recent call last):\n"
+                            + "  File \"<stdin>\", line 3, in <module>\n"
+                            + "binascii.Error: Invalid base64-encoded string";
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse(traceback, 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "traceback should be reported as an execution failure, got: " + result.error());
+            assertFalse(
+                    result.error().contains("unexpected server response"),
+                    "should not fall through to the opaque branch, got: " + result.error());
+        }
+
+        @Test
+        void edit_syntaxError_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "  File \"<stdin>\"\nSyntaxError: invalid syntax", 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "SyntaxError should be reported as an execution failure, got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_missingInterpreter_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "/bin/sh: python3: No such file or directory", 127, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "missing interpreter should be reported as an execution failure, got: "
+                            + result.error());
+        }
     }
 
     // ================================================================
