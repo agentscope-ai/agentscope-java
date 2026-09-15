@@ -16,13 +16,19 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tool calls accumulator for accumulating streaming tool call chunks.
@@ -38,6 +44,8 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolCallsAccumulator.class);
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -92,6 +100,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
+            ToolCallState state = ToolCallState.PENDING;
             String rawContentStr = this.rawContent.toString();
 
             // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
@@ -113,8 +122,22 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             }
                         }
                     }
-                } catch (Exception ignored) {
-                    // Parsing failed, keep previously merged args
+                } catch (Exception e) {
+                    state = ToolCallState.PARSE_FAILED;
+                    // Do not leave stale or partial arguments executable after final parsing
+                    // fails. The PARSE_FAILED state prevents dispatch through ReActAgent, and
+                    // clearing the map keeps the block fail-closed for other consumers too.
+                    finalArgs.clear();
+                    log.warn(
+                            "Failed to parse accumulated tool call arguments: "
+                                    + "toolId={}, toolName={}, byteLength={}, sha256={}, "
+                                    + "exceptionType={}, message={}",
+                            toolId,
+                            name,
+                            rawContentStr.getBytes(StandardCharsets.UTF_8).length,
+                            sha256(rawContentStr),
+                            e.getClass().getName(),
+                            e.getMessage());
                 }
             }
 
@@ -135,6 +158,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
+                    .state(state)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
@@ -144,6 +168,21 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return "__fragment__".equals(name)
                     || "__pending__".equals(name)
                     || (name != null && name.startsWith("__"));
+        }
+
+        private String sha256(String value) {
+            try {
+                byte[] digest =
+                        MessageDigest.getInstance("SHA-256")
+                                .digest(value.getBytes(StandardCharsets.UTF_8));
+                StringBuilder hex = new StringBuilder(digest.length * 2);
+                for (byte b : digest) {
+                    hex.append(String.format("%02x", b));
+                }
+                return hex.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 is not available", e);
+            }
         }
 
         private String generateId() {
