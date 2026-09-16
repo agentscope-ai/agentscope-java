@@ -56,15 +56,18 @@ class HarnessAgentLocalWorkspaceDisabledTest {
 
     private String previousUserDir;
     private String previousWorkspaceProperty;
+    private String previousStateHome;
 
     @BeforeEach
     void pointWorkingDirectoryAtTempDir() {
         previousUserDir = System.getProperty("user.dir");
         previousWorkspaceProperty = System.getProperty(HarnessAgent.WORKSPACE_PROPERTY);
+        previousStateHome = System.getProperty("agentscope.state.home");
         // The default workspace would resolve against ${user.dir}; redirect it to a scratch dir
         // so the test can assert that NOTHING is created there in disabled mode.
         System.setProperty("user.dir", workingDirectory.toString());
         System.clearProperty(HarnessAgent.WORKSPACE_PROPERTY);
+        System.clearProperty("agentscope.state.home");
     }
 
     @AfterEach
@@ -74,6 +77,11 @@ class HarnessAgentLocalWorkspaceDisabledTest {
             System.setProperty(HarnessAgent.WORKSPACE_PROPERTY, previousWorkspaceProperty);
         } else {
             System.clearProperty(HarnessAgent.WORKSPACE_PROPERTY);
+        }
+        if (previousStateHome != null) {
+            System.setProperty("agentscope.state.home", previousStateHome);
+        } else {
+            System.clearProperty("agentscope.state.home");
         }
     }
 
@@ -108,6 +116,36 @@ class HarnessAgentLocalWorkspaceDisabledTest {
     }
 
     @Test
+    void disabledBuild_withStateHomeOverride_doesNotFailFast() {
+        // -Dagentscope.state.home relocates the default JsonFileAgentStateStore off $HOME, so
+        // the caller has taken responsibility for where the state tree lands.
+        System.setProperty(
+                "agentscope.state.home", workingDirectory.resolve("state-home").toString());
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("ws-disabled-statehome")
+                        .model(stubModel("ok"))
+                        .disableLocalWorkspace()
+                        .disableSubagents()
+                        .disableFilesystemTools()
+                        .disableShellTool()
+                        .disableMemoryTools()
+                        .disableMemoryHooks()
+                        .disableDynamicSkills()
+                        .disableDefaultWorkspaceSkills()
+                        .disableWorkspaceContext()
+                        .disableTranscript()
+                        .disableCompaction()
+                        .disableToolResultEviction()
+                        .taskRepository(new NoopTaskRepository())
+                        .build()) {
+            // build succeeded without an explicit state store — the default JsonFile store is
+            // permitted because state.home moves it outside the workspace concern.
+            assertTrue(true);
+        }
+    }
+
+    @Test
     void disabledBuild_withSubagentsButNoTaskRepository_failsFast() {
         IllegalStateException ex =
                 assertThrows(
@@ -133,27 +171,27 @@ class HarnessAgentLocalWorkspaceDisabledTest {
 
     @Test
     void ephemeralWorkspace_resolvesOutsideWorkingDirectory() {
+        Path tmpDir = Paths.get(System.getProperty("java.io.tmpdir"));
         Path ephemeral = HarnessAgent.resolveEphemeralWorkspace("my-agent");
-        assertTrue(ephemeral.startsWith(Paths.get(System.getProperty("java.io.tmpdir"))));
+        assertTrue(ephemeral.startsWith(tmpDir));
         assertFalse(
                 ephemeral.toAbsolutePath().toString().contains(workingDirectory.toString()),
                 "ephemeral workspace must stay under the JVM temp dir, never the working"
                         + " directory");
-        assertEquals(
-                Paths.get(System.getProperty("java.io.tmpdir"), "agentscope-workspace", "my-agent"),
-                ephemeral);
+        // layout: <tmp>/agentscope-workspace/<jvm-nonce>/<agentId> — the nonce isolates
+        // replicas / tenants on one host, and the agent id ends the path.
+        assertTrue(ephemeral.startsWith(tmpDir.resolve("agentscope-workspace")));
+        assertEquals("my-agent", ephemeral.getFileName().toString());
+        assertEquals(3, ephemeral.getNameCount() - tmpDir.getNameCount());
     }
 
     @Test
     void ephemeralWorkspace_sanitizesBlankAgentId() {
         assertEquals(
-                Paths.get(
-                        System.getProperty("java.io.tmpdir"), "agentscope-workspace", "ReActAgent"),
-                HarnessAgent.resolveEphemeralWorkspace("   "));
+                "ReActAgent",
+                HarnessAgent.resolveEphemeralWorkspace("   ").getFileName().toString());
         assertEquals(
-                Paths.get(
-                        System.getProperty("java.io.tmpdir"), "agentscope-workspace", "ReActAgent"),
-                HarnessAgent.resolveEphemeralWorkspace(""));
+                "ReActAgent", HarnessAgent.resolveEphemeralWorkspace("").getFileName().toString());
     }
 
     private static HarnessAgent.Builder buildFullyDisabledAgent() {

@@ -168,6 +168,11 @@ import reactor.core.publisher.Mono;
  */
 public class HarnessAgent implements Agent, AutoCloseable {
 
+    /** Per-JVM nonce that keeps {@link #resolveEphemeralWorkspace(String)} trees from colliding
+     * across replicas / tenants sharing one host. */
+    private static final String EPHEMERAL_WORKSPACE_NONCE =
+            java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
     private final ReActAgent delegate;
@@ -1193,6 +1198,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
         return Paths.get(System.getProperty("java.io.tmpdir"))
                 .resolve("agentscope-workspace")
+                // Per-JVM nonce keeps multi-replica / multi-tenant deployments on one host from
+                // colliding in the same tree; the previous pattern was host-global per agentId.
+                .resolve(EPHEMERAL_WORKSPACE_NONCE)
                 .resolve(safeAgentId);
     }
 
@@ -2314,11 +2322,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *
          * <p>When enabled and no explicit {@link #workspace(Path)} is set, the workspace path
          * resolves to an ephemeral location under the JVM temp directory
-         * ({@code ${java.io.tmpdir}/agentscope-workspace/<agentId>}) instead of
+         * ({@code ${java.io.tmpdir}/agentscope-workspace/<jvm-nonce>/<agentId>}) instead of
          * {@code ${user.dir}/.agentscope/workspace}, and no default local filesystem is created.
-         * This targets SaaS / container deployments that run agents inside a remote sandbox or
-         * with an in-memory / distributed store, and never want a {@code .agentscope} directory
-         * to appear in the application's working directory.
+         * The per-JVM nonce keeps replicas / tenants on one host from colliding in the same
+         * tree. This targets SaaS / container deployments that run agents inside a remote
+         * sandbox or with an in-memory / distributed store, and never want a {@code .agentscope}
+         * directory to appear in the application's working directory.
          *
          * <p><strong>Required companion configuration:</strong> because the workspace-backed
          * defaults (JsonFileAgentStateStore, WorkspaceTaskRepository, local filesystem) are not
@@ -2326,7 +2335,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * supplies the corresponding custom implementations:
          * <ul>
          *   <li>an explicit {@link #stateStore(io.agentscope.core.state.AgentStateStore)} (or a
-         *       {@code DistributedStore});</li>
+         *       {@code DistributedStore}) — a {@code -Dagentscope.state.home} override also
+         *       satisfies the check, relocating the default state tree off {@code $HOME};</li>
          *   <li>an explicit {@link #taskRepository(io.agentscope.harness.agent.subagent.task.TaskRepository)}
          *       when subagents are enabled;</li>
          *   <li>a set of opt-outs for workspace-local subsystems that are not desired in this
@@ -2334,7 +2344,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       {@link #disableMemoryTools()}, {@link #disableMemoryHooks()},
          *       {@link #disableDynamicSkills()}, {@link #disableDefaultWorkspaceSkills()} and
          *       {@link #disableTranscript()}. Any such subsystem that is left enabled reads and
-         *       writes the ephemeral temp workspace instead of {@code ${user.dir}}.</li>
+         *       writes the ephemeral temp workspace instead of {@code ${user.dir}} — note that
+         *       artifacts under the JVM temp directory are <strong>not durable</strong>: an OS
+         *       tmp reaper may sweep them at any time, so rely on this mode only when those
+         *       subsystems are off or their state lives in a remote / distributed store.</li>
          * </ul>
          *
          * @return this builder
@@ -2484,13 +2497,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             : new LocalPeriodicGate();
 
             AgentStateStore effectiveSession = stateStoreOverride;
-            if (disableLocalWorkspace && effectiveSession == null) {
+            if (disableLocalWorkspace
+                    && effectiveSession == null
+                    && System.getProperty("agentscope.state.home") == null) {
                 throw new IllegalStateException(
                         "disableLocalWorkspace() leaves no default AgentStateStore: the default"
-                            + " JsonFileAgentStateStore would persist to ~/.agentscope/state, which"
-                            + " is exactly what this mode must avoid. Pass an explicit"
-                            + " .stateStore(...) or configure a DistributedStore that supplies"
-                            + " one.");
+                            + " JsonFileAgentStateStore would persist under ~/.agentscope/state,"
+                            + " which is exactly what this mode must avoid. Pass an explicit"
+                            + " .stateStore(...), configure a DistributedStore that supplies one,"
+                            + " or set -Dagentscope.state.home to relocate the state tree off"
+                            + " $HOME.");
             }
             IsolationScope fsIsolationScope = IsolationScope.USER;
             if (remoteFilesystemSpec != null && remoteFilesystemSpec.getIsolationScope() != null) {
@@ -2603,7 +2619,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new AgentTraceMiddleware());
             }
             boolean artifactDeliveryEnabled =
-                    artifactDeliveryTarget != null && !disableFilesystemTools;
+                    artifactDeliveryTarget != null && !disableFilesystemTools && filesystem != null;
             if (!disableWorkspaceContext) {
                 WorkspaceContextMiddleware markdownMw =
                         new WorkspaceContextMiddleware(

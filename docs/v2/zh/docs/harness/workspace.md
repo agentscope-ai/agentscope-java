@@ -521,6 +521,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `MessageBus` / 异步工具注册表 | workspace 版 | 跳过（没有本地文件系统） |
 | Transcript（会话记录） | 持久化在工作区内 | 未提供 `.transcriptStore(...)` 时跳过并输出告警 |
 | 技能 staging（`.skills-cache`） | 落到工作区 | 不再 staging |
+| 记忆 / 会话工具（若保持开启） | 持久化在工作区内 | 写入临时工作区——**不保证持久**，OS 的临时目录清理随时可能清掉；需要持久化请关闭它们或改用远端存储 |
 
 > 该开关只重定向 / 禁用**本地**工作区的落盘。仍然开启的子系统（记忆钩子、Plan Mode 等）会读写临时工作区而不是你的工作目录。想要完全无状态构建，请组合使用你不需要的那些 workspace 本地子系统的 `disable*` 开关（`disableMemoryTools()`、`disableMemoryHooks()`、`disableDynamicSkills()`、`disableDefaultWorkspaceSkills()`、`disableTranscript()` 等）。
 
