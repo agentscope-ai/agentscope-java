@@ -494,7 +494,7 @@ public class DashScopeHttpClient {
      * @return true if the model name matches a user-supplied multimodal pattern
      */
     private boolean matchesUserPattern(String modelName) {
-        if (userMultimodalPatterns.isEmpty() || modelName == null) {
+        if (modelName == null || userMultimodalPatterns.isEmpty()) {
             return false;
         }
         String lowerModelName = modelName.trim().toLowerCase();
