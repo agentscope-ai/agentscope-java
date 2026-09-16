@@ -31,6 +31,7 @@ import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.StructuredOutputConfigurationException;
 import io.agentscope.core.formatter.StructuredOutputParseException;
 import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputUnknownFailureException;
 import io.agentscope.core.formatter.StructuredOutputUtils;
 import io.agentscope.core.formatter.StructuredOutputValidator;
 import io.agentscope.core.hook.Hook;
@@ -50,6 +51,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,7 +59,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.mockito.ArgumentMatchers;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
@@ -1004,15 +1005,21 @@ class ReActAgentStructuredOutputTest {
                         .build();
 
         Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
         try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(StructuredOutputUtils.class)) {
-            utils.when(() -> StructuredOutputUtils.extractJsonObject("{\"answer\": 42}"))
-                    .thenThrow(new IllegalStateException("transient registry hiccup"))
-                    .thenCallRealMethod();
-            // wrapNativeStructuredResult also goes through this class: keep the real
-            // payload conversion (a static-mock default would null the metadata).
-            utils.when(() -> StructuredOutputUtils.toPlainObject(ArgumentMatchers.any()))
-                    .thenCallRealMethod();
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            // CALLS_REAL_METHODS as the default answer: only the first
+                            // extractJsonObject call is intercepted, everything else runs
+                            // for real — unstubbed methods can never silently become
+                            // null-returning mocks as production code evolves.
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
         }
@@ -1024,16 +1031,24 @@ class ReActAgentStructuredOutputTest {
     @DisplayName("persistent unknown failure exhausts retries and rethrows the original fault")
     void testPersistentUnknownFailureRethrowsOriginalException() {
         // A persistent internal fault must not masquerade as a model-output verdict:
-        // every model response carries text that breaks the codec inside extraction
-        // (unknown domain, non-configuration), the retry loop runs to exhaustion, and
-        // the caller gets the ORIGINAL exception — not a StructuredOutputValidationException.
+        // extraction fails on every attempt (unknown domain), the default retry budget
+        // (3 attempts) is consumed, and the caller gets the typed unknown-failure
+        // wrapper — not a StructuredOutputValidationException, and with no extra
+        // synthetic-tool round trip (the fallback router short-circuits the wrapper).
         AtomicInteger calls = new AtomicInteger();
         MockModel brokenModel =
                 new MockModel(
-                        msgs -> {
-                            calls.incrementAndGet();
-                            throw new NullPointerException("validator path NPE");
-                        }) {
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_" + calls.incrementAndGet())
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("{\"answer\": 42}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 0))
+                                                .build())) {
                     @Override
                     public boolean supportsNativeStructuredOutput() {
                         return true;
@@ -1046,8 +1061,6 @@ class ReActAgentStructuredOutputTest {
                         .sysPrompt("You are a math assistant")
                         .model(brokenModel)
                         .toolkit(toolkit)
-                        .structuredOutputPolicy(
-                                StructuredOutputRetryPolicy.builder().maxAttempts(2).build())
                         .build();
 
         Msg inputMsg =
@@ -1057,16 +1070,26 @@ class ReActAgentStructuredOutputTest {
                         .content(TextBlock.builder().text("What is 3 + 4?").build())
                         .build();
 
-        NullPointerException ex =
-                assertThrows(
-                        NullPointerException.class,
-                        () -> agent.call(inputMsg, MathAnswer.class).block());
-        assertEquals("validator path NPE", ex.getMessage());
-        assertEquals(
-                2,
-                calls.get(),
-                "unknown failures consume the retry budget (limited recovery), then"
-                        + " rethrow the original fault");
+        try (MockedStatic<StructuredOutputUtils> utils =
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")) {
+                                throw new IllegalStateException("persistent internal fault");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
+            StructuredOutputUnknownFailureException ex =
+                    assertThrows(
+                            StructuredOutputUnknownFailureException.class,
+                            () -> agent.call(inputMsg, MathAnswer.class).block());
+            assertEquals("persistent internal fault", ex.getCause().getMessage());
+            assertEquals(
+                    3,
+                    calls.get(),
+                    "the fault consumes the default retry budget (3 attempts) and is"
+                            + " rethrown without a synthetic-tool round trip");
+        }
     }
 
     @Test
@@ -1137,35 +1160,31 @@ class ReActAgentStructuredOutputTest {
                         .build();
 
         Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
         try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(StructuredOutputUtils.class)) {
-            utils.when(() -> StructuredOutputUtils.extractJsonObject("{\"answer\": 42}"))
-                    .thenThrow(new IllegalStateException("transient registry hiccup"))
-                    .thenCallRealMethod();
-            utils.when(() -> StructuredOutputUtils.toPlainObject(ArgumentMatchers.any()))
-                    .thenCallRealMethod();
-            utils.when(() -> StructuredOutputUtils.retryPrompt(ArgumentMatchers.anyList()))
-                    .thenCallRealMethod();
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
         }
         assertEquals(2, calls.get());
         assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
-        // The correction turn name is how the synthetic turn is identified.
         assertNotNull(
                 correctionText.get(),
                 "a structured-output correction turn must have been appended");
-        // retryPrompt(real errors) contains the schema-complaint header; the neutral
-        // path instead produces "internal validation error". Assert what the model
-        // actually received was the neutral instruction, i.e. retryPrompt saw the
-        // marker error. We assert indirectly: the correction must NOT claim the
-        // output failed schema validation.
+        // The unknown-domain correction must carry the neutral instruction — never the
+        // "failed JSON Schema validation" wording that blames the model's output.
         assertTrue(
-                !correctionText.get().contains("failed JSON Schema validation"),
-                () ->
-                        "correction turn must be neutral for unknown-domain failures, got:"
-                                + " "
-                                + correctionText.get());
+                correctionText.get().contains("internal validation error"),
+                () -> "correction turn must be neutral, got: " + correctionText.get());
+        assertFalse(correctionText.get().contains("failed JSON Schema validation"));
     }
 
     @Test
@@ -1215,13 +1234,17 @@ class ReActAgentStructuredOutputTest {
                         .build();
 
         Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
         try (MockedStatic<StructuredOutputUtils> utils =
-                Mockito.mockStatic(StructuredOutputUtils.class)) {
-            utils.when(() -> StructuredOutputUtils.extractJsonObject("{\"answer\": 42}"))
-                    .thenThrow(new IllegalStateException("transient registry hiccup"))
-                    .thenCallRealMethod();
-            utils.when(() -> StructuredOutputUtils.toPlainObject(ArgumentMatchers.any()))
-                    .thenCallRealMethod();
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
             responseMsg = agent.call(inputMsg, MathAnswer.class).block();
             assertNotNull(responseMsg);
         }
@@ -1229,6 +1252,7 @@ class ReActAgentStructuredOutputTest {
 
         FailedAttempt failed = observed.get();
         assertNotNull(failed, "onFailedAttempt must observe the unknown-domain attempt");
+        assertEquals(FailedAttempt.Kind.UNKNOWN_FAILURE, failed.kind());
         assertEquals(StructuredOutputValidator.UNKNOWN_FAILURE_MARKER, failed.parseErrorMessage());
         assertTrue(
                 failed.rawException() instanceof IllegalStateException,
@@ -1236,14 +1260,10 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
-    @DisplayName("retryPrompt: neutral marker vs schema-complaint vs >5-error truncation")
+    @DisplayName("retryPrompt: neutral instruction vs schema-complaint vs >5-error truncation")
     void testRetryPromptBranches() {
-        // Neutral marker: the unknown-domain branch produces the neutral instruction.
-        String neutral =
-                StructuredOutputUtils.retryPrompt(
-                        List.of(
-                                new StructuredOutputValidator.ValidationError(
-                                        "$", StructuredOutputValidator.UNKNOWN_FAILURE_MARKER)));
+        // Unknown-domain failures use the dedicated neutral prompt.
+        String neutral = StructuredOutputUtils.unknownFailurePrompt();
         assertTrue(neutral.contains("internal validation error"));
         assertTrue(neutral.contains("respond again with a JSON object"));
         assertFalse(neutral.contains("failed JSON Schema validation"));

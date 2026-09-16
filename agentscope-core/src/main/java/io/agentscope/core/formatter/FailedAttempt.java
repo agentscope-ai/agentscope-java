@@ -69,7 +69,9 @@ public record FailedAttempt(
         /** The model output was not valid JSON or not a JSON object. */
         PARSE_ERROR,
         /** The model output was valid JSON but failed schema validation. */
-        VALIDATION_ERROR
+        VALIDATION_ERROR,
+        /** Extraction/validation itself failed for a non-model reason (platform fault). */
+        UNKNOWN_FAILURE
     }
 
     public Optional<Long> totalTokens() {

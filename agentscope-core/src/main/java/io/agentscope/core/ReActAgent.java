@@ -61,6 +61,7 @@ import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.StructuredOutputConfigurationException;
 import io.agentscope.core.formatter.StructuredOutputParseException;
 import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputUnknownFailureException;
 import io.agentscope.core.formatter.StructuredOutputUtils;
 import io.agentscope.core.formatter.StructuredOutputValidationException;
 import io.agentscope.core.formatter.StructuredOutputValidator;
@@ -1293,6 +1294,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // are equally fatal on the synthetic tool path — it
                                     // reuses the same schema and would fail the same way;
                                     // degrading would only burn one more model call.
+                                    return Mono.error(e);
+                                }
+                                if (e instanceof StructuredOutputUnknownFailureException) {
+                                    // An internal (non-model) failure already proven fatal
+                                    // on this path: degrading would burn a synthetic-tool
+                                    // round trip and could mask the fault entirely.
                                     return Mono.error(e);
                                 }
                                 log.warn(
@@ -2537,9 +2544,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         FailedAttempt failed =
                                 new FailedAttempt(
                                         soValidationAttempts,
-                                        parseErrorMessage == null
-                                                ? FailedAttempt.Kind.VALIDATION_ERROR
-                                                : FailedAttempt.Kind.PARSE_ERROR,
+                                        unknownDomainFailure != null
+                                                ? FailedAttempt.Kind.UNKNOWN_FAILURE
+                                                : parseErrorMessage == null
+                                                        ? FailedAttempt.Kind.VALIDATION_ERROR
+                                                        : FailedAttempt.Kind.PARSE_ERROR,
                                         parseErrorMessage == null ? errors : List.of(),
                                         parseErrorMessage,
                                         text,
@@ -2588,23 +2597,42 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         getName(),
                                         schema.getName());
                             }
-                            if (soFailedAttempts.size() == 1
-                                    && soFailedAttempts.get(0).parseErrorMessage() != null
-                                    && StructuredOutputValidator.UNKNOWN_FAILURE_MARKER.equals(
-                                            soFailedAttempts.get(0).parseErrorMessage())
-                                    && soFailedAttempts.get(0).rawException() != null) {
+                            boolean allUnknownDomain =
+                                    !soFailedAttempts.isEmpty()
+                                            && soFailedAttempts.stream()
+                                                    .allMatch(
+                                                            a ->
+                                                                    a.kind()
+                                                                            == FailedAttempt.Kind
+                                                                                    .UNKNOWN_FAILURE);
+                            if (allUnknownDomain) {
                                 // The loop never actually touched a model-output problem:
-                                // surface the original internal fault instead of a
-                                // validation verdict that points at the model.
+                                // surface the internal fault as its own failure domain
+                                // (typed wrapper, original cause preserved) instead of a
+                                // validation verdict that points at the model. The wrapper
+                                // is also short-circuited by the fallback router.
+                                Throwable last =
+                                        soFailedAttempts
+                                                .get(soFailedAttempts.size() - 1)
+                                                .rawException();
                                 log.error(
                                         "Structured output validation failed on a"
-                                                + " non-model (unknown/transient) fault;"
-                                                + " rethrowing the original exception"
+                                                + " non-model (unknown/transient) fault after"
+                                                + " {} attempt(s); rethrowing as"
+                                                + " StructuredOutputUnknownFailureException"
                                                 + " (agent={}, schema={})",
+                                        soValidationAttempts,
                                         getName(),
                                         schema.getName(),
-                                        soFailedAttempts.get(0).rawException());
-                                return Mono.error(soFailedAttempts.get(0).rawException());
+                                        last);
+                                return Mono.error(
+                                        new StructuredOutputUnknownFailureException(
+                                                "structured_output_unknown_failure: internal"
+                                                        + " failure during structured-output"
+                                                        + " validation after "
+                                                        + soValidationAttempts
+                                                        + " attempt(s)",
+                                                last));
                             }
                             return Mono.error(
                                     new StructuredOutputValidationException(
@@ -2625,8 +2653,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         .content(
                                                 TextBlock.builder()
                                                         .text(
-                                                                StructuredOutputUtils.retryPrompt(
-                                                                        errors))
+                                                                unknownDomainFailure != null
+                                                                        ? StructuredOutputUtils
+                                                                                .unknownFailurePrompt()
+                                                                        : StructuredOutputUtils
+                                                                                .retryPrompt(
+                                                                                        errors))
                                                         .build())
                                         .metadata(
                                                 Map.of(
