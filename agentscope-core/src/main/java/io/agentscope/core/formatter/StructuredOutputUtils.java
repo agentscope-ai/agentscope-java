@@ -42,19 +42,24 @@ public final class StructuredOutputUtils {
      * @param errors the validation errors of the previous attempt
      * @return a prompt fragment to append to the original prompt
      */
+    /**
+     * Builds the neutral correction prompt for unknown-domain (platform/internal) failures.
+     *
+     * <p>The model's previous answer may have been perfectly valid, so this instruction
+     * deliberately avoids asserting a schema mismatch — it asks for a fresh, conforming
+     * response instead of asking the model to "fix" an output that is not broken.
+     *
+     * @return a prompt fragment to append before re-asking the model
+     */
+    public static String unknownFailurePrompt() {
+        return "\n\nAn internal validation error occurred on the platform side."
+                + " Please respond again with a JSON object matching the required"
+                + " schema, without explanation:";
+    }
+
     public static String retryPrompt(List<StructuredOutputValidator.ValidationError> errors) {
         if (errors == null || errors.isEmpty()) {
             return "";
-        }
-        // Unknown/transient failures carry a marker message instead of a schema complaint:
-        // the model's previous answer may have been perfectly valid, so blaming the output
-        // would give it nothing to fix and could churn until the budget is exhausted.
-        if (errors.size() == 1
-                && StructuredOutputValidator.UNKNOWN_FAILURE_MARKER.equals(
-                        errors.get(0).message())) {
-            return "\n\nAn internal validation error occurred on the platform side."
-                    + " Please respond again with a JSON object matching the required"
-                    + " schema, without explanation:";
         }
         StringBuilder sb =
                 new StringBuilder(
