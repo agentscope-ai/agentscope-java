@@ -85,8 +85,8 @@ public class FallbackChainModel implements Model {
     private final List<Model> candidates;
     private final Model primary;
     private final Duration cooldown;
-    private final ConcurrentHashMap<String, Long> coolUntilMillis;
-    private final ConcurrentHashMap<String, Throwable> lastFailureByKey;
+    private final ConcurrentHashMap<Model, Long> coolUntilMillis;
+    private final ConcurrentHashMap<Model, Throwable> lastFailureByKey;
     private final FailoverListener failoverListener;
 
     /**
@@ -110,54 +110,77 @@ public class FallbackChainModel implements Model {
      * @throws NullPointerException if {@code primary} is null
      */
     public FallbackChainModel(Model primary, List<Model> fallbacks, Duration cooldown) {
-        this(primary, fallbacks, cooldown, new ConcurrentHashMap<>(), null);
+        this(
+                primary,
+                fallbacks,
+                cooldown,
+                new ConcurrentHashMap<>(),
+                new ConcurrentHashMap<>(),
+                null);
     }
 
     /**
-     * Creates a fallback chain sharing an existing cooldown table.
+     * Creates a fallback chain sharing existing cooldown and last-failure tables.
      *
-     * <p>The shared table keeps cooldown state alive across multiple {@link #stream} calls (the
-     * many reasoning rounds of an agent loop, or successive requests): a candidate that failed in
-     * one call is skipped by every caller until its window expires. Passing a fresh map per
-     * wrapper bounds cooldown to a single stream call.
+     * <p>The shared tables keep cooldown state (and the diagnostic last failure per candidate)
+     * alive across multiple {@link #stream} calls — the many reasoning rounds of an agent loop,
+     * or successive requests, where {@code modelForCall()} rebuilds the wrapper per call. A
+     * candidate that failed in one call is skipped by every caller until its window expires, and
+     * the all-cooling error still carries the original failure. Both tables are keyed by the
+     * candidate {@link Model} instance (identity semantics unless a provider overrides
+     * {@code equals}), so two candidates that share a name behind different endpoints/keys stay
+     * separate. Pass fresh maps per wrapper to bound cooldown to a single stream call.
      *
      * @param primary the primary model (must not be null)
      * @param fallbacks ordered fallback models; may be null or empty
      * @param cooldown cooldown applied to each candidate after a switchable failure; {@code null}
      *     falls back to {@link #DEFAULT_COOLDOWN}
-     * @param sharedCoolUntilMillis shared cooldown table (modifiable, not null)
-     * @throws NullPointerException if {@code primary} or {@code sharedCoolUntilMillis} is null
+     * @param sharedCoolUntilMillis shared cooldown table (modifiable, not null); keyed by candidate
+     *     identity, so wrappers sharing a table must use the same candidate instances for entries
+     *     to mean what they appear to mean
+     * @param sharedLastFailures shared last-failure table (modifiable, not null); same identity
+     *     contract as the cooldown table
+     * @throws NullPointerException if {@code primary}, {@code sharedCoolUntilMillis} or
+     *     {@code sharedLastFailures} is null
      */
     public FallbackChainModel(
             Model primary,
             List<Model> fallbacks,
             Duration cooldown,
-            ConcurrentHashMap<String, Long> sharedCoolUntilMillis) {
-        this(primary, fallbacks, cooldown, sharedCoolUntilMillis, null);
+            ConcurrentHashMap<Model, Long> sharedCoolUntilMillis,
+            ConcurrentHashMap<Model, Throwable> sharedLastFailures) {
+        this(primary, fallbacks, cooldown, sharedCoolUntilMillis, sharedLastFailures, null);
     }
 
     /**
-     * Creates a fallback chain with a cooldown table and a failover listener.
+     * Creates a fallback chain with shared tables and a failover listener.
      *
      * @param primary the primary model (must not be null)
      * @param fallbacks ordered fallback models; may be null or empty
      * @param cooldown cooldown applied to each candidate after a switchable failure; {@code null}
      *     falls back to {@link #DEFAULT_COOLDOWN}
-     * @param sharedCoolUntilMillis shared cooldown table (modifiable, not null)
+     * @param sharedCoolUntilMillis shared cooldown table (modifiable, not null); keyed by candidate
+     *     identity (see the 5-arg constructor)
+     * @param sharedLastFailures shared last-failure table (modifiable, not null)
      * @param failoverListener listener notified at each switch site (may be null)
-     * @throws NullPointerException if {@code primary} or {@code sharedCoolUntilMillis} is null
+     * @throws NullPointerException if {@code primary}, {@code sharedCoolUntilMillis} or
+     *     {@code sharedLastFailures} is null
      */
     public FallbackChainModel(
             Model primary,
             List<Model> fallbacks,
             Duration cooldown,
-            ConcurrentHashMap<String, Long> sharedCoolUntilMillis,
+            ConcurrentHashMap<Model, Long> sharedCoolUntilMillis,
+            ConcurrentHashMap<Model, Throwable> sharedLastFailures,
             FailoverListener failoverListener) {
         if (primary == null) {
             throw new NullPointerException("primary model must not be null");
         }
         if (sharedCoolUntilMillis == null) {
             throw new NullPointerException("sharedCoolUntilMillis must not be null");
+        }
+        if (sharedLastFailures == null) {
+            throw new NullPointerException("sharedLastFailures must not be null");
         }
         List<Model> chain = new ArrayList<>();
         chain.add(primary);
@@ -172,7 +195,7 @@ public class FallbackChainModel implements Model {
         this.primary = primary;
         this.cooldown = cooldown != null ? cooldown : DEFAULT_COOLDOWN;
         this.coolUntilMillis = sharedCoolUntilMillis;
-        this.lastFailureByKey = new ConcurrentHashMap<>();
+        this.lastFailureByKey = sharedLastFailures;
         this.failoverListener = failoverListener;
     }
 
@@ -204,12 +227,13 @@ public class FallbackChainModel implements Model {
         }
 
         Model candidate = candidates.get(index);
-        String candidateKey = candidateKey(index, candidate);
 
-        if (isCooling(candidateKey)) {
+        if (isCooling(candidate)) {
             // Propagate the last real failure (if any) so an all-cooling call still reports
             // the underlying reason (e.g. an expired key) instead of a bare synthetic message.
-            Throwable remembered = lastFailureByKey.get(candidateKey);
+            // Both tables are shared across wrappers (agent wiring rebuilds the wrapper per
+            // call), so the remembered failure survives wrapper rebuilds.
+            Throwable remembered = lastFailureByKey.get(candidate);
             return attempt(
                     index + 1,
                     lastFailure != null ? lastFailure : remembered,
@@ -236,7 +260,7 @@ public class FallbackChainModel implements Model {
                                 // would hide the real auth error behind a cooldown message. The
                                 // candidate still switches (next one may hold valid credentials).
                                 if (!isAuthFailure(error)) {
-                                    recordFailure(candidateKey, error);
+                                    recordFailure(candidate, error);
                                 }
                                 if (index + 1 < candidates.size()) {
                                     Model next = candidates.get(index + 1);
@@ -274,7 +298,7 @@ public class FallbackChainModel implements Model {
                                 // concurrent session.
                                 if (classify(midStreamError) == FailureCategory.SWITCHABLE
                                         && !isAuthFailure(midStreamError)) {
-                                    recordFailure(candidateKey, midStreamError);
+                                    recordFailure(candidate, midStreamError);
                                 }
                                 return Flux.error(midStreamError);
                             });
@@ -282,23 +306,32 @@ public class FallbackChainModel implements Model {
     }
 
     /** Skips candidates currently inside their cooldown window. */
-    private boolean isCooling(String key) {
-        Long coolUntil = coolUntilMillis.get(key);
+    private boolean isCooling(Model candidate) {
+        Long coolUntil = coolUntilMillis.get(candidate);
         return coolUntil != null && coolUntil > System.currentTimeMillis();
     }
 
     /**
-     * Marks a candidate as cooling for {@link #cooldown} and remembers the triggering failure.
-     * Expired entries are evicted on write so the table stays bounded over the lifetime of a
-     * long-lived agent.
+     * Marks a candidate as cooling for {@link #cooldown} and remembers the triggering failure
+     * in the shared table. Expired entries are evicted lazily — only when the table grows past
+     * {@link #EVICTION_SWEEP_THRESHOLD} — so a per-failure O(n) sweep of a large shared table is
+     * avoided while the table stays bounded: entries only ever come from the chain's candidates
+     * (fixed at construction), so the table cannot grow unbounded beyond the chain length.
      */
-    private void recordFailure(String key, Throwable error) {
+    private void recordFailure(Model candidate, Throwable error) {
         long now = System.currentTimeMillis();
-        // removeIf on an empty map is a no-op, so no guard is needed.
-        coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
-        coolUntilMillis.put(key, now + cooldown.toMillis());
-        lastFailureByKey.put(key, error);
+        if (coolUntilMillis.size() >= EVICTION_SWEEP_THRESHOLD) {
+            coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
+            lastFailureByKey
+                    .entrySet()
+                    .removeIf(entry -> !coolUntilMillis.containsKey(entry.getKey()));
+        }
+        coolUntilMillis.put(candidate, now + cooldown.toMillis());
+        lastFailureByKey.put(candidate, error);
     }
+
+    /** Sweep expired cooldown entries only once the shared table grows this large. */
+    private static final int EVICTION_SWEEP_THRESHOLD = 64;
 
     /**
      * Notifies the failover listener at a switch site. An exception thrown by the listener is
@@ -314,16 +347,6 @@ public class FallbackChainModel implements Model {
         } catch (Exception e) {
             LOG.warn("Failover listener threw an exception, ignoring", e);
         }
-    }
-
-    /**
-     * Cooldown key: chain index plus model name. The chain is fixed at construction
-     * ({@code List.copyOf}), so the index is a collision-free instance identity across shared
-     * tables as long as wrappers sharing a table expose their candidates in the same order
-     * (which the agent wiring does — it reuses the same candidate list every call).
-     */
-    private static String candidateKey(int index, Model model) {
-        return index + "@" + model.getModelName();
     }
 
     /**

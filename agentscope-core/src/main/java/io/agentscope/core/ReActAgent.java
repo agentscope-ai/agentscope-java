@@ -248,10 +248,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Agent-scoped cooldown table shared by every {@link FallbackChainModel} wrapper created in
-     * {@link #modelForCall()}: cooldown survives across reasoning rounds and successive requests,
-     * while the {@code activeModel} reference stays per-call (concurrency-safe).
+     * {@link #modelForCall()}: cooldown survives across reasoning rounds and successive requests.
+     * Keyed by the candidate {@code Model} instance (identity semantics), so same-named
+     * candidates behind different endpoints/keys stay separate.
      */
-    private final ConcurrentHashMap<String, Long> fallbackCoolUntilMillis =
+    private final ConcurrentHashMap<Model, Long> fallbackCoolUntilMillis =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Agent-scoped last-failure table shared alongside {@link #fallbackCoolUntilMillis}: keeps
+     * the triggering failure per candidate so an all-cooling call can still report the real
+     * reason (e.g. an auth error) across wrapper rebuilds. Same identity-keying contract.
+     */
+    private final ConcurrentHashMap<Model, Throwable> fallbackLastFailures =
             new ConcurrentHashMap<>();
 
     private final int maxIters;
@@ -740,11 +749,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * <p>{@link FallbackChainModel} reports the primary's capabilities regardless of which
      * candidate serves a call (the chain's stable identity under concurrency). A candidate with a
-     * smaller context window or different structured-output support than the primary is therefore
-     * almost certainly a configuration mistake: after a switch the agent would keep building
-     * requests/compaction on the primary's capability assumptions. Unknown capabilities
-     * ({@code getContextWindowSize() == 0}, default {@code supportsNativeStructuredOutput()})
-     * are tolerated silently.
+     * smaller context window than the primary is therefore almost certainly a configuration
+     * mistake: after a switch the agent would keep building requests/compaction on the primary's
+     * capability assumptions.
+     *
+     * <p>Gaps in the checks are deliberate:
+     *
+     * <ul>
+     *   <li>Unknown context windows ({@code getContextWindowSize() == 0}) are tolerated silently
+     *       — {@code 0} is the interface's "not available" marker.
+     *   <li>Structured-output support is compared only when the candidate <b>positively
+     *       declares</b> support ({@code nativeOut && !primaryNative}): {@code
+     *       supportsNativeStructuredOutput()} has no "unknown" state (interface default is {@code
+     *       false}), so a candidate that simply does not override it must not warn on every build.
+     *   <li>A throwing capability getter from a third-party {@link Model} implementation is
+     *       caught and skipped (debug log) — a diagnostic check must never fail agent
+     *       construction.
+     * </ul>
      */
     private void validateFallbackChainCapabilities() {
         if (fallbackModels.isEmpty() || model == null) {
@@ -754,31 +775,42 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         boolean primaryNative = model.supportsNativeStructuredOutput();
         boolean primaryNativeWithTools = model.supportsNativeStructuredOutputWithTools();
         for (Model fallback : fallbackModels) {
-            int window = fallback.getContextWindowSize();
-            boolean nativeOut = fallback.supportsNativeStructuredOutput();
-            boolean nativeWithTools = fallback.supportsNativeStructuredOutputWithTools();
-            if (window > 0 && primaryWindow > 0 && window < primaryWindow) {
-                log.warn(
-                        "Fallback candidate {} has a smaller context window ({}) than the primary"
-                                + " model {} ({}); the chain reports the primary's capabilities, so"
-                                + " compaction may trigger on the wrong budget after a switch",
+            try {
+                int window = fallback.getContextWindowSize();
+                if (window > 0 && primaryWindow > 0 && window < primaryWindow) {
+                    log.warn(
+                            "Fallback candidate {} has a smaller context window ({}) than the"
+                                    + " primary model {} ({}); the chain reports the primary's"
+                                    + " capabilities, so compaction may trigger on the wrong"
+                                    + " budget after a switch",
+                            fallback.getModelName(),
+                            window,
+                            model.getModelName(),
+                            primaryWindow);
+                }
+
+                boolean nativeOut = fallback.supportsNativeStructuredOutput();
+                boolean nativeWithTools = fallback.supportsNativeStructuredOutputWithTools();
+                // Only compare when the candidate positively declares support; a default false
+                // (no override) means "unknown", which is tolerated silently per the javadoc.
+                if ((nativeOut && !primaryNative) || (nativeWithTools && !primaryNativeWithTools)) {
+                    log.warn(
+                            "Fallback candidate {} declares structured-output support (native={},"
+                                + " withTools={}) that the primary model {} does not (native={},"
+                                + " withTools={}); the chain reports the primary's capabilities, so"
+                                + " the candidate's native support may go unused after a switch",
+                            fallback.getModelName(),
+                            nativeOut,
+                            nativeWithTools,
+                            model.getModelName(),
+                            primaryNative,
+                            primaryNativeWithTools);
+                }
+            } catch (RuntimeException e) {
+                log.debug(
+                        "Skipping capability check for fallback candidate {}: getter threw",
                         fallback.getModelName(),
-                        window,
-                        model.getModelName(),
-                        primaryWindow);
-            }
-            if (nativeOut != primaryNative || nativeWithTools != primaryNativeWithTools) {
-                log.warn(
-                        "Fallback candidate {} reports different structured-output support"
-                                + " (native={}, withTools={}) than the primary model {} (native={},"
-                                + " withTools={}); the chain reports the primary's capabilities,"
-                                + " so request construction may mismatch the serving candidate",
-                        fallback.getModelName(),
-                        nativeOut,
-                        nativeWithTools,
-                        model.getModelName(),
-                        primaryNative,
-                        primaryNativeWithTools);
+                        e);
             }
         }
     }
@@ -4148,6 +4180,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     fallbackModels,
                     FallbackChainModel.DEFAULT_COOLDOWN,
                     fallbackCoolUntilMillis,
+                    fallbackLastFailures,
                     failoverListener);
         }
 

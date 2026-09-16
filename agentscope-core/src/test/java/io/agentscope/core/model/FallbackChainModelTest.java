@@ -262,9 +262,11 @@ class FallbackChainModelTest {
                 new CallRecordingModel(
                         "fallback", new HttpTransportException("also down", 502, ""));
 
-        ConcurrentHashMap<String, Long> shared = new ConcurrentHashMap<>();
+        ConcurrentHashMap<Model, Long> shared = new ConcurrentHashMap<>();
+        ConcurrentHashMap<Model, Throwable> sharedFailures = new ConcurrentHashMap<>();
         FallbackChainModel chain =
-                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60), shared);
+                new FallbackChainModel(
+                        primary, List.of(fallback), Duration.ofSeconds(60), shared, sharedFailures);
 
         // First call: both fail and enter cooldown.
         StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
@@ -356,14 +358,16 @@ class FallbackChainModelTest {
     @DisplayName("Shared cooldown table persists across wrapper instances")
     void sharedCooldownSurvivesNewWrappers() throws InterruptedException {
         // Mirrors the agent wiring: modelForCall() creates a fresh FallbackChainModel on every
-        // call, but all wrappers share the agent-scoped cooldown table.
-        ConcurrentHashMap<String, Long> shared = new ConcurrentHashMap<>();
+        // call, but all wrappers share the agent-scoped cooldown and last-failure tables.
+        ConcurrentHashMap<Model, Long> shared = new ConcurrentHashMap<>();
+        ConcurrentHashMap<Model, Throwable> sharedFailures = new ConcurrentHashMap<>();
         CallRecordingModel primary =
                 new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
         CallRecordingModel fallback = new CallRecordingModel("fallback", null);
 
         FallbackChainModel first =
-                new FallbackChainModel(primary, List.of(fallback), Duration.ofMillis(300), shared);
+                new FallbackChainModel(
+                        primary, List.of(fallback), Duration.ofMillis(300), shared, sharedFailures);
         StepVerifier.create(first.stream(List.of(), null, null))
                 .expectNextCount(1)
                 .verifyComplete();
@@ -372,7 +376,8 @@ class FallbackChainModelTest {
         // A second, independent wrapper over the same models shares the cooldown: primary is
         // still cooling from the first wrapper's failure, so it is skipped.
         FallbackChainModel second =
-                new FallbackChainModel(primary, List.of(fallback), Duration.ofMillis(300), shared);
+                new FallbackChainModel(
+                        primary, List.of(fallback), Duration.ofMillis(300), shared, sharedFailures);
         StepVerifier.create(second.stream(List.of(), null, null))
                 .expectNextCount(1)
                 .verifyComplete();
@@ -382,7 +387,8 @@ class FallbackChainModelTest {
         // After the window expires the primary becomes eligible again.
         Thread.sleep(400);
         FallbackChainModel third =
-                new FallbackChainModel(primary, List.of(fallback), Duration.ofMillis(300), shared);
+                new FallbackChainModel(
+                        primary, List.of(fallback), Duration.ofMillis(300), shared, sharedFailures);
         StepVerifier.create(third.stream(List.of(), null, null))
                 .expectNextCount(1)
                 .verifyComplete();
@@ -429,9 +435,11 @@ class FallbackChainModelTest {
                 new CallRecordingModel(
                         "fallback", new HttpTransportException("also down", 503, ""));
 
-        ConcurrentHashMap<String, Long> shared = new ConcurrentHashMap<>();
+        ConcurrentHashMap<Model, Long> shared = new ConcurrentHashMap<>();
+        ConcurrentHashMap<Model, Throwable> sharedFailures = new ConcurrentHashMap<>();
         FallbackChainModel chain =
-                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60), shared);
+                new FallbackChainModel(
+                        primary, List.of(fallback), Duration.ofSeconds(60), shared, sharedFailures);
 
         // First call: both fail, both enter cooldown.
         StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
@@ -504,6 +512,7 @@ class FallbackChainModelTest {
                         List.of(fallback),
                         Duration.ofSeconds(30),
                         new ConcurrentHashMap<>(),
+                        new ConcurrentHashMap<>(),
                         (failed, error) -> notified.add(failed.getModelName()));
 
         StepVerifier.create(chain.stream(List.of(), null, null))
@@ -528,6 +537,7 @@ class FallbackChainModelTest {
                         primary,
                         List.of(fallback),
                         Duration.ofSeconds(30),
+                        new ConcurrentHashMap<>(),
                         new ConcurrentHashMap<>(),
                         (failed, error) -> {
                             throw new RuntimeException("listener boom");
@@ -716,7 +726,28 @@ class FallbackChainModelTest {
         CallRecordingModel primary = new CallRecordingModel("primary", null);
         assertThrows(
                 NullPointerException.class,
-                () -> new FallbackChainModel(primary, List.of(), Duration.ofSeconds(1), null));
+                () ->
+                        new FallbackChainModel(
+                                primary,
+                                List.of(),
+                                Duration.ofSeconds(1),
+                                null,
+                                new ConcurrentHashMap<>()));
+    }
+
+    @Test
+    @DisplayName("Null shared last-failure table is rejected")
+    void nullSharedLastFailuresRejected() {
+        CallRecordingModel primary = new CallRecordingModel("primary", null);
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        new FallbackChainModel(
+                                primary,
+                                List.of(),
+                                Duration.ofSeconds(1),
+                                new ConcurrentHashMap<>(),
+                                null));
     }
 
     /** ModelHttpException stub for classification tests (mirrors ExecutionConfigTest). */
