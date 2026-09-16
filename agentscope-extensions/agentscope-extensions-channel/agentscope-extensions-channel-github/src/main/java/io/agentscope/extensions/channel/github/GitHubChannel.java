@@ -18,6 +18,7 @@ package io.agentscope.extensions.channel.github;
 import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -51,7 +52,7 @@ public final class GitHubChannel implements Channel {
     private final GitHubOutboundClient outboundClient;
     private final GitHubInboundMapper mapper;
     private final GitHubBotIdentityResolver botIdentityResolver;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
     private final GitHubChannelRegistry registry;
@@ -66,7 +67,7 @@ public final class GitHubChannel implements Channel {
             GitHubOutboundClient outboundClient,
             GitHubInboundMapper mapper,
             GitHubBotIdentityResolver botIdentityResolver,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             GitHubChannelRegistry registry) {
@@ -84,9 +85,29 @@ public final class GitHubChannel implements Channel {
         this.registry = Objects.requireNonNull(registry, "registry");
     }
 
-    /** Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. */
+    /**
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore}; use {@link #fromProperties(String, ChannelConfig,
+     * Map, InboundEventDeduplicator)} to supply a shared-storage deduplicator.
+     */
     public static GitHubChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(channelId, routing, rawProperties, new IdempotencyStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise.
+     *
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static GitHubChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
         GitHubChannelProperties props = GitHubChannelProperties.from(channelId, rawProperties);
         GitHubSignatureVerifier sig = new GitHubSignatureVerifier(props.webhookSecret());
         GitHubOutboundClient outbound = new GitHubOutboundClient(props.apiBase(), props.token());
@@ -101,7 +122,7 @@ public final class GitHubChannel implements Channel {
                 outbound,
                 mapper,
                 identity,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
                 new ChannelRouter(routing.defaultAgentId()),
                 GitHubChannelRegistry.instance());
@@ -197,7 +218,7 @@ public final class GitHubChannel implements Channel {
         return botIdentityResolver;
     }
 
-    IdempotencyStore idempotency() {
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 

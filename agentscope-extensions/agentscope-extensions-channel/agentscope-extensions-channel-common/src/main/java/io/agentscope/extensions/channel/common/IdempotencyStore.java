@@ -20,14 +20,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Bounded per-channel idempotency store for inbound webhook events. Webhook providers (notably
- * WeCom) commonly retry the same message id under failure; this store de-duplicates by
+ * Bounded in-process implementation of {@link InboundEventDeduplicator}. Webhook providers
+ * (notably WeCom) commonly retry the same message id under failure; this store de-duplicates by
  * {@code msgId}.
  *
- * <p>Internal map is bounded to {@link #maxEntries} — when full, the oldest entries (by insertion
- * order) are evicted to make room. Entries are also lazily expired after {@link #ttlMillis}.
+ * <p>Internal map is bounded to {@link #maxEntries} — when full, entries are evicted to make
+ * room: expired entries are dropped first, after which the victim is unspecified. Entries are
+ * also lazily expired after {@link #ttlMillis}.
+ *
+ * <p>State lives in the JVM heap, so deduplication only holds within a single process; see {@link
+ * InboundEventDeduplicator} for multi-instance deployments. This class is thread-safe.
  */
-public final class IdempotencyStore {
+public final class IdempotencyStore implements InboundEventDeduplicator {
 
     private final long ttlMillis;
     private final int maxEntries;
@@ -53,6 +57,7 @@ public final class IdempotencyStore {
      * Records {@code key} as seen. Returns {@code true} when this is the first time {@code key} is
      * seen (the caller should proceed), {@code false} when it has already been seen within the TTL.
      */
+    @Override
     public boolean firstSeen(String key) {
         if (key == null) {
             return true;
