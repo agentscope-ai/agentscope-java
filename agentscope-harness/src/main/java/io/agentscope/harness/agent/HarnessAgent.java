@@ -922,7 +922,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
+        return wrappedStreamEvents(effective, msgs, () -> delegate.streamEvents(msgs, effective));
     }
 
     @Override
@@ -971,7 +971,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal alongside the {@link #stream(List, StreamOptions)}
-     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Supplier)}.
+     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, List, Supplier)}.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
@@ -991,7 +991,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
-            RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
+            RuntimeContext effective, List<Msg> msgs, Supplier<Flux<AgentEvent>> inner) {
         return Flux.using(
                 () -> {
                     if (sandboxLifecycleMw != null) {
@@ -999,7 +999,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     }
                     return effective;
                 },
-                eff -> inner.get(),
+                eff -> {
+                    Flux<AgentEvent> events = inner.get();
+                    if (compactionHook == null) {
+                        return events;
+                    }
+                    return events.onErrorResume(
+                            e ->
+                                    isContextOverflowError(e)
+                                            ? recoverFromOverflowStream(msgs, eff)
+                                            : Flux.error(e));
+                },
                 eff -> {
                     if (sandboxLifecycleMw != null) {
                         sandboxLifecycleMw.releaseForCall(eff);
@@ -1058,6 +1068,38 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
+        return forceCompactContext(effective)
+                .then(delegate.call(msgs, effective != null ? effective : RuntimeContext.empty()));
+    }
+
+    /**
+     * Streaming counterpart of {@link #recoverFromOverflow(List, RuntimeContext)}:
+     * emergency compaction of the persisted context, then a single retry of the whole event stream.
+     * Errors thrown by the retry do not re-enter the overflow handler, so there is no retry loop.
+     */
+    private Flux<AgentEvent> recoverFromOverflowStream(List<Msg> msgs, RuntimeContext effective) {
+        log.warn(
+                "Context overflow detected during streaming, triggering emergency compaction via"
+                        + " CompactionMiddleware");
+        return forceCompactContext(effective)
+                .thenMany(
+                        delegate.streamEvents(
+                                msgs, effective != null ? effective : RuntimeContext.empty()));
+    }
+
+    /**
+     * Forces a {@code triggerMessages=1} emergency compaction over the persisted agent state,
+     * replaces {@link AgentState#contextMutable()} with the compacted messages, and persists it.
+     * Errors when compaction cannot be performed.
+     *
+     * @param effective per-call runtime context
+     */
+    private Mono<Void> forceCompactContext(RuntimeContext effective) {
+        if (compactionHook == null) {
+            return Mono.error(
+                    new RuntimeException(
+                            "Context overflow: no compaction configured, unable to recover"));
+        }
         AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
         List<Msg> allMsgs = state.contextMutable();
         if (allMsgs.isEmpty()) {
@@ -1070,7 +1112,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? effective.getSessionId()
                         : "default";
 
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
+        // Emergency compaction must shrink the full context, including the latest message.
+        CompactionConfig forceConfig =
+                CompactionConfig.builder().triggerMessages(1).keepMessages(0).keepTokens(0).build();
         String effectiveFlushPrompt =
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
@@ -1088,17 +1132,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         sessionId)
                 .flatMap(
                         opt -> {
-                            if (opt.isPresent()) {
-                                state.contextMutable().clear();
-                                state.contextMutable().addAll(opt.get());
-                                return delegate.call(
-                                        msgs,
-                                        effective != null ? effective : RuntimeContext.empty());
+                            if (opt.isEmpty()) {
+                                return Mono.error(
+                                        new RuntimeException(
+                                                "Context overflow: emergency compaction yielded"
+                                                        + " no result"));
                             }
-                            return Mono.error(
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction yielded no"
-                                                    + " result"));
+                            state.contextMutable().clear();
+                            state.contextMutable().addAll(opt.get());
+                            // The retry reloads persisted state before invoking the model.
+                            delegate.saveAgentState(effective);
+                            return Mono.<Void>empty();
                         });
     }
 
