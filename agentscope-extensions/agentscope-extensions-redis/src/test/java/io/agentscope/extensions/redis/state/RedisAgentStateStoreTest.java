@@ -232,7 +232,6 @@ class RedisAgentStateStoreTest {
     void newVersionedStateUsesClusterSafeLayoutWhenLegacyDoesNotExist() {
         when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(false);
         when(client.get("agentscope:session:{user/s1}:missing")).thenReturn(null);
-        when(client.keyExists("agentscope:session:{user/s1}:_keys")).thenReturn(true);
         when(client.getSetMembers("agentscope:session:{user/s1}:_keys"))
                 .thenReturn(Set.of("agent_state"));
 
@@ -244,8 +243,8 @@ class RedisAgentStateStoreTest {
         assertEquals(null, loaded.value());
         verify(client).get("agentscope:session:{user/s1}:missing");
         verify(client, never()).get("agentscope:session:user/s1:missing");
+        verify(client).getSetMembers("agentscope:session:user/s1:_keys");
         verify(client).getSetMembers("agentscope:session:{user/s1}:_keys");
-        verify(client, never()).getSetMembers("agentscope:session:user/s1:_keys");
         ArgumentCaptor<String[]> deletedKeys = ArgumentCaptor.forClass(String[].class);
         verify(client).deleteKeys(deletedKeys.capture());
         List<String> deleted = Arrays.asList(deletedKeys.getValue());
@@ -257,15 +256,13 @@ class RedisAgentStateStoreTest {
     @Test
     @DisplayName("delete session uses v0 layout when only v0 marker exists")
     void deleteSessionUsesLegacyLayoutWhenOnlyLegacyMarkerExists() {
-        when(client.keyExists("agentscope:session:{user/s1}:_keys")).thenReturn(false);
-        when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(true);
         when(client.getSetMembers("agentscope:session:user/s1:_keys"))
                 .thenReturn(Set.of("agent_state", "messages:list"));
 
         store.delete("user", "s1");
 
         verify(client).getSetMembers("agentscope:session:user/s1:_keys");
-        verify(client, never()).getSetMembers("agentscope:session:{user/s1}:_keys");
+        verify(client).getSetMembers("agentscope:session:{user/s1}:_keys");
         ArgumentCaptor<String[]> deletedKeys = ArgumentCaptor.forClass(String[].class);
         verify(client).deleteKeys(deletedKeys.capture());
         List<String> deleted = Arrays.asList(deletedKeys.getValue());
@@ -277,27 +274,118 @@ class RedisAgentStateStoreTest {
     }
 
     @Test
-    @DisplayName("exists selects v1 first and falls back to v0 only when v1 marker is missing")
-    void existsSelectsClusterSafeLayoutBeforeLegacyFallback() {
+    @DisplayName("delete removes v0 and v1 state separately when both layouts exist")
+    void deleteRemovesBothLayoutsWithoutCombiningRedisSlots() {
+        when(client.getSetMembers("agentscope:session:user/s1:_keys"))
+                .thenReturn(Set.of("legacy_state", "legacy_messages:list"));
+        when(client.getSetMembers("agentscope:session:{user/s1}:_keys"))
+                .thenReturn(Set.of("cluster_state", "cluster_messages:list"));
+
+        store.delete("user", "s1");
+
+        ArgumentCaptor<String[]> deletedKeys = ArgumentCaptor.forClass(String[].class);
+        verify(client, times(2)).deleteKeys(deletedKeys.capture());
+        List<List<String>> deleteCalls =
+                deletedKeys.getAllValues().stream().map(Arrays::asList).toList();
+        assertEquals(2, deleteCalls.size());
+        assertTrue(
+                deleteCalls.stream()
+                        .anyMatch(
+                                keys ->
+                                        keys.contains("agentscope:session:user/s1:_keys")
+                                                && keys.contains(
+                                                        "agentscope:session:user/s1:legacy_state")
+                                                && keys.contains(
+                                                        "agentscope:session:user/s1:legacy_state:ver")
+                                                && keys.contains(
+                                                        "agentscope:session:user/s1:legacy_messages:list")
+                                                && keys.contains(
+                                                        "agentscope:session:user/s1:legacy_messages:list:_hash")
+                                                && keys.stream()
+                                                        .noneMatch(
+                                                                key -> key.contains("{user/s1}"))));
+        assertTrue(
+                deleteCalls.stream()
+                        .anyMatch(
+                                keys ->
+                                        keys.contains("agentscope:session:{user/s1}:_keys")
+                                                && keys.contains(
+                                                        "agentscope:session:{user/s1}:cluster_state")
+                                                && keys.contains(
+                                                        "agentscope:session:{user/s1}:cluster_state:ver")
+                                                && keys.contains(
+                                                        "agentscope:session:{user/s1}:cluster_messages:list")
+                                                && keys.contains(
+                                                        "agentscope:session:{user/s1}:cluster_messages:list:_hash")
+                                                && keys.stream()
+                                                        .noneMatch(
+                                                                key ->
+                                                                        key.contains(
+                                                                                "agentscope:session:user/s1:"))));
+    }
+
+    @Test
+    @DisplayName("delete is a no-op when neither layout tracks state")
+    void deleteDoesNothingWhenNeitherLayoutHasTrackedKeys() {
+        when(client.getSetMembers("agentscope:session:user/s1:_keys")).thenReturn(Set.of());
+        when(client.getSetMembers("agentscope:session:{user/s1}:_keys")).thenReturn(null);
+
+        store.delete("user", "s1");
+
+        verify(client, never()).deleteKeys(any(String[].class));
+    }
+
+    @Test
+    @DisplayName("delete wraps failures while cleaning a session layout")
+    void deleteWrapsLayoutCleanupFailure() {
+        IllegalStateException failure = new IllegalStateException("Redis unavailable");
+        when(client.getSetMembers("agentscope:session:user/s1:_keys")).thenThrow(failure);
+
+        RuntimeException thrown =
+                assertThrows(RuntimeException.class, () -> store.delete("user", "s1"));
+
+        assertEquals("Failed to delete session: user/s1", thrown.getMessage());
+        assertEquals(failure, thrown.getCause());
+    }
+
+    @Test
+    @DisplayName("exists uses v0 precedence when both layout markers exist")
+    void existsUsesResolvedLegacyLayoutWhenBothMarkersExist() {
+        when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(true);
         when(client.keyExists("agentscope:session:{user/s1}:_keys")).thenReturn(true);
+        when(client.getSetSize("agentscope:session:user/s1:_keys")).thenReturn(1L);
         when(client.getSetSize("agentscope:session:{user/s1}:_keys")).thenReturn(0L);
 
-        assertFalse(store.exists("user", "s1"));
-        verify(client, never()).keyExists("agentscope:session:user/s1:_keys");
-        verify(client, never()).getSetSize("agentscope:session:user/s1:_keys");
+        assertTrue(store.exists("user", "s1"));
+        verify(client, never()).getSetSize("agentscope:session:{user/s1}:_keys");
+    }
 
-        reset(client);
-        when(client.keyExists("agentscope:session:{user/s1}:_keys")).thenReturn(false);
-        when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(true);
-        when(client.getSetSize("agentscope:session:user/s1:_keys")).thenReturn(1L);
+    @Test
+    @DisplayName("exists uses v1 layout when no v0 marker exists")
+    void existsUsesClusterSafeLayoutWhenLegacyMarkerIsMissing() {
+        when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(false);
+        when(client.getSetSize("agentscope:session:{user/s1}:_keys")).thenReturn(1L);
 
         assertTrue(store.exists("user", "s1"));
 
         reset(client);
-        when(client.keyExists("agentscope:session:{user/s1}:_keys")).thenReturn(false);
         when(client.keyExists("agentscope:session:user/s1:_keys")).thenReturn(false);
+        when(client.getSetSize("agentscope:session:{user/s1}:_keys")).thenReturn(0L);
 
         assertFalse(store.exists("user", "s1"));
+    }
+
+    @Test
+    @DisplayName("exists wraps failures while resolving the session layout")
+    void existsWrapsLayoutResolutionFailure() {
+        IllegalStateException failure = new IllegalStateException("Redis unavailable");
+        when(client.keyExists("agentscope:session:user/s1:_keys")).thenThrow(failure);
+
+        RuntimeException thrown =
+                assertThrows(RuntimeException.class, () -> store.exists("user", "s1"));
+
+        assertEquals("Failed to check session existence: user/s1", thrown.getMessage());
+        assertEquals(failure, thrown.getCause());
     }
 
     @Test

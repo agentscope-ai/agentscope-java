@@ -48,26 +48,25 @@ import redis.clients.jedis.UnifiedJedis;
  * </ul>
  *
  * <p>The session state is stored in Redis with following key structure. The session segment is
- * {@code {userId}/{sessionId}} (or {@code __anon__/{sessionId}} when user id is absent). Existing
- * versioned state entries keep their v0 non-hash-tagged session segment. New versioned state
- * entries use a Redis Cluster-safe hash-tagged session segment, where {@code {userId}/{sessionId}}
- * is wrapped in braces. List state keeps the v0 non-hash-tagged layout.
+ * {@code {userId}/{sessionId}} (or {@code __anon__/{sessionId}} when user id is absent). Sessions
+ * with an existing v0 marker keep their non-hash-tagged session segment. New sessions use a Redis
+ * Cluster-safe hash-tagged session segment, where {@code {userId}/{sessionId}} is wrapped in braces.
+ * Scalar and list state use the same resolved layout for a session.
  *
  * <ul>
  *   <li>Single state: {@code {prefix}{sessionSegment}:{stateKey}} - Redis String containing JSON
  *   <li>Version: {@code {prefix}{sessionSegment}:{stateKey}:ver} - Redis String containing the
  *       optimistic version
- *   <li>List state: {@code {prefix}{userId}/{sessionId}:{stateKey}:list} - Redis List containing
- *       JSON items
- *   <li>List hash: {@code {prefix}{userId}/{sessionId}:{stateKey}:list:_hash} - Hash for change
- *       detection
+ *   <li>List state: {@code {prefix}{sessionSegment}:{stateKey}:list} - Redis List containing JSON
+ *       items
+ *   <li>List hash: {@code {prefix}{sessionSegment}:{stateKey}:list:_hash} - Hash for change detection
  *   <li>AgentStateStore marker: {@code {prefix}{sessionSegment}:_keys} - Redis Set tracking all
  *       state keys
  * </ul>
  *
- * <p>For versioned state, {@code {sessionSegment}} is either v0 {@code {userId}/{sessionId}} or
- * hash-tagged {@code {{userId}/{sessionId}}}. Public builder usage is unchanged; the layout is
- * selected internally from session metadata.
+ * <p>For all state, {@code {sessionSegment}} is either v0 {@code {userId}/{sessionId}} or hash-tagged
+ * {@code {{userId}/{sessionId}}}. Public builder usage is unchanged; the layout is selected
+ * internally from session metadata.
  *
  * <p><strong>Jedis Usage Examples:</strong></p>
  *
@@ -381,15 +380,9 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        RedisAgentStateKeyLayout v1KeyLayout = v1KeyLayout(userId, sessionId);
         try {
-            String v1KeysKey = v1KeyLayout.getKeysKey();
-            if (client.keyExists(v1KeysKey)) {
-                return client.getSetSize(v1KeysKey) > 0;
-            }
-            RedisAgentStateKeyLayout v0KeyLayout = v0KeyLayout(userId, sessionId);
-            String v0KeysKey = v0KeyLayout.getKeysKey();
-            return client.keyExists(v0KeysKey) && client.getSetSize(v0KeysKey) > 0;
+            RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+            return client.getSetSize(keyLayout.getKeysKey()) > 0;
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to check session existence: "
@@ -402,34 +395,40 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId) {
-        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
-        String keysKey = keyLayout.getKeysKey();
-
         try {
-            Set<String> trackedKeys = client.getSetMembers(keysKey);
-
-            if (trackedKeys != null && !trackedKeys.isEmpty()) {
-                Set<String> keysToDelete = new HashSet<>();
-                keysToDelete.add(keysKey);
-
-                for (String trackedKey : trackedKeys) {
-                    if (RedisAgentStateKeyLayout.isListTrackKey(trackedKey)) {
-                        String baseKey =
-                                RedisAgentStateKeyLayout.baseKeyFromListTrackKey(trackedKey);
-                        keysToDelete.add(keyLayout.getListKey(baseKey));
-                        keysToDelete.add(keyLayout.getListKey(baseKey) + HASH_SUFFIX);
-                    } else {
-                        keysToDelete.add(keyLayout.getStateKey(trackedKey));
-                        keysToDelete.add(
-                                RedisStateVersionSupport.versionKey(
-                                        keyLayout.getStateKey(trackedKey)));
-                    }
-                }
-
-                client.deleteKeys(keysToDelete.toArray(new String[0]));
-            }
+            deleteUserSession(v0KeyLayout(userId, sessionId));
+            deleteUserSession(v1KeyLayout(userId, sessionId));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete session: " + keyLayout.slotId(), e);
+            throw new RuntimeException(
+                    "Failed to delete session: "
+                            + RedisAgentStateKeyLayout.normalizeUser(userId)
+                            + "/"
+                            + sessionId,
+                    e);
+        }
+    }
+
+    private void deleteUserSession(RedisAgentStateKeyLayout keyLayout) {
+        String keysKey = keyLayout.getKeysKey();
+        Set<String> trackedKeys = client.getSetMembers(keysKey);
+
+        if (trackedKeys != null && !trackedKeys.isEmpty()) {
+            Set<String> keysToDelete = new HashSet<>();
+            keysToDelete.add(keysKey);
+
+            for (String trackedKey : trackedKeys) {
+                if (RedisAgentStateKeyLayout.isListTrackKey(trackedKey)) {
+                    String baseKey = RedisAgentStateKeyLayout.baseKeyFromListTrackKey(trackedKey);
+                    keysToDelete.add(keyLayout.getListKey(baseKey));
+                    keysToDelete.add(keyLayout.getListKey(baseKey) + HASH_SUFFIX);
+                } else {
+                    keysToDelete.add(keyLayout.getStateKey(trackedKey));
+                    keysToDelete.add(
+                            RedisStateVersionSupport.versionKey(keyLayout.getStateKey(trackedKey)));
+                }
+            }
+
+            client.deleteKeys(keysToDelete.toArray(new String[0]));
         }
     }
 

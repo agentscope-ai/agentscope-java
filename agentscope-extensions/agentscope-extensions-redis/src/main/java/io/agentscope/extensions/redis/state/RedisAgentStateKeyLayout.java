@@ -26,8 +26,9 @@ import java.util.Optional;
  * content equal to the v0 segment lets the state key, version key, and session marker share one hash
  * slot for Lua CAS operations.
  *
- * <p>The store keeps existing v0 sessions on v0 and creates new versioned sessions on v1. List
- * state remains on v0 layout because it does not participate in the multi-key Lua CAS path.
+ * <p>The store keeps existing v0 sessions on v0 and creates new sessions on v1. Scalar and list
+ * state use the same resolved layout so one session does not create markers in both layouts during
+ * normal operation.
  */
 final class RedisAgentStateKeyLayout {
 
@@ -47,11 +48,11 @@ final class RedisAgentStateKeyLayout {
     }
 
     /**
-     * Resolve the layout for versioned state reads and writes.
+     * Resolve the layout for session state reads and writes.
      *
-     * <p>Existing v0 sessions stay on v0 so old data remains readable and writable. New versioned
-     * sessions use v1 so the state key, version key, and session marker share one Redis Cluster hash
-     * slot for Lua CAS operations.
+     * <p>Existing v0 sessions stay on v0 so old data remains readable and writable. New sessions
+     * use v1 so the state key, version key, list keys, and session marker share one Redis Cluster
+     * hash slot.
      *
      * @param client Redis client used to test whether the v0 marker exists
      * @param keyPrefix Redis key prefix configured for the state store
