@@ -620,6 +620,31 @@ ReActAgent.builder()
 
 failover 监听器在切换现场同步回调并携带原始错误——这是切换唯一的进程内信号，主模型的错误不会到达事件流或中间件。实现须非阻塞、线程安全；实现抛出的异常仅记录日志，不影响切换。
 
+#### 多级回退链（fallbackModels）
+
+需要多个备用模型，或想要失败分类与逐候选冷却时，使用 `fallbackModels(...)`——按序尝试的有序链。当前候选发生"切换可恢复"的失败（429 / 5xx / 超时 / 网络 / 401 / 403）时，链透明地切换到下一个候选；请求侧失败（400 / 422 等 4xx）快速失败、不消耗链——换到任何候选都会同样失败。
+
+```java
+// 与 .model(String) 相同的解析方式（自动读取环境变量中的 API key）。
+import io.agentscope.core.model.ModelRegistry;
+
+ReActAgent.builder()
+        .model("dashscope:qwen-plus")
+        // 每个失败候选按序切换到下一个
+        .fallbackModels(
+                List.of(
+                        ModelRegistry.resolve("dashscope:qwen-max"),    // 第 1 备用
+                        ModelRegistry.resolve("openai:gpt-4o-mini")))   // 第 2 备用
+        .build();
+```
+
+关键语义（由 `io.agentscope.core.model.FallbackChainModel` 实现）：
+
+- 每个候选有独立**冷却**状态：失败后跳过冷却窗口（默认 30s），窗口过期自动恢复可用——恢复由真实流量验证，无调度器、无后台线程。**认证失败（401/403）不冷却**——错误凭据不会在窗口内自行修复，应让真实鉴权错误浮出，而不是被冷却消息掩盖。
+- **流中途失败**（首块已交付后）刻意不切到备用：流中途切换可能重复已交付内容。只有传输类失败才会冷却候选——请求形状的中途错误说明不了候选的健康状况，不应因一个坏请求把主模型对所有并发会话停用 30 秒。
+- 能力查询（`getModelName`、`supportsNativeStructuredOutput`、`getContextWindowSize`）报告**主模型**——链的稳定身份——因此不会观察到其他并发调用的活跃候选；要查看某次调用实际由哪个候选服务，使用 `FailoverListener`（或 warn 日志）。因此候选应与主模型**能力兼容**（上下文窗口相同或更大、结构化输出支持一致）；builder 在构建时会对方差提示警告。
+- 链仅作用于 `ReActAgent` 内部；旧的单层 `fallbackModel` 路径保持不变，未配置链时仍使用它。包装类本身是公开的，也可以直接 `model(new FallbackChainModel(primary, fallbacks))` 注入做完全控制。
+
 ### 技能系统（Skills）
 
 技能是可热加载的 Markdown 提示词模块，运行时由 LLM 按需激活：

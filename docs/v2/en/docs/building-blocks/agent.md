@@ -649,12 +649,19 @@ Key semantics (implemented by `io.agentscope.core.model.FallbackChainModel`):
 
 - Candidates keep their own **cooldown** state: after a failure a candidate is skipped for a
   cooldown window (default 30s), then automatically becomes eligible again — recovery is verified
-  by real traffic, no scheduler or background threads are involved.
+  by real traffic, no scheduler or background threads are involved. **Auth failures (401/403)
+  are not cooled** — a wrong credential will not fix itself inside the window, and the real auth
+  error should surface instead of a cooldown message.
 - **Mid-stream failures** (after the first chunk was delivered) are deliberately not retried on a
-  fallback: switching mid-response can duplicate already-delivered content. The failure is
-  recorded (cooldown applies) and propagated as-is.
+  fallback: switching mid-response can duplicate already-delivered content. Only transport-class
+  failures cool the candidate — a request-shaped mid-stream error says nothing about the
+  candidate's health and must not park it for every concurrent session.
 - Capability queries (`getModelName`, `supportsNativeStructuredOutput`,
-  `getContextWindowSize`) delegate to the currently active candidate.
+  `getContextWindowSize`) report the **primary** model — the chain's stable identity — so they
+  never observe another concurrent call's active candidate. Use the `FailoverListener` (or the
+  warn logs) to see which candidate actually served a call. Candidates should therefore be
+  **capability-compatible** with the primary (same or larger context window, same
+  structured-output support); the builder warns at build time when they are not.
 - The chain applies inside `ReActAgent` only; the legacy single `fallbackModel` path is unchanged
   and is still used when no chain is configured. The wrapper itself is public and can also be
   wired directly via `model(new FallbackChainModel(primary, fallbacks))` for full control.

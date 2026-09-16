@@ -190,6 +190,110 @@ class FallbackChainModelTest {
     }
 
     @Test
+    @DisplayName("Auth failures (401) switch but are not cooled")
+    void authFailureSwitchesButIsNotCooled() {
+        CallRecordingModel primary =
+                new CallRecordingModel(
+                        "primary", new HttpTransportException("invalid key", 401, ""));
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain =
+                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60));
+
+        // First call: 401 -> switches to fallback; primary must NOT enter cooldown.
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+        assertEquals(1, primary.callCount.get());
+
+        // Second call inside what would be the cooldown window: primary is tried again because
+        // auth failures are not cooled (a wrong credential will not fix itself, and the real
+        // auth error must surface instead of a cooldown message).
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+        assertEquals(2, primary.callCount.get(), "401 must not cool the primary");
+        assertEquals(2, fallback.callCount.get());
+    }
+
+    @Test
+    @DisplayName("Request-side mid-stream failures do not cool the candidate")
+    void midStreamRequestSideFailureDoesNotCool() {
+        // Emits one chunk then fails with a request-side error (e.g. response parse 400).
+        CallRecordingModel primary =
+                new CallRecordingModel("primary", null) {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<io.agentscope.core.message.Msg> messages,
+                            List<ToolSchema> tools,
+                            GenerateOptions options) {
+                        callCount.incrementAndGet();
+                        return Flux.concat(
+                                Flux.just(textResponse("partial")),
+                                Flux.error(
+                                        new HttpTransportException("payload too large", 400, "")));
+                    }
+                };
+        CallRecordingModel fallback = new CallRecordingModel("fallback", null);
+
+        FallbackChainModel chain =
+                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60));
+
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .expectError()
+                .verify();
+
+        // The request-shaped mid-stream failure must not park the primary for other sessions:
+        // a second call tries the primary again.
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectNextCount(1)
+                .expectError()
+                .verify();
+        assertEquals(2, primary.callCount.get(), "request-shaped mid-stream failure must not cool");
+    }
+
+    @Test
+    @DisplayName("All-cooling error preserves the last real failure as cause")
+    void allCoolingErrorPreservesLastFailure() {
+        HttpTransportException realFailure = new HttpTransportException("upstream down", 503, "");
+        CallRecordingModel primary = new CallRecordingModel("primary", realFailure);
+        CallRecordingModel fallback =
+                new CallRecordingModel(
+                        "fallback", new HttpTransportException("also down", 502, ""));
+
+        ConcurrentHashMap<String, Long> shared = new ConcurrentHashMap<>();
+        FallbackChainModel chain =
+                new FallbackChainModel(primary, List.of(fallback), Duration.ofSeconds(60), shared);
+
+        // First call: both fail and enter cooldown.
+        StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
+
+        // Second call inside the window: the error must carry the original failure, not a
+        // bare synthetic message with no cause.
+        StepVerifier.create(chain.stream(List.of(), null, null))
+                .expectErrorSatisfies(
+                        error -> {
+                            Throwable cause = error;
+                            boolean saw503 = false;
+                            while (cause != null) {
+                                if (cause instanceof HttpTransportException hte
+                                        && Integer.valueOf(503).equals(hte.getStatusCode())) {
+                                    saw503 = true;
+                                    break;
+                                }
+                                cause = cause.getCause();
+                            }
+                            assertEquals(
+                                    true,
+                                    saw503,
+                                    "all-cooling error must preserve the last real failure: "
+                                            + error);
+                        })
+                .verify();
+    }
+
+    @Test
     @DisplayName("Cooling candidate is skipped until its cooldown expires (lazy recovery)")
     void coolingCandidateSkippedThenRecovers() throws InterruptedException {
         CallRecordingModel primary =
@@ -317,7 +421,7 @@ class FallbackChainModelTest {
     }
 
     @Test
-    @DisplayName("Every candidate cooling at once reports the cooldown message, not failure")
+    @DisplayName("Every candidate cooling at once propagates the last real failure, no attempt")
     void allCandidatesCoolingReportsCooldownMessage() {
         CallRecordingModel primary =
                 new CallRecordingModel("primary", new HttpTransportException("down", 503, ""));
@@ -332,19 +436,31 @@ class FallbackChainModelTest {
         // First call: both fail, both enter cooldown.
         StepVerifier.create(chain.stream(List.of(), null, null)).expectError().verify();
 
-        // Second call inside the window: nothing is attempted; the error must say so.
+        // Second call inside the window: nothing is attempted, and the propagated error carries
+        // the last real failure as cause instead of a bare synthetic message.
         StepVerifier.create(chain.stream(List.of(), null, null))
                 .expectErrorSatisfies(
                         error -> {
-                            String message = error.getMessage();
+                            Throwable cause = error;
+                            boolean saw503 = false;
+                            while (cause != null) {
+                                if (cause instanceof HttpTransportException hte
+                                        && Integer.valueOf(503).equals(hte.getStatusCode())) {
+                                    saw503 = true;
+                                    break;
+                                }
+                                cause = cause.getCause();
+                            }
                             assertEquals(
                                     true,
-                                    message != null
-                                            && message.contains("cooldown")
-                                            && message.contains("nothing was attempted"),
-                                    "all-cooling error must say nothing was attempted: " + message);
+                                    saw503,
+                                    "all-cooling error must carry the last real failure: " + error);
                         })
                 .verify();
+
+        // Nothing was attempted in the second call.
+        assertEquals(1, primary.callCount.get(), "primary must not be attempted while cooling");
+        assertEquals(1, fallback.callCount.get(), "fallback must not be attempted while cooling");
     }
 
     @Test
@@ -625,7 +741,7 @@ class FallbackChainModelTest {
 
         private final String name;
         private final Throwable error;
-        private final AtomicInteger callCount = new AtomicInteger();
+        protected final AtomicInteger callCount = new AtomicInteger();
 
         CallRecordingModel(String name, Throwable error) {
             this.name = name;

@@ -353,6 +353,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.fallbackModels = List.copyOf(builder.flatFallbackModels);
+        validateFallbackChainCapabilities();
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -732,6 +733,54 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? b.flatStopOnReject
                         : ReactConfig.DEFAULT_STOP_ON_REJECT;
         return new ReactConfig(b.maxIters, stop);
+    }
+
+    /**
+     * Warns when a fallback candidate is not capability-compatible with the primary model.
+     *
+     * <p>{@link FallbackChainModel} reports the primary's capabilities regardless of which
+     * candidate serves a call (the chain's stable identity under concurrency). A candidate with a
+     * smaller context window or different structured-output support than the primary is therefore
+     * almost certainly a configuration mistake: after a switch the agent would keep building
+     * requests/compaction on the primary's capability assumptions. Unknown capabilities
+     * ({@code getContextWindowSize() == 0}, default {@code supportsNativeStructuredOutput()})
+     * are tolerated silently.
+     */
+    private void validateFallbackChainCapabilities() {
+        if (fallbackModels.isEmpty() || model == null) {
+            return;
+        }
+        int primaryWindow = model.getContextWindowSize();
+        boolean primaryNative = model.supportsNativeStructuredOutput();
+        boolean primaryNativeWithTools = model.supportsNativeStructuredOutputWithTools();
+        for (Model fallback : fallbackModels) {
+            int window = fallback.getContextWindowSize();
+            boolean nativeOut = fallback.supportsNativeStructuredOutput();
+            boolean nativeWithTools = fallback.supportsNativeStructuredOutputWithTools();
+            if (window > 0 && primaryWindow > 0 && window < primaryWindow) {
+                log.warn(
+                        "Fallback candidate {} has a smaller context window ({}) than the primary"
+                                + " model {} ({}); the chain reports the primary's capabilities, so"
+                                + " compaction may trigger on the wrong budget after a switch",
+                        fallback.getModelName(),
+                        window,
+                        model.getModelName(),
+                        primaryWindow);
+            }
+            if (nativeOut != primaryNative || nativeWithTools != primaryNativeWithTools) {
+                log.warn(
+                        "Fallback candidate {} reports different structured-output support"
+                                + " (native={}, withTools={}) than the primary model {} (native={},"
+                                + " withTools={}); the chain reports the primary's capabilities,"
+                                + " so request construction may mismatch the serving candidate",
+                        fallback.getModelName(),
+                        nativeOut,
+                        nativeWithTools,
+                        model.getModelName(),
+                        primaryNative,
+                        primaryNativeWithTools);
+            }
+        }
     }
 
     // ==================== RuntimeContext ====================

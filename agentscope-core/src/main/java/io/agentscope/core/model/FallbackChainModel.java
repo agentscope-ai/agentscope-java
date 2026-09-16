@@ -58,6 +58,19 @@ import reactor.core.publisher.Flux;
  * never leaks across calls. Use the {@link FailoverListener} (or the warn logs) to observe
  * which candidate served a particular call.
  *
+ * <p><b>Capability compatibility requirement.</b> Because the chain reports the primary's
+ * capabilities, candidates should be capability-compatible with the primary: the same (or
+ * larger) {@link #getContextWindowSize()} and the same structured-output support. A candidate
+ * with a smaller window or different structured-output support will still serve requests (the
+ * chain only fails on the candidate's own errors), but the agent keeps building requests and
+ * compaction decisions on the primary's capability assumptions. The {@code
+ * ReActAgent.Builder.fallbackModels(...)} path warns at build time when candidates look
+ * incompatible; callers wiring this class directly are responsible for the same check.
+ *
+ * <p><b>Auth failures (401/403) are not cooled</b>: a wrong credential will not fix itself
+ * inside the cooldown window, so cooling would hide the real auth error behind a cooldown
+ * message. They still switch to the next candidate (which may hold valid credentials).
+ *
  * <p>This class is the framework-side building block for multi-level model fallback. Users can
  * wire it directly via {@code ReActAgent.Builder.model(...)} or through the builder convenience
  * switch {@code ReActAgent.Builder.fallbackModels(...)}.
@@ -73,6 +86,7 @@ public class FallbackChainModel implements Model {
     private final Model primary;
     private final Duration cooldown;
     private final ConcurrentHashMap<String, Long> coolUntilMillis;
+    private final ConcurrentHashMap<String, Throwable> lastFailureByKey;
     private final FailoverListener failoverListener;
 
     /**
@@ -158,6 +172,7 @@ public class FallbackChainModel implements Model {
         this.primary = primary;
         this.cooldown = cooldown != null ? cooldown : DEFAULT_COOLDOWN;
         this.coolUntilMillis = sharedCoolUntilMillis;
+        this.lastFailureByKey = new ConcurrentHashMap<>();
         this.failoverListener = failoverListener;
     }
 
@@ -182,17 +197,26 @@ public class FallbackChainModel implements Model {
                                     cooldownSkips > 0
                                             ? "All "
                                                     + cooldownSkips
-                                                    + " fallback candidates are in cooldown;"
-                                                    + " nothing was attempted this call"
+                                                    + " candidates in the fallback chain are in"
+                                                    + " cooldown; nothing was attempted this call"
                                             : "All model candidates in the fallback chain failed");
             return Flux.error(error);
         }
 
         Model candidate = candidates.get(index);
-        String candidateKey = candidateKey(candidate);
+        String candidateKey = candidateKey(index, candidate);
 
         if (isCooling(candidateKey)) {
-            return attempt(index + 1, lastFailure, cooldownSkips + 1, messages, tools, options);
+            // Propagate the last real failure (if any) so an all-cooling call still reports
+            // the underlying reason (e.g. an expired key) instead of a bare synthetic message.
+            Throwable remembered = lastFailureByKey.get(candidateKey);
+            return attempt(
+                    index + 1,
+                    lastFailure != null ? lastFailure : remembered,
+                    cooldownSkips + 1,
+                    messages,
+                    tools,
+                    options);
         }
 
         Flux<ChatResponse> candidateFlux = candidate.stream(messages, tools, options);
@@ -207,7 +231,13 @@ public class FallbackChainModel implements Model {
                                 yield Flux.error(error);
                             }
                             case SWITCHABLE -> {
-                                recordFailure(candidateKey);
+                                // Auth failures (401/403) are deliberately NOT cooled: a wrong
+                                // credential will not fix itself inside the window, so cooling
+                                // would hide the real auth error behind a cooldown message. The
+                                // candidate still switches (next one may hold valid credentials).
+                                if (!isAuthFailure(error)) {
+                                    recordFailure(candidateKey, error);
+                                }
                                 if (index + 1 < candidates.size()) {
                                     Model next = candidates.get(index + 1);
                                     LOG.warn(
@@ -236,8 +266,16 @@ public class FallbackChainModel implements Model {
                     return flux.onErrorResume(
                             midStreamError -> {
                                 // Mid-stream failure: do not switch (content may already have
-                                // been delivered); record the cooldown and propagate as-is.
-                                recordFailure(candidateKey);
+                                // been delivered). Only transport-class failures cool the
+                                // candidate — a request-shaped mid-stream error (prompt that
+                                // makes the provider abort, tokenizer edge case, oversized
+                                // payload) says nothing about the candidate's health, and with
+                                // an agent-scoped table it must not park the primary for every
+                                // concurrent session.
+                                if (classify(midStreamError) == FailureCategory.SWITCHABLE
+                                        && !isAuthFailure(midStreamError)) {
+                                    recordFailure(candidateKey, midStreamError);
+                                }
                                 return Flux.error(midStreamError);
                             });
                 });
@@ -250,15 +288,16 @@ public class FallbackChainModel implements Model {
     }
 
     /**
-     * Marks a candidate as cooling for {@link #cooldown}. Expired entries are evicted on write so
-     * the table stays bounded over the lifetime of a long-lived agent.
+     * Marks a candidate as cooling for {@link #cooldown} and remembers the triggering failure.
+     * Expired entries are evicted on write so the table stays bounded over the lifetime of a
+     * long-lived agent.
      */
-    private void recordFailure(String key) {
+    private void recordFailure(String key, Throwable error) {
         long now = System.currentTimeMillis();
-        if (coolUntilMillis.size() > 0 && !coolUntilMillis.isEmpty()) {
-            coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
-        }
+        // removeIf on an empty map is a no-op, so no guard is needed.
+        coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
         coolUntilMillis.put(key, now + cooldown.toMillis());
+        lastFailureByKey.put(key, error);
     }
 
     /**
@@ -278,12 +317,36 @@ public class FallbackChainModel implements Model {
     }
 
     /**
-     * Cooldown key: model name plus instance identity. Two candidates that expose the same model
-     * name behind different endpoints/keys are distinct instances and must not cool each other
-     * down; the instance identity keeps their entries separate.
+     * Cooldown key: chain index plus model name. The chain is fixed at construction
+     * ({@code List.copyOf}), so the index is a collision-free instance identity across shared
+     * tables as long as wrappers sharing a table expose their candidates in the same order
+     * (which the agent wiring does — it reuses the same candidate list every call).
      */
-    private static String candidateKey(Model model) {
-        return model.getModelName() + '@' + System.identityHashCode(model);
+    private static String candidateKey(int index, Model model) {
+        return index + "@" + model.getModelName();
+    }
+
+    /**
+     * Whether the error chain carries an auth failure (HTTP 401/403). Auth failures are
+     * switchable (the next candidate may hold valid credentials) but are deliberately not
+     * cooled: a wrong credential will not fix itself inside the cooldown window, and cooling
+     * would hide the real auth error behind a cooldown message.
+     */
+    private static boolean isAuthFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            Integer status = null;
+            if (current instanceof HttpTransportException hte) {
+                status = hte.getStatusCode();
+            } else if (current instanceof ModelHttpException mhe) {
+                status = mhe.getStatusCode();
+            }
+            if (status != null) {
+                return status == 401 || status == 403;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**
