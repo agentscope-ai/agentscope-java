@@ -61,7 +61,9 @@ import reactor.core.publisher.Flux;
  */
 public class DashScopeHttpClient {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeHttpClient.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DashScopeHttpClient.class));
 
     /** Default base URL for DashScope API. */
     public static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com";

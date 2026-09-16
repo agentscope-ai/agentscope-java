@@ -56,7 +56,9 @@ import reactor.core.publisher.Mono;
  */
 public class DifyRAGClient {
 
-    private static final Logger log = LoggerFactory.getLogger(DifyRAGClient.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DifyRAGClient.class));
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient httpClient;
@@ -441,7 +443,9 @@ public class DifyRAGClient {
      * Logging interceptor for OkHttp (debug mode only).
      */
     private static class LoggingInterceptor implements Interceptor {
-        private static final Logger log = LoggerFactory.getLogger(LoggingInterceptor.class);
+        private static final Logger log =
+                io.agentscope.core.util.SanitizingLogger.wrap(
+                        LoggerFactory.getLogger(LoggingInterceptor.class));
 
         @Override
         public Response intercept(Chain chain) throws IOException {

@@ -30,7 +30,9 @@ import org.slf4j.LoggerFactory;
  */
 class ToolGroupManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(ToolGroupManager.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(ToolGroupManager.class));
 
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups

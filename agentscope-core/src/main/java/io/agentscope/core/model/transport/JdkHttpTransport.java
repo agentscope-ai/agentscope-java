@@ -67,7 +67,9 @@ import reactor.core.scheduler.Schedulers;
  */
 public class JdkHttpTransport implements HttpTransport {
 
-    private static final Logger log = LoggerFactory.getLogger(JdkHttpTransport.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(JdkHttpTransport.class));
     private static final String SSE_DATA_PREFIX = "data:";
     private static final String SSE_DONE_MARKER = "[DONE]";
 

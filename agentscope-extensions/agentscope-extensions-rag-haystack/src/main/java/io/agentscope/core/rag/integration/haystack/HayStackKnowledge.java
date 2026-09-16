@@ -70,7 +70,9 @@ import reactor.core.publisher.Mono;
  */
 public class HayStackKnowledge implements Knowledge {
 
-    private static final Logger logger = LoggerFactory.getLogger(HayStackKnowledge.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(HayStackKnowledge.class));
 
     private final HayStackClient client;
 

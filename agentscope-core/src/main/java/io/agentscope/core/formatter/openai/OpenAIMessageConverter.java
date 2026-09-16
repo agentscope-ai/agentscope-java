@@ -49,7 +49,9 @@ import org.slf4j.LoggerFactory;
  */
 public class OpenAIMessageConverter {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIMessageConverter.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OpenAIMessageConverter.class));
 
     private final Function<Msg, String> textExtractor;
     private final Function<List<ContentBlock>, String> toolResultConverter;

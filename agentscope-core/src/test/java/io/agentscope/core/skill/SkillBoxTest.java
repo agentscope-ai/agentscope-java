@@ -72,6 +72,8 @@ import reactor.core.publisher.Mono;
 @Tag("unit")
 class SkillBoxTest {
 
+    @TempDir Path tempDir;
+
     private SkillBox skillBox;
     private Toolkit toolkit;
 
@@ -85,6 +87,78 @@ class SkillBoxTest {
     @Nested
     @DisplayName("SkillBox Basic Skill Management Test")
     class SkillBoxBasic {
+        @Test
+        @DisplayName("Should keep uploaded resources inside the configured work directory")
+        void testUploadSkillFilesRejectsTraversal() {
+            Path workDir = tempDir.resolve("work");
+            Path escapedResource = tempDir.resolve("escaped.txt");
+            AgentSkill traversalSkill =
+                    new AgentSkill(
+                            "traversal",
+                            "Traversal skill",
+                            "# Content",
+                            Map.of("../../../escaped.txt", "escaped"));
+            Path absoluteSkillPath = tempDir.resolve("absolute-skill").toAbsolutePath();
+            AgentSkill absoluteSkill =
+                    new AgentSkill(
+                            absoluteSkillPath.toString(),
+                            "Absolute skill",
+                            "# Content",
+                            Map.of("payload.txt", "payload"));
+            skillBox.codeExecution().workDir(workDir.toString()).enable();
+            skillBox.registerSkill(traversalSkill);
+            skillBox.registerSkill(absoluteSkill);
+
+            skillBox.uploadSkillFiles();
+
+            assertFalse(Files.exists(escapedResource));
+            assertFalse(Files.exists(Path.of(absoluteSkill.getSkillId()).resolve("payload.txt")));
+        }
+
+        @Test
+        @DisplayName("Should upload valid nested resources")
+        void testUploadSkillFilesAllowsValidNestedResource() throws Exception {
+            Path workDir = tempDir.resolve("work");
+            AgentSkill skill =
+                    new AgentSkill(
+                            "valid",
+                            "Valid skill",
+                            "# Content",
+                            Map.of("scripts/run.sh", "echo ok"));
+            skillBox.codeExecution().workDir(workDir.toString()).enable();
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            assertEquals(
+                    "echo ok",
+                    Files.readString(
+                            workDir.resolve("skills")
+                                    .resolve(skill.getSkillId())
+                                    .resolve("scripts/run.sh")));
+        }
+
+        @Test
+        @DisplayName("Should reject a skill directory symlink that escapes the upload directory")
+        void testUploadSkillFilesRejectsSymlinkEscape() throws Exception {
+            Path workDir = tempDir.resolve("work");
+            Path uploadDir = Files.createDirectories(workDir.resolve("skills"));
+            Path outsideDir = Files.createDirectories(tempDir.resolve("outside"));
+            AgentSkill skill =
+                    new AgentSkill(
+                            "linked",
+                            "Linked skill",
+                            "# Content",
+                            Map.of("payload.txt", "payload"));
+            Files.createSymbolicLink(uploadDir.resolve(skill.getSkillId()), outsideDir);
+            skillBox.codeExecution().workDir(workDir.toString()).enable();
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            assertFalse(Files.exists(outsideDir.resolve("payload.txt")));
+        }
+
         @Test
         @DisplayName("Should get skill by id")
         void testGetSkillById() {

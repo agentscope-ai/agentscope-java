@@ -78,7 +78,9 @@ import reactor.core.publisher.Mono;
  */
 public class RAGFlowKnowledge implements Knowledge {
 
-    private static final Logger logger = LoggerFactory.getLogger(RAGFlowKnowledge.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(RAGFlowKnowledge.class));
 
     private final RAGFlowClient client;
 

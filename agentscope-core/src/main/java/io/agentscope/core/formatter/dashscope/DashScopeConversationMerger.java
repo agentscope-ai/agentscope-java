@@ -40,7 +40,9 @@ import org.slf4j.LoggerFactory;
  */
 public class DashScopeConversationMerger {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeConversationMerger.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DashScopeConversationMerger.class));
 
     private static final String HISTORY_START_TAG = "<history>";
     private static final String HISTORY_END_TAG = "</history>";

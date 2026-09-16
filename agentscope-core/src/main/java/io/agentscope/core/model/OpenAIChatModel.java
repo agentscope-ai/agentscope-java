@@ -57,7 +57,9 @@ import reactor.core.scheduler.Schedulers;
  */
 public class OpenAIChatModel extends ChatModelBase {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIChatModel.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OpenAIChatModel.class));
 
     private final OpenAIClient client;
     private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;

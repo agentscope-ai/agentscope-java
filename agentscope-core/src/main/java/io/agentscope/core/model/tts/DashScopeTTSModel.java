@@ -60,7 +60,9 @@ import reactor.core.publisher.Mono;
  */
 public class DashScopeTTSModel implements TTSModel {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeTTSModel.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DashScopeTTSModel.class));
 
     /** Default base URL for DashScope API. */
     public static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com";

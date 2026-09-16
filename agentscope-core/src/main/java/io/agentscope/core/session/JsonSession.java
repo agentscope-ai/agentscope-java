@@ -342,14 +342,15 @@ public class JsonSession implements Session {
     private Path getSessionDir(SessionKey sessionKey) {
         String identifier = sessionKey.toIdentifier();
         // If identifier contains special characters, encode it for file system safety
-        if (!SAFE_FILENAME_PATTERN.matcher(identifier).matches()) {
-            String encoded =
+        if (!SAFE_FILENAME_PATTERN.matcher(identifier).matches()
+                || ".".equals(identifier)
+                || "..".equals(identifier)) {
+            identifier =
                     Base64.getUrlEncoder()
                             .withoutPadding()
                             .encodeToString(identifier.getBytes(StandardCharsets.UTF_8));
-            return sessionDirectory.resolve(encoded);
         }
-        return sessionDirectory.resolve(identifier);
+        return resolveContainedPath(sessionDirectory, identifier);
     }
 
     /**
@@ -360,7 +361,7 @@ public class JsonSession implements Session {
      * @return Path to the state file ({sessionDir}/{key}.json)
      */
     private Path getStatePath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".json");
+        return resolveContainedPath(getSessionDir(sessionKey), key + ".json");
     }
 
     /**
@@ -371,7 +372,7 @@ public class JsonSession implements Session {
      * @return Path to the list file ({sessionDir}/{key}.jsonl)
      */
     private Path getListPath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".jsonl");
+        return resolveContainedPath(getSessionDir(sessionKey), key + ".jsonl");
     }
 
     /**
@@ -382,7 +383,26 @@ public class JsonSession implements Session {
      * @return Path to the hash file ({sessionDir}/{key}.hash)
      */
     private Path getHashPath(SessionKey sessionKey, String key) {
-        return getSessionDir(sessionKey).resolve(key + ".hash");
+        return resolveContainedPath(getSessionDir(sessionKey), key + ".hash");
+    }
+
+    private static Path resolveContainedPath(Path baseDir, String untrustedPath) {
+        try {
+            Path canonicalBase = baseDir.toFile().getCanonicalFile().toPath();
+            Path candidate = Path.of(untrustedPath);
+            if (candidate.isAbsolute()) {
+                throw new IllegalArgumentException("Absolute paths are not allowed");
+            }
+            Path canonicalCandidate =
+                    canonicalBase.resolve(candidate).toFile().getCanonicalFile().toPath();
+            if (canonicalCandidate.equals(canonicalBase)
+                    || !canonicalCandidate.startsWith(canonicalBase)) {
+                throw new IllegalArgumentException("Path escapes the session directory");
+            }
+            return canonicalCandidate;
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to resolve session path", e);
+        }
     }
 
     /**

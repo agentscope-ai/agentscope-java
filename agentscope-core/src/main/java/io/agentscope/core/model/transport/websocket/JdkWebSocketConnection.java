@@ -37,7 +37,9 @@ import reactor.core.publisher.Sinks;
  */
 public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
 
-    private static final Logger log = LoggerFactory.getLogger(JdkWebSocketConnection.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(JdkWebSocketConnection.class));
 
     private final String url;
     private final Class<T> messageType;

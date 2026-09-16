@@ -83,7 +83,9 @@ import reactor.core.publisher.Mono;
  */
 public class DifyKnowledge implements Knowledge {
 
-    private static final Logger log = LoggerFactory.getLogger(DifyKnowledge.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DifyKnowledge.class));
 
     private final DifyRAGClient client;
     private final DifyRAGConfig config;

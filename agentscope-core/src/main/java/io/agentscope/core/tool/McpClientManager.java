@@ -35,7 +35,9 @@ import reactor.core.publisher.Mono;
  */
 class McpClientManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(McpClientManager.class));
 
     private final Map<String, McpClientWrapper> mcpClients = new ConcurrentHashMap<>();
     private final ToolRegistry toolRegistry;

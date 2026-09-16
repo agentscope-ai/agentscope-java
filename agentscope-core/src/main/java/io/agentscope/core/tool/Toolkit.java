@@ -65,7 +65,8 @@ import reactor.core.publisher.Mono;
  */
 public class Toolkit {
 
-    private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(LoggerFactory.getLogger(Toolkit.class));
 
     private final ToolGroupManager groupManager = new ToolGroupManager();
     private final ToolRegistry toolRegistry = new ToolRegistry();

@@ -63,7 +63,9 @@ import reactor.core.publisher.Flux;
  */
 public class OpenAIClient {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OpenAIClient.class));
 
     /** Default base URL for OpenAI API. */
     public static final String DEFAULT_BASE_URL = "https://api.openai.com";

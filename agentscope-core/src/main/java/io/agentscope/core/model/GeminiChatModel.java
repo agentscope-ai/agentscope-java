@@ -54,7 +54,9 @@ import reactor.core.scheduler.Schedulers;
  */
 public class GeminiChatModel extends ChatModelBase {
 
-    private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(GeminiChatModel.class));
 
     private final String apiKey;
     private final String modelName;

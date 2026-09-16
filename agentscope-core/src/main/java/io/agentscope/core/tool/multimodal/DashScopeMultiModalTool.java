@@ -90,7 +90,9 @@ import reactor.core.publisher.Mono;
  */
 public class DashScopeMultiModalTool {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeMultiModalTool.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DashScopeMultiModalTool.class));
 
     /**
      * DashScope API key.

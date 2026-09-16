@@ -53,7 +53,9 @@ import reactor.core.publisher.Mono;
  */
 public class HayStackClient {
 
-    private static final Logger logger = LoggerFactory.getLogger(HayStackClient.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(HayStackClient.class));
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 

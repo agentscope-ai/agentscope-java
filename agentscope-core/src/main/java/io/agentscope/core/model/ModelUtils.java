@@ -30,7 +30,9 @@ import reactor.util.retry.Retry;
  */
 public final class ModelUtils {
 
-    private static final Logger LOG = LoggerFactory.getLogger(ModelUtils.class);
+    private static final Logger LOG =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(ModelUtils.class));
 
     private ModelUtils() {
         // Utility class - prevent instantiation

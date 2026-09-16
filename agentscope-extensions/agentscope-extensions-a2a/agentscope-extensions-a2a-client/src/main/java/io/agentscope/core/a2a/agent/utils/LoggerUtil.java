@@ -21,6 +21,7 @@ import io.a2a.util.Utils;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.util.SanitizingLogger;
 import java.util.List;
 import org.slf4j.Logger;
 
@@ -93,7 +94,7 @@ public class LoggerUtil {
      */
     public static void trace(Logger logger, String format, Object... args) {
         if (logger.isTraceEnabled()) {
-            logger.trace(format, args);
+            SanitizingLogger.wrap(logger).trace(format, args);
         }
     }
 
@@ -111,7 +112,7 @@ public class LoggerUtil {
      */
     public static void debug(Logger logger, String format, Object... args) {
         if (logger.isDebugEnabled()) {
-            logger.debug(format, args);
+            SanitizingLogger.wrap(logger).debug(format, args);
         }
     }
 
@@ -129,7 +130,7 @@ public class LoggerUtil {
      */
     public static void info(Logger logger, String format, Object... args) {
         if (logger.isInfoEnabled()) {
-            logger.info(format, args);
+            SanitizingLogger.wrap(logger).info(format, args);
         }
     }
 
@@ -147,7 +148,7 @@ public class LoggerUtil {
      */
     public static void warn(Logger logger, String format, Object... args) {
         if (logger.isWarnEnabled()) {
-            logger.warn(format, args);
+            SanitizingLogger.wrap(logger).warn(format, args);
         }
     }
 
@@ -165,7 +166,7 @@ public class LoggerUtil {
      */
     public static void error(Logger logger, String format, Object... args) {
         if (logger.isErrorEnabled()) {
-            logger.error(format, args);
+            SanitizingLogger.wrap(logger).error(format, args);
         }
     }
 }

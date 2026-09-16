@@ -43,7 +43,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SkillBox implements StateModule {
-    private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(LoggerFactory.getLogger(SkillBox.class));
     private static final String BASE64_PREFIX = "base64:";
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
@@ -726,7 +727,7 @@ public class SkillBox implements StateModule {
      *
      */
     public void uploadSkillFiles() {
-        Path targetDir = ensureUploadDirExists();
+        Path targetDir = toCanonicalPath(ensureUploadDirExists());
         SkillFileFilter filter = fileFilter != null ? fileFilter : SkillFileFilter.acceptAll();
         int fileCount = 0;
 
@@ -738,7 +739,13 @@ public class SkillBox implements StateModule {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Path skillDir;
+            try {
+                skillDir = resolveContainedPath(targetDir, skillId, false);
+            } catch (IllegalArgumentException e) {
+                logger.warn("Skipping skill with invalid ID: {}", skillId);
+                continue;
+            }
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -751,10 +758,10 @@ public class SkillBox implements StateModule {
                     continue;
                 }
 
-                Path targetPath = skillDir.resolve(resourcePath).normalize();
-
-                // Security check: Prevent path traversal attacks
-                if (!targetPath.startsWith(skillDir)) {
+                Path targetPath;
+                try {
+                    targetPath = resolveContainedPath(skillDir, resourcePath, true);
+                } catch (IllegalArgumentException e) {
                     logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
@@ -785,6 +792,38 @@ public class SkillBox implements StateModule {
         }
 
         logger.info("Uploaded {} skill files to: {}", fileCount, targetDir);
+    }
+
+    private static Path toCanonicalPath(Path path) {
+        try {
+            return path.toFile().getCanonicalFile().toPath();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to resolve canonical path: " + path, e);
+        }
+    }
+
+    private static Path resolveContainedPath(Path baseDir, String untrustedPath, boolean nested) {
+        if (untrustedPath == null || untrustedPath.isBlank()) {
+            throw new IllegalArgumentException("Path must not be blank");
+        }
+
+        Path relativePath;
+        try {
+            relativePath = Path.of(untrustedPath);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Invalid path", e);
+        }
+        if (relativePath.isAbsolute() || (!nested && relativePath.getNameCount() != 1)) {
+            throw new IllegalArgumentException("Absolute or multi-segment path is not allowed");
+        }
+
+        Path canonicalBase = toCanonicalPath(baseDir);
+        Path canonicalCandidate = toCanonicalPath(canonicalBase.resolve(relativePath).normalize());
+        if (canonicalCandidate.equals(canonicalBase)
+                || !canonicalCandidate.startsWith(canonicalBase)) {
+            throw new IllegalArgumentException("Path escapes its configured directory");
+        }
+        return canonicalCandidate;
     }
 
     private static class DefaultSkillFileFilter implements SkillFileFilter {

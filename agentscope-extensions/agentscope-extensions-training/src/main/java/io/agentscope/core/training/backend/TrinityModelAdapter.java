@@ -51,7 +51,9 @@ import reactor.core.publisher.Flux;
  */
 public class TrinityModelAdapter extends ChatModelBase {
 
-    private static final Logger logger = LoggerFactory.getLogger(TrinityModelAdapter.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(TrinityModelAdapter.class));
 
     /** Wrapped OpenAIChatModel instance */
     private final OpenAIChatModel delegate;

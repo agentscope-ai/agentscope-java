@@ -31,7 +31,9 @@ import reactor.core.publisher.Mono;
  */
 class SkillToolFactory {
 
-    private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(SkillToolFactory.class));
 
     private final SkillRegistry skillRegistry;
     private Toolkit toolkit;

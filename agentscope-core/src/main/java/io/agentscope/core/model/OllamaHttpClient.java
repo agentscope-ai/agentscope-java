@@ -54,7 +54,9 @@ import reactor.core.publisher.Flux;
  */
 public class OllamaHttpClient {
 
-    private static final Logger log = LoggerFactory.getLogger(OllamaHttpClient.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OllamaHttpClient.class));
 
     /** Default base URL for Ollama API. */
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";

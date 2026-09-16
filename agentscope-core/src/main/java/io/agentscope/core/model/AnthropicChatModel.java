@@ -52,7 +52,9 @@ import reactor.core.scheduler.Schedulers;
  */
 public class AnthropicChatModel extends ChatModelBase {
 
-    private static final Logger log = LoggerFactory.getLogger(AnthropicChatModel.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(AnthropicChatModel.class));
 
     private final String baseUrl;
     private final String apiKey;

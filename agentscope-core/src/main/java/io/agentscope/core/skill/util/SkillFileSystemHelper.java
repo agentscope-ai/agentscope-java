@@ -44,7 +44,9 @@ import org.slf4j.LoggerFactory;
  */
 public final class SkillFileSystemHelper {
 
-    private static final Logger logger = LoggerFactory.getLogger(SkillFileSystemHelper.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(SkillFileSystemHelper.class));
     private static final String SKILL_FILE_NAME = "SKILL.md";
 
     private SkillFileSystemHelper() {}

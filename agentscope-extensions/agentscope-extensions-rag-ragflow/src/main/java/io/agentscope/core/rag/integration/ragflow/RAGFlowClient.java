@@ -47,7 +47,9 @@ import reactor.core.publisher.Mono;
  */
 public class RAGFlowClient {
 
-    private static final Logger logger = LoggerFactory.getLogger(RAGFlowClient.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(RAGFlowClient.class));
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 

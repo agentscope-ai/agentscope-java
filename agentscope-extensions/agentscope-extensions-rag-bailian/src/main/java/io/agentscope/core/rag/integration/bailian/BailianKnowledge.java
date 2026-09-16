@@ -86,7 +86,9 @@ import reactor.core.publisher.Mono;
  */
 public class BailianKnowledge implements Knowledge {
 
-    private static final Logger log = LoggerFactory.getLogger(BailianKnowledge.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(BailianKnowledge.class));
 
     private final BailianClient client;
     private final BailianConfig config;

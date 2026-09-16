@@ -73,7 +73,8 @@ import reactor.core.scheduler.Schedulers;
  */
 public class TTSHook implements Hook {
 
-    private static final Logger log = LoggerFactory.getLogger(TTSHook.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(LoggerFactory.getLogger(TTSHook.class));
 
     private final DashScopeRealtimeTTSModel ttsModel;
     private final AudioPlayer audioPlayer;

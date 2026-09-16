@@ -46,7 +46,9 @@ import org.slf4j.LoggerFactory;
  */
 public class OpenAIResponseParser {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIResponseParser.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OpenAIResponseParser.class));
 
     /** Placeholder name for tool call argument fragments in streaming responses. */
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";

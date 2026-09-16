@@ -215,11 +215,15 @@ public class WebSocketTransportConfig {
          *
          * <p><b>Warning:</b> Setting this to true disables SSL certificate verification,
          * which makes the connection vulnerable to man-in-the-middle attacks.
-         * This should only be used for testing or with trusted self-signed certificates.
+         * This should only be used for isolated local testing. Configure a custom trust store or
+         * inject a preconfigured HTTP client when self-signed certificates are required.
          *
          * @param ignoreSsl true to ignore SSL certificate verification, false otherwise
          * @return this builder
+         * @deprecated This option disables peer authentication and will be removed. Use a custom
+         *     trust store or a preconfigured client instead.
          */
+        @Deprecated(forRemoval = true)
         public Builder ignoreSsl(boolean ignoreSsl) {
             this.ignoreSsl = ignoreSsl;
             return this;

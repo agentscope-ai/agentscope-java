@@ -51,7 +51,9 @@ import reactor.core.scheduler.Schedulers;
  */
 public class DashScopeChatModel extends ChatModelBase {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeChatModel.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(DashScopeChatModel.class));
 
     private final String modelName;
     private final boolean stream;

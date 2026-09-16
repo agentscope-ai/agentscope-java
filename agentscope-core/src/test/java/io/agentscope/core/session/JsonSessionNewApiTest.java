@@ -17,6 +17,7 @@ package io.agentscope.core.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -55,6 +56,52 @@ class JsonSessionNewApiTest {
     @Nested
     @DisplayName("save() and get() for single State")
     class SingleStateTests {
+
+        @Test
+        @DisplayName("Should reject a state key that escapes the session directory")
+        void testRejectsStateKeyTraversal() {
+            Path escapedFile = tempDir.getParent().resolve("escaped-state.json");
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            session.save(
+                                    sessionKey,
+                                    "../../escaped-state",
+                                    new AgentMetaState("id", "name", null, null)));
+            assertFalse(escapedFile.toFile().exists());
+        }
+
+        @Test
+        @DisplayName("Should encode dot-dot session identifiers")
+        void testEncodesDotDotSessionIdentifier() {
+            SessionKey traversalKey = SimpleSessionKey.of("..");
+            Path escapedFile = tempDir.getParent().resolve("escaped-session.json");
+
+            session.save(
+                    traversalKey, "escaped-session", new AgentMetaState("id", "name", null, null));
+
+            assertFalse(escapedFile.toFile().exists());
+            assertTrue(session.exists(traversalKey));
+        }
+
+        @Test
+        @DisplayName("Should reject a session directory symlink that escapes the base directory")
+        void testRejectsSessionSymlinkEscape() throws Exception {
+            Path outsideDir =
+                    java.nio.file.Files.createDirectories(
+                            tempDir.resolveSibling(tempDir.getFileName() + "-outside"));
+            java.nio.file.Files.createSymbolicLink(tempDir.resolve("test_session"), outsideDir);
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            session.save(
+                                    sessionKey,
+                                    "payload",
+                                    new AgentMetaState("id", "name", null, null)));
+            assertFalse(java.nio.file.Files.exists(outsideDir.resolve("payload.json")));
+        }
 
         @Test
         @DisplayName("Should save and retrieve AgentMetaState")

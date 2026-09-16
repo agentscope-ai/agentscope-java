@@ -56,7 +56,9 @@ import reactor.util.retry.Retry;
  */
 class ToolExecutor {
 
-    private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
+    private static final Logger logger =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(ToolExecutor.class));
 
     private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;

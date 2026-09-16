@@ -50,7 +50,9 @@ import reactor.core.publisher.Mono;
  */
 public class BailianClient {
 
-    private static final Logger log = LoggerFactory.getLogger(BailianClient.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(BailianClient.class));
 
     private final Client sdkClient;
     private final String workspaceId;

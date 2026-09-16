@@ -45,7 +45,9 @@ import org.slf4j.LoggerFactory;
  */
 public class OpenAIChatFormatter extends OpenAIBaseFormatter {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIChatFormatter.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(OpenAIChatFormatter.class));
 
     public OpenAIChatFormatter() {
         super();

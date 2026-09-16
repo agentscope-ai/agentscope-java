@@ -41,7 +41,9 @@ import reactor.core.publisher.Flux;
  */
 public class AnthropicResponseParser {
 
-    private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
+    private static final Logger log =
+            io.agentscope.core.util.SanitizingLogger.wrap(
+                    LoggerFactory.getLogger(AnthropicResponseParser.class));
 
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
