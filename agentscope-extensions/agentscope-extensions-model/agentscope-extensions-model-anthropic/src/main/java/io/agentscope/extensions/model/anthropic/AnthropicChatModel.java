@@ -278,25 +278,33 @@ public class AnthropicChatModel extends ChatModelBase {
      * <p>The Anthropic SDK's {@link AnthropicServiceException}s (e.g. {@code
      * com.anthropic.errors.RateLimitException}) carry an HTTP status code but do not implement
      * {@link ModelHttpException}; without this adaptation a real 429 would be classified as
-     * non-retryable and the retry/fallback machinery would stop after the first attempt. The
-     * original SDK exception is preserved as the cause for diagnostics.
+     * non-retryable and the retry/fallback machinery would stop after the first attempt.
+     *
+     * <p>Only retryable statuses (429 / 5xx) are rewritten to {@link HttpTransportException};
+     * any other SDK error flows through unchanged so the exception type callers observe (a
+     * {@link ModelException} carrying {@code modelName}/{@code provider}) stays stable. The
+     * provider error body is deliberately not carried, so the per-retry log lines never echo
+     * payload fragments that may contain user content. The original SDK exception is preserved
+     * as the cause for diagnostics.
      *
      * @param error the raw SDK exception (may be wrapped by the synchronous catch
      *     {@link ModelException})
-     * @return an {@link HttpTransportException} when the cause chain carries an
+     * @return an {@link HttpTransportException} when the cause chain carries a retryable
      *     {@link AnthropicServiceException}, otherwise the original error unchanged
      */
     static Throwable adaptSdkException(Throwable error) {
         Throwable current = error;
         while (current != null) {
             if (current instanceof AnthropicServiceException ase) {
-                return new HttpTransportException(
-                        "Anthropic API request failed with status "
-                                + ase.statusCode()
-                                + (error.getMessage() != null ? ": " + error.getMessage() : ""),
-                        ase.statusCode(),
-                        ase.body() != null ? ase.body().toString() : null,
-                        error);
+                int status = ase.statusCode();
+                if (status == 429 || (status >= 500 && status < 600)) {
+                    return new HttpTransportException(
+                            "Anthropic API request failed with status " + status,
+                            status,
+                            null,
+                            error);
+                }
+                return error;
             }
             current = current.getCause();
         }

@@ -579,4 +579,60 @@ class AnthropicChatModelTest {
         IllegalStateException plain = new IllegalStateException("plain failure");
         assertSame(plain, AnthropicChatModel.adaptSdkException(plain));
     }
+
+    @Test
+    @DisplayName("Non-retryable SDK statuses (400) keep the original exception type")
+    void nonRetryableSdkStatusKeepsOriginalExceptionType() {
+        com.anthropic.errors.BadRequestException sdk400 =
+                com.anthropic.errors.BadRequestException.builder()
+                        .headers(com.anthropic.core.http.Headers.builder().build())
+                        .body(com.anthropic.core.JsonValue.from("{}"))
+                        .build();
+
+        // A 400 must NOT be rewritten: callers keep seeing a ModelException with
+        // modelName/provider fields, and RETRYABLE_ERRORS leaves it alone.
+        Throwable adapted = AnthropicChatModel.adaptSdkException(sdk400);
+        assertSame(sdk400, adapted, "non-retryable SDK statuses must flow through unchanged");
+        assertEquals(
+                false,
+                ExecutionConfig.RETRYABLE_ERRORS.test(adapted),
+                "400 must not be classified as retryable");
+
+        // The same holds through the synchronous-catch wrapping.
+        ModelException wrapped =
+                new ModelException(
+                        "Failed to stream Anthropic API: " + sdk400.getMessage(),
+                        sdk400,
+                        "claude-sonnet-4-5-20250929",
+                        "anthropic");
+        assertSame(
+                wrapped,
+                AnthropicChatModel.adaptSdkException(wrapped),
+                "wrapped non-retryable SDK statuses must flow through unchanged");
+    }
+
+    @Test
+    @DisplayName("Adapted 429 does not carry the provider error body into the log path")
+    void adapted429DoesNotCarryResponseBody() {
+        com.anthropic.errors.RateLimitException sdk429 =
+                com.anthropic.errors.RateLimitException.builder()
+                        .headers(com.anthropic.core.http.Headers.builder().build())
+                        .body(com.anthropic.core.JsonValue.from("{\"error\":\"rate_limit\"}"))
+                        .build();
+
+        HttpTransportException transport =
+                (HttpTransportException) AnthropicChatModel.adaptSdkException(sdk429);
+        assertEquals(
+                Integer.valueOf(429),
+                transport.getStatusCode(),
+                "status must be preserved for classification");
+        assertEquals(
+                null,
+                transport.getResponseBody(),
+                "provider error body must not be carried into retry/log surfaces");
+        assertEquals(
+                true,
+                ExecutionConfig.RETRYABLE_ERRORS.test(transport),
+                "429 stays retryable without the body");
+    }
 }

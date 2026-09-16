@@ -7,6 +7,14 @@ description: "AgentScope Java 各版本变更记录"
 
 ---
 
+## 未发布
+
+### 兼容性
+
+- `ModelUtils.applyTimeoutAndRetry` 在 `ExecutionConfig.retryOn` 未显式设置时，默认改用 `RETRYABLE_ERRORS`：认证/请求侧错误（401/403/400/422）不再重试（此前是所有错误都重试），429 / 5xx / 超时 / 网络错误仍会重试。依赖旧"全重试"行为的调用方请显式设置 `retryOn`。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05
