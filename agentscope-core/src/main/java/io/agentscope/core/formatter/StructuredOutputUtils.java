@@ -36,13 +36,6 @@ public final class StructuredOutputUtils {
     private StructuredOutputUtils() {}
 
     /**
-     * Builds a prompt fragment that feeds validation errors back to the model
-     * for correction (the industry-standard remediation pattern).
-     *
-     * @param errors the validation errors of the previous attempt
-     * @return a prompt fragment to append to the original prompt
-     */
-    /**
      * Builds the neutral correction prompt for unknown-domain (platform/internal) failures.
      *
      * <p>The model's previous answer may have been perfectly valid, so this instruction
@@ -57,6 +50,13 @@ public final class StructuredOutputUtils {
                 + " schema, without explanation:";
     }
 
+    /**
+     * Builds a prompt fragment that feeds validation errors back to the model
+     * for correction (the industry-standard remediation pattern).
+     *
+     * @param errors the validation errors of the previous attempt
+     * @return a prompt fragment to append to the original prompt
+     */
     public static String retryPrompt(List<StructuredOutputValidator.ValidationError> errors) {
         if (errors == null || errors.isEmpty()) {
             return "";
