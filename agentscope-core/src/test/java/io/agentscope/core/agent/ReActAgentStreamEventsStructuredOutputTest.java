@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -322,5 +323,76 @@ class ReActAgentStreamEventsStructuredOutputTest {
         assertTrue(
                 lastResult(textSchemaEvents).getResult().hasStructuredData(),
                 "String + JsonNode overload should yield a structured result");
+    }
+
+    @Test
+    void contextlessClassAndSchemaOverloadsYieldStructuredResults() {
+        ReActAgent agent = agent(fallbackModel());
+
+        List<AgentEvent> classEvents =
+                agent.streamEvents(List.of(userMsg()), WeatherResponse.class)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(classEvents);
+        assertWeather(lastResult(classEvents).getResult());
+
+        List<AgentEvent> schemaEvents =
+                agent.streamEvents(List.of(userMsg()), weatherSchema())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(schemaEvents);
+        assertTrue(
+                lastResult(schemaEvents).getResult().hasStructuredData(),
+                "context-less JsonNode overload should yield a structured result");
+    }
+
+    @Test
+    void castedNullStructuredArgumentFailsFastClearly() {
+        ReActAgent agent = agent(fallbackModel());
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                agent.streamEvents(
+                                                List.of(userMsg()),
+                                                (Class<?>) null,
+                                                RuntimeContext.empty())
+                                        .collectList()
+                                        .block(Duration.ofSeconds(10)));
+        assertTrue(
+                ex.getMessage() != null && ex.getMessage().contains("targetClass or schemaDesc"),
+                "casted-null should fail fast with a clear message, got: " + ex.getMessage());
+    }
+
+    @Test
+    void streamEventsNativePathMatchesCallResult() {
+        ReActAgent streamingAgent = agent(nativeModel());
+        ReActAgent callAgent = agent(nativeModel());
+
+        Msg streamed =
+                lastResult(
+                                streamingAgent
+                                        .streamEvents(
+                                                List.of(userMsg()),
+                                                WeatherResponse.class,
+                                                RuntimeContext.empty())
+                                        .collectList()
+                                        .block(Duration.ofSeconds(10)))
+                        .getResult();
+
+        Msg called =
+                callAgent
+                        .call(List.of(userMsg()), WeatherResponse.class, RuntimeContext.empty())
+                        .block(Duration.ofSeconds(10));
+
+        assertNotNull(streamed);
+        assertNotNull(called);
+        assertWeather(streamed);
+        assertWeather(called);
+        assertEquals(
+                streamed.getStructuredData(false),
+                called.getStructuredData(false),
+                "native-path streamEvents(...) should match call(...)");
     }
 }

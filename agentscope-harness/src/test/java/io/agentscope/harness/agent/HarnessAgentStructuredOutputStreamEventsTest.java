@@ -34,7 +34,10 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -269,6 +272,67 @@ class HarnessAgentStructuredOutputStreamEventsTest {
             assertTrue(
                     lastResult(textSchemaEvents).getResult().hasStructuredData(),
                     "String + JsonNode overload should yield a structured result");
+        }
+    }
+
+    /**
+     * Pins the sandbox-lifecycle promise on the structured overloads: each stream subscription must
+     * go through {@code wrappedStreamEvents}' acquire/release exactly once — observable here as
+     * exactly one sandbox create on the first call and exactly one resume (state saved by release)
+     * on the second, against a real sandbox-backed HarnessAgent.
+     */
+    @Test
+    void sandboxBackedStreamEvents_acquiresAndReleasesExactlyOncePerSubscription()
+            throws Exception {
+        InMemorySandboxClient client = new InMemorySandboxClient();
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec(client);
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+
+        String previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", workspace.resolve("state-home").toString());
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("weather-agent")
+                        .model(repeatedFallbackModel(2))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .build()) {
+
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("sandbox-s1").build();
+
+            List<AgentEvent> first =
+                    agent.streamEvents(List.of(userMsg()), WeatherResponse.class, ctx)
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(first);
+            assertTrue(
+                    lastResult(first).getResult().hasStructuredData(),
+                    "first structured stream should complete under the sandbox");
+            assertEquals(
+                    1,
+                    client.getCreateCount(),
+                    "first subscription must acquire the sandbox exactly once (create)");
+
+            List<AgentEvent> second =
+                    agent.streamEvents(List.of(userMsg()), weatherSchema(), ctx)
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(second);
+            assertTrue(
+                    lastResult(second).getResult().hasStructuredData(),
+                    "second structured stream should complete under the sandbox");
+            assertEquals(
+                    1,
+                    client.getResumeCount(),
+                    "second subscription must resume the sandbox saved by the first subscription's"
+                            + " release (release persisted state exactly once)");
+        } finally {
+            if (previousStateHome != null) {
+                System.setProperty("agentscope.state.home", previousStateHome);
+            } else {
+                System.clearProperty("agentscope.state.home");
+            }
         }
     }
 }
