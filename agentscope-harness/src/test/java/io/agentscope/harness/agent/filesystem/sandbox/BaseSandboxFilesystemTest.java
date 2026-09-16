@@ -278,8 +278,14 @@ class BaseSandboxFilesystemTest {
             // Verify command uses a unique mktemp file + printf + base64 pipe (not echo/argv,
             // not a predictable $$ name)
             assertTrue(
-                    fs.lastCommand.contains("mktemp /tmp/.agentscope-edit.XXXXXX"),
+                    fs.lastCommand.contains(".agentscope-edit.XXXXXX"),
                     "edit should create a unique temp file via mktemp, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("${TMPDIR:-/tmp}"),
+                    "edit should honor TMPDIR with a /tmp fallback, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("trap 'rm -f \"$T\"' EXIT INT TERM"),
+                    "edit should clean the payload via trap on any exit, got: " + fs.lastCommand);
             assertTrue(
                     fs.lastCommand.contains("cat > \"$T\""),
                     "edit should write payload to the mktemp file, got: " + fs.lastCommand);
@@ -299,8 +305,9 @@ class BaseSandboxFilesystemTest {
                     fs.lastCommand.contains("python3 -c"),
                     "edit should NOT use python3 -c inline form");
             assertFalse(
-                    fs.lastCommand.contains("echo "),
-                    "edit should NOT use echo (may wrap long base64), got: " + fs.lastCommand);
+                    fs.lastCommand.startsWith("echo ") || fs.lastCommand.contains("| echo "),
+                    "edit should NOT pipe base64 through echo (may wrap long lines), got: "
+                            + fs.lastCommand);
         }
 
         @Test
@@ -554,10 +561,63 @@ class BaseSandboxFilesystemTest {
             assertEquals("x\nx\nx\n", Files.readString(file));
         }
 
+        // The original #3084 breakage was specific to `bash -lc`: `\n` inside a double-quoted
+        // `python3 -c "...\n..."` is a literal backslash+n there, collapsing the script to one
+        // line. The LocalShell cases above run `sh -c`, so they never exercised the shell that
+        // actually broke. This drives the assembled command through `bash -lc` and asserts a
+        // newline-containing replacement lands intact — the behaviour no string assertion can
+        // prove and the one that regressed twice.
+        @Test
+        void edit_multiLineReplacement_survivesBashLoginShell() throws IOException {
+            assumeTrue(bashAvailable(), "bash required for this reproduction");
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("bash-multi.txt");
+            Files.writeString(file, "start\nPLACEHOLDER\nend\n");
+
+            BashLoginShellSandboxFilesystem fs = new BashLoginShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "PLACEHOLDER", "a\nb\nc", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "edit should succeed under bash -lc, got: " + result.error());
+            assertEquals("start\na\nb\nc\nend\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_largePayload_survivesBashLoginShell() throws IOException {
+            // ARG_MAX guard under the exact shell that broke: a multi-KB payload must ride the
+            // temp file, not argv, through bash -lc.
+            assumeTrue(bashAvailable(), "bash required for this reproduction");
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("bash-large.txt");
+            Files.writeString(file, "BEGIN\nMARK\nEND\n");
+            String large = "L".repeat(50_000);
+
+            BashLoginShellSandboxFilesystem fs = new BashLoginShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "MARK", large, false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "large edit should succeed under bash -lc, got: " + result.error());
+            assertEquals("BEGIN\n" + large + "\nEND\n", Files.readString(file));
+        }
+
         private static boolean python3Available() {
             try {
                 Process p =
                         new ProcessBuilder("sh", "-c", "command -v python3")
+                                .redirectErrorStream(true)
+                                .start();
+                return p.waitFor() == 0;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        private static boolean bashAvailable() {
+            try {
+                Process p =
+                        new ProcessBuilder("sh", "-c", "command -v bash")
                                 .redirectErrorStream(true)
                                 .start();
                 return p.waitFor() == 0;
@@ -663,6 +723,48 @@ class BaseSandboxFilesystemTest {
             try {
                 Process p =
                         new ProcessBuilder("sh", "-c", command).redirectErrorStream(true).start();
+                String output =
+                        new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                int exitCode = p.waitFor();
+                return new ExecuteResponse(output, exitCode, false);
+            } catch (Exception e) {
+                return new ExecuteResponse("execute failed: " + e.getMessage(), 1, false);
+            }
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of();
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Runs the assembled command through {@code bash -lc}, the exact shell whose {@code \n}
+     * handling caused the #3084 breakage. Used by the e2e tests to exercise the shell that
+     * {@code sh -c}-based {@link LocalShellSandboxFilesystem} never covered.
+     */
+    private static final class BashLoginShellSandboxFilesystem extends BaseSandboxFilesystem {
+
+        @Override
+        public String id() {
+            return "bash-login-shell";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            try {
+                Process p =
+                        new ProcessBuilder("bash", "-lc", command)
+                                .redirectErrorStream(true)
+                                .start();
                 String output =
                         new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
                 int exitCode = p.waitFor();

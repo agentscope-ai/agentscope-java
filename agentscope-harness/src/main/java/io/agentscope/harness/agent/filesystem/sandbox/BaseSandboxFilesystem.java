@@ -295,32 +295,43 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // /tmp/.agentscope-edit-$$ name: the payload (which can contain secrets copied out of the
         // edited file) being world-readable under the default umask, and two concurrent edits
         // clobbering each other when a backend reuses a single shell session (where $$ is
-        // constant across calls).
+        // constant across calls). ${TMPDIR:-/tmp} with a bare-mktemp fallback keeps edit() working
+        // on sandboxes where /tmp is absent, read-only, or relocated via TMPDIR (K8s pods without
+        // an emptyDir on /tmp, noexec tmpfs) instead of failing every call. A trap removes the
+        // payload on any shell exit — including a SIGTERM from a sandbox timeout between the write
+        // and the read — so the plaintext never lingers on disk.
         String cmd =
-                "T=$(mktemp /tmp/.agentscope-edit.XXXXXX) || exit 1\n"
+                "T=$(mktemp \"${TMPDIR:-/tmp}/.agentscope-edit.XXXXXX\" 2>/dev/null || mktemp)"
+                        + " || exit 1\n"
+                        + "trap 'rm -f \"$T\"' EXIT INT TERM\n"
                         + "cat > \"$T\" <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n"
                         + "printf '%s\\n' "
                         + scriptB64
-                        + " | base64 -d | python3 - \"$T\" 2>&1\n"
-                        + "rm -f \"$T\"";
+                        + " | base64 -d | python3 - \"$T\" 2>&1";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
 
-        // The edit script only ever prints a JSON object on stdout ({"error":...} or
-        // {"count":...}). A Python traceback or shell error in the captured output means the
-        // command failed to run at all (missing temp file, base64 decode failure, or a
-        // regression to a broken command shape). Surface that as an execution failure instead of
-        // letting it fall through to the opaque "unexpected server response" branch below — that
-        // opacity is exactly how the earlier bash -lc breakage stayed mysterious.
-        if (looksLikeExecutionFailure(output)) {
+        // The edit script exits 0 on every legitimate outcome (a success, or an {"error":...}
+        // JSON for file_not_found / string_not_found / multiple_occurrences). So a non-zero exit
+        // means the command itself failed to run — mktemp could not create the temp file (exit 1,
+        // empty output), python3 was missing (127), etc. Keying off exitCode closes the
+        // empty-output hole that a substring heuristic on output alone leaves open (an empty
+        // message would otherwise fall through to the opaque "unexpected server response" branch —
+        // exactly the opacity this path exists to remove). The output-shape check still catches
+        // the rare broken shell that exits 0 while emitting a Python traceback / SyntaxError.
+        if (!result.isSuccess() || looksLikeExecutionFailure(output)) {
+            String detail =
+                    output.isEmpty()
+                            ? "exit code " + result.exitCode()
+                            : output.substring(0, Math.min(200, output.length()));
             return EditResult.fail(
                     "Error editing file '"
                             + filePath
                             + "': edit command failed to execute: "
-                            + output.substring(0, Math.min(200, output.length())));
+                            + detail);
         }
 
         if (output.contains("\"error\"")) {
@@ -535,7 +546,8 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     private static boolean looksLikeExecutionFailure(String output) {
         return output.contains("Traceback (most recent call last)")
                 || output.contains("SyntaxError")
-                || output.contains("No such file or directory");
+                || output.contains("No such file or directory")
+                || output.contains(": not found");
     }
 
     private static String jsonEscape(String s) {
