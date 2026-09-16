@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -177,6 +178,32 @@ class WordReaderTest {
                 new WordReader(512, SplitStrategy.CHARACTER, 50, true, false, TableFormat.MARKDOWN);
 
         assertEquals("Paragraph one.\n\n\nParagraph two.", readSingleChunk(reader, docx));
+    }
+
+    @Test
+    @DisplayName("Should escape special characters in Markdown table cells")
+    void testMarkdownTableCellsAreEscaped(@TempDir Path tempDir) throws Exception {
+        Path docx =
+                writeDocx(
+                        tempDir.resolve("table-cells.docx"),
+                        doc -> {
+                            XWPFTable table = doc.createTable(3, 2);
+                            table.getRow(0).getCell(0).setText("A|B");
+                            table.getRow(0).getCell(1).setText("Path \\| label");
+                            table.getRow(1).getCell(0).setText("1|2");
+                            table.getRow(1).getCell(1).setText("Line 1\nLine 2");
+                            table.getRow(2).getCell(0).setText("plain");
+                            table.getRow(2).getCell(1).setText("ok");
+                        });
+        WordReader reader =
+                new WordReader(4096, SplitStrategy.CHARACTER, 0, false, true, TableFormat.MARKDOWN);
+
+        String expected =
+                "| A\\|B | Path \\\\\\| label |\n"
+                        + "| --- | --- |\n"
+                        + "| 1\\|2 | Line 1<br>Line 2 |\n"
+                        + "| plain | ok |\n";
+        assertEquals(expected, readSingleChunk(reader, docx));
     }
 
     /** Authors a .docx fixture in memory, so that no binary test resource is required. */

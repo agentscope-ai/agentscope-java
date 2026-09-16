@@ -367,9 +367,7 @@ public class WordReader extends AbstractChunkingReader {
         int numCols = tableData.get(0).size();
 
         // Header row
-        md.append("| ");
-        md.append(String.join(" | ", tableData.get(0)));
-        md.append(" |\n");
+        md.append(formatMarkdownTableRow(tableData.get(0)));
 
         // Separator row
         md.append("| ");
@@ -383,12 +381,23 @@ public class WordReader extends AbstractChunkingReader {
 
         // Data rows
         for (int i = 1; i < tableData.size(); i++) {
-            md.append("| ");
-            md.append(String.join(" | ", tableData.get(i)));
-            md.append(" |\n");
+            md.append(formatMarkdownTableRow(tableData.get(i)));
         }
 
         return md.toString();
+    }
+
+    /** Formats a table row after escaping each cell's Markdown table delimiters. */
+    private String formatMarkdownTableRow(List<String> cells) {
+        return "| "
+                + String.join(" | ", cells.stream().map(this::escapeMarkdownTableCell).toList())
+                + " |\n";
+    }
+
+    /** Keeps cell text on one Markdown table row while preserving literal pipes and backslashes. */
+    private String escapeMarkdownTableCell(String cell) {
+        String normalized = cell.replace("\r\n", "\n").replace('\r', '\n');
+        return normalized.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>");
     }
 
     /**
