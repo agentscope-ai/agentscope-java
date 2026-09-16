@@ -102,12 +102,6 @@ ReActAgent agent =
 
 Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
 
-基础 `agentscope-spring-boot-starter` 传递引入的是 `agentscope-core`，而非
-包含全部扩展类的 `io.agentscope:agentscope` 聚合 JAR。请按需添加模型或协议
-starter（例如 `agentscope-agui-spring-boot-starter`），或显式依赖对应扩展模块。
-此前依赖基础 starter 间接获得扩展的应用，需要补充这些依赖声明。
-不要将聚合 JAR 与独立模块混用，否则其中嵌入的同名类可能遮蔽你希望使用的版本。
-
 OpenAI 示例：
 
 ```yaml

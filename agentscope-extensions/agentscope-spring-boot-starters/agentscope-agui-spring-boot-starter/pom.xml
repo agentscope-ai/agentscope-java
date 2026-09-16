@@ -89,42 +89,4 @@
         </dependency>
     </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <configuration>
-                    <java>
-                        <includes>
-                            <include>src/**/*.java</include>
-                        </includes>
-                    </java>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-invoker-plugin</artifactId>
-                <version>3.10.1</version>
-                <configuration>
-                    <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
-                    <localRepositoryPath>${project.build.directory}/it-repository</localRepositoryPath>
-                    <settingsFile>src/it/settings.xml</settingsFile>
-                    <mergeUserSettings>true</mergeUserSettings>
-                    <streamLogsOnFailures>true</streamLogsOnFailures>
-                    <skipInvocation>${skipTests}</skipInvocation>
-                    <skipInstallation>${skipTests}</skipInstallation>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>starter-runtime-classpath</id>
-                        <goals>
-                            <goal>install</goal>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
 </project>

@@ -102,14 +102,6 @@ ReActAgent agent =
 
 For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
 
-The base `agentscope-spring-boot-starter` brings in `agentscope-core`, not the
-all-in-one `io.agentscope:agentscope` JAR. Add the provider or protocol starter you
-need (for example, `agentscope-agui-spring-boot-starter`), or explicitly depend on
-the corresponding extension module. Applications that previously relied on
-extensions arriving through the base starter must now declare those dependencies.
-Avoid combining the all-in-one JAR with individual modules: it embeds their
-classes and can shadow the version you intended to use.
-
 OpenAI example:
 
 ```yaml

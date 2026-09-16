@@ -496,12 +496,7 @@
                 <artifactId>agentscope-chat-completions-web-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
-          <!-- Starter Runtime -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>starter-runtime</artifactId>
-                <version>${project.version}</version>
-            </dependency>
+
             <!-- AgentScope Skill MySQL Storage -->
             <dependency>
                 <groupId>io.agentscope</groupId>
