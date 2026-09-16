@@ -330,6 +330,7 @@ final class HarnessAgentBuilderSupport {
         final GenerateOptions capturedGenOpts = b.generateOptions;
         final String capturedEnvMemory = b.environmentMemory;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
+        final var capturedContextPolicy = b.contextPolicy;
         final List<Hook> capturedHooks = List.copyOf(b.hooks);
         final List<MiddlewareBase> capturedMiddlewares = List.copyOf(b.middlewares);
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
@@ -376,6 +377,7 @@ final class HarnessAgentBuilderSupport {
                             .maxIters(capturedMaxIters)
                             .environmentMemory(capturedEnvMemory)
                             .memory(capturedMemoryConfig)
+                            .contextPolicy(capturedContextPolicy)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .maxContextTokens(capturedMaxContextTokens);
@@ -456,6 +458,7 @@ final class HarnessAgentBuilderSupport {
         final AbstractFilesystem capturedSharedBackend =
                 sandboxFs != null ? sandboxFs : b.abstractFilesystem;
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
+        final var capturedContextPolicy = b.contextPolicy;
         final boolean capturedUseLegacyXmlWorkspaceContext = b.useLegacyXmlWorkspaceContext;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final boolean capturedDisableShellTool = b.disableShellTool;
@@ -520,6 +523,7 @@ final class HarnessAgentBuilderSupport {
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
                             .memory(capturedMemoryConfig)
+                            .contextPolicy(capturedContextPolicy)
                             .useLegacyXmlWorkspaceContext(capturedUseLegacyXmlWorkspaceContext)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
 

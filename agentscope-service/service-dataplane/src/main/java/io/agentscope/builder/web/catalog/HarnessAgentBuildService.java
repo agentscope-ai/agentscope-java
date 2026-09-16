@@ -43,6 +43,7 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import java.nio.file.Files;
@@ -323,9 +324,16 @@ public class HarnessAgentBuildService {
         String modelName = snapshot.model();
         Integer maxIters = snapshot.maxIters();
         var skillRepos = snapshot.skillRepositories();
+        var contextPolicy = ContextPolicy.defaults();
 
         if (spec.overridesJson() != null && !spec.overridesJson().isBlank()) {
             Map<String, Object> overrides = parseOverrides(spec.overridesJson());
+            if (overrides.containsKey("contextPolicy")) {
+                if (!(overrides.get("contextPolicy") instanceof Map<?, ?> policyValues)) {
+                    throw new IllegalArgumentException("contextPolicy must be an object");
+                }
+                contextPolicy = ContextPolicy.fromMap(policyValues);
+            }
             if (overrides.get("name") instanceof String s) {
                 name = s;
             }
@@ -351,6 +359,7 @@ public class HarnessAgentBuildService {
                 DP_AGENT_PREFIX + session.ownerId() + "-" + agentId + "-" + session.id();
 
         HarnessAgent.Builder b = HarnessAgent.builder();
+        b.contextPolicy(contextPolicy);
         // Pin the stable namespace key to the instance id (unique across users). The display
         // name (b.name) is human-facing and may change without rewriting any composite-filesystem
         // keys.

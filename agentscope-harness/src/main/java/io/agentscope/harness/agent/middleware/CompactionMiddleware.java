@@ -21,6 +21,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
@@ -78,143 +79,137 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        if (!(agent instanceof ReActAgent reActAgent)) {
-            return next.apply(input);
-        }
-        final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        Model executionModel = agent instanceof ReActAgent react ? react.getModel() : model;
+        if (executionModel == null) executionModel = model;
+        int window = executionModel.getContextWindowSize();
+        int budget =
+                window > 0
+                        ? Math.max(1, window - config.getReserved())
+                        : CompactionConfig.FALLBACK_TRIGGER_TOKENS;
+        return prepare(
+                        agent,
+                        ctx,
+                        new ModelCallInput(
+                                input.messages(), input.tools(), input.options(), executionModel),
+                        budget)
+                .flatMapMany(
+                        prepared ->
+                                next.apply(
+                                        new ReasoningInput(
+                                                prepared.messages(),
+                                                prepared.tools(),
+                                                prepared.options())));
+    }
 
-        return Flux.defer(
+    /** Compact at the final model boundary, using the actual request's conversation allowance. */
+    public Mono<ModelCallInput> prepare(
+            Agent agent, RuntimeContext ctx, ModelCallInput input, int conversationBudget) {
+        return Mono.defer(
                 () -> {
-                    List<Msg> messages = input.messages();
-                    Msg systemMsg = null;
-                    List<Msg> conversation;
-                    if (messages != null
-                            && !messages.isEmpty()
-                            && messages.get(0).getRole() == MsgRole.SYSTEM) {
-                        systemMsg = messages.get(0);
-                        conversation = new ArrayList<>(messages.subList(1, messages.size()));
-                    } else {
-                        conversation = messages != null ? new ArrayList<>(messages) : List.of();
-                    }
-
-                    String agentId = agent.getName();
-                    String sessionId =
-                            rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
-
-                    CompactionConfig effectiveConfig = resolveEffectiveConfig();
-
-                    MemoryFlushManager flushManager =
-                            new MemoryFlushManager(workspaceManager, model);
-                    ConversationCompactor compactor =
-                            new ConversationCompactor(model, flushManager);
-                    final Msg sys = systemMsg;
-
-                    // Only compaction may degrade; downstream reasoning errors must propagate.
-                    return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
-                            .onErrorResume(
-                                    error -> {
-                                        if (ExceptionUtils.containsInterruptedException(error)) {
-                                            return Mono.error(error);
+                    AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+                    List<Msg> original =
+                            state == null ? List.of() : List.copyOf(state.contextMutable());
+                    return prepareCandidate(agent, ctx, input, conversationBudget, original)
+                            .map(
+                                    candidate -> {
+                                        if (state != null
+                                                && state.contextMutable().equals(original)) {
+                                            applyToContext(state, candidate.history());
                                         }
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                error.getMessage());
-                                        return Mono.just(Optional.empty());
-                                    })
-                            .flatMapMany(
-                                    optResult -> {
-                                        if (optResult.isEmpty()) {
-                                            return next.apply(input);
-                                        }
-                                        List<Msg> compacted = optResult.get();
-                                        applyToContext(
-                                                RuntimeContext.resolveAgentState(rc, reActAgent),
-                                                compacted);
-                                        log.debug(
-                                                "Compacted to {} messages before reasoning",
-                                                compacted.size());
-                                        List<Msg> newMessages = new ArrayList<>();
-                                        if (sys != null) {
-                                            newMessages.add(sys);
-                                        }
-                                        newMessages.addAll(compacted);
-                                        return next.apply(
-                                                new ReasoningInput(
-                                                        newMessages,
-                                                        input.tools(),
-                                                        input.options()));
+                                        return candidate.input();
                                     });
                 });
     }
 
-    /**
-     * Resolves dynamic defaults in the config using the model's context window.
-     */
-    private CompactionConfig resolveEffectiveConfig() {
-        int configTrigger = config.getTriggerTokens();
-        int configKeep = config.getKeepTokens();
-
-        boolean needsDynamic = (configTrigger == 0) || (configKeep == -1);
-        if (!needsDynamic) {
-            return config;
+    /** A model view and candidate durable history. Creating it never replaces active history. */
+    public record Candidate(ModelCallInput input, List<Msg> history) {
+        public Candidate {
+            history = List.copyOf(history);
         }
+    }
 
-        int contextWindow = model.getContextWindowSize();
+    public Mono<Candidate> prepareCandidate(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            int conversationBudget,
+            List<Msg> canonical) {
+        return Mono.defer(
+                () -> {
+                    RuntimeContext rc = ctx == null ? RuntimeContext.empty() : ctx;
+                    List<Msg> prefix = new ArrayList<>();
+                    List<Msg> conversation = new ArrayList<>();
+                    for (Msg msg : input.messages()) {
+                        if (msg.getRole() == MsgRole.SYSTEM || isSynthetic(msg)) {
+                            prefix.add(msg);
+                        } else {
+                            conversation.add(msg);
+                        }
+                    }
+                    int trigger =
+                            config.getTriggerTokens() > 0
+                                    ? Math.min(config.getTriggerTokens(), conversationBudget)
+                                    : conversationBudget;
+                    int keep =
+                            config.getKeepTokens() >= 0
+                                    ? config.getKeepTokens()
+                                    : Math.min(
+                                            config.getKeepTokensMax(),
+                                            Math.max(
+                                                    config.getKeepTokensMin(),
+                                                    (int)
+                                                            (conversationBudget
+                                                                    * config
+                                                                            .getKeepTokensRatio())));
+                    CompactionConfig effective =
+                            config.withEffective(
+                                    Math.max(1, trigger),
+                                    Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    ConversationCompactor compactor =
+                            new ConversationCompactor(
+                                    model, new MemoryFlushManager(workspaceManager, model));
+                    // Commit only if the view is exactly the canonical history. Hook-added context
+                    // must never leak into durable history, and concurrent changes must not be
+                    // erased.
+                    boolean canCommit = canonical.equals(conversation);
+                    return compactor
+                            .compactIfNeeded(
+                                    rc,
+                                    conversation,
+                                    effective,
+                                    agent.getName(),
+                                    rc.getSessionId() == null ? "default" : rc.getSessionId())
+                            .onErrorResume(
+                                    error -> {
+                                        if (ExceptionUtils.containsInterruptedException(error))
+                                            return Mono.error(error);
+                                        log.warn(
+                                                "Compaction failed; final request budget validation"
+                                                        + " still applies",
+                                                error);
+                                        return Mono.just(Optional.empty());
+                                    })
+                            .map(
+                                    result -> {
+                                        if (result.isEmpty())
+                                            return new Candidate(input, canonical);
+                                        List<Msg> compacted = result.get();
+                                        List<Msg> messages = new ArrayList<>(prefix);
+                                        messages.addAll(compacted);
+                                        return new Candidate(
+                                                new ModelCallInput(
+                                                        List.copyOf(messages),
+                                                        input.tools(),
+                                                        input.options(),
+                                                        input.model()),
+                                                canCommit ? compacted : canonical);
+                                    });
+                });
+    }
 
-        int effectiveTrigger;
-        if (configTrigger == 0) {
-            if (contextWindow > 0) {
-                effectiveTrigger = contextWindow - config.getReserved();
-                if (effectiveTrigger <= 0) {
-                    // reserved exceeds the model's context window; a negative or zero trigger
-                    // would fire compaction on every call. Clamp to half the context window so
-                    // compaction still activates at a sensible point without thrashing.
-                    effectiveTrigger = Math.max(1, contextWindow / 2);
-                    log.warn(
-                            "Dynamic compaction trigger clamped: contextWindow={} <= reserved={}"
-                                    + "; using proportional trigger={}. Consider reducing"
-                                    + " reserved() for this model.",
-                            contextWindow,
-                            config.getReserved(),
-                            effectiveTrigger);
-                } else {
-                    log.debug(
-                            "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
-                            contextWindow,
-                            config.getReserved(),
-                            effectiveTrigger);
-                }
-            } else {
-                effectiveTrigger = CompactionConfig.FALLBACK_TRIGGER_TOKENS;
-                log.debug(
-                        "Model does not report context window, using fallback trigger: {}",
-                        effectiveTrigger);
-            }
-        } else {
-            effectiveTrigger = configTrigger;
-        }
-
-        int effectiveKeep;
-        if (configKeep == -1) {
-            if (contextWindow > 0) {
-                int usable = contextWindow - config.getReserved();
-                effectiveKeep =
-                        Math.min(
-                                config.getKeepTokensMax(),
-                                Math.max(
-                                        config.getKeepTokensMin(),
-                                        (int) (usable * config.getKeepTokensRatio())));
-                log.debug("Dynamic keep tokens: {}", effectiveKeep);
-            } else {
-                effectiveKeep = 0;
-            }
-        } else {
-            effectiveKeep = configKeep;
-        }
-
-        return config.withEffective(effectiveTrigger, effectiveKeep);
+    private static boolean isSynthetic(Msg msg) {
+        return msg.getMetadata() != null
+                && Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC));
     }
 
     private static void applyToContext(AgentState state, List<Msg> compacted) {

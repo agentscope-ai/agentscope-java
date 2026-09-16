@@ -46,6 +46,7 @@ public final class SessionEventTypes {
 
     // ---- Span (persisted) ----
     public static final String SPAN_MODEL_REQUEST_START = "span.model_request_start";
+    public static final String SPAN_CONTEXT_BUILD = "span.context_build";
     public static final String SPAN_MODEL_REQUEST_END = "span.model_request_end";
 
     // ---- Inbound ----

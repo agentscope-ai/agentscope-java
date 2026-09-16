@@ -24,6 +24,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
@@ -109,7 +110,10 @@ public class ConversationCompactor {
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+            return Mono.just(
+                    messages.equals(conversationMessages)
+                            ? Optional.empty()
+                            : Optional.of(messages));
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
@@ -195,7 +199,21 @@ public class ConversationCompactor {
                                                                     ? null
                                                                     : offloadPath;
                                                     Msg summaryMsg =
-                                                            buildSummaryMessage(summary, filePath);
+                                                            buildSummaryMessage(summary, filePath)
+                                                                    .withMetadata(
+                                                                            Map.of(
+                                                                                    "context.summary_version",
+                                                                                            1,
+                                                                                    "context.covered_messages",
+                                                                                            summaryInput
+                                                                                                    .stream()
+                                                                                                    .map(
+                                                                                                            Msg
+                                                                                                                    ::getId)
+                                                                                                    .toList(),
+                                                                                    "context.summary_model",
+                                                                                            model
+                                                                                                    .getModelName()));
                                                     List<Msg> compacted = new ArrayList<>();
                                                     compacted.add(summaryMsg);
                                                     compacted.addAll(tail);
@@ -356,7 +374,7 @@ public class ConversationCompactor {
                                 .content(TextBlock.builder().text(prompt).build())
                                 .build());
 
-        return model.stream(summarizationInput, null, null)
+        return ContextModelCalls.auxiliary(model, summarizationInput)
                 .reduce(
                         new StringBuilder(),
                         (sb, resp) -> {
@@ -372,15 +390,8 @@ public class ConversationCompactor {
                 .map(StringBuilder::toString)
                 .map(String::strip)
                 .filter(s -> !s.isBlank())
-                .defaultIfEmpty("(Summary unavailable)")
-                .onErrorResume(
-                        e -> {
-                            if (ExceptionUtils.containsInterruptedException(e)) {
-                                return Mono.error(e);
-                            }
-                            log.warn("Summarization LLM call failed: {}", e.getMessage());
-                            return Mono.just("(Summarization failed: " + e.getMessage() + ")");
-                        });
+                .switchIfEmpty(
+                        Mono.error(new IllegalStateException("Summary model returned no content")));
     }
 
     /**

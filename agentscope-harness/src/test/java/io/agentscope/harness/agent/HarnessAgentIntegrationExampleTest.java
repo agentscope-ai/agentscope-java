@@ -153,12 +153,11 @@ class HarnessAgentIntegrationExampleTest {
                             + captor.getAllValues().stream()
                                     .map(HarnessAgentIntegrationExampleTest::joinAllText)
                                     .toList());
-            // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context>
-            // blocks
+            // The final builder renders workspace instructions and references separately.
             assertTrue(
                     combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
                     "expected workspace guidance sections");
-            assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
+            assertTrue(combined.contains("<project_rules "));
             assertTrue(
                     combined.contains(agentsPersona),
                     "AGENTS.md should appear under workspace hook");

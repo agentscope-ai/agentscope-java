@@ -30,6 +30,22 @@ import java.util.Objects;
 public final class TaskContextState {
 
     private final List<Task> tasks;
+    private long revision;
+
+    @JsonProperty("revision")
+    public long getRevision() {
+        return revision;
+    }
+
+    @JsonProperty("revision")
+    public void setRevision(long revision) {
+        this.revision = revision;
+    }
+
+    /** Advance only after a validated update, including clearing the list. */
+    public void markUpdated() {
+        revision++;
+    }
 
     /** Construct an empty context. */
     public TaskContextState() {
@@ -59,12 +75,12 @@ public final class TaskContextState {
         if (!(o instanceof TaskContextState other)) {
             return false;
         }
-        return Objects.equals(tasks, other.tasks);
+        return revision == other.revision && Objects.equals(tasks, other.tasks);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(tasks);
+        return Objects.hash(tasks, revision);
     }
 
     @Override

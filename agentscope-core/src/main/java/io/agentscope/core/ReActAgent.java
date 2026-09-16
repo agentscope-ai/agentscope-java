@@ -87,6 +87,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -147,6 +148,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -253,6 +255,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
+    private final ModelRequestPreparer modelRequestPreparer;
     private final boolean enablePendingToolRecovery;
 
     // ==================== Persistence ====================
@@ -343,6 +346,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         mws.add(new GracefulShutdownMiddleware(shutdownManager));
         mws.addAll(builder.middlewares);
         this.middlewares = List.copyOf(mws);
+        this.modelRequestPreparer = builder.modelRequestPreparer;
 
         this.stateStore = builder.stateStore;
         this.conflictPolicy =
@@ -2553,7 +2557,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             rc,
                             MiddlewareBase::onModelCall,
                             modelCallCore)
-                    .apply(new ModelCallInput(messages, tools, options, modelForCall()))
+                    .apply(
+                            new ModelCallInput(
+                                    messages,
+                                    tools,
+                                    options,
+                                    modelForCall(
+                                            rc,
+                                            ModelRequestPreparer.Purpose.REASONING,
+                                            this::publishEvent)))
                     .doOnNext(
                             event -> {
                                 if (event instanceof TextBlockDeltaEvent textDelta) {
@@ -2575,11 +2587,55 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Flux<AgentEvent> modelCallStream(
                 ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
 
-            String replyId = UUID.randomUUID().toString().replace("-", "");
+            return Flux.defer(
+                    () -> {
+                        String callId = UUID.randomUUID().toString().replace("-", "");
+                        return prepareRequest(mci, callId, ModelRequestPreparer.Purpose.REASONING)
+                                .flatMapMany(
+                                        prepared ->
+                                                preparedModelCallStream(
+                                                        context, prepared, withToolEvents, callId));
+                    });
+        }
+
+        private Mono<ModelCallInput> prepareRequest(
+                ModelCallInput input, String callId, ModelRequestPreparer.Purpose purpose) {
+            return modelRequestPreparer == null
+                    ? Mono.just(input)
+                    : Mono.defer(
+                                    () ->
+                                            modelRequestPreparer.prepareObserved(
+                                                    ReActAgent.this,
+                                                    rc,
+                                                    input,
+                                                    callId,
+                                                    purpose,
+                                                    this::publishEvent))
+                            .switchIfEmpty(
+                                    Mono.error(
+                                            new IllegalStateException(
+                                                    "Model request preparer returned no request")));
+        }
+
+        private AgentEvent modelCallStart(String replyId) {
+            if (rc == null) return new ModelCallStartEvent(replyId);
+            String key = ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + replyId;
+            Object manifest = rc.get(key);
+            rc.put(key, null);
+            ModelCallStartEvent event = new ModelCallStartEvent(replyId);
+            return manifest == null ? event : event.withMetadataEntry("contextManifest", manifest);
+        }
+
+        private Flux<AgentEvent> preparedModelCallStream(
+                ReasoningContext context,
+                ModelCallInput mci,
+                boolean withToolEvents,
+                String replyId) {
+
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
-                    mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                    Flux.defer(() -> mci.model().stream(mci.messages(), mci.tools(), mci.options()))
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
                                     chunk ->
@@ -2623,7 +2679,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 return Flux.fromIterable(events);
                             });
 
-            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+            return Flux.concat(Flux.just(modelCallStart(replyId)), modelEvents, endEvents);
         }
 
         private void emitBlockEvents(
@@ -3595,7 +3651,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> messageList = prepareSummaryMessages();
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
-            Model summaryModel = modelForCall();
+            Model summaryModel =
+                    modelForCall(rc, ModelRequestPreparer.Purpose.SUMMARY, this::publishEvent);
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
@@ -3682,11 +3739,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Flux<AgentEvent> summaryModelCallStream(
                 ReasoningContext context, ModelCallInput mci, GenerateOptions hookOptions) {
 
-            String replyId = UUID.randomUUID().toString().replace("-", "");
+            return Flux.defer(
+                    () -> {
+                        String callId = UUID.randomUUID().toString().replace("-", "");
+                        return prepareRequest(mci, callId, ModelRequestPreparer.Purpose.SUMMARY)
+                                .flatMapMany(
+                                        prepared ->
+                                                preparedSummaryModelCallStream(
+                                                        context, prepared, hookOptions, callId));
+                    });
+        }
+
+        private Flux<AgentEvent> preparedSummaryModelCallStream(
+                ReasoningContext context,
+                ModelCallInput mci,
+                GenerateOptions hookOptions,
+                String replyId) {
+
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
             Flux<AgentEvent> modelEvents =
-                    mci.model().stream(mci.messages(), mci.tools(), mci.options())
+                    Flux.defer(() -> mci.model().stream(mci.messages(), mci.tools(), mci.options()))
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
                             .concatMap(
                                     chunk ->
@@ -3755,7 +3828,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 return Flux.fromIterable(events);
                             });
 
-            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+            return Flux.concat(Flux.just(modelCallStart(replyId)), modelEvents, endEvents);
         }
 
         private List<Msg> prepareSummaryMessages() {
@@ -4063,7 +4136,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
-    private Model modelForCall() {
+    private Model modelForCall(
+            RuntimeContext callContext,
+            ModelRequestPreparer.Purpose purpose,
+            Consumer<AgentEvent> events) {
         Model fallbackModel = modelConfig.fallbackModel();
         if (fallbackModel == null) {
             return model;
@@ -4075,7 +4151,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                Flux<ChatResponse> primaryFlux = model.stream(messages, tools, options);
+                Flux<ChatResponse> primaryFlux =
+                        Flux.defer(
+                                () -> {
+                                    activeModel.set(model);
+                                    return model.stream(messages, tools, options);
+                                });
                 return primaryFlux.switchOnFirst(
                         (signal, flux) -> {
                             if (signal.isOnError()) {
@@ -4087,7 +4168,59 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         fallbackModel.getModelName(),
                                         error);
                                 notifyFailover(failoverListener, model, error);
-                                return fallbackModel.stream(messages, tools, options);
+                                if (modelRequestPreparer == null) {
+                                    return fallbackModel.stream(messages, tools, options);
+                                }
+                                RuntimeContext rc =
+                                        callContext == null ? RuntimeContext.empty() : callContext;
+                                String callId = UUID.randomUUID().toString().replace("-", "");
+                                String key =
+                                        ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + callId;
+                                return Mono.defer(
+                                                () ->
+                                                        modelRequestPreparer.prepareObserved(
+                                                                ReActAgent.this,
+                                                                rc,
+                                                                new ModelCallInput(
+                                                                        messages,
+                                                                        tools,
+                                                                        options,
+                                                                        fallbackModel),
+                                                                callId,
+                                                                purpose,
+                                                                events))
+                                        .switchIfEmpty(
+                                                Mono.error(
+                                                        new IllegalStateException(
+                                                                "Fallback preparation returned no"
+                                                                        + " request")))
+                                        .flatMapMany(
+                                                prepared -> {
+                                                    ModelCallStartEvent start =
+                                                            new ModelCallStartEvent(callId);
+                                                    Object manifest = rc.get(key);
+                                                    rc.put(key, null);
+                                                    if (manifest != null)
+                                                        start.withMetadataEntry(
+                                                                "contextManifest", manifest);
+                                                    events.accept(start);
+                                                    return Flux.defer(
+                                                                    () ->
+                                                                            prepared.model().stream(
+                                                                                    prepared
+                                                                                            .messages(),
+                                                                                    prepared
+                                                                                            .tools(),
+                                                                                    prepared
+                                                                                            .options()))
+                                                            .doFinally(
+                                                                    ignored ->
+                                                                            events.accept(
+                                                                                    new ModelCallEndEvent(
+                                                                                            callId,
+                                                                                            null)));
+                                                })
+                                        .doFinally(ignored -> rc.put(key, null));
                             }
                             return flux;
                         });
@@ -4557,6 +4690,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return middlewares;
     }
 
+    public ModelRequestPreparer getModelRequestPreparer() {
+        return modelRequestPreparer;
+    }
+
     /** Returns the per-model-call {@link ExecutionConfig}, or {@code null} if none was set. */
     public ExecutionConfig getModelExecutionConfig() {
         return modelExecutionConfig;
@@ -4613,6 +4750,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         GenerateOptions generateOptions;
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
+        private ModelRequestPreparer modelRequestPreparer;
+
+        /** Installs the final request preparation boundary, outside the middleware onion. */
+        public Builder modelRequestPreparer(ModelRequestPreparer preparer) {
+            this.modelRequestPreparer = Objects.requireNonNull(preparer);
+            return this;
+        }
+
         private boolean enableMetaTool = false;
         private boolean taskListEnabled = false;
         private ToolExecutionContext toolExecutionContext;

@@ -24,6 +24,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -154,7 +155,7 @@ public class MemoryFlushManager {
                         .content(TextBlock.builder().text(userPrompt.toString()).build())
                         .build());
 
-        return model.stream(flushInput, null, null)
+        return ContextModelCalls.auxiliary(model, flushInput)
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {

@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -37,6 +38,38 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class SessionEventMapperTest {
+    @Test
+    void failedContextBuildPersistsWithoutOpeningModelPreview() {
+        var ids = new SessionEventMapper.PreviewIds();
+        String previewId = ids.messageEventId();
+        var payload =
+                Map.<String, Object>of(
+                        "model_call_id",
+                        "rejected",
+                        "status",
+                        "failed",
+                        "context_manifest",
+                        Map.of("validation", "budget_exceeded"));
+        var result =
+                new SessionEventMapper(new ObjectMapper())
+                        .map(new CustomEvent("context_build", payload), ids);
+        assertThat(result.persisted().orElseThrow().type())
+                .isEqualTo(SessionEventTypes.SPAN_CONTEXT_BUILD);
+        assertThat(result.persisted().orElseThrow().payload()).isEqualTo(payload);
+        assertThat(ids.messageEventId()).isEqualTo(previewId);
+    }
+
+    @Test
+    void modelStartCarriesContextManifestAndCallIdentity() {
+        var mapper = new SessionEventMapper(new ObjectMapper());
+        var event = new ModelCallStartEvent("call-context");
+        var manifest = Map.of("policyVersion", "harness-context-v1", "estimatedInputTokens", 123);
+        event.withMetadataEntry("contextManifest", manifest);
+        var result = mapper.map(event, new SessionEventMapper.PreviewIds());
+        assertThat(result.persisted().orElseThrow().payload())
+                .containsEntry("model_call_id", "call-context")
+                .containsEntry("context_manifest", manifest);
+    }
 
     private SessionEventMapper mapper;
     private SessionEventMapper.PreviewIds previewIds;

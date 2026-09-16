@@ -504,12 +504,12 @@ class HarnessAgentTest {
         String combined =
                 captor.getAllValues().stream()
                         .map(HarnessAgentTest::joinAllText)
-                        .filter(s -> s.contains("<agents_context>"))
+                        .filter(s -> s.contains("<project_rules "))
                         .findFirst()
                         .orElse("");
         assertTrue(
-                combined.contains("<agents_context>"),
-                "expected workspace hook to wrap AGENTS.md in agents_context");
+                combined.contains("<project_rules "),
+                "expected context builder to wrap AGENTS.md in project_rules");
         assertTrue(
                 combined.contains(marker), "model should see AGENTS.md body in injected context");
     }

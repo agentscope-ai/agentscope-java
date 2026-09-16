@@ -21,6 +21,7 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -33,6 +34,7 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -250,13 +252,22 @@ public class SessionEventMapper {
             return MappingResult.persist(
                     SessionEventTypes.AGENT_TOOL_RESULT, payload, buf.eventId());
         }
-        if (event instanceof ModelCallStartEvent) {
+        if (event instanceof CustomEvent custom
+                && ModelRequestPreparer.BUILD_EVENT_NAME.equals(custom.getName())) {
+            return MappingResult.persist(SessionEventTypes.SPAN_CONTEXT_BUILD, custom.getValue());
+        }
+        if (event instanceof ModelCallStartEvent modelStart) {
             // Opening a model request opens a fresh preview window. The previous window must stay
             // readable until then: AgentResultEvent arrives only at the end of the turn and needs
             // the last window's id to reconcile with the streamed preview.
             previewIds.resetMessage();
             previewIds.resetThinking();
-            return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_START, Map.of());
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("model_call_id", modelStart.getReplyId());
+            if (event.getMetadata() != null && event.getMetadata().containsKey("contextManifest")) {
+                payload.put("context_manifest", event.getMetadata().get("contextManifest"));
+            }
+            return MappingResult.persist(SessionEventTypes.SPAN_MODEL_REQUEST_START, payload);
         }
         if (event instanceof ModelCallEndEvent modelEnd) {
             Map<String, Object> payload = new LinkedHashMap<>();

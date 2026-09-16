@@ -18,6 +18,8 @@ package io.agentscope.core.tool.builtin;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskContextState;
@@ -95,6 +97,27 @@ public class TodoTools {
             stateInjected = true,
             readOnly = false,
             concurrencySafe = false)
+    public ToolResultBlock write(
+            @ToolParam(name = "todos", description = "The COMPLETE updated todo list.")
+                    List<TodoItem> todos,
+            AgentState state) {
+        String result = todoWrite(todos, state);
+        var output = TextBlock.builder().text(result).build();
+        if (result.startsWith("Error:")) {
+            return ToolResultBlock.of(output);
+        }
+        return ToolResultBlock.of(
+                List.of(output),
+                Map.of(
+                        "context.state_key",
+                        "tasksContext",
+                        "context.state_revision",
+                        state.getTasksContext().getRevision(),
+                        "context.representation",
+                        "full"));
+    }
+
+    /** Applies a validated full-list update and renders its receipt. */
     public String todoWrite(
             @ToolParam(
                             name = "todos",
@@ -168,11 +191,12 @@ public class TodoTools {
         List<Task> live = ctx.tasksMutable();
         live.clear();
         live.addAll(rebuilt);
+        ctx.markUpdated();
 
         return render(rebuilt);
     }
 
-    private static String render(List<Task> tasks) {
+    public static String render(List<Task> tasks) {
         if (tasks.isEmpty()) {
             return "Todo list cleared (0 items).";
         }

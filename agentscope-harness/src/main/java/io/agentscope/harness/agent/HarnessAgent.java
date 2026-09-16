@@ -43,6 +43,8 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
@@ -70,6 +72,7 @@ import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.AtPathExpansionMiddleware;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.ContextConventionsMiddleware;
 import io.agentscope.harness.agent.middleware.DynamicSubagentsMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessRuntimeMiddleware;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
@@ -131,6 +134,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -1230,6 +1234,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
         MemoryConfig memoryConfig = MemoryConfig.defaults();
         ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
         boolean disableCompaction = false;
+        ContextPolicy contextPolicy = ContextPolicy.defaults();
+
+        /** Configures final model input budgeting and metadata-only context observations. */
+        public Builder contextPolicy(ContextPolicy policy) {
+            this.contextPolicy = Objects.requireNonNull(policy);
+            return this;
+        }
+
         boolean disableToolResultEviction = false;
 
         final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
@@ -1428,6 +1440,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          */
         public static Builder fromAgent(ReActAgent agent) {
             Builder b = new Builder();
+            if (agent.getModelRequestPreparer() instanceof HarnessContextBuilder contextBuilder) {
+                b.contextPolicy(contextBuilder.policy());
+            }
 
             // Observable configuration.
             b.name(agent.getName());
@@ -2518,6 +2533,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Middlewares ----
+            inner.middleware(new ContextConventionsMiddleware());
             if (sandboxLifecycleMw != null) {
                 inner.middleware(sandboxLifecycleMw);
             }
@@ -2606,13 +2622,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 if (compactionModel != null) {
                     compactionHook =
                             new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
-                    inner.middleware(compactionHook);
                 }
             }
-            if (!disableToolResultEviction && toolResultEvictionConfig != null) {
-                inner.middleware(
-                        new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig));
-            }
+            ToolResultEvictionMiddleware contextEviction =
+                    !disableToolResultEviction && toolResultEvictionConfig != null
+                            ? new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig)
+                            : null;
+            inner.modelRequestPreparer(
+                    new HarnessContextBuilder(contextPolicy, compactionHook, contextEviction));
             if (messageBus != null) {
                 inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }

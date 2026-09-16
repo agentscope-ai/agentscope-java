@@ -26,8 +26,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
 import java.util.ArrayList;
@@ -52,8 +55,8 @@ import reactor.core.publisher.Mono;
  * {@code PermissionEngine} at construction and cannot be toggled at runtime, whereas plan mode must
  * switch dynamically.
  *
- * <p>{@link #onSystemPrompt} injects a plan-mode banner so the model knows it is in the read-only
- * design phase.
+ * <p>{@link #onSystemPrompt} collects mode instructions for the final context builder.
+ * {@link #onModelCall} refreshes them when mode changes within the same call.
  */
 public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
 
@@ -78,7 +81,6 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
     private static final String PLAN_BANNER_TEMPLATE =
             """
 
-            <system-reminder>
             PLAN MODE is active (read-only). Plan file: %s
             Investigate the problem and draft a plan, but do NOT modify files, run mutating commands,
             or otherwise change state. Record your plan with the plan_write tool. When the plan is
@@ -90,23 +92,23 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
             If you cannot produce a concrete plan because you lack information (for example the system
             you were asked to work on is not present in this workspace), STOP and ask the user one
             specific clarifying question instead of inventing a plan or assuming details.
-            </system-reminder>\
             """;
 
     private static final String BUILD_MODE_PLAN_HINT =
-            "\n\n<system-reminder>You have switched from PLAN to BUILD mode; the read-only"
-                    + " restriction is lifted. An approved plan exists at %s — read it for the"
+            "\n\nYou have switched from PLAN to BUILD mode; the read-only"
+                    + " restriction is lifted. A plan reference exists at %s — this path alone is"
+                    + " not proof of approval. Read it for the"
                     + " details, then EXECUTE it step by step until the task is complete. Do NOT"
                     + " stop after merely producing the plan. If a todo list is available, capture"
                     + " the plan's steps with the todo_write tool and keep exactly one task"
-                    + " in_progress as you work through them.</system-reminder>";
+                    + " in_progress as you work through them.";
 
     private static final String PLAN_EXTRA_TOOLS_HINT =
-            "\n\n<system-reminder>The following tool(s) are additionally available during PLAN"
+            "\n\nThe following tool(s) are additionally available during PLAN"
                     + " mode for read-only investigation: %s. Use them ONLY to read/inspect (e.g."
                     + " cat, ls, grep, git log/diff/show/status). Do NOT run mutating commands"
                     + " (file writes, installs, git commit, rm, mv, network side effects, etc.)"
-                    + " until the plan is approved.</system-reminder>";
+                    + " until the plan is approved.";
 
     private final PlanModeManager manager;
     private final Predicate<String> readOnlyResolver;
@@ -143,26 +145,50 @@ public class PlanModeMiddleware implements HarnessRuntimeMiddleware {
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
+        return Mono.fromSupplier(
+                () -> {
+                    RuntimeContext rc = ctx == null ? RuntimeContext.empty() : ctx;
+                    WorkspaceContextMaterials.register(
+                            rc,
+                            List.of(
+                                    ContextItem.instruction(
+                                            "mode_rules",
+                                            "harness:plan-mode",
+                                            modeInstructions(agent, rc))));
+                    return currentPrompt == null ? "" : currentPrompt;
+                });
+    }
+
+    /** Refresh mode rules at each model boundary, including transitions within one agent call. */
+    @Override
+    public Flux<AgentEvent> onModelCall(
+            Agent agent,
+            RuntimeContext ctx,
+            ModelCallInput input,
+            Function<ModelCallInput, Flux<AgentEvent>> next) {
+        return onSystemPrompt(agent, ctx, "").flatMapMany(ignored -> next.apply(input));
+    }
+
+    private String modeInstructions(Agent agent, RuntimeContext ctx) {
         AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-        String base = currentPrompt != null ? currentPrompt : "";
 
         if (manager.isPlanActive(state)) {
             String path = manager.planFilePath(state);
-            String banner = base + PLAN_BANNER_TEMPLATE.formatted(path);
+            String banner = PLAN_BANNER_TEMPLATE.formatted(path);
             if (!additionalAllowed.isEmpty()) {
                 String tools = additionalAllowed.stream().collect(Collectors.joining(", "));
                 banner += PLAN_EXTRA_TOOLS_HINT.formatted(tools);
             }
-            return Mono.just(banner);
+            return banner;
         }
 
         // BUILD mode: if a plan file was previously written, surface its path so the model
         // can re-read it after compaction without needing to remember the original tool call.
         String planFile = state != null ? state.getPlanModeContext().getCurrentPlanFile() : null;
         if (planFile != null && !planFile.isBlank()) {
-            return Mono.just(base + BUILD_MODE_PLAN_HINT.formatted(planFile));
+            return BUILD_MODE_PLAN_HINT.formatted(planFile);
         }
-        return Mono.just(base);
+        return "";
     }
 
     @Override
