@@ -131,6 +131,15 @@ public class FallbackChainModel implements Model {
      * {@code equals}), so two candidates that share a name behind different endpoints/keys stay
      * separate. Pass fresh maps per wrapper to bound cooldown to a single stream call.
      *
+     * <p><b>Shared-table contract.</b> The intended usage is: wrappers sharing the tables expose
+     * the <em>same</em> candidate instances (as the agent wiring does — every
+     * {@code modelForCall()} rebuilds the wrapper from the same candidate list). In that mode
+     * the tables are bounded by the chain length by construction. Sharing the injectable tables
+     * across wrappers built from <em>different</em> candidate instances is supported as an
+     * escape hatch, but the caller then owns the resulting cross-chain accumulation: a
+     * remembered failure stays pinned for the tables' lifetime until the sweep triggers (once
+     * the table outgrows this chain's candidate count, expired entries are evicted on write).
+     *
      * @param primary the primary model (must not be null)
      * @param fallbacks ordered fallback models; may be null or empty
      * @param cooldown cooldown applied to each candidate after a switchable failure; {@code null}
@@ -315,16 +324,29 @@ public class FallbackChainModel implements Model {
      * Marks a candidate as cooling for {@link #cooldown} and remembers the triggering failure
      * in the shared table.
      *
-     * <p>No eviction sweep is needed: entries are keyed by the chain's own candidates (fixed at
-     * construction), so both tables stay bounded at the chain length by construction — a
-     * remembered {@link Throwable} is pinned for the agent lifetime, which is a bounded
-     * retention, not a leak.
+     * <p>For the normal wiring (wrappers sharing the agent's tables always expose the same
+     * candidate instances), entries are keyed by the chain's own candidates — fixed at
+     * construction — so both tables stay bounded at the chain length by construction and no
+     * eviction runs; a remembered {@link Throwable} is pinned for the lifetime of the tables
+     * (bounded retention, not a leak). When a caller shares the injectable tables across
+     * wrappers built from <em>different</em> candidate instances (the shared-table constructor's
+     * deliberate escape hatch), the entry set is capped by sweeping expired entries once it
+     * outgrows this chain's candidate count — a bounded bound, still O(1) amortized.
      */
     private void recordFailure(Model candidate, Throwable error) {
         long now = System.currentTimeMillis();
+        if (coolUntilMillis.size() >= candidates.size() + EVICTION_SWEEP_GRACE) {
+            coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
+            lastFailureByKey
+                    .entrySet()
+                    .removeIf(entry -> !coolUntilMillis.containsKey(entry.getKey()));
+        }
         coolUntilMillis.put(candidate, now + cooldown.toMillis());
         lastFailureByKey.put(candidate, error);
     }
+
+    /** Sweep expired entries only once the shared table outgrows the fixed chain length. */
+    private static final int EVICTION_SWEEP_GRACE = 1;
 
     /**
      * Notifies the failover listener at a switch site. An exception thrown by the listener is

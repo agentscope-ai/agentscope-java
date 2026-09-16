@@ -91,6 +91,51 @@ class ReActAgentCapabilityValidationTest {
     }
 
     @Test
+    @DisplayName("A throwing primary getter is also skipped, never failing build()")
+    void throwingPrimaryGetterIsSkipped() {
+        // An adversarial third-party Model used as the *primary*: its capability getters throw.
+        // The check must skip (debug) and return no warnings — agent construction must not fail
+        // on a diagnostic probe, on either side of the chain.
+        Model brokenPrimary =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.empty();
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "broken-primary";
+                    }
+
+                    @Override
+                    public int getContextWindowSize() {
+                        throw new IllegalStateException("no metrics");
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        throw new IllegalStateException("no metrics");
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutputWithTools() {
+                        throw new IllegalStateException("no metrics");
+                    }
+                };
+        Model fallback = stub("fallback", 8192, false, false);
+
+        List<String> warnings =
+                ReActAgent.validateFallbackChainCapabilities(brokenPrimary, List.of(fallback));
+
+        assertEquals(
+                List.of(),
+                warnings,
+                "A throwing primary getter must skip the whole check, never throw");
+    }
+
+    @Test
     @DisplayName("Smaller context window yields a compaction warning")
     void smallerContextWindowYieldsCompactionWarning() {
         Model primary = stub("primary", 8192, false, false);

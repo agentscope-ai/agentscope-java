@@ -766,8 +766,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * silently.
      *
      * <p>A throwing capability getter from a third-party {@link Model} implementation is caught
-     * and skipped (including a throwing {@code getModelName()}) — a diagnostic check must never
-     * fail agent construction.
+     * and skipped (including a throwing {@code getModelName()}, on both the primary and the
+     * candidates) — a diagnostic check must never fail agent construction.
      *
      * @param model the primary model (may be null)
      * @param fallbackModels the configured fallback chain (may be empty)
@@ -778,9 +778,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (fallbackModels.isEmpty() || model == null) {
             return warnings;
         }
-        int primaryWindow = model.getContextWindowSize();
-        boolean primaryNative = model.supportsNativeStructuredOutput();
-        boolean primaryNativeWithTools = model.supportsNativeStructuredOutputWithTools();
+
+        int primaryWindow;
+        boolean primaryNative;
+        boolean primaryNativeWithTools;
+        try {
+            primaryWindow = model.getContextWindowSize();
+            primaryNative = model.supportsNativeStructuredOutput();
+            primaryNativeWithTools = model.supportsNativeStructuredOutputWithTools();
+        } catch (RuntimeException e) {
+            // A throwing *primary* getter must be as harmless as a throwing candidate one.
+            log.debug("Skipping fallback-chain capability check: primary getter threw", e);
+            return warnings;
+        }
+
         for (Model fallback : fallbackModels) {
             try {
                 int window = fallback.getContextWindowSize();
