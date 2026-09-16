@@ -386,6 +386,60 @@ class BaseSandboxFilesystemTest {
                     "missing interpreter should be reported as an execution failure, got: "
                             + result.error());
         }
+
+        @Test
+        void edit_nonZeroExitWithEmptyOutput_reportedWithExitCode() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("", 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "non-zero exit should be reported as an execution failure, got: "
+                            + result.error());
+            assertTrue(
+                    result.error().contains("exit code 1"),
+                    "empty output should surface the exit code, got: " + result.error());
+        }
+
+        @Test
+        void edit_tracebackWithZeroExit_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "Traceback (most recent call last):\n"
+                                            + "  File \"<stdin>\", line 1\n"
+                                            + "SyntaxError: unexpected EOF",
+                                    0,
+                                    false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "a python traceback must be treated as a failure even with a zero exit code,"
+                            + " got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_interpreterNotFoundPattern_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse("sh: 1: python3: not found", 0, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "a 'not found' interpreter error must be treated as a failure even with a zero"
+                            + " exit code, got: "
+                            + result.error());
+        }
     }
 
     // ================================================================
