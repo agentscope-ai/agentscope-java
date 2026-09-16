@@ -21,7 +21,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Options for the OpenSandbox-backed {@link SandboxClient}. */
+/**
+ * Options for the OpenSandbox-backed {@link SandboxClient}.
+ *
+ * <p>All value setters reject {@code null} except {@link #setApiKey(String)}, where {@code null}
+ * means unset when call-level options are merged with client defaults.
+ */
 public class OpenSandboxClientOptions extends SandboxClientOptions {
 
     private String endpoint = "http://localhost:8080";
@@ -198,6 +203,8 @@ public class OpenSandboxClientOptions extends SandboxClientOptions {
         return useServerProxySet;
     }
 
+    // When adding an option field, copy both its value and explicit-set flag here, and extend
+    // copyOfPreservesExplicitFieldFlags.
     static OpenSandboxClientOptions copyOf(OpenSandboxClientOptions source) {
         OpenSandboxClientOptions copy = new OpenSandboxClientOptions();
         copy.endpoint = source.endpoint;

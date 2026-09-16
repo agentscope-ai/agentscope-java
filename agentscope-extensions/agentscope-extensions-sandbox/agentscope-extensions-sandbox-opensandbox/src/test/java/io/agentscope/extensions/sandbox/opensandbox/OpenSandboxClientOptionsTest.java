@@ -120,8 +120,30 @@ class OpenSandboxClientOptionsTest {
         Map<String, String> nullValue = new LinkedHashMap<>();
         nullValue.put("cpu", null);
         assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(nullValue));
+    }
+
+    @Test
+    void rejectedNullValuesDoNotBecomeExplicitOptions() {
+        OpenSandboxClientOptions options = new OpenSandboxClientOptions();
+
+        assertThrows(NullPointerException.class, () -> options.setEndpoint(null));
+        assertThrows(IllegalArgumentException.class, () -> options.setImage(null));
+        assertThrows(IllegalArgumentException.class, () -> options.setEntrypoint(null));
+        assertThrows(IllegalArgumentException.class, () -> options.setResourceLimits(null));
+
+        assertFalse(options.isEndpointSet());
+        assertFalse(options.isImageSet());
+        assertFalse(options.isEntrypointSet());
+        assertFalse(options.isResourceLimitsSet());
+    }
+
+    @Test
+    void nullApiKeyMeansUnset() {
+        OpenSandboxClientOptions options = new OpenSandboxClientOptions();
+
         options.setApiKey("secret");
         options.setApiKey(null);
+
         assertFalse(options.isApiKeySet());
     }
 
