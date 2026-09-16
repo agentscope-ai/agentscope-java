@@ -2,7 +2,9 @@
 title: 配置参考
 ---
 
-[English](/v2/en/service/configuration)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通过 Chart values 配置入口与存储。
 
@@ -35,3 +37,19 @@ Docker 在 `.env` 中配置；Kubernetes 将敏感项放入已有 Secret，通�
 ## 版本与迁移
 
 Dataplane/Scheduler 默认使用 Hibernate `update`，Go 在启动时执行迁移。`BUILDER_JPA_DDL_AUTO=validate` 只校验已有表，不初始化新数据库；仅在已自行完成 schema 管理时使用。升级前按[运维指南](/v2/zh/service/operations)备份和演练。
+
+## 修改后如何确认生效
+
+先区分部署配置和 Agent 配置，按下面的范围验证：
+
+| 修改位置 | 操作与验证 |
+| --- | --- |
+| Compose `.env` | 重新创建受影响容器；仅 `docker compose restart` 不会把新的环境变量应用到已有容器 |
+| Helm values / Secret | 按生产安装流程更新，并确认受影响 Pod 使用新配置；环境变量不会在已有进程中自动刷新 |
+| Agent Instructions / Definition | 按编辑页面保存、发布并绑定目标 revision，然后新建工作验证实际使用的定义 |
+| Session defaults | 新建 Session 验证继承值；已有 Session 的显式选择需要单独检查 |
+| Memory 文档正文 | 要求 Agent 再次读取；旧回复不会因知识更新自动改写 |
+
+例如修改默认模型凭据后，在安装目录按[本地安装](/v2/zh/service/quickstart)的 Compose 流程重新创建服务，检查健康状态，再新建 Managed Chat 提交一句简单请求。模型请求成功后，再执行[售前方案团队](/v2/zh/service/cases/presales-team)的知识读取检查，可以分别定位模型配置和资源绑定问题。
+
+验收记录保留修改项名称、应用版本、重建时间和新 Session ID；不记录密钥原文。修改 bootstrap 配置不会覆盖数据库中已存在的管理员密码，处理方式见[账号参考](/v2/zh/service/access)。

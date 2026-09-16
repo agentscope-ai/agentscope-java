@@ -2,9 +2,19 @@
 title: "Vault：为工具提供凭据"
 ---
 
-[English](/v2/en/service/vault)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 **Resources → Vault** 保存 Agent 工具连接使用的凭据。Secret 写入后页面只展示类型、标签和目标等元数据，不重新展示明文。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/vault.png" alt="Vault 与凭据元数据列表" />
+</Frame>
+
+选择 Vault 后，核对凭据的名称、类型和目标地址，再将它关联到需要访问该服务的 Agent。图中仅展示演示凭据的元数据，不包含真实密钥。
 
 ## 配置一个连接
 
@@ -17,6 +27,26 @@ title: "Vault：为工具提供凭据"
 | Generic secret | 只提供存储，不会自动注入任意工具 |
 
 OAuth 内容需要 `access_token`，可按连接需要包含刷新信息。保存凭据本身不意味着外部服务已授予正确权限。
+
+## 为 Managed Agent 绑定凭据
+
+在 Agent 的 **Runtime → Session defaults → Default vaults** 选择 Vault 并保存，对应 `defaultVaultIds`。随后在 Definition 的工具/MCP 设置中配置连接。Session API 的 `vaultIds` 可覆盖默认列表：省略继承默认绑定，`[]` 不挂载默认 Vault。
+
+凭据类型对应 API 值 `static_bearer`、`mcp_oauth`、`environment_variable` 和 `api_key`。其中 `api_key` 是通用存储类型，不会自动配置模型认证或注入工具。环境变量类型也不会全局导出到 Dataplane 或任意 Shell 进程。
+
+例如创建 `environment_variable` 凭据，Target 填 `REPORTS_TOKEN`，Secret 填外部服务签发的值。在 MCP 连接中显式引用；下面是连接字段片段，URL 需要替换成你的服务地址：
+
+```json
+{
+  "name": "reports",
+  "url": "https://reports.example.com/mcp",
+  "headers": {
+    "Authorization": "Bearer ${REPORTS_TOKEN}"
+  }
+}
+```
+
+将这些字段放入该 Agent 的 `mcpServers` 连接，并选择匹配的 HTTP transport。新建 Chat 后调用一次只读工具。若使用 `static_bearer`，则将 Target 设为连接名 `reports` 或完整 endpoint，由解析器设置 Bearer header，无需再配置同名占位符。一个连接只选一种清晰的认证方式，避免多个凭据竞争同一目标。
 
 ## 验证和轮换
 

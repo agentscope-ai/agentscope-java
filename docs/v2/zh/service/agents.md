@@ -1,10 +1,28 @@
 ---
-title: "Agents：定义可重复使用的能力"
+title: "注册或者创建 Agent"
 ---
 
-[English](/v2/en/service/agents)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 **DESIGN → Agents** 管理 Agent 的身份、行为和执行方式。Agent 定义可以被 Chat、Issue、Team 和 Endpoint 复用；保存定义本身不会执行任务。
+
+## 按运行方式接入
+
+- **Managed Agent**：在控制台创建云端 Agent，再配置模型和资源。
+- **AgentScope 框架**：注册你编写并部署的应用，以 External Agent 方式接入；任务执行能力需要相应适配。
+- **Hosted**：连接 Runtime Host，选择已经安装并登录的 Coding Agent provider。
+
+左侧三个子菜单用于完成创建、注册和验证。详细参数、资源配置与工作原理统一收录于下方的参考手册。完成接入后，继续[通过 Endpoint 分派任务](/v2/zh/service/endpoints)或[在控制台创建 Issue](/v2/zh/service/issues)。
+
+## 界面导览
+
+<Frame caption="当前控制台截图，使用固定演示数据。">
+  <img src="/imgs/service/agents.png" alt="Agent 目录与 Managed、Hosted、External 筛选" />
+</Frame>
+
+顶部筛选用于区分运行方式，卡片说明 Agent 的用途。点击卡片进入配置；需要新能力时点击 **New agent**。示例中三类 Agent 并列展示，实际可用性仍需检查各自的运行环境。
 
 ## 选择运行方式
 

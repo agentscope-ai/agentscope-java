@@ -2,7 +2,9 @@
 title: Connect a Runtime Host
 ---
 
-[简体中文](/v2/zh/service/runtime-host)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 A Runtime Host runs on a computer or server with a Coding Agent provider installed. The control plane dispatches and records work; the Host executes it with the local provider.
 
