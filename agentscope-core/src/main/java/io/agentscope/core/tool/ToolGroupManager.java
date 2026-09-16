@@ -403,6 +403,10 @@ class ToolGroupManager {
      * <p>All META-scoped groups not in {@code toActivate} are deactivated.
      * {@link ToolGroupScope#EXTERNAL} groups are not affected.
      *
+     * <p>Legacy single-session API: mutates the shared activation flags. Framework paths now
+     * apply the same replacement semantics to the per-session {@code ToolContextState} instead
+     * ({@code replaceActivatedGroups}); this method is no longer called by the framework.
+     *
      * @param toActivate group names to keep active (must all be META scope)
      */
     public void replaceMetaActiveGroups(List<String> toActivate) {

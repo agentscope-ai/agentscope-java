@@ -31,6 +31,13 @@ import java.util.Objects;
  * so they are safe to construct per-call and carry in an immutable request config. The concrete
  * type ({@code Map<String, SchemaOnlyTool>} rather than {@code Map<String, AgentTool>}) makes
  * "external tool ⇒ schema-only" a compile-time invariant.
+ *
+ * <p>Contract: {@code externalTools} always take priority over the backend regardless of {@code
+ * mergeMode} — {@code mergeMode} only governs backend visibility ({@link
+ * ToolMergeMode#EXTERNAL_ONLY} hides the backend when tool deletion is allowed). {@code
+ * AGENT_ONLY} therefore only ever pairs with an empty tool map (that is {@link #NONE}); a
+ * non-empty {@code externalTools} combined with {@code AGENT_ONLY} is not produced by the
+ * framework and is an unsupported combination.
  */
 public record ToolRequestConfig(
         Map<String, SchemaOnlyTool> externalTools, // name -> external (schema-only) tool, overrides

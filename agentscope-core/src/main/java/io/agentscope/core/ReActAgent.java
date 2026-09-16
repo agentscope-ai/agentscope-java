@@ -1732,11 +1732,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         RuntimeContext rc;
 
         /**
-         * Per-call resolved toolkit: prefers the {@code toolkit} carried on {@link #rc} (per-call
-         * override) and falls back to the enclosing agent's shared {@code toolkit} field. Resolved
-         * once in {@code beforeAgentExecution} and stable for the whole call, so concurrent calls
-         * on the same agent never observe each other's per-call overrides. All toolkit access in
-         * this scope reads {@code activeToolkit} rather than the shared field.
+         * Stable per-call reference to the agent's shared {@code toolkit}, resolved once in
+         * {@code beforeAgentExecution}. The toolkit is never copied and never mutated per call;
+         * per-call tool differences live on {@link #toolRequestConfig} and are composed with this
+         * toolkit on demand, so concurrent calls on the same agent never observe each other's
+         * differences. All toolkit access in this scope reads {@code activeToolkit} for uniformity.
          */
         Toolkit activeToolkit;
 
