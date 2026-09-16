@@ -448,22 +448,44 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_nullExitCode_notTreatedAsHardFailure() {
+        void edit_nullExitCode_withResultPayload_treatedAsSuccess() {
             // A backend that cannot report an exit code (exitCode == null) means "unknown", not
             // "failed" — the rest of this class guards with exitCode() != null for exactly this
-            // reason. A null code must not turn into "edit command failed to execute", which would
-            // make the model retry and double-apply the replacement on an edit that may have
-            // succeeded.
+            // reason. When the script still printed a valid {"count":...}, the edit demonstrably
+            // succeeded and must be reported as such; turning it into "edit command failed to
+            // execute" would make the model retry and double-apply the replacement. This is the
+            // assertion that would regress if the guard were re-tightened to !result.isSuccess().
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("{\"count\": 1}", null, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "a null (unknown) exit code with a valid result payload must be a success,"
+                            + " got: "
+                            + result.error());
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_nullExitCode_emptyOutput_reportedWithClearMessage() {
+            // Null code AND no output at all: the script printed neither a result nor an error, so
+            // there is no evidence the edit ran. Surface an explicit, actionable message rather
+            // than falling through to the opaque "unexpected server response" branch with a blank
+            // tail — the exact opacity the exit-code guard exists to remove.
             FixedResponseFilesystem fs =
                     new FixedResponseFilesystem(new ExecuteResponse("", null, false));
 
             var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
 
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("neither an exit code nor any output"),
+                    "null code + empty output should get a clear message, got: " + result.error());
             assertFalse(
-                    result.error() != null
-                            && result.error().contains("edit command failed to execute"),
-                    "a null (unknown) exit code must not be reported as an execution failure, got: "
-                            + result.error());
+                    result.error().contains("unexpected server response"),
+                    "should not fall through to the opaque branch, got: " + result.error());
         }
     }
 

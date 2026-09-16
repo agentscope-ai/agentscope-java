@@ -327,17 +327,26 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // message would otherwise fall through to the opaque "unexpected server response" branch —
         // exactly the opacity this path exists to remove). A null exit code means the backend
         // could not report one (unknown, not failed); like the other call sites in this class
-        // (:146, :206) only a known non-zero code is treated as a hard failure, so a successful
-        // edit on a backend that omits the exit code is not turned into a false "failed to
-        // execute" that would make the model retry and double-apply the replacement. The
-        // output-shape check still catches the rare broken shell that exits 0 while emitting a
-        // Python traceback / SyntaxError.
+        // (:146, :206) a missing code is not by itself a hard failure, so a successful edit on a
+        // backend that omits the exit code — proven by the {"count":...} payload it printed — is
+        // honored as success below rather than turned into a false "failed to execute" that would
+        // make the model retry and double-apply the replacement. The one exception is a null code
+        // WITH no output at all: nothing was reported, so it is surfaced as an explicit failure
+        // here instead of the blank-tailed opaque branch. The output-shape check still catches the
+        // rare broken shell that exits 0 while emitting a Python traceback / SyntaxError.
         Integer exitCode = result.exitCode();
-        if ((exitCode != null && exitCode != 0) || looksLikeExecutionFailure(output)) {
-            String detail =
-                    output.isEmpty()
-                            ? (exitCode == null ? "no exit code reported" : "exit code " + exitCode)
-                            : output.substring(0, Math.min(200, output.length()));
+        boolean noCodeNoOutput = exitCode == null && output.isEmpty();
+        if ((exitCode != null && exitCode != 0)
+                || looksLikeExecutionFailure(output)
+                || noCodeNoOutput) {
+            String detail;
+            if (!output.isEmpty()) {
+                detail = output.substring(0, Math.min(200, output.length()));
+            } else if (exitCode == null) {
+                detail = "backend reported neither an exit code nor any output";
+            } else {
+                detail = "exit code " + exitCode;
+            }
             return EditResult.fail(
                     "Error editing file '"
                             + filePath
