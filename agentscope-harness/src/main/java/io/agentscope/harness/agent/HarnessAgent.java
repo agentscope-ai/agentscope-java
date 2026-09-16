@@ -991,6 +991,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, Class,
      * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
      *
+     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
+     * overload: its context-less plain {@code streamEvents} entries are
+     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
+     *
      * @param msgs input messages
      * @param structuredModel class defining the expected structure
      * @param ctx runtime context to propagate into the call
@@ -1008,6 +1012,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * Stream fine-grained {@link AgentEvent}s with structured output (JSON-schema-driven) and a
      * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, JsonNode,
      * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
+     * overload: its context-less plain {@code streamEvents} entries are
+     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
      *
      * @param msgs input messages
      * @param schema JSON schema defining the expected structure
