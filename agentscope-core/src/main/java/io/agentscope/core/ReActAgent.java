@@ -362,7 +362,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.fallbackModels = List.copyOf(builder.flatFallbackModels);
-        validateFallbackChainCapabilities();
+        for (String warning : validateFallbackChainCapabilities(this.model, this.fallbackModels)) {
+            log.warn(warning);
+        }
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -745,7 +747,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Warns when a fallback candidate is not capability-compatible with the primary model.
+     * Validates fallback-chain capability compatibility and returns warnings to log at build
+     * time.
      *
      * <p>{@link FallbackChainModel} reports the primary's capabilities regardless of which
      * candidate serves a call (the chain's stable identity under concurrency). A candidate with a
@@ -753,23 +756,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * mistake: after a switch the agent would keep building requests/compaction on the primary's
      * capability assumptions.
      *
-     * <p>Gaps in the checks are deliberate:
+     * <p>Direction of the structured-output check is deliberate: it only fires when a candidate
+     * <b>positively declares</b> support the primary does not have ({@code nativeOut &&
+     * !primaryNative}). The reverse direction — a candidate that supports <i>less</i> than the
+     * primary — is not reported because {@code supportsNativeStructuredOutput()} has no "unknown"
+     * state: the interface default {@code false} is indistinguishable from a genuine lack of
+     * support, and warning on every build of a legitimate mixed-provider chain would be noise.
+     * Unknown context windows ({@code getContextWindowSize() == 0}) are likewise tolerated
+     * silently.
      *
-     * <ul>
-     *   <li>Unknown context windows ({@code getContextWindowSize() == 0}) are tolerated silently
-     *       — {@code 0} is the interface's "not available" marker.
-     *   <li>Structured-output support is compared only when the candidate <b>positively
-     *       declares</b> support ({@code nativeOut && !primaryNative}): {@code
-     *       supportsNativeStructuredOutput()} has no "unknown" state (interface default is {@code
-     *       false}), so a candidate that simply does not override it must not warn on every build.
-     *   <li>A throwing capability getter from a third-party {@link Model} implementation is
-     *       caught and skipped (debug log) — a diagnostic check must never fail agent
-     *       construction.
-     * </ul>
+     * <p>A throwing capability getter from a third-party {@link Model} implementation is caught
+     * and skipped (including a throwing {@code getModelName()}) — a diagnostic check must never
+     * fail agent construction.
+     *
+     * @param model the primary model (may be null)
+     * @param fallbackModels the configured fallback chain (may be empty)
+     * @return warning messages, empty when the chain is capability-clean
      */
-    private void validateFallbackChainCapabilities() {
+    static List<String> validateFallbackChainCapabilities(Model model, List<Model> fallbackModels) {
+        List<String> warnings = new ArrayList<>();
         if (fallbackModels.isEmpty() || model == null) {
-            return;
+            return warnings;
         }
         int primaryWindow = model.getContextWindowSize();
         boolean primaryNative = model.supportsNativeStructuredOutput();
@@ -778,40 +785,56 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             try {
                 int window = fallback.getContextWindowSize();
                 if (window > 0 && primaryWindow > 0 && window < primaryWindow) {
-                    log.warn(
-                            "Fallback candidate {} has a smaller context window ({}) than the"
-                                    + " primary model {} ({}); the chain reports the primary's"
-                                    + " capabilities, so compaction may trigger on the wrong"
-                                    + " budget after a switch",
-                            fallback.getModelName(),
-                            window,
-                            model.getModelName(),
-                            primaryWindow);
+                    warnings.add(
+                            "Fallback candidate "
+                                    + safeModelName(fallback)
+                                    + " has a smaller context window ("
+                                    + window
+                                    + ") than the primary model "
+                                    + safeModelName(model)
+                                    + " ("
+                                    + primaryWindow
+                                    + "); the chain reports the primary's capabilities, so"
+                                    + " compaction may trigger on the wrong budget after a switch");
                 }
 
                 boolean nativeOut = fallback.supportsNativeStructuredOutput();
                 boolean nativeWithTools = fallback.supportsNativeStructuredOutputWithTools();
                 // Only compare when the candidate positively declares support; a default false
-                // (no override) means "unknown", which is tolerated silently per the javadoc.
+                // (no override) means "unknown", which is tolerated silently (see javadoc).
                 if ((nativeOut && !primaryNative) || (nativeWithTools && !primaryNativeWithTools)) {
-                    log.warn(
-                            "Fallback candidate {} declares structured-output support (native={},"
-                                + " withTools={}) that the primary model {} does not (native={},"
-                                + " withTools={}); the chain reports the primary's capabilities, so"
-                                + " the candidate's native support may go unused after a switch",
-                            fallback.getModelName(),
-                            nativeOut,
-                            nativeWithTools,
-                            model.getModelName(),
-                            primaryNative,
-                            primaryNativeWithTools);
+                    warnings.add(
+                            "Fallback candidate "
+                                    + safeModelName(fallback)
+                                    + " declares structured-output support (native="
+                                    + nativeOut
+                                    + ", withTools="
+                                    + nativeWithTools
+                                    + ") that the primary model "
+                                    + safeModelName(model)
+                                    + " does not (native="
+                                    + primaryNative
+                                    + ", withTools="
+                                    + primaryNativeWithTools
+                                    + "); the chain reports the primary's capabilities, so the"
+                                    + " candidate's native support may go unused after a switch");
                 }
             } catch (RuntimeException e) {
                 log.debug(
                         "Skipping capability check for fallback candidate {}: getter threw",
-                        fallback.getModelName(),
+                        safeModelName(fallback),
                         e);
             }
+        }
+        return warnings;
+    }
+
+    /** Safely resolves a model's name for diagnostics (never throws). */
+    private static String safeModelName(Model model) {
+        try {
+            return model.getModelName();
+        } catch (RuntimeException e) {
+            return "<unknown>";
         }
     }
 

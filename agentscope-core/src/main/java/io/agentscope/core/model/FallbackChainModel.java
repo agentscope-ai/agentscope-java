@@ -313,25 +313,18 @@ public class FallbackChainModel implements Model {
 
     /**
      * Marks a candidate as cooling for {@link #cooldown} and remembers the triggering failure
-     * in the shared table. Expired entries are evicted lazily — only when the table grows past
-     * {@link #EVICTION_SWEEP_THRESHOLD} — so a per-failure O(n) sweep of a large shared table is
-     * avoided while the table stays bounded: entries only ever come from the chain's candidates
-     * (fixed at construction), so the table cannot grow unbounded beyond the chain length.
+     * in the shared table.
+     *
+     * <p>No eviction sweep is needed: entries are keyed by the chain's own candidates (fixed at
+     * construction), so both tables stay bounded at the chain length by construction — a
+     * remembered {@link Throwable} is pinned for the agent lifetime, which is a bounded
+     * retention, not a leak.
      */
     private void recordFailure(Model candidate, Throwable error) {
         long now = System.currentTimeMillis();
-        if (coolUntilMillis.size() >= EVICTION_SWEEP_THRESHOLD) {
-            coolUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= now);
-            lastFailureByKey
-                    .entrySet()
-                    .removeIf(entry -> !coolUntilMillis.containsKey(entry.getKey()));
-        }
         coolUntilMillis.put(candidate, now + cooldown.toMillis());
         lastFailureByKey.put(candidate, error);
     }
-
-    /** Sweep expired cooldown entries only once the shared table grows this large. */
-    private static final int EVICTION_SWEEP_THRESHOLD = 64;
 
     /**
      * Notifies the failover listener at a switch site. An exception thrown by the listener is

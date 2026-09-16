@@ -661,7 +661,14 @@ Key semantics (implemented by `io.agentscope.core.model.FallbackChainModel`):
   never observe another concurrent call's active candidate. Use the `FailoverListener` (or the
   warn logs) to see which candidate actually served a call. Candidates should therefore be
   **capability-compatible** with the primary (same or larger context window, same
-  structured-output support); the builder warns at build time when they are not.
+  structured-output support). The builder warns at build time when a candidate's known
+  capabilities look incompatible: an explicitly smaller context window, or structured-output
+  support the candidate declares that the primary does not have. The reverse direction (a
+  candidate merely lacking the primary's support) is not reported because
+  `supportsNativeStructuredOutput()` has no "unknown" state — a default `false` is
+  indistinguishable from genuine lack of support, so warning there would be noise on legitimate
+  mixed-provider chains; check the selected model's capabilities yourself if you mix providers
+  with different structured-output support.
 - The chain applies inside `ReActAgent` only; the legacy single `fallbackModel` path is unchanged
   and is still used when no chain is configured. The wrapper itself is public and can also be
   wired directly via `model(new FallbackChainModel(primary, fallbacks))` for full control.
