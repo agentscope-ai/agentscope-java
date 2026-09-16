@@ -295,15 +295,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // /tmp/.agentscope-edit-$$ name: the payload (which can contain secrets copied out of the
         // edited file) being world-readable under the default umask, and two concurrent edits
         // clobbering each other when a backend reuses a single shell session (where $$ is
-        // constant across calls). ${TMPDIR:-/tmp} with a bare-mktemp fallback keeps edit() working
-        // on sandboxes where /tmp is absent, read-only, or relocated via TMPDIR (K8s pods without
-        // an emptyDir on /tmp, noexec tmpfs) instead of failing every call. A trap removes the
-        // payload on any shell exit — including a SIGTERM from a sandbox timeout between the write
-        // and the read — so the plaintext never lingers on disk.
+        // constant across calls). ${TMPDIR:-/tmp} keeps edit() working when /tmp is relocated via
+        // TMPDIR; the fallback pins an explicit /tmp template rather than a bare `mktemp` (which
+        // BSD/macOS reject outright, and which on GNU/BusyBox still consults the same broken
+        // $TMPDIR) so a missing or read-only TMPDIR degrades to /tmp instead of failing every call.
+        // The EXIT trap removes the payload on normal exit; the INT/TERM traps exit (rather than
+        // just unlinking and letting the pipeline read a now-missing file), so a SIGTERM from a
+        // sandbox timeout both interrupts the run and triggers the EXIT cleanup. SIGKILL cannot be
+        // trapped, so the plaintext can only linger if the shell is hard-killed.
         String cmd =
-                "T=$(mktemp \"${TMPDIR:-/tmp}/.agentscope-edit.XXXXXX\" 2>/dev/null || mktemp)"
-                        + " || exit 1\n"
-                        + "trap 'rm -f \"$T\"' EXIT INT TERM\n"
+                "T=$(mktemp \"${TMPDIR:-/tmp}/.agentscope-edit.XXXXXX\" 2>/dev/null"
+                        + " || mktemp /tmp/.agentscope-edit.XXXXXX) || exit 1\n"
+                        + "trap 'rm -f \"$T\"' EXIT\n"
+                        + "trap 'exit 130' INT\n"
+                        + "trap 'exit 143' TERM\n"
                         + "cat > \"$T\" <<'__EDIT_EOF__'\n"
                         + payloadB64
                         + "\n__EDIT_EOF__\n"
@@ -320,12 +325,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // empty output), python3 was missing (127), etc. Keying off exitCode closes the
         // empty-output hole that a substring heuristic on output alone leaves open (an empty
         // message would otherwise fall through to the opaque "unexpected server response" branch —
-        // exactly the opacity this path exists to remove). The output-shape check still catches
-        // the rare broken shell that exits 0 while emitting a Python traceback / SyntaxError.
-        if (!result.isSuccess() || looksLikeExecutionFailure(output)) {
+        // exactly the opacity this path exists to remove). A null exit code means the backend
+        // could not report one (unknown, not failed); like the other call sites in this class
+        // (:146, :206) only a known non-zero code is treated as a hard failure, so a successful
+        // edit on a backend that omits the exit code is not turned into a false "failed to
+        // execute" that would make the model retry and double-apply the replacement. The
+        // output-shape check still catches the rare broken shell that exits 0 while emitting a
+        // Python traceback / SyntaxError.
+        Integer exitCode = result.exitCode();
+        if ((exitCode != null && exitCode != 0) || looksLikeExecutionFailure(output)) {
             String detail =
                     output.isEmpty()
-                            ? "exit code " + result.exitCode()
+                            ? (exitCode == null ? "no exit code reported" : "exit code " + exitCode)
                             : output.substring(0, Math.min(200, output.length()));
             return EditResult.fail(
                     "Error editing file '"

@@ -284,8 +284,14 @@ class BaseSandboxFilesystemTest {
                     fs.lastCommand.contains("${TMPDIR:-/tmp}"),
                     "edit should honor TMPDIR with a /tmp fallback, got: " + fs.lastCommand);
             assertTrue(
-                    fs.lastCommand.contains("trap 'rm -f \"$T\"' EXIT INT TERM"),
-                    "edit should clean the payload via trap on any exit, got: " + fs.lastCommand);
+                    fs.lastCommand.contains("trap 'rm -f \"$T\"' EXIT"),
+                    "edit should clean the payload via an EXIT trap, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("trap 'exit 130' INT")
+                            && fs.lastCommand.contains("trap 'exit 143' TERM"),
+                    "edit should exit (not just unlink) on INT/TERM so a timeout interrupts the run"
+                            + " and triggers EXIT cleanup, got: "
+                            + fs.lastCommand);
             assertTrue(
                     fs.lastCommand.contains("cat > \"$T\""),
                     "edit should write payload to the mktemp file, got: " + fs.lastCommand);
@@ -438,6 +444,25 @@ class BaseSandboxFilesystemTest {
                     result.error().contains("edit command failed to execute"),
                     "a 'not found' interpreter error must be treated as a failure even with a zero"
                             + " exit code, got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_nullExitCode_notTreatedAsHardFailure() {
+            // A backend that cannot report an exit code (exitCode == null) means "unknown", not
+            // "failed" — the rest of this class guards with exitCode() != null for exactly this
+            // reason. A null code must not turn into "edit command failed to execute", which would
+            // make the model retry and double-apply the replacement on an edit that may have
+            // succeeded.
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("", null, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(
+                    result.error() != null
+                            && result.error().contains("edit command failed to execute"),
+                    "a null (unknown) exit code must not be reported as an execution failure, got: "
                             + result.error());
         }
     }
