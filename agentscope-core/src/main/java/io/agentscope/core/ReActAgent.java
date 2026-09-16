@@ -1289,17 +1289,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // defeat the documented contract.
                                     return Mono.error(e);
                                 }
-                                if (e instanceof StructuredOutputConfigurationException) {
+                                if (isNonDegradableFailure(e)) {
                                     // Configuration errors (missing/uncompilable schema)
-                                    // are equally fatal on the synthetic tool path — it
-                                    // reuses the same schema and would fail the same way;
-                                    // degrading would only burn one more model call.
-                                    return Mono.error(e);
-                                }
-                                if (e instanceof StructuredOutputUnknownFailureException) {
-                                    // An internal (non-model) failure already proven fatal
-                                    // on this path: degrading would burn a synthetic-tool
-                                    // round trip and could mask the fault entirely.
+                                    // and exhausted unknown-domain faults are already fatal
+                                    // on the synthetic tool path — it reuses the same
+                                    // schema/situation and would fail the same way;
+                                    // degrading would burn a round trip and could mask the
+                                    // fault. Matched through the cause chain so an
+                                    // intermediate operator wrapping cannot silently
+                                    // reopen the degrade path.
                                     return Mono.error(e);
                                 }
                                 log.warn(
@@ -1312,6 +1310,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
+    }
+
+    /**
+     * Walks the cause chain for failure types that must never degrade to the synthetic-tool
+     * fallback: configuration errors and exhausted unknown-domain faults.
+     */
+    private static boolean isNonDegradableFailure(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof StructuredOutputConfigurationException
+                    || t instanceof StructuredOutputUnknownFailureException) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
     }
 
     /**
@@ -2611,10 +2626,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // (typed wrapper, original cause preserved) instead of a
                                 // validation verdict that points at the model. The wrapper
                                 // is also short-circuited by the fallback router.
-                                Throwable last =
-                                        soFailedAttempts
-                                                .get(soFailedAttempts.size() - 1)
-                                                .rawException();
+                                Throwable last = null;
+                                for (FailedAttempt attempt : soFailedAttempts) {
+                                    if (attempt.rawException() != null) {
+                                        last = attempt.rawException();
+                                    }
+                                }
+                                if (last == null) {
+                                    // Defensive: the backward-compatible FailedAttempt
+                                    // constructor allows a null rawException — never build
+                                    // the wrapper without a cause.
+                                    last =
+                                            new IllegalStateException(
+                                                    "unknown-domain failure without a recorded"
+                                                            + " cause");
+                                }
                                 log.error(
                                         "Structured output validation failed on a"
                                                 + " non-model (unknown/transient) fault after"
