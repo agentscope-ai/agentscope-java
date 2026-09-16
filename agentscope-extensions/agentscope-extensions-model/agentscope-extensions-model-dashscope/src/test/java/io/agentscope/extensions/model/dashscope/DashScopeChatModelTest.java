@@ -138,6 +138,76 @@ class DashScopeChatModelTest {
         assertNotNull(nonStreamingModel, "Non-streaming model should be created");
     }
 
+    @Test
+    @DisplayName("Explicit stream=false is honored when thinking mode is enabled")
+    void testExplicitNonStreamingHonoredWithThinking() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .enableThinking(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(testMessages(), List.of(), GenerateOptions.builder().build())
+                .blockLast();
+
+        String body = mockServer.takeRequest().getBody().readUtf8();
+        assertTrue(
+                body.contains("\"incremental_output\":false"),
+                "An explicit stream=false must not be rewritten: " + body);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Streaming defaults to true when not set explicitly")
+    void testStreamingDefaultsTrueWhenUnset() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"request_id\":\"test\",\"output\":{\"choices\":[]}}\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(testMessages(), List.of(), GenerateOptions.builder().build())
+                .blockLast();
+
+        String body = mockServer.takeRequest().getBody().readUtf8();
+        assertTrue(
+                body.contains("\"incremental_output\":true"),
+                "Streaming should default to true when unset: " + body);
+
+        mockServer.shutdown();
+    }
+
+    private static List<Msg> testMessages() {
+        return List.of(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
+                        .build());
+    }
+
     // ========== Thinking Mode Tests ==========
 
     @Test
