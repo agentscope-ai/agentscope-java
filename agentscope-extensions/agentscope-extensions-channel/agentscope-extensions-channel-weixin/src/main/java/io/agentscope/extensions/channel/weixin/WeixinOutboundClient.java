@@ -106,7 +106,7 @@ public final class WeixinOutboundClient {
                                 cursor == null ? "" : cursor,
                                 "base_info",
                                 baseInfo()));
-        com.fasterxml.jackson.databind.JsonNode response = JSON.readTree(body);
+        com.fasterxml.jackson.databind.JsonNode response = parse(body);
         List<com.fasterxml.jackson.databind.JsonNode> messages = new ArrayList<>();
         response.path("msgs").forEach(messages::add);
         return new JsonNodeResponse(
@@ -169,7 +169,7 @@ public final class WeixinOutboundClient {
     }
 
     private static void assertSuccess(String operation, String body) throws Exception {
-        com.fasterxml.jackson.databind.JsonNode response = JSON.readTree(body);
+        com.fasterxml.jackson.databind.JsonNode response = parse(body);
         int ret = response.path("ret").asInt(0);
         int errcode = response.path("errcode").asInt(0);
         if (ret != 0 || errcode != 0) {
@@ -183,6 +183,26 @@ public final class WeixinOutboundClient {
                             + errcode
                             + " "
                             + response.path("errmsg").asText(""));
+        }
+    }
+
+    /**
+     * Parses a provider body without letting Jackson quote it: inbox payloads and context tokens
+     * travel in these responses, and the default parse error embeds a fragment of the input.
+     */
+    private static com.fasterxml.jackson.databind.JsonNode parse(String body) throws Exception {
+        try {
+            return JSON.readTree(body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            com.fasterxml.jackson.core.JsonLocation where = error.getLocation();
+            throw new IllegalStateException(
+                    "iLink returned an unparseable response"
+                            + (where == null
+                                    ? ""
+                                    : " near line "
+                                            + where.getLineNr()
+                                            + ", column "
+                                            + where.getColumnNr()));
         }
     }
 

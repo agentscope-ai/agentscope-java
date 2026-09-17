@@ -25,7 +25,16 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-/** Reusable QR login client for Tencent iLink personal Weixin accounts. */
+/**
+ * Reusable QR login client for Tencent iLink personal Weixin accounts.
+ *
+ * <p><b>The status URL carries a login secret.</b> The provider protocol takes {@code qrcode} —
+ * and, when it asks for one, {@code verify_code} — as GET query parameters of {@code
+ * get_qrcode_status}, so the request URI is short-lived credential material rather than something
+ * safe to record. Do not add request-URI logging, a generic HTTP client interception, or any
+ * wrapper that copies the URI into an exception message. Failures are reported by status code and
+ * parse position only; see {@link #response}.
+ */
 public final class WeixinLoginClient {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final HttpClient http;
@@ -140,7 +149,21 @@ public final class WeixinLoginClient {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() / 100 != 2)
             throw new IllegalStateException("iLink HTTP " + response.statusCode());
-        return JSON.readTree(response.body());
+        try {
+            return JSON.readTree(response.body());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            // Deliberately no body snippet: the login response carries bot_token, and Jackson's
+            // default message quotes the offending token from the input.
+            com.fasterxml.jackson.core.JsonLocation where = error.getLocation();
+            throw new IllegalStateException(
+                    "iLink returned an unparseable login response"
+                            + (where == null
+                                    ? ""
+                                    : " near line "
+                                            + where.getLineNr()
+                                            + ", column "
+                                            + where.getColumnNr()));
+        }
     }
 
     private static String required(JsonNode n, String field) {
