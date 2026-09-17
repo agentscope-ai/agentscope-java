@@ -68,7 +68,7 @@ public final class BotLoopGuard {
         }
         long now = System.currentTimeMillis();
         maybeSweep(now);
-        PeerState state = states.computeIfAbsent(peerKey, k -> new PeerState());
+        PeerState state = states.computeIfAbsent(peerKey, k -> new PeerState(now));
         synchronized (state) {
             if (state.cooldownUntilMs > now) {
                 return false;
@@ -120,9 +120,10 @@ public final class BotLoopGuard {
     /**
      * Removes peers that have recorded no event for longer than {@code windowMillis +
      * cooldownMillis}; by then the sliding window is empty and any cooldown has expired. Under a
-     * rare concurrent interleaving — the entry evicted between a caller's acquisition and its
-     * recording — that peer's window restarts empty; for a heuristic throttle this momentary
-     * relaxation is accepted.
+     * rare concurrent interleaving — a genuinely idle entry evicted between another caller's
+     * acquisition of it and its recording — that peer's window restarts empty; for a heuristic
+     * throttle this momentary relaxation is accepted. A newly created entry carries its creation
+     * time as its last-event stamp, so it can never be mistaken for idle here.
      *
      * @return the number of peers removed
      */
@@ -151,5 +152,10 @@ public final class BotLoopGuard {
         final Deque<Long> events = new ArrayDeque<>();
         long cooldownUntilMs;
         long lastEventMs;
+
+        PeerState(long now) {
+            // Stamped at creation: a newly created entry can never satisfy the idle check.
+            this.lastEventMs = now;
+        }
     }
 }

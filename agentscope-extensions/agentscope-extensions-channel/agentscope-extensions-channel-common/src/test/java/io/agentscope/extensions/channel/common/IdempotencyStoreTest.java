@@ -46,6 +46,8 @@ class IdempotencyStoreTest {
         assertFalse(store.firstSeen("ch|1"));
         Thread.sleep(160);
         assertTrue(store.firstSeen("ch|1"));
+        // The accepted observation restarts the retention window: an immediate redelivery drops.
+        assertFalse(store.firstSeen("ch|1"));
     }
 
     @Test

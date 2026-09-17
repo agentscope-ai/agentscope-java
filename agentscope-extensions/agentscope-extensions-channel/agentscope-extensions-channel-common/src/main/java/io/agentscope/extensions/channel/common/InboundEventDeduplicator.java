@@ -23,12 +23,18 @@ package io.agentscope.extensions.channel.common;
  * received, and each redelivery must execute at most once.
  *
  * <p>Keys are opaque and caller-composed — typically {@code channelId + "|" + platformEventId}.
+ * Implementations backed by shared storage should namespace keys per deployment (for example with
+ * an environment or application prefix): platform event ids are only unique within one channel
+ * deployment, and a key shared by two deployments silently drops live traffic.
  *
  * <p>The default {@link IdempotencyStore} keeps state in the JVM heap, which only deduplicates
  * within a single process: a redelivery that lands on another instance, or after a restart, is not
  * recognized. Deployments running multiple channel instances should provide an implementation
  * backed by shared storage (for example a Redis {@code SET ... NX EX} keyed by channel and
- * platform event id) and inject it via the channel factories.
+ * platform event id). Injection today is programmatic: channels expose a {@code
+ * fromProperties(channelId, routing, rawProperties, InboundEventDeduplicator)} factory overload
+ * for hand-wired setups, while the config-driven path ({@code agentscope.json} resolved through
+ * the harness {@code ChannelFactory}) constructs channels with the default process-local store.
  *
  * <p>Implementations must be thread-safe: channels invoke {@link #firstSeen(String)} from
  * concurrent callback threads.

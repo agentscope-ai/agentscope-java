@@ -54,8 +54,10 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
     }
 
     /**
-     * Records {@code key} as seen. Returns {@code true} when this is the first time {@code key} is
-     * seen (the caller should proceed), {@code false} when it has already been seen within the TTL.
+     * Records {@code key} as seen. Returns {@code true} when {@code key} has not been observed
+     * within the TTL (the caller should proceed), {@code false} when it is a redelivery. An
+     * accepted observation restarts the key's retention window, so after the TTL lapses only the
+     * first redelivery proceeds and the rest are still dropped.
      */
     @Override
     public boolean firstSeen(String key) {
@@ -68,7 +70,12 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
         if (prior == null) {
             return true;
         }
-        return now - prior > ttlMillis;
+        if (now - prior > ttlMillis) {
+            // Restart the retention window so only the first post-expiry redelivery proceeds.
+            seen.put(key, now);
+            return true;
+        }
+        return false;
     }
 
     /** Drops any entries older than {@link #ttlMillis} and bounds size to {@link #maxEntries}. */
