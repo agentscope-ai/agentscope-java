@@ -16,7 +16,9 @@
 package io.agentscope.extensions.channel.weixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -128,6 +130,137 @@ class WeixinLoginClientTest {
             assertTrue(observedQueries.get().contains("qrcode=qr-2"));
             assertTrue(observedQueries.get().contains("qrcode=qr-1"));
             assertEquals(first.pollingBaseUrl(), second.pollingBaseUrl());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void rejectsBlankVerificationCode() {
+        WeixinLoginClient client =
+                new WeixinLoginClient("http://127.0.0.1:1", Duration.ofSeconds(1));
+        WeixinLoginSession session = new WeixinLoginSession("qr-1", "http://127.0.0.1:1");
+
+        assertThrows(IllegalArgumentException.class, () -> client.verify(session, "  "));
+        assertThrows(IllegalArgumentException.class, () -> client.verify(session, null));
+    }
+
+    @Test
+    void verificationCodeTravelsWithTheStatusQuery() throws Exception {
+        AtomicReference<String> query = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange -> {
+                    query.set(exchange.getRequestURI().getQuery());
+                    write(
+                            exchange,
+                            "{\"status\":\"confirmed\",\"bot_token\":\"secret\","
+                                + "\"ilink_bot_id\":\"account-1\",\"ilink_user_id\":\"user-1\"}");
+                });
+        server.start();
+        try {
+            WeixinLoginClient client =
+                    new WeixinLoginClient(
+                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                            Duration.ofSeconds(3));
+            WeixinLoginSession session =
+                    new WeixinLoginSession(
+                            "qr 1", "http://127.0.0.1:" + server.getAddress().getPort());
+
+            WeixinLoginStep step = client.verify(session, " 123456 ");
+
+            assertTrue(query.get().contains("qrcode=qr+1"), query.get());
+            assertTrue(query.get().contains("verify_code=123456"), query.get());
+            assertEquals("confirmed", step.status());
+            assertEquals("account-1", step.accountId());
+            assertEquals("user-1", step.userId());
+            assertTrue(step.connected());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void surfacesTheVerificationChallenge() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange -> write(exchange, "{\"status\":\"need_verifycode\"}"));
+        server.start();
+        try {
+            WeixinLoginClient client =
+                    new WeixinLoginClient(
+                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                            Duration.ofSeconds(3));
+            WeixinLoginStep step =
+                    client.poll(
+                            new WeixinLoginSession(
+                                    "qr-1", "http://127.0.0.1:" + server.getAddress().getPort()));
+
+            assertTrue(step.requiresVerification());
+            assertFalse(step.connected());
+            assertFalse(step.alreadyConnected());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void rejectsAnUntrustedPollingRedirect() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange ->
+                        write(
+                                exchange,
+                                "{\"status\":\"scaned_but_redirect\",\"redirect_host\":"
+                                        + "\"https://evil.example.com\"}"));
+        server.start();
+        try {
+            WeixinLoginClient client =
+                    new WeixinLoginClient(
+                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                            Duration.ofSeconds(3));
+            WeixinLoginSession session =
+                    new WeixinLoginSession(
+                            "qr-1", "http://127.0.0.1:" + server.getAddress().getPort());
+
+            assertThrows(IllegalArgumentException.class, () -> client.poll(session));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void reportsProviderHttpFailuresAndMissingFields() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_bot_qrcode",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange -> {
+                    byte[] bytes = "boom".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(503, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            WeixinLoginClient client = new WeixinLoginClient(baseUrl, Duration.ofSeconds(3));
+
+            assertThrows(IllegalStateException.class, () -> client.start("3"));
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> client.poll(new WeixinLoginSession("qr-1", baseUrl)));
         } finally {
             server.stop(0);
         }

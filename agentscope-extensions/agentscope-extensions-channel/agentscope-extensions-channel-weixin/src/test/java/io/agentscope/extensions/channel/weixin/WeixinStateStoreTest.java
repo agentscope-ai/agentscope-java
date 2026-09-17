@@ -18,6 +18,7 @@ package io.agentscope.extensions.channel.weixin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Clock;
@@ -85,6 +86,50 @@ class WeixinStateStoreTest {
     }
 
     @Test
+    void readOnlyLookupsDoNotRetainAccounts() {
+        InMemoryWeixinStateStore store = new InMemoryWeixinStateStore();
+
+        assertEquals("", store.loadCursor("ghost"));
+        assertNull(store.loadContextToken("ghost", "peer"));
+        assertFalse(store.isLeaseCurrent("ghost", null));
+        store.releaseLease("ghost", null);
+
+        assertEquals(0, store.retainedAccounts(), "validation must not materialise accounts");
+    }
+
+    @Test
+    void forgetsAccountsThatHaveNoLeaseAndNoPendingWork() {
+        AtomicLong time = new AtomicLong(1000);
+        InMemoryWeixinStateStore store = new InMemoryWeixinStateStore(clockAt(time));
+        WeixinLease active = store.acquireLease("active", "holder", 60_000).orElseThrow();
+        WeixinLease idle = store.acquireLease("idle", "holder", 1000).orElseThrow();
+        store.acceptBatch("idle", idle, "cursor-idle", List.of());
+        assertEquals("cursor-idle", store.loadCursor("idle"));
+
+        time.addAndGet(2000);
+        store.acceptBatch("active", active, "cursor-active", List.of());
+
+        assertEquals("", store.loadCursor("idle"), "an idle account must be forgotten");
+        assertEquals("cursor-active", store.loadCursor("active"));
+    }
+
+    @Test
+    void keepsAccountsThatStillHoldPendingMessages() {
+        AtomicLong time = new AtomicLong(1000);
+        InMemoryWeixinStateStore store = new InMemoryWeixinStateStore(clockAt(time));
+        WeixinLease active = store.acquireLease("active", "holder", 60_000).orElseThrow();
+        WeixinLease pending = store.acquireLease("pending", "holder", 1000).orElseThrow();
+        store.acceptBatch(
+                "pending", pending, "cursor-pending", List.of(new WeixinInboxMessage("m1", "p")));
+
+        time.addAndGet(2000);
+        store.acceptBatch("active", active, "cursor-active", List.of());
+
+        assertEquals("cursor-pending", store.loadCursor("pending"), "pending work must be kept");
+        assertEquals(2, store.retainedAccounts());
+    }
+
+    @Test
     void releasedLeaseCannotBecomeValidAgainForTheSameHolder() {
         WeixinStateStore store = WeixinStateStore.inMemory();
         WeixinLease old = store.acquireLease("account", "holder", 60_000).orElseThrow();
@@ -95,5 +140,24 @@ class WeixinStateStoreTest {
         assertFalse(store.renewLease("account", old, 60_000));
         assertFalse(store.acceptBatch("account", old, "lost", List.of()));
         assertEquals("", store.loadCursor("account"));
+    }
+
+    private static Clock clockAt(AtomicLong millis) {
+        return new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return Instant.ofEpochMilli(millis.get());
+            }
+        };
     }
 }
