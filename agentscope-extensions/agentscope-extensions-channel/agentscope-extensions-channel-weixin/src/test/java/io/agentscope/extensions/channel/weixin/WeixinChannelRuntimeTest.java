@@ -67,6 +67,7 @@ class WeixinChannelRuntimeTest {
     private HttpServer server;
     private WeixinChannel channel;
     private final AtomicInteger providerStarts = new AtomicInteger();
+    private final AtomicInteger notifyStartFailures = new AtomicInteger();
     private final AtomicInteger polls = new AtomicInteger();
     private final AtomicInteger sends = new AtomicInteger();
     private final AtomicInteger dispatches = new AtomicInteger();
@@ -84,9 +85,17 @@ class WeixinChannelRuntimeTest {
                 exchange -> {
                     String path = exchange.getRequestURI().getPath();
                     String body = "{\"ret\":0}";
+                    int status = 200;
                     if (path.endsWith("getupdates")) {
                         JSON.readTree(exchange.getRequestBody());
                         polls.incrementAndGet();
+                        // A real getupdates blocks; answering instantly would spin the consumer
+                        // loop as fast as the CPU allows and starve the rest of the suite.
+                        try {
+                            Thread.sleep(25);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
                         body = updates.get();
                     } else if (path.endsWith("sendmessage")) {
                         sends.incrementAndGet();
@@ -94,11 +103,17 @@ class WeixinChannelRuntimeTest {
                         body = sendResponse;
                     } else {
                         exchange.getRequestBody().readAllBytes();
-                        if (path.endsWith("notifystart")) providerStarts.incrementAndGet();
+                        if (path.endsWith("notifystart")) {
+                            providerStarts.incrementAndGet();
+                            if (notifyStartFailures.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+                                status = 500;
+                                body = "{\"ret\":1,\"errcode\":1}";
+                            }
+                        }
                     }
                     byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
-                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.sendResponseHeaders(status, bytes.length);
                     exchange.getResponseBody().write(bytes);
                     exchange.close();
                 });
@@ -272,6 +287,36 @@ class WeixinChannelRuntimeTest {
     }
 
     @Test
+    void providerSessionStartIsRetriedAfterATransientFailure() throws Exception {
+        notifyStartFailures.set(2);
+        startChannel(
+                WeixinStateStore.inMemory(),
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onTransientFailure(String accountId, String reason) {
+                        transientFailures.add(reason);
+                    }
+                });
+
+        assertTrue(
+                waitFor(() -> providerStarts.get() >= 3),
+                "notifystart was not retried: attempts=" + providerStarts.get());
+        assertFalse(transientFailures.isEmpty(), "the failed startup must be reported");
+    }
+
+    @Test
+    void byteIdenticalMessagesWithoutIdsAreBothDispatched() throws Exception {
+        updates = () -> polls.get() <= 1 ? idlessDuplicateBatch() : EMPTY_BATCH;
+        startChannel(WeixinStateStore.inMemory(), WeixinRuntimeListener.noOp());
+
+        assertTrue(
+                waitFor(() -> dispatches.get() == 2),
+                "one of two identical id-less messages was dropped: " + dispatches.get());
+        assertTrue(waitFor(() -> sends.get() == 2), "replies");
+        assertEquals(2, dispatches.get());
+    }
+
+    @Test
     void listenerFailuresDoNotStopDispatch() throws Exception {
         updates = () -> batch(1, "peer-a");
         startChannel(
@@ -375,6 +420,18 @@ class WeixinChannelRuntimeTest {
                     .append("\"}}]}");
         }
         return json.append("]}").toString();
+    }
+
+    /** Two byte-identical messages, neither carrying a provider message_id. */
+    private static String idlessDuplicateBatch() {
+        String message =
+                "{\"message_type\":1,\"from_user_id\":\"peer-a\",\"context_token\":\"ctx-1\","
+                        + "\"item_list\":[{\"type\":1,\"text_item\":{\"text\":\"same\"}}]}";
+        return "{\"ret\":0,\"get_updates_buf\":\"cursor-dupe\",\"msgs\":["
+                + message
+                + ","
+                + message
+                + "]}";
     }
 
     private static String idlessBatch() {
