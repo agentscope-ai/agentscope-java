@@ -17,7 +17,9 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -35,16 +37,60 @@ import (
 // project team membership without coupling product schema to Team rows.
 type TeamContextLookup func(ctx context.Context, sessionID string) json.RawMessage
 
+// ManagedExecutionContextLookup returns private task execution context for a
+// managed session. It is exposed only through the internal resolve endpoint.
+type ManagedExecutionContextLookup func(ctx context.Context, sessionID string) json.RawMessage
+
+var (
+	// ErrManagedRuntimeFenceConflict means a runtime status patch is malformed or
+	// does not match the immutable fields of the named current Attempt.
+	ErrManagedRuntimeFenceConflict = errors.New("managed runtime fence mismatch")
+	// ErrManagedRuntimeFenceGone means the physical Attempt was failed,
+	// cancelled, requeued, or replaced and its data-plane turn must stop.
+	ErrManagedRuntimeFenceGone = errors.New("managed runtime Attempt is gone")
+)
+
+// ManagedRuntimeFence is captured when one physical managed turn is admitted.
+// Every status patch from that turn carries this exact tuple; callers must not
+// look up and adopt a newer session scope in a finally block.
+type ManagedRuntimeFence struct {
+	AgentTaskID        string `json:"agentTaskId,omitempty"`
+	AttemptID          string `json:"attemptId,omitempty"`
+	DispatchGeneration int64  `json:"dispatchGeneration,omitempty"`
+	TurnID             string `json:"turnId,omitempty"`
+}
+
+func (f ManagedRuntimeFence) Complete() bool {
+	return strings.TrimSpace(f.AgentTaskID) != "" && strings.TrimSpace(f.AttemptID) != "" &&
+		f.DispatchGeneration > 0 && strings.TrimSpace(f.TurnID) != ""
+}
+
+func (f ManagedRuntimeFence) Empty() bool {
+	return strings.TrimSpace(f.AgentTaskID) == "" && strings.TrimSpace(f.AttemptID) == "" &&
+		f.DispatchGeneration == 0 && strings.TrimSpace(f.TurnID) == ""
+}
+
+// ManagedRuntimeFenceValidator reports whether the product session is bound
+// to an AgentTask and verifies its current runtime-store fence. Personal chat
+// sessions return managed=false and continue to accept an empty fence.
+type ManagedRuntimeFenceValidator func(ctx context.Context, sessionID string,
+	fence ManagedRuntimeFence) (managed bool, err error)
+
 // TeamMemberActivityHook is invoked after a product session runtime status
 // patch succeeds. Used to mirror idle/running onto store-backed team members.
 type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
 
 type Server struct {
-	cfg                    Config
-	db                     *DB
-	vaultKey               []byte
-	teamContextLookup      TeamContextLookup
-	teamMemberActivityHook TeamMemberActivityHook
+	accountDisableGuard     func(context.Context, string) error
+	oauthHTTPClient         *http.Client // Optional transport override for in-process provider tests.
+	channelWork             *ChannelWorkRuntime
+	cfg                     Config
+	db                      *DB
+	vaultKey                []byte
+	teamContextLookup       TeamContextLookup
+	executionContextLookup  ManagedExecutionContextLookup
+	managedRuntimeValidator ManagedRuntimeFenceValidator
+	teamMemberActivityHook  TeamMemberActivityHook
 }
 
 // SetTeamContextLookup injects the runtime-store TeamContext lookup used by resolve.
@@ -52,6 +98,40 @@ func (s *Server) SetTeamContextLookup(fn TeamContextLookup) {
 	if s != nil {
 		s.teamContextLookup = fn
 	}
+}
+
+// SetManagedExecutionContextLookup injects the runtime-store lookup used to
+// materialize task-scoped MCP credentials in the data plane.
+func (s *Server) SetManagedExecutionContextLookup(fn ManagedExecutionContextLookup) {
+	if s != nil {
+		s.executionContextLookup = fn
+	}
+}
+
+// SetManagedRuntimeFenceValidator injects the runtime-store authority used to
+// fence product-session status projection from delayed physical turns.
+func (s *Server) SetManagedRuntimeFenceValidator(fn ManagedRuntimeFenceValidator) {
+	if s != nil {
+		s.managedRuntimeValidator = fn
+	}
+}
+
+// ValidateManagedRuntime verifies that a managed Agent can create an
+// executable session, including the otherwise easy-to-miss Environment.
+func (s *Server) ValidateManagedRuntime(ctx context.Context, ownerID, agentID string) error {
+	if s == nil {
+		return fmt.Errorf("managed control plane is unavailable")
+	}
+	if strings.TrimSpace(s.cfg.DataURL) == "" {
+		return fmt.Errorf("managed data plane URL is not configured")
+	}
+	if _, err := s.loadAgent(ctx, ownerID, agentID); err != nil {
+		return fmt.Errorf("managed Agent definition is unavailable")
+	}
+	if _, err := s.resolveDefaultEnvironmentID(ctx, ownerID, agentID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SetTeamMemberActivityHook injects the store-backed member phase sync used when
@@ -68,6 +148,9 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 	if len(cfg.JWTSecret) < 32 {
 		return nil, fmt.Errorf("jwt secret must be at least 32 characters")
 	}
+	if err := validateBootstrap(cfg); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("workspace root: %w", err)
 	}
@@ -80,7 +163,12 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
-	if cfg.SeedUsers {
+	if cfg.BootstrapAdmin != "" {
+		if err := bootstrapAdmin(ctx, db, cfg); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("bootstrap admin: %w", err)
+		}
+	} else if cfg.SeedUsers {
 		if err := seedUsers(ctx, db); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("seed users: %w", err)
@@ -104,7 +192,6 @@ func (s *Server) Middlewares() []gin.HandlerFunc {
 // Register mounts every product route onto the given router.
 func (s *Server) Register(r gin.IRouter) {
 	s.registerAuth(r)
-	s.registerAgents(r)
 	s.registerAgentExtras(r)
 	s.registerWorkspace(r)
 	s.registerWorkspaces(r)
@@ -115,6 +202,7 @@ func (s *Server) Register(r gin.IRouter) {
 	s.registerSessions(r)
 	s.registerMemory(r)
 	s.registerVaults(r)
+	s.registerOAuth(r)
 	s.registerDeployments(r)
 	s.registerFiles(r)
 	s.registerInternal(r)
@@ -124,6 +212,44 @@ func (s *Server) Register(r gin.IRouter) {
 // the same credential on the Kubernetes-native API.
 func (s *Server) VerifyToken(token string) (*Claims, error) {
 	return parseToken(s.cfg.JWTSecret, token)
+}
+
+// VerifyAccountToken also checks the live account, so deletion and platform-role
+// revocation take effect without waiting for a seven-day JWT to expire.
+func (s *Server) VerifyAccountToken(ctx context.Context, token string) (*Claims, error) {
+	claims, err := s.VerifyToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, fmt.Errorf("account store unavailable")
+	}
+	var username, roles string
+	var disabled bool
+	var authVersion int64
+	err = s.db.Pool.QueryRow(ctx, `SELECT username,roles_csv,disabled,auth_version FROM users WHERE user_id=$1`, claims.Subject).Scan(&username, &roles, &disabled, &authVersion)
+	if err != nil || disabled || claims.AccountVersion != authVersion || claims.ExpiresAt == nil || claims.IssuedAt == nil {
+		return nil, fmt.Errorf("account unavailable")
+	}
+	id := sessionFingerprint(token)
+	_, err = s.db.Pool.Exec(ctx, `INSERT INTO account_login_sessions(id,user_id,created_at,expires_at) SELECT $1,$2,$3,$4 FROM users WHERE user_id=$2 AND legacy_sessions_closed=false AND disabled=false AND auth_version=$5 ON CONFLICT DO NOTHING`, id, claims.Subject, claims.IssuedAt.Time, claims.ExpiresAt.Time, claims.AccountVersion)
+	if err != nil {
+		return nil, err
+	}
+	var revoked bool
+	if err = s.db.Pool.QueryRow(ctx, `SELECT revoked_at IS NOT NULL FROM account_login_sessions WHERE id=$1 AND user_id=$2`, id, claims.Subject).Scan(&revoked); err != nil || revoked {
+		return nil, fmt.Errorf("login session revoked")
+	}
+	if _, err = s.db.Pool.Exec(ctx, `UPDATE account_login_sessions SET last_seen_at=now() WHERE id=$1 AND last_seen_at<now()-interval '1 minute'`, id); err != nil {
+		return nil, err
+	}
+	claims.Username = username
+	claims.Roles = splitRoles(roles)
+	return claims, nil
+}
+
+func (s *Server) SetAccountDisableGuard(fn func(context.Context, string) error) {
+	s.accountDisableGuard = fn
 }
 
 // Close releases the database pool.

@@ -105,9 +105,6 @@ type DeclarativeSpec struct {
 	Skills *SkillsSpec `json:"skills,omitempty"`
 	// +optional
 	Subagents []SubagentSpec `json:"subagents,omitempty"`
-	// +optional
-	TeamTemplates []TeamTemplateRef `json:"teamTemplates,omitempty"`
-
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=1
@@ -194,23 +191,6 @@ type SubagentSpec struct {
 	// +kubebuilder:validation:Enum=isolated;shared
 	WorkspaceMode string `json:"workspaceMode,omitempty"`
 	URL           string `json:"url,omitempty"`
-}
-
-// TeamTemplateRef defines a team template for cross-agent collaboration.
-type TeamTemplateRef struct {
-	// +kubebuilder:validation:Required
-	Name           string               `json:"name"`
-	Description    string               `json:"description,omitempty"`
-	Members        []TeamTemplateMember `json:"members,omitempty"`
-	DynamicMembers *DynamicMembersSpec  `json:"dynamicMembers,omitempty"`
-	Config         *TeamConfig          `json:"config,omitempty"`
-}
-
-// TeamTemplateMember defines a member in a team template.
-type TeamTemplateMember struct {
-	Role     string `json:"role"`
-	AgentRef string `json:"agentRef"`
-	Prompt   string `json:"prompt,omitempty"`
 }
 
 // AdvancedConfig holds advanced agent configuration.

@@ -1,4 +1,6 @@
-# 流式输出（Streaming）
+---
+title: 流式输出
+---
 
 `Agent.stream()` 返回一条 `Flux<Event>` 响应式事件流，让调用方可以**实时**看到每一步推理、工具结果和最终回复，而不必等 `call()` 返回整体 `Msg`。
 
@@ -143,7 +145,7 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message) {
 }
 ```
 
-如果使用 `HarnessAgent` 并需要向前端传递子 agent 来源信息，可将 `event.getSource()` 一并序列化（详见 [Harness 子 Agent 流式](../harness/streaming.md)）。
+如果使用 `HarnessAgent` 并需要向前端传递子 agent 来源信息，可将 `event.getSource()` 一并序列化（详见 [Harness 子 Agent 流式](/v1/zh/docs/harness/streaming)）。
 
 ---
 
@@ -172,6 +174,6 @@ StreamOptions options = StreamOptions.builder()
 
 ## 相关文档
 
-- [Hook](./hook.md) — 在推理 / 工具调用各阶段插入自定义逻辑
-- [模型（Model）](./model.md) — 底层流式模型配置
-- [Harness 子 Agent 流式](../harness/streaming.md) — HarnessAgent `agent_spawn` / `agent_send` 触发的子 agent 事件转发与 `EventSource` 字段
+- [Hook](/v1/zh/docs/task/hook) — 在推理 / 工具调用各阶段插入自定义逻辑
+- [模型（Model）](/v1/zh/docs/task/model) — 底层流式模型配置
+- [Harness 子 Agent 流式](/v1/zh/docs/harness/streaming) — HarnessAgent `agent_spawn` / `agent_send` 触发的子 agent 事件转发与 `EventSource` 字段

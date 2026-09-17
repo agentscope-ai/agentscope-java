@@ -1,4 +1,6 @@
-# Multi-Agent Overview
+---
+title: Overview
+---
 
 Multi-agent systems coordinate specialized agents or components to handle complex workflows. Not every complex task needs multiple agents—a single agent with the right tools and prompt can often suffice. This page summarizes when multi-agent patterns help and which patterns the project supports.
 
@@ -19,23 +21,23 @@ The project supports the following multi-agent patterns. Each has a dedicated pa
 
 | Pattern | What it does | When to use it |
 |--------|----------------|-----------------|
-| **[Pipeline](pipeline.md)** | Runs agents in a fixed flow: **sequential** (A → B → C), **parallel** (same input to several agents, then merge), or **loop** (repeat a sub-pipeline until a condition). Built with Spring AI Alibaba flow agents and AgentScopeAgent. | You have a clear pipeline (e.g. NL → SQL → score, or one topic → multiple research angles → merged report). |
-| **[Custom Workflow](workflow.md)** | You define the graph with **StateGraph**: sequential, conditional, or mixed **deterministic + agentic** steps (e.g. rewrite → retrieve → agent, or list_tables → get_schema → generate_query). Nodes can be functions or AgentScopeAgent. | Standard patterns don’t fit; you need multi-stage flow with explicit control or mix of non-LLM and LLM/agent steps. |
-| **[Routing](routing.md)** | A **router** classifies the input and sends it to one or more specialist agents (e.g. GitHub, Notion, Slack); results are merged into one answer. | You have distinct verticals (knowledge domains) and want classify → specialists → synthesize in one shot or with a graph. |
-| **[Skills](skills.md)** | **Progressive disclosure**: one agent sees skill names/descriptions and loads full skill content (e.g. `SKILL.md`) on demand via a tool (`read_skill`). No separate sub-agent process. | You want one agent with many specializations and need to avoid loading all domain text into context at once. |
-| **[Subagents](subagent.md)** | A central **orchestrator** delegates work to **sub-agents** via tools (e.g. Task / TaskOutput). Sub-agents can be defined in Markdown or in code. The orchestrator holds the conversation; sub-agents are stateless per call. | You have multiple domains (e.g. codebase, web, dependencies), want one coordinator, and don’t need sub-agents to talk directly to the user. |
-| **[Supervisor](supervisor.md)** | A central **supervisor** agent calls specialized agents as **tools** (one tool per specialist, e.g. `schedule_event`, `manage_email`). Specialists are stateless; only the supervisor’s reply is shown to the user. | You have clear domains (e.g. calendar, email) and want a single entry point that routes and combines specialist results. |
-| **[Handoffs](handoffs.md)** | **State-driven routing**: tools update a state variable (e.g. `active_agent`); a graph uses it to route to different agent nodes. Each agent can “hand off” to another via a tool call. | You need role-based or sequential handoffs (e.g. sales ↔ support) where the active agent changes during the conversation. |
-| **[Multi-Agent Debate](multiagent-debate.md)** | **Debaters** exchange arguments via MsgHub; a **moderator** evaluates with structured output and decides when the debate is finished. | You want multiple perspectives (e.g. reasoning tasks) and a single decision when to stop and what the answer is. |
+| **[Pipeline](/v1/en/docs/multi-agent/pipeline)** | Runs agents in a fixed flow: **sequential** (A → B → C), **parallel** (same input to several agents, then merge), or **loop** (repeat a sub-pipeline until a condition). Built with Spring AI Alibaba flow agents and AgentScopeAgent. | You have a clear pipeline (e.g. NL → SQL → score, or one topic → multiple research angles → merged report). |
+| **[Custom Workflow](/v1/en/docs/multi-agent/workflow)** | You define the graph with **StateGraph**: sequential, conditional, or mixed **deterministic + agentic** steps (e.g. rewrite → retrieve → agent, or list_tables → get_schema → generate_query). Nodes can be functions or AgentScopeAgent. | Standard patterns don’t fit; you need multi-stage flow with explicit control or mix of non-LLM and LLM/agent steps. |
+| **[Routing](/v1/en/docs/multi-agent/routing)** | A **router** classifies the input and sends it to one or more specialist agents (e.g. GitHub, Notion, Slack); results are merged into one answer. | You have distinct verticals (knowledge domains) and want classify → specialists → synthesize in one shot or with a graph. |
+| **[Skills](/v1/en/docs/multi-agent/skills)** | **Progressive disclosure**: one agent sees skill names/descriptions and loads full skill content (e.g. `SKILL.md`) on demand via a tool (`read_skill`). No separate sub-agent process. | You want one agent with many specializations and need to avoid loading all domain text into context at once. |
+| **[Subagents](/v1/en/docs/multi-agent/subagent)** | A central **orchestrator** delegates work to **sub-agents** via tools (e.g. Task / TaskOutput). Sub-agents can be defined in Markdown or in code. The orchestrator holds the conversation; sub-agents are stateless per call. | You have multiple domains (e.g. codebase, web, dependencies), want one coordinator, and don’t need sub-agents to talk directly to the user. |
+| **[Supervisor](/v1/en/docs/multi-agent/supervisor)** | A central **supervisor** agent calls specialized agents as **tools** (one tool per specialist, e.g. `schedule_event`, `manage_email`). Specialists are stateless; only the supervisor’s reply is shown to the user. | You have clear domains (e.g. calendar, email) and want a single entry point that routes and combines specialist results. |
+| **[Handoffs](/v1/en/docs/multi-agent/handoffs)** | **State-driven routing**: tools update a state variable (e.g. `active_agent`); a graph uses it to route to different agent nodes. Each agent can “hand off” to another via a tool call. | You need role-based or sequential handoffs (e.g. sales ↔ support) where the active agent changes during the conversation. |
+| **[Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate)** | **Debaters** exchange arguments via MsgHub; a **moderator** evaluates with structured output and decides when the debate is finished. | You want multiple perspectives (e.g. reasoning tasks) and a single decision when to stop and what the answer is. |
 
 ## Choosing a pattern
 
 At a high level, multi-agent patterns fall into **workflow** and **conversational** modes:
 
-- **Workflow mode**: [Pipeline](pipeline.md), [Routing](routing.md), [Handoffs](handoffs.md), [Custom Workflow](workflow.md). The flow moves between agents or nodes; each node may interact with the user.
-- **Conversational mode**: [Supervisor](supervisor.md), [Subagents](subagent.md), [Skills](skills.md). Agent decisions happen in a continuous dialogue context; usually only the main agent interacts with the user and returns the final result.
+- **Workflow mode**: [Pipeline](/v1/en/docs/multi-agent/pipeline), [Routing](/v1/en/docs/multi-agent/routing), [Handoffs](/v1/en/docs/multi-agent/handoffs), [Custom Workflow](/v1/en/docs/multi-agent/workflow). The flow moves between agents or nodes; each node may interact with the user.
+- **Conversational mode**: [Supervisor](/v1/en/docs/multi-agent/supervisor), [Subagents](/v1/en/docs/multi-agent/subagent), [Skills](/v1/en/docs/multi-agent/skills). Agent decisions happen in a continuous dialogue context; usually only the main agent interacts with the user and returns the final result.
 
-Other patterns (e.g. [MsgHub](../task/msghub.md), [Agent as Tool](../task/agent-as-tool.md), [Handoffs](handoffs.md), [Multi-Agent Debate](multiagent-debate.md)) can be combined with either mode as needed.
+Other patterns (e.g. [MsgHub](/v1/en/docs/task/msghub), [Agent as Tool](/v1/en/docs/task/agent-as-tool), [Handoffs](/v1/en/docs/multi-agent/handoffs), [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate)) can be combined with either mode as needed.
 
 ### Routing vs Supervisor
 
@@ -59,16 +61,16 @@ Use this as a quick guide; details and tradeoffs are on each pattern’s page.
 
 | If you need… | Consider |
 |--------------|----------|
-| A fixed pipeline (sequence, parallel, or loop) | [Pipeline](pipeline.md) |
-| Your own graph (deterministic + agentic steps, multi-stage) | [Custom Workflow](workflow.md) |
-| One classification step then specialist(s) and merge | [Routing](routing.md) |
-| Several agents seeing each other’s messages | [MsgHub](../task/msghub.md) |
-| One agent to call another as a tool (with optional session) | [Agent as Tool](../task/agent-as-tool.md) |
-| One agent, many specializations, load context on demand | [Skills](skills.md) |
-| One orchestrator dispatching to many sub-agents via Task tools | [Subagents](subagent.md) |
-| One supervisor with one tool per specialist (e.g. calendar, email) | [Supervisor](supervisor.md) |
-| Control to move between agents (e.g. sales ↔ support) by tool | [Handoffs](handoffs.md) |
-| Multiple debaters + a moderator with a clear stopping rule | [Multi-Agent Debate](multiagent-debate.md) |
+| A fixed pipeline (sequence, parallel, or loop) | [Pipeline](/v1/en/docs/multi-agent/pipeline) |
+| Your own graph (deterministic + agentic steps, multi-stage) | [Custom Workflow](/v1/en/docs/multi-agent/workflow) |
+| One classification step then specialist(s) and merge | [Routing](/v1/en/docs/multi-agent/routing) |
+| Several agents seeing each other’s messages | [MsgHub](/v1/en/docs/task/msghub) |
+| One agent to call another as a tool (with optional session) | [Agent as Tool](/v1/en/docs/task/agent-as-tool) |
+| One agent, many specializations, load context on demand | [Skills](/v1/en/docs/multi-agent/skills) |
+| One orchestrator dispatching to many sub-agents via Task tools | [Subagents](/v1/en/docs/multi-agent/subagent) |
+| One supervisor with one tool per specialist (e.g. calendar, email) | [Supervisor](/v1/en/docs/multi-agent/supervisor) |
+| Control to move between agents (e.g. sales ↔ support) by tool | [Handoffs](/v1/en/docs/multi-agent/handoffs) |
+| Multiple debaters + a moderator with a clear stopping rule | [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate) |
 
 **Combining patterns**: You can mix them. For example, a supervisor can use Agent as Tool for specialists; a subagent orchestrator can use Skills for on-demand context; a graph can use Handoffs for one part and Routing for another. Choose the pattern that best fits each part of your workflow.
 

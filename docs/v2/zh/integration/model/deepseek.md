@@ -1,4 +1,6 @@
-# DeepSeek 模型
+---
+title: DeepSeek
+---
 
 `agentscope-extensions-model-openai` 通过 OpenAI 兼容模型栈提供 DeepSeek 的一等支持。引入 OpenAI 模型扩展模块后，可以通过 `ModelRegistry` 使用 `deepseek:<model>`。
 

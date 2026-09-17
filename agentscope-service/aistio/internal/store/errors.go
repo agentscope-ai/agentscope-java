@@ -21,6 +21,10 @@ var (
 	ErrNotFound = errors.New("store: not found")
 
 	// ErrConflict is returned on optimistic-lock / unique-constraint conflicts
-	// (e.g. TeamTask.Claim with a stale expectedVersion).
+	// (e.g. AgentTask claim with a stale expectedVersion).
 	ErrConflict = errors.New("store: conflict")
+
+	// ErrForbidden is returned when a machine identity cannot claim the
+	// requested logical Agent or crosses a tenant/namespace boundary.
+	ErrForbidden = errors.New("store: forbidden")
 )

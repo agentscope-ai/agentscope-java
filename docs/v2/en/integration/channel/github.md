@@ -1,4 +1,6 @@
-# GitHub Channel
+---
+title: GitHub Channel
+---
 
 `agentscope-extensions-channel-github` connects your Agent to GitHub issue and PR comment threads. When someone comments on an issue or pull request, the Agent replies as a new comment.
 

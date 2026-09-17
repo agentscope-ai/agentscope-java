@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/spring-ai-alibaba/aistio/internal/asdp"
@@ -35,8 +36,13 @@ import (
 // Config holds the connector configuration.
 type Config struct {
 	ControlPlaneAddr string
-	AgentName        string
-	InstanceID       string
+	AuthToken        string
+	AgentID          string
+	AgentKey         string
+	BindingID        string
+	InstanceKey      string
+	Generation       int64
+	Tenant           string
 	Namespace        string
 	Runtime          string
 	SDKVersion       string
@@ -57,6 +63,9 @@ type Config struct {
 
 	// OnSessionCommand is called when the control plane sends a session command.
 	OnSessionCommand func(sessionID string, command string, params []byte)
+
+	// OnExecutionAttempt receives a fenced dispatch or cancel command.
+	OnExecutionAttempt func(command *asdp.ExecutionAttemptCommand)
 }
 
 // Connector manages the gRPC connection to the control plane.
@@ -77,6 +86,12 @@ type Connector struct {
 
 // New creates a new Connector.
 func New(cfg Config) *Connector {
+	if cfg.Tenant == "" {
+		cfg.Tenant = "default"
+	}
+	if cfg.Namespace == "" {
+		cfg.Namespace = "default"
+	}
 	if cfg.SessionReportInterval == 0 {
 		cfg.SessionReportInterval = 10 * time.Second
 	}
@@ -122,6 +137,9 @@ func (c *Connector) Start(ctx context.Context) error {
 
 func (c *Connector) connectAndRun(ctx context.Context) error {
 	logger := log.Log.WithName("connector")
+	if c.cfg.AgentID == "" || c.cfg.AgentKey == "" || c.cfg.BindingID == "" || c.cfg.InstanceKey == "" || c.cfg.Generation <= 0 {
+		return fmt.Errorf("agentId, agentKey, bindingId, instanceKey, and a positive generation are required")
+	}
 
 	creds, err := c.dialCredentials()
 	if err != nil {
@@ -139,6 +157,9 @@ func (c *Connector) connectAndRun(ctx context.Context) error {
 	// unblocks and the connection is retried.
 	runCtx, runCancel := context.WithCancel(ctx)
 	defer runCancel()
+	if c.cfg.AuthToken != "" {
+		runCtx = metadata.AppendToOutgoingContext(runCtx, "authorization", "Bearer "+c.cfg.AuthToken)
+	}
 
 	client := asdp.NewAgentDataPlaneServiceClient(conn)
 	stream, err := client.Connect(runCtx)
@@ -177,7 +198,8 @@ func (c *Connector) connectAndRun(ctx context.Context) error {
 	}
 	logger.Info("connected to control plane",
 		"cpVersion", ack.ControlPlaneVersion,
-		"agent", c.cfg.AgentName,
+		"agentId", c.cfg.AgentID,
+		"agentKey", c.cfg.AgentKey,
 	)
 
 	// gRPC client streams are NOT safe for concurrent Send. Funnel every
@@ -310,8 +332,12 @@ func (c *Connector) handleDownstream(ctx context.Context, sendCh chan<- *asdp.Up
 			},
 		})
 
-	case *asdp.Downstream_TeamEvent:
-		logger.V(1).Info("team event received", "team", p.TeamEvent.TeamId, "type", p.TeamEvent.EventType)
+	case *asdp.Downstream_ExecutionAttempt:
+		logger.V(1).Info("execution attempt command received", "attemptId", p.ExecutionAttempt.AttemptId,
+			"agentTaskId", p.ExecutionAttempt.AgentTaskId, "generation", p.ExecutionAttempt.Generation)
+		if c.cfg.OnExecutionAttempt != nil {
+			c.cfg.OnExecutionAttempt(p.ExecutionAttempt)
+		}
 	}
 }
 
@@ -413,9 +439,13 @@ func (c *Connector) Stop() {
 
 func (c *Connector) buildMeta() *asdp.UpstreamMeta {
 	return &asdp.UpstreamMeta{
-		AgentName:  c.cfg.AgentName,
-		InstanceId: c.cfg.InstanceID,
-		Namespace:  c.cfg.Namespace,
-		Timestamp:  time.Now().Unix(),
+		AgentId:     c.cfg.AgentID,
+		AgentKey:    c.cfg.AgentKey,
+		BindingId:   c.cfg.BindingID,
+		InstanceKey: c.cfg.InstanceKey,
+		Generation:  c.cfg.Generation,
+		Tenant:      c.cfg.Tenant,
+		Namespace:   c.cfg.Namespace,
+		Timestamp:   time.Now().Unix(),
 	}
 }

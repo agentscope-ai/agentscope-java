@@ -16,6 +16,7 @@
 package io.agentscope.builder.web.managed;
 
 import io.agentscope.builder.control.ControlPlaneClient;
+import io.agentscope.builder.control.ControlPlaneClient.ManagedExecutionScope;
 import io.agentscope.builder.control.SessionResolveResult;
 import io.agentscope.builder.web.managed.service.ManagedJsonHelper;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
@@ -94,6 +95,16 @@ public class DataSessionService {
     /** Updates session status and optional stop reason metadata via the control plane. */
     public ManagedSessionDto updateStatus(
             String ownerId, String sessionId, String status, Map<String, Object> stopReason) {
+        return updateStatus(ownerId, sessionId, status, stopReason, null);
+    }
+
+    /** Updates status using the immutable fence of the physical turn that produced it. */
+    public ManagedSessionDto updateStatus(
+            String ownerId,
+            String sessionId,
+            String status,
+            Map<String, Object> stopReason,
+            ManagedExecutionScope scope) {
         if (SessionStatuses.isLifecycleStatus(status)
                 && !SessionStatuses.TERMINATED.equals(status)) {
             throw new ResponseStatusException(
@@ -101,13 +112,20 @@ public class DataSessionService {
                     "Lifecycle status '" + status + "' is owned by the control plane");
         }
         ManagedSessionDto current = get(ownerId, sessionId);
-        controlPlaneClient.patchSessionRuntime(sessionId, status, stopReason, ownerId);
+        controlPlaneClient.patchSessionRuntime(sessionId, status, stopReason, ownerId, scope);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", status);
         if (stopReason != null) {
             payload.put("stopReason", stopReason);
         }
-        eventLog.append(sessionId, "session.status_" + status, payload);
+        SessionEventDto statusEvent =
+                scope == null
+                        ? eventLog.append(sessionId, "session.status_" + status, payload)
+                        : eventLog.appendLocal(
+                                sessionId, "session.status_" + status, payload, null);
+        if (scope != null) {
+            controlPlaneClient.appendSessionEvent(statusEvent, scope);
+        }
         long now = System.currentTimeMillis();
         return new ManagedSessionDto(
                 current.id(),

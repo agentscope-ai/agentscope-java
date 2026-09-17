@@ -1,0 +1,64 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Required: the registry namespace from your release manifest.
+imageRepository: ""
+# Empty uses Chart.appVersion; release packaging sets appVersion.
+imageTag: ""
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+# Pre-create a Secret using deploy/kubernetes.env.example. Never put credentials in values.
+existingSecret: ""
+# PostgreSQL is operated separately; create cp, rt, dp schemas before installing.
+# This Chart runs standalone aistiod: no Kubernetes reconcilers or ASDP gRPC.
+allowLocalEnvironment: false
+publicURL: http://localhost:18080
+service:
+  type: ClusterIP
+  port: 8080
+persistence:
+  workspaces:
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteMany]
+    size: 10Gi
+  artifacts:
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 10Gi
+control:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+dataplane:
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+scheduler:
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {memory: 1Gi}
+gateway:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tls: []
+nodeSelector: {}
+tolerations: []

@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: 'The Second Half of Coding Agents: From Personal Efficiency to Org-Level Engineering'
 ---
-
-# Coding Agent: The Second Half — From Personal Productivity to Organizational Engineering Systems
 
 Developers still hand-writing code the old-fashioned way are practically training to become intangible-cultural-heritage inheritors; the vast majority are already using Coding Agents like Claude Code and Cursor. The direction is right, but the scenario is different, so the solution is different too—installing an AI assistant locally for personal productivity and building an AI-driven engineering collaboration system inside an organization are two entirely different dimensions. The former already has mature products; the latter is just getting started. This post is about the latter.
 
@@ -207,4 +205,4 @@ The first half of the Coding Agent era was about personal productivity—smarter
 
 The codingagent example mentioned in this post is a complete and readable sample; I recommend cloning it, running it once, and then reading the source code—it maps all the engineering problems discussed here to real code.
 
-Dig deeper: [Harness Architecture](../docs/harness/architecture.md) · [Workspace](../docs/harness/workspace.md) · [Sandbox](../docs/harness/sandbox.md) · [Context Compaction](../docs/harness/compaction.md) · [Subagent](../docs/harness/subagent.md) · [Skill](../docs/harness/skill.md) · [Plan Mode](../docs/harness/plan-mode.md)
+Dig deeper: [Harness Architecture](/v2/en/docs/harness/architecture) · [Workspace](/v2/en/docs/harness/workspace) · [Sandbox](/v2/en/docs/harness/sandbox) · [Context Compaction](/v2/en/docs/harness/compaction) · [Subagent](/v2/en/docs/harness/subagent) · [Skill](/v2/en/docs/harness/skill) · [Plan Mode](/v2/en/docs/harness/plan-mode)
