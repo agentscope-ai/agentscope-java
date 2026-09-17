@@ -16,6 +16,7 @@
 package io.agentscope.extensions.channel.weixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -103,6 +104,41 @@ class WeixinOutboundClientTest {
                                                     "ctx-1")
                                             .block());
             assertTrue(error.getMessage().contains("-14"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void unparseableProviderBodiesDoNotEchoTheirContent() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/getupdates",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] bytes =
+                            "{\"get_updates_buf\":\"cursor\",\"msgs\":[{\"text\":\"secret-payload\""
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            WeixinOutboundClient client =
+                    new WeixinOutboundClient(
+                            WeixinChannelProperties.from(
+                                    "test",
+                                    Map.of(
+                                            "baseUrl",
+                                            "http://127.0.0.1:" + server.getAddress().getPort())),
+                            WeixinCredentialProvider.fixed("test-token"));
+
+            IllegalStateException error =
+                    assertThrows(IllegalStateException.class, () -> client.updates(""));
+
+            assertTrue(error.getMessage().contains("unparseable"), error.getMessage());
+            assertFalse(error.getMessage().contains("secret-payload"), error.getMessage());
         } finally {
             server.stop(0);
         }

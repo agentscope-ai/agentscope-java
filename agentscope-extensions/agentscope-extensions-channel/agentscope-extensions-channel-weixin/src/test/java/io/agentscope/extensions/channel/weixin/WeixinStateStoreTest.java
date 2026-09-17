@@ -98,19 +98,50 @@ class WeixinStateStoreTest {
     }
 
     @Test
-    void forgetsAccountsThatHaveNoLeaseAndNoPendingWork() {
+    void keepsTheCursorWhenAnAccountGoesIdle() {
         AtomicLong time = new AtomicLong(1000);
         InMemoryWeixinStateStore store = new InMemoryWeixinStateStore(clockAt(time));
         WeixinLease active = store.acquireLease("active", "holder", 60_000).orElseThrow();
         WeixinLease idle = store.acquireLease("idle", "holder", 1000).orElseThrow();
         store.acceptBatch("idle", idle, "cursor-idle", List.of());
-        assertEquals("cursor-idle", store.loadCursor("idle"));
 
         time.addAndGet(2000);
         store.acceptBatch("active", active, "cursor-active", List.of());
 
-        assertEquals("", store.loadCursor("idle"), "an idle account must be forgotten");
+        assertEquals(
+                "cursor-idle",
+                store.loadCursor("idle"),
+                "the cursor is the consumer position and must survive idleness");
         assertEquals("cursor-active", store.loadCursor("active"));
+    }
+
+    @Test
+    void forgetsAccountsThatNeverHeldState() {
+        AtomicLong time = new AtomicLong(1000);
+        InMemoryWeixinStateStore store = new InMemoryWeixinStateStore(clockAt(time));
+        WeixinLease active = store.acquireLease("active", "holder", 60_000).orElseThrow();
+        WeixinLease seen = store.acquireLease("seen-once", "holder", 1000).orElseThrow();
+        store.releaseLease("seen-once", seen);
+        assertEquals(2, store.retainedAccounts());
+
+        time.addAndGet(2000);
+        store.acceptBatch("active", active, "cursor-active", List.of());
+
+        assertEquals(1, store.retainedAccounts(), "a stateless account must not be retained");
+        assertEquals("", store.loadCursor("seen-once"));
+    }
+
+    @Test
+    void removeAccountDropsTheCursor() {
+        InMemoryWeixinStateStore store = new InMemoryWeixinStateStore();
+        WeixinLease lease = store.acquireLease("retired", "holder", 60_000).orElseThrow();
+        store.acceptBatch("retired", lease, "cursor", List.of());
+        assertEquals("cursor", store.loadCursor("retired"));
+
+        store.removeAccount("retired");
+
+        assertEquals(0, store.retainedAccounts());
+        assertEquals("", store.loadCursor("retired"));
     }
 
     @Test

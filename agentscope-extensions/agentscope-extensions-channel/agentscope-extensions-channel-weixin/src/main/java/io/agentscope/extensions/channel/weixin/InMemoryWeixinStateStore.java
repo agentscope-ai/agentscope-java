@@ -33,9 +33,12 @@ import java.util.UUID;
  * WeixinStateStore} is what makes restart recovery and horizontal scaling work; see the module
  * README.
  *
- * <p>Accounts whose lease expired and whose inbox is empty are forgotten opportunistically
- * during {@link #acceptBatch}, and completed message tombstones expire after {@link #RETENTION_MS},
- * so a long-running process does not accumulate state for accounts it no longer serves.
+ * <p>Completed message tombstones expire after {@link #RETENTION_MS}, and during {@link
+ * #acceptBatch} the store forgets accounts that hold nothing at all (no cursor, no peer context,
+ * no inbox, no live lease) — for example ids seen only while validating a request. An account
+ * that has actually consumed a message keeps its cursor and peer context until the host retires
+ * it with {@link #removeAccount}; dropping them would make the consumer replay the provider
+ * backlog from the beginning.
  */
 final class InMemoryWeixinStateStore implements WeixinStateStore {
     private static final long RETENTION_MS = Duration.ofDays(7).toMillis();
@@ -59,6 +62,13 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
     /** Number of accounts currently retained; used by tests and diagnostics. */
     int retainedAccounts() {
         return accounts.size();
+    }
+
+    @Override
+    public synchronized void removeAccount(String accountId) {
+        if (accountId == null || accountId.isBlank())
+            throw new IllegalArgumentException("accountId is required");
+        accounts.remove(accountId);
     }
 
     /** Looks up an account without creating one; validation paths must use this. */
@@ -184,8 +194,11 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
     }
 
     /**
-     * Expires tombstones in every account and forgets accounts that went idle. Called on each
-     * accepted batch, so the cost is proportional to the accounts seen while this process runs.
+     * Expires tombstones in every account and forgets accounts that hold no state at all. Called on
+     * each accepted batch, so the cost is proportional to the accounts seen while this process runs.
+     *
+     * <p>An account with a cursor or peer context is never dropped here: that state is the
+     * consumer's position, and forgetting it would replay the provider backlog.
      */
     private void prune(String activeAccountId) {
         long now = clock.millis();
@@ -197,6 +210,8 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
                         entry ->
                                 !entry.getKey().equals(activeAccountId)
                                         && entry.getValue().expiresAt <= now
+                                        && entry.getValue().cursor.isEmpty()
+                                        && entry.getValue().contexts.isEmpty()
                                         && entry.getValue().inbox.isEmpty());
     }
 

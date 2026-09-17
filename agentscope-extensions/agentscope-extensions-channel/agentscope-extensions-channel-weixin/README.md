@@ -44,7 +44,11 @@ Managed hosts should construct the Channel with `WeixinChannel.create(...)` and 
 interfaces do not assume where credentials or state are stored; the module ships no Redis or JDBC
 adapter, so a host that needs restart recovery and horizontal scaling implements the store
 contract itself. `InMemoryWeixinStateStore` is the reference implementation of that contract and
-evicts idle accounts, but it is single-JVM state.
+is single-JVM state: it forgets accounts that never held anything (ids seen only while validating
+a request) and expires completed message tombstones after seven days, but an account that has
+actually consumed a message keeps its cursor and peer context until the host retires it with
+`removeAccount(accountId)`. Dropping that state automatically would make the consumer replay the
+provider backlog from the beginning.
 
 The Channel never writes credentials to the local filesystem.
 
@@ -72,6 +76,16 @@ Pending messages remain until successfully processed. Context tokens are retaine
 Custom stores must implement the entire state contract; cursor-only adapters and default
 successful no-op implementations are no longer supported. Runtime listeners can use
 `onLeaseAcquired` to attach the lease generation to host-specific status reports.
+
+### Login transport
+
+The QR-login flow follows the provider protocol: `get_bot_qrcode` is a POST, while
+`get_qrcode_status` is a GET whose `qrcode` — and, when the provider asks for one, `verify_code`
+— travel as query parameters. The status URL is therefore a credential: treat it as a secret and
+do not enable URI-level request logging (provider access logs, reverse proxies, or
+`jdk.httpclient` debug logging) for this client. The module itself never logs a request URI or a
+response body: provider failures are reported by status code, parse failures by line and column,
+and every warning goes through `safeMessage(...)`, which reduces a failure to its exception type.
 
 `WeixinLoginClient` is stateless. `start(...)` returns a one-time `WeixinLoginChallenge` containing
 the QR image and a portable `WeixinLoginSession`; every `poll(...)` or `verify(...)` call returns a
