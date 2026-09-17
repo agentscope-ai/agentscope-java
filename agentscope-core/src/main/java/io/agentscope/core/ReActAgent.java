@@ -4275,8 +4275,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (newState == null && behavior == null) {
                     continue;
                 }
-                ToolUseBlock replacement =
-                        newState == null ? toolUse : toolUse.withState(newState);
+                ToolUseBlock replacement = newState == null ? toolUse : toolUse.withState(newState);
                 if (behavior != null) {
                     Map<String, Object> metadata = new HashMap<>(replacement.getMetadata());
                     metadata.put(ToolUseBlock.METADATA_PERMISSION_BEHAVIOR, behavior.name());
