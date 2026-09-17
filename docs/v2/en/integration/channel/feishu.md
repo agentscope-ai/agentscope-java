@@ -68,3 +68,30 @@ When `encryptKey` is configured, the callback body arrives as `{"encrypt":"<base
 **Inbound:** `FeishuCallbackController` → optional decryption → URL verification check → event_id dedup → `FeishuInboundMapper` (text messages only in MVP) → bot-loop guard → Gateway.
 
 **Outbound:** `FeishuOutboundClient` sends replies via `POST /open-apis/im/v1/messages` with a `tenant_access_token` from `FeishuAccessTokenProvider`. Tokens are cached and proactively refreshed at ~80% of TTL.
+
+## Multi-tenant deployments
+
+When channel credentials are runtime data — one Feishu app per tenant, added, rotated and removed while the process serves traffic — wire the callback controller with a `FeishuCredentialResolver` instead of registering one channel per tenant:
+
+```java
+@Bean
+FeishuTenantChannelManager feishuTenantChannels(TenantRepository tenantRepository, Gateway gateway) {
+    return new FeishuTenantChannelManager(
+        tenantKey -> tenantRepository.findByKey(tenantKey)   // application-owned lookup
+            .map(row -> FeishuChannelProperties.from(tenantKey, row.asPropertiesMap())),
+        ChannelConfig.of("feishu", "main"),
+        gateway);
+}
+// The component-scanned FeishuCallbackController injects this bean; no controller bean is needed.
+```
+
+The `{tenantKey}` path segment of each callback resolves to credentials, and the tenant's channel is materialized on first use. The resolver is consulted on every callback and the channel's credentials are refreshed in place, so a rotation takes effect on the next request without replacing the channel — the tenant keeps its sessions and bot-loop guard. Refresh is grouped by what the credentials feed: rotating only the encrypt key or the verification token keeps the cached tenant access token, while rotating the app secret starts a credential generation that mints its own — each generation gets a token store of its own, so a request still in flight on the previous generation cannot leave its token behind for the new one.
+
+The tenant key doubles as the channel id: conversations and bot-loop guards are namespaced per tenant, so two tenants whose user ids collide do not share sessions. Per-tenant agent routing is expressed with `channel`-tier bindings in the shared `ChannelConfig`.
+
+Notes:
+
+- An empty resolve result means "no such tenant" and the callback is rejected; let lookup failures throw, so they surface as a failed callback and the platform retries.
+- `FeishuTenantChannelManager.evict(tenantKey)` releases a deleted tenant's channel and token cache.
+- Materialized channels are owned by the manager: they are not registered in `FeishuChannelRegistry` or in a harness `ChannelManager`, so proactive delivery through `ChannelManager#deliver` does not reach them.
+- Spring wiring: expose a `FeishuTenantChannelManager` bean. The component-scanned controller injects it and serves the tenant route; with no such bean it keeps serving the static registry. Do not declare a second `FeishuCallbackController` bean — its request mappings would collide with the scanned one's and fail startup.
