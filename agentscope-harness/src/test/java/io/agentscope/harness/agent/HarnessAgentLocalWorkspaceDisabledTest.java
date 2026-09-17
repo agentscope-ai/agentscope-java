@@ -139,9 +139,11 @@ class HarnessAgentLocalWorkspaceDisabledTest {
                         .disableToolResultEviction()
                         .taskRepository(new NoopTaskRepository())
                         .build()) {
-            // build succeeded without an explicit state store — the default JsonFile store is
-            // permitted because state.home moves it outside the workspace concern.
-            assertTrue(true);
+            // The default JsonFileAgentStateStore is permitted because state.home relocates
+            // the state tree off $HOME — assert the override is actually honoured.
+            assertTrue(
+                    Files.isDirectory(workingDirectory.resolve("state-home")),
+                    "the default JsonFileAgentStateStore must land under agentscope.state.home");
         }
     }
 
