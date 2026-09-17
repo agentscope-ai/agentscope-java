@@ -117,10 +117,7 @@ class WeixinLoginClientTest {
                 });
         server.start();
         try {
-            WeixinLoginClient client =
-                    new WeixinLoginClient(
-                            "http://127.0.0.1:" + server.getAddress().getPort(),
-                            Duration.ofSeconds(3));
+            WeixinLoginClient client = new WeixinLoginClient(urlOf(server), Duration.ofSeconds(3));
             WeixinLoginSession first = client.start("3").session();
             WeixinLoginSession second = client.start("3").session();
 
@@ -136,13 +133,18 @@ class WeixinLoginClientTest {
     }
 
     @Test
-    void rejectsBlankVerificationCode() {
-        WeixinLoginClient client =
-                new WeixinLoginClient("http://127.0.0.1:1", Duration.ofSeconds(1));
-        WeixinLoginSession session = new WeixinLoginSession("qr-1", "http://127.0.0.1:1");
+    void rejectsBlankVerificationCode() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.start();
+        try {
+            WeixinLoginClient client = new WeixinLoginClient(urlOf(server), Duration.ofSeconds(1));
+            WeixinLoginSession session = new WeixinLoginSession("qr-1", urlOf(server));
 
-        assertThrows(IllegalArgumentException.class, () -> client.verify(session, "  "));
-        assertThrows(IllegalArgumentException.class, () -> client.verify(session, null));
+            assertThrows(IllegalArgumentException.class, () -> client.verify(session, "  "));
+            assertThrows(IllegalArgumentException.class, () -> client.verify(session, null));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
@@ -160,13 +162,8 @@ class WeixinLoginClientTest {
                 });
         server.start();
         try {
-            WeixinLoginClient client =
-                    new WeixinLoginClient(
-                            "http://127.0.0.1:" + server.getAddress().getPort(),
-                            Duration.ofSeconds(3));
-            WeixinLoginSession session =
-                    new WeixinLoginSession(
-                            "qr 1", "http://127.0.0.1:" + server.getAddress().getPort());
+            WeixinLoginClient client = new WeixinLoginClient(urlOf(server), Duration.ofSeconds(3));
+            WeixinLoginSession session = new WeixinLoginSession("qr 1", urlOf(server));
 
             WeixinLoginStep step = client.verify(session, " 123456 ");
 
@@ -189,14 +186,8 @@ class WeixinLoginClientTest {
                 exchange -> write(exchange, "{\"status\":\"need_verifycode\"}"));
         server.start();
         try {
-            WeixinLoginClient client =
-                    new WeixinLoginClient(
-                            "http://127.0.0.1:" + server.getAddress().getPort(),
-                            Duration.ofSeconds(3));
-            WeixinLoginStep step =
-                    client.poll(
-                            new WeixinLoginSession(
-                                    "qr-1", "http://127.0.0.1:" + server.getAddress().getPort()));
+            WeixinLoginClient client = new WeixinLoginClient(urlOf(server), Duration.ofSeconds(3));
+            WeixinLoginStep step = client.poll(new WeixinLoginSession("qr-1", urlOf(server)));
 
             assertTrue(step.requiresVerification());
             assertFalse(step.connected());
@@ -218,13 +209,8 @@ class WeixinLoginClientTest {
                                         + "\"https://evil.example.com\"}"));
         server.start();
         try {
-            WeixinLoginClient client =
-                    new WeixinLoginClient(
-                            "http://127.0.0.1:" + server.getAddress().getPort(),
-                            Duration.ofSeconds(3));
-            WeixinLoginSession session =
-                    new WeixinLoginSession(
-                            "qr-1", "http://127.0.0.1:" + server.getAddress().getPort());
+            WeixinLoginClient client = new WeixinLoginClient(urlOf(server), Duration.ofSeconds(3));
+            WeixinLoginSession session = new WeixinLoginSession("qr-1", urlOf(server));
 
             assertThrows(IllegalArgumentException.class, () -> client.poll(session));
         } finally {
@@ -254,7 +240,7 @@ class WeixinLoginClientTest {
                 });
         server.start();
         try {
-            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            String baseUrl = urlOf(server);
             WeixinLoginClient client = new WeixinLoginClient(baseUrl, Duration.ofSeconds(3));
 
             assertThrows(IllegalStateException.class, () -> client.start("3"));
@@ -264,6 +250,93 @@ class WeixinLoginClientTest {
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void httpFailuresDoNotEchoTheLoginUriOrResponseBody() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange -> {
+                    byte[] bytes =
+                            "{\"bot_token\":\"super-secret-token\""
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(500, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            String baseUrl = urlOf(server);
+            WeixinLoginClient client = new WeixinLoginClient(baseUrl, Duration.ofSeconds(3));
+
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    client.verify(
+                                            new WeixinLoginSession("qr-secret", baseUrl),
+                                            "654321"));
+
+            assertTrue(error.getMessage().contains("500"), error.getMessage());
+            assertFalse(error.getMessage().contains("654321"), error.getMessage());
+            assertFalse(error.getMessage().contains("qr-secret"), error.getMessage());
+            assertFalse(error.getMessage().contains("super-secret-token"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void unparseableLoginBodiesDoNotEchoTheirContent() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/get_qrcode_status",
+                exchange -> write(exchange, "{\"bot_token\":\"super-secret-token\""));
+        server.start();
+        try {
+            String baseUrl = urlOf(server);
+            WeixinLoginClient client = new WeixinLoginClient(baseUrl, Duration.ofSeconds(3));
+
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> client.poll(new WeixinLoginSession("qr-secret", baseUrl)));
+
+            assertTrue(error.getMessage().contains("unparseable"), error.getMessage());
+            assertFalse(error.getMessage().contains("super-secret-token"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void transportFailuresDoNotEchoTheLoginUri() throws Exception {
+        int closedPort;
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            closedPort = socket.getLocalPort();
+        }
+        String baseUrl = "http://127.0.0.1:" + closedPort;
+        WeixinLoginClient client = new WeixinLoginClient(baseUrl, Duration.ofSeconds(3));
+
+        Exception error =
+                assertThrows(
+                        Exception.class,
+                        () ->
+                                client.verify(
+                                        new WeixinLoginSession("qr-secret", baseUrl), "654321"));
+
+        assertFalse(
+                String.valueOf(error.getMessage()).contains("654321"),
+                String.valueOf(error.getMessage()));
+        assertFalse(
+                String.valueOf(error.getMessage()).contains("qr-secret"),
+                String.valueOf(error.getMessage()));
+    }
+
+    /** Real server URL: these tests must fail on the behaviour under test, not on endpoint policy. */
+    private static String urlOf(HttpServer server) {
+        return "http://127.0.0.1:" + server.getAddress().getPort();
     }
 
     private static String protocolHeaders(HttpExchange exchange) {

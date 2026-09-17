@@ -55,6 +55,15 @@ public interface WeixinStateStore {
 
     boolean failMessage(String accountId, WeixinLease lease, WeixinInboxClaim claim);
 
+    /**
+     * Forgets everything held for {@code accountId}: cursor, peer context tokens and inbox.
+     *
+     * <p>Hosts call this when an account is retired so a long-lived process does not accumulate
+     * state for accounts it no longer serves. Implementations that hold no per-account state can
+     * leave the default no-op.
+     */
+    default void removeAccount(String accountId) {}
+
     static WeixinStateStore inMemory() {
         return new InMemoryWeixinStateStore();
     }
