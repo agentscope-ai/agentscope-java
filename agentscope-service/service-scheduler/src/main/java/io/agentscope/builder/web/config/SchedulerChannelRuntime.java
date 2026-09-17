@@ -24,6 +24,9 @@ import io.agentscope.extensions.channel.feishu.FeishuChannel;
 import io.agentscope.extensions.channel.github.GitHubChannel;
 import io.agentscope.extensions.channel.gitlab.GitLabChannel;
 import io.agentscope.extensions.channel.wecom.WeComChannel;
+import io.agentscope.extensions.channel.weixin.WeixinChannel;
+import io.agentscope.extensions.channel.weixin.WeixinLease;
+import io.agentscope.extensions.channel.weixin.WeixinRuntimeListener;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -69,6 +72,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
     private final WebClient controlPlane;
     private final ObjectMapper objectMapper;
     private final ChannelRuntimeCatalog catalog;
+    private final io.agentscope.extensions.channel.weixin.WeixinStateStore weixinStateStore;
     private final int configFetchRetries;
     private final long configFetchBackoffMs;
     private final long refreshIntervalMs;
@@ -83,6 +87,8 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
 
     private final Map<String, String> lastConfigFingerprints = new HashMap<>();
     private final Map<String, String> lastErrors = new HashMap<>();
+    private final Map<String, RuntimeObservation> runtimeObservations = new HashMap<>();
+    private final Map<String, Object> runtimeListenerTokens = new HashMap<>();
 
     private volatile boolean running;
     private ScheduledFuture<?> refreshTask;
@@ -93,6 +99,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             @Qualifier("controlPlaneWebClient") WebClient controlPlane,
             ObjectMapper objectMapper,
             ChannelRuntimeCatalog catalog,
+            io.agentscope.extensions.channel.weixin.WeixinStateStore weixinStateStore,
             @Value("${builder.scheduler.channel-config-retries:12}") int configFetchRetries,
             @Value("${builder.scheduler.channel-config-backoff-ms:5000}") long backoffMs,
             @Value("${builder.scheduler.channel-refresh-ms:15000}") long refreshIntervalMs) {
@@ -101,6 +108,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
         this.controlPlane = controlPlane;
         this.objectMapper = objectMapper;
         this.catalog = catalog;
+        this.weixinStateStore = weixinStateStore;
         this.configFetchRetries = configFetchRetries;
         this.configFetchBackoffMs = backoffMs;
         this.refreshIntervalMs = refreshIntervalMs;
@@ -116,6 +124,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
         ChannelTypeRegistry.register(WeComChannel.TYPE, WeComChannel::fromProperties);
         ChannelTypeRegistry.register(GitHubChannel.TYPE, GitHubChannel::fromProperties);
         ChannelTypeRegistry.register(GitLabChannel.TYPE, GitLabChannel::fromProperties);
+        ChannelTypeRegistry.register(WeixinChannel.TYPE, WeixinChannel::fromProperties);
         log.info("Registered channel factories: {}", ChannelTypeRegistry.registeredTypes());
     }
 
@@ -141,10 +150,15 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
+    public synchronized void stop() {
         if (!running) {
             return;
         }
+        runtimeListenerTokens.clear();
+        runtimeObservations.replaceAll(
+                (id, prior) ->
+                        new RuntimeObservation(
+                                false, prior.errorCode(), prior.lease(), prior.sequence() + 1));
         if (refreshTask != null) {
             refreshTask.cancel(false);
             refreshTask = null;
@@ -157,6 +171,8 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
         channelManager.channelIds().forEach(channelManager::unregister);
         lastConfigFingerprints.clear();
         lastErrors.clear();
+        reportRuntimeStatus();
+        runtimeObservations.clear();
         catalog.replaceAll(Map.of());
         running = false;
         log.info("Scheduler channel runtime stopped");
@@ -194,6 +210,8 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                 channelManager.unregister(liveId);
                 lastConfigFingerprints.remove(liveId);
                 lastErrors.remove(liveId);
+                runtimeObservations.remove(liveId);
+                runtimeListenerTokens.remove(liveId);
                 log.info("Channel '{}' removed (no longer in control-plane config)", liveId);
             }
         }
@@ -205,6 +223,8 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                 channelManager.unregister(channelId);
                 lastConfigFingerprints.remove(channelId);
                 lastErrors.remove(channelId);
+                runtimeObservations.remove(channelId);
+                runtimeListenerTokens.remove(channelId);
                 continue;
             }
             String fingerprint = fingerprint(entry);
@@ -213,14 +233,17 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                 continue;
             }
             channelManager.unregister(channelId);
+            runtimeListenerTokens.remove(channelId);
             lastErrors.remove(channelId);
             Channel channel = buildChannel(channelId, entry);
             if (channel == null) {
                 lastConfigFingerprints.remove(channelId);
+                runtimeListenerTokens.remove(channelId);
                 lastErrors.put(channelId, "failed to build channel");
                 continue;
             }
             try {
+                runtimeObservations.remove(channelId);
                 channelManager.register(channel);
                 channel.init(gateway);
                 channel.start();
@@ -230,6 +253,8 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             } catch (Exception ex) {
                 channelManager.unregister(channelId);
                 lastConfigFingerprints.remove(channelId);
+                runtimeObservations.remove(channelId);
+                runtimeListenerTokens.remove(channelId);
                 lastErrors.put(channelId, ex.getMessage());
                 log.warn("Failed to start channel '{}': {}", channelId, ex.getMessage());
             }
@@ -239,13 +264,41 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
 
     private void reportRuntimeStatus() {
         List<Map<String, Object>> items = new ArrayList<>();
-        for (String id : catalog.snapshot().keySet()) {
+        Map<String, RuntimeObservation> observations;
+        Map<String, String> errors;
+        Map<String, ChannelConfigEntry> configs;
+        synchronized (this) {
+            observations = new HashMap<>(runtimeObservations);
+            errors = new HashMap<>(lastErrors);
+            configs = catalog.snapshot();
+        }
+        for (var entry : configs.entrySet()) {
+            String id = entry.getKey();
+            RuntimeObservation observation = observations.get(id);
+            boolean weixin = WeixinChannel.TYPE.equals(entry.getValue().getType());
+            // A standby has no observation authority and must not overwrite the active replica.
+            if (weixin && (observation == null || observation.lease() == null)) continue;
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("channelId", id);
+            if (weixin) {
+                item.put("accountId", entry.getValue().getProperties().get("accountId"));
+                item.put(
+                        "credentialRevision",
+                        Long.parseLong(
+                                String.valueOf(
+                                        entry.getValue()
+                                                .getProperties()
+                                                .get("credentialRevision"))));
+                item.put("leaseHolder", observation.lease().holderId());
+                item.put("leaseGeneration", observation.lease().generation());
+                item.put("sequence", observation.sequence());
+            }
             boolean started =
-                    channelManager.getChannel(id).isPresent() && !lastErrors.containsKey(id);
+                    observation != null
+                            ? observation.started()
+                            : channelManager.getChannel(id).isPresent() && !errors.containsKey(id);
             item.put("started", started);
-            String err = lastErrors.get(id);
+            String err = observation != null ? observation.errorCode() : errors.get(id);
             if (err != null) {
                 item.put("error", err);
             }
@@ -286,8 +339,25 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             return null;
         }
         try {
-            return factory.create(
-                    channelId, entry.toChannelConfig(channelId), entry.getProperties());
+            Map<String, Object> properties = new LinkedHashMap<>(entry.getProperties());
+            if (WeixinChannel.TYPE.equals(type)) {
+                Object listenerToken = new Object();
+                runtimeListenerTokens.put(channelId, listenerToken);
+                return WeixinChannel.create(
+                        channelId,
+                        entry.toChannelConfig(channelId),
+                        io.agentscope.extensions.channel.weixin.WeixinChannelProperties.from(
+                                channelId, properties),
+                        new WeixinControlPlaneCredentialProvider(
+                                controlPlane,
+                                objectMapper,
+                                channelId,
+                                Long.parseLong(
+                                        String.valueOf(properties.get("credentialRevision")))),
+                        weixinStateStore,
+                        managedWeixinRuntimeListener(channelId, listenerToken));
+            }
+            return factory.create(channelId, entry.toChannelConfig(channelId), properties);
         } catch (RuntimeException ex) {
             log.warn(
                     "Failed to instantiate channel '{}' of type '{}': {}",
@@ -353,4 +423,90 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             return String.valueOf(Objects.hashCode(entry));
         }
     }
+
+    private WeixinRuntimeListener managedWeixinRuntimeListener(
+            String channelId, Object listenerToken) {
+        return new WeixinRuntimeListener() {
+            @Override
+            public void onLeaseAcquired(String accountId, WeixinLease lease) {
+                synchronized (SchedulerChannelRuntime.this) {
+                    if (runtimeListenerTokens.get(channelId) != listenerToken) return;
+                    runtimeObservations.put(
+                            channelId, new RuntimeObservation(false, null, lease, 1));
+                }
+            }
+
+            @Override
+            public void onRunning(String accountId) {
+                recordRuntimeObservation(channelId, listenerToken, true, null);
+            }
+
+            @Override
+            public void onStopped(String accountId) {
+                recordRuntimeStopped(channelId, listenerToken);
+            }
+
+            @Override
+            public void onCredentialRejected(String accountId, String reason) {
+                recordRuntimeObservation(channelId, listenerToken, false, "CREDENTIAL_REJECTED");
+            }
+
+            @Override
+            public void onTransientFailure(String accountId, String reason) {
+                recordRuntimeObservation(channelId, listenerToken, false, "TRANSIENT_FAILURE");
+            }
+
+            @Override
+            public void onRecovered(String accountId) {
+                recordRuntimeObservation(channelId, listenerToken, true, null);
+            }
+        };
+    }
+
+    private void recordRuntimeObservation(
+            String channelId, Object listenerToken, boolean started, String errorCode) {
+        synchronized (this) {
+            if (runtimeListenerTokens.get(channelId) != listenerToken) {
+                return;
+            }
+            RuntimeObservation prior = runtimeObservations.get(channelId);
+            if (prior == null || prior.lease() == null) return;
+            if (prior.started() == started && Objects.equals(prior.errorCode(), errorCode)) return;
+            runtimeObservations.put(
+                    channelId,
+                    new RuntimeObservation(
+                            started, errorCode, prior.lease(), prior.sequence() + 1));
+        }
+        try {
+            refreshExecutor.execute(this::reportRuntimeStatus);
+        } catch (RuntimeException ex) {
+            log.debug(
+                    "Runtime observation report was not scheduled: {}",
+                    ex.getClass().getSimpleName());
+        }
+    }
+
+    private void recordRuntimeStopped(String channelId, Object listenerToken) {
+        synchronized (this) {
+            if (runtimeListenerTokens.get(channelId) != listenerToken) {
+                return;
+            }
+            RuntimeObservation prior = runtimeObservations.get(channelId);
+            if (prior == null || prior.lease() == null) return;
+            runtimeObservations.put(
+                    channelId,
+                    new RuntimeObservation(
+                            false, prior.errorCode(), prior.lease(), prior.sequence() + 1));
+        }
+        try {
+            refreshExecutor.execute(this::reportRuntimeStatus);
+        } catch (RuntimeException ex) {
+            log.debug(
+                    "Runtime observation report was not scheduled: {}",
+                    ex.getClass().getSimpleName());
+        }
+    }
+
+    private record RuntimeObservation(
+            boolean started, String errorCode, WeixinLease lease, long sequence) {}
 }

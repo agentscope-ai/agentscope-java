@@ -132,6 +132,16 @@ public class SchedulerConfig {
                 transactionTemplate);
     }
 
+    /** Scheduler-owned durable state for Weixin cursors, peer contexts, and account leases. */
+    @Bean
+    @ConditionalOnMissingBean(io.agentscope.extensions.channel.weixin.WeixinStateStore.class)
+    public io.agentscope.extensions.channel.weixin.WeixinStateStore weixinStateStore(
+            DataSource dataSource, TransactionTemplate transactionTemplate) {
+        log.info("Wiring JDBC Weixin runtime state store on the Scheduler DataSource");
+        WeixinStateSchema.initialize(dataSource);
+        return new JdbcWeixinStateStore(dataSource, transactionTemplate);
+    }
+
     /** HTTP client for the control plane, pre-authenticated with the internal token. */
     @Bean
     @Qualifier("controlPlaneWebClient")

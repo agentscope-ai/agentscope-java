@@ -35,8 +35,8 @@ import reactor.core.scheduler.Schedulers;
  * managed-session model across plane boundaries:
  *
  * <ol>
- *   <li>{@code POST /api/internal/sessions/find-or-create} on the <b>control plane</b> resolves
- *       (or creates and version-pins) the session for the channel conversation;
+ *   <li>{@code POST /api/internal/managed-sessions/find-or-create} on the <b>control plane</b>
+ *       resolves the managed session and registers its runtime identity before dispatch;
  *   <li>{@code POST /api/sessions/{id}/events} on the <b>data plane</b> posts the user message,
  *       which schedules the harness turn asynchronously;
  *   <li>{@code GET /api/sessions/{id}/events?after=seq} on the <b>data plane</b> is polled until
@@ -56,6 +56,8 @@ public class ManagedSessionChannelBridge {
 
     private static final ParameterizedTypeReference<List<SessionEventDto>> EVENT_LIST =
             new ParameterizedTypeReference<>() {};
+
+    private record SessionRegistration(String id) {}
 
     private final WebClient controlPlane;
     private final WebClient dataPlane;
@@ -95,13 +97,13 @@ public class ManagedSessionChannelBridge {
     }
 
     private String doDispatch(String ownerId, String agentId, String externalKey, String text) {
-        ManagedSessionDto session = findOrCreateSession(ownerId, agentId, externalKey);
+        SessionRegistration session = findOrCreateSession(ownerId, agentId, externalKey);
         long after = postUserMessage(ownerId, session.id(), text);
         return awaitReply(ownerId, session.id(), after);
     }
 
     /** Resolves the active session for the conversation, creating one on first contact. */
-    private ManagedSessionDto findOrCreateSession(
+    private SessionRegistration findOrCreateSession(
             String ownerId, String agentId, String externalKey) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ownerId", ownerId);
@@ -111,11 +113,11 @@ public class ManagedSessionChannelBridge {
         }
         return controlPlane
                 .post()
-                .uri("/api/internal/sessions/find-or-create")
+                .uri("/api/internal/managed-sessions/find-or-create")
                 .header(InternalTokenAuthFilter.INTERNAL_USER_HEADER, ownerId)
                 .bodyValue(body)
                 .retrieve()
-                .bodyToMono(ManagedSessionDto.class)
+                .bodyToMono(SessionRegistration.class)
                 .block(Duration.ofSeconds(30));
     }
 
