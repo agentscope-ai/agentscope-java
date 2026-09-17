@@ -286,6 +286,9 @@ public final class WeixinChannel implements Channel {
                 notifyListener(
                         "transient failure",
                         listener -> listener.onTransientFailure(p.accountId(), safeMessage(error)));
+                // The provider session never started: there is nothing to poll and nothing to stop.
+                // Leave the lease so the outer loop backs off, reacquires and retries startup.
+                throw new IllegalStateException("Weixin provider session did not start");
             }
             while (running && session.valid && !Thread.currentThread().isInterrupted()) {
                 try {
@@ -442,13 +445,24 @@ public final class WeixinChannel implements Channel {
         }
     }
 
+    /**
+     * Derives one durable inbox id per message.
+     *
+     * <p>A message the provider sends without {@code message_id} is keyed by its position in the
+     * batch plus a digest of the payload. The position is what keeps two byte-identical id-less
+     * messages — a user typing the same thing twice — from collapsing into a single claim and
+     * losing one of them, while a re-delivered batch keeps the same ids and is still deduplicated.
+     */
     private List<WeixinInboxMessage> inboxMessages(List<JsonNode> messages) {
-        List<WeixinInboxMessage> result = new ArrayList<>();
-        for (JsonNode message : messages == null ? List.<JsonNode>of() : messages) {
+        List<JsonNode> batch = messages == null ? List.of() : messages;
+        List<WeixinInboxMessage> result = new ArrayList<>(batch.size());
+        for (int position = 0; position < batch.size(); position++) {
+            JsonNode message = batch.get(position);
             String payload = message.toString();
+            int index = position;
             String messageId =
                     WeixinInboundMapper.messageId(message)
-                            .orElseGet(() -> "payload-" + digest(payload));
+                            .orElseGet(() -> "payload-" + index + "-" + digest(payload));
             result.add(new WeixinInboxMessage(messageId, payload));
         }
         return result;

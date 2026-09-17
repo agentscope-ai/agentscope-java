@@ -18,7 +18,13 @@ package io.agentscope.extensions.channel.weixin;
 import java.util.Map;
 import java.util.Objects;
 
-/** Provider configuration for one Personal Weixin Channel instance. */
+/**
+ * Provider configuration for one Personal Weixin Channel instance.
+ *
+ * <p>{@code requestTimeoutMs} bounds the control calls, while {@code longPollTimeoutMs} bounds the
+ * {@code getupdates} long poll — the provider holds that request open, so the client derives a
+ * longer deadline for it (see {@code WeixinOutboundClient.timeoutFor}).
+ */
 public record WeixinChannelProperties(
         String accountId,
         String baseUrl,

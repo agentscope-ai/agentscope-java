@@ -60,6 +60,8 @@ class WeixinChannelLoopbackTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/ilink/bot/getupdates", this::getUpdates);
         server.createContext("/ilink/bot/sendmessage", this::sendMessage);
+        server.createContext("/ilink/bot/msg/notifystart", WeixinChannelLoopbackTest::acknowledge);
+        server.createContext("/ilink/bot/msg/notifystop", WeixinChannelLoopbackTest::acknowledge);
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -212,6 +214,12 @@ class WeixinChannelLoopbackTest {
     private void sendMessage(HttpExchange exchange) throws IOException {
         sendCalls.incrementAndGet();
         sendRequest.set(JSON.readTree(exchange.getRequestBody()));
+        write(exchange, "{\"ret\":0}");
+    }
+
+    /** The consumer refuses to poll until the provider session starts, so this must answer. */
+    private static void acknowledge(HttpExchange exchange) throws IOException {
+        exchange.getRequestBody().readAllBytes();
         write(exchange, "{\"ret\":0}");
     }
 
