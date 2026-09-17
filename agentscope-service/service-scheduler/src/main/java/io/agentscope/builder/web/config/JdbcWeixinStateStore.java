@@ -307,6 +307,23 @@ public final class JdbcWeixinStateStore implements WeixinStateStore {
                                 == 1);
     }
 
+    @Override
+    public void removeAccount(String accountId) {
+        requireAccount(accountId);
+        // Retirement is explicit and one-way: the cursor is the provider consumer position, so
+        // dropping it makes the next poll replay whatever the provider still holds for the
+        // account. Callers use this when the account will not resume its provider session.
+        transactions.executeWithoutResult(
+                status -> {
+                    jdbc.update("delete from builder_weixin_inbox where account_id = ?", accountId);
+                    jdbc.update(
+                            "delete from builder_weixin_cursor where account_id = ?", accountId);
+                    jdbc.update(
+                            "delete from builder_weixin_context where account_id = ?", accountId);
+                    jdbc.update("delete from builder_weixin_lease where account_id = ?", accountId);
+                });
+    }
+
     private <T> T withLease(
             String accountId, WeixinLease lease, T rejected, Function<Long, T> action) {
         requireAccount(accountId);
