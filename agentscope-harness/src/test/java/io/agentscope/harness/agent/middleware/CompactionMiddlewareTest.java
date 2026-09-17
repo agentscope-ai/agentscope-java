@@ -33,7 +33,9 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -103,6 +105,112 @@ class CompactionMiddlewareTest {
                 .verifyComplete();
 
         assertEquals(1, nextCalls.get());
+    }
+
+    /** Routine compaction must not drop messages appended while summarization is in flight. */
+    @Test
+    void compactionPreservesMessagesAppendedDuringSummarization() {
+        Msg previous = userMessage("previous context");
+        Msg latest = userMessage("latest request");
+        Msg appended = userMessage("appended during compaction");
+        AgentState state =
+                AgentState.builder()
+                        .sessionId("session")
+                        .context(List.of(previous, latest))
+                        .build();
+        ReActAgent agent = agent();
+        when(agent.getAgentState()).thenReturn(state);
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(
+                        null, new AppendingSummaryModel(state, appended), fixedConfig());
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent,
+                                context("user", "session"),
+                                input("previous context", "latest request"),
+                                next -> Flux.empty()))
+                .verifyComplete();
+
+        assertTrue(
+                state.getContext().stream()
+                        .anyMatch(m -> ConversationCompactor.SUMMARY_MSG_NAME.equals(m.getName())),
+                "compaction result should be applied");
+        assertEquals(
+                1,
+                state.getContext().stream().filter(m -> appended.getId().equals(m.getId())).count(),
+                "messages appended during summarization must survive");
+    }
+
+    /**
+     * A prefix rebuilt into equivalent instances mid-flight (store round trip, snapshot restore)
+     * must not be mistaken for a concurrent edit, otherwise compaction silently never sticks.
+     */
+    @Test
+    void compactionAppliesAfterContextIsRestoredFromSnapshotDuringSummarization() {
+        Msg previous = userMessage("previous context");
+        Msg latest = userMessage("latest request");
+        AgentState state =
+                AgentState.builder()
+                        .sessionId("session")
+                        .context(List.of(previous, latest))
+                        .build();
+        String snapshotJson = state.toJson();
+        ReActAgent agent = agent();
+        when(agent.getAgentState()).thenReturn(state);
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(
+                        null, new RestoringSummaryModel(state, snapshotJson), fixedConfig());
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent,
+                                context("user", "session"),
+                                input("previous context", "latest request"),
+                                next -> Flux.empty()))
+                .verifyComplete();
+
+        assertTrue(
+                state.getContext().stream()
+                        .anyMatch(m -> ConversationCompactor.SUMMARY_MSG_NAME.equals(m.getName())),
+                "an equivalent rebuild of the prefix must not block compaction");
+    }
+
+    /** A prefix that genuinely changed during summarization must not be overwritten. */
+    @Test
+    void compactionIsRejectedWhenContextChangesDuringSummarization() {
+        Msg previous = userMessage("previous context");
+        Msg latest = userMessage("latest request");
+        Msg diverted = userMessage("written by a concurrent writer");
+        AgentState state =
+                AgentState.builder()
+                        .sessionId("session")
+                        .context(List.of(previous, latest))
+                        .build();
+        ReActAgent agent = agent();
+        when(agent.getAgentState()).thenReturn(state);
+        AtomicInteger nextCalls = new AtomicInteger();
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(
+                        null, new ReplacingPrefixSummaryModel(state, diverted), fixedConfig());
+
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent,
+                                context("user", "session"),
+                                input("previous context", "latest request"),
+                                next -> {
+                                    nextCalls.incrementAndGet();
+                                    return Flux.empty();
+                                }))
+                .verifyComplete();
+
+        assertEquals(1, nextCalls.get(), "the turn must continue despite the rejected compaction");
+        assertEquals(List.of(diverted), state.getContext());
+        assertFalse(
+                state.getContext().stream()
+                        .anyMatch(m -> ConversationCompactor.SUMMARY_MSG_NAME.equals(m.getName())),
+                "a changed prefix must not be replaced with a stale compaction result");
     }
 
     /** An interrupt during real compaction summarization must propagate without entering reasoning. */
@@ -426,6 +534,87 @@ class CompactionMiddlewareTest {
         @Override
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /** Appends to the live state while producing a summary, simulating a concurrent writer. */
+    private static final class AppendingSummaryModel extends ChatModelBase {
+        private final AgentState state;
+        private final Msg appended;
+
+        private AppendingSummaryModel(AgentState state, Msg appended) {
+            this.state = state;
+            this.appended = appended;
+        }
+
+        @Override
+        public String getModelName() {
+            return "appending-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            state.contextMutable().add(appended);
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /**
+     * Rehydrates the live context from a snapshot while producing a summary, the way a state store
+     * round trip or a snapshot restore would.
+     */
+    private static final class RestoringSummaryModel extends ChatModelBase {
+        private final AgentState state;
+        private final String snapshotJson;
+
+        private RestoringSummaryModel(AgentState state, String snapshotJson) {
+            this.state = state;
+            this.snapshotJson = snapshotJson;
+        }
+
+        @Override
+        public String getModelName() {
+            return "restoring-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            state.replaceContext(AgentState.fromJsonString(snapshotJson).getContext());
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("summary").build()))
+                            .build());
+        }
+    }
+
+    /** Replaces the live context with a different message while producing a summary. */
+    private static final class ReplacingPrefixSummaryModel extends ChatModelBase {
+        private final AgentState state;
+        private final Msg replacement;
+
+        private ReplacingPrefixSummaryModel(AgentState state, Msg replacement) {
+            this.state = state;
+            this.replacement = replacement;
+        }
+
+        @Override
+        public String getModelName() {
+            return "replacing-prefix-summary";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            state.replaceContext(List.of(replacement));
             return Flux.just(
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("summary").build()))

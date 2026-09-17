@@ -1010,8 +1010,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     return events.onErrorResume(
                             e ->
                                     isContextOverflowError(e) && recoveryGate.canRecover()
-                                            ? recoveryGate.suppressRetryOpening(
-                                                    recoverFromOverflowStream(msgs, eff, e))
+                                            ? recoverFromOverflowStream(msgs, eff, e)
                                             : Flux.error(e));
                 },
                 eff -> {
@@ -1075,7 +1074,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private Mono<Msg> forceCompactAndRetry(
             List<Msg> msgs, RuntimeContext effective, Throwable overflowError) {
-        return forceCompactContext(effective, overflowError)
+        return delegate.serializeForSession(
+                        effective, () -> forceCompactContext(effective, overflowError))
                 .then(delegate.call(msgs, effective != null ? effective : RuntimeContext.empty()));
     }
 
@@ -1089,7 +1089,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         log.warn(
                 "Context overflow detected during streaming, triggering emergency compaction via"
                         + " CompactionMiddleware");
-        return forceCompactContext(effective, overflowError)
+        return delegate.serializeForSession(
+                        effective, () -> forceCompactContext(effective, overflowError))
                 .thenMany(
                         delegate.streamEvents(
                                 msgs, effective != null ? effective : RuntimeContext.empty()));
@@ -1111,70 +1112,100 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             "Context overflow: no compaction configured, unable to recover",
                             overflowError));
         }
-        AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
-        List<Msg> allMsgs = state.getContext();
-        if (allMsgs.isEmpty()) {
-            return Mono.error(
-                    new RuntimeException(
-                            "Context overflow: context is empty, cannot compact", overflowError));
-        }
-        String agentId = getName();
-        String sessionId =
-                effective != null && effective.getSessionId() != null
-                        ? effective.getSessionId()
-                        : "default";
+        return Mono.defer(
+                () -> {
+                    AgentState state = delegate.getAgentState(effective);
+                    List<Msg> allMsgs = state.getContext();
+                    if (allMsgs.isEmpty()) {
+                        return Mono.error(
+                                new RuntimeException(
+                                        "Context overflow: context is empty, cannot compact",
+                                        overflowError));
+                    }
+                    String agentId = getName();
+                    String sessionId =
+                            effective != null && effective.getSessionId() != null
+                                    ? effective.getSessionId()
+                                    : "default";
 
-        // Emergency compaction must shrink the full context, including the latest message.
-        CompactionConfig forceConfig =
-                CompactionConfig.builder().triggerMessages(1).keepMessages(0).keepTokens(0).build();
-        String effectiveFlushPrompt =
-                memoryConfig.flushPrompt() != null
-                        ? memoryConfig.flushPrompt()
-                        : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
-        MemoryFlushManager fm =
-                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
+                    // Emergency compaction must shrink the full context, including the latest
+                    // message.
+                    CompactionConfig forceConfig =
+                            CompactionConfig.builder()
+                                    .triggerMessages(1)
+                                    .keepMessages(0)
+                                    .keepTokens(0)
+                                    .build();
+                    String effectiveFlushPrompt =
+                            memoryConfig.flushPrompt() != null
+                                    ? memoryConfig.flushPrompt()
+                                    : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+                    ConversationCompactor compactor =
+                            CompactionMiddleware.createConversationCompactor(
+                                    workspaceManager, getModel(), effectiveFlushPrompt);
 
-        return compactor
-                .compactIfNeeded(
-                        effective != null ? effective : RuntimeContext.empty(),
-                        allMsgs,
-                        forceConfig,
-                        agentId,
-                        sessionId)
-                .onErrorMap(
-                        compactionError -> {
-                            RuntimeException failure =
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction failed",
-                                            overflowError);
-                            failure.addSuppressed(compactionError);
-                            return failure;
-                        })
-                .flatMap(
-                        opt -> {
-                            if (opt.isEmpty()) {
-                                return Mono.error(
-                                        new RuntimeException(
-                                                "Context overflow: emergency compaction yielded"
-                                                        + " no result",
-                                                overflowError));
-                            }
-                            state.replaceContext(opt.get());
-                            // The retry reloads persisted state before invoking the model.
-                            return Mono.<Void>fromRunnable(() -> delegate.saveAgentState(effective))
-                                    .subscribeOn(Schedulers.boundedElastic())
-                                    .onErrorMap(
-                                            saveError -> {
-                                                RuntimeException failure =
-                                                        new RuntimeException(
-                                                                "Context overflow: failed to"
-                                                                    + " persist compacted state",
-                                                                overflowError);
-                                                failure.addSuppressed(saveError);
-                                                return failure;
-                                            });
-                        });
+                    return compactor
+                            .compactIfNeeded(
+                                    effective != null ? effective : RuntimeContext.empty(),
+                                    allMsgs,
+                                    forceConfig,
+                                    agentId,
+                                    sessionId)
+                            .onErrorMap(
+                                    compactionError -> {
+                                        RuntimeException failure =
+                                                new RuntimeException(
+                                                        "Context overflow: emergency compaction"
+                                                                + " failed",
+                                                        overflowError);
+                                        failure.addSuppressed(compactionError);
+                                        return failure;
+                                    })
+                            .flatMap(
+                                    opt -> {
+                                        if (opt.isEmpty()) {
+                                            return Mono.error(
+                                                    new RuntimeException(
+                                                            "Context overflow: emergency compaction"
+                                                                    + " yielded no result",
+                                                            overflowError));
+                                        }
+                                        if (!state.replaceContextPreservingAppends(
+                                                allMsgs, opt.get())) {
+                                            return Mono.error(
+                                                    new RuntimeException(
+                                                            "Context overflow: the context changed"
+                                                                + " while emergency compaction was"
+                                                                + " running (snapshot="
+                                                                    + allMsgs.size()
+                                                                    + " messages, current="
+                                                                    + state.getContext().size()
+                                                                    + " messages, compacted="
+                                                                    + opt.get().size()
+                                                                    + " messages), so the retry"
+                                                                    + " cannot be issued",
+                                                            overflowError));
+                                        }
+                                        // The retry reloads persisted state before invoking the
+                                        // model.
+                                        return Mono.<Void>fromRunnable(
+                                                        () -> delegate.saveAgentState(effective))
+                                                .subscribeOn(Schedulers.boundedElastic())
+                                                .onErrorMap(
+                                                        saveError -> {
+                                                            RuntimeException failure =
+                                                                    new RuntimeException(
+                                                                            "Context overflow:"
+                                                                                    + " failed to"
+                                                                                    + " persist"
+                                                                                    + " compacted"
+                                                                                    + " state",
+                                                                            overflowError);
+                                                            failure.addSuppressed(saveError);
+                                                            return failure;
+                                                        });
+                                    });
+                });
     }
 
     private static boolean isContextOverflowError(Throwable e) {
@@ -1186,8 +1217,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return lower.contains("context_length_exceeded")
                 || lower.contains("context length")
                 || lower.contains("maximum context")
-                || lower.contains("exceed_context_size_error")
-                || lower.contains("exceeds the available context")
                 || lower.contains("token limit")
                 || lower.contains("too many tokens")
                 || lower.contains("exceeds the model's maximum")
@@ -1219,25 +1248,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         boolean canRecover() {
             return state.get() == OpeningState.RECOVERABLE;
-        }
-
-        Flux<AgentEvent> suppressRetryOpening(Flux<AgentEvent> retry) {
-            AtomicReference<OpeningState> retryState =
-                    new AtomicReference<>(OpeningState.EXPECT_AGENT_START);
-            return retry.filter(
-                    event -> {
-                        OpeningState current = retryState.get();
-                        if (current == OpeningState.EXPECT_AGENT_START && isRootAgentStart(event)) {
-                            retryState.set(OpeningState.EXPECT_MODEL_START);
-                            return false;
-                        }
-                        if (current == OpeningState.EXPECT_MODEL_START && isRootModelStart(event)) {
-                            retryState.set(OpeningState.CLOSED);
-                            return false;
-                        }
-                        retryState.set(OpeningState.CLOSED);
-                        return true;
-                    });
         }
 
         private static boolean isRootAgentStart(AgentEvent event) {

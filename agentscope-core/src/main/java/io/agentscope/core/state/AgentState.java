@@ -210,6 +210,77 @@ public final class AgentState implements State {
         }
     }
 
+    /**
+     * Replaces the context while preserving messages appended after the supplied snapshot.
+     *
+     * <p>This is intended for callers that build a replacement from {@link #getContext()} and may
+     * race with appends to the live context. If the current context no longer starts with the
+     * supplied snapshot, no change is made. The head of the context is compared by message id (see
+     * {@link #prefixMatchesSnapshot}), so a prefix that only differs by being rebuilt into
+     * equivalent instances is still accepted; messages without an id cannot be matched that way and
+     * count as changed.
+     *
+     * @param expectedSnapshot context snapshot used to build the replacement
+     * @param replacement replacement context
+     * @return {@code true} when the replacement was applied
+     */
+    public boolean replaceContextPreservingAppends(
+            List<Msg> expectedSnapshot, List<Msg> replacement) {
+        List<Msg> expected = expectedSnapshot == null ? List.of() : expectedSnapshot;
+        List<Msg> copy = replacement == null ? List.of() : new ArrayList<>(replacement);
+        synchronized (context) {
+            int expectedSize = expected.size();
+            if (context.size() < expectedSize
+                    || !prefixMatchesSnapshot(context, expected, expectedSize)) {
+                return false;
+            }
+            List<Msg> merged = new ArrayList<>(copy);
+            merged.addAll(context.subList(expectedSize, context.size()));
+            context.clear();
+            context.addAll(merged);
+            return true;
+        }
+    }
+
+    /**
+     * Compares the head of the live context with the snapshot a replacement was built from.
+     *
+     * <p>The comparison is by message id, not by object identity: {@link Msg} does not implement
+     * {@code equals}, so {@code List.equals} degrades to reference comparison, which rejects a
+     * prefix that was merely rebuilt into equivalent instances (a state rehydrated from a store, or
+     * restored from a snapshot) even though the conversation did not change. {@link Msg} ids are
+     * assigned once, are serialized with the state, and — for generated messages such as compaction
+     * summaries — are derived from the content, so two messages sharing an id do stand for the same
+     * entry while a genuine concurrent edit still produces a different id.
+     */
+    private static boolean prefixMatchesSnapshot(List<Msg> current, List<Msg> expected, int size) {
+        for (int i = 0; i < size; i++) {
+            if (!representsSameMessage(current.get(i), expected.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Reports whether two messages stand for the same conversation entry: same id and same role.
+     * Messages that carry no id cannot be matched that way and fall back to reference comparison,
+     * which for two distinct instances rejects the prefix: an id-less position cannot be verified,
+     * so the guard stays closed rather than treating any two id-less messages as one entry.
+     */
+    private static boolean representsSameMessage(Msg current, Msg expected) {
+        if (current == expected) {
+            return true;
+        }
+        if (current == null || expected == null) {
+            return false;
+        }
+        String currentId = current.getId();
+        return currentId != null
+                && currentId.equals(expected.getId())
+                && Objects.equals(current.getRole(), expected.getRole());
+    }
+
     @JsonProperty("reply_id")
     public String getReplyId() {
         return replyId;

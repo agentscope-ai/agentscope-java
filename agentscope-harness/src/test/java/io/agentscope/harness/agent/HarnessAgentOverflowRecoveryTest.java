@@ -21,8 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
@@ -44,6 +46,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -56,10 +59,8 @@ class HarnessAgentOverflowRecoveryTest {
 
     private static final String OVERFLOW_MESSAGE =
             "HTTP transport error during streaming: HTTP request failed with status 400 | "
-                    + "{\"error\":{\"code\":400,\"message\":\"request (766014 tokens) exceeds the "
-                    + "available context size (128000 tokens), try increasing it\","
-                    + "\"type\":\"exceed_context_size_error\",\"n_prompt_tokens\":766014,"
-                    + "\"n_ctx\":128000}}";
+                    + "{\"error\":{\"code\":400,\"message\":\"input token limit is 1048576\","
+                    + "\"type\":\"invalid_request_error\",\"id\":\"as-xxxxx\"}}";
 
     @TempDir Path workspace;
 
@@ -91,13 +92,38 @@ class HarnessAgentOverflowRecoveryTest {
                     streamedText(events),
                     "partial output from the failed attempt must not be replayed");
             assertEquals(
-                    1,
+                    2,
                     events.stream().filter(AgentStartEvent.class::isInstance).count(),
-                    "the failed attempt must not leak a duplicate agent-start event");
+                    "the retry must emit a complete agent lifecycle");
             assertEquals(
-                    1,
+                    2,
                     events.stream().filter(ModelCallStartEvent.class::isInstance).count(),
-                    "the failed attempt must not leak a duplicate model-call-start event");
+                    "the retry must emit a matching model-call lifecycle");
+            assertTrue(
+                    events.stream()
+                            .filter(AgentEndEvent.class::isInstance)
+                            .map(e -> ((AgentEndEvent) e).getReplyId())
+                            .allMatch(
+                                    replyId ->
+                                            events.stream()
+                                                    .filter(AgentStartEvent.class::isInstance)
+                                                    .map(e -> ((AgentStartEvent) e).getReplyId())
+                                                    .anyMatch(replyId::equals)),
+                    "every emitted agent end must have a matching agent start");
+            assertTrue(
+                    events.stream()
+                            .filter(ModelCallEndEvent.class::isInstance)
+                            .map(e -> ((ModelCallEndEvent) e).getReplyId())
+                            .allMatch(
+                                    replyId ->
+                                            events.stream()
+                                                    .filter(ModelCallStartEvent.class::isInstance)
+                                                    .map(
+                                                            e ->
+                                                                    ((ModelCallStartEvent) e)
+                                                                            .getReplyId())
+                                                    .anyMatch(replyId::equals)),
+                    "every emitted model-call end must have a matching model-call start");
 
             AgentState persisted =
                     store.get(ctx.getUserId(), ctx.getSessionId(), "agent_state", AgentState.class)
@@ -126,7 +152,7 @@ class HarnessAgentOverflowRecoveryTest {
                                             .block());
 
             assertTrue(
-                    failure.getMessage().contains("exceeds the available context size"),
+                    failure.getMessage().contains("token limit"),
                     "the original overflow must propagate: " + failure.getMessage());
             assertEquals(1, model.callCount(), "no recovery may run after text was emitted");
         }
@@ -145,8 +171,41 @@ class HarnessAgentOverflowRecoveryTest {
                             () -> agent.streamEvents(List.of(), ctx).collectList().block());
 
             assertNotNull(
-                    findCauseContaining(failure, "exceeds the available context size"),
+                    findCauseContaining(failure, "token limit"),
                     "the original provider error must survive recovery failure");
+        }
+    }
+
+    @Test
+    void streamEvents_preservesMessagesAppendedDuringCompaction() throws Exception {
+        Files.createDirectories(workspace);
+        Msg appended = userMessage("appended during compaction");
+        AtomicReference<HarnessAgent> agentRef = new AtomicReference<>();
+        OverflowOnceModel model =
+                new OverflowOnceModel(
+                        false,
+                        () ->
+                                agentRef.get()
+                                        .getDelegate()
+                                        .getAgentState("user", "overflow")
+                                        .contextMutable()
+                                        .add(appended));
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("overflow").build();
+
+        try (HarnessAgent agent = buildAgent(model, store)) {
+            agentRef.set(agent);
+            seedConversation(agent, ctx);
+
+            agent.streamEvents(List.of(userMessage("hello")), ctx).collectList().block();
+
+            AgentState persisted =
+                    store.get(ctx.getUserId(), ctx.getSessionId(), "agent_state", AgentState.class)
+                            .orElseThrow();
+            assertEquals(
+                    1,
+                    countMessagesWithId(persisted.getContext(), appended),
+                    "messages appended during compaction must survive the context swap");
         }
     }
 
@@ -261,9 +320,15 @@ class HarnessAgentOverflowRecoveryTest {
         private final List<List<Msg>> inputs = new CopyOnWriteArrayList<>();
         private final AtomicInteger calls = new AtomicInteger();
         private final boolean overflowAfterFirstText;
+        private final Runnable onSummaryCall;
 
         private OverflowOnceModel(boolean overflowAfterFirstText) {
+            this(overflowAfterFirstText, () -> {});
+        }
+
+        private OverflowOnceModel(boolean overflowAfterFirstText, Runnable onSummaryCall) {
             this.overflowAfterFirstText = overflowAfterFirstText;
+            this.onSummaryCall = onSummaryCall;
         }
 
         /** Emits the configured response sequence for this test model. */
@@ -273,6 +338,7 @@ class HarnessAgentOverflowRecoveryTest {
             inputs.add(List.copyOf(messages));
             int call = calls.incrementAndGet();
             if (isSummaryPrompt(messages)) {
+                onSummaryCall.run();
                 return Flux.just(textResponse("summary"));
             }
             if (call == 1) {
