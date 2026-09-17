@@ -22,7 +22,10 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
 import io.agentscope.harness.agent.memory.session.SessionTree;
@@ -40,7 +43,7 @@ class MemoryFlushManagerOffloadTest {
 
     @Test
     void resolveOffloadPath_omitsHostPathForSandboxFilesystem() {
-        AbstractSandboxFilesystem filesystem = mock(AbstractSandboxFilesystem.class);
+        SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
         try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace, filesystem)) {
             MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
 
@@ -53,7 +56,12 @@ class MemoryFlushManagerOffloadTest {
 
     @Test
     void resolveOffloadPath_keepsReachablePathForLocalFilesystem() {
-        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+        try (WorkspaceManager workspaceManager =
+                new WorkspaceManager(
+                        workspace,
+                        OverlayFilesystem.of(
+                                new LocalFilesystemWithShell(workspace),
+                                new LocalFilesystem(workspace)))) {
             MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
 
             assertEquals(
