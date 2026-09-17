@@ -16,8 +16,10 @@
 package io.agentscope.extensions.channel.feishu;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -92,12 +94,18 @@ public final class FeishuChannel implements Channel {
 
     /**
      * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
-     * process-local {@link IdempotencyStore}; use {@link #fromProperties(String, ChannelConfig,
-     * Map, InboundEventDeduplicator)} to supply a shared-storage deduplicator.
+     * process-local {@link IdempotencyStore} and {@link InMemoryAccessTokenStore}; use the
+     * overloads taking {@link InboundEventDeduplicator} and {@link AccessTokenStore} to supply
+     * shared-storage implementations.
      */
     public static FeishuChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
-        return fromProperties(channelId, routing, rawProperties, new IdempotencyStore());
+        return fromProperties(
+                channelId,
+                routing,
+                rawProperties,
+                new IdempotencyStore(),
+                new InMemoryAccessTokenStore());
     }
 
     /**
@@ -114,10 +122,34 @@ public final class FeishuChannel implements Channel {
             ChannelConfig routing,
             Map<String, Object> rawProperties,
             InboundEventDeduplicator idempotency) {
+        return fromProperties(
+                channelId, routing, rawProperties, idempotency, new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Factory variant that additionally lets the application supply the {@link AccessTokenStore}
+     * caching the outbound access token — for example a shared-storage implementation so one
+     * instance's refresh or invalidation serves the whole deployment. The process-local {@link
+     * InMemoryAccessTokenStore} is used otherwise.
+     *
+     * @param channelId the channel id (key in {@code agentscope.json#channels})
+     * @param routing the {@link ChannelConfig} parsed from the file entry's routing block
+     * @param rawProperties provider-specific properties (appId, appSecret, encryptKey, ...)
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     * @param tokenStore cache for this channel's access token — one instance per credential, not
+     *     to be shared across channels with different credentials; must be thread-safe
+     */
+    public static FeishuChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency,
+            AccessTokenStore tokenStore) {
         FeishuChannelProperties props = FeishuChannelProperties.from(channelId, rawProperties);
         FeishuCrypto crypto = props.isEncrypted() ? new FeishuCrypto(props.encryptKey()) : null;
         FeishuAccessTokenProvider tokenProvider =
-                new FeishuAccessTokenProvider(props.apiBase(), props.appId(), props.appSecret());
+                new FeishuAccessTokenProvider(
+                        props.apiBase(), props.appId(), props.appSecret(), tokenStore);
         FeishuOutboundClient outbound = new FeishuOutboundClient(props.apiBase(), tokenProvider);
         FeishuInboundMapper mapper = new FeishuInboundMapper(channelId);
         return new FeishuChannel(
