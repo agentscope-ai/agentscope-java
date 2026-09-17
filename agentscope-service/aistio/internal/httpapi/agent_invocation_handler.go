@@ -155,6 +155,11 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 		if bindingErr != nil || binding.AgentID != agent.ID || !binding.Enabled || binding.ArchivedAt != nil || binding.Kind != candidate.Binding.Kind {
 			continue
 		}
+		// Scheduler's managed bridge posts to the Java data plane. It cannot
+		// execute a Hosted or External runtime selected as a policy fallback.
+		if originType == "channel" && binding.Kind != controlmodel.DataPlaneManaged {
+			continue
+		}
 		now := time.Now().UTC()
 		sessionID, instanceRef := requestedSessionID, ""
 		var instanceID uuid.UUID
@@ -168,8 +173,16 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			if json.Unmarshal(binding.Configuration, &cfg) != nil {
 				continue
 			}
-			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, "",
-				originType+"|"+originRef+"|"+requestedSessionID)
+			if originType == "channel" && (cfg.OwnerRef != agent.OwnerRef || cfg.ManagedDefinitionRef != agent.ID.String()) {
+				continue
+			}
+			externalKey := originType + "|" + originRef + "|" + requestedSessionID
+			if originType == "channel" {
+				// The product channel handler already authenticated and constructed
+				// this stable address key. Preserve it so cp.sessions is reused.
+				externalKey = originRef
+			}
+			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, "", externalKey)
 			if err != nil {
 				return nil, err
 			}
@@ -198,6 +211,23 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			continue
 		}
 		phase := store.SessionPhaseActive
+		if originType == "channel" {
+			existing, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: agent.Tenant,
+				Namespace: agent.Namespace, AgentID: agent.ID, SessionID: sessionID, Limit: 2})
+			if listErr != nil {
+				return nil, listErr
+			}
+			if len(existing) > 0 {
+				current := existing[0]
+				if len(existing) != 1 || current.BindingID != binding.ID || current.OriginType != originType || current.OriginRef != originRef || store.ChannelSessionOwnerRef(current) != agent.OwnerRef {
+					return nil, store.ErrConflict
+				}
+				// Resolving a conversation is not a new runtime observation. Keep
+				// phase, busy, timestamps, and any concurrent event state intact.
+				return current, nil
+			}
+			phase = store.SessionPhaseIdle
+		}
 		if binding.Kind == controlmodel.DataPlaneHostedRuntime {
 			phase = store.SessionPhaseIdle
 			if existing, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: agent.Tenant,
@@ -205,7 +235,11 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 				phase = existing[0].Phase
 			}
 		}
-		payload, _ := json.Marshal(gin.H{"originType": originType, "originRef": originRef})
+		metadata := gin.H{"originType": originType, "originRef": originRef}
+		if originType == "channel" {
+			metadata["channelOwnerRef"] = agent.OwnerRef
+		}
+		payload, _ := json.Marshal(metadata)
 		return s.store.Sessions().Upsert(ctx, &store.Session{Tenant: agent.Tenant, Namespace: agent.Namespace,
 			AgentID: agent.ID, BindingID: binding.ID, AgentInstanceID: instanceID, InstanceGeneration: generation,
 			AgentName: agent.AgentKey, SessionID: sessionID, InstanceRef: instanceRef, OriginType: originType,

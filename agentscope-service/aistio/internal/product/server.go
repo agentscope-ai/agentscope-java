@@ -81,6 +81,8 @@ type ManagedRuntimeFenceValidator func(ctx context.Context, sessionID string,
 type TeamMemberActivityHook func(ctx context.Context, sessionID, status string)
 
 type Server struct {
+	weixinCleanupCancel     context.CancelFunc
+	weixinCleanupDone       chan struct{}
 	accountDisableGuard     func(context.Context, string) error
 	oauthHTTPClient         *http.Client // Optional transport override for in-process provider tests.
 	channelWork             *ChannelWorkRuntime
@@ -175,11 +177,13 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 		}
 	}
 
-	return &Server{
+	server := &Server{
 		cfg:      cfg,
 		db:       db,
 		vaultKey: vaultKey(cfg.VaultMasterKey, cfg.JWTSecret),
-	}, nil
+	}
+	server.startWeixinExpiryWorker()
+	return server, nil
 }
 
 // Middlewares returns the auth chain that must wrap the product routes.
@@ -255,6 +259,10 @@ func (s *Server) SetAccountDisableGuard(fn func(context.Context, string) error) 
 // Close releases the database pool.
 func (s *Server) Close() {
 	if s != nil {
+		if s.weixinCleanupCancel != nil {
+			s.weixinCleanupCancel()
+			<-s.weixinCleanupDone
+		}
 		s.db.Close()
 	}
 }
