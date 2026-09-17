@@ -106,6 +106,12 @@ public final class WeixinChannel implements Channel {
             throw new IllegalArgumentException(
                     "weixin.botToken is required by the standalone properties factory");
         }
+        log.warn(
+                "Weixin channel '{}' uses the standalone properties factory: credentials and"
+                        + " runtime state stay in this process and are lost on restart. Production"
+                        + " hosts should call WeixinChannel.create(...) with a durable"
+                        + " WeixinStateStore.",
+                id);
         return create(
                 id,
                 c,

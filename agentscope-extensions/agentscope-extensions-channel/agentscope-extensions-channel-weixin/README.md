@@ -8,6 +8,16 @@ account-scoped leases.
 The module contains provider protocol and Channel runtime behavior only. A host application owns
 credential persistence, durable runtime state, authorization workflows, and user-facing status.
 
+## Compliance and scope
+
+This extension drives a **personal** Weixin account through Tencent's iLink service, not an
+enterprise bot account. Personal-account automation is governed by the applicable WeChat terms and
+by an operator's own policy, and an account used this way can be restricted by the provider.
+Adopting this module is therefore a deployment decision, not just a technical one: the host is
+responsible for confirming that it may automate the account, and for telling end users that a bot
+answers on it. The first release intentionally supports direct text conversations only; group,
+media and event messages are ignored until they have explicit routing and security semantics.
+
 ## Standalone configuration
 
 ```json
@@ -24,9 +34,17 @@ credential persistence, durable runtime state, authorization workflows, and user
 ```
 
 The properties factory is convenient for a standalone process and keeps credentials only in that
-process. Managed hosts should construct the Channel with `WeixinChannel.create(...)` and inject a
-`WeixinCredentialProvider`, `WeixinStateStore`, and `WeixinRuntimeListener`. These interfaces do
-not assume where credentials or state are stored.
+process. It logs a warning on construction, because it pairs the fixed credential provider with
+`WeixinStateStore.inMemory()`: the cursor, peer context tokens and lease are held in that process
+only, so a restart replays or drops inbound messages and forgets the conversation context, and a
+second instance cannot see the first. Use it for local development, not deployment.
+
+Managed hosts should construct the Channel with `WeixinChannel.create(...)` and inject a
+`WeixinCredentialProvider`, a durable `WeixinStateStore`, and a `WeixinRuntimeListener`. These
+interfaces do not assume where credentials or state are stored; the module ships no Redis or JDBC
+adapter, so a host that needs restart recovery and horizontal scaling implements the store
+contract itself. `InMemoryWeixinStateStore` is the reference implementation of that contract and
+evicts idle accounts, but it is single-JVM state.
 
 The Channel never writes credentials to the local filesystem.
 
