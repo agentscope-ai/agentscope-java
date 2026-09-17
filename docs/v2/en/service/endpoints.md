@@ -1,10 +1,14 @@
 ---
-title: "Endpoints: integrate Agent capabilities into applications"
+title: "Application integration: Endpoint and SSE"
 ---
 
-[简体中文](/v2/zh/service/endpoints)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 An Endpoint exposes an Agent, Team or published Workflow revision through a stable interface with authentication, schemas and invocation records. Callers do not need internal runtime or scheduler addresses.
+
+Publish an entry point and submit work here, then use [SSE format and task feedback](/v2/en/service/sse-events) to consume events, reconnect and retrieve the final result.
 
 ## Choose a mode
 
@@ -59,3 +63,5 @@ A disconnected SSE stream is not proof of failure; query statusUrl first. Check 
 Publish an Endpoint release to switch its target and retain history. Rollback points the entry at a previous release; it does not restore databases or undo external operations. Disable prevents new use. Inspect the specific invocation/execution when cancelling existing work.
 
 Related: [API reference](/v2/en/service/api-reference) · [Workflows](/v2/en/service/workflows).
+
+See the [fulfillment case](/v2/en/service/cases/order-fulfillment) for a Team Job, constrained input, investigation progress, and a Workflow connecting approval to business execution.

@@ -2,7 +2,9 @@
 title: "Execution reference: Sessions, Runs and Attempts"
 ---
 
-[简体中文](/v2/zh/service/sessions)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Use Chat for conversation and Issues for work. Sessions and Executions are diagnostic views whose availability depends on operational permissions.
 
@@ -38,3 +40,18 @@ Tool events, final replies, Attempt success and Issue acceptance are separate ev
 ## Reconnect
 
 Reopen the original work and query saved events and current state. SSE ending is not proof of failure. Proxies should forward events promptly. Do not submit duplicate work with a new idempotency key merely because the frontend disconnected.
+
+## What to record during diagnosis
+
+Practice with the [engineering case](/v2/en/service/cases/sdlc-team): open the Run from the parent Issue, locate the Hosted member in Task map, inspect its latest Attempt, and correlate its Session, logs, and files.
+
+| Record | Purpose |
+| --- | --- |
+| Issue ID and acceptance criteria | Establish the deliverable and whether human acceptance is outstanding |
+| Run ID, mode, and target revision | Identify the execution, orchestration shape, and definition |
+| Node / Task / Attempt IDs | Locate the failing step and distinguish retry levels |
+| Session ID and Host/provider where applicable | Locate execution context and machine |
+| Status, error, time, and last event cursor | Distinguish a wait, terminal failure, and an observation disconnect |
+| Artifacts and test logs | Evaluate delivery against requirements instead of status labels alone |
+
+If a second Attempt succeeds, retain the first failure and associate delivery with the successful execution's files. For an SSE disconnect, resume observation of the original invocation with its cursor using the [SSE guide](/v2/en/service/sse-events); do not create another business task.

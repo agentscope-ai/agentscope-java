@@ -1,10 +1,22 @@
 ---
-title: "Inbox: notifications, approvals and reviews"
+title: "Console Inbox: notifications, approvals and reviews"
 ---
 
-[简体中文](/v2/zh/service/inbox)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Inbox brings together work updates, approvals and result reviews that concern you. Start with items that need a decision, then read informational updates.
+
+Handle feedback related to your [console Issues](/v2/en/service/issues) here. Applications receive execution feedback through [SSE and status APIs](/v2/en/service/sse-events); work that requires human review still follows its acceptance policy.
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/inbox.png" alt="Inbox review request with its linked issue" />
+</Frame>
+
+Select a notification in the message list, then read the linked issue and its result on the right. Reading a notification does not complete the review; inspect the deliverable before using the review actions.
 
 ## Find actionable items
 
@@ -36,3 +48,5 @@ Archive informational messages after reading them. Archive cannot replace a deci
 For access failures, contact the scope or work owner. Administrative identity is not a substitute for authorization to private work.
 
 Next: [Automations](/v2/en/service/automation) · [Accounts and permissions](/v2/en/service/access).
+
+Practice with the [engineering case](/v2/en/service/cases/sdlc-team): inspect the final commit, actual tests, GitHub review, and CI before accepting delivery. Service acceptance and GitHub approval remain separate records.
