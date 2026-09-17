@@ -129,8 +129,19 @@ public class GeminiMessageConverter {
                     if (metadata != null
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
+                        if (signature instanceof byte[] bytes) {
+                            // In-memory: signature is already byte[]
+                            partBuilder.thoughtSignature(bytes);
+                        } else if (signature instanceof String base64 && !base64.isEmpty()) {
+                            // Persistence: the codec restores byte[] as a String
+                            try {
+                                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
+                            } catch (IllegalArgumentException e) {
+                                log.warn(
+                                        "Skipping invalid thought signature on tool call '{}'",
+                                        tub.getName(),
+                                        e);
+                            }
                         }
                     }
 

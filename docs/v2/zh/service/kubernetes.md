@@ -1,10 +1,12 @@
 ---
-title: "生产安装：Kubernetes 与 Helm"
+title: "生产安装"
 ---
 
-[English](/v2/en/service/kubernetes)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
-正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
+本页介绍面向生产环境的 Kubernetes 与 Helm 安装。正式 Service Chart 安装 Gateway、Control、Dataplane 和 Scheduler。PostgreSQL、持久存储、入口域名和 TLS 由你管理。应用每组件默认单副本并采用 Recreate 更新，部署和升级需要维护窗口。
 
 ## 1. 准备依赖
 

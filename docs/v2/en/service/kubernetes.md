@@ -1,10 +1,12 @@
 ---
-title: "Production installation with Kubernetes and Helm"
+title: "Production installation"
 ---
 
-[简体中文](/v2/zh/service/kubernetes)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
+This guide covers production deployment with Kubernetes and Helm. The published Service Chart installs Gateway, Control, Dataplane and Scheduler. You manage PostgreSQL, storage, domain and TLS. Components default to one replica with Recreate updates; plan maintenance windows.
 
 ## 1. Prepare dependencies
 
