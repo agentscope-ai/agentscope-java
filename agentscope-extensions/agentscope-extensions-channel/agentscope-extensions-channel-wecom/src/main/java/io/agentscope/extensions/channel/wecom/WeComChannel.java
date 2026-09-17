@@ -18,6 +18,7 @@ package io.agentscope.extensions.channel.wecom;
 import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -57,7 +58,7 @@ public final class WeComChannel implements Channel {
     private final WeComAccessTokenProvider tokenProvider;
     private final WeComOutboundClient outboundClient;
     private final WeComInboundMapper mapper;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
     private final WeComChannelRegistry registry;
@@ -72,7 +73,7 @@ public final class WeComChannel implements Channel {
             WeComAccessTokenProvider tokenProvider,
             WeComOutboundClient outboundClient,
             WeComInboundMapper mapper,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             WeComChannelRegistry registry) {
@@ -90,7 +91,9 @@ public final class WeComChannel implements Channel {
     }
 
     /**
-     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}.
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore}; use {@link #fromProperties(String, ChannelConfig,
+     * Map, InboundEventDeduplicator)} to supply a shared-storage deduplicator.
      *
      * @param channelId the channel id (key in {@code agentscope.json#channels})
      * @param routing the {@link ChannelConfig} parsed from the file entry's routing block
@@ -99,6 +102,26 @@ public final class WeComChannel implements Channel {
      */
     public static WeComChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(channelId, routing, rawProperties, new IdempotencyStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise.
+     *
+     * @param channelId the channel id (key in {@code agentscope.json#channels})
+     * @param routing the {@link ChannelConfig} parsed from the file entry's routing block
+     * @param rawProperties provider-specific properties (corpId, agentId, secret, token,
+     *     encodingAesKey, ...)
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static WeComChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
         WeComChannelProperties props = WeComChannelProperties.from(channelId, rawProperties);
         WeComCrypto crypto = new WeComCrypto(props.token(), props.encodingAesKey(), props.corpId());
         WeComAccessTokenProvider tokenProvider =
@@ -114,7 +137,7 @@ public final class WeComChannel implements Channel {
                 tokenProvider,
                 outbound,
                 mapper,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
                 new ChannelRouter(routing.defaultAgentId()),
                 WeComChannelRegistry.instance());
@@ -204,7 +227,7 @@ public final class WeComChannel implements Channel {
         return mapper;
     }
 
-    IdempotencyStore idempotency() {
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 
