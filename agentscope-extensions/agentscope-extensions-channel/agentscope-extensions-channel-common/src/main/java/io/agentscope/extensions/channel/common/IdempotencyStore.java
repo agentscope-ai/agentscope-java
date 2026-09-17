@@ -71,9 +71,8 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
             return true;
         }
         if (now - prior > ttlMillis) {
-            // Restart the retention window so only the first post-expiry redelivery proceeds.
-            seen.put(key, now);
-            return true;
+            // Only the CAS winner restarts the window; the loser sees a redelivery.
+            return seen.replace(key, prior, now);
         }
         return false;
     }

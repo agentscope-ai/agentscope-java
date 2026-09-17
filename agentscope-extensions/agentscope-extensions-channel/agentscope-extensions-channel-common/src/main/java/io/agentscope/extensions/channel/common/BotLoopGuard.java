@@ -119,11 +119,10 @@ public final class BotLoopGuard {
 
     /**
      * Removes peers that have recorded no event for longer than {@code windowMillis +
-     * cooldownMillis}; by then the sliding window is empty and any cooldown has expired. Under a
-     * rare concurrent interleaving — a genuinely idle entry evicted between another caller's
-     * acquisition of it and its recording — that peer's window restarts empty; for a heuristic
-     * throttle this momentary relaxation is accepted. A newly created entry carries its creation
-     * time as its last-event stamp, so it can never be mistaken for idle here.
+     * cooldownMillis}; by then the sliding window is empty and any cooldown has expired, so an
+     * evicted peer simply restarts with a fresh window on its next event. A newly created entry
+     * carries its creation time as its last-event stamp, so it can never be mistaken for idle
+     * here.
      *
      * @return the number of peers removed
      */
