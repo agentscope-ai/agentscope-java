@@ -36,10 +36,13 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * DingTalk (钉钉) channel adapter using the Stream protocol (persistent WebSocket).
+ * DingTalk (钉钉) channel adapter.
  *
- * <p>Inbound: {@link DingTalkStreamClient} dispatches each bot message payload here, where it is
- * mapped through {@link DingTalkInboundMapper}, deduplicated by {@code msgId}, throttled by the
+ * <p>Reception mode is selected by {@link DingTalkChannelProperties#mode()}: in {@code stream}
+ * mode (default), {@link DingTalkStreamClient} holds a persistent WebSocket and dispatches each
+ * bot message payload here; in {@code http} mode, {@link DingTalkCallbackController} receives
+ * signed HTTP callbacks and hands the verified payload to the same intake. Either way the payload
+ * is mapped through {@link DingTalkInboundMapper}, deduplicated by {@code msgId}, throttled by the
  * bot-loop guard, then routed via {@link ChannelRouter} and executed through the {@link Gateway}.
  *
  * <p>Outbound: {@link DingTalkOutboundClient} sends replies through the OpenAPI batchSend
@@ -61,7 +64,14 @@ public final class DingTalkChannel implements Channel {
     private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
+
+    /** Present only in {@code stream} mode; {@code null} in {@code http} mode. */
     private final DingTalkStreamClient streamClient;
+
+    /** Present only in {@code http} mode; {@code null} in {@code stream} mode. */
+    private final DingTalkCallbackCrypto crypto;
+
+    private final DingTalkChannelRegistry registry;
 
     private volatile Gateway gateway;
 
@@ -74,7 +84,8 @@ public final class DingTalkChannel implements Channel {
             DingTalkInboundMapper mapper,
             InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
-            ChannelRouter router) {
+            ChannelRouter router,
+            DingTalkChannelRegistry registry) {
         this.channelId = Objects.requireNonNull(channelId, "channelId");
         this.config = Objects.requireNonNull(config, "config");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -84,7 +95,14 @@ public final class DingTalkChannel implements Channel {
         this.idempotency = Objects.requireNonNull(idempotency, "idempotency");
         this.botLoopGuard = Objects.requireNonNull(botLoopGuard, "botLoopGuard");
         this.router = Objects.requireNonNull(router, "router");
-        this.streamClient = new DingTalkStreamClient(properties, this::onInboundPayload);
+        this.registry = Objects.requireNonNull(registry, "registry");
+        if (DingTalkChannelProperties.MODE_HTTP.equals(properties.mode())) {
+            this.streamClient = null;
+            this.crypto = new DingTalkCallbackCrypto(properties.appSecret(), properties.aesKey());
+        } else {
+            this.streamClient = new DingTalkStreamClient(properties, this::onInboundPayload);
+            this.crypto = null;
+        }
     }
 
     /**
@@ -125,7 +143,8 @@ public final class DingTalkChannel implements Channel {
                 mapper,
                 idempotency,
                 new BotLoopGuard(),
-                new ChannelRouter(routing.defaultAgentId()));
+                new ChannelRouter(routing.defaultAgentId()),
+                DingTalkChannelRegistry.instance());
     }
 
     // -----------------------------------------------------------------
@@ -151,17 +170,26 @@ public final class DingTalkChannel implements Channel {
 
     @Override
     public void start() {
-        streamClient.start();
+        if (crypto != null) {
+            registry.register(this);
+        } else {
+            streamClient.start();
+        }
         log.info(
-                "DingTalk channel '{}' started: appKey={}, robotCode={}",
+                "DingTalk channel '{}' started in {} mode: appKey={}, robotCode={}",
                 channelId,
+                properties.mode(),
                 properties.appKey(),
                 properties.robotCode());
     }
 
     @Override
     public void stop() {
-        streamClient.stop();
+        if (crypto != null) {
+            registry.unregister(channelId, this);
+        } else {
+            streamClient.stop();
+        }
         log.info("DingTalk channel '{}' stopped", channelId);
     }
 
@@ -201,10 +229,15 @@ public final class DingTalkChannel implements Channel {
     }
 
     // -----------------------------------------------------------------
-    //  Stream callback
+    //  Inbound intake (shared by both reception modes)
     // -----------------------------------------------------------------
 
-    private void onInboundPayload(JsonNode payload) {
+    /**
+     * Handles a bot-message payload delivered by either reception mode ({@link
+     * DingTalkStreamClient} in stream mode, {@link DingTalkCallbackController} in http mode):
+     * deduplicates by {@code msgId}, maps, applies the bot-loop guard, then dispatches.
+     */
+    void onInboundPayload(JsonNode payload) {
         Optional<String> msgId = DingTalkInboundMapper.extractMsgId(payload);
         if (msgId.isPresent() && !idempotency.firstSeen(channelId + "|" + msgId.get())) {
             log.debug(
@@ -241,6 +274,11 @@ public final class DingTalkChannel implements Channel {
 
     DingTalkInboundMapper mapper() {
         return mapper;
+    }
+
+    /** Callback verification/decryption helper; {@code null} unless running in http mode. */
+    DingTalkCallbackCrypto crypto() {
+        return crypto;
     }
 
     InboundEventDeduplicator idempotency() {
