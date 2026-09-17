@@ -107,4 +107,38 @@ class WeixinOutboundClientTest {
             server.stop(0);
         }
     }
+
+    @org.junit.jupiter.api.Test
+    void notificationEndpointsAreCalled() throws Exception {
+        List<String> calls = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    calls.add(exchange.getRequestURI().getPath());
+                    byte[] bytes = "{\"ret\":0}".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            WeixinOutboundClient client =
+                    new WeixinOutboundClient(
+                            WeixinChannelProperties.from(
+                                    "test",
+                                    Map.of(
+                                            "baseUrl",
+                                            "http://127.0.0.1:" + server.getAddress().getPort())),
+                            WeixinCredentialProvider.fixed("test-token"));
+
+            client.notifyStart();
+            client.notifyStop();
+
+            assertEquals(List.of("/ilink/bot/msg/notifystart", "/ilink/bot/msg/notifystop"), calls);
+        } finally {
+            server.stop(0);
+        }
+    }
 }

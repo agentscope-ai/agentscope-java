@@ -79,6 +79,21 @@ class WeixinEndpointPolicyTest {
     }
 
     @Test
+    void rejectsHostnamesThatOnlyLookLikeLoopback() {
+        // Loopback is matched on the literal host, not on what the name resolves to: a DNS name
+        // that points at 127.0.0.1 must not become an allowed provider endpoint.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> WeixinEndpointPolicy.normalizeBaseUrl("http://localhost.attacker.example"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> WeixinEndpointPolicy.normalizeBaseUrl("http://127.0.0.1.attacker.example"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> WeixinEndpointPolicy.normalizeBaseUrl("https://localhost.attacker.example"));
+    }
+
+    @Test
     void rejectsPlaintextHttpOutsideLoopback() {
         assertThrows(
                 IllegalArgumentException.class,

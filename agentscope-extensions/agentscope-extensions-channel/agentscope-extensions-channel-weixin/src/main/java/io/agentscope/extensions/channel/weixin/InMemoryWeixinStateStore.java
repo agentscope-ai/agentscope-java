@@ -25,7 +25,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Standalone/test adapter with the same fencing and claim rules as a durable host. */
+/** Standalone/test adapter with the same fencing and claim rules as a durable host.
+ *
+ * <p><b>Not for production.</b> Everything lives in this process: a restart loses the cursor,
+ * peer context tokens and leases, and a second host instance sees a different store, so the
+ * single-consumer guarantee only holds within one JVM. Reaching for a durable {@link
+ * WeixinStateStore} is what makes restart recovery and horizontal scaling work; see the module
+ * README.
+ *
+ * <p>Accounts whose lease expired and whose inbox is empty are forgotten opportunistically
+ * during {@link #acceptBatch}, and completed message tombstones expire after {@link #RETENTION_MS},
+ * so a long-running process does not accumulate state for accounts it no longer serves.
+ */
 final class InMemoryWeixinStateStore implements WeixinStateStore {
     private static final long RETENTION_MS = Duration.ofDays(7).toMillis();
     private final Clock clock;
@@ -39,19 +50,33 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         this.clock = clock;
     }
 
+    /** Creates the account if needed; only mutating operations may use this. */
     private Account account(String id) {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("accountId is required");
         return accounts.computeIfAbsent(id, ignored -> new Account());
     }
 
+    /** Number of accounts currently retained; used by tests and diagnostics. */
+    int retainedAccounts() {
+        return accounts.size();
+    }
+
+    /** Looks up an account without creating one; validation paths must use this. */
+    private Account existing(String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("accountId is required");
+        return accounts.get(id);
+    }
+
     @Override
     public synchronized String loadCursor(String accountId) {
-        return account(accountId).cursor;
+        Account a = existing(accountId);
+        return a == null ? "" : a.cursor;
     }
 
     @Override
     public synchronized String loadContextToken(String accountId, String peerId) {
-        return account(accountId).contexts.get(peerId);
+        Account a = existing(accountId);
+        return a == null ? null : a.contexts.get(peerId);
     }
 
     @Override
@@ -89,14 +114,14 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
 
     @Override
     public synchronized boolean isLeaseCurrent(String accountId, WeixinLease lease) {
-        Account a = account(accountId);
-        return lease != null && lease.equals(a.lease) && a.expiresAt > clock.millis();
+        Account a = existing(accountId);
+        return a != null && lease != null && lease.equals(a.lease) && a.expiresAt > clock.millis();
     }
 
     @Override
     public synchronized void releaseLease(String accountId, WeixinLease lease) {
-        Account a = account(accountId);
-        if (lease != null && lease.equals(a.lease)) a.expiresAt = 0;
+        Account a = existing(accountId);
+        if (a != null && lease != null && lease.equals(a.lease)) a.expiresAt = 0;
     }
 
     @Override
@@ -108,13 +133,11 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         List<WeixinInboxMessage> batch = List.copyOf(messages);
         if (!isLeaseCurrent(accountId, lease)) return false;
         Account a = account(accountId);
-        a.inbox
-                .values()
-                .removeIf(m -> m.completed && m.completedAt < clock.millis() - RETENTION_MS);
         for (WeixinInboxMessage message : batch) {
             a.inbox.putIfAbsent(message.messageId(), new Message(message.payload()));
         }
         if (nextCursor != null && !nextCursor.isBlank()) a.cursor = nextCursor;
+        prune(accountId);
         return true;
     }
 
@@ -160,9 +183,27 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         return true;
     }
 
+    /**
+     * Expires tombstones in every account and forgets accounts that went idle. Called on each
+     * accepted batch, so the cost is proportional to the accounts seen while this process runs.
+     */
+    private void prune(String activeAccountId) {
+        long now = clock.millis();
+        for (Account account : accounts.values()) {
+            account.inbox.values().removeIf(m -> m.completed && m.completedAt < now - RETENTION_MS);
+        }
+        accounts.entrySet()
+                .removeIf(
+                        entry ->
+                                !entry.getKey().equals(activeAccountId)
+                                        && entry.getValue().expiresAt <= now
+                                        && entry.getValue().inbox.isEmpty());
+    }
+
     private Message validClaim(String accountId, WeixinLease lease, WeixinInboxClaim claim) {
         if (!isLeaseCurrent(accountId, lease)) return null;
-        Message m = account(accountId).inbox.get(claim.messageId());
+        Account a = existing(accountId);
+        Message m = a == null ? null : a.inbox.get(claim.messageId());
         return m != null
                         && !m.completed
                         && lease.equals(m.lease)
