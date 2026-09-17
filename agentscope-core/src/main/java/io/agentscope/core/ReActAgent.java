@@ -1785,7 +1785,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 msgs = List.of();
             }
 
-            Set<String> pendingIds = getPendingToolUseIds();
+            Set<String> pendingIds = MessageUtils.pendingToolUseIds(state.contextMutable());
 
             // No pending tools -> normal processing
             if (pendingIds.isEmpty()) {
@@ -1806,7 +1806,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // the permission HITL flow so ASKING tool calls are handled by confirmation first.
             if (enablePendingToolRecovery) {
                 maybePatchPendingToolCalls(msgs, pendingIds);
-                pendingIds = getPendingToolUseIds();
+                pendingIds = MessageUtils.pendingToolUseIds(state.contextMutable());
                 if (pendingIds.isEmpty()) {
                     addToContext(msgs);
                     return coreAgent();
@@ -1827,7 +1827,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!providedResults.isEmpty()) {
                 // User provided tool results -> validate and add
                 validateAndAddToolResults(msgs, pendingIds);
-                return hasPendingToolUse() ? resumeAgent() : coreAgent();
+                return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
+                        ? resumeAgent()
+                        : coreAgent();
             }
 
             // Recovery was disabled and user did not provide tool results — unrecoverable.
@@ -1950,7 +1952,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
         private String resolvePendingRequestReplyId(String metadataKey) {
-            Msg requestMsg = findLastAssistantMsg();
+            Msg requestMsg = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (requestMsg == null || requestMsg.getMetadata() == null) {
                 return "";
             }
@@ -1965,18 +1967,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * metadata there lets the next call recover it from session state.
          */
         private void persistPendingRequestReplyId(String metadataKey, String replyId) {
-            Msg lastAssistant = findLastAssistantMsg();
+            Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null) {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
             metadata.put(metadataKey, replyId);
-            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
+            MessageUtils.replaceLastMessageByRole(
+                    state.contextMutable(),
+                    MsgRole.ASSISTANT,
+                    lastAssistant.withMetadata(metadata));
         }
 
         /** Remove HITL correlation metadata after the resume payload is accepted. */
         private void clearPendingRequestReplyId(String metadataKey) {
-            Msg lastAssistant = findLastAssistantMsg();
+            Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null || lastAssistant.getMetadata() == null) {
                 return;
             }
@@ -1985,17 +1990,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
             metadata.remove(metadataKey);
-            replaceLastAssistantMsg(lastAssistant.withMetadata(metadata));
-        }
-
-        private void replaceLastAssistantMsg(Msg replacement) {
-            List<Msg> ctx = state.contextMutable();
-            for (int i = ctx.size() - 1; i >= 0; i--) {
-                if (ctx.get(i).getRole() == MsgRole.ASSISTANT) {
-                    ctx.set(i, replacement);
-                    return;
-                }
-            }
+            MessageUtils.replaceLastMessageByRole(
+                    state.contextMutable(),
+                    MsgRole.ASSISTANT,
+                    lastAssistant.withMetadata(metadata));
         }
 
         /**
@@ -2034,7 +2032,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     deniedToolCalls.add(target);
                 }
             }
-            applyToolUseBlockReplacements(replacements);
+            MessageUtils.replaceToolUseBlocks(state.contextMutable(), replacements);
             for (ToolUseBlock denied : deniedToolCalls) {
                 ToolResultBlock deniedResult =
                         ToolResultBlock.text(PERMISSION_DENIED_BY_USER)
@@ -2060,42 +2058,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             replyId, toolCall.getId(), toolCall.getName(), ToolResultState.DENIED));
         }
 
-        /**
-         * Locate the last assistant Msg and substitute {@code ToolUseBlock}s in-place when their id
-         * appears in {@code replacements}.
-         */
-        private void applyToolUseBlockReplacements(Map<String, ToolUseBlock> replacements) {
-            if (replacements == null || replacements.isEmpty()) {
-                return;
-            }
-            List<Msg> ctx = state.contextMutable();
-            for (int i = ctx.size() - 1; i >= 0; i--) {
-                Msg m = ctx.get(i);
-                if (m.getRole() != MsgRole.ASSISTANT) {
-                    continue;
-                }
-                boolean hasMatch =
-                        m.getContent().stream()
-                                .anyMatch(
-                                        b ->
-                                                b instanceof ToolUseBlock t
-                                                        && replacements.containsKey(t.getId()));
-                if (!hasMatch) {
-                    continue;
-                }
-                List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
-                for (ContentBlock block : m.getContent()) {
-                    if (block instanceof ToolUseBlock t && replacements.containsKey(t.getId())) {
-                        rebuilt.add(replacements.get(t.getId()));
-                    } else {
-                        rebuilt.add(block);
-                    }
-                }
-                ctx.set(i, m.withContent(rebuilt));
-                return;
-            }
-        }
-
         private void maybePatchPendingToolCalls(List<Msg> msgs, Set<String> pendingIds) {
             if (pendingIds.isEmpty()) {
                 return;
@@ -2108,7 +2070,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (userProvidedResults) {
                 return;
             }
-            Msg lastAssistant = findLastAssistantMsg();
+            Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null) {
                 return;
             }
@@ -2152,11 +2114,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * resumed run inherits an inconsistent context and providers may return an empty response.
          *
          * <p>Must run <em>before</em> the recovery message is added, otherwise that recovery
-         * message becomes the last assistant message and {@link #getPendingToolUseIds()} no longer
+         * message becomes the last assistant message and pending-tool detection no longer
          * detects the pending calls.
          */
         private void synthesizeErrorResultsForPendingToolCalls() {
-            List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
+            List<ToolUseBlock> pendingToolCalls =
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
             if (pendingToolCalls.isEmpty()) {
                 return;
             }
@@ -2184,54 +2147,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             } else if (externalEventEmitter != null) {
                 externalEventEmitter.emit(event);
             }
-        }
-
-        /**
-         * Find the last assistant message in context.
-         *
-         * @return The last assistant message, or null if not found
-         */
-        private Msg findLastAssistantMsg() {
-            List<Msg> contextMsgs = state.contextMutable();
-            for (int i = contextMsgs.size() - 1; i >= 0; i--) {
-                Msg msg = contextMsgs.get(i);
-                if (msg.getRole() == MsgRole.ASSISTANT) {
-                    return msg;
-                }
-            }
-            return null;
-        }
-
-        /**
-         * Check if there are pending tool calls without corresponding results.
-         *
-         * @return true if there are pending tool calls
-         */
-        private boolean hasPendingToolUse() {
-            return !getPendingToolUseIds().isEmpty();
-        }
-
-        /**
-         * Get the set of pending tool use IDs from the last assistant message.
-         *
-         * @return Set of tool use IDs that have no corresponding results in memory
-         */
-        private Set<String> getPendingToolUseIds() {
-            Msg lastAssistant = findLastAssistantMsg();
-            if (lastAssistant == null || !lastAssistant.hasContentBlocks(ToolUseBlock.class)) {
-                return Set.of();
-            }
-
-            Set<String> existingResultIds =
-                    state.contextMutable().stream()
-                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                            .map(ToolResultBlock::getId)
-                            .collect(Collectors.toSet());
-
-            return lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
-                    .map(ToolUseBlock::getId)
-                    .filter(id -> !existingResultIds.contains(id))
-                    .collect(Collectors.toSet());
         }
 
         /**
@@ -2379,7 +2294,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     options);
                                 }
                                 List<Msg> modelInput =
-                                        prependSystemMsg(
+                                        MessageUtils.prependSystemMessage(
                                                 event.getInputMessages(), event.getSystemMessage());
                                 List<ToolSchema> tools =
                                         toolkit.getToolSchemas(
@@ -2522,7 +2437,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // (e.g. a reasoning model that wrote its whole answer into the
                                 // reasoning channel and left the content channel empty). Loop
                                 // back to reasoning with a synthetic reminder.
-                                if (!hasToolCalls(eventMsg)) {
+                                if (!MessageUtils.hasToolCalls(eventMsg)) {
                                     log.warn(
                                             "Final response has no visible content (empty reply),"
                                                     + " model: {}, iter: {}",
@@ -2801,11 +2716,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @return Mono containing the final result message
          */
         private Mono<Msg> acting(int iter) {
-            List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
+            List<ToolUseBlock> pendingToolCalls =
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
 
             if (pendingToolCalls.isEmpty()) {
                 List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-                if (!recentToolCalls.isEmpty() && allRecentToolCallsDenied(recentToolCalls)) {
+                if (!recentToolCalls.isEmpty()
+                        && MessageUtils.allToolCallsDenied(
+                                state.contextMutable(), recentToolCalls)) {
                     return emitAllToolsDeniedThroughMiddleware(recentToolCalls, iter);
                 }
                 return executeIteration(iter + 1);
@@ -2847,7 +2765,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (rs != null) {
                                     if (rs.getGenerateReason()
                                             == GenerateReason.PERMISSION_ASKING) {
-                                        Msg lastAssistant = findLastAssistantMsg();
+                                        Msg lastAssistant =
+                                                MessageUtils.lastAssistantMessage(
+                                                        state.contextMutable());
                                         if (lastAssistant != null) {
                                             return Mono.just(
                                                     lastAssistant.withGenerateReason(
@@ -3589,7 +3509,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             log.debug("Maximum iterations reached. Generating summary...");
 
             // Handle pending tool calls that were not completed before max iterations
-            List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+            List<ToolUseBlock> pendingTools =
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
             if (!pendingTools.isEmpty()) {
                 log.warn(
                         "Max iterations reached with {} pending tool calls. Adding error results.",
@@ -3626,7 +3547,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             preSummaryEvent -> {
                                 List<Msg> effectiveMessages =
-                                        prependSystemMsg(
+                                        MessageUtils.prependSystemMessage(
                                                 preSummaryEvent.getInputMessages(),
                                                 preSummaryEvent.getSystemMessage());
                                 GenerateOptions effectiveOptions =
@@ -3819,24 +3740,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // ==================== Helper Methods ====================
 
         /**
-         * Prepends the system message to {@code msgs} if non-null.
-         *
-         * <p>Called immediately before each {@code model.stream()} invocation to build the final
-         * LLM input without contaminating the context message list.
-         */
-        private static List<Msg> prependSystemMsg(List<Msg> msgs, Msg systemMsg) {
-            if (systemMsg == null) {
-                return msgs != null ? msgs : List.of();
-            }
-            List<Msg> result = new ArrayList<>();
-            result.add(systemMsg);
-            if (msgs != null) {
-                result.addAll(msgs);
-            }
-            return result;
-        }
-
-        /**
          * Check if the ReAct loop should terminate.
          *
          * <p>A response with tool calls continues to the acting phase. A tool-free response
@@ -3852,7 +3755,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return true;
             }
 
-            if (hasToolCalls(msg)) {
+            if (MessageUtils.hasToolCalls(msg)) {
                 return false;
             }
 
@@ -3860,10 +3763,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .anyMatch(
                             textBlock ->
                                     textBlock.getText() != null && !textBlock.getText().isBlank());
-        }
-
-        private static boolean hasToolCalls(Msg msg) {
-            return !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
         }
 
         /**
@@ -3887,26 +3786,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     Msg.METADATA_REMINDER_KIND,
                                     "empty_response"))
                     .build();
-        }
-
-        /**
-         * Check whether every tool call in the given list has a DENIED result in context.
-         */
-        private boolean allRecentToolCallsDenied(List<ToolUseBlock> recentToolCalls) {
-            Set<String> toolIds =
-                    recentToolCalls.stream().map(ToolUseBlock::getId).collect(Collectors.toSet());
-
-            Map<String, ToolResultState> resultStates = new HashMap<>();
-            for (Msg m : state.contextMutable()) {
-                for (ToolResultBlock r : m.getContentBlocks(ToolResultBlock.class)) {
-                    if (toolIds.contains(r.getId())) {
-                        resultStates.put(r.getId(), r.getState());
-                    }
-                }
-            }
-
-            return toolIds.size() == resultStates.size()
-                    && resultStates.values().stream().allMatch(s -> s == ToolResultState.DENIED);
         }
 
         /**
@@ -3941,7 +3820,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     () -> {
                                         RequestStopEvent rs = stopRef.get();
                                         if (rs != null) {
-                                            Msg lastMsg = findLastAssistantMsg();
+                                            Msg lastMsg =
+                                                    MessageUtils.lastAssistantMessage(
+                                                            state.contextMutable());
                                             GenerateReason reason =
                                                     rs.getGenerateReason() != null
                                                             ? rs.getGenerateReason()
@@ -3968,28 +3849,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
         }
 
-        /**
-         * Extract only pending tool calls (those without results in context) from the most recent
-         * assistant message.
-         *
-         * <p>This method filters out tool calls that already have corresponding results in context,
-         * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
-         *
-         * @return List of tool use blocks that don't have results yet, or empty list if all tools
-         *     have been executed
-         */
-        private List<ToolUseBlock> extractPendingToolCalls() {
-            List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
-            if (allToolCalls.isEmpty()) {
-                return List.of();
-            }
-
-            Set<String> pendingIds = getPendingToolUseIds();
-            return allToolCalls.stream()
-                    .filter(toolUse -> pendingIds.contains(toolUse.getId()))
-                    .toList();
-        }
-
         // ==================== Tool call state helpers (Permission HITL) ====================
 
         /**
@@ -4001,47 +3860,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (updates == null || updates.isEmpty()) {
                 return;
             }
-            List<Msg> ctx = state.contextMutable();
-            for (int i = ctx.size() - 1; i >= 0; i--) {
-                Msg m = ctx.get(i);
-                if (m.getRole() != MsgRole.ASSISTANT) {
-                    continue;
-                }
-                boolean hasMatch =
-                        m.getContent().stream()
-                                .anyMatch(
-                                        b ->
-                                                b instanceof ToolUseBlock t
-                                                        && updates.containsKey(t.getId()));
-                if (!hasMatch) {
-                    continue;
-                }
-                List<ContentBlock> rebuilt = new ArrayList<>(m.getContent().size());
-                for (ContentBlock block : m.getContent()) {
-                    if (block instanceof ToolUseBlock t && updates.containsKey(t.getId())) {
-                        rebuilt.add(t.withState(updates.get(t.getId())));
-                    } else {
-                        rebuilt.add(block);
-                    }
-                }
-                ctx.set(i, m.withContent(rebuilt));
-                return; // only the last assistant msg holds the live tool_use blocks
+            Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
+            if (lastAssistant == null) {
+                return;
             }
-        }
-
-        /** Convenience overload for a single tool call. */
-        private void updateToolCallState(String toolCallId, ToolCallState newState) {
-            updateToolCallStates(Map.of(toolCallId, newState));
-        }
-
-        /** Whether any ToolUseBlock in the last assistant Msg is in ASKING state. */
-        private boolean hasAskingToolCalls() {
-            return !askingToolCalls().isEmpty();
+            Map<String, ToolUseBlock> replacements = new HashMap<>();
+            for (ToolUseBlock toolUse : lastAssistant.getContentBlocks(ToolUseBlock.class)) {
+                ToolCallState newState = updates.get(toolUse.getId());
+                if (newState != null) {
+                    replacements.put(toolUse.getId(), toolUse.withState(newState));
+                }
+            }
+            MessageUtils.replaceToolUseBlocks(state.contextMutable(), replacements);
         }
 
         /** The ToolUseBlocks in the last assistant Msg that are in ASKING state (HITL pending). */
         private List<ToolUseBlock> askingToolCalls() {
-            Msg last = findLastAssistantMsg();
+            Msg last = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (last == null) {
                 return List.of();
             }
