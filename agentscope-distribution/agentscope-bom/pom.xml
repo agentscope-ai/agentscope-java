@@ -341,6 +341,11 @@
                 <artifactId>agentscope-extensions-channel-gitlab</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-weixin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Training Extension -->
             <dependency>
