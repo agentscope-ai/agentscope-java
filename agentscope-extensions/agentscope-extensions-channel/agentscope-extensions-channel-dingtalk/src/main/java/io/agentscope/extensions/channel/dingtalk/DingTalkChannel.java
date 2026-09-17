@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -60,7 +61,7 @@ public final class DingTalkChannel implements Channel {
     private final DingTalkAccessTokenProvider tokenProvider;
     private final DingTalkOutboundClient outboundClient;
     private final DingTalkInboundMapper mapper;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
 
@@ -81,7 +82,7 @@ public final class DingTalkChannel implements Channel {
             DingTalkAccessTokenProvider tokenProvider,
             DingTalkOutboundClient outboundClient,
             DingTalkInboundMapper mapper,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             DingTalkChannelRegistry registry) {
@@ -104,9 +105,29 @@ public final class DingTalkChannel implements Channel {
         }
     }
 
-    /** Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. */
+    /**
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore}; use {@link #fromProperties(String, ChannelConfig,
+     * Map, InboundEventDeduplicator)} to supply a shared-storage deduplicator.
+     */
     public static DingTalkChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(channelId, routing, rawProperties, new IdempotencyStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise.
+     *
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static DingTalkChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
         DingTalkChannelProperties props = DingTalkChannelProperties.from(channelId, rawProperties);
         DingTalkAccessTokenProvider tokenProvider =
                 new DingTalkAccessTokenProvider(props.apiBase(), props.appKey(), props.appSecret());
@@ -120,7 +141,7 @@ public final class DingTalkChannel implements Channel {
                 tokenProvider,
                 outbound,
                 mapper,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
                 new ChannelRouter(routing.defaultAgentId()),
                 DingTalkChannelRegistry.instance());
@@ -260,7 +281,7 @@ public final class DingTalkChannel implements Channel {
         return crypto;
     }
 
-    IdempotencyStore idempotency() {
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 
