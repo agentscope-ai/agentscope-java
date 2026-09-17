@@ -15,6 +15,7 @@
  */
 package io.agentscope.spring.boot.dashscope;
 
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -31,6 +32,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     # base-url: # optional
  *     stream: true
  *     enable-thinking: true
+ *     # multimodal-model-patterns: ["deepseek-v4.1"]   # optional
  * }</pre>
  */
 @ConfigurationProperties(prefix = "agentscope.dashscope")
@@ -65,6 +67,17 @@ public class DashScopeProperties {
      * Whether to enable thinking mode (optional).
      */
     private Boolean enableThinking;
+
+    /**
+     * Additional case-insensitive substring patterns for multimodal model detection.
+     *
+     * <p>When {@code endpointType} is {@code AUTO} (the default), a model name matching
+     * any of these patterns is routed to the multimodal generation API, in addition to
+     * the built-in model-name rules. This allows using multimodal models not yet covered
+     * by the built-in whitelist (e.g. {@code deepseek-v4.1}) without waiting for a
+     * framework update.
+     */
+    private List<String> multimodalModelPatterns;
 
     public boolean isEnabled() {
         return enabled;
@@ -112,5 +125,13 @@ public class DashScopeProperties {
 
     public void setEnableThinking(Boolean enableThinking) {
         this.enableThinking = enableThinking;
+    }
+
+    public List<String> getMultimodalModelPatterns() {
+        return multimodalModelPatterns;
+    }
+
+    public void setMultimodalModelPatterns(List<String> multimodalModelPatterns) {
+        this.multimodalModelPatterns = multimodalModelPatterns;
     }
 }
