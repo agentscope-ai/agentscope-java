@@ -19,7 +19,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Configuration for a single DingTalk (钉钉) channel instance.
+ * Configuration for a single DingTalk (钉钉) channel instance. In a multi-tenant deployment the
+ * same record is the unit a {@link DingTalkCredentialResolver} returns per tenant key; resolved
+ * properties must configure {@code mode=http}, since only the callback path is materialized per
+ * tenant.
  *
  * <p>Reception mode: {@link #MODE_STREAM} (default) receives bot messages over a persistent
  * WebSocket connection; {@link #MODE_HTTP} receives them via signed HTTP callbacks delivered to
@@ -127,6 +130,33 @@ public record DingTalkChannelProperties(
                 asString(p, "apiBase"),
                 asString(p, "oapiBase"),
                 asString(p, "streamRegisterUrl"));
+    }
+
+    /**
+     * Masks the credential fields. A resolver result reaches application and framework logging —
+     * inside an {@code Optional}, an exception message, a controller advice logger — where the
+     * generated rendering would print them in full. {@code appKey} and the routing fields stay
+     * visible, since they are what makes a log line locatable.
+     *
+     * <p>The rendering is written out by hand rather than derived from the record components, so a
+     * field added here must be added below too: otherwise it is absent from every log line instead
+     * of visibly masked.
+     */
+    @Override
+    public String toString() {
+        return "DingTalkChannelProperties[appKey="
+                + appKey
+                + ", appSecret=***, robotCode="
+                + robotCode
+                + ", mode="
+                + mode
+                + ", aesKey=***, apiBase="
+                + apiBase
+                + ", oapiBase="
+                + oapiBase
+                + ", streamRegisterUrl="
+                + streamRegisterUrl
+                + "]";
     }
 
     private static String asString(Map<String, Object> p, String key) {

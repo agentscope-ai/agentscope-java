@@ -15,7 +15,9 @@
  */
 package io.agentscope.extensions.channel.dingtalk;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
@@ -23,8 +25,14 @@ import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import okhttp3.mockwebserver.Dispatcher;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.RecordedRequest;
 
-/** Shared fixtures for callback tests: HMAC signature computation and AES envelope construction. */
+/**
+ * Shared fixtures for callback tests: HMAC signature computation, AES envelope construction, and a
+ * stand-in DingTalk API for tests that let the outbound path run for real.
+ */
 final class DingTalkCallbackTestSupport {
 
     static final String SECRET = "test-app-secret";
@@ -37,6 +45,13 @@ final class DingTalkCallbackTestSupport {
                     .substring(0, 43);
 
     private DingTalkCallbackTestSupport() {}
+
+    /** Generates a 43-character AES key: base64 of 32 random bytes, padding stripped. */
+    static String newAesKey() {
+        byte[] key = new byte[32];
+        new java.security.SecureRandom().nextBytes(key);
+        return Base64.getEncoder().encodeToString(key).substring(0, 43);
+    }
 
     /** Returns the current millisecond epoch as a request timestamp string. */
     static String timestamp() {
@@ -63,7 +78,12 @@ final class DingTalkCallbackTestSupport {
      * big-endian length | msg [| trailer], PKCS#7-padded to a 32-byte multiple, base64-encoded.
      */
     static String encrypt(String json, String trailer) throws Exception {
-        byte[] key = Base64.getDecoder().decode(AES_KEY + "=");
+        return encrypt(AES_KEY, json, trailer);
+    }
+
+    /** {@link #encrypt(String, String)} for a caller-supplied 43-character AES key. */
+    static String encrypt(String aesKey, String json, String trailer) throws Exception {
+        byte[] key = Base64.getDecoder().decode(aesKey + "=");
         byte[] msg = json.getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         bos.write(new byte[16]);
@@ -85,5 +105,44 @@ final class DingTalkCallbackTestSupport {
                 new SecretKeySpec(key, "AES"),
                 new IvParameterSpec(Arrays.copyOf(key, 16)));
         return Base64.getEncoder().encodeToString(cipher.doFinal(padded));
+    }
+
+    /** Reads the {@code appKey} a recorded token request authenticated as. */
+    static String appKeyOf(RecordedRequest request) {
+        try {
+            return new ObjectMapper()
+                    .readTree(request.getBody().readUtf8())
+                    .path("appKey")
+                    .asText(null);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Minimal DingTalk API: the token endpoint echoes a deterministic token per app key, message
+     * send accepts.
+     */
+    static final class ApiDispatcher extends Dispatcher {
+
+        @Override
+        public MockResponse dispatch(RecordedRequest request) {
+            String path = request.getPath() == null ? "" : request.getPath();
+            if (path.startsWith("/v1.0/oauth2/accessToken")) {
+                return json(
+                        "{\"accessToken\":\"tok-" + appKeyOf(request) + "\",\"expireIn\":7200}");
+            }
+            if (path.startsWith("/v1.0/robot/")) {
+                return json("{}");
+            }
+            return new MockResponse().setResponseCode(404);
+        }
+
+        private static MockResponse json(String body) {
+            return new MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(body);
+        }
     }
 }

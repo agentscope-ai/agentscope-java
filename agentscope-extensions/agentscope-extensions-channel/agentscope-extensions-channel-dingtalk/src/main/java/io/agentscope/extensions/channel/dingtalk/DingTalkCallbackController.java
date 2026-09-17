@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,18 @@ import reactor.core.publisher.Mono;
  * <p>Each {@link DingTalkChannel} registers itself with the controller at start-up; the controller
  * dispatches incoming requests by {@code channelId} extracted from the URL path. This avoids
  * Spring-side dynamic mapping registration and keeps wiring trivially testable.
+ *
+ * <p>Two wiring modes:
+ *
+ * <ul>
+ *   <li><b>Static</b> — the default constructor. The path segment must name a channel registered
+ *       in {@link DingTalkChannelRegistry}.
+ *   <li><b>Multi-tenant</b> — {@link #DingTalkCallbackController(DingTalkTenantChannelManager)}.
+ *       The path segment is a tenant key: credentials are resolved per callback, so tenants can be
+ *       added, rotated and removed at runtime without registering channel instances. Expose a
+ *       {@link DingTalkTenantChannelManager} bean and component scanning selects this constructor;
+ *       without such a bean the no-argument constructor serves the static wiring.
+ * </ul>
  */
 @RestController
 @RequestMapping("/api/channels/dingtalk")
@@ -51,15 +64,57 @@ public class DingTalkCallbackController {
     /** Cap on exception-message snippets carried into logs; Jackson messages embed parsed source. */
     private static final int MAX_SNIPPET_LENGTH = 200;
 
-    private final DingTalkChannelRegistry registry;
+    /** Resolves the channel serving a request's path segment; {@code null} when none exists. */
+    private final ChannelSource channelSource;
 
     public DingTalkCallbackController() {
-        this(DingTalkChannelRegistry.instance());
+        this(DingTalkChannelRegistry.instance()::get);
+    }
+
+    /**
+     * Multi-tenant constructor: each callback's {@code {tenantKey}} path segment is resolved to
+     * credentials on every request, and the tenant's channel is materialized or refreshed through
+     * {@code manager} — see {@link DingTalkTenantChannelManager}. An unknown tenant answers 401
+     * like every other rejected request, so the endpoint is not a tenant-key oracle.
+     *
+     * <p>All handlers are safe to invoke concurrently; resolution and credential refresh are
+     * serialized per tenant inside the manager, so this controller adds no shared mutable state.
+     *
+     * <p>Spring wiring: this class is a component, so the annotation makes Spring prefer this
+     * constructor whenever a {@link DingTalkTenantChannelManager} bean exists and fall back to the
+     * no-argument constructor when none does. A multi-tenant application therefore exposes the
+     * manager bean and nothing else; declaring a second {@link DingTalkCallbackController} bean
+     * would register the same request mappings twice and fail startup.
+     *
+     * @param manager the tenant channel manager, typically a singleton bean
+     */
+    @Autowired(required = false)
+    public DingTalkCallbackController(DingTalkTenantChannelManager manager) {
+        this(tenantSource(Objects.requireNonNull(manager, "manager")));
     }
 
     /** Visible for tests — allows injecting a fresh registry. */
     DingTalkCallbackController(DingTalkChannelRegistry registry) {
-        this.registry = Objects.requireNonNull(registry, "registry");
+        this(Objects.requireNonNull(registry, "registry")::get);
+    }
+
+    private DingTalkCallbackController(ChannelSource channelSource) {
+        this.channelSource = Objects.requireNonNull(channelSource, "channelSource");
+    }
+
+    private static ChannelSource tenantSource(DingTalkTenantChannelManager manager) {
+        return key -> manager.channelFor(key).orElse(null);
+    }
+
+    /** Source of the channel serving a request; implementations return {@code null} if unknown. */
+    @FunctionalInterface
+    interface ChannelSource {
+        DingTalkChannel get(String id);
+    }
+
+    /** Visible for tests; the handler reaches channels through this seam as well. */
+    DingTalkChannel channelFor(String id) {
+        return channelSource.get(id);
     }
 
     /**
@@ -79,21 +134,24 @@ public class DingTalkCallbackController {
             @RequestHeader(value = "timestamp", required = false) String timestamp,
             @RequestHeader(value = "sign", required = false) String sign,
             @RequestBody String body) {
-        DingTalkChannel channel = registry.get(channelId);
+        DingTalkChannel channel = channelFor(channelId);
         if (channel == null) {
             // An unauthenticated probe must not distinguish an unknown channel id from a bad
             // signature, so both answer 401; the detail is kept out of the warn stream.
             log.debug("DingTalk dispatch: no channel registered for id='{}'", channelId);
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
-        if (isBlank(timestamp) || isBlank(sign) || !channel.crypto().verify(timestamp, sign)) {
+        // One credential snapshot per request: a rotation concurrent with this request cannot mix
+        // generations between signature verification, decryption and the intake below.
+        DingTalkChannel.Credentials credentials = channel.credentials();
+        if (isBlank(timestamp) || isBlank(sign) || !credentials.crypto().verify(timestamp, sign)) {
             log.warn(
                     "DingTalk dispatch: signature verification failed (channelId='{}')", channelId);
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
         JsonNode payload;
         try {
-            payload = extractPayload(channel, body);
+            payload = extractPayload(credentials.crypto(), body);
         } catch (RuntimeException e) {
             log.warn(
                     "DingTalk dispatch: failed to extract payload (channelId='{}'): {}",
@@ -102,12 +160,14 @@ public class DingTalkCallbackController {
             return Mono.just(ResponseEntity.badRequest().body(""));
         }
         // The intake pipeline acks benign cases internally (duplicates, non-text payloads, loop
-        // guard); the reply itself is delivered through the outbound API, not this response.
-        channel.onInboundPayload(payload);
+        // guard); the reply itself is delivered through the outbound API, not this response. It
+        // runs on the snapshot captured above, so the callback is attributed to the app key that
+        // verified it and its reply leaves through that generation's client.
+        channel.onInboundPayload(payload, credentials);
         return Mono.just(ResponseEntity.ok(""));
     }
 
-    private static JsonNode extractPayload(DingTalkChannel channel, String body) {
+    private static JsonNode extractPayload(DingTalkCallbackCrypto crypto, String body) {
         if (body == null || body.isBlank()) {
             throw new IllegalStateException("Request body is empty");
         }
@@ -126,14 +186,14 @@ public class DingTalkCallbackController {
         // Fail closed: a channel configured with an aesKey only ever receives envelopes from
         // DingTalk, so a plain body indicates a mismatched or forged request, not a message to
         // dispatch. The reverse mismatch (envelope without aesKey) fails inside decrypt().
-        if (channel.crypto().hasAesKey() && !hasEnvelope) {
+        if (crypto.hasAesKey() && !hasEnvelope) {
             throw new IllegalStateException(
                     "Channel expects an encrypted callback body but none was present");
         }
         if (!hasEnvelope) {
             return root;
         }
-        String plain = channel.crypto().decrypt(encrypt.asText());
+        String plain = crypto.decrypt(encrypt.asText());
         try {
             return MAPPER.readTree(plain);
         } catch (Exception e) {

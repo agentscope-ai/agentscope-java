@@ -1,0 +1,219 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.channel.dingtalk;
+
+import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
+import io.agentscope.harness.agent.gateway.Gateway;
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Provides the {@link DingTalkChannel} of each tenant in a multi-tenant deployment, materializing
+ * it on first use from {@link DingTalkCredentialResolver} results.
+ *
+ * <p>Wire one instance into {@link DingTalkCallbackController} and tenants can be added, rotated
+ * and removed at runtime without the application constructing or registering a channel per tenant.
+ *
+ * <h2>Reception mode</h2>
+ *
+ * <p>The manager serves the http callback path, so resolved properties must configure {@link
+ * DingTalkChannelProperties#MODE_HTTP mode=http}; resolving anything else fails fast. Stream-mode
+ * tenants keep the static wiring — a stream WebSocket binds its credentials at connect time and
+ * cannot be materialized per request.
+ *
+ * <h2>Lifecycle</h2>
+ *
+ * <p>{@link #channelFor(String)} resolves the tenant's credentials on every call, and the single
+ * call that materializes a tenant resolves twice — the credential lock the second resolve runs
+ * under belongs to the channel the first one creates, and {@link #channelFor(String)} documents
+ * which of the two answers the tenant keeps. The first call materializes the tenant's channel;
+ * later calls return that same instance after refreshing its credentials in place when they
+ * changed — see {@link DingTalkChannel#refreshCredentials}. A rotation therefore never replaces
+ * the channel object: the tenant keeps its sessions, deduplication state and bot-loop guard, and
+ * the credential fields that did not change keep their access-token cache.
+ *
+ * <p>The tenant key doubles as the channel id, so conversations, deduplication keys and bot-loop
+ * guards are namespaced per tenant by construction — two tenants whose user ids collide do not
+ * share sessions. Per-tenant agent routing is expressed with {@code channel}-tier bindings in the
+ * shared {@link ChannelConfig}.
+ *
+ * <p>{@link #evict(String)} drops a tenant. Call it when the tenant is deleted so its channel and
+ * its token cache are released; the manager does not evict on its own, since a lookup that
+ * transiently returns nothing must not tear down a live tenant's runtime.
+ *
+ * <h2>Scope</h2>
+ *
+ * <p>Materialized channels serve the inbound callback path — verify, decrypt, dispatch and reply.
+ * They are owned by this manager: they are neither registered in the process-wide
+ * {@link DingTalkChannelRegistry} nor with a harness {@code ChannelManager}, so proactive outbound
+ * delivery through {@code ChannelManager#deliver} does not reach them.
+ *
+ * <h2>Thread safety</h2>
+ *
+ * <p>Safe for concurrent use. Materialization is atomic per tenant key; resolve-and-refresh is
+ * serialized per tenant on the channel's credential lock, so the applied snapshot is the newest
+ * resolver answer even when callbacks race a rotation; request paths read the credential snapshot
+ * lock-free. The lock is per tenant, so lookups for different tenants proceed independently, while
+ * a lookup for one tenant waits out the resolver call of another lookup for the same tenant — keep
+ * the resolver's own work to a lookup, not a remote round trip on the callback path.
+ */
+public final class DingTalkTenantChannelManager {
+
+    private static final Logger log = LoggerFactory.getLogger(DingTalkTenantChannelManager.class);
+
+    private final DingTalkCredentialResolver resolver;
+    private final ChannelConfig routing;
+    private final Gateway gateway;
+    private final InboundEventDeduplicator idempotency;
+    private final ConcurrentHashMap<String, DingTalkChannel> channels = new ConcurrentHashMap<>();
+
+    /**
+     * Creates a manager using a process-local {@link IdempotencyStore}; see
+     * {@link #DingTalkTenantChannelManager(DingTalkCredentialResolver, ChannelConfig, Gateway,
+     * InboundEventDeduplicator)} to supply a shared-storage implementation instead.
+     *
+     * @param resolver resolves credentials per tenant key; consulted on every callback, and twice
+     *     on the call that first materializes the tenant
+     * @param routing the {@link ChannelConfig} every tenant channel is built with (default agent,
+     *     bindings, dm scope)
+     * @param gateway the gateway tenant channels dispatch into
+     */
+    public DingTalkTenantChannelManager(
+            DingTalkCredentialResolver resolver, ChannelConfig routing, Gateway gateway) {
+        this(resolver, routing, gateway, new IdempotencyStore());
+    }
+
+    /**
+     * Creates a manager with an application-supplied deduplicator — for example a shared-storage
+     * implementation so platform redeliveries are recognized across instances.
+     *
+     * <p>One deduplicator instance serves every tenant; the intake keys deduplication by the
+     * channel id, and the tenant key doubles as the channel id, so a single bounded store (or a
+     * single shared backing store) covers the whole deployment rather than one store per tenant.
+     *
+     * <p>Each tenant channel allocates a process-local access-token store per credential
+     * generation: the store contract binds one instance to one credential, and neither tenants nor
+     * a tenant's successive rotated credentials may share one, so no store is accepted here.
+     *
+     * @param resolver resolves credentials per tenant key; consulted on every callback, and twice
+     *     on the call that first materializes the tenant
+     * @param routing the {@link ChannelConfig} every tenant channel is built with (default agent,
+     *     bindings, dm scope)
+     * @param gateway the gateway tenant channels dispatch into
+     * @param idempotency deduplicator shared by all tenant channels; must be thread-safe
+     */
+    public DingTalkTenantChannelManager(
+            DingTalkCredentialResolver resolver,
+            ChannelConfig routing,
+            Gateway gateway,
+            InboundEventDeduplicator idempotency) {
+        this.resolver = Objects.requireNonNull(resolver, "resolver");
+        this.routing = Objects.requireNonNull(routing, "routing");
+        this.gateway = Objects.requireNonNull(gateway, "gateway");
+        this.idempotency = Objects.requireNonNull(idempotency, "idempotency");
+    }
+
+    /**
+     * Returns the channel serving {@code tenantKey}, materializing it on first use and refreshing
+     * its credentials when they changed.
+     *
+     * <p>Resolution and refresh are serialized per tenant on the channel's credential lock, so two
+     * callbacks that resolve different credential generations apply them in the order the resolver
+     * answered: the snapshot the tenant keeps is the newest answer, not the one whose thread
+     * happened to arrive last.
+     *
+     * <p>The one call that materializes a tenant resolves a second time, before the serialization
+     * above can apply: the lock lives on the channel, and the channel does not exist until a
+     * resolve has succeeded, so that first resolve only seeds the materialization while the resolve
+     * under the lock is the one the channel keeps. A resolver must therefore tolerate being called
+     * more than once for a single callback — make it a lookup, and keep any logging or metering
+     * free of assumptions about the call count.
+     *
+     * @param tenantKey the routing key from the callback URL path
+     * @return the tenant's channel, or empty when the resolver reports no such tenant
+     * @throws IllegalArgumentException when the resolved properties do not configure {@code
+     *     mode=http}
+     */
+    public Optional<DingTalkChannel> channelFor(String tenantKey) {
+        Objects.requireNonNull(tenantKey, "tenantKey");
+        DingTalkChannel channel = channels.get(tenantKey);
+        if (channel == null) {
+            // First use: the channel object carrying the lock does not exist yet, so this resolve
+            // runs outside it. The result only seeds the materialization — the resolve below is
+            // what the channel keeps, so a rotation racing this step still ends on the newest
+            // answer rather than on this one.
+            Optional<DingTalkChannelProperties> initial = resolver.resolve(tenantKey);
+            if (initial.isEmpty()) {
+                return Optional.empty();
+            }
+            DingTalkChannelProperties seed = initial.get();
+            requireHttpMode(tenantKey, seed);
+            channel = channels.computeIfAbsent(tenantKey, key -> materialize(key, seed));
+        }
+        synchronized (channel.credentialLock()) {
+            Optional<DingTalkChannelProperties> resolved = resolver.resolve(tenantKey);
+            if (resolved.isEmpty()) {
+                // A lookup that transiently returns nothing serves no callback but keeps the live
+                // channel: the platform retries, and the tenant's runtime is not torn down.
+                return Optional.empty();
+            }
+            DingTalkChannelProperties properties = resolved.get();
+            requireHttpMode(tenantKey, properties);
+            channel.refreshCredentials(properties);
+        }
+        return Optional.of(channel);
+    }
+
+    /**
+     * Drops the channel cached for {@code tenantKey}, if any. The next {@link #channelFor(String)}
+     * call materializes a fresh one.
+     *
+     * @param tenantKey the routing key from the callback URL path
+     */
+    public void evict(String tenantKey) {
+        Objects.requireNonNull(tenantKey, "tenantKey");
+        if (channels.remove(tenantKey) != null) {
+            log.info("DingTalk tenant '{}' evicted", tenantKey);
+        }
+    }
+
+    private static void requireHttpMode(String tenantKey, DingTalkChannelProperties properties) {
+        if (!DingTalkChannelProperties.MODE_HTTP.equals(properties.mode())) {
+            throw new IllegalArgumentException(
+                    "Tenant '"
+                            + tenantKey
+                            + "' resolved with mode='"
+                            + properties.mode()
+                            + "'; multi-tenant channels serve the http callback path, so resolved"
+                            + " properties must configure mode='http'");
+        }
+    }
+
+    private DingTalkChannel materialize(String tenantKey, DingTalkChannelProperties properties) {
+        DingTalkChannel channel =
+                DingTalkChannel.fromProperties(
+                        tenantKey, routing, properties, idempotency, InMemoryAccessTokenStore::new);
+        channel.init(gateway);
+        log.info("DingTalk tenant '{}' channel materialized", tenantKey);
+        return channel;
+    }
+}
