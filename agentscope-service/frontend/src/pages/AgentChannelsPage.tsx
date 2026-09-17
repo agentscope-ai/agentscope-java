@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import {
   AgentPresence,
@@ -32,6 +32,7 @@ import PlatformCredentialsForm, {
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
 import ChannelBindingTable from '../components/ChannelBindingTable';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', maxWidth: 1100 },
@@ -69,6 +70,7 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 export default function AgentChannelsPage() {
+  const scope = useControlPlaneScope();
   const { agentId } = useOutletContext<{ agentId: string }>();
   const [presences, setPresences] = useState<AgentPresence[]>([]);
   const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
@@ -76,7 +78,7 @@ export default function AgentChannelsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [edit, setEdit] = useState<AgentPresence | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr(null);
     try {
       const [p, t] = await Promise.all([listAgentPresences(agentId), listChannelTypes()]);
@@ -85,9 +87,9 @@ export default function AgentChannelsPage() {
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }
+  }, [agentId]);
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [agentId]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="console-page-legacy" style={S.root}>
@@ -103,6 +105,7 @@ export default function AgentChannelsPage() {
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
           <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Default channels</h2>
           <span style={{ flex: 1 }} />
+          {types.some(t => t.type === 'weixin') && <Link style={{ ...S.btn, textDecoration: 'none', marginRight: 8 }} to={scope.scopedPath(`/agent-center/entrypoints?create=weixin&agentId=${encodeURIComponent(agentId)}`)}>连接微信</Link>}
           <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => setShowCreate(true)}>
             + Connect channel
           </button>
@@ -132,10 +135,10 @@ export default function AgentChannelsPage() {
                 }}>
                   {p.enabled ? (p.started ? 'connected' : 'stopped') : 'disabled'}
                 </span>
-                <Link style={{ ...S.btn, textDecoration: 'none' }} to={`/agent-center/entrypoints/${encodeURIComponent(p.channelId)}`}>
-                  Advanced
+                <Link style={{ ...S.btn, textDecoration: 'none' }} to={scope.scopedPath(`/agent-center/entrypoints/${encodeURIComponent(p.channelId)}`)}>
+                  {p.platform === 'weixin' ? '管理微信连接' : 'Advanced'}
                 </Link>
-                <button style={S.btn} onClick={() => setEdit(p)}>Edit</button>
+                {p.platform !== 'weixin' && <><button style={S.btn} onClick={() => setEdit(p)}>Edit</button>
                 <button
                   style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }}
                   onClick={async () => {
@@ -149,7 +152,7 @@ export default function AgentChannelsPage() {
                   }}
                 >
                   Disconnect
-                </button>
+                </button></>}
                 {cb ? (
                   <div style={{ width: '100%', fontSize: '0.78rem', color: '#64748b', fontFamily: 'monospace' }}>
                     {cb}
@@ -167,7 +170,7 @@ export default function AgentChannelsPage() {
       {(showCreate || edit) && (
         <PresenceDialog
           agentId={agentId}
-          types={types}
+          types={types.filter(t => t.type !== 'weixin')}
           initial={edit}
           onClose={() => { setShowCreate(false); setEdit(null); }}
           onSaved={async () => {
