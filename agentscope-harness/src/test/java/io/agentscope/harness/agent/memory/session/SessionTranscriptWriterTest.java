@@ -29,7 +29,10 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
-import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.transcript.FilesystemTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
@@ -182,7 +185,7 @@ class SessionTranscriptWriterTest {
 
     @Test
     void resolveContextPath_omitsHostPathForSandboxFilesystem() {
-        AbstractSandboxFilesystem filesystem = mock(AbstractSandboxFilesystem.class);
+        SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
         try (WorkspaceManager wm = new WorkspaceManager(workspace, filesystem)) {
             SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
 
@@ -193,7 +196,12 @@ class SessionTranscriptWriterTest {
 
     @Test
     void resolveContextPath_keepsReachablePathForLocalFilesystem() {
-        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+        try (WorkspaceManager wm =
+                new WorkspaceManager(
+                        workspace,
+                        OverlayFilesystem.of(
+                                new LocalFilesystemWithShell(workspace),
+                                new LocalFilesystem(workspace)))) {
             SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
 
             assertEquals(
