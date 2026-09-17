@@ -538,6 +538,7 @@ func main() {
 			BootstrapPassword:     os.Getenv("AISTIO_BOOTSTRAP_PASSWORD"),
 			AllowLocalEnvironment: allowLocalEnvironment,
 			DataURL:               os.Getenv("BUILDER_DATA_URL"),
+			SchedulerURL:          os.Getenv("BUILDER_SCHEDULER_URL"),
 			VaultMasterKey:        os.Getenv("BUILDER_VAULT_MASTER_KEY"),
 			OAuthPublicURL:        os.Getenv("BUILDER_OAUTH_PUBLIC_URL"),
 		})

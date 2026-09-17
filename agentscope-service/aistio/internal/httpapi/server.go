@@ -406,6 +406,9 @@ func (s *Server) registerRoutes() {
 		s.product.Register(pg)
 	}
 	if s.store != nil {
+		managedSessions := s.router.Group("/api/internal/managed-sessions")
+		managedSessions.Use(s.internalTokenMiddleware())
+		managedSessions.POST("/find-or-create", s.internalFindOrCreateManagedSession)
 		managedRuntime := s.router.Group("/api/internal/runtime-sessions")
 		managedRuntime.Use(s.internalTokenMiddleware())
 		managedRuntime.POST("/:sessionId/events", s.reportManagedSessionEvent)

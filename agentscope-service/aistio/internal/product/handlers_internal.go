@@ -52,6 +52,7 @@ func (s *Server) registerInternal(r gin.IRouter) {
 	r.DELETE("/api/internal/sessions/:id/memory-stores/:storeId/memories/*path", s.sessionMemory(s.deleteMemory))
 	r.POST("/api/internal/deployments/:id/fire", s.internalFireDeployment)
 	r.GET("/api/internal/channels/config", s.internalChannelsConfig)
+	r.POST("/api/internal/channels/:channelId/credential", s.internalWeixinCredential)
 	r.POST("/api/internal/channels/runtime", s.internalChannelRuntimeReport)
 }
 
@@ -969,15 +970,44 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 		delete(cfg, "channelId")
 		out[ch.ChannelID] = cfg
 	}
+	if err := rows.Err(); err != nil {
+		writeErr(c, 500, "channel configuration unavailable")
+		return
+	}
+	rows.Close()
+	for id, value := range out {
+		cfg := value.(gin.H)
+		if cfg["type"] != "weixin" {
+			continue
+		}
+		props, err := s.weixinRuntimeProperties(c.Request.Context(), id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			delete(out, id)
+			continue
+		}
+		if err != nil {
+			writeErr(c, 500, "channel configuration unavailable")
+			return
+		}
+		cfg["properties"] = props
+	}
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, out)
 }
 
 type channelRuntimeReport struct {
-	Channels []struct {
-		ChannelID string  `json:"channelId"`
-		Started   bool    `json:"started"`
-		Error     *string `json:"error"`
-	} `json:"channels"`
+	Channels []channelRuntimeObservation `json:"channels"`
+}
+
+type channelRuntimeObservation struct {
+	ChannelID          string  `json:"channelId"`
+	Started            bool    `json:"started"`
+	Error              *string `json:"error"`
+	AccountID          string  `json:"accountId"`
+	CredentialRevision int64   `json:"credentialRevision"`
+	LeaseHolder        string  `json:"leaseHolder"`
+	LeaseGeneration    int64   `json:"leaseGeneration"`
+	Sequence           int64   `json:"sequence"`
 }
 
 func (s *Server) internalChannelRuntimeReport(c *gin.Context) {
@@ -992,14 +1022,56 @@ func (s *Server) internalChannelRuntimeReport(c *gin.Context) {
 		if id == "" {
 			continue
 		}
-		var errVal any
-		if item.Error != nil && strings.TrimSpace(*item.Error) != "" {
-			errVal = strings.TrimSpace(*item.Error)
+		item.ChannelID = id
+		if err := s.applyChannelRuntimeObservation(c.Request.Context(), item, now); err != nil {
+			writeErr(c, http.StatusInternalServerError, "runtime status unavailable")
+			return
 		}
-		_, _ = s.db.Pool.Exec(c.Request.Context(),
-			`UPDATE channels SET runtime_started=$1, runtime_error=$2, runtime_updated_at=$3
-			 WHERE channel_id=$4`,
-			item.Started, errVal, now, id)
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) applyChannelRuntimeObservation(ctx context.Context, item channelRuntimeObservation, now int64) error {
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Match the lifecycle lock order: Channel, then Weixin connection.
+	var typ string
+	var disabled bool
+	err = tx.QueryRow(ctx, `SELECT type,disabled FROM channels WHERE channel_id=$1 FOR UPDATE`, item.ChannelID).Scan(&typ, &disabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if typ == "weixin" {
+		if disabled || item.AccountID == "" || item.LeaseHolder == "" || item.CredentialRevision <= 0 || item.LeaseGeneration <= 0 || item.Sequence <= 0 {
+			return nil
+		}
+		accepted, err := tx.Exec(ctx, `UPDATE weixin_connections SET runtime_lease_generation=$1,
+		 runtime_lease_holder=$2,runtime_report_sequence=$3
+		 WHERE channel_id=$4 AND account_id=$5 AND credential_revision=$6 AND credential_id IS NOT NULL
+		 AND (runtime_lease_generation<$1 OR
+		 (runtime_lease_generation=$1 AND runtime_lease_holder=$2 AND runtime_report_sequence<=$3))`,
+			item.LeaseGeneration, item.LeaseHolder, item.Sequence, item.ChannelID, item.AccountID, item.CredentialRevision)
+		if err != nil {
+			return err
+		}
+		if accepted.RowsAffected() == 0 {
+			return nil
+		}
+	}
+	var errVal any
+	if item.Error != nil && strings.TrimSpace(*item.Error) != "" {
+		errVal = strings.TrimSpace(*item.Error)
+	}
+	_, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=$1,runtime_error=$2,runtime_updated_at=$3 WHERE channel_id=$4`,
+		item.Started, errVal, now, item.ChannelID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
