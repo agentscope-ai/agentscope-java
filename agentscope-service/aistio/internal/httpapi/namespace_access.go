@@ -265,7 +265,7 @@ func (s *Server) namespaceAccessMiddleware() gin.HandlerFunc {
 			c.Request.Body = io.NopCloser(bytes.NewReader(data))
 			c.Request.ContentLength = int64(len(data))
 		}
-		c.Request = c.Request.WithContext(store.WithWorkAccess(c.Request.Context(), store.WorkAccess{Refs: a.Refs, Restricted: !controlmodel.NamespaceAllows(roles, "work.audit")}))
+		c.Request = c.Request.WithContext(store.WithWorkAccess(c.Request.Context(), store.WorkAccess{User: user, Refs: a.Refs, Restricted: !controlmodel.NamespaceAllows(roles, "work.audit")}))
 		if !s.authorizeWorkObject(c, body) {
 			return
 		}

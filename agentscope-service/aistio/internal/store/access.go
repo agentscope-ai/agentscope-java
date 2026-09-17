@@ -19,6 +19,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	controlmodel "github.com/spring-ai-alibaba/aistio/internal/controlplane/model"
 )
@@ -36,9 +37,27 @@ type AccessRepository interface {
 // WorkAccess is attached only by the authenticated API boundary. Empty Refs with
 // Restricted=true grants no private work; absence is for trusted background work.
 type WorkAccess struct {
+	// User is the stable account ID; Refs also includes legacy actor aliases.
+	User       string
 	Refs       []string
 	Restricted bool
 }
+
+// ChannelSessionOwnerRef returns the account verified when the control plane
+// registered the channel conversation, independent of later Agent ownership.
+func ChannelSessionOwnerRef(session *Session) string {
+	if session == nil || session.OriginType != "channel" || session.AgentTaskID != nil {
+		return ""
+	}
+	var metadata struct {
+		Owner string `json:"channelOwnerRef"`
+	}
+	if json.Unmarshal(session.TaskContext, &metadata) != nil {
+		return ""
+	}
+	return metadata.Owner
+}
+
 type workAccessKey struct{}
 
 func WithWorkAccess(ctx context.Context, access WorkAccess) context.Context {
