@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -150,8 +152,10 @@ class AgentSpawnToolForceSyncTest {
                         .build();
 
         String result =
-                tool.agentSpawn(ctx, null, "fast_agent", "go", null, 0, null)
-                        .block(Duration.ofSeconds(15));
+                assertText(
+                        tool.agentSpawn(ctx, null, "fast_agent", "go", null, 0, null)
+                                .block(Duration.ofSeconds(15)),
+                        ToolResultState.SUCCESS);
 
         assertNotNull(result);
         assertTrue(result.contains("status: ok"), "Expected sync ok reply, got: " + result);
@@ -255,8 +259,10 @@ class AgentSpawnToolForceSyncTest {
                         .build();
 
         String result =
-                tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
-                        .block(Duration.ofSeconds(10));
+                assertText(
+                        tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
+                                .block(Duration.ofSeconds(10)),
+                        ToolResultState.ERROR);
 
         assertNotNull(result, "agentSpawn returned null");
         assertTrue(

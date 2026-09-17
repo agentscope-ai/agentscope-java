@@ -19,6 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
@@ -30,15 +33,41 @@ class TodoToolsTest {
     private final TodoTools tool = new TodoTools();
 
     @Test
+    void rejectsBlankContentWithoutReplacingExistingTasks() {
+        AgentState state = AgentState.builder().build();
+        tool.todoWrite(List.of(new TodoItem("Keep me", "pending", null)), state);
+        assertText(
+                tool.todoWrite(List.of(new TodoItem(" ", "pending", null)), state),
+                ToolResultState.ERROR);
+        assertEquals("Keep me", state.getTasksContext().getTasks().get(0).getSubject());
+    }
+
+    @Test
+    void errorLookingTodoContentIsSuccessfulData() {
+        AgentState state = AgentState.builder().build();
+        String text =
+                assertText(
+                        tool.todoWrite(
+                                List.of(
+                                        new TodoItem(
+                                                "[ERROR] investigate log entry", "pending", null)),
+                                state),
+                        ToolResultState.SUCCESS);
+        assertTrue(text.contains("[ERROR] investigate log entry"));
+    }
+
+    @Test
     void writesFullListIntoTasksContext() {
         AgentState state = AgentState.builder().build();
         String out =
-                tool.todoWrite(
-                        List.of(
-                                new TodoItem("Investigate bug", "in_progress", "high"),
-                                new TodoItem("Write fix", "pending", null),
-                                new TodoItem("Add test", "pending", "low")),
-                        state);
+                assertText(
+                        tool.todoWrite(
+                                List.of(
+                                        new TodoItem("Investigate bug", "in_progress", "high"),
+                                        new TodoItem("Write fix", "pending", null),
+                                        new TodoItem("Add test", "pending", "low")),
+                                state),
+                        ToolResultState.SUCCESS);
 
         List<Task> tasks = state.getTasksContext().getTasks();
         assertEquals(3, tasks.size());
@@ -80,11 +109,13 @@ class TodoToolsTest {
     void rejectsMultipleInProgress() {
         AgentState state = AgentState.builder().build();
         String out =
-                tool.todoWrite(
-                        List.of(
-                                new TodoItem("A", "in_progress", null),
-                                new TodoItem("B", "in_progress", null)),
-                        state);
+                assertText(
+                        tool.todoWrite(
+                                List.of(
+                                        new TodoItem("A", "in_progress", null),
+                                        new TodoItem("B", "in_progress", null)),
+                                state),
+                        ToolResultState.ERROR);
         assertTrue(out.toLowerCase().contains("at most one"));
         // State must be left untouched on rejection.
         assertTrue(state.getTasksContext().getTasks().isEmpty());
@@ -93,7 +124,10 @@ class TodoToolsTest {
     @Test
     void rejectsInvalidStatus() {
         AgentState state = AgentState.builder().build();
-        String out = tool.todoWrite(List.of(new TodoItem("A", "doing", null)), state);
+        String out =
+                assertText(
+                        tool.todoWrite(List.of(new TodoItem("A", "doing", null)), state),
+                        ToolResultState.ERROR);
         assertTrue(out.toLowerCase().contains("invalid status"));
         assertTrue(state.getTasksContext().getTasks().isEmpty());
     }
@@ -102,15 +136,23 @@ class TodoToolsTest {
     void clearingListWithEmptyInput() {
         AgentState state = AgentState.builder().build();
         tool.todoWrite(List.of(new TodoItem("A", "pending", null)), state);
-        String out = tool.todoWrite(List.of(), state);
+        String out = assertText(tool.todoWrite(List.of(), state), ToolResultState.SUCCESS);
         assertTrue(state.getTasksContext().getTasks().isEmpty());
         assertTrue(out.toLowerCase().contains("cleared"));
     }
 
     @Test
     void missingStateReturnsError() {
-        String out = tool.todoWrite(List.of(new TodoItem("A", "pending", null)), null);
+        String out =
+                assertText(
+                        tool.todoWrite(List.of(new TodoItem("A", "pending", null)), null),
+                        ToolResultState.ERROR);
         assertFalse(out.isBlank());
         assertTrue(out.toLowerCase().contains("error"));
+    }
+
+    private static String assertText(ToolResultBlock result, ToolResultState expected) {
+        assertEquals(expected, result.getState());
+        return ((TextBlock) result.getOutput().get(0)).getText();
     }
 }

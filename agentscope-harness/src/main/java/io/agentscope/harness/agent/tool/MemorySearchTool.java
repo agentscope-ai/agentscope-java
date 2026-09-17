@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -49,16 +50,16 @@ public class MemorySearchTool {
                     "Search through long-term memory files (MEMORY.md and memory/*.md) for"
                             + " relevant information. Use before answering questions about prior"
                             + " work, decisions, dates, people, preferences, or todos.")
-    public String memorySearch(
+    public ToolResultBlock memorySearch(
             RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Keywords to search for in memory files")
                     String query) {
         if (query == null || query.isBlank()) {
-            return "No query provided";
+            return ToolResultBlock.error("No query provided");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        return keywordSearch(rc, query);
+        return ToolResultBlock.success(keywordSearch(rc, query));
     }
 
     private String keywordSearch(RuntimeContext rc, String query) {
