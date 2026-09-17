@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -102,6 +103,20 @@ class AgentStateTest {
         s.contextMutable().add(Msg.builder().role(MsgRole.USER).textContent("first").build());
         s.contextMutable().add(Msg.builder().role(MsgRole.ASSISTANT).textContent("reply").build());
         assertEquals(2, s.getContext().size());
+    }
+
+    @Test
+    void replaceContextPreservesMutableHandleAndReplacesContents() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        Msg replacement = Msg.builder().role(MsgRole.ASSISTANT).textContent("replacement").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> mutableHandle = s.contextMutable();
+
+        s.replaceContext(List.of(replacement));
+
+        assertSame(mutableHandle, s.contextMutable());
+        assertEquals(List.of(replacement), s.getContext());
+        assertEquals(List.of(replacement), mutableHandle);
     }
 
     @Test

@@ -82,7 +82,7 @@ public final class AgentState implements State {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
         this.userId = builder.userId;
         this.summary = builder.summary == null ? "" : builder.summary;
-        this.context = new ArrayList<>(builder.context);
+        this.context = Collections.synchronizedList(new ArrayList<>(builder.context));
         this.replyId = builder.replyId == null ? newHex() : builder.replyId;
         this.curIter = builder.curIter;
         this.shutdownInterrupted = builder.shutdownInterrupted;
@@ -179,12 +179,35 @@ public final class AgentState implements State {
     /** Defensive copy of the conversation buffer. */
     @JsonProperty("context")
     public List<Msg> getContext() {
-        return Collections.unmodifiableList(new ArrayList<>(context));
+        synchronized (context) {
+            return Collections.unmodifiableList(new ArrayList<>(context));
+        }
     }
 
-    /** Live, mutable handle for components that append/replace messages in place. */
+    /**
+     * Live, mutable handle for components that append/remove messages in place.
+     *
+     * <p>Individual list operations are synchronized. Callers that iterate the list or perform a
+     * compound operation must synchronize on the returned list. Use {@link #replaceContext(List)}
+     * when replacing the complete conversation buffer.
+     */
     public List<Msg> contextMutable() {
         return context;
+    }
+
+    /**
+     * Replaces the conversation buffer while preserving the identity of the live mutable handle.
+     * Readers using {@link #getContext()} observe either the old or the complete replacement, never
+     * the intermediate cleared state.
+     *
+     * @param replacement replacement conversation messages (may be {@code null} to clear)
+     */
+    public void replaceContext(List<Msg> replacement) {
+        List<Msg> copy = replacement == null ? List.of() : new ArrayList<>(replacement);
+        synchronized (context) {
+            context.clear();
+            context.addAll(copy);
+        }
     }
 
     @JsonProperty("reply_id")

@@ -25,6 +25,8 @@ import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -140,6 +142,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HarnessAgent is the user-facing harness API that wraps a {@link ReActAgent} with workspace /
@@ -943,30 +946,29 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private Mono<Msg> wrappedCall(
             List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
-        Mono<Msg> base =
-                Mono.using(
-                        () -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.acquireForCall(effective);
-                            }
-                            return effective;
-                        },
-                        eff -> inner.get(),
-                        eff -> {
-                            if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.releaseForCall(eff);
-                            }
-                        });
-        if (compactionHook != null) {
-            return base.onErrorResume(
-                    e -> {
-                        if (isContextOverflowError(e)) {
-                            return recoverFromOverflow(msgs, effective);
-                        }
-                        return Mono.error(e);
-                    });
-        }
-        return base;
+        return Mono.using(
+                () -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.acquireForCall(effective);
+                    }
+                    return effective;
+                },
+                eff -> {
+                    Mono<Msg> call = inner.get();
+                    if (compactionHook == null) {
+                        return call;
+                    }
+                    return call.onErrorResume(
+                            e ->
+                                    isContextOverflowError(e)
+                                            ? recoverFromOverflow(msgs, eff, e)
+                                            : Mono.error(e));
+                },
+                eff -> {
+                    if (sandboxLifecycleMw != null) {
+                        sandboxLifecycleMw.releaseForCall(eff);
+                    }
+                });
     }
 
     /**
@@ -1000,14 +1002,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     return effective;
                 },
                 eff -> {
-                    Flux<AgentEvent> events = inner.get();
+                    OverflowRecoveryGate recoveryGate = new OverflowRecoveryGate();
+                    Flux<AgentEvent> events = inner.get().doOnNext(recoveryGate::recordEmitted);
                     if (compactionHook == null) {
                         return events;
                     }
                     return events.onErrorResume(
                             e ->
-                                    isContextOverflowError(e)
-                                            ? recoverFromOverflowStream(msgs, eff)
+                                    isContextOverflowError(e) && recoveryGate.canRecover()
+                                            ? recoveryGate.suppressRetryOpening(
+                                                    recoverFromOverflowStream(msgs, eff, e))
                                             : Flux.error(e));
                 },
                 eff -> {
@@ -1055,33 +1059,37 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return b.build();
     }
 
-    private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
+    private Mono<Msg> recoverFromOverflow(
+            List<Msg> msgs, RuntimeContext effective, Throwable overflowError) {
         if (compactionHook != null) {
             log.warn(
                     "Context overflow detected, triggering emergency compaction via"
                             + " CompactionMiddleware");
-            return forceCompactAndRetry(msgs, effective);
+            return forceCompactAndRetry(msgs, effective, overflowError);
         }
         return Mono.error(
                 new RuntimeException(
-                        "Context overflow: no compaction configured, unable to recover"));
+                        "Context overflow: no compaction configured, unable to recover",
+                        overflowError));
     }
 
-    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
-        return forceCompactContext(effective)
+    private Mono<Msg> forceCompactAndRetry(
+            List<Msg> msgs, RuntimeContext effective, Throwable overflowError) {
+        return forceCompactContext(effective, overflowError)
                 .then(delegate.call(msgs, effective != null ? effective : RuntimeContext.empty()));
     }
 
     /**
-     * Streaming counterpart of {@link #recoverFromOverflow(List, RuntimeContext)}:
+     * Streaming counterpart of {@link #recoverFromOverflow(List, RuntimeContext, Throwable)}:
      * emergency compaction of the persisted context, then a single retry of the whole event stream.
      * Errors thrown by the retry do not re-enter the overflow handler, so there is no retry loop.
      */
-    private Flux<AgentEvent> recoverFromOverflowStream(List<Msg> msgs, RuntimeContext effective) {
+    private Flux<AgentEvent> recoverFromOverflowStream(
+            List<Msg> msgs, RuntimeContext effective, Throwable overflowError) {
         log.warn(
                 "Context overflow detected during streaming, triggering emergency compaction via"
                         + " CompactionMiddleware");
-        return forceCompactContext(effective)
+        return forceCompactContext(effective, overflowError)
                 .thenMany(
                         delegate.streamEvents(
                                 msgs, effective != null ? effective : RuntimeContext.empty()));
@@ -1093,18 +1101,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * Errors when compaction cannot be performed.
      *
      * @param effective per-call runtime context
+     * @param overflowError the model failure that triggered the recovery; carried as the cause of
+     *     recovery failures so the provider's original message is not lost
      */
-    private Mono<Void> forceCompactContext(RuntimeContext effective) {
+    private Mono<Void> forceCompactContext(RuntimeContext effective, Throwable overflowError) {
         if (compactionHook == null) {
             return Mono.error(
                     new RuntimeException(
-                            "Context overflow: no compaction configured, unable to recover"));
+                            "Context overflow: no compaction configured, unable to recover",
+                            overflowError));
         }
         AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
-        List<Msg> allMsgs = state.contextMutable();
+        List<Msg> allMsgs = state.getContext();
         if (allMsgs.isEmpty()) {
             return Mono.error(
-                    new RuntimeException("Context overflow: context is empty, cannot compact"));
+                    new RuntimeException(
+                            "Context overflow: context is empty, cannot compact", overflowError));
         }
         String agentId = getName();
         String sessionId =
@@ -1130,19 +1142,38 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         forceConfig,
                         agentId,
                         sessionId)
+                .onErrorMap(
+                        compactionError -> {
+                            RuntimeException failure =
+                                    new RuntimeException(
+                                            "Context overflow: emergency compaction failed",
+                                            overflowError);
+                            failure.addSuppressed(compactionError);
+                            return failure;
+                        })
                 .flatMap(
                         opt -> {
                             if (opt.isEmpty()) {
                                 return Mono.error(
                                         new RuntimeException(
                                                 "Context overflow: emergency compaction yielded"
-                                                        + " no result"));
+                                                        + " no result",
+                                                overflowError));
                             }
-                            state.contextMutable().clear();
-                            state.contextMutable().addAll(opt.get());
+                            state.replaceContext(opt.get());
                             // The retry reloads persisted state before invoking the model.
-                            delegate.saveAgentState(effective);
-                            return Mono.<Void>empty();
+                            return Mono.<Void>fromRunnable(() -> delegate.saveAgentState(effective))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .onErrorMap(
+                                            saveError -> {
+                                                RuntimeException failure =
+                                                        new RuntimeException(
+                                                                "Context overflow: failed to"
+                                                                    + " persist compacted state",
+                                                                overflowError);
+                                                failure.addSuppressed(saveError);
+                                                return failure;
+                                            });
                         });
     }
 
@@ -1155,10 +1186,74 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return lower.contains("context_length_exceeded")
                 || lower.contains("context length")
                 || lower.contains("maximum context")
+                || lower.contains("exceed_context_size_error")
+                || lower.contains("exceeds the available context")
                 || lower.contains("token limit")
                 || lower.contains("too many tokens")
                 || lower.contains("exceeds the model's maximum")
                 || lower.contains("reduce the length");
+    }
+
+    /**
+     * Allows whole-invocation replay only before the first model call emits semantic output.
+     * Replaying after a tool or later model call could duplicate tool execution, hooks, and events;
+     * recovery for those cases must be implemented at the individual model-call boundary.
+     */
+    private static final class OverflowRecoveryGate {
+
+        private final AtomicReference<OpeningState> state =
+                new AtomicReference<>(OpeningState.EXPECT_AGENT_START);
+
+        void recordEmitted(AgentEvent event) {
+            state.updateAndGet(
+                    current -> {
+                        if (current == OpeningState.EXPECT_AGENT_START && isRootAgentStart(event)) {
+                            return OpeningState.EXPECT_MODEL_START;
+                        }
+                        if (current == OpeningState.EXPECT_MODEL_START && isRootModelStart(event)) {
+                            return OpeningState.RECOVERABLE;
+                        }
+                        return OpeningState.CLOSED;
+                    });
+        }
+
+        boolean canRecover() {
+            return state.get() == OpeningState.RECOVERABLE;
+        }
+
+        Flux<AgentEvent> suppressRetryOpening(Flux<AgentEvent> retry) {
+            AtomicReference<OpeningState> retryState =
+                    new AtomicReference<>(OpeningState.EXPECT_AGENT_START);
+            return retry.filter(
+                    event -> {
+                        OpeningState current = retryState.get();
+                        if (current == OpeningState.EXPECT_AGENT_START && isRootAgentStart(event)) {
+                            retryState.set(OpeningState.EXPECT_MODEL_START);
+                            return false;
+                        }
+                        if (current == OpeningState.EXPECT_MODEL_START && isRootModelStart(event)) {
+                            retryState.set(OpeningState.CLOSED);
+                            return false;
+                        }
+                        retryState.set(OpeningState.CLOSED);
+                        return true;
+                    });
+        }
+
+        private static boolean isRootAgentStart(AgentEvent event) {
+            return event instanceof AgentStartEvent && event.getSource() == null;
+        }
+
+        private static boolean isRootModelStart(AgentEvent event) {
+            return event instanceof ModelCallStartEvent && event.getSource() == null;
+        }
+    }
+
+    private enum OpeningState {
+        EXPECT_AGENT_START,
+        EXPECT_MODEL_START,
+        RECOVERABLE,
+        CLOSED
     }
 
     public static Builder builder() {
