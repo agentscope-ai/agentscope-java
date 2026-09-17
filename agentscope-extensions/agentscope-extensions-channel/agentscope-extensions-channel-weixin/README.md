@@ -50,6 +50,10 @@ actually consumed a message keeps its cursor and peer context until the host ret
 `removeAccount(accountId)`. Dropping that state automatically would make the consumer replay the
 provider backlog from the beginning.
 
+`requestTimeoutMs` bounds the control calls and `longPollTimeoutMs` bounds the `getupdates` long
+poll; the client adds a short grace to the latter, because a deadline shorter than the provider's
+poll window would abort every poll.
+
 The Channel never writes credentials to the local filesystem.
 
 The iLink service does not publish a fixed bot-token TTL. A token may be revoked or invalidated by

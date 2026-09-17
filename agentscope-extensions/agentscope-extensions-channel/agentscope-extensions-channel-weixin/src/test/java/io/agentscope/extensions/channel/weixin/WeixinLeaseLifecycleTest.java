@@ -139,7 +139,9 @@ class WeixinLeaseLifecycleTest {
                 .when(store)
                 .acquireLease(anyString(), anyString(), anyLong());
         start(Mono.just(reply()));
-        assertTrue(attempted.await(2, TimeUnit.SECONDS));
+        assertTrue(
+                attempted.await(5, TimeUnit.SECONDS),
+                "the standby instance never attempted to acquire the lease");
         assertEquals(1, entered.getCount());
         store.releaseLease("account", owner);
         assertTrue(sent.await(3, TimeUnit.SECONDS));

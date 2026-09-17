@@ -87,7 +87,10 @@ public final class WeixinOutboundClient {
                                                     "/ilink/bot/sendmessage",
                                                     Map.of("msg", m, "base_info", baseInfo()),
                                                     beforeSend));
-                                } catch (WeixinCredentialRejectedException e) {
+                                } catch (WeixinCredentialRejectedException
+                                        | IllegalStateException e) {
+                                    // Provider outcome and credential failures keep their type:
+                                    // wrapping them hides the reason from the caller's onError.
                                     throw e;
                                 } catch (Exception e) {
                                     throw new RuntimeException("Weixin send failed", e);
@@ -96,6 +99,9 @@ public final class WeixinOutboundClient {
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
+
+    /** Grace on top of the long-poll window before the request is abandoned. */
+    private static final long LONG_POLL_GRACE_MS = 5_000L;
 
     public JsonNodeResponse updates(String cursor) throws Exception {
         String body =
@@ -107,6 +113,7 @@ public final class WeixinOutboundClient {
                                 "base_info",
                                 baseInfo()));
         com.fasterxml.jackson.databind.JsonNode response = parse(body);
+        requireProviderResult("getupdates", response);
         List<com.fasterxml.jackson.databind.JsonNode> messages = new ArrayList<>();
         response.path("msgs").forEach(messages::add);
         return new JsonNodeResponse(
@@ -149,7 +156,7 @@ public final class WeixinOutboundClient {
                 WeixinProtocolHeaders.authenticatedJsonPost(
                                 HttpRequest.newBuilder(
                                                 URI.create(p.baseUrl().replaceAll("/$", "") + path))
-                                        .timeout(Duration.ofMillis(p.requestTimeoutMs())),
+                                        .timeout(Duration.ofMillis(timeoutFor(path))),
                                 token())
                         .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(payload)))
                         .build();
@@ -158,6 +165,17 @@ public final class WeixinOutboundClient {
         if (r.statusCode() / 100 != 2)
             throw new IllegalStateException("iLink HTTP " + r.statusCode());
         return r.body();
+    }
+
+    /**
+     * {@code getupdates} holds the connection open for the provider's long-poll window, so its read
+     * timeout has to outlast {@code longPollTimeoutMs}; every control call keeps
+     * {@code requestTimeoutMs}.
+     */
+    private long timeoutFor(String path) {
+        return path.endsWith("getupdates")
+                ? Math.max((long) p.longPollTimeoutMs() + LONG_POLL_GRACE_MS, p.requestTimeoutMs())
+                : p.requestTimeoutMs();
     }
 
     private String token() {
@@ -170,6 +188,7 @@ public final class WeixinOutboundClient {
 
     private static void assertSuccess(String operation, String body) throws Exception {
         com.fasterxml.jackson.databind.JsonNode response = parse(body);
+        requireProviderResult(operation, response);
         int ret = response.path("ret").asInt(0);
         int errcode = response.path("errcode").asInt(0);
         if (ret != 0 || errcode != 0) {
@@ -203,6 +222,19 @@ public final class WeixinOutboundClient {
                                             + where.getLineNr()
                                             + ", column "
                                             + where.getColumnNr()));
+        }
+    }
+
+    /**
+     * A provider response has to state its outcome. Defaulting a missing {@code ret} to zero would
+     * accept any 2xx body — an empty object, a proxy error page rendered as JSON — as a delivered
+     * message, and the channel would then complete the inbox claim and drop the reply.
+     */
+    private static void requireProviderResult(
+            String operation, com.fasterxml.jackson.databind.JsonNode response) {
+        if (!response.has("ret") && !response.has("errcode")) {
+            throw new IllegalStateException(
+                    "iLink " + operation + " response carries no ret/errcode");
         }
     }
 
