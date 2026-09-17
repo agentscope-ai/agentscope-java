@@ -69,3 +69,30 @@ All WeCom callbacks are encrypted. The adapter handles decryption and signature 
 **Inbound:** `WeComCallbackController` → URL verification (echostr) → decrypt → MsgId dedup → `WeComInboundMapper` (text messages) → bot-loop guard → Gateway.
 
 **Outbound:** `WeComOutboundClient` sends replies via `/cgi-bin/message/send` (DMs) or `/cgi-bin/appchat/send` (groups), authenticating with an `access_token` from `WeComAccessTokenProvider`.
+
+## Multi-tenant deployments
+
+When channel credentials are runtime data — one WeCom app per tenant, added, rotated and removed while the process serves traffic — wire the callback controller with a `WeComCredentialResolver` instead of registering one channel per tenant:
+
+```java
+@Bean
+WeComTenantChannelManager weComTenantChannels(TenantRepository tenantRepository, Gateway gateway) {
+    return new WeComTenantChannelManager(
+        tenantKey -> tenantRepository.findByKey(tenantKey)   // application-owned lookup
+            .map(row -> WeComChannelProperties.from(tenantKey, row.asPropertiesMap())),
+        ChannelConfig.of("wecom", "main"),
+        gateway);
+}
+// The component-scanned WeComCallbackController injects this bean; no controller bean is needed.
+```
+
+The `{tenantKey}` path segment of each callback resolves to credentials, and the tenant's channel is materialized on first use. The resolver is consulted on every callback and the channel's credentials are refreshed in place, so a rotation takes effect on the next request without replacing the channel — the tenant keeps its sessions, deduplication state and bot-loop guard. Refresh is grouped by what the credentials feed: rotating only the callback token keeps the cached access token, while rotating the secret discards it — each credential generation mints into a token store of its own, so a request still in flight on the previous generation cannot leave its token behind for the new one.
+
+The tenant key doubles as the channel id: conversations, deduplication keys and bot-loop guards are namespaced per tenant, so two tenants whose user ids collide do not share sessions. Per-tenant agent routing is expressed with `channel`-tier bindings in the shared `ChannelConfig`.
+
+Notes:
+
+- An empty resolve result means "no such tenant" and the callback is rejected; let lookup failures throw, so they surface as a failed callback and the platform retries.
+- `WeComTenantChannelManager.evict(tenantKey)` releases a deleted tenant's channel and token cache.
+- Materialized channels are owned by the manager: they are not registered in `WeComChannelRegistry` or in a harness `ChannelManager`, so proactive delivery through `ChannelManager#deliver` does not reach them.
+- Spring wiring: expose a `WeComTenantChannelManager` bean. The component-scanned controller injects it and serves the tenant route; with no such bean it keeps serving the static registry. Do not declare a second `WeComCallbackController` bean — its request mappings would collide with the scanned one's and fail startup.

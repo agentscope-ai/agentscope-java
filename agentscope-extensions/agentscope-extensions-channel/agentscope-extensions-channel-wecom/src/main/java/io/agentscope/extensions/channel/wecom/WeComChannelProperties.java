@@ -20,7 +20,8 @@ import java.util.Objects;
 
 /**
  * Provider-specific configuration for a single WeCom (企业微信) channel instance, sourced from the
- * {@code properties} block of {@code channels.<id>} in {@code agentscope.json}.
+ * {@code properties} block of {@code channels.<id>} in {@code agentscope.json}. In a multi-tenant
+ * deployment the same record is the unit a {@link WeComCredentialResolver} returns per tenant key.
  *
  * <p>The environment-variable-resolved values (e.g. {@code ${WECOM_CORP_ID}}) are expected to be
  * substituted by the caller before construction.
@@ -31,7 +32,8 @@ import java.util.Objects;
  * @param token callback token (configured in the WeCom admin console)
  * @param encodingAesKey 43-character base64 (no padding) AES key for callback encryption
  * @param callbackPath the HTTP path Spring exposes the callback under; defaults to
- *     {@code /api/channels/wecom/{channelId}/callback}
+ *     {@code /api/channels/wecom/{channelId}/callback}. Unused when the record comes from a
+ *     credential resolver — the callback route is fixed and the tenant key is carried in the path.
  * @param apiBase override for the WeCom API base URL; default
  *     {@code https://qyapi.weixin.qq.com}
  */
@@ -104,5 +106,25 @@ public record WeComChannelProperties(
             throw new IllegalArgumentException(
                     "wecom." + key + " must be an integer, got: " + v, e);
         }
+    }
+
+    /**
+     * Masks the credential fields. In a multi-tenant deployment these records come out of the
+     * application's {@link WeComCredentialResolver} and travel through its code, where the
+     * auto-generated record rendering can reach logs — nested in an {@code Optional}'s text, an
+     * exception message, or a handler's diagnostic output — and expose the secret, callback token
+     * or AES key. The remaining fields stay readable for diagnostics.
+     */
+    @Override
+    public String toString() {
+        return "WeComChannelProperties[corpId="
+                + corpId
+                + ", agentId="
+                + agentId
+                + ", secret=***, token=***, encodingAesKey=***, callbackPath="
+                + callbackPath
+                + ", apiBase="
+                + apiBase
+                + "]";
     }
 }
