@@ -18,6 +18,7 @@ package io.agentscope.extensions.channel.feishu;
 import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -57,7 +58,7 @@ public final class FeishuChannel implements Channel {
     private final FeishuAccessTokenProvider tokenProvider;
     private final FeishuOutboundClient outboundClient;
     private final FeishuInboundMapper mapper;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
     private final FeishuChannelRegistry registry;
@@ -72,7 +73,7 @@ public final class FeishuChannel implements Channel {
             FeishuAccessTokenProvider tokenProvider,
             FeishuOutboundClient outboundClient,
             FeishuInboundMapper mapper,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             FeishuChannelRegistry registry) {
@@ -89,9 +90,30 @@ public final class FeishuChannel implements Channel {
         this.registry = Objects.requireNonNull(registry, "registry");
     }
 
-    /** Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. */
+    /**
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore}; use {@link #fromProperties(String, ChannelConfig,
+     * Map, InboundEventDeduplicator)} to supply a shared-storage deduplicator.
+     */
     public static FeishuChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(channelId, routing, rawProperties, new IdempotencyStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise. Note the Feishu callback controller currently delegates deduplication to the
+     * durable intake, so the supplied store is held for channels that consult it.
+     *
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static FeishuChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
         FeishuChannelProperties props = FeishuChannelProperties.from(channelId, rawProperties);
         FeishuCrypto crypto = props.isEncrypted() ? new FeishuCrypto(props.encryptKey()) : null;
         FeishuAccessTokenProvider tokenProvider =
@@ -106,7 +128,7 @@ public final class FeishuChannel implements Channel {
                 tokenProvider,
                 outbound,
                 mapper,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
                 new ChannelRouter(routing.defaultAgentId()),
                 FeishuChannelRegistry.instance());
@@ -202,7 +224,7 @@ public final class FeishuChannel implements Channel {
         return mapper;
     }
 
-    IdempotencyStore idempotency() {
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 

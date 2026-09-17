@@ -363,6 +363,10 @@
                   {
                     "group": "Blogs",
                     "pages": [
+                      "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
+                      "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
+                      "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
+                      "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
                       "v2/en/blogs/agentscope-v2-release",
                       "v2/en/blogs/agentscope-v2-explained",
                       "v2/en/blogs/agentscope-v1-harness",
@@ -852,18 +856,13 @@
                   {
                     "group": "博客",
                     "pages": [
+                      "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
+                      "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
+                      "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
+                      "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
                       "v2/zh/blogs/agentscope-v2-release",
                       "v2/zh/blogs/agentscope-v2-explained",
                       "v2/zh/blogs/agentscope-v1-harness",
-                      {
-                        "group": "如何构建 Agent Harness",
-                        "pages": [
-                          "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
-                          "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
-                          "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
-                          "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution"
-                        ]
-                      },
                       "v2/zh/blogs/agentscope-v1-builder",
                       "v2/zh/blogs/agentscope-v2-coding-agent",
                       "v2/zh/blogs/managed-agents-agentscope-rumtime",
