@@ -1313,20 +1313,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Walks the cause chain for failure types that must never degrade to the synthetic-tool
-     * fallback: configuration errors and exhausted unknown-domain faults.
+     * Walks the cause chain (cycle-safe, via {@link ExceptionUtils}) for failure types that
+     * must never degrade to the synthetic-tool fallback: configuration errors and exhausted
+     * unknown-domain faults.
      */
     private static boolean isNonDegradableFailure(Throwable error) {
-        for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof StructuredOutputConfigurationException
-                    || t instanceof StructuredOutputUnknownFailureException) {
-                return true;
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        return false;
+        return ExceptionUtils.containsCause(
+                error,
+                t ->
+                        t instanceof StructuredOutputConfigurationException
+                                || t instanceof StructuredOutputUnknownFailureException);
     }
 
     /**
@@ -2635,11 +2631,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (last == null) {
                                     // Defensive: the backward-compatible FailedAttempt
                                     // constructor allows a null rawException — never build
-                                    // the wrapper without a cause.
+                                    // the wrapper without a cause. Log with attempt context
+                                    // so the null-raw case is investigable.
+                                    String kinds =
+                                            soFailedAttempts.stream()
+                                                    .map(a -> a.kind().name())
+                                                    .collect(
+                                                            java.util.stream.Collectors.joining(
+                                                                    ","));
+                                    log.error(
+                                            "Unknown-domain failure exhausted retries without"
+                                                    + " a recorded cause: after {} attempt(s),"
+                                                    + " kinds=[{}] (agent={}, schema={})",
+                                            soValidationAttempts,
+                                            kinds,
+                                            getName(),
+                                            schema.getName());
                                     last =
                                             new IllegalStateException(
-                                                    "unknown-domain failure without a recorded"
-                                                            + " cause");
+                                                    "unknown-domain failure after "
+                                                            + soValidationAttempts
+                                                            + " attempt(s), kinds=["
+                                                            + kinds
+                                                            + "]"
+                                                            + " — no cause recorded");
                                 }
                                 log.error(
                                         "Structured output validation failed on a"
