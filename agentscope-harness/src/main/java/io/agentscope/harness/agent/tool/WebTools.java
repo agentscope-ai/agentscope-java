@@ -24,6 +24,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * Builtin web tools ({@code web_fetch}, {@code web_search}) for Managed Agents / Harness.
@@ -35,9 +36,29 @@ public final class WebTools {
 
     private WebTools() {}
 
+    /**
+     * Default client for the built-in web tools. Uses the JDK's default version negotiation
+     * (HTTP/2 preferred, transparently falling back to HTTP/1.1 when the server does not support
+     * it). If a target server misbehaves under HTTP/2 negotiation and returns empty responses
+     * (e.g. {@code HTTP/1.1 header parser received no bytes}, see issue #3101), inject an
+     * HTTP/1.1-only client via the {@code WebFetchTool(HttpClient)} / {@code WebSearchTool(HttpClient)}
+     * constructors or {@code HarnessAgent.Builder#webHttpClient(HttpClient)}.
+     */
+    static HttpClient createDefaultHttpClient() {
+        return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    }
+
     public static final class WebFetchTool {
-        private final HttpClient client =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        private final HttpClient client;
+
+        public WebFetchTool() {
+            this(createDefaultHttpClient());
+        }
+
+        /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
+        public WebFetchTool(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
+        }
 
         @Tool(
                 name = "web_fetch",
@@ -89,8 +110,16 @@ public final class WebTools {
     public static final class WebSearchTool {
         private static final String TAVILY_API = "https://api.tavily.com/search";
         private final ObjectMapper mapper = new ObjectMapper();
-        private final HttpClient client =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        private final HttpClient client;
+
+        public WebSearchTool() {
+            this(createDefaultHttpClient());
+        }
+
+        /** Creates a tool that uses a caller-supplied client (custom proxy, SSL, HTTP version, ...). */
+        public WebSearchTool(HttpClient client) {
+            this.client = Objects.requireNonNull(client, "client");
+        }
 
         @Tool(
                 name = "web_search",

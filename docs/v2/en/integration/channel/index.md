@@ -19,10 +19,27 @@ Each channel adapter follows the same pattern:
 1. **Inbound** — receives messages from the platform (via webhook, WebSocket, etc.), parses them into a normalized `InboundMessage`, deduplicates, applies bot-loop protection, and dispatches through the Gateway.
 2. **Outbound** — delivers agent replies back to the platform through the platform's send API.
 
-All adapters share two common utilities from `agentscope-extensions-channel-common`:
+All adapters share three common utilities from `agentscope-extensions-channel-common`:
 
 - **IdempotencyStore** — deduplicates retried webhook deliveries by message id.
 - **BotLoopGuard** — per-peer rate limiter that prevents runaway bot-to-bot loops.
+- **AccessTokenStore** — caches the outbound access token used for platform API calls.
+
+## Multi-instance deployments
+
+The common utilities keep state in the JVM by default (`IdempotencyStore`,
+`InMemoryAccessTokenStore`), which only sees a single process. When channel adapters run on
+several replicas — behind a load balancer, or one process per bot — construct them through the
+`fromProperties` overload that accepts shared-storage implementations:
+
+```java
+FeishuChannel.fromProperties(channelId, routing, rawProperties, deduplicator, tokenStore);
+```
+
+- A shared `InboundEventDeduplicator` recognizes platform redeliveries across instances.
+- A shared `AccessTokenStore` (Feishu, WeCom, DingTalk) lets one replica's token refresh or
+  invalidation serve the whole deployment, instead of each replica fetching and caching its own
+  token for the same credential.
 
 ## Shared dependency
 
