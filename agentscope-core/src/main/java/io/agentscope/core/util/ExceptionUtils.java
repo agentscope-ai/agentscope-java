@@ -69,10 +69,24 @@ public final class ExceptionUtils {
      * @return {@code true} if an {@link InterruptedException} is present in the cause chain
      */
     public static boolean containsInterruptedException(Throwable error) {
+        return containsCause(error, t -> t instanceof InterruptedException);
+    }
+
+    /**
+     * Whether the given throwable (or any throwable in its cause chain) satisfies the
+     * predicate. The cause chain is walked with an identity set guard so circular causes
+     * cannot cause an infinite loop.
+     *
+     * @param error the throwable to inspect (may be {@code null})
+     * @param predicate tested against every throwable in the chain
+     * @return {@code true} if any chain element satisfies the predicate
+     */
+    public static boolean containsCause(
+            Throwable error, java.util.function.Predicate<Throwable> predicate) {
         IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
         Throwable current = error;
         while (current != null && visited.put(current, Boolean.TRUE) == null) {
-            if (current instanceof InterruptedException) {
+            if (predicate.test(current)) {
                 return true;
             }
             current = current.getCause();
