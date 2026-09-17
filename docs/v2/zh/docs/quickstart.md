@@ -1,6 +1,6 @@
 ---
-title: "快速开始"
-description: "快速上手 AgentScope Java 2.0 —— 用 HarnessAgent 跑通第一个长期运行的智能体"
+title: 快速开始
+description: 快速上手 AgentScope Java 2.0 —— 用 HarnessAgent 跑通第一个长期运行的智能体
 ---
 
 ## 安装
@@ -19,11 +19,15 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 </dependency>
 ```
 
-:::{note}
-把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](others/release-notes.md)。
-:::
 
-如果只需要裸 `ReActAgent` 的框架 API（不需要工作区 / 持久化 / 子 agent / 沙箱），`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见 [Harness 架构](./harness/architecture.md)。
+<Note>
+
+把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](/v2/zh/docs/others/release-notes)。
+
+</Note>
+
+
+如果只需要裸 `ReActAgent` 的框架 API（不需要工作区 / 持久化 / 子 agent / 沙箱），`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见 [Harness 架构](/v2/zh/docs/harness/architecture)。
 
 下面的 quickstart 通过 `.model("dashscope:qwen-plus")` 使用 DashScope，因此还需要引入对应模型扩展：
 
@@ -93,9 +97,13 @@ public class FirstAgent {
 
 `AgentState` 默认存储在**工作区之外**的 `~/.agentscope/state/<agentId>/` 下——因为状态是恢复工作区本身的前提条件（例如沙箱清空后需要先有状态才能重建工作区），不能和工作区数据耦合。进程重启、`sessionId` 不变，第二段对话依然记得第一段。
 
-:::{warning}
-默认的 `JsonFileAgentStateStore` 是基于本地文件的实现，适用于开发和单机部署。生产集群环境请使用分布式实现，如 `RedisAgentStateStore`（由 `agentscope-extensions-redis` 提供），或自行实现 `AgentStateStore` 接口。详见[上线指南](./others/going-to-production.md)。
-:::
+
+<Warning>
+
+默认的 `JsonFileAgentStateStore` 是基于本地文件的实现，适用于开发和单机部署。生产集群环境请使用分布式实现，如 `RedisAgentStateStore`（由 `agentscope-extensions-redis` 提供），或自行实现 `AgentStateStore` 接口。详见[上线指南](/v2/zh/docs/others/going-to-production)。
+
+</Warning>
+
 
 多聊几轮触发压缩后，提炼出来的事实会先落到 `workspace/memory/YYYY-MM-DD.md`，再被周期性合并到 `MEMORY.md`，并在下一轮推理时自动注入 system prompt。
 
@@ -122,9 +130,13 @@ agent.streamEvents(new UserMessage("帮我把今天的关键点列三条。"))
         .blockLast();
 ```
 
-:::{tip}
+
+<Tip>
+
 运行前在环境变量里设置 `DASHSCOPE_API_KEY`。切换模型提供商时，需要引入对应的 `agentscope-extensions-model-*` 模型扩展模块，修改 `.model(...)` 的字符串，并设置对应的 API key（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`）。需要更精细地控制超时 / 自定义 endpoint 等参数时，可使用对应模型提供商的 builder（例如 `DashScopeChatModel.builder()...build()`）构造实例后传给 `.model(Model)`。
-:::
+
+</Tip>
+
 
 ### 多用户并发
 
@@ -157,11 +169,11 @@ agent.call(new UserMessage(userInput), RuntimeContext.builder()
         .build()).block();
 ```
 
-同一 `(userId, sessionId)` 的请求自动串行化（不会并发写同一份状态）；不同 session 完全并行。完整生产部署模式（Redis session、沙箱、技能仓库等）参见[上线指南](./others/going-to-production.md)。
+同一 `(userId, sessionId)` 的请求自动串行化（不会并发写同一份状态）；不同 session 完全并行。完整生产部署模式（Redis session、沙箱、技能仓库等）参见[上线指南](/v2/zh/docs/others/going-to-production)。
 
 ## 接下来
 
-- [智能体（Agent）](./building-blocks/agent.md) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、`AgentStateStore` 配置
-- [Harness 架构](./harness/architecture.md) —— `HarnessAgent` 的各项能力如何协作、状态如何流转
-- [工作区](./harness/workspace.md) —— `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` 的目录布局与加载机制
-- [文件系统](./harness/filesystem.md) —— 本机 + shell / 共享存储 / 沙箱三种部署模式
+- [智能体（Agent）](/v2/zh/docs/building-blocks/agent) —— `ReActAgent` 的完整接口、参数、`call` / `streamEvents` / `observe`、人机交互、`AgentStateStore` 配置
+- [Harness 架构](/v2/zh/docs/harness/architecture) —— `HarnessAgent` 的各项能力如何协作、状态如何流转
+- [工作区](/v2/zh/docs/harness/workspace) —— `AGENTS.md` / `MEMORY.md` / `skills/` / `subagents/` / `tools.json` 的目录布局与加载机制
+- [文件系统](/v2/zh/docs/harness/filesystem) —— 本机 + shell / 共享存储 / 沙箱三种部署模式

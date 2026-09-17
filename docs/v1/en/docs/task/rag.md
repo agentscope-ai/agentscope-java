@@ -1,4 +1,6 @@
-# RAG (Retrieval-Augmented Generation)
+---
+title: RAG
+---
 
 AgentScope provides built-in RAG support, enabling Agents to access external knowledge bases.
 
@@ -537,7 +539,7 @@ public class CustomReader implements Reader {
    - Use **Agentic Mode**: Complex tasks, selective retrieval, powerful LLMs
 
 6. **Vector Store Selection**:
-   - Use **InMemoryStore**: Development, testing, small datasets (<10K documents)
+   - Use **InMemoryStore**: Development, testing, small datasets (&lt;10K documents)
    - Use **QdrantStore**: Production, large datasets, persistence required
    - Use **ElasticsearchStore**: Production environments, large-scale datasets, and self-hosted (private deployment) services.
 
@@ -549,4 +551,4 @@ public class CustomReader implements Reader {
 - **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
 - **Elasticsearch Knowledge Base Example**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
 - **PgVector Knowledge Base Example**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
-- 
+-

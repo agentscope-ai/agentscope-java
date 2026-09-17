@@ -1,12 +1,14 @@
-# 基础设施 / 中间件
+---
+title: 概览
+---
 
 这一组扩展把 AgentScope 接到企业里常见的基础设施上，让 Agent 能像普通服务一样被治理、被调度、被发现。
 
 | 扩展 | 中间件 | 主要能力 |
 | --- | --- | --- |
-| [Higress](higress.md) | [Higress](https://higress.io/) AI 网关 | 通过 MCP 把网关上的工具引入 Toolkit |
-| [Nacos](nacos.md) | [Nacos](https://nacos.io/) | A2A AgentCard 注册发现、Prompt 配置中心、Skill 仓库 |
-| [Scheduler](scheduler.md) | XXL-Job / Quartz | 让 Agent 按 CRON 或固定速率定时跑 |
+| [Higress](/v2/zh/integration/infrastructure/higress) | [Higress](https://higress.io/) AI 网关 | 通过 MCP 把网关上的工具引入 Toolkit |
+| [Nacos](/v2/zh/integration/infrastructure/nacos) | [Nacos](https://nacos.io/) | A2A AgentCard 注册发现、Prompt 配置中心、Skill 仓库 |
+| [Scheduler](/v2/zh/integration/infrastructure/scheduler) | XXL-Job / Quartz | 让 Agent 按 CRON 或固定速率定时跑 |
 
 ## 整体定位
 

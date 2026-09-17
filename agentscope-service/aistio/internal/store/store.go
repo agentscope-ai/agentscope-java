@@ -25,16 +25,24 @@ import (
 // Store is the runtime-data persistence facade.
 // Implementations: PostgreSQL (production), memory (dev/tests).
 type Store interface {
+	Access() AccessRepository
 	Sessions() SessionRepository
 	Turns() TurnRepository
 	Events() EventRepository
 	ContextSnapshots() ContextSnapshotRepository
 	Metrics() MetricsRepository
 	TranscriptIndex() TranscriptIndexRepository
-	TeamMessages() TeamMessageRepository
-	TeamTasks() TeamTaskRepository
-	Teams() TeamRepository
 	Commands() SessionCommandRepository
+	AgentCatalog() AgentCatalogRepository
+	RuntimeRegistry() RuntimeRegistryRepository
+	ExecutionAttempts() ExecutionAttemptRepository
+	Orchestration() OrchestrationRepository
+	Outbox() OutboxRepository
+	Collaboration() CollaborationRepository
+	WorkSources() WorkSourceRepository
+	Endpoints() EndpointRepository
+	TeamProposals() TeamProposalRepository
+	Chats() ChatRepository
 
 	// Hosted DistributedStore backends (data-plane coordination).
 	KV() KVRepository
@@ -42,7 +50,7 @@ type Store interface {
 	Snapshots() SnapshotRepository
 	Bus() BusRepository
 	AsyncTools() AsyncToolRepository
-	Tasks() TaskRepository
+	DPTasks() DPTaskRepository
 
 	// Migrate applies schema migrations. No-op for memory.
 	Migrate(ctx context.Context) error
@@ -64,7 +72,7 @@ type Store interface {
 // SessionRepository manages the sessions table.
 type SessionRepository interface {
 	Upsert(ctx context.Context, s *Session) (*Session, error)
-	Get(ctx context.Context, agentName, namespace, sessionID string) (*Session, error)
+	Get(ctx context.Context, tenant, agentName, namespace, sessionID string) (*Session, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Session, error)
 	List(ctx context.Context, filter SessionFilter) ([]*Session, error)
 	UpdatePhase(ctx context.Context, id uuid.UUID, phase string) error
@@ -73,23 +81,23 @@ type SessionRepository interface {
 	// (History). DP stopping Level-1 listing is not a hard destroy — use
 	// explicit terminate for terminated. Already archived/terminated rows are
 	// left alone. Returns the number of rows updated.
-	ArchiveMissing(ctx context.Context, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error)
+	ArchiveMissing(ctx context.Context, tenant, agentName, namespace string, keepSessionIDs []string, olderThan time.Duration) (int, error)
 	// ArchiveIdleOlderThan marks idle sessions inactive longer than olderThan as archived.
 	ArchiveIdleOlderThan(ctx context.Context, olderThan time.Duration) (int, error)
-	CountActive(ctx context.Context, agentName, namespace string) (int32, error)
+	CountActive(ctx context.Context, tenant, agentName, namespace string) (int32, error)
 	// CountByPhase returns session counts keyed by lowercase phase.
 	CountByPhase(ctx context.Context, filter SessionFilter) (map[string]int, error)
 	// ListByPressure returns sessions whose latest snapshot context_pressure
 	// is >= minPressure, ordered by pressure descending.
 	ListByPressure(ctx context.Context, filter SessionFilter, minPressure float64, limit int) ([]*SessionWithSnapshot, error)
-	DeleteByAgent(ctx context.Context, agentName, namespace string) error
-	DeleteByTeam(ctx context.Context, teamName, namespace string) error
+	DeleteByAgent(ctx context.Context, tenant, agentName, namespace string) error
 }
 
 // TurnRepository manages session_turns (one row per inference turn).
 type TurnRepository interface {
 	// SyncOnPhase opens a running turn when phase becomes active, and closes
-	// any running turn when phase leaves active. Idempotent across polls.
+	// any running turn when phase leaves active. The logical outcome "failed"
+	// closes a failed provider turn without terminating its reusable session. Idempotent across polls.
 	SyncOnPhase(ctx context.Context, sessionFK uuid.UUID, phase string) error
 	List(ctx context.Context, sessionFK uuid.UUID, limit int) ([]*SessionTurn, error)
 	CurrentRunning(ctx context.Context, sessionFK uuid.UUID) (*SessionTurn, error)
@@ -99,6 +107,10 @@ type TurnRepository interface {
 type EventRepository interface {
 	Append(ctx context.Context, event *SessionEvent) error
 	List(ctx context.Context, sessionFK uuid.UUID, opts ...EventOption) ([]*SessionEvent, error)
+	// WaitForNew blocks until an event with seq greater than afterSeq is
+	// available for the session or ctx is cancelled. Implementations should use
+	// a notification primitive rather than polling durable storage.
+	WaitForNew(ctx context.Context, sessionFK uuid.UUID, afterSeq int) error
 }
 
 // ContextSnapshotRepository manages context_snapshots (Level 4).
@@ -132,14 +144,14 @@ type MetricsRepository interface {
 	// AggregateTokens buckets token usage by the given duration (e.g. time.Hour).
 	AggregateTokens(ctx context.Context, filter TokenFilter, bucket time.Duration) ([]TokenBucket, error)
 	// TopAgents returns agents ranked by total tokens since the given time.
-	TopAgents(ctx context.Context, since time.Time, limit int) ([]AgentUsage, error)
+	TopAgents(ctx context.Context, tenant string, since time.Time, limit int) ([]AgentUsage, error)
 	// TopSessionsByTokens returns sessions ranked by summed token deltas since the given time.
-	TopSessionsByTokens(ctx context.Context, since time.Time, limit int) ([]SessionUsage, error)
+	TopSessionsByTokens(ctx context.Context, tenant string, since time.Time, limit int) ([]SessionUsage, error)
 	// TopSessionsByDuration returns active sessions ranked by current running
 	// turn elapsed (now - turn.started_at). Idle/archived sessions are excluded.
-	TopSessionsByDuration(ctx context.Context, since time.Time, limit int) ([]SessionDuration, error)
+	TopSessionsByDuration(ctx context.Context, tenant string, since time.Time, limit int) ([]SessionDuration, error)
 	// TopAgentsByActiveSessions ranks agents by peak active_sessions in agent_metrics since.
-	TopAgentsByActiveSessions(ctx context.Context, since time.Time, limit int) ([]AgentUsage, error)
+	TopAgentsByActiveSessions(ctx context.Context, tenant string, since time.Time, limit int) ([]AgentUsage, error)
 	// PressureStats returns average and p95 context pressure across latest snapshots.
 	PressureStats(ctx context.Context, filter SessionFilter) (avg, p95 float64, err error)
 	// SumTokenUsage returns the sum of total_tokens matching the filter.
@@ -154,64 +166,6 @@ type SessionCommandRepository interface {
 	Update(ctx context.Context, cmd *SessionCommand) error
 	GetByCommandID(ctx context.Context, commandID string) (*SessionCommand, error)
 	List(ctx context.Context, filter SessionCommandFilter) ([]*SessionCommand, error)
-}
-
-// TeamMessageRepository manages the team_messages outbox.
-type TeamMessageRepository interface {
-	Send(ctx context.Context, msg *TeamMessage) error
-	ListPending(ctx context.Context, teamName, namespace string) ([]*TeamMessage, error)
-	// ListPendingAll returns undelivered messages across all teams, limited,
-	// ordered by created_at ASC. Used by the outbox dispatcher.
-	ListPendingAll(ctx context.Context, limit int) ([]*TeamMessage, error)
-	MarkDelivered(ctx context.Context, id int64) error
-	IncrementAttempts(ctx context.Context, id int64) error
-	History(ctx context.Context, teamName, namespace string, limit int) ([]*TeamMessage, error)
-	DeleteByTeam(ctx context.Context, teamName, namespace string) error
-}
-
-// TeamRepository manages store-backed teams and their members.
-type TeamRepository interface {
-	Create(ctx context.Context, team *Team) (*Team, error)
-	Get(ctx context.Context, namespace, name string) (*Team, error)
-	List(ctx context.Context, namespace string) ([]*Team, error)
-	UpdatePhase(ctx context.Context, namespace, name, phase string) error
-	Update(ctx context.Context, team *Team) (*Team, error)
-	Delete(ctx context.Context, namespace, name string) error
-
-	UpsertMember(ctx context.Context, m *TeamMember) (*TeamMember, error)
-	GetMember(ctx context.Context, namespace, teamName, memberName string) (*TeamMember, error)
-	ListMembers(ctx context.Context, namespace, teamName string) ([]*TeamMember, error)
-	RemoveMember(ctx context.Context, namespace, teamName, memberName string) error
-	BindMemberSession(ctx context.Context, namespace, teamName, memberName, sessionID, managedSessionID, instanceRef string) error
-	UpdateMemberPhase(ctx context.Context, namespace, teamName, memberName, phase string) error
-	// FindMemberBySessionID returns the member bound to sessionID (session_id or
-	// managed_session_id). ErrNotFound when no match.
-	FindMemberBySessionID(ctx context.Context, sessionID string) (*TeamMember, error)
-}
-
-// TeamTaskRepository manages team_tasks. Method signatures align with the
-// previous TaskStoreInterface so callers can switch with minimal changes.
-type TeamTaskRepository interface {
-	// Create inserts a pending task. owner may be empty (unassigned) or a member name.
-	Create(ctx context.Context, namespace, teamName, subject, description string, blockedBy []string, owner string) (*TeamTask, error)
-	Get(ctx context.Context, namespace, teamName, taskID string) (*TeamTask, error)
-	List(ctx context.Context, namespace, teamName string) ([]*TeamTask, error)
-	// Assign sets owner on a pending task (lead-assign). Stays pending.
-	Assign(ctx context.Context, namespace, teamName, taskID, owner string, expectedVersion int64) (*TeamTask, error)
-	// Claim moves a pending unblocked task to in_progress when owner is empty
-	// (self-claim) or already equals claimedBy (assignee starts assigned work).
-	// expectedVersion <= 0 means claim at the current store version.
-	Claim(ctx context.Context, namespace, teamName, taskID, claimedBy string, expectedVersion int64) (*TeamTask, error)
-	Complete(ctx context.Context, namespace, teamName, taskID, result string) (*TeamTask, error)
-	// Fail marks a pending or in-progress task failed, recording reason in result.
-	// Terminal tasks are rejected with ErrConflict.
-	Fail(ctx context.Context, namespace, teamName, taskID, reason string) (*TeamTask, error)
-	Unclaim(ctx context.Context, namespace, teamName, taskID string) (*TeamTask, error)
-	// GetUnblockedPending returns pending tasks whose blockers are completed
-	// and owner is empty (self-claim candidates).
-	GetUnblockedPending(ctx context.Context, namespace, teamName string) ([]*TeamTask, error)
-	GetSummary(ctx context.Context, namespace, teamName string) (total, pending, inProgress, completed int32, err error)
-	DeleteByTeam(ctx context.Context, namespace, teamName string) error
 }
 
 // KVRepository is the hosted BaseStore backend (workspace KV + CAS).
@@ -288,7 +242,7 @@ type AsyncToolRepository interface {
 }
 
 // TaskRepository is the hosted subagent background task backend.
-type TaskRepository interface {
+type DPTaskRepository interface {
 	Upsert(ctx context.Context, task *DPTask) (*DPTask, error)
 	Get(ctx context.Context, tenant, parentAgentID, parentSessionID, taskID string) (*DPTask, error)
 	List(ctx context.Context, tenant, parentAgentID, parentSessionID, status string) ([]*DPTask, error)
@@ -320,6 +274,7 @@ func ResolveEventOptions(opts []EventOption) EventListOpts {
 		Until:       o.Until,
 		Before:      o.Before,
 		BeforeSeq:   o.BeforeSeq,
+		AfterSeq:    o.AfterSeq,
 		Limit:       o.Limit,
 		Offset:      o.Offset,
 		NewestFirst: o.NewestFirst,

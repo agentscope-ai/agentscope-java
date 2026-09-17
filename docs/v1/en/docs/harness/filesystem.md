@@ -1,4 +1,6 @@
-# Filesystem
+---
+title: Filesystem
+---
 
 ## Purpose
 
@@ -8,7 +10,7 @@ In Harness, **the filesystem serves three distinct but often confused roles**:
 
 1. **Tool surface**: `FilesystemTool` (and optional `ShellExecuteTool`) recognize a single `AbstractFilesystem` instance; all paths and executions flow through this outlet, making it easy to swap implementations.
 2. **Physical landing for workspace reads/writes**: `WorkspaceManager` reads "filesystem first, fall back to local if not found"; writes and uploads always go through filesystem. Therefore **where long-term memory, daily logs, and session logs ultimately land** depends on which **mode** you choose.
-3. **Multi-tenant and isolation**: `NamespaceFactory` assembles a path prefix from `RuntimeContext.userId` and other sources on every operation, making the same codebase transparently switch storage shards across **user / session / global** boundaries; `RemoteFilesystemSpec` and `SandboxFilesystemSpec` also connect **IsolationScope** to "shared KV" or "sandbox state key", aligned with the [Sandbox](./sandbox/index.md) isolation story.
+3. **Multi-tenant and isolation**: `NamespaceFactory` assembles a path prefix from `RuntimeContext.userId` and other sources on every operation, making the same codebase transparently switch storage shards across **user / session / global** boundaries; `RemoteFilesystemSpec` and `SandboxFilesystemSpec` also connect **IsolationScope** to "shared KV" or "sandbox state key", aligned with the [Sandbox](/v1/en/docs/harness/sandbox/index) isolation story.
 
 ## Three Declarative Modes
 
@@ -17,7 +19,7 @@ In Harness, **the filesystem serves three distinct but often confused roles**:
 | Mode | Config Method | Typical Artifact | Shell | Best For |
 |------|--------------|-----------------|-------|----------|
 | **1 — Composite + Shared Storage** | `filesystem(RemoteFilesystemSpec)` | `CompositeFilesystem`: **shell-free** `LocalFilesystem` at workspace root + `RemoteFilesystem` routed by prefix | No | Multi-replica sharing of `MEMORY.md`, `memory/`, session logs, etc.; **no host shell** |
-| **2 — Sandbox** | `filesystem(SandboxFilesystemSpec)` | `SandboxBackedFilesystem` + lifecycle by [Sandbox](./sandbox/index.md) | Yes (inside sandbox) | Isolated execution, recoverable sandbox sessions, optional snapshots and distributed sessions |
+| **2 — Sandbox** | `filesystem(SandboxFilesystemSpec)` | `SandboxBackedFilesystem` + lifecycle by [Sandbox](/v1/en/docs/harness/sandbox/index) | Yes (inside sandbox) | Isolated execution, recoverable sandbox sessions, optional snapshots and distributed sessions |
 | **3 — Local + Shell** | `filesystem(LocalFilesystemSpec)` or **no explicit filesystem call** | `LocalFilesystemWithShell` | Yes (host `sh -c`) | Single-process/local, trusted environment, simple scripts and tests |
 
 **When no `filesystem(...)` is called**, it is equivalent to **explicit `filesystem(new LocalFilesystemSpec())`** — mode 3, with root directory at `workspace` and host shell available.
@@ -31,7 +33,7 @@ In Harness, **the filesystem serves three distinct but often confused roles**:
 
 ### Mode 2: Sandbox (`SandboxFilesystemSpec`)
 
-- See [Sandbox](./sandbox/index.md). Key point: still exposes `AbstractFilesystem` + optional `ShellExecuteTool` (via `AbstractSandboxFilesystem`) to upper layers, but actual IO/processes happen on the `SandboxClient` side in an isolated environment; `SandboxLifecycleHook` acquires/persists/releases around each `call`.
+- See [Sandbox](/v1/en/docs/harness/sandbox/index). Key point: still exposes `AbstractFilesystem` + optional `ShellExecuteTool` (via `AbstractSandboxFilesystem`) to upper layers, but actual IO/processes happen on the `SandboxClient` side in an isolated environment; `SandboxLifecycleHook` acquires/persists/releases around each `call`.
 
 ### Mode 3: Local + Shell (`LocalFilesystemSpec` or default)
 
@@ -39,7 +41,7 @@ In Harness, **the filesystem serves three distinct but often confused roles**:
 
 ## Class Hierarchy and `ShellExecuteTool` Registration
 
-```{mermaid}
+```mermaid
 classDiagram
     class AbstractFilesystem {
         <<interface>>
@@ -155,7 +157,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Related Pages
 
-- [Sandbox](./sandbox/index.md) — sandbox mode principles, `SandboxStateStore`, distributed options
-- [Tool](./tool.md) — `FilesystemTool` / `ShellExecuteTool` parameters
-- [Workspace](./workspace.md) — `WorkspaceManager` and two-layer reads
-- [Architecture](./architecture.md) — collaboration with hooks and `RuntimeContext`
+- [Sandbox](/v1/en/docs/harness/sandbox/index) — sandbox mode principles, `SandboxStateStore`, distributed options
+- [Tool](/v1/en/docs/harness/tool) — `FilesystemTool` / `ShellExecuteTool` parameters
+- [Workspace](/v1/en/docs/harness/workspace) — `WorkspaceManager` and two-layer reads
+- [Architecture](/v1/en/docs/harness/architecture) — collaboration with hooks and `RuntimeContext`

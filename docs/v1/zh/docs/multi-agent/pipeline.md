@@ -1,4 +1,6 @@
-# Pipeline（管道）
+---
+title: 管道
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
@@ -329,7 +331,7 @@ public class PipelineCommandRunner implements ApplicationRunner {
 
 ## 相关文档
 
-- [Routing](./routing.md) - 分类并路由到专家智能体
-- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
-- [Handoffs](./handoffs.md) - 状态驱动路由与智能体间交接
-- [多智能体辩论](./multiagent-debate.md) - 辩论工作流模式
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类并路由到专家智能体
+- [MsgHub](/v1/zh/docs/task/msghub) - 多智能体对话的消息广播
+- [Handoffs](/v1/zh/docs/multi-agent/handoffs) - 状态驱动路由与智能体间交接
+- [多智能体辩论](/v1/zh/docs/multi-agent/multiagent-debate) - 辩论工作流模式

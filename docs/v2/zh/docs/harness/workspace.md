@@ -1,6 +1,6 @@
 ---
-title: "工作区（Workspace）"
-description: "智能体定义与进化的 source of truth：目录布局、工作区与 API 的等价关系、原生多租户隔离、filesystem 模式、重点内容深入"
+title: 工作区（Workspace）
+description: 智能体定义与进化的 source of truth：目录布局、工作区与 API 的等价关系、原生多租户隔离、filesystem 模式、重点内容深入
 ---
 
 ## 设计理念
@@ -47,7 +47,7 @@ description: "智能体定义与进化的 source of truth：目录布局、工�
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
 
-> **`AgentState` 不是工作区内容——别把两者混为一谈。** agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的*元数据*，例如当前激活的计划文件）会被序列化成一份 `AgentState` 文档，存进**独立子系统 `AgentStateStore`**（默认 `~/.agentscope/state/<agentId>/`，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的*文件产物*（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 `AgentState` 保存易失的*运行期上下文 + 工作区元数据*。两个存储、两套生命周期——详见 [Context](../building-blocks/context.md)。
+> **`AgentState` 不是工作区内容——别把两者混为一谈。** agent 中途恢复对话所需的在途上下文（对话缓冲、滚动摘要、权限 / 工具 / 任务 / Plan-Mode 子上下文，以及指向工作区产物的*元数据*，例如当前激活的计划文件）会被序列化成一份 `AgentState` 文档，存进**独立子系统 `AgentStateStore`**（默认 `~/.agentscope/state/<agentId>/`，完全在工作区树之外）。这是刻意的拆分：工作区保存持久的*文件产物*（永不压缩的会话日志、计划 markdown、任务记录、记忆），而 `AgentState` 保存易失的*运行期上下文 + 工作区元数据*。两个存储、两套生命周期——详见 [Context](/v2/zh/docs/building-blocks/context)。
 
 **3. 原生多租户隔离。** 工作区数据（记忆、会话、任务、技能、沙箱状态）由单一的 `IsolationScope` 分桶——无需应用层手写任何分区逻辑。Scope 决定谁和谁共享一个桶：
 
@@ -58,13 +58,13 @@ description: "智能体定义与进化的 source of truth：目录布局、工�
 | `AGENT` | 该 agent 的所有用户与会话 | 共享知识库型 agent |
 | `GLOBAL` | 整个 store 实例共用一个桶 | 慎用——所有 agent/用户争抢同一槽位 |
 
-选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 [filesystem — IsolationScope](./filesystem.md#isolationscope--多用户与多副本怎么分桶)。
+选定的 scope 在不同 filesystem 模式下落地方式不同（本机为路径前缀、共享存储为 KV 命名空间、沙箱为状态 slot）。完整语义、降级规则、并发说明见 [filesystem — IsolationScope](/v2/zh/docs/harness/filesystem#isolationscope--多用户与多副本怎么分桶)。
 
 > `IsolationScope` 管的是上面**工作区 / filesystem** 的分桶。`AgentState` 有自己正交的寻址方式：无论哪种 scope，它始终按 `(userId, sessionId)` 存进 `AgentStateStore`。
 
 单个 `HarnessAgent` 实例可服务数千并发用户，用户间数据零泄漏。
 
-**4. 工作区与 filesystem 解耦。** 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 `HarnessAgent` 能"代码不动、部署形态切换"的根因。详细见 [filesystem](./filesystem.md) 的三种模式。
+**4. 工作区与 filesystem 解耦。** 同一份目录布局可以落在三种地方：本机磁盘、共享 KV 存储（Redis / JDBC）、沙箱容器。这是 `HarnessAgent` 能"代码不动、部署形态切换"的根因。详细见 [filesystem](/v2/zh/docs/harness/filesystem) 的三种模式。
 
 ## 工作区目录布局
 
@@ -92,7 +92,7 @@ description: "智能体定义与进化的 source of truth：目录布局、工�
         └── <sessionId>.json
 ```
 
-> **这棵树是*逻辑*布局，不是固定的磁盘路径。** 它画成 `.agentscope/workspace/...`，但那只是默认的本机落点。同一份布局可以物理上落在**本机磁盘**、落在**远端分布式存储**（Redis / JDBC / OSS，通过 `RemoteFilesystemSpec`），或**映射进沙箱容器**（`SandboxFilesystemSpec`）——下面这些相对路径在三种模式下完全一致，变的只是后端存储，你的 agent 代码不用动。用 [filesystem](./filesystem.md) 选后端；本文其余内容都是按这套逻辑布局来写的。
+> **这棵树是*逻辑*布局，不是固定的磁盘路径。** 它画成 `.agentscope/workspace/...`，但那只是默认的本机落点。同一份布局可以物理上落在**本机磁盘**、落在**远端分布式存储**（Redis / JDBC / OSS，通过 `RemoteFilesystemSpec`），或**映射进沙箱容器**（`SandboxFilesystemSpec`）——下面这些相对路径在三种模式下完全一致，变的只是后端存储，你的 agent 代码不用动。用 [filesystem](/v2/zh/docs/harness/filesystem) 选后端；本文其余内容都是按这套逻辑布局来写的。
 
 **唯一你真正需要写的是 `AGENTS.md`**（不写也能跑，只是少一段人格注入）。其他目录在你启用对应能力时自动出现：
 
@@ -167,7 +167,7 @@ env:
 
 ## 工作区内容如何被加载
 
-因为工作区是逻辑布局（见上方提示框），"加载"从不假设它是一个普通本机目录——每次读取都经过配置的 `AbstractFilesystem`，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的[两层读](#两层读架构filesystem-first--本地兜底)正是把这种"与后端无关"落到实处的机制；各模式如何在物理上解析路径，见 [filesystem](./filesystem.md)。
+因为工作区是逻辑布局（见上方提示框），"加载"从不假设它是一个普通本机目录——每次读取都经过配置的 `AbstractFilesystem`，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的[两层读](#两层读架构filesystem-first--本地兜底)正是把这种"与后端无关"落到实处的机制；各模式如何在物理上解析路径，见 [filesystem](/v2/zh/docs/harness/filesystem)。
 
 ### 一次推理的 system prompt 拼装
 
@@ -225,7 +225,7 @@ workspace/
         └── researcher.md             ← 只对 alice 生效
 ```
 
-调用时只要 `RuntimeContext.userId="alice"`，框架就会先看 `alice/skills/code-reviewer/`，没有再退到 `skills/code-reviewer/`。下层独有的 skill 仍然可见，只在重名时被上层挡住。完整优先级表参考 [技能 — 同名冲突谁说了算](./skill.md#同名冲突谁说了算)。
+调用时只要 `RuntimeContext.userId="alice"`，框架就会先看 `alice/skills/code-reviewer/`，没有再退到 `skills/code-reviewer/`。下层独有的 skill 仍然可见，只在重名时被上层挡住。完整优先级表参考 [技能 — 同名冲突谁说了算](/v2/zh/docs/harness/skill#同名冲突谁说了算)。
 
 #### 同一套 agent 逻辑，按用户定制
 
@@ -243,7 +243,7 @@ workspace/
 
 ### 三种 filesystem 模式下的加载行为
 
-工作区只是"逻辑布局"，物理落点由 [filesystem](./filesystem.md) 选择。同一份目录在不同模式下被加载的方式不一样，这里分别举例。
+工作区只是"逻辑布局"，物理落点由 [filesystem](/v2/zh/docs/harness/filesystem) 选择。同一份目录在不同模式下被加载的方式不一样，这里分别举例。
 
 **模式 1 · 共享存储（`RemoteFilesystemSpec`）—— 模板 + 远端覆盖**
 
@@ -259,7 +259,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```
 
 - **如何加载**：每次推理时，`AGENTS.md` / `MEMORY.md` / `tools.json` 会被框架以"远端为上层、本机模板为下层"的 overlay 读出来。本地磁盘上的 `<workspace>/AGENTS.md` 是**只读模板**——是初始或多副本同步的种子；远端 KV 里如果存在该用户的同名 key，就以远端为准。
-- **路由规则**：`memory/` / `skills/` / `subagents/` / `knowledge/` / `agents/<id>/sessions/` / `agents/<id>/tasks/` 都自动按 `IsolationScope` 进命名空间（默认 USER，每个 `userId` 一个命名空间；详见 [filesystem — IsolationScope](./filesystem.md#isolationscope--多用户与多副本怎么分桶)）。
+- **路由规则**：`memory/` / `skills/` / `subagents/` / `knowledge/` / `agents/<id>/sessions/` / `agents/<id>/tasks/` 都自动按 `IsolationScope` 进命名空间（默认 USER，每个 `userId` 一个命名空间；详见 [filesystem — IsolationScope](/v2/zh/docs/harness/filesystem#isolationscope--多用户与多副本怎么分桶)）。
 - **最佳实践**：把团队约定的 `AGENTS.md` / `knowledge/` / 共享 `skills/` 用 git 同步到所有副本的本地磁盘作为模板；运行时产物（`MEMORY.md`、`memory/`、`agents/<id>/...`）让 KV 自己长。
 
 **模式 2 · 沙箱（`DockerFilesystemSpec` / K8s / E2B / AgentRun）—— Projection + Hydrate**
@@ -308,7 +308,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ### Agent 状态 —— 独立存储，不在工作区
 
-`AgentState` 是按 `(userId, sessionId)` 维度的运行期上下文，被刻意放在**工作区树之外**。每次 `call()` 结束，它会被序列化成 JSON，按该次调用的 `(userId, sessionId)` 通过 [`AgentStateStore`](../../integration/session/index.md) 持久化；下次同 `(userId, sessionId)` 的 `call()` 自动加载回来。
+`AgentState` 是按 `(userId, sessionId)` 维度的运行期上下文，被刻意放在**工作区树之外**。每次 `call()` 结束，它会被序列化成 JSON，按该次调用的 `(userId, sessionId)` 通过 [`AgentStateStore`](/v2/zh/integration/session/index) 持久化；下次同 `(userId, sessionId)` 的 `call()` 自动加载回来。
 
 默认情况下 `HarnessAgent` 使用 `JsonFileAgentStateStore`，根目录在工作区**之外**的 `~/.agentscope/state/<agentId>/`（可通过 `agentscope.state.home` 系统属性改根目录），让运行时状态与工作区数据解耦。可通过 `.stateStore(...)` 换成别的后端。
 
@@ -321,7 +321,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 > 默认的 `JsonFileAgentStateStore` 仅适合单机。生产多副本必须换成分布式后端（`RedisAgentStateStore` / `MysqlAgentStateStore` ……）。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)` 但没换成分布式状态存储，`build()` 会直接抛 `IllegalStateException`—— 强制提醒你别让运行时状态成为单点。
 
-完整细节（恢复链路、跨节点接续、`(userId, sessionId)` 寻址）见 [Context](../building-blocks/context.md)。
+完整细节（恢复链路、跨节点接续、`(userId, sessionId)` 寻址）见 [Context](/v2/zh/docs/building-blocks/context)。
 
 ### Memory（长期记忆）
 
@@ -343,7 +343,7 @@ workspace/
 读取路径：
 
 - 框架自动读 `MEMORY.md`（两层读，filesystem 优先）；
-- agent 可主动调 `memory_search` / `memory_get` 找老内容（详见 [记忆](./memory.md)）。
+- agent 可主动调 `memory_search` / `memory_get` 找老内容（详见 [记忆](/v2/zh/docs/harness/memory)）。
 
 ### 命名空间隔离怎么落到路径上
 
@@ -365,11 +365,11 @@ workspace/
 
 | 通道 | 落在哪 | 怎么开 | 怎么累积 | 深入文档 |
 |------|--------|--------|---------|---------|
-| **长期记忆** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | 压缩前 `MemoryFlushMiddleware` 从对话前缀抽取事实；后台节流任务合并去重写回 `MEMORY.md`，每轮重新注入 | [记忆](./memory.md) |
-| **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](./skill.md#自学习闭环可选) |
-| **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](./plan-mode.md) |
-| **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文压缩](./compaction.md) |
-| **会话日志** | `agents/<agentId>/sessions/`（工作区） | 默认开启 | 每次 `call()` 追加到永不压缩的 JSONL 日志；`session_search` / `session_history` 查它 | [Context](../building-blocks/context.md) |
+| **长期记忆** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | 压缩前 `MemoryFlushMiddleware` 从对话前缀抽取事实；后台节流任务合并去重写回 `MEMORY.md`，每轮重新注入 | [记忆](/v2/zh/docs/harness/memory) |
+| **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](/v2/zh/docs/harness/skill#自学习闭环可选) |
+| **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](/v2/zh/docs/harness/plan-mode) |
+| **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文压缩](/v2/zh/docs/harness/compaction) |
+| **会话日志** | `agents/<agentId>/sessions/`（工作区） | 默认开启 | 每次 `call()` 追加到永不压缩的 JSONL 日志；`session_search` / `session_history` 查它 | [Context](/v2/zh/docs/building-blocks/context) |
 
 贯穿其中的理念：**智能体在每次运行之间变强，而你不用搭任何存储。** 记忆、技能、计划、会话日志、落盘结果都只是工作区里的文件——它们享受和本页其它内容一样的按租户隔离、两层读、以及跨 filesystem 模式的可移植性。（唯一的例外是易失的 `AgentState` 运行期上下文——它存在独立的 `AgentStateStore`，不在工作区；见 [运行时数据与 Memory 怎么存](#运行时数据与-memory-怎么存)。）
 
@@ -393,7 +393,7 @@ skills/code-reviewer/
 3. `workspace/skills/` —— 工作区共用
 4. `<userId>/skills/` —— 用户隔离（覆盖以上所有）
 
-下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 `DynamicSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](./skill.md)。
+下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 `DynamicSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/v2/zh/docs/harness/skill)。
 
 ### `subagents/`
 
@@ -412,7 +412,7 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 ```
 
 加载：`AgentSpecLoader` 在构建期**非递归**地扫 `workspace/subagents/*.md`，再合并你通过 `.subagent(SubagentDeclaration...)` 编程注册的声明。主 agent 通过 `agent_spawn agent_id="reviewer" task="..."` 调用。
-完整细节（同步 / 后台、远程子 agent、流式转发、任务存储）见 [子 Agent](./subagent.md)。
+完整细节（同步 / 后台、远程子 agent、流式转发、任务存储）见 [子 Agent](/v2/zh/docs/harness/subagent)。
 
 ### `tools.json`
 
@@ -457,7 +457,7 @@ plans/
 └── PLAN.md           ← plan_write 写入的当前计划
 ```
 
-注意：`PlanModeContext`（是否处于 plan 阶段、当前计划文件路径）跟着 `AgentState` 走，是**运行时状态**，通过 `AgentStateStore` 持久化（默认 `~/.agentscope/state/<agentId>/`，在工作区之外）。`plans/` 下只是 markdown 内容本身。详见 [Plan Mode](./plan-mode.md)。
+注意：`PlanModeContext`（是否处于 plan 阶段、当前计划文件路径）跟着 `AgentState` 走，是**运行时状态**，通过 `AgentStateStore` 持久化（默认 `~/.agentscope/state/<agentId>/`，在工作区之外）。`plans/` 下只是 markdown 内容本身。详见 [Plan Mode](/v2/zh/docs/harness/plan-mode)。
 
 ### `agents/<agentId>/`
 
@@ -474,7 +474,7 @@ agents/<agentId>/
 
 > 序列化的 `AgentState`（`agent_state`）默认**不**在工作区里——它存在配置的 `AgentStateStore`（默认 `~/.agentscope/state/<agentId>/`）。工作区里只保留上面的对话日志与任务记录。
 
-跨节点恢复 / 多副本部署时这些数据必须共享（要么走 `RedisAgentStateStore` + `RemoteFilesystemSpec`，要么走沙箱+分布式状态）。详见 [Context](../building-blocks/context.md) 与 [filesystem](./filesystem.md)。
+跨节点恢复 / 多副本部署时这些数据必须共享（要么走 `RedisAgentStateStore` + `RemoteFilesystemSpec`，要么走沙箱+分布式状态）。详见 [Context](/v2/zh/docs/building-blocks/context) 与 [filesystem](/v2/zh/docs/harness/filesystem)。
 
 ### `knowledge/`
 
@@ -501,10 +501,10 @@ knowledge/
 
 ## 相关文档
 
-- [架构](./architecture.md) — system prompt 是怎么拼出来的，能力之间如何协作
-- [文件系统](./filesystem.md) — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、`IsolationScope`、多用户隔离
-- [Context](../building-blocks/context.md) — `AgentState` 与 `AgentStateStore` 的持久化、跨节点恢复
-- [记忆](./memory.md) — `MEMORY.md` / `memory/` 的生成与维护、压缩、卸载
-- [技能](./skill.md) — 四层合成、自学习闭环、`<available_skills>` 块
-- [子 Agent](./subagent.md) — `subagents/` 声明文件、同步/后台、流式转发
-- [Plan Mode](./plan-mode.md) — `plans/` 计划文件、只读阶段、HITL 退出
+- [架构](/v2/zh/docs/harness/architecture) — system prompt 是怎么拼出来的，能力之间如何协作
+- [文件系统](/v2/zh/docs/harness/filesystem) — 工作区在物理上落到哪里（本机 / 沙箱 / 共享存储）、`IsolationScope`、多用户隔离
+- [Context](/v2/zh/docs/building-blocks/context) — `AgentState` 与 `AgentStateStore` 的持久化、跨节点恢复
+- [记忆](/v2/zh/docs/harness/memory) — `MEMORY.md` / `memory/` 的生成与维护、压缩、卸载
+- [技能](/v2/zh/docs/harness/skill) — 四层合成、自学习闭环、`<available_skills>` 块
+- [子 Agent](/v2/zh/docs/harness/subagent) — `subagents/` 声明文件、同步/后台、流式转发
+- [Plan Mode](/v2/zh/docs/harness/plan-mode) — `plans/` 计划文件、只读阶段、HITL 退出

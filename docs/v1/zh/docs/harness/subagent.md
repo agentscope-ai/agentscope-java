@@ -1,4 +1,6 @@
-# 子 Agent（Subagent）
+---
+title: 子 Agent
+---
 
 ## 作用
 
@@ -242,7 +244,7 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [工具](./tool.md)
-- [工作区](./workspace.md)
-- [架构](./architecture.md)
-- [流式输出](./streaming.md)
+- [工具](/v1/zh/docs/harness/tool)
+- [工作区](/v1/zh/docs/harness/workspace)
+- [架构](/v1/zh/docs/harness/architecture)
+- [流式输出](/v1/zh/docs/harness/streaming)

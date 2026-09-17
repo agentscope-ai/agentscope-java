@@ -1,4 +1,6 @@
-# Handoffs（交接）
+---
+title: Handoffs
+---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
@@ -249,9 +251,9 @@ resultOpt.ifPresent(state -> {
 
 ## 相关文档
 
-- [Pipeline](./pipeline.md) - 顺序与并行智能体执行
-- [Routing](./routing.md) - 分类并路由到专家智能体
-- [Supervisor](./supervisor.md) - 中心监督者与专职智能体即工具
-- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
-- [Agent as Tool](../task/agent-as-tool.md) - 将智能体注册为工具供其他智能体调用
-- [工具系统](../task/tool.md) - AgentScope 工具与 Toolkit
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行智能体执行
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类并路由到专家智能体
+- [Supervisor](/v1/zh/docs/multi-agent/supervisor) - 中心监督者与专职智能体即工具
+- [MsgHub](/v1/zh/docs/task/msghub) - 多智能体对话的消息广播
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 将智能体注册为工具供其他智能体调用
+- [工具系统](/v1/zh/docs/task/tool) - AgentScope 工具与 Toolkit

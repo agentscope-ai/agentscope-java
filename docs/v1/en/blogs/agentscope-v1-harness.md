@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: AgentScope Java 1.1 · Harness
 ---
-
-# AgentScope Java 1.1 · Harness
 
 AgentScope Java 1.1 introduces the first public release of the **Harness Framework**: a production runtime layer for long-running, distributed agents.
 
@@ -117,8 +115,8 @@ Msg reply = agent.call(userMessage, ctx).block();
 
 ## Recommended Reading
 
-- [Harness Overview](../harness/overview.md)
-- [Harness Architecture](../harness/architecture.md)
-- [Filesystem](../harness/filesystem.md)
-- [Sandbox](../harness/sandbox/index.md)
-- [Chinese full article](../../zh/blogs/agentscope-v1-harness.md)
+- [Harness Overview](/v1/en/docs/harness/overview)
+- [Harness Architecture](/v1/en/docs/harness/architecture)
+- [Filesystem](/v1/en/docs/harness/filesystem)
+- [Sandbox](/v1/en/docs/harness/sandbox/index)
+- [Chinese full article](/v1/zh/blogs/agentscope-v1-harness)
