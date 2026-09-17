@@ -191,6 +191,47 @@ class JdbcWeixinStateStoreTest {
     }
 
     @Test
+    void removeAccountDropsEveryRecordForThatAccountOnly() {
+        var retired = store.acquireLease("retired", "holder-a", 60_000).orElseThrow();
+        var kept = store.acquireLease("kept", "holder-b", 60_000).orElseThrow();
+        assertTrue(
+                store.acceptBatch(
+                        "retired",
+                        retired,
+                        "cursor-retired",
+                        List.of(new WeixinInboxMessage("message", "{}"))));
+        assertTrue(store.saveContextToken("retired", retired, "peer", "context-retired"));
+        assertTrue(store.acceptBatch("kept", kept, "cursor-kept", List.of()));
+
+        store.removeAccount("retired");
+
+        // The removed account is gone from the database, not just from one adapter instance.
+        var restarted = newStore();
+        assertEquals("", restarted.loadCursor("retired"));
+        assertNull(restarted.loadContextToken("retired", "peer"));
+        assertFalse(restarted.isLeaseCurrent("retired", retired));
+        assertEquals(0, countRows("builder_weixin_cursor", "retired"));
+        assertEquals(0, countRows("builder_weixin_context", "retired"));
+        assertEquals(0, countRows("builder_weixin_inbox", "retired"));
+        assertEquals(0, countRows("builder_weixin_lease", "retired"));
+        assertEquals("cursor-kept", restarted.loadCursor("kept"));
+        assertTrue(restarted.isLeaseCurrent("kept", kept));
+    }
+
+    @Test
+    void removeAccountRejectsABlankAccountId() {
+        assertThrows(IllegalArgumentException.class, () -> store.removeAccount("  "));
+        assertThrows(IllegalArgumentException.class, () -> store.removeAccount(null));
+    }
+
+    private int countRows(String table, String accountId) {
+        return jdbc.queryForObject(
+                "select count(*) from " + table + " where account_id = ?",
+                Integer.class,
+                accountId);
+    }
+
+    @Test
     void completedTombstonesArePurgedAfterRetentionButPendingMessagesRemain() {
         var lease = store.acquireLease("account", "holder", 60_000).orElseThrow();
         store.acceptBatch(

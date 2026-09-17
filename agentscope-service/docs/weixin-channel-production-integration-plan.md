@@ -174,6 +174,15 @@ The production `WeixinStateStore` implementation belongs to the Scheduler and it
 - durable inbound message claim and processing result;
 - runtime timestamps and sanitized failure state.
 
+Retention is deliberate. The cursor and the per-peer context tokens are the account's resume
+position: replaying from an empty cursor makes the consumer re-deliver messages the provider still
+holds, so the Scheduler never evicts account state on its own. It cannot: a reversible `disable`
+already removes the Channel from the desired configuration and tears the runtime down, and that
+looks the same as a disconnect in the configuration feed. Retiring an account is therefore an
+explicit, one-way host action - `WeixinStateStore.removeAccount(accountId)` drops the cursor,
+context, inbox and lease rows for that account - and completed inbox tombstones expire after seven
+days.
+
 The control-plane Vault schema is not used for these records.
 
 ### 5.4 Runtime observation Adapter
