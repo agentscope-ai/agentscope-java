@@ -114,15 +114,22 @@ public final class JdbcWeixinStateStore implements WeixinStateStore {
         requireAccount(accountId);
         if (holderId == null || holderId.isBlank() || leaseMs <= 0)
             throw new IllegalArgumentException("holderId and positive leaseMs are required");
-        // ON CONFLICT avoids aborting a PostgreSQL transaction on concurrent first acquisition.
-        jdbc.update(
-                "insert into builder_weixin_lease"
-                        + " (account_id, holder_id, generation, acquired_at, expires_at)"
-                        + " values (?, '', 0, 0, 0) on conflict do nothing",
-                accountId);
         return transactions.execute(
                 status -> {
+                    // The bootstrap insert shares this transaction. ON CONFLICT keeps a concurrent
+                    // first acquisition from aborting the transaction, and a concurrent
+                    // removeAccount cannot delete a row this transaction has not committed yet —
+                    // which is what used to leave lock() without a row to return.
+                    jdbc.update(
+                            "insert into builder_weixin_lease (account_id, holder_id, generation,"
+                                + " acquired_at, expires_at) values (?, '', 0, 0, 0) on conflict do"
+                                + " nothing",
+                            accountId);
                     LeaseRow row = lock(accountId);
+                    if (row == null) {
+                        // Defensive: a missing row must back off like a lost lease, never throw.
+                        return Optional.empty();
+                    }
                     long timestamp = now();
                     if (row.expiresAt > timestamp && !row.holderId.equals(holderId))
                         return Optional.empty();
