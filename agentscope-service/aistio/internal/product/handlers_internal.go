@@ -1006,7 +1006,13 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 }
 
 // channelRuntimeStaleReportMs bounds how old the last accepted report may be before a lease-less
-// failure report is allowed to overwrite it. It is several scheduler poll intervals wide.
+// failure report is allowed to overwrite it.
+//
+// Precondition: the scheduler's report interval must stay well below this bound - the default
+// ("builder.scheduler.channel-refresh-ms", 15s) is one eighth of it. The control plane cannot see
+// the configured interval, so a deployment that raises it into this range would make every healthy
+// leader look stale and reopen the flap this fence exists to prevent; SchedulerChannelRuntime warns
+// at startup when the interval is set above a minute.
 const channelRuntimeStaleReportMs = 2 * 60 * 1000
 
 type channelRuntimeReport struct {

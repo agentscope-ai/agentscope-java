@@ -75,6 +75,14 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
     private final io.agentscope.extensions.channel.weixin.WeixinStateStore weixinStateStore;
     private final int configFetchRetries;
     private final long configFetchBackoffMs;
+
+    /**
+     * The control plane fences lease-less runtime reports on a report older than two minutes being
+     * stale (`channelRuntimeStaleReportMs`). That interval is not visible to the control plane, so
+     * warn once when this one is set high enough to eat into the margin.
+     */
+    private static final long CONTROL_PLANE_STALE_FENCE_WARN_MS = 60_000L;
+
     private final long refreshIntervalMs;
 
     private final ScheduledExecutorService refreshExecutor =
@@ -132,6 +140,15 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
     public void start() {
         if (running) {
             return;
+        }
+        if (refreshIntervalMs > CONTROL_PLANE_STALE_FENCE_WARN_MS) {
+            log.warn(
+                    "Channel refresh interval is {}ms. The control plane treats a runtime report"
+                        + " older than {}ms as stale, and a stale row may be overwritten by a"
+                        + " lease-less failure report from a standby. Keep this interval well below"
+                        + " that bound.",
+                    refreshIntervalMs,
+                    CONTROL_PLANE_STALE_FENCE_WARN_MS);
         }
         registerChannelFactories();
         reconcile(fetchChannelConfigWithRetry());
