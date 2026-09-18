@@ -31,7 +31,7 @@ import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -70,12 +70,15 @@ public final class FeishuChannel implements Channel {
 
     /**
      * Yields the access-token store of one credential generation, and is called once per rebuild of
-     * the outbound group. A store serves a single credential, so generations must not share one:
-     * reusing an instance across generations would let a request that still holds the previous
-     * outbound client write a token minted from the rotated-out credentials into the slot the new
-     * generation reads.
+     * the outbound group with that generation's properties. A store serves a single credential, so
+     * generations must not share one: reusing an instance across generations would let a request
+     * that still holds the previous outbound client write a token minted from the rotated-out
+     * credentials into the slot the new generation reads. The properties let implementations scope
+     * shared storage (for example a Redis key hashed from the credential fields): instances on
+     * different processes holding the same generation share one slot, while a rotation moves to a
+     * fresh one.
      */
-    private final Supplier<AccessTokenStore> tokenStoreFactory;
+    private final Function<FeishuChannelProperties, AccessTokenStore> tokenStoreFactory;
 
     /** Serializes credential replacement; reads of {@link #credentials} are lock-free. */
     private final Object credentialLock = new Object();
@@ -93,7 +96,7 @@ public final class FeishuChannel implements Channel {
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             FeishuChannelRegistry registry,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<FeishuChannelProperties, AccessTokenStore> tokenStoreFactory) {
         this.channelId = Objects.requireNonNull(channelId, "channelId");
         this.config = Objects.requireNonNull(config, "config");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
@@ -176,20 +179,22 @@ public final class FeishuChannel implements Channel {
                 routing,
                 FeishuChannelProperties.from(channelId, rawProperties),
                 idempotency,
-                () -> tokenStore);
+                properties -> tokenStore);
     }
 
     /**
      * Factory for callers that already hold resolved {@link FeishuChannelProperties}. The
      * {@code tokenStoreFactory} is the seam multi-tenant wiring uses: it is called once per
-     * credential generation instead of being handed one store for the channel's lifetime.
+     * credential generation — with that generation's properties — instead of being handed one store
+     * for the channel's lifetime; each call must return a store serving only that generation's
+     * credential.
      */
     static FeishuChannel fromProperties(
             String channelId,
             ChannelConfig routing,
             FeishuChannelProperties properties,
             InboundEventDeduplicator idempotency,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<FeishuChannelProperties, AccessTokenStore> tokenStoreFactory) {
         Objects.requireNonNull(channelId, "channelId");
         Objects.requireNonNull(routing, "routing");
         Objects.requireNonNull(properties, "properties");
@@ -371,7 +376,7 @@ public final class FeishuChannel implements Channel {
     private static Credentials newCredentials(
             FeishuChannelProperties properties,
             Credentials previous,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<FeishuChannelProperties, AccessTokenStore> tokenStoreFactory) {
         boolean callbackUnchanged =
                 previous != null && callbackCredentialsEqual(previous.properties(), properties);
         boolean appUnchanged =
@@ -391,7 +396,7 @@ public final class FeishuChannel implements Channel {
                                         properties.apiBase(),
                                         properties.appId(),
                                         properties.appSecret(),
-                                        tokenStoreFactory.get()));
+                                        tokenStoreFactory.apply(properties)));
         return new Credentials(properties, crypto, outbound);
     }
 

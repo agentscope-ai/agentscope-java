@@ -183,7 +183,7 @@ class FeishuChannelCredentialRotationTest {
                 ChannelConfig.of(CHANNEL_ID, "main"),
                 properties,
                 new IdempotencyStore(),
-                () -> {
+                generation -> {
                     InMemoryAccessTokenStore store = new InMemoryAccessTokenStore();
                     tokenStores.add(store);
                     return store;
