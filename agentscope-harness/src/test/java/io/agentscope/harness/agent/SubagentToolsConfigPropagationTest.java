@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,10 +72,12 @@ class SubagentToolsConfigPropagationTest {
         assertEquals(toolsDeclared, declaration.isToolsDeclared());
         assertTrue(declaration.getTools().isEmpty());
 
+        ToolsConfig parent = parentWithMcp();
         ToolsConfig child =
                 HarnessAgentBuilderSupport.childToolsConfig(
-                        parentWithMcp(), declaration.getTools(), declaration.isToolsDeclared());
+                        parent, declaration.getTools(), declaration.isToolsDeclared());
         assertNotNull(child);
+        assertNotSame(parent, child);
         assertEquals(!toolsDeclared, child.getMcpServers().containsKey("industry-data"));
     }
 
@@ -201,21 +205,62 @@ class SubagentToolsConfigPropagationTest {
                 "an explicit empty allow-list must not inherit the parent's MCP servers (#3178)");
     }
 
-    @Test
-    void absentAllowListInheritsTheResolvedParentConfigUnchanged() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void absentAllowListInheritsValuesWithoutSharingMutableContainers(boolean strict) {
         ToolsConfig parent = parentWithMcp();
+        parent.setAllow(new ArrayList<>(List.of("query_data")));
+        parent.setDeny(new ArrayList<>(List.of("execute")));
+        parent.setStrictAllow(strict);
+        parent.setDefaultToolsEnabled(!strict);
         ToolsConfig child = HarnessAgentBuilderSupport.childToolsConfig(parent, List.of(), false);
+        ToolsConfig sibling = HarnessAgentBuilderSupport.childToolsConfig(parent, List.of(), false);
 
-        assertTrue(
-                child == parent,
-                "an absent tools list must inherit the parent config unchanged — otherwise every"
-                        + " existing declaration silently loses its tools");
-        assertTrue(child.getMcpServers().containsKey("industry-data"));
+        assertNotSame(parent, child);
+        assertNotSame(child, sibling);
+        assertNotSame(parent.getAllow(), child.getAllow());
+        assertNotSame(parent.getDeny(), child.getDeny());
+        assertNotSame(parent.getMcpServers(), child.getMcpServers());
+        assertEquals(parent.getAllow(), child.getAllow());
+        assertEquals(parent.getDeny(), child.getDeny());
+        assertEquals(parent.getMcpServers(), child.getMcpServers());
+        assertEquals(strict, child.isStrictAllow());
+        assertEquals(!strict, child.isDefaultToolsEnabled());
+
+        parent.getAllow().clear();
+        parent.getDeny().clear();
+        assertEquals(List.of("query_data"), child.getAllow());
+        assertEquals(List.of("execute"), child.getDeny());
+        child.setAllow(List.of("child_only"));
+        child.setDeny(List.of("child_denied"));
+        child.setStrictAllow(!strict);
+        child.setDefaultToolsEnabled(strict);
+        child.getMcpServers().clear();
+        assertTrue(parent.getMcpServers().containsKey("industry-data"));
+        assertTrue(sibling.getMcpServers().containsKey("industry-data"));
+        assertEquals(List.of("query_data"), sibling.getAllow());
+        assertEquals(List.of("execute"), sibling.getDeny());
+        assertEquals(strict, parent.isStrictAllow());
+        assertEquals(strict, sibling.isStrictAllow());
+        assertEquals(!strict, parent.isDefaultToolsEnabled());
+        assertEquals(!strict, sibling.isDefaultToolsEnabled());
 
         assertNull(
                 HarnessAgentBuilderSupport.childToolsConfig(null, List.of(), false),
                 "an absent tools list with no parent config must stay null so the child can load"
                         + " its own workspace tools.json");
+    }
+
+    @Test
+    void absentAllowListPreservesNullFieldsAndDefaultFlags() {
+        ToolsConfig parent = new ToolsConfig();
+        ToolsConfig child = HarnessAgentBuilderSupport.childToolsConfig(parent, null, false);
+        assertNotSame(parent, child);
+        assertNull(child.getAllow());
+        assertNull(child.getDeny());
+        assertNull(child.getMcpServers());
+        assertFalse(child.isStrictAllow());
+        assertTrue(child.isDefaultToolsEnabled());
     }
 
     @Test

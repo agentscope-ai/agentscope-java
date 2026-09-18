@@ -320,7 +320,8 @@ final class HarnessAgentBuilderSupport {
      * parent config and the declaration's tool allow-list.
      *
      * <p>An <b>absent</b> allow-list ({@code allowDeclared=false}) inherits the resolved parent
-     * config unchanged — matching {@link SubagentDeclaration#getTools()} and
+     * config values in a separate config with copied lists and server map — matching
+     * {@link SubagentDeclaration#getTools()} and
      * {@link #allowlistedInheritedToolkit}, so declarations that never listed tools keep their
      * behaviour. An <b>explicitly empty</b> list is a true opt-out: the child inherits no MCP
      * servers (and no allow-list) from the parent, with a WARN so the drop is visible (#3178). A
@@ -334,7 +335,14 @@ final class HarnessAgentBuilderSupport {
             List<String> allow,
             boolean allowDeclared) {
         if (!allowDeclared) {
-            return parent;
+            if (parent == null) return null;
+            var inherited = new io.agentscope.harness.agent.tools.ToolsConfig();
+            inherited.setAllow(copyList(parent.getAllow()));
+            inherited.setDeny(copyList(parent.getDeny()));
+            inherited.setMcpServers(parent.getMcpServers());
+            inherited.setStrictAllow(parent.isStrictAllow());
+            inherited.setDefaultToolsEnabled(parent.isDefaultToolsEnabled());
+            return inherited;
         }
         if (allow == null || allow.isEmpty()) {
             var optOut = new io.agentscope.harness.agent.tools.ToolsConfig();
