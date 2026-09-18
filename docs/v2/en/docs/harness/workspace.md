@@ -531,6 +531,7 @@ What changes:
 | Transcripts | persisted under the workspace | skipped with a warning unless a `.transcriptStore(...)` is supplied |
 | Skills staging (`.skills-cache`) | materialised in the workspace | not staged |
 | Memory / session tools (when left enabled) | persisted in the workspace | written to the ephemeral temp workspace — **not durable**; an OS tmp reaper may sweep them at any time, so disable them or back them with a remote store when persistence is required |
+| Cleanup of the ephemeral tree | n/a (lives with the deployment) | **caller-owned**: never deleted by `close()`; all builds in one JVM share the same `agentscope-workspace/<jvm-nonce>/` root (no per-build accumulation), while JVM restarts / replicas create a new root — purge `${java.io.tmpdir}/agentscope-workspace` at process start when rebuilds are frequent |
 
 > The flag relocates / disables *local* workspace materialisation. Subsystems that are left
 > enabled (memory hooks, plan mode, …) read and write the ephemeral temp workspace instead of the

@@ -2350,6 +2350,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       subsystems are off or their state lives in a remote / distributed store.</li>
          * </ul>
          *
+         * <p><strong>Cleanup responsibility:</strong> the ephemeral tree is never deleted by
+         * {@link #close()} or the harness. It is keyed by a per-JVM nonce (all builds in one JVM
+         * share the same {@code agentscope-workspace/<nonce>/} root), so within a single process
+         * the same agentId reuses its directory across rebuilds and no per-build accumulation
+         * occurs; across JVM restarts / replicas a new nonce root is created. Deployments that
+         * rebuild agents frequently should either rely on the OS tmp reaper or purge
+         * {@code ${java.io.tmpdir}/agentscope-workspace} themselves — e.g. at process start.</li>
+         *
          * @return this builder
          */
         public Builder disableLocalWorkspace() {

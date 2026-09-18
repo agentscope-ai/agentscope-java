@@ -522,6 +522,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | Transcript（会话记录） | 持久化在工作区内 | 未提供 `.transcriptStore(...)` 时跳过并输出告警 |
 | 技能 staging（`.skills-cache`） | 落到工作区 | 不再 staging |
 | 记忆 / 会话工具（若保持开启） | 持久化在工作区内 | 写入临时工作区——**不保证持久**，OS 的临时目录清理随时可能清掉；需要持久化请关闭它们或改用远端存储 |
+| 临时工作区树的清理 | 不适用（随部署存在） | **由调用方负责**：`close()` 从不删除；同一 JVM 内所有构建共享同一个 `agentscope-workspace/<jvm-nonce>/` 根（不会按构建累积），JVM 重启 / 多副本会新建根目录——频繁重建时建议在进程启动时清理 `${java.io.tmpdir}/agentscope-workspace` |
 
 > 该开关只重定向 / 禁用**本地**工作区的落盘。仍然开启的子系统（记忆钩子、Plan Mode 等）会读写临时工作区而不是你的工作目录。想要完全无状态构建，请组合使用你不需要的那些 workspace 本地子系统的 `disable*` 开关（`disableMemoryTools()`、`disableMemoryHooks()`、`disableDynamicSkills()`、`disableDefaultWorkspaceSkills()`、`disableTranscript()` 等）。
 
