@@ -29,8 +29,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
@@ -261,5 +265,38 @@ class HarnessAgentTaskOutcomeTest {
                         eq("partial report"),
                         any(),
                         any());
+    }
+
+    @Test
+    void mixedPermissionPauseOnlyRequestsApprovalForPermissionCalls() {
+        ToolUseBlock permissionCall =
+                ToolUseBlock.builder()
+                        .id("permission")
+                        .name("bash")
+                        .state(ToolCallState.ASKING)
+                        .metadata(
+                                java.util.Map.of(
+                                        ToolUseBlock.METADATA_PERMISSION_BEHAVIOR,
+                                        PermissionBehavior.ASK.name()))
+                        .build();
+        ToolUseBlock askUserCall =
+                ToolUseBlock.builder()
+                        .id("question")
+                        .name("ask_user")
+                        .state(ToolCallState.ASKING)
+                        .metadata(
+                                java.util.Map.of(
+                                        ToolUseBlock.METADATA_PERMISSION_BEHAVIOR, "ASK_USER"))
+                        .build();
+        Msg mixed =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(permissionCall, askUserCall))
+                        .generateReason(GenerateReason.PERMISSION_AND_ASK_USER_ASKING)
+                        .build();
+
+        assertEquals(
+                List.of(permissionCall),
+                HarnessAgentTaskStarter.permissionConfirmationCalls(mixed));
     }
 }

@@ -34,6 +34,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
@@ -144,6 +145,52 @@ class AgentProtocolTaskStoreHitlTest {
         AgentEvent event = new AgentResultEvent(asking);
         assertInstanceOf(AgentResultEvent.class, event);
         assertEquals(asking, ((AgentResultEvent) event).getResult());
+    }
+
+    @Test
+    void mixedPermissionPauseFailsWithoutDroppingEitherPendingSubset() throws Exception {
+        ToolUseBlock permissionCall =
+                ToolUseBlock.builder()
+                        .id("tc-permission")
+                        .name("bash")
+                        .input(Map.of("cmd", "pwd"))
+                        .state(ToolCallState.ASKING)
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_PERMISSION_BEHAVIOR,
+                                        PermissionBehavior.ASK.name()))
+                        .build();
+        ToolUseBlock askUserCall =
+                ToolUseBlock.builder()
+                        .id("tc-question")
+                        .name("ask_user")
+                        .input(Map.of("questions", List.of(Map.of("id", "q_1"))))
+                        .state(ToolCallState.ASKING)
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_PERMISSION_BEHAVIOR,
+                                        PermissionBehavior.ASK_USER.name()))
+                        .build();
+        Msg mixed =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(permissionCall, askUserCall))
+                        .generateReason(GenerateReason.PERMISSION_AND_ASK_USER_ASKING)
+                        .build();
+        when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(
+                        Flux.just(
+                                new AgentStartEvent("sess", null, "worker"),
+                                new AgentResultEvent(mixed),
+                                new AgentEndEvent(null)));
+
+        store.submit("mixed-1", "worker", "please continue", Map.of("detail", "full"));
+
+        awaitCondition(() -> "error".equals(store.snapshot("mixed-1").get("status")), 5_000);
+        Map<String, Object> snapshot = store.snapshot("mixed-1");
+        assertTrue(((String) snapshot.get("error")).contains("both permission confirmation"));
+        assertFalse(snapshot.containsKey("pending_confirms"));
+        assertFalse(store.hasSubmitContext("mixed-1"));
     }
 
     private static Msg askingMsg() {
