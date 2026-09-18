@@ -90,10 +90,18 @@ public class ManagedSessionChannelBridge {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** @deprecated use {@link #dispatchAndAwaitReply(String, String, String, String)} */
+    /**
+     * @deprecated use {@link #dispatchAndAwaitReply(String, String, String, String)}. Without a
+     *     stable external key the control plane would create a new session per call — or, since
+     *     the registration endpoint now requires one, reject the request — so this overload fails
+     *     fast instead of relying on that.
+     */
     @Deprecated
     public Mono<String> dispatchAndAwaitReply(String ownerId, String agentId, String text) {
-        return dispatchAndAwaitReply(ownerId, agentId, null, text);
+        return Mono.error(
+                new IllegalArgumentException(
+                        "externalKey is required: use dispatchAndAwaitReply(ownerId, agentId,"
+                                + " externalKey, text)"));
     }
 
     private String doDispatch(String ownerId, String agentId, String externalKey, String text) {

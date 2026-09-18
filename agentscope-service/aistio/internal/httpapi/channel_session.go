@@ -43,8 +43,12 @@ func (s *Server) internalFindOrCreateManagedSession(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(req.ExternalKey) == "" {
-		// Preserve the bridge's one-off overload: absent keys start a new session.
-		req.ExternalKey = "channel:" + uuid.NewString()
+		// Require the stable key instead of minting one. A caller that omitted it used to get a
+		// fresh session on every call, which grows the session table without bound behind a
+		// long-lived internal token and defeats the find-or-create lock below. The bridge builds
+		// the key with ChannelExternalKeys before calling.
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "externalKey is required"})
+		return
 	}
 	agentID, err := uuid.Parse(req.AgentID)
 	if err != nil {
