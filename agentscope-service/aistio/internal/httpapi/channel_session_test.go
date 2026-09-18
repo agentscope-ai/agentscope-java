@@ -58,6 +58,23 @@ func TestChannelSessionRequiresInternalAuthAndManagedBinding(t *testing.T) {
 	}
 }
 
+func TestChannelSessionRequiresAnExternalKey(t *testing.T) {
+	st, agent, _, _ := setupConversationAgent(t)
+	agent.OwnerRef = "owner"
+	if _, err := st.AgentCatalog().UpdateAgent(t.Context(), agent, agent.Version); err != nil {
+		t.Fatal(err)
+	}
+	s := NewServer(ServerOptions{Store: st, InternalToken: "internal-secret"})
+
+	// A missing key used to mint a fresh session per call: unbounded growth behind the internal
+	// token, and the find-or-create lock could never deduplicate. Reject it instead.
+	body := `{"ownerId":"owner","agentId":"` + agent.ID.String() + `"}`
+	out := channelSessionRequest(s, body, "internal-secret")
+	if out.Code != http.StatusBadRequest || !strings.Contains(out.Body.String(), "externalKey is required") {
+		t.Fatalf("missing externalKey accepted: %d %s", out.Code, out.Body)
+	}
+}
+
 func TestChannelSessionManagedRegistrationPostgres(t *testing.T) {
 	if os.Getenv("AISTIO_TEST_POSTGRES_DSN") == "" {
 		t.Skip("AISTIO_TEST_POSTGRES_DSN not set")
