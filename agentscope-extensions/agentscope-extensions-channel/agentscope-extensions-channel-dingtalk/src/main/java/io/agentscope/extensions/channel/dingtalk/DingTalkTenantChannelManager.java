@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.channel.dingtalk;
 
+import io.agentscope.extensions.channel.common.AccessTokenStore;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
 import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
@@ -23,6 +24,7 @@ import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,12 +86,15 @@ public final class DingTalkTenantChannelManager {
     private final ChannelConfig routing;
     private final Gateway gateway;
     private final InboundEventDeduplicator idempotency;
+    private final BiFunction<String, DingTalkChannelProperties, AccessTokenStore> tokenStoreFactory;
     private final ConcurrentHashMap<String, DingTalkChannel> channels = new ConcurrentHashMap<>();
 
     /**
      * Creates a manager using a process-local {@link IdempotencyStore}; see
      * {@link #DingTalkTenantChannelManager(DingTalkCredentialResolver, ChannelConfig, Gateway,
-     * InboundEventDeduplicator)} to supply a shared-storage implementation instead.
+     * InboundEventDeduplicator)} and {@link #DingTalkTenantChannelManager(DingTalkCredentialResolver,
+     * ChannelConfig, Gateway, InboundEventDeduplicator, BiFunction)} to supply shared-storage
+     * implementations instead.
      *
      * @param resolver resolves credentials per tenant key; consulted on every callback, and twice
      *     on the call that first materializes the tenant
@@ -111,8 +116,9 @@ public final class DingTalkTenantChannelManager {
      * single shared backing store) covers the whole deployment rather than one store per tenant.
      *
      * <p>Each tenant channel allocates a process-local access-token store per credential
-     * generation: the store contract binds one instance to one credential, and neither tenants nor
-     * a tenant's successive rotated credentials may share one, so no store is accepted here.
+     * generation; see {@link #DingTalkTenantChannelManager(DingTalkCredentialResolver,
+     * ChannelConfig, Gateway, InboundEventDeduplicator, BiFunction)} to supply shared-storage
+     * token stores instead.
      *
      * @param resolver resolves credentials per tenant key; consulted on every callback, and twice
      *     on the call that first materializes the tenant
@@ -126,10 +132,47 @@ public final class DingTalkTenantChannelManager {
             ChannelConfig routing,
             Gateway gateway,
             InboundEventDeduplicator idempotency) {
+        this(
+                resolver,
+                routing,
+                gateway,
+                idempotency,
+                (tenantKey, properties) -> new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Creates a manager with an application-supplied deduplicator and access-token store factory —
+     * for example shared-storage implementations so platform redeliveries are recognized, and one
+     * instance's token refresh or invalidation serves the whole deployment.
+     *
+     * <p>The store factory is invoked each time a tenant's outbound runtime is (re)built — once
+     * when the tenant is materialized, and once per app-credential rotation — with the tenant key
+     * and that generation's {@code properties}. The store contract binds one instance to one
+     * credential generation: in-memory implementations must return a fresh instance per call,
+     * while shared-storage implementations key the slot by the tenant key and the generation's
+     * credential fields, so every instance of the deployment serves one token per generation and a
+     * rotation moves to a fresh slot.
+     *
+     * @param resolver resolves credentials per tenant key; consulted on every callback, and twice
+     *     on the call that first materializes the tenant
+     * @param routing the {@link ChannelConfig} every tenant channel is built with (default agent,
+     *     bindings, dm scope)
+     * @param gateway the gateway tenant channels dispatch into
+     * @param idempotency deduplicator shared by all tenant channels; must be thread-safe
+     * @param tokenStoreFactory yields the access-token store of one credential generation; must be
+     *     thread-safe and must not return one instance for different credential generations
+     */
+    public DingTalkTenantChannelManager(
+            DingTalkCredentialResolver resolver,
+            ChannelConfig routing,
+            Gateway gateway,
+            InboundEventDeduplicator idempotency,
+            BiFunction<String, DingTalkChannelProperties, AccessTokenStore> tokenStoreFactory) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.routing = Objects.requireNonNull(routing, "routing");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.idempotency = Objects.requireNonNull(idempotency, "idempotency");
+        this.tokenStoreFactory = Objects.requireNonNull(tokenStoreFactory, "tokenStoreFactory");
     }
 
     /**
@@ -211,7 +254,11 @@ public final class DingTalkTenantChannelManager {
     private DingTalkChannel materialize(String tenantKey, DingTalkChannelProperties properties) {
         DingTalkChannel channel =
                 DingTalkChannel.fromProperties(
-                        tenantKey, routing, properties, idempotency, InMemoryAccessTokenStore::new);
+                        tenantKey,
+                        routing,
+                        properties,
+                        idempotency,
+                        generation -> tokenStoreFactory.apply(tenantKey, generation));
         channel.init(gateway);
         log.info("DingTalk tenant '{}' channel materialized", tenantKey);
         return channel;

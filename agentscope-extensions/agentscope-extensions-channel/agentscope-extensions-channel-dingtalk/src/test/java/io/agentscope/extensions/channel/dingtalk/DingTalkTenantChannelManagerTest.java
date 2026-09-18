@@ -30,6 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
 import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import io.agentscope.harness.agent.gateway.Gateway;
@@ -148,6 +149,44 @@ class DingTalkTenantChannelManagerTest {
     }
 
     @Test
+    void tokenStoreFactorySeesTenantAndGenerationAndRunsOncePerGeneration() {
+        List<String> factoryCalls = new ArrayList<>();
+        List<AccessTokenStore> stores = new ArrayList<>();
+        DingTalkTenantChannelManager instrumented =
+                new DingTalkTenantChannelManager(
+                        resolver,
+                        ChannelConfig.of("dingtalk", "main"),
+                        gateway,
+                        new IdempotencyStore(),
+                        (key, properties) -> {
+                            factoryCalls.add(key + ":" + properties.appSecret());
+                            InMemoryAccessTokenStore store = new InMemoryAccessTokenStore();
+                            stores.add(store);
+                            return store;
+                        });
+
+        DingTalkChannelProperties initial = httpProperties("secret-1", AES_KEY);
+        tenants.put(tenantKey, initial);
+        instrumented.channelFor(tenantKey).orElseThrow();
+        instrumented.channelFor(tenantKey).orElseThrow();
+        // An AES-key-only rotation leaves the outbound runtime — and its store — in place.
+        tenants.put(
+                tenantKey,
+                rotate(initial, initial.appSecret(), DingTalkCallbackTestSupport.newAesKey()));
+        instrumented.channelFor(tenantKey).orElseThrow();
+        // An app-secret rotation rebuilds the outbound runtime onto a new generation.
+        tenants.put(tenantKey, rotate(initial, "secret-2", initial.aesKey()));
+        instrumented.channelFor(tenantKey).orElseThrow();
+
+        assertEquals(List.of(tenantKey + ":secret-1", tenantKey + ":secret-2"), factoryCalls);
+        // One store instance per credential generation: a generation's slot must not be reachable
+        // from another generation's requests.
+        assertEquals(2, stores.size());
+        assertNotSame(stores.get(0), stores.get(1));
+        instrumented.evict(tenantKey);
+    }
+
+    @Test
     void rejectsStreamModeResolution() {
         tenants.put(
                 tenantKey,
@@ -180,7 +219,7 @@ class DingTalkTenantChannelManagerTest {
                                 null,
                                 null),
                         new IdempotencyStore(),
-                        InMemoryAccessTokenStore::new);
+                        properties -> new InMemoryAccessTokenStore());
         DingTalkChannelProperties rotated = httpProperties("secret-2", null);
 
         // Stream properties are rejected outright; http properties cannot refresh a stream
