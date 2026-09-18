@@ -230,7 +230,7 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 					// it is this conversation: adopt it for this agent instead of failing the turn
 					// with a conflict it could never recover from. Writing through the upsert keeps
 					// phase, busy and timestamps as stored.
-					return s.store.Sessions().Upsert(ctx, withChannelOwner(current, agent.OwnerRef, originRef))
+					return s.store.Sessions().Upsert(ctx, withChannelOwner(current, agent.OwnerRef))
 				}
 				if ownerRef != agent.OwnerRef {
 					return nil, store.ErrConflict
@@ -263,10 +263,19 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 }
 
 // withChannelOwner returns a copy of the session that records the verified channel owner, leaving
-// every other column as stored.
-func withChannelOwner(session *store.Session, ownerRef, originRef string) *store.Session {
+// every other column - and every other key already in task_context - as stored. The upsert replaces
+// the whole column, so rebuilding the payload from the keys this branch happens to know about would
+// delete whatever an older writer left there.
+func withChannelOwner(session *store.Session, ownerRef string) *store.Session {
 	adopted := *session
-	payload, _ := json.Marshal(gin.H{"originType": "channel", "originRef": originRef, "channelOwnerRef": ownerRef})
+	metadata := map[string]any{}
+	if len(session.TaskContext) > 0 {
+		// An unreadable payload is not worth failing the turn over; the owner is the key that has
+		// to be right, so fall back to a payload carrying just it.
+		_ = json.Unmarshal(session.TaskContext, &metadata)
+	}
+	metadata["channelOwnerRef"] = ownerRef
+	payload, _ := json.Marshal(metadata)
 	adopted.TaskContext = payload
 	return &adopted
 }

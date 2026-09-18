@@ -58,6 +58,34 @@ func TestChannelSessionRequiresInternalAuthAndManagedBinding(t *testing.T) {
 	}
 }
 
+func TestWithChannelOwnerPreservesExistingMetadata(t *testing.T) {
+	session := &store.Session{
+		TaskContext: json.RawMessage(
+			`{"originType":"channel","originRef":"ref","custom":"kept","conversationTurn":{"state":"running"}}`),
+	}
+
+	adopted := withChannelOwner(session, "owner-1")
+
+	var metadata map[string]any
+	if err := json.Unmarshal(adopted.TaskContext, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	// The upsert replaces task_context wholesale, so adoption must merge rather than rebuild:
+	// a legacy row can carry keys this branch does not know about.
+	if metadata["channelOwnerRef"] != "owner-1" || metadata["custom"] != "kept" {
+		t.Fatalf("adoption dropped metadata: %v", metadata)
+	}
+	if _, ok := metadata["conversationTurn"]; !ok {
+		t.Fatalf("adoption dropped nested metadata: %v", metadata)
+	}
+	if string(session.TaskContext) == string(adopted.TaskContext) {
+		t.Fatal("adoption did not change the payload")
+	}
+	if bytes.Contains(session.TaskContext, []byte("channelOwnerRef")) {
+		t.Fatal("adoption mutated the stored session")
+	}
+}
+
 func TestChannelSessionRequiresAnExternalKey(t *testing.T) {
 	st, agent, _, _ := setupConversationAgent(t)
 	agent.OwnerRef = "owner"
