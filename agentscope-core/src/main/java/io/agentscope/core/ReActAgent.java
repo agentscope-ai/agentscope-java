@@ -1851,8 +1851,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 && pendingBatch.size() == originalBatch.size()
                                 && externalPairs.size() == pendingBatch.size()
                                 && externalPairs.stream().allMatch(this::isReturnDirectToolCall);
+                // Validate and publish from the caller's original messages so the
+                // ExternalExecutionResultEvent carries the real external results;
+                // only what lands in context is placeholder-shaped on a short-circuit.
                 validateAndAddToolResults(
-                        returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs, pendingIds);
+                        msgs,
+                        returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs,
+                        pendingIds);
                 if (returnDirectResume) {
                     return Mono.just(finalizeReturnDirect(externalPairs, externalReplyId));
                 }
@@ -2190,11 +2195,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       completed)</li>
          * </ul>
          *
-         * @param msgs The input messages to validate
+         * <p>Validation and the published {@link ExternalExecutionResultEvent} always reflect
+         * {@code msgs} as the caller supplied them; {@code msgsToPersist} is what lands in
+         * context and may differ only on a returnDirect short-circuit, where the tool results
+         * are replaced with placeholder-shaped copies.
+         *
+         * @param msgs The input messages to validate and publish
+         * @param msgsToPersist The messages to add to context (may be placeholder-substituted)
          * @param pendingIds The set of pending tool use IDs
          * @throws IllegalStateException if validation fails
          */
-        private void validateAndAddToolResults(List<Msg> msgs, Set<String> pendingIds) {
+        private void validateAndAddToolResults(
+                List<Msg> msgs, List<Msg> msgsToPersist, Set<String> pendingIds) {
             if (msgs == null || msgs.isEmpty()) {
                 return;
             }
@@ -2251,7 +2263,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 publishEvent(new ExternalExecutionResultEvent(replyId, results));
                 clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             }
-            state.contextMutable().addAll(msgs);
+            state.contextMutable().addAll(msgsToPersist);
         }
 
         /**
@@ -2278,9 +2290,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Build placeholder-shaped copies of the caller-supplied messages for a returnDirect
          * short-circuit: every {@link ToolResultBlock}'s output is replaced with the
-         * returnDirect placeholder sentence (id/name/state preserved) while non-tool-result
-         * content passes through unchanged. New {@link Msg}s are built — the caller's objects
-         * are never mutated — keeping the context invariant {@code [tool_use,
+         * returnDirect placeholder sentence (id/name preserved, state normalized via {@link
+         * #determineToolResultState(ToolResultBlock)} like the in-framework path) while
+         * non-tool-result content passes through unchanged. New {@link Msg}s are built — the
+         * caller's objects are never mutated — keeping the context invariant {@code [tool_use,
          * tool_result(placeholder), assistant(full result)]}.
          */
         private List<Msg> placeholderToolResultMsgs(List<Msg> msgs) {
@@ -2299,7 +2312,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!(block instanceof ToolResultBlock result)) {
                 return block;
             }
-            return placeholderResultBlock(result.getId(), result.getName(), result.getState());
+            return placeholderResultBlock(
+                    result.getId(), result.getName(), determineToolResultState(result));
         }
 
         /**
@@ -2876,8 +2890,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 && successPairs.stream()
                                                         .allMatch(this::isReturnDirectToolCall);
 
+                                // takeUntil: a stopAgent() raised on an earlier tool of the
+                                // batch must win over .last()'s final element, otherwise the
+                                // stop request is swallowed and the loop keeps running (or
+                                // finalizes a returnDirect answer despite the stop).
                                 return Flux.fromIterable(successPairs)
                                         .concatMap(e -> notifyPostActingHook(e, returnDirect))
+                                        .takeUntil(PostActingEvent::isStopRequested)
                                         .last()
                                         .flatMap(
                                                 event -> {

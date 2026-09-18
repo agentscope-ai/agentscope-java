@@ -160,8 +160,11 @@ public @interface Tool {
      * <p>Because the successful result is presented to the caller as the turn's final
      * answer, tools declaring {@code returnDirect = true} should ensure successful
      * results always produce presentable content blocks — never an empty output list.
-     * A zero-block result is skipped in the closing message; if the whole batch yields
-     * nothing, a defensive {@code "(no output)"} placeholder is shown instead.
+     * The closing answer's event projection is text-only: non-text blocks (e.g. images)
+     * still travel with the message-level result but emit no text events, so a text-only
+     * consumer sees the final answer only if it is text. A zero-block result is skipped
+     * in the closing message; if the whole batch yields nothing, a defensive {@code "(no
+     * output)"} placeholder is shown instead.
      *
      * @return true to short-circuit the ReAct loop after execution
      */

@@ -483,6 +483,81 @@ class ReActAgentReturnDirectTest {
     }
 
     @Test
+    void earlierPostActingStopWinsOverReturnDirect() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUsesResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("weather")
+                                                                        .input(Map.of())
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("forecast")
+                                                                        .input(Map.of())
+                                                                        .build())))));
+        Toolkit toolkit =
+                toolkitWith(
+                        new TestTool("weather", true, ToolResultBlock.text("sunny")),
+                        new TestTool("forecast", true, ToolResultBlock.text("cloudy")));
+
+        Hook stopFirstToolHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent pa
+                                && "tc1".equals(pa.getToolUse().getId())) {
+                            pa.stopAgent();
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .hook(stopFirstToolHook)
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(
+                GenerateReason.ACTING_STOP_REQUESTED,
+                result.getGenerateReason(),
+                "a stopAgent() raised on an earlier tool of the batch must not be swallowed"
+                        + " by taking only the last hook event");
+        assertEquals(
+                "sunny",
+                ((TextBlock)
+                                result.getContentBlocks(ToolResultBlock.class)
+                                        .get(0)
+                                        .getOutput()
+                                        .get(0))
+                        .getText(),
+                "the stop message carries the stopping tool's real result for review");
+        assertEquals(1, model.callCount(), "the stop must prevent any further iteration");
+        Msg toolMsg = findToolResultMsg(agent, "tc1");
+        assertNotNull(toolMsg);
+        assertEquals(
+                "sunny",
+                ((TextBlock)
+                                toolMsg.getContentBlocks(ToolResultBlock.class)
+                                        .get(0)
+                                        .getOutput()
+                                        .get(0))
+                        .getText(),
+                "a stopping tool's result is persisted verbatim, never placeholder-shaped");
+    }
+
+    @Test
     void failingReturnDirectToolDoesNotReturnDirect() {
         ScriptedModel model =
                 new ScriptedModel(
@@ -721,6 +796,36 @@ class ReActAgentReturnDirectTest {
         assertEquals(1, countText(agent, "ext-result"), "full result must not be duplicated");
     }
 
+    @Test
+    void externalResumeNormalizesPlaceholderState() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        Toolkit toolkit = toolkitWith(new TestTool("ext", true, null).suspended());
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        agent.call(List.of()).block();
+        ToolResultBlock unsetState =
+                ToolResultBlock.builder()
+                        .id("tc1")
+                        .name("ext")
+                        .output(TextBlock.builder().text("ext-result").build())
+                        .build();
+
+        Msg resumed = agent.call(List.of(externalResultMsg(unsetState))).block();
+
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, resumed.getGenerateReason());
+        Msg toolMsg = findToolResultMsg(agent, "tc1");
+        assertNotNull(toolMsg);
+        assertEquals(
+                ToolResultState.SUCCESS,
+                toolMsg.getContentBlocks(ToolResultBlock.class).get(0).getState(),
+                "the persisted placeholder must carry the state the short-circuit gate"
+                        + " determined (null/RUNNING normalized to SUCCESS), matching the"
+                        + " in-framework path");
+    }
+
     @ParameterizedTest
     @EnumSource(
             value = ToolResultState.class,
@@ -935,6 +1040,14 @@ class ReActAgentReturnDirectTest {
         int iEnd = indexOf(resumeEvents, TextBlockEndEvent.class);
         int iResult = indexOf(resumeEvents, AgentResultEvent.class);
         assertTrue(iExternalResult >= 0, "ExternalExecutionResultEvent must still be emitted");
+        ExternalExecutionResultEvent externalResult =
+                (ExternalExecutionResultEvent) resumeEvents.get(iExternalResult);
+        assertEquals(1, externalResult.getToolResults().size());
+        assertEquals(
+                "ext-result",
+                ((TextBlock) externalResult.getToolResults().get(0).getOutput().get(0)).getText(),
+                "ExternalExecutionResultEvent must carry the caller's real result, not the"
+                        + " returnDirect placeholder");
         assertTrue(iStart > iExternalResult, "closing events follow the external-result event");
         assertTrue(iDelta > iStart);
         assertTrue(iEnd > iDelta);
