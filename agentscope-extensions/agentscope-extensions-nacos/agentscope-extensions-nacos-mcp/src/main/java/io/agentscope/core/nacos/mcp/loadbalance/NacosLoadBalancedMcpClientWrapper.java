@@ -56,11 +56,10 @@ import reactor.core.publisher.Mono;
  * to the remaining connected endpoints instead of failing outright, so an instance that is still
  * starting up or already shutting down does not break the call as long as one endpoint is healthy.
  *
- * <p>Endpoint changes propagate at runtime. Note that the tool list published into a
- * {@code Toolkit} is a snapshot taken at registration time: a server that only becomes available
- * after the application started (or whose tool set changes later) needs the wrapper to be
- * re-registered. {@link #awaitConnectedEndpoint(Duration)} waits for a first connection and is the
- * recommended way to avoid publishing an empty tool set while the server is still starting up.
+ * <p>Endpoint changes propagate at runtime, but the tool list published into a {@code Toolkit} is a
+ * snapshot taken at registration time: a server that only becomes available after the application
+ * started (or whose tool set changes later) needs the wrapper to be re-registered. Endpoint scale
+ * in/out alone does not require a re-registration.
  *
  * <p>Because the wrapper is itself a {@link McpClientWrapper}, it can be registered into a
  * {@code Toolkit} directly, and all remote MCP tools are converted into AgentScope tools
@@ -116,9 +115,6 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                         thread.setDaemon(true);
                         return thread;
                     });
-
-    /** Monitor for waiters of {@link #awaitConnectedEndpoint(Duration)}. */
-    private final Object endpointReadyMonitor = new Object();
 
     private final AbstractNacosMcpServerListener listener =
             new AbstractNacosMcpServerListener() {
@@ -365,38 +361,6 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
     }
 
     /**
-     * Waits until at least one endpoint of this MCP server is connected.
-     *
-     * <p>Registration into a Toolkit captures the tools that are available at that moment, so a
-     * caller that wants the tools of a server which is still starting up can wait here instead of
-     * registering an empty tool set.
-     *
-     * @param timeout how long to wait for the first connected endpoint
-     * @return true if at least one endpoint is connected, false on timeout or when the wrapper is
-     *     closed
-     */
-    public boolean awaitConnectedEndpoint(Duration timeout) {
-        Objects.requireNonNull(timeout, "timeout must not be null");
-        long deadline = System.nanoTime() + timeout.toNanos();
-        synchronized (endpointReadyMonitor) {
-            while (!closed && connectedEndpointCount() == 0) {
-                long remainingNanos = deadline - System.nanoTime();
-                if (remainingNanos <= 0) {
-                    break;
-                }
-                long waitMillis = Math.max(1L, Math.min(remainingNanos / 1_000_000L, 200L));
-                try {
-                    endpointReadyMonitor.wait(waitMillis);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }
-        return connectedEndpointCount() > 0;
-    }
-
-    /**
      * Unsubscribes from Nacos and closes all endpoint connections.
      */
     @Override
@@ -419,7 +383,6 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
         } finally {
             reconcileLock.unlock();
         }
-        signalEndpointReady();
         reconciler.shutdown();
         logger.info("Closed Nacos load-balanced MCP client '{}'", name);
     }
@@ -579,10 +542,6 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                     endpoint,
                     serverName,
                     e);
-            return;
-        }
-        if (registered) {
-            signalEndpointReady();
         }
     }
 
@@ -653,12 +612,6 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
             client.close();
         } catch (Exception e) {
             logger.warn("Error closing MCP connection for endpoint '{}'", endpoint, e);
-        }
-    }
-
-    private void signalEndpointReady() {
-        synchronized (endpointReadyMonitor) {
-            endpointReadyMonitor.notifyAll();
         }
     }
 

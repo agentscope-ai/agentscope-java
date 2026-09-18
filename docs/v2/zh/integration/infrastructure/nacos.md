@@ -149,16 +149,15 @@ toolkit.registerMcpClient(client).block();
 
 ### 工具注册是快照
 
-端点变化在后台生效，但 `Toolkit.registerMcpClient(...)` 只发布注册那一刻发现的工具列表。所以从 `NacosMcpClients` 里取出需要的连接后自行注册；如果 MCP Server 可能还在启动，可以先等第一个实例连通：
+端点变化在后台生效，但 `Toolkit.registerMcpClient(...)` 只发布注册那一刻发现的工具列表。所以从 `NacosMcpClients` 里取出需要的连接后自行注册：
 
 ```java
 NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
 weather.initialize().block();
-weather.awaitConnectedEndpoint(Duration.ofSeconds(30));  // 可选，有界等待首个实例连通
 toolkit.registerMcpClient(weather).block();
 ```
 
-注册之后才出现的 Server、或工具集后来发生变化的 Server，需要重新注册一次；仅仅是实例扩缩容不需要。
+因此建议等 MCP Server 起来后再注册；注册之后才出现的 Server、或工具集后来发生变化的 Server，需要重新注册一次；仅仅是实例扩缩容不需要。
 
 ### Spring Boot 自动配置
 

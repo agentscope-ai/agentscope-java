@@ -62,7 +62,6 @@ import org.springframework.context.annotation.Bean;
  *     HarnessAgent agent = HarnessAgent.builder().toolkit(new Toolkit())...build();
  *     NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
  *     weather.initialize().block();
- *     weather.awaitConnectedEndpoint(Duration.ofSeconds(30));  // optional: wait for a first instance
  *     agent.getToolkit().registerMcpClient(weather).block();
  *     return agent;
  * }

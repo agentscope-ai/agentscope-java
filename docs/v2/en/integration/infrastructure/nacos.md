@@ -149,16 +149,15 @@ Tool calls are dispatched to one of the connected instances, decided by an `Endp
 
 ### Tool registration is a snapshot
 
-Endpoint changes are applied in the background, but `Toolkit.registerMcpClient(...)` publishes the tool list discovered at registration time. So pick the connection you need from `NacosMcpClients` and register it yourself, waiting for a first endpoint to come up if the MCP server may still be starting:
+Endpoint changes are applied in the background, but `Toolkit.registerMcpClient(...)` publishes the tool list discovered at registration time. So pick the connection you need from `NacosMcpClients` and register it yourself:
 
 ```java
 NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
 weather.initialize().block();
-weather.awaitConnectedEndpoint(Duration.ofSeconds(30));   // optional, bounded wait for a first instance
 toolkit.registerMcpClient(weather).block();
 ```
 
-A server that appears after registration, or a server whose tool set changes later, needs a fresh `registerMcpClient` call: endpoint scale in/out alone does not require it.
+It therefore pays to register once the MCP server is up: a server that appears after registration, or a server whose tool set changes later, needs a fresh `registerMcpClient` call, while endpoint scale in/out alone does not.
 
 ### Spring Boot autoconfiguration
 

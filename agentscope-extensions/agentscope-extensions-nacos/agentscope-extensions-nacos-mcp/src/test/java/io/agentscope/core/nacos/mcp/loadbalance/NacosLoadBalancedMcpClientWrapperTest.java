@@ -791,64 +791,6 @@ class NacosLoadBalancedMcpClientWrapperTest {
     }
 
     @Nested
-    @DisplayName("Waiting for a connection")
-    class AwaitingConnection {
-
-        @Test
-        @DisplayName("Should give up when no endpoint connects within the timeout")
-        void shouldGiveUpAfterTimeout() throws NacosException {
-            stubSubscription(null);
-            NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
-            wrapper.initialize().block();
-
-            assertFalse(wrapper.awaitConnectedEndpoint(Duration.ofMillis(50)));
-        }
-
-        @Test
-        @DisplayName("Should return as soon as an endpoint connects while waiting")
-        void shouldReturnWhenEndpointConnects() throws Exception {
-            stubSubscription(null);
-            NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
-            wrapper.initialize().block();
-            AbstractNacosMcpServerListener listener = captureListener();
-
-            Thread pusher =
-                    new Thread(
-                            () -> {
-                                try {
-                                    Thread.sleep(100);
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                }
-                                push(
-                                        listener,
-                                        detail(
-                                                AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE,
-                                                endpoint("127.0.0.1", 18081)));
-                            });
-            pusher.start();
-            try {
-                assertTrue(wrapper.awaitConnectedEndpoint(Duration.ofSeconds(5)));
-            } finally {
-                pusher.join();
-            }
-            assertEquals(1, wrapper.getConnectedEndpointCount());
-        }
-
-        @Test
-        @DisplayName("Should stop waiting after close")
-        void shouldStopWaitingAfterClose() throws NacosException {
-            stubSubscription(null);
-            NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
-            wrapper.initialize().block();
-
-            wrapper.close();
-
-            assertFalse(wrapper.awaitConnectedEndpoint(Duration.ofSeconds(1)));
-        }
-    }
-
-    @Nested
     @DisplayName("Lifecycle")
     class Lifecycle {
 
