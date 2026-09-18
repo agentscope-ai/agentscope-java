@@ -22,10 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -134,6 +136,62 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    private static final class ReturningErrorTool extends ToolBase {
+        ReturningErrorTool(String name) {
+            super(
+                    name,
+                    "returns structured error",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.error("probe failed"));
+        }
+    }
+
+    private static final class MetadataTool extends ToolBase {
+        MetadataTool(String name) {
+            super(
+                    name,
+                    "returns metadata",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            return Mono.just(
+                    ToolResultBlock.of(
+                            TextBlock.builder().text("meta:" + q).build(),
+                            Map.of("source", "meta_tool", "query", q)));
+        }
+    }
+
     private static final class RecordingMiddleware implements MiddlewareBase {
         final List<String> trace = new ArrayList<>();
 
@@ -155,6 +213,21 @@ class ReActAgentNewLoopE2ETest {
                 Function<ActingInput, Flux<AgentEvent>> next) {
             trace.add("acting:enter");
             return next.apply(input).doOnComplete(() -> trace.add("acting:exit"));
+        }
+    }
+
+    private static final class StripToolEventContextMiddleware implements MiddlewareBase {
+        @Override
+        public Flux<AgentEvent> onActing(
+                Agent agent,
+                RuntimeContext ctx,
+                ActingInput input,
+                Function<ActingInput, Flux<AgentEvent>> next) {
+            return next.apply(input)
+                    .contextWrite(
+                            context ->
+                                    context.delete(SubagentEventBus.CONTEXT_KEY)
+                                            .delete(AgentEventEmitter.CONTEXT_KEY));
         }
     }
 
@@ -227,5 +300,120 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    @Test
+    void toolReturningErrorBlockEmitsErrorResultEndState() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "failing", "probe")),
+                                () -> Flux.just(textResponse("handled"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ReturningErrorTool("failing"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run the failing tool")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        ToolResultEndEvent end =
+                events.stream()
+                        .filter(ToolResultEndEvent.class::isInstance)
+                        .map(ToolResultEndEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, end.getState());
+    }
+
+    @Test
+    void toolResultMetadataPropagatesToEvents() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "meta", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new MetadataTool("meta"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run meta tool")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        Map<String, Object> expected = Map.of("source", "meta_tool", "query", "alpha");
+
+        events.stream()
+                .filter(ToolResultEndEvent.class::isInstance)
+                .map(ToolResultEndEvent.class::cast)
+                .forEach(e -> assertEquals(expected, e.getMetadata()));
+
+        events.stream()
+                .filter(ToolResultTextDeltaEvent.class::isInstance)
+                .map(ToolResultTextDeltaEvent.class::cast)
+                .forEach(e -> assertEquals(expected, e.getMetadata()));
+    }
+
+    @Test
+    void streamEventsRestoresEmitterWhenActingContextLosesEventKeys() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "search", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new AlwaysAllowTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .middleware(new StripToolEventContextMiddleware())
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
+        assertTrue(events.get(0) instanceof AgentStartEvent);
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
     }
 }

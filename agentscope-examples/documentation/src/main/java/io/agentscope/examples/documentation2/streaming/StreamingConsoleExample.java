@@ -20,13 +20,13 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.util.List;
 import java.util.Scanner;
 
@@ -56,7 +56,7 @@ import java.util.Scanner;
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
+ *   mvn exec:java -pl agentscope-examples/documentation \
  *       -Dexec.mainClass=io.agentscope.examples.documentation2.streaming.StreamingConsoleExample
  * </pre>
  */

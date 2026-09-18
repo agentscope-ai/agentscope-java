@@ -1,0 +1,16 @@
+apiVersion: agentscope.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: qwen-max-config
+  namespace: production
+spec:
+  provider: DashScope
+  model: "qwen-max"
+  apiKeySecret: "dashscope-credentials"
+  apiKeySecretKey: "api-key"
+  options:
+    temperature: "0.7"
+    maxTokens: "4096"
+    topP: "0.9"
+  tls:
+    disableVerify: false

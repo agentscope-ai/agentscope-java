@@ -1,4 +1,6 @@
-# 多模态（Multimodal）
+---
+title: 多模态
+---
 
 多模态功能使 Agent 能够理解和生成图像、音频、视频等多种媒体内容。
 
@@ -114,8 +116,8 @@ Msg multiImageMsg = Msg.builder()
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 ReActAgent agent = ReActAgent.builder()
     .name("VisionAssistant")
@@ -145,10 +147,10 @@ System.out.println(response.getTextContent());
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.*;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 
@@ -230,5 +232,5 @@ DashScopeChatModel.builder()
 ## 更多资源
 
 - **完整示例代码**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
-- **消息机制**: [message.md](../quickstart/message.md) - 了解消息结构
-- **模型配置**: [model.md](./model.md) - 了解模型配置选项
+- **消息机制**: [message.md](/v1/zh/docs/quickstart/key-concepts) - 了解消息结构
+- **模型配置**: [model.md](/v1/zh/docs/task/model) - 了解模型配置选项

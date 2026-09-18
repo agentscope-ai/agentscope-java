@@ -186,7 +186,7 @@ class AguiEventEncoderTest {
 
         assertNotNull(sse);
         assertTrue(sse.contains("\"type\":\"RAW\""));
-        assertTrue(sse.contains("\"rawEvent\""));
+        assertTrue(sse.contains("\"event\""));
         assertTrue(sse.contains("\"error\":\"Something went wrong\""));
     }
 

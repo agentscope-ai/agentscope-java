@@ -34,11 +34,23 @@ public sealed interface TaskRunSpec {
 
     /**
      * Remote HTTP task execution. The {@code taskId} is chosen by the client and used as the
-     * remote task key end-to-end.
+     * remote task key end-to-end. {@code context} carries submission-time metadata (streaming
+     * preference, propagated deny rules, parent identity); defaults to
+     * {@link RemoteSubmitContext#empty()} for callers that predate this field.
      */
     record RemoteTaskRunSpec(
-            String baseUrl, Map<String, String> headers, String agentId, String input)
-            implements TaskRunSpec {}
+            String baseUrl,
+            Map<String, String> headers,
+            String agentId,
+            String input,
+            RemoteSubmitContext context)
+            implements TaskRunSpec {
+
+        public RemoteTaskRunSpec(
+                String baseUrl, Map<String, String> headers, String agentId, String input) {
+            this(baseUrl, headers, agentId, input, RemoteSubmitContext.empty());
+        }
+    }
 
     /**
      * Adopts an already-running {@link CompletableFuture} as a tracked background task. Used when

@@ -44,7 +44,7 @@ class AguiModelTest {
 
             assertEquals("msg-1", msg.getId());
             assertEquals("user", msg.getRole());
-            assertEquals("Hello world", msg.getContent());
+            assertEquals("Hello world", msg.getTextContent());
             assertTrue(msg.isUserMessage());
             assertFalse(msg.isAssistantMessage());
         }
@@ -79,11 +79,36 @@ class AguiModelTest {
         }
 
         @Test
+        void testRoleHelpersAreCaseInsensitive() {
+            AguiMessage user =
+                    new AguiMessage("msg-1", "USER", new MessageContent.Text("Hello"), null, null);
+            AguiMessage assistant =
+                    new AguiMessage(
+                            "msg-2", "ASSISTANT", new MessageContent.Text("Hello"), null, null);
+            AguiMessage system =
+                    new AguiMessage(
+                            "msg-3", "SYSTEM", new MessageContent.Text("Hello"), null, null);
+            AguiMessage tool =
+                    new AguiMessage(
+                            "msg-4", "TOOL", new MessageContent.Text("Hello"), null, "tc-1");
+
+            assertTrue(user.isUserMessage());
+            assertTrue(assistant.isAssistantMessage());
+            assertTrue(system.isSystemMessage());
+            assertTrue(tool.isToolMessage());
+        }
+
+        @Test
         void testMessageWithToolCalls() {
             AguiFunctionCall function = new AguiFunctionCall("get_weather", "{\"city\":\"NYC\"}");
             AguiToolCall toolCall = new AguiToolCall("tc-1", function);
             AguiMessage msg =
-                    new AguiMessage("msg-5", "assistant", "Let me check", List.of(toolCall), null);
+                    new AguiMessage(
+                            "msg-5",
+                            "assistant",
+                            new MessageContent.Text("Let me check"),
+                            List.of(toolCall),
+                            null);
 
             assertTrue(msg.hasToolCalls());
             assertEquals(1, msg.getToolCalls().size());
@@ -117,14 +142,18 @@ class AguiModelTest {
         void testNullIdThrows() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new AguiMessage(null, "user", "content", null, null));
+                    () ->
+                            new AguiMessage(
+                                    null, "user", new MessageContent.Text("content"), null, null));
         }
 
         @Test
         void testNullRoleThrows() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new AguiMessage("id", null, "content", null, null));
+                    () ->
+                            new AguiMessage(
+                                    "id", null, new MessageContent.Text("content"), null, null));
         }
 
         @Test
@@ -164,10 +193,12 @@ class AguiModelTest {
             String json = JsonUtils.getJsonCodec().toJson(msg);
             assertTrue(json.contains("\"id\":\"msg-1\""));
             assertTrue(json.contains("\"role\":\"assistant\""));
+            assertTrue(json.contains("\"content\":\"Hello\""));
 
             AguiMessage deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
+            assertEquals("Hello", deserialized.getTextContent());
         }
 
         @Test
@@ -175,6 +206,103 @@ class AguiModelTest {
             AguiMessage msg = new AguiMessage("msg-1", "user", null, null, null);
 
             assertNull(msg.getContent());
+            assertNull(msg.getTextContent());
+            assertFalse(msg.hasBlocks());
+        }
+
+        @Test
+        void testMessageWithBlocksContent() {
+            List<InputContent> parts =
+                    List.of(
+                            new TextInputContent("Describe this"),
+                            new ImageInputContent(
+                                    new InputContentUrlSource("https://example.com/img.png"),
+                                    null));
+            AguiMessage msg = AguiMessage.userMessage("msg-blocks", parts);
+
+            assertTrue(msg.hasBlocks());
+            assertNull(msg.getTextContent());
+            assertNotNull(msg.getContent());
+        }
+
+        @Test
+        void testJsonSerializationWithBlocks() throws JsonProcessingException {
+            List<InputContent> parts =
+                    List.of(
+                            new TextInputContent("Hello"),
+                            new ImageInputContent(
+                                    new InputContentUrlSource("https://example.com/img.png"),
+                                    null));
+            AguiMessage msg = AguiMessage.userMessage("msg-1", parts);
+
+            String json = JsonUtils.getJsonCodec().toJson(msg);
+            assertTrue(json.contains("\"content\":["));
+            assertTrue(json.contains("\"type\":\"text\""));
+            assertTrue(json.contains("\"type\":\"image\""));
+
+            AguiMessage deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+            assertEquals(msg.getId(), deserialized.getId());
+            assertTrue(deserialized.hasBlocks());
+        }
+
+        @Test
+        void testJsonDeserializationStringContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": "plain text",
+                      "toolCalls": [],
+                      "toolCallId": null
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("m1", msg.getId());
+            assertEquals("plain text", msg.getTextContent());
+            assertFalse(msg.hasBlocks());
+        }
+
+        @Test
+        void testJsonDeserializationArrayContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "hi"
+                        }
+                      ]
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertEquals("m1", msg.getId());
+            assertTrue(msg.hasBlocks());
+            assertNull(msg.getTextContent());
+        }
+
+        @Test
+        void testJsonDeserializationNullContent() throws JsonProcessingException {
+            String json =
+                    """
+                    {
+                      "id": "m1",
+                      "role": "user",
+                      "content": null
+                    }
+                    """;
+
+            AguiMessage msg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+            assertNull(msg.getContent());
+            assertNull(msg.getTextContent());
         }
     }
 
@@ -497,6 +625,9 @@ class AguiModelTest {
             AguiContext context = new AguiContext("User name", "Alice");
             Map<String, Object> state = Map.of("count", 10);
             Map<String, Object> forwardedProps = Map.of("custom", "value");
+            AguiResume resume =
+                    new AguiResume(
+                            "interrupt-1", AguiResume.STATUS_RESOLVED, Map.of("approved", true));
 
             RunAgentInput input =
                     RunAgentInput.builder()
@@ -507,13 +638,16 @@ class AguiModelTest {
                             .context(List.of(context))
                             .state(state)
                             .forwardedProps(forwardedProps)
+                            .resume(List.of(resume))
                             .build();
 
             assertTrue(input.hasMessages());
             assertTrue(input.hasTools());
             assertTrue(input.hasContext());
             assertTrue(input.hasState());
+            assertTrue(input.hasResume());
             assertEquals("value", input.getForwardedProp("custom"));
+            assertEquals(List.of(resume), input.getResume());
         }
 
         @Test
@@ -530,6 +664,8 @@ class AguiModelTest {
             assertTrue(input.getState().isEmpty());
             assertNotNull(input.getForwardedProps());
             assertTrue(input.getForwardedProps().isEmpty());
+            assertNotNull(input.getResume());
+            assertTrue(input.getResume().isEmpty());
         }
 
         @Test
@@ -548,6 +684,7 @@ class AguiModelTest {
             assertFalse(emptyInput.hasTools());
             assertFalse(emptyInput.hasContext());
             assertFalse(emptyInput.hasState());
+            assertFalse(emptyInput.hasResume());
         }
 
         @Test
@@ -591,6 +728,7 @@ class AguiModelTest {
             assertTrue(str.contains("thread-123"));
             assertTrue(str.contains("run-456"));
             assertTrue(str.contains("messages=1"));
+            assertTrue(str.contains("resume=0"));
         }
 
         @Test
@@ -601,16 +739,26 @@ class AguiModelTest {
                             .runId("r1")
                             .messages(List.of(AguiMessage.userMessage("m1", "Test")))
                             .state(Map.of("key", "value"))
+                            .resume(
+                                    List.of(
+                                            new AguiResume(
+                                                    "interrupt-1",
+                                                    AguiResume.STATUS_RESOLVED,
+                                                    Map.of("approved", true))))
                             .build();
 
             String json = JsonUtils.getJsonCodec().toJson(input);
             assertTrue(json.contains("\"threadId\":\"t1\""));
             assertTrue(json.contains("\"runId\":\"r1\""));
+            assertTrue(json.contains("\"resume\""));
+            assertTrue(json.contains("\"interruptId\":\"interrupt-1\""));
 
             RunAgentInput deserialized =
                     JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
             assertEquals(input.getThreadId(), deserialized.getThreadId());
             assertEquals(input.getMessages().size(), deserialized.getMessages().size());
+            assertEquals(input.getResume().size(), deserialized.getResume().size());
+            assertEquals("interrupt-1", deserialized.getResume().get(0).getInterruptId());
         }
 
         @Test
@@ -619,7 +767,9 @@ class AguiModelTest {
                     "{\"threadId\":\"t1\",\"runId\":\"r1\","
                         + "\"messages\":[{\"id\":\"m1\",\"role\":\"user\",\"content\":\"Hello\"}],"
                         + "\"tools\":[],\"context\":[],\"state\":{\"key\":\"value\"},"
-                        + "\"forwardedProps\":{\"prop1\":123}}";
+                        + "\"forwardedProps\":{\"prop1\":123},"
+                        + "\"resume\":[{\"interruptId\":\"int-1\",\"status\":\"resolved\","
+                        + "\"payload\":{\"approved\":true}}]}";
 
             RunAgentInput input = JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
 
@@ -628,6 +778,43 @@ class AguiModelTest {
             assertEquals(1, input.getMessages().size());
             assertEquals("value", input.getState().get("key"));
             assertEquals(123, input.getForwardedProp("prop1"));
+            assertEquals(1, input.getResume().size());
+            assertEquals("int-1", input.getResume().get(0).getInterruptId());
+            assertEquals(AguiResume.STATUS_RESOLVED, input.getResume().get(0).getStatus());
+        }
+    }
+
+    @Nested
+    class AguiResumeTest {
+
+        @Test
+        void testCreation() {
+            AguiResume resume =
+                    new AguiResume(
+                            "interrupt-1", AguiResume.STATUS_RESOLVED, Map.of("approved", true));
+
+            assertEquals("interrupt-1", resume.getInterruptId());
+            assertEquals(AguiResume.STATUS_RESOLVED, resume.getStatus());
+            assertTrue(resume.isResolved());
+            assertFalse(resume.isCancelled());
+        }
+
+        @Test
+        void testCancelled() {
+            AguiResume resume = new AguiResume("interrupt-1", AguiResume.STATUS_CANCELLED, null);
+
+            assertTrue(resume.isCancelled());
+            assertFalse(resume.isResolved());
+            assertNull(resume.getPayload());
+        }
+
+        @Test
+        void testNullFieldsThrow() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiResume(null, AguiResume.STATUS_RESOLVED, null));
+            assertThrows(
+                    NullPointerException.class, () -> new AguiResume("interrupt-1", null, null));
         }
     }
 

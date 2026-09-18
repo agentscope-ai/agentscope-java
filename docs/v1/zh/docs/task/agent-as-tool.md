@@ -1,10 +1,16 @@
-# Agent as Tool（子智能体工具）
+---
+title: Agent as Tool
+---
 
-```{admonition} 实验性功能
-:class: warning
+<Warning>
+
+**实验性功能**
+
 
 此功能目前处于实验阶段，API 可能会发生变化。如果您在使用过程中遇到问题，欢迎通过 [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues) 反馈。
-```
+
+</Warning>
+
 
 ## 概述
 
@@ -37,7 +43,7 @@ Agent as Tool 允许将一个智能体注册为工具，供其他智能体调用
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // 创建模型
 DashScopeChatModel model = DashScopeChatModel.builder()

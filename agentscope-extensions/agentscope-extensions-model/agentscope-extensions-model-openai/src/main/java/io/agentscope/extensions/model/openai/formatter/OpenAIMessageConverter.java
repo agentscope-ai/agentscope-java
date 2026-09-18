@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -37,8 +39,11 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,10 +109,12 @@ public class OpenAIMessageConverter {
      */
     private OpenAIMessage convertSystemMessage(Msg msg) {
         String content = textExtractor.apply(msg);
-        return OpenAIMessage.builder()
-                .role("system")
-                .content(content != null ? content : "")
-                .build();
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role("system").content(content != null ? content : "");
+        if (msg.getName() != null) {
+            builder.name(sanitizeName(msg.getName()));
+        }
+        return builder.build();
     }
 
     /**
@@ -121,7 +128,7 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         List<ContentBlock> blocks = msg.getContent();
@@ -249,6 +256,46 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Video - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DataBlock db) {
+                try {
+                    Source source = db.getSource();
+                    if (source == null) {
+                        log.warn("DataBlock has null source, skipping");
+                        continue;
+                    }
+                    String mimeType = MediaUtils.resolveMimeType(source);
+                    if (mimeType.startsWith("image/")) {
+                        contentParts.add(
+                                OpenAIContentPart.imageUrl(convertImageSourceToUrl(source)));
+                    } else if (mimeType.startsWith("video/")) {
+                        contentParts.add(
+                                OpenAIContentPart.videoUrl(convertVideoSourceToUrl(source)));
+                    } else if (mimeType.startsWith("audio/")) {
+                        if (source instanceof Base64Source b64) {
+                            String format = detectAudioFormat(b64.getMediaType());
+                            contentParts.add(OpenAIContentPart.inputAudio(b64.getData(), format));
+                        } else {
+                            log.warn(
+                                    "URL-based audio DataBlock not supported by OpenAI input_audio;"
+                                            + " using text reference");
+                            contentParts.add(
+                                    OpenAIContentPart.text(
+                                            "[Audio URL: " + ((URLSource) source).getUrl() + "]"));
+                        }
+                    } else {
+                        log.warn("DataBlock has unroutable MIME type '{}', skipping", mimeType);
+                        contentParts.add(
+                                OpenAIContentPart.text(
+                                        "[Media - unsupported MIME type: " + mimeType + "]"));
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process DataBlock: {}", errorMsg);
+                    contentParts.add(
+                            OpenAIContentPart.text(
+                                    "[Media - processing failed: " + errorMsg + "]"));
+                }
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -296,8 +343,9 @@ public class OpenAIMessageConverter {
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
                     List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
-                        if (item instanceof OpenAIReasoningDetail rd) {
-                            details.add(rd);
+                        OpenAIReasoningDetail detail = toReasoningDetail(item);
+                        if (detail != null) {
+                            details.add(detail);
                         }
                     }
                     if (!details.isEmpty()) {
@@ -308,26 +356,25 @@ public class OpenAIMessageConverter {
         }
 
         if (msg.getName() != null) {
-            builder.name(msg.getName());
+            builder.name(sanitizeName(msg.getName()));
         }
 
         // Handle tool calls
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
-            List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
 
             // First pass: find any thought signature in the blocks
             String fallbackSignature = null;
             for (ToolUseBlock toolUse : toolBlocks) {
                 if (toolUse.getMetadata() != null) {
-                    Object signatureObj =
-                            toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        fallbackSignature = (String) signatureObj;
-                        if (fallbackSignature != null && !fallbackSignature.isEmpty()) {
-                            break;
-                        }
+                    String candidate =
+                            toSignatureString(
+                                    toolUse.getMetadata()
+                                            .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+                    if (candidate != null) {
+                        fallbackSignature = candidate;
+                        break;
                     }
                 }
             }
@@ -347,15 +394,7 @@ public class OpenAIMessageConverter {
                 if (toolUse.getMetadata() != null) {
                     Object signatureObj =
                             toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        signature = (String) signatureObj;
-                    }
-
-                    // Add reasoning detail if present
-                    Object detailObj = toolUse.getMetadata().get("reasoningDetail");
-                    if (detailObj instanceof OpenAIReasoningDetail) {
-                        reasoningDetails.add((OpenAIReasoningDetail) detailObj);
-                    }
+                    signature = toSignatureString(signatureObj);
                 }
 
                 // Fallback to shared signature if missing
@@ -380,10 +419,6 @@ public class OpenAIMessageConverter {
                         signature != null);
             }
             builder.toolCalls(toolCalls);
-
-            if (!reasoningDetails.isEmpty()) {
-                builder.reasoningDetails(reasoningDetails);
-            }
         }
 
         return builder.build();
@@ -432,11 +467,56 @@ public class OpenAIMessageConverter {
         for (ContentBlock block : blocks) {
             if (block instanceof ImageBlock
                     || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
+                    || block instanceof VideoBlock
+                    || block instanceof DataBlock) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Normalizes a thought signature metadata value to a Base64 string.
+     *
+     * <p>Signatures are produced as {@code byte[]} by some model parsers and as Base64 strings by
+     * others; after a JSON state persistence round-trip a {@code byte[]} signature is restored as
+     * a Base64 {@code String}. Both forms are accepted here.
+     *
+     * @param signature the raw metadata value
+     * @return the Base64 string form, or {@code null} if no usable signature is present
+     */
+    private static String toSignatureString(Object signature) {
+        if (signature instanceof String s && !s.isEmpty()) {
+            return s;
+        }
+        if (signature instanceof byte[] bytes && bytes.length > 0) {
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        return null;
+    }
+
+    /**
+     * Restores an {@link OpenAIReasoningDetail} from a metadata value.
+     *
+     * <p>After a JSON state persistence round-trip the typed detail object is restored as a {@code
+     * LinkedHashMap}, so it is converted back to its typed form here.
+     *
+     * @param value the raw metadata value
+     * @return the typed detail, or {@code null} if it cannot be restored
+     */
+    private static OpenAIReasoningDetail toReasoningDetail(Object value) {
+        if (value instanceof OpenAIReasoningDetail detail) {
+            return detail;
+        }
+        if (value instanceof Map<?, ?>) {
+            try {
+                return JsonUtils.getJsonCodec().convertValue(value, OpenAIReasoningDetail.class);
+            } catch (RuntimeException e) {
+                log.warn("Failed to restore reasoning detail from metadata", e);
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -471,6 +551,17 @@ public class OpenAIMessageConverter {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }
 
+    /** Sanitizes a message name to satisfy OpenAI's {@code ^[a-zA-Z0-9_-]{1,64}$} constraint. */
+    static String sanitizeName(String name) {
+        String sanitized = OPENAI_NAME_ILLEGAL_CHARS.matcher(name).replaceAll("_");
+        if (sanitized.length() > 64) {
+            sanitized = sanitized.substring(0, 64);
+        }
+        return sanitized.isEmpty() ? "agent" : sanitized;
+    }
+
+    private static final Pattern OPENAI_NAME_ILLEGAL_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
+
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.
      *
@@ -483,7 +574,11 @@ public class OpenAIMessageConverter {
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            if (result.getCacheControl() == null || result.getCacheControl().isEmpty()) {
+                result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            }
+        } else if (Boolean.FALSE.equals(cacheFlag)) {
+            result.setCacheControl(OpenAIBaseFormatter.getNoCacheControl());
         }
     }
 }

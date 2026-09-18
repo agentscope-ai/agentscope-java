@@ -1,4 +1,6 @@
-# Multi-Agent Debate
+---
+title: Multi-Agent Debate
+---
 
 Multi-Agent Debate is a workflow pattern that simulates a multi-turn discussion between different agents. This pattern is particularly useful for problem-solving tasks where multiple perspectives can lead to better solutions.
 
@@ -37,9 +39,9 @@ This pattern is inspired by research showing that multi-agent debate can improve
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // Define the debate topic
 String topic = """
@@ -207,12 +209,12 @@ Here's a complete, runnable example:
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.pipeline.MsgHub;
 
 public class MultiAgentDebateExample {
@@ -362,8 +364,8 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## Related Documentation
 
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
-- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [Structured Output](../task/structured-output.md) - Extracting structured data from agent responses
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Handoffs](/v1/en/docs/multi-agent/handoffs) - State-driven routing and transfer between agents
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [Structured Output](/v1/en/docs/task/structured-output) - Extracting structured data from agent responses

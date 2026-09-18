@@ -1,4 +1,6 @@
-# MsgHub
+---
+title: MsgHub
+---
 
 MsgHub is a message broadcasting center for multi-agent conversations in AgentScope. It manages message distribution among a group of agents, eliminating the need for manual message passing code.
 
@@ -45,12 +47,12 @@ try (MsgHub hub = MsgHub.builder()
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.pipeline.MsgHub;
 
 // Create model with MultiAgentFormatter (important!)
@@ -305,5 +307,5 @@ hub.enter()
 
 ## Related Documentation
 
-- [Pipeline](../multi-agent/pipeline.md) - Sequential and parallel agent execution
-- [Multi-Agent Debate](../multi-agent/multiagent-debate.md) - Debate workflow pattern
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate) - Debate workflow pattern

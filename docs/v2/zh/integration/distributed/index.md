@@ -1,4 +1,6 @@
-# 分布式存储（Distributed Store）
+---
+title: 分布式存储（Distributed Store）
+---
 
 AgentScope 将所有需要分布式持久化的组件统一到 `DistributedStore` 接口下。一行配置即可让 Agent 的状态、工作区文件系统、沙箱快照和并发锁全部切到同一个分布式后端。
 
@@ -20,12 +22,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 能力矩阵
 
-| 功能组件 | 接口 | Redis | OSS | MySQL |
-|---------|------|:-----:|:---:|:-----:|
-| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| 功能组件 | 接口 | Redis | OSS | MySQL | MongoDB |
+|---------|------|:-----:|:---:|:-----:|:-------:|
+| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
+| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
+| 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
 
 > OSS 不提供 `SandboxExecutionGuard`——对象存储不适合做分布式锁。需要 sandbox 并发控制的 OSS 用户，用 `DistributedStore.builder()` 混入 Redis 的 guard。
 
@@ -80,6 +82,26 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 
 ## 后端详细文档
 
-- [Redis](redis.md) — 最全功能覆盖，多副本生产首选
-- [MySQL / JDBC](mysql.md) — 已有关系型数据库的场景
-- [阿里云 OSS](oss.md) — 对象存储，大容量快照首选
+- [Redis](/v2/zh/integration/distributed/redis) — 最全功能覆盖，多副本生产首选
+- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — 已有关系型数据库的场景
+- [MongoDB](/v2/zh/integration/distributed/mongodb) — 文档型存储，适合大量会话历史
+- [阿里云 OSS](/v2/zh/integration/distributed/oss) — 对象存储，大容量快照首选
+
+## aistio 托管 Store
+
+若已部署 aistio 控制面，可由控制面托管 `DistributedStore` 的协调类能力（BaseStore、沙箱锁/快照、MessageBus、AsyncToolRegistry、**TaskRepository**、可选 **SessionTurnGate**）。**`AgentStateStore` 仍需自备一个后端**（Redis / MySQL / Postgres / OSS）；core 已提供 `getVersioned` / `saveIfVersion` 乐观并发，但存储不在控制面。
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+- 控制面开启：`--enable-hosted-store`（生产建议 Postgres）。
+- **`withAgentStateStore` 已包含**托管 `TaskRepository` 与 `SessionTurnGate`。使用 **`SandboxFilesystemSpec` 且需要子 agent 后台任务**时，应走此路径（workspace 版 `TaskRepository` 无法跨副本持久化任务）。
+- **AgentStateStore versioning**：Redis、Postgres、MySQL、InMemory 支持 CAS；JsonFile / OSS / COS / JPA 仍为 last-writer-wins。多副本建议选支持 versioning 的后端。
+- **Turn gate + `ConflictPolicy.FAIL`** 为可选：多副本下减少重复 LLM turn；正确性仍靠 CAS（当后端支持 versioning 时）。
+- 当前鉴权为集群内共享 internal token；租户（`agentName` / `namespace`）取自请求体——**不适用于**同一控制面上互不信任的多租户。
+- `MessageBus.queueDrain` 为 **destructive**（读即 ack）；租户/key 弄错会丢消息。

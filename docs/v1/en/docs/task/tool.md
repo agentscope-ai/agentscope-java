@@ -1,4 +1,6 @@
-# Tool
+---
+title: Tool System
+---
 
 The tool system enables agents to perform external operations such as API calls, database queries, file operations, etc.
 
@@ -199,7 +201,7 @@ public String query(
 }
 ```
 
-> See [Agent](../quickstart/agent.md) documentation for detailed configuration.
+> See [Agent](/v1/en/docs/quickstart/agent) documentation for detailed configuration.
 
 ## Built-in Tools
 
@@ -257,7 +259,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](/v1/en/docs/task/agent-as-tool) for details.
 
 ## AgentTool Interface
 
@@ -297,7 +299,7 @@ public class CustomTool implements AgentTool {
 
 ```java
 Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
-    .parallel(true)                    // Parallel execution of multiple tools
+    .parallel(false)                   // Serialize multiple tool calls (default is parallel)
     .allowToolDeletion(false)          // Prevent tool deletion
     .executionConfig(ExecutionConfig.builder()
         .timeout(Duration.ofSeconds(30))
@@ -307,7 +309,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `parallel` | Whether to execute multiple tools in parallel | `false` |
+| `parallel` | Whether to execute multiple tools in parallel | `true` |
 | `allowToolDeletion` | Whether to allow tool deletion | `true` |
 | `executionConfig.timeout` | Tool execution timeout | 5 minutes |
 

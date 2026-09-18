@@ -357,6 +357,40 @@ class GracefulShutdownTest {
         }
 
         @Test
+        @DisplayName("unbindStateSaver removes a previously bound saver")
+        void unbindStateSaverRemovesBoundSaver() {
+            TestableAgent agent = createTestAgent("agent-1");
+            AtomicReference<AgentState> savedState = new AtomicReference<>();
+
+            manager.bindStateSaver(agent, savedState::set);
+
+            // Before unbind: the saver is reachable via registerRequest -> saveOnInterruptObserved
+            String requestIdBefore = manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(requestIdBefore);
+            assertNotNull(savedState.get(), "saver should be invoked before unbind");
+
+            // After unbind: registerRequest finds no saver, so saveOnInterruptObserved is a no-op
+            savedState.set(null);
+            manager.unbindStateSaver(agent);
+            String requestIdAfter = manager.registerRequest(agent);
+            manager.saveOnInterruptObserved(requestIdAfter);
+            assertNull(savedState.get(), "saver should not be invoked after unbind");
+        }
+
+        @Test
+        @DisplayName("unbindStateSaver with null agent is no-op")
+        void unbindStateSaverNullAgent() {
+            assertDoesNotThrow(() -> manager.unbindStateSaver(null));
+        }
+
+        @Test
+        @DisplayName("unbindStateSaver for an unregistered agent is no-op")
+        void unbindStateSaverUnregisteredAgent() {
+            TestableAgent agent = createTestAgent("agent-1");
+            assertDoesNotThrow(() -> manager.unbindStateSaver(agent));
+        }
+
+        @Test
         @DisplayName("checkAndClearShutdownInterrupted with null agent returns false")
         void checkInterruptedNullAgent() {
             assertFalse(manager.checkAndClearShutdownInterrupted(null));
@@ -367,6 +401,20 @@ class GracefulShutdownTest {
         void checkInterruptedNoState() {
             TestableAgent agent = new TestableAgent("no-state", false, false, false);
             assertFalse(manager.checkAndClearShutdownInterrupted(agent));
+        }
+
+        @Test
+        @DisplayName("checkAndClearShutdownInterruptedForState clears only the supplied state")
+        void checkInterruptedForState() {
+            AgentState state = AgentState.builder().build();
+
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(null));
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state));
+
+            state.setShutdownInterrupted(true);
+            assertTrue(manager.checkAndClearShutdownInterruptedForState(state));
+            assertFalse(state.isShutdownInterrupted());
+            assertFalse(manager.checkAndClearShutdownInterruptedForState(state));
         }
 
         @Test

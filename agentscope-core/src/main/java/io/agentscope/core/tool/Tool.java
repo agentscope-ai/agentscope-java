@@ -119,9 +119,8 @@ public @interface Tool {
     /**
      * Whether the tool is executed outside the framework.
      *
-     * <p>External tools never run their {@code callAsync} body. Instead the framework throws a
-     * {@code ToolSuspendException} so the agent loop can surface the call to the caller via a
-     * {@code TOOL_SUSPENDED} message.
+     * <p>External tools never run their {@code callAsync} body through Toolkit execution. The
+     * agent loop surfaces the call to the caller via a {@code TOOL_SUSPENDED} message.
      *
      * @return true if this tool should be surfaced as a suspended call
      */

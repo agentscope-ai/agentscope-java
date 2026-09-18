@@ -1,4 +1,6 @@
-# Bailian Memory
+---
+title: Bailian Memory
+---
 
 `agentscope-extensions-memory-bailian` integrates with Alibaba Cloud Bailian's long-term memory service. It is fully managed and supports advanced retrieval features such as rerank, judge, and rewrite.
 

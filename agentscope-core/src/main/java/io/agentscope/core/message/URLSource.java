@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
@@ -35,20 +36,40 @@ import java.util.Objects;
  *
  * <p>Using URL sources is more efficient for large media files and allows
  * the system to stream content rather than loading everything into memory.
+ *
+ * <p>When the URL has no file extension (e.g. CDN signed URLs), set {@code mimeType}
+ * explicitly so converters can route the content to the correct media slot without
+ * relying on extension-based inference.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class URLSource extends Source {
 
     private final String url;
+
+    @JsonProperty("mime_type")
+    private final String mimeType;
 
     /**
      * Creates a new URL source for JSON deserialization.
      *
      * @param url The URL pointing to the media content
+     * @param mimeType Optional MIME type hint (e.g. "image/jpeg"); may be null
      * @throws NullPointerException if url is null
      */
     @JsonCreator
-    public URLSource(@JsonProperty("url") String url) {
+    public URLSource(@JsonProperty("url") String url, @JsonProperty("mime_type") String mimeType) {
         this.url = Objects.requireNonNull(url, "url cannot be null");
+        this.mimeType = mimeType;
+    }
+
+    /**
+     * Creates a new URL source without a MIME type hint.
+     *
+     * @param url The URL pointing to the media content
+     * @throws NullPointerException if url is null
+     */
+    public URLSource(String url) {
+        this(url, null);
     }
 
     /**
@@ -58,6 +79,19 @@ public class URLSource extends Source {
      */
     public String getUrl() {
         return url;
+    }
+
+    /**
+     * Gets the optional MIME type hint for this URL source.
+     *
+     * <p>When present, converters use this value instead of inferring the type
+     * from the URL's file extension. Useful for extension-less URLs such as
+     * CDN signed links or API-generated media endpoints.
+     *
+     * @return The MIME type (e.g. "image/jpeg"), or null if not set
+     */
+    public String getMimeType() {
+        return mimeType;
     }
 
     /**
@@ -76,6 +110,8 @@ public class URLSource extends Source {
 
         private String url;
 
+        private String mimeType;
+
         /**
          * Sets the URL for the media content.
          *
@@ -88,13 +124,24 @@ public class URLSource extends Source {
         }
 
         /**
-         * Builds a new URLSource with the configured URL.
+         * Sets an optional MIME type hint for extension-less URLs.
+         *
+         * @param mimeType The MIME type (e.g. "video/mp4")
+         * @return This builder for chaining
+         */
+        public Builder mimeType(String mimeType) {
+            this.mimeType = mimeType;
+            return this;
+        }
+
+        /**
+         * Builds a new URLSource with the configured fields.
          *
          * @return A new URLSource instance
          * @throws NullPointerException if url is null
          */
         public URLSource build() {
-            return new URLSource(url);
+            return new URLSource(url, mimeType);
         }
     }
 }

@@ -21,11 +21,15 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +53,15 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
     /** Default timeout in seconds for shell command execution. */
     public static final int DEFAULT_EXECUTE_TIMEOUT = 120;
+
+    /** Read buffer size (bytes) for the stream drainer threads. */
+    private static final int DRAIN_CHUNK_BYTES = 8192;
+
+    /**
+     * Safety net (millis) for joining drainer threads after the process exits or is destroyed.
+     * Never reached in practice: process exit closes the streams and ends the drainers at once.
+     */
+    private static final long DRAIN_JOIN_TIMEOUT_MILLIS = 5000;
 
     private final String sandboxId;
     private final int defaultTimeout;
@@ -333,15 +346,27 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
 
             Process proc = pb.start();
 
+            // stdout/stderr must be drained concurrently with waitFor: if the child writes
+            // more than the OS pipe buffer (~4 KB on Windows, 64 KB default on Linux) while
+            // the parent blocks in waitFor, both sides deadlock and every such command is
+            // misreported as a timeout (exit 124).
+            ByteArrayOutputStream stdoutBuf = new ByteArrayOutputStream();
+            ByteArrayOutputStream stderrBuf = new ByteArrayOutputStream();
+            Thread stdoutDrainer = drainAsync(proc.getInputStream(), stdoutBuf);
+            Thread stderrDrainer = drainAsync(proc.getErrorStream(), stderrBuf);
+
             boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
-
-            String stdout =
-                    new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr =
-                    new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
             if (!finished) {
                 proc.destroyForcibly();
+            }
+            joinQuietly(stdoutDrainer);
+            joinQuietly(stderrDrainer);
+
+            Charset outputCharset = outputCharset(osName);
+            String stdout = stdoutBuf.toString(outputCharset);
+            String stderr = stderrBuf.toString(outputCharset);
+
+            if (!finished) {
                 String msg;
                 if (timeoutSeconds != null) {
                     msg =
@@ -429,5 +454,52 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             log.warn("Failed to create namespace directory {}: {}", namespaced, e.getMessage());
         }
         return namespaced;
+    }
+
+    /**
+     * Continuously copies a subprocess stream into {@code buf} on a daemon thread so the child
+     * never blocks on a full OS pipe buffer. Read errors (e.g. the stream closing when the
+     * process is destroyed on timeout) end the drainer quietly.
+     */
+    private static Thread drainAsync(InputStream in, ByteArrayOutputStream buf) {
+        Thread t =
+                new Thread(
+                        () -> {
+                            byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
+                            int n;
+                            try {
+                                while ((n = in.read(chunk)) != -1) {
+                                    buf.write(chunk, 0, n);
+                                }
+                            } catch (IOException ignored) {
+                                // Stream closed because the process was destroyed; nothing to do.
+                            }
+                        });
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    private static void joinQuietly(Thread t) {
+        try {
+            t.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    static Charset outputCharset(String osName) {
+        return outputCharset(osName, System.getProperty("native.encoding"));
+    }
+
+    static Charset outputCharset(String osName, String nativeEncoding) {
+        if (!osName.toLowerCase(Locale.ROOT).contains("win")) {
+            return StandardCharsets.UTF_8;
+        }
+
+        if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
+            return Charset.forName(nativeEncoding);
+        }
+        return Charset.defaultCharset();
     }
 }

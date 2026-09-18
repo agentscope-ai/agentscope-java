@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
@@ -30,6 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -208,5 +210,114 @@ class SkillPromoterTest {
                         "skills");
         PromotionResult result = promoter.promote("ghost", "alice", RuntimeContext.empty()).block();
         assertEquals(PromotionResult.Status.INVALID, result.status());
+    }
+
+    @Test
+    void explicitContext_promotesOnlyTheOwningUsersDraft() throws Exception {
+        LocalFilesystem userFs =
+                new LocalFilesystem(workspace, false, 64, IsolationScope.USER.toNamespaceFactory());
+        WorkspaceSkillRepository userDrafts =
+                new WorkspaceSkillRepository(
+                        userFs, "skills/_drafts", RuntimeContext::empty, "drafts");
+        WorkspaceSkillRepository userMain =
+                new WorkspaceSkillRepository(userFs, "skills", RuntimeContext::empty, "main");
+        WorkspaceManager userWorkspaceManager = new WorkspaceManager(workspace, userFs);
+        RuntimeContext alice =
+                RuntimeContext.builder().userId("alice").sessionId("session-a").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("session-b").build();
+
+        Path aliceDraft = workspace.resolve("alice/skills/_drafts/private-skill");
+        Files.createDirectories(aliceDraft.resolve("scripts"));
+        Files.writeString(
+                aliceDraft.resolve("SKILL.md"),
+                validSkillMd("private-skill", "Alice's private skill."));
+        Files.writeString(aliceDraft.resolve("scripts/run.sh"), "echo safe\n");
+
+        AtomicBoolean gateCalled = new AtomicBoolean();
+        SkillPromotionGate approveGate =
+                (candidate, ctx) -> {
+                    gateCalled.set(true);
+                    assertEquals("alice", ctx.getUserId());
+                    return Mono.just(
+                            new SkillPromotionGate.PromotionDecision.Approve(
+                                    "reviewer", List.of("prod"), Instant.now()));
+                };
+        SkillPromoter promoter =
+                new SkillPromoter(
+                        userDrafts,
+                        userMain,
+                        userWorkspaceManager,
+                        null,
+                        approveGate,
+                        "skills/_drafts",
+                        "skills");
+
+        try {
+            PromotionResult bobResult = promoter.promote("private-skill", "reviewer", bob).block();
+            assertNotNull(bobResult);
+            assertEquals(PromotionResult.Status.INVALID, bobResult.status());
+            assertTrue(Files.exists(aliceDraft.resolve("SKILL.md")));
+            assertTrue(!gateCalled.get());
+
+            PromotionResult aliceResult =
+                    promoter.promote("private-skill", "reviewer", alice).block();
+            assertNotNull(aliceResult);
+            assertEquals(PromotionResult.Status.APPROVED, aliceResult.status());
+            assertTrue(gateCalled.get());
+            assertTrue(
+                    Files.exists(workspace.resolve("alice/skills/private-skill/scripts/run.sh")));
+            assertTrue(!Files.exists(aliceDraft));
+            assertTrue(!Files.exists(workspace.resolve("bob/skills/private-skill")));
+        } finally {
+            userWorkspaceManager.close();
+        }
+    }
+
+    @Test
+    void explicitContext_scansResourcesInTheOwningUsersNamespace() throws Exception {
+        LocalFilesystem userFs =
+                new LocalFilesystem(workspace, false, 64, IsolationScope.USER.toNamespaceFactory());
+        WorkspaceSkillRepository userDrafts =
+                new WorkspaceSkillRepository(
+                        userFs, "skills/_drafts", RuntimeContext::empty, "drafts");
+        WorkspaceSkillRepository userMain =
+                new WorkspaceSkillRepository(userFs, "skills", RuntimeContext::empty, "main");
+        WorkspaceManager userWorkspaceManager = new WorkspaceManager(workspace, userFs);
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").build();
+
+        Path aliceDraft = workspace.resolve("alice/skills/_drafts/dangerous-skill");
+        Files.createDirectories(aliceDraft.resolve("scripts"));
+        Files.writeString(
+                aliceDraft.resolve("SKILL.md"),
+                validSkillMd("dangerous-skill", "Skill with a dangerous resource."));
+        Files.writeString(aliceDraft.resolve("scripts/run.sh"), "rm -rf /\n");
+
+        AtomicBoolean gateCalled = new AtomicBoolean();
+        SkillPromotionGate approveGate =
+                (candidate, ctx) -> {
+                    gateCalled.set(true);
+                    return Mono.just(
+                            new SkillPromotionGate.PromotionDecision.Approve(
+                                    "reviewer", List.of("prod"), Instant.now()));
+                };
+        SkillPromoter promoter =
+                new SkillPromoter(
+                        userDrafts,
+                        userMain,
+                        userWorkspaceManager,
+                        null,
+                        approveGate,
+                        "skills/_drafts",
+                        "skills");
+
+        try {
+            PromotionResult result = promoter.promote("dangerous-skill", "reviewer", alice).block();
+            assertNotNull(result);
+            assertEquals(PromotionResult.Status.REJECTED, result.status());
+            assertTrue(!gateCalled.get());
+            assertTrue(Files.exists(aliceDraft.resolve("SKILL.md")));
+        } finally {
+            userWorkspaceManager.close();
+        }
     }
 }

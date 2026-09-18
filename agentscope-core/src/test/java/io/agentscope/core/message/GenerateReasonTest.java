@@ -35,7 +35,7 @@ class GenerateReasonTest {
     @DisplayName("Should have all expected enum values")
     void testEnumValues() {
         GenerateReason[] values = GenerateReason.values();
-        assertEquals(10, values.length);
+        assertEquals(11, values.length);
 
         // Verify all expected values exist
         assertNotNull(GenerateReason.MODEL_STOP);

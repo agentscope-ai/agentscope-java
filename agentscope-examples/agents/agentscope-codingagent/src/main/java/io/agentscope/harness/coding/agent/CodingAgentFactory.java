@@ -15,10 +15,10 @@
  */
 package io.agentscope.harness.coding.agent;
 
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.anthropic.AnthropicChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
@@ -81,7 +81,7 @@ public final class CodingAgentFactory {
             String image = resolveSandboxImage();
             DockerFilesystemSpec sandboxSpec = new DockerFilesystemSpec();
             sandboxSpec.image(image);
-            sandboxSpec.workspaceRoot("/home/agentscope/workspace");
+            sandboxSpec.workspaceRoot(workingDir);
             sandboxSpec.isolationScope(IsolationScope.SESSION);
             builder.filesystem(sandboxSpec);
         }

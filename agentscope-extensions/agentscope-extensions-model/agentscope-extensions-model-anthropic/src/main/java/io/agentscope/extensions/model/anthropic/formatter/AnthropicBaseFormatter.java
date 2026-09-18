@@ -15,12 +15,16 @@
  */
 package io.agentscope.extensions.model.anthropic.formatter;
 
+import com.anthropic.models.messages.CacheControlEphemeral;
+import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
+import com.anthropic.models.messages.TextBlockParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -58,8 +62,8 @@ public abstract class AnthropicBaseFormatter
             MessageCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions) {
-        // Save options for applyTools
-        currentOptions.set(options);
+        // Save effective options for applyTools, including model-level defaults.
+        currentOptions.set(GenerateOptions.mergeOptions(options, defaultOptions));
 
         // Apply other options
         AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);
@@ -81,7 +85,7 @@ public abstract class AnthropicBaseFormatter
 
         // Use saved options to apply tools with tool choice
         GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options);
+        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options, this.cacheTtl);
 
         // Clean up thread-local storage
         currentOptions.remove();
@@ -98,9 +102,153 @@ public abstract class AnthropicBaseFormatter
      * @param messages All messages including potential system message
      */
     public void applySystemMessage(MessageCreateParams.Builder paramsBuilder, List<Msg> messages) {
+        applySystemMessage(paramsBuilder, messages, false);
+    }
+
+    /**
+     * Extract and apply system message if present, optionally marking it for prompt caching.
+     *
+     * <p>When {@code cacheControlEnabled} is true, the system prompt is sent as a text block
+     * carrying <code>cache_control: {"type": "ephemeral"}</code> so long system prompts can be
+     * cached by Anthropic.
+     *
+     * @param paramsBuilder Anthropic request parameters builder
+     * @param messages All messages including potential system message
+     * @param cacheControlEnabled whether prompt caching is enabled
+     */
+    public void applySystemMessage(
+            MessageCreateParams.Builder paramsBuilder,
+            List<Msg> messages,
+            boolean cacheControlEnabled) {
         String systemMessage = messageConverter.extractSystemMessage(messages);
-        if (systemMessage != null && !systemMessage.isEmpty()) {
+        if (systemMessage == null || systemMessage.isEmpty()) {
+            return;
+        }
+
+        if (cacheControlEnabled) {
+            paramsBuilder.systemOfTextBlockParams(
+                    List.of(
+                            TextBlockParam.builder()
+                                    .text(systemMessage)
+                                    .cacheControl(buildCacheControl(this.cacheTtl))
+                                    .build()));
+        } else {
             paramsBuilder.system(systemMessage);
         }
+    }
+
+    /** Shared ephemeral cache control marker for prompt caching. */
+    static final CacheControlEphemeral EPHEMERAL_CACHE_CONTROL =
+            CacheControlEphemeral.builder().build();
+
+    /** TTL for ephemeral cache control, set once at model construction. */
+    private String cacheTtl;
+
+    /** Configure the TTL applied to prompt-caching markers (e.g. {@code "1h"}). */
+    public void cacheTtl(String cacheTtl) {
+        this.cacheTtl = cacheTtl;
+    }
+
+    /**
+     * Build a {@link CacheControlEphemeral} applying the configured TTL. When no TTL is set
+     * the shared default ephemeral marker is returned.
+     */
+    static CacheControlEphemeral buildCacheControl(String cacheTtl) {
+        if (cacheTtl == null || cacheTtl.isEmpty()) {
+            return EPHEMERAL_CACHE_CONTROL;
+        }
+        return CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.of(cacheTtl)).build();
+    }
+
+    /**
+     * Apply the automatic cache control strategy to formatted messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last cacheable content
+     * block of the last message. Anthropic caches everything up to and including the marked
+     * block, so this caches the entire conversation prefix across turns.
+     *
+     * @param formattedMessages the formatted Anthropic messages
+     * @return the messages with cache control applied
+     */
+    public List<MessageParam> applyCacheControl(List<MessageParam> formattedMessages) {
+        if (formattedMessages == null || formattedMessages.isEmpty()) {
+            return formattedMessages;
+        }
+
+        int lastIdx = formattedMessages.size() - 1;
+        MessageParam last = formattedMessages.get(lastIdx);
+        CacheControlEphemeral cacheControl = buildCacheControl(this.cacheTtl);
+        MessageParam marked = markLastCacheableBlock(last, cacheControl);
+        if (marked == last) {
+            return formattedMessages;
+        }
+
+        List<MessageParam> result = new ArrayList<>(formattedMessages);
+        result.set(lastIdx, marked);
+        return result;
+    }
+
+    /**
+     * Return a copy of the message whose last cacheable content block carries ephemeral
+     * cache_control. String content is converted to a single text block so cache_control can be
+     * attached. Returns the original instance when nothing can be marked.
+     */
+    private static MessageParam markLastCacheableBlock(
+            MessageParam message, CacheControlEphemeral cacheControl) {
+        MessageParam.Content content = message.content();
+
+        if (content.isString()) {
+            TextBlockParam text =
+                    TextBlockParam.builder()
+                            .text(content.asString())
+                            .cacheControl(cacheControl)
+                            .build();
+            return message.toBuilder()
+                    .content(
+                            MessageParam.Content.ofBlockParams(
+                                    List.of(ContentBlockParam.ofText(text))))
+                    .build();
+        }
+
+        if (content.isBlockParams()) {
+            List<ContentBlockParam> blocks = new ArrayList<>(content.asBlockParams());
+            for (int i = blocks.size() - 1; i >= 0; i--) {
+                ContentBlockParam marked = withCacheControl(blocks.get(i), cacheControl);
+                if (marked == null) {
+                    continue;
+                }
+                blocks.set(i, marked);
+                return message.toBuilder()
+                        .content(MessageParam.Content.ofBlockParams(blocks))
+                        .build();
+            }
+        }
+
+        return message;
+    }
+
+    /**
+     * Return a copy of the block with ephemeral cache_control attached, or {@code null} when the
+     * block type does not support cache_control (e.g. thinking blocks).
+     */
+    private static ContentBlockParam withCacheControl(
+            ContentBlockParam block, CacheControlEphemeral cacheControl) {
+        if (block.isText()) {
+            return ContentBlockParam.ofText(
+                    block.asText().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isImage()) {
+            return ContentBlockParam.ofImage(
+                    block.asImage().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isToolUse()) {
+            return ContentBlockParam.ofToolUse(
+                    block.asToolUse().toBuilder().cacheControl(cacheControl).build());
+        }
+        if (block.isToolResult()) {
+            return ContentBlockParam.ofToolResult(
+                    block.asToolResult().toBuilder().cacheControl(cacheControl).build());
+        }
+        return null;
     }
 }

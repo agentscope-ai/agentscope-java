@@ -24,6 +24,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -43,6 +44,13 @@ public abstract class OpenAIBaseFormatter
         extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+
+    /**
+     * Sentinel for an explicit "no cache" intent. An empty map is serialized away (via
+     * {@code @JsonInclude(NON_EMPTY)} on {@link OpenAIMessage#cacheControl}), so the upstream API
+     * receives no {@code cache_control} field and therefore performs no caching.
+     */
+    private static final Map<String, String> NO_CACHE_CONTROL = Collections.emptyMap();
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
@@ -173,8 +181,8 @@ public abstract class OpenAIBaseFormatter
      * Apply cache control to OpenAI messages.
      *
      * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
+     * message in the list. Messages that already carry a cache_control value (including the empty
+     * "no cache" sentinel) are left untouched.
      *
      * @param messages the list of formatted OpenAI messages
      */
@@ -183,12 +191,12 @@ public abstract class OpenAIBaseFormatter
             return;
         }
         for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+            if ("system".equals(msg.getRole()) && shouldAutoCache(msg)) {
                 msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
             }
         }
         OpenAIMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
+        if (shouldAutoCache(lastMsg)) {
             lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
@@ -200,5 +208,28 @@ public abstract class OpenAIBaseFormatter
      */
     static Map<String, String> getEphemeralCacheControl() {
         return EPHEMERAL_CACHE_CONTROL;
+    }
+
+    /**
+     * Get the "no cache" sentinel constant.
+     *
+     * @return unmodifiable empty map representing an explicit "no cache" intent
+     */
+    static Map<String, String> getNoCacheControl() {
+        return NO_CACHE_CONTROL;
+    }
+
+    /**
+     * Whether the automatic cache-control strategy should mark a message as ephemeral.
+     *
+     * <p>Returns {@code true} only when the message has no cache_control value at all. Any non-null
+     * value — an explicit {@code {"type": "ephemeral"}}, a custom value, or the empty "no cache"
+     * sentinel — is left unchanged.
+     *
+     * @param message the message to inspect
+     * @return {@code true} if the message should be auto-cached, {@code false} otherwise
+     */
+    private static boolean shouldAutoCache(OpenAIMessage message) {
+        return message.getCacheControl() == null;
     }
 }

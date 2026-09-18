@@ -19,6 +19,8 @@ package io.agentscope.core.a2a.server.transport.jsonrpc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -51,13 +53,16 @@ import io.a2a.spec.TaskResubscriptionRequest;
 import io.a2a.spec.TransportProtocol;
 import io.a2a.transport.jsonrpc.handler.JSONRPCHandler;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Flow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.FlowAdapters;
 import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for JsonRpcTransportWrapper.
@@ -280,6 +285,48 @@ class JsonRpcTransportWrapperTest {
     }
 
     @Nested
+    @DisplayName("Streaming Backpressure Tests")
+    class StreamingBackpressureTests {
+
+        @Test
+        @DisplayName("Should show unbuffered streaming can lose burst responses")
+        void testUnbufferedStreamingBurstDropsResponse() {
+            SendStreamingMessageResponse reasoningResponse =
+                    mock(SendStreamingMessageResponse.class);
+            SendStreamingMessageResponse textResponse = mock(SendStreamingMessageResponse.class);
+
+            Flux<SendStreamingMessageResponse> unbuffered =
+                    Flux.from(
+                            FlowAdapters.toPublisher(
+                                    burstPublisher(List.of(reasoningResponse, textResponse))));
+
+            AssertionError overflowError =
+                    assertThrows(
+                            AssertionError.class,
+                            () ->
+                                    StepVerifier.create(unbuffered, 1)
+                                            .expectNext(reasoningResponse)
+                                            .verifyComplete());
+            assertTrue(
+                    String.valueOf(overflowError.getMessage()).contains("request overflow"),
+                    "Expected request overflow but got: " + overflowError.getMessage());
+
+            Flux<SendStreamingMessageResponse> buffered =
+                    Flux.from(
+                                    FlowAdapters.toPublisher(
+                                            burstPublisher(
+                                                    List.of(reasoningResponse, textResponse))))
+                            .onBackpressureBuffer();
+
+            StepVerifier.create(buffered, 1)
+                    .expectNext(reasoningResponse)
+                    .thenRequest(1)
+                    .expectNext(textResponse)
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
     @DisplayName("Error Handling Tests")
     class ErrorHandlingTests {
 
@@ -369,5 +416,28 @@ class JsonRpcTransportWrapperTest {
             assertNotNull(error);
             assertInstanceOf(InvalidRequestError.class, error);
         }
+    }
+
+    private static <T> Flow.Publisher<T> burstPublisher(List<T> values) {
+        return subscriber ->
+                subscriber.onSubscribe(
+                        new Flow.Subscription() {
+                            private boolean emitted;
+
+                            @Override
+                            public void request(long n) {
+                                if (emitted) {
+                                    return;
+                                }
+                                emitted = true;
+                                for (T value : values) {
+                                    subscriber.onNext(value);
+                                }
+                                subscriber.onComplete();
+                            }
+
+                            @Override
+                            public void cancel() {}
+                        });
     }
 }

@@ -425,8 +425,19 @@ public class RemoteFilesystem implements AbstractFilesystem {
                                         + (effectivePattern.startsWith("**")
                                                 ? effectivePattern
                                                 : "**/" + effectivePattern));
+        // Java NIO requires a path separator for patterns that start with "**/", so the
+        // recursive matcher does not match files located directly in the search root. Strip the
+        // recursive prefix for a second matcher that covers those root-level files.
+        String directPattern;
+        if (effectivePattern.startsWith("**/")) {
+            directPattern = effectivePattern.substring(3);
+        } else if (effectivePattern.equals("**")) {
+            directPattern = "*";
+        } else {
+            directPattern = effectivePattern;
+        }
         PathMatcher directMatcher =
-                FileSystems.getDefault().getPathMatcher("glob:" + effectivePattern);
+                FileSystems.getDefault().getPathMatcher("glob:" + directPattern);
 
         // Fast path: index has entries for this prefix
         if (index != null && index.hasPrefix(normalizedPath)) {

@@ -1,4 +1,6 @@
-# 子 Agent（Subagent）
+---
+title: 子 Agent
+---
 
 ## 作用
 
@@ -35,7 +37,8 @@ Subagent 让主 agent 把「可独立处理、上下文重、可并行」的任�
 1. 内置 `general-purpose`
 2. 编程声明：`builder.subagent(SubagentDeclaration)`
 3. 文件声明：`workspace/subagents/*.md`（`AgentSpecLoader` 非递归加载）
-4. 自定义工厂：`builder.subagentFactory(name, factory)`
+4. 自定义工厂：`builder.subagentFactory(name, factory)` 或
+   `builder.subagentFactory(name, description, factory)`，后者可为编排器提供有意义的描述而非仅有名称（省略或为空白时回退为名称）
 
 ---
 
@@ -241,7 +244,7 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [工具](./tool.md)
-- [工作区](./workspace.md)
-- [架构](./architecture.md)
-- [流式输出](./streaming.md)
+- [工具](/v1/zh/docs/harness/tool)
+- [工作区](/v1/zh/docs/harness/workspace)
+- [架构](/v1/zh/docs/harness/architecture)
+- [流式输出](/v1/zh/docs/harness/streaming)

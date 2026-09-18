@@ -52,6 +52,16 @@
             </exclusions>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-ollama</artifactId>
+        </dependency>
+
         <!-- OpenAI Java SDK -->
         <dependency>
             <groupId>com.openai</groupId>

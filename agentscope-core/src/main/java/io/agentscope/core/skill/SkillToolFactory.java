@@ -38,10 +38,7 @@ import reactor.core.publisher.Mono;
 /**
  * Factory for creating skill access tools that allow agents to dynamically load and access skills.
  *
- * @deprecated since 2.0.0. The skill package is removed; manage markdown skill catalogs in
- *     application code.
  */
-@Deprecated(since = "2.0.0")
 class SkillToolFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
@@ -381,6 +378,24 @@ class SkillToolFactory {
                     "Activated skill tool group: {} and its tools: {}",
                     toolsGroupName,
                     toolkit.getToolGroup(toolsGroupName).getTools());
+        }
+
+        // Also activate any SkillToolGroup bound to this skill via activateOnSkill
+        AgentSkill agentSkill = skillRegistry.getSkill(skillId);
+        if (agentSkill != null) {
+            List<String> boundGroups =
+                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
+            for (String group : boundGroups) {
+                if (!group.equals(toolsGroupName)
+                        && toolkit.getToolGroup(group) != null
+                        && !toolkit.getToolGroup(group).isActive()) {
+                    toolkit.updateToolGroups(List.of(group), true);
+                    logger.info(
+                            "Activated skill-bound tool group: {} for skill: {}",
+                            group,
+                            agentSkill.getName());
+                }
+            }
         }
     }
 }

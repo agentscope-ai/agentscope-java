@@ -94,18 +94,32 @@ public class GeminiResponseParser {
             if (response.usageMetadata().isPresent()) {
                 GenerateContentResponseUsageMetadata metadata = response.usageMetadata().get();
 
-                int inputTokens = metadata.promptTokenCount().orElse(0);
-                int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
+                int inputTokens =
+                        metadata.promptTokenCount().orElse(0)
+                                + metadata.toolUsePromptTokenCount().orElse(0);
+                int cachedTokens = metadata.cachedContentTokenCount().orElse(0);
                 int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
-
-                // Output tokens exclude thinking tokens (following DashScope behavior)
-                // In Gemini, candidatesTokenCount includes thinking, so we subtract it
-                int outputTokens = totalOutputTokens - thinkingTokens;
+                int outputTokens =
+                        metadata.candidatesTokenCount()
+                                .map(candidateTokens -> candidateTokens + thinkingTokens)
+                                .orElseGet(
+                                        () ->
+                                                metadata.totalTokenCount()
+                                                        .map(
+                                                                total ->
+                                                                        Math.max(
+                                                                                0,
+                                                                                total
+                                                                                        - inputTokens))
+                                                        // Without candidate or total counts,
+                                                        // thoughts are the only reported output.
+                                                        .orElse(thinkingTokens));
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .cachedTokens(cachedTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

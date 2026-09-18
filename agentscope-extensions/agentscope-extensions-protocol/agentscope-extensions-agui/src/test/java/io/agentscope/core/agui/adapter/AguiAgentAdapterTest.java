@@ -198,12 +198,12 @@ class AguiAgentAdapterTest {
         List<AguiEvent> events = adapter.run(input).collectList().block();
 
         assertNotNull(events);
-        assertEquals(3, events.size());
+        assertEquals(2, events.size());
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
         AguiEvent.RunError runError = assertInstanceOf(AguiEvent.RunError.class, events.get(1));
         assertEquals("RuntimeException", runError.message());
         assertEquals("INTERNAL_ERROR", runError.code());
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(2));
+        assertNotNull(runError.timestamp());
     }
 
     @Test
@@ -717,8 +717,8 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should have: RunStarted, RunError, RunFinished
-        assertTrue(events.size() >= 3);
+        // Should have: RunStarted, RunError
+        assertEquals(2, events.size());
         assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
 
         // Find RunError event
@@ -731,8 +731,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(errorEvent, "Should have RunError event");
         assertTrue(errorEvent.message().contains("Agent error"));
-
-        assertInstanceOf(AguiEvent.RunFinished.class, events.get(events.size() - 1));
+        assertInstanceOf(AguiEvent.RunError.class, events.get(events.size() - 1));
     }
 
     @Test

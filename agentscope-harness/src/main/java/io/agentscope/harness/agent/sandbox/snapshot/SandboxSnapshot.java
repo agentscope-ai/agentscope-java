@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.io.InputStream;
@@ -58,6 +59,7 @@ public interface SandboxSnapshot {
      * @return true if {@link #restore()} would succeed
      * @throws Exception if checking restorability fails
      */
+    @JsonIgnore
     boolean isRestorable() throws Exception;
 
     /**
@@ -72,6 +74,7 @@ public interface SandboxSnapshot {
      *
      * @return type string (e.g. "noop", "local", "remote")
      */
+    @JsonIgnore
     String getType();
 
     /**
@@ -82,6 +85,7 @@ public interface SandboxSnapshot {
      *
      * @return false only for no-op implementations that discard all archive data
      */
+    @JsonIgnore
     default boolean isPersistenceEnabled() {
         return true;
     }

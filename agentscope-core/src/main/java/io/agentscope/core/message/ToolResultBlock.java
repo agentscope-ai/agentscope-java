@@ -207,7 +207,27 @@ public final class ToolResultBlock extends ContentBlock {
                 null,
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
-                null);
+                null,
+                ToolResultState.ERROR);
+    }
+
+    /**
+     * Create an error result for a tool call.
+     *
+     * <p>The {@code [ERROR]} prefix is used by the agent runtime to preserve the error marker in
+     * generated tool results.
+     *
+     * @param toolId Tool call ID
+     * @param errorMessage Error message
+     * @return Error ToolResultBlock for use in a message
+     */
+    public static ToolResultBlock error(String toolId, String errorMessage) {
+        return new ToolResultBlock(
+                toolId,
+                null,
+                List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()),
+                null,
+                ToolResultState.ERROR);
     }
 
     /**

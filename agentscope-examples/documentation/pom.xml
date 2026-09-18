@@ -27,7 +27,7 @@
     </parent>
 
     <groupId>io.agentscope.examples</groupId>
-    <artifactId>documentation2</artifactId>
+    <artifactId>documentation</artifactId>
     <packaging>jar</packaging>
 
     <name>AgentScope Java - Examples - Documentation</name>
@@ -70,16 +70,10 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
-        <!-- DashScope SDK for MultiModalTool -->
+        <!-- DashScope model implementation and MultiModalTool -->
         <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>dashscope-sdk-java</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-simple</artifactId>
-                </exclusion>
-            </exclusions>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
         <!-- RAG Extensions -->
@@ -133,6 +127,18 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-studio</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-anthropic</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-gemini</artifactId>
+        </dependency>
 
         <!-- Git-based Skill Repository -->
         <dependency>
@@ -171,4 +177,15 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Declared without executions so the spring-boot:run prefix resolves; the default lifecycle is unaffected -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+            </plugin>
+        </plugins>
+    </build>
 </project>

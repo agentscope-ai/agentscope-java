@@ -129,6 +129,13 @@ public class OpenAIRequest {
     private String reasoningEffort;
 
     /**
+     * Maximum number of tokens the model may spend on thinking/reasoning content.
+     * Used by reasoning models (e.g. Qwen3, DeepSeek-R1) to cap internal chain-of-thought.
+     */
+    @JsonProperty("thinking_budget")
+    private Integer thinkingBudget;
+
+    /**
      * Controls whether to allow parallel tool calls.
      * Set to false to disable parallel tool calling.
      */
@@ -345,6 +352,14 @@ public class OpenAIRequest {
         this.reasoningEffort = reasoningEffort;
     }
 
+    public Integer getThinkingBudget() {
+        return thinkingBudget;
+    }
+
+    public void setThinkingBudget(Integer thinkingBudget) {
+        this.thinkingBudget = thinkingBudget;
+    }
+
     public Boolean getParallelToolCalls() {
         return parallelToolCalls;
     }
@@ -551,6 +566,11 @@ public class OpenAIRequest {
 
         public Builder reasoningEffort(String reasoningEffort) {
             request.setReasoningEffort(reasoningEffort);
+            return this;
+        }
+
+        public Builder thinkingBudget(Integer thinkingBudget) {
+            request.setThinkingBudget(thinkingBudget);
             return this;
         }
 

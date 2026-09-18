@@ -15,10 +15,16 @@
  */
 package io.agentscope.extensions.model.openai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.transport.ProxyConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +41,39 @@ class OpenAIModelProviderTest {
         assertTrue(provider.supports("openai:gpt-4o-mini"));
         assertFalse(provider.supports("openai:"));
         assertFalse(provider.supports("dashscope:qwen-max"));
+    }
+
+    @Test
+    void createRejectsUnsupportedModelIdsBeforeReadingEnvironment() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+
+        assertThrows(IllegalArgumentException.class, () -> provider.create("openai:"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create("gpt-4o-mini"));
+        assertThrows(IllegalArgumentException.class, () -> provider.create(null));
+    }
+
+    @Test
+    void createUsesModelCreationContext() {
+        OpenAIModelProvider provider = new OpenAIModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-openai-key")
+                        .baseUrl("https://openai.example.com/v1")
+                        .endpointPath("/v4/chat/completions")
+                        .stream(false)
+                        .component(GenerateOptions.class, GenerateOptions.builder().build())
+                        .component(ProxyConfig.class, ProxyConfig.http("localhost", 8080))
+                        .option("contextWindowSize", 128000)
+                        .option("nativeStructuredOutput", false)
+                        .option("nativeStructuredOutputWithTools", true)
+                        .build();
+
+        Model model = provider.create("openai:gpt-4o-mini", context);
+
+        assertTrue(model instanceof OpenAIChatModel);
+        assertTrue(model.getModelName().equals("gpt-4o-mini"));
+        assertEquals(128000, model.getContextWindowSize());
+        assertFalse(model.supportsNativeStructuredOutput());
     }
 
     @Test

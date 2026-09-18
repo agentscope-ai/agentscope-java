@@ -21,9 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.time.Duration;
+import java.time.Instant;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,6 +45,12 @@ class MemoryFlushMiddlewareTriggerTest {
             RuntimeContext.builder().userId("userA").sessionId("session1").build();
     private static final RuntimeContext RC_SESSION_2 =
             RuntimeContext.builder().userId("userA").sessionId("session2").build();
+
+    /** Clear the shared throttle map between tests. */
+    @BeforeEach
+    void resetSharedTimerMap() {
+        LocalPeriodicGate.clearForTests();
+    }
 
     /** Creates a USER-scope (default) middleware for trigger-gate tests. */
     private static MemoryFlushMiddleware make(MemoryConfig.FlushTrigger trigger) {
@@ -207,5 +216,64 @@ class MemoryFlushMiddlewareTriggerTest {
         assertEquals("userB", mw.timerKeyFor(RC_USER_B));
         assertEquals("", mw.timerKeyFor(RC_ANON), "no userId → empty key");
         assertEquals("", mw.timerKeyFor(null), "null rc → empty key");
+    }
+
+    // ── Cross-instance throttle sharing (the core bug-fix scenario) ──────────
+
+    @Test
+    void throttledMode_crossInstanceSharesOneThrottleSlot() {
+        // Simulates the real-world scenario: HarnessAgent.Builder.build() creates a new
+        // MemoryFlushMiddleware per request. The process-wide LocalPeriodicGate persists
+        // across instances so the second instance correctly sees the flush timestamp from
+        // the first instance.
+        Duration gap = Duration.ofHours(1);
+        MemoryFlushMiddleware mw1 = make(MemoryConfig.FlushTrigger.throttled(gap));
+        MemoryFlushMiddleware mw2 = make(MemoryConfig.FlushTrigger.throttled(gap));
+
+        assertTrue(mw1.shouldFlushNow(RC_USER_A), "first instance, first call wins");
+        assertFalse(
+                mw2.shouldFlushNow(RC_USER_A),
+                "second instance must respect the throttle window set by the first instance");
+    }
+
+    @Test
+    void throttledMode_crossInstance_differentUsersAreIndependent() {
+        // Cross-instance but different users must not interfere — userB should still win
+        // their own slot even though userA already flushed via a different instance.
+        Duration gap = Duration.ofHours(1);
+        MemoryFlushMiddleware mw1 = make(MemoryConfig.FlushTrigger.throttled(gap));
+        MemoryFlushMiddleware mw2 = make(MemoryConfig.FlushTrigger.throttled(gap));
+
+        assertTrue(mw1.shouldFlushNow(RC_USER_A), "mw1: userA wins");
+        assertTrue(
+                mw2.shouldFlushNow(RC_USER_B),
+                "mw2: userB must still win their own independent slot");
+        assertFalse(mw1.shouldFlushNow(RC_USER_B), "mw1: userB now throttled in their own window");
+    }
+
+    // ── Stale entry eviction ──────────────────────────────────────────────────
+
+    @Test
+    void cleanupStaleEntries_removesOldEntries() {
+        LocalPeriodicGate gate = new LocalPeriodicGate();
+        LocalPeriodicGate.seedLastClaimAtForTests("USER:staleUser", Instant.EPOCH);
+
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
+
+        assertFalse(
+                LocalPeriodicGate.hasClaimForTests("USER:staleUser"),
+                "stale entry (EPOCH timestamp) should be removed");
+    }
+
+    @Test
+    void cleanupStaleEntries_preservesRecentEntries() {
+        LocalPeriodicGate gate = new LocalPeriodicGate();
+        gate.tryClaim("USER:recentUser", Duration.ZERO);
+
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
+
+        assertTrue(
+                LocalPeriodicGate.hasClaimForTests("USER:recentUser"),
+                "recent entry should survive cleanup");
     }
 }

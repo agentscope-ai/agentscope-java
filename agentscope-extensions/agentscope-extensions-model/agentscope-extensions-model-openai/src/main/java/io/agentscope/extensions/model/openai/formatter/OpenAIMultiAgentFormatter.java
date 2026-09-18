@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
@@ -73,7 +74,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
             switch (group.type) {
                 case SYSTEM -> {
                     Msg systemMsg = group.messages.get(0);
-                    result.add(messageConverter.convertToMessage(systemMsg, false));
+                    result.add(convertMessage(systemMsg, false));
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> {
@@ -85,9 +86,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
-                    result.add(
-                            messageConverter.convertToMessage(
-                                    bypassMsg, hasMediaContent(bypassMsg)));
+                    result.add(convertMessage(bypassMsg, hasMediaContent(bypassMsg)));
                 }
             }
         }
@@ -147,9 +146,24 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 if (msg.hasContentBlocks(ToolUseBlock.class)) {
                     yield MessageGroupType.TOOL_SEQUENCE;
                 }
+                if (msg.getRole() == MsgRole.ASSISTANT && hasReasoningDetails(msg)) {
+                    yield MessageGroupType.TOOL_SEQUENCE;
+                }
                 yield MessageGroupType.AGENT_CONVERSATION;
             }
         };
+    }
+
+    /**
+     * Check whether a message carries encrypted reasoning details that must be preserved
+     * on an individual assistant message (cannot be merged into a user history message).
+     */
+    private boolean hasReasoningDetails(Msg msg) {
+        ThinkingBlock tb = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (tb == null || tb.getMetadata() == null) {
+            return false;
+        }
+        return tb.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS);
     }
 
     /**
@@ -160,7 +174,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
 
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
-                result.add(messageConverter.convertToMessage(msg, hasMediaContent(msg)));
+                result.add(convertMessage(msg, hasMediaContent(msg)));
             }
         }
 

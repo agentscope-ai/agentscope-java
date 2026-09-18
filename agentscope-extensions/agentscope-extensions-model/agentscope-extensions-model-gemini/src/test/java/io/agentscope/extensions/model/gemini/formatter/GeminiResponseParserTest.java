@@ -216,9 +216,9 @@ class GeminiResponseParserTest {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(100)
-                        .candidatesTokenCount(60) // Includes thinking
+                        .candidatesTokenCount(60)
                         .thoughtsTokenCount(10) // Thinking tokens
-                        .totalTokenCount(160)
+                        .totalTokenCount(170)
                         .build();
 
         GenerateContentResponse response =
@@ -238,11 +238,103 @@ class GeminiResponseParserTest {
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
 
-        // Output tokens = candidatesTokenCount - thoughtsTokenCount
-        assertEquals(50, usage.getOutputTokens());
+        // Output tokens include candidate and model-generated thinking tokens.
+        assertEquals(70, usage.getOutputTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);
+    }
+
+    @Test
+    void testParseUsageMetadataClassifiesToolUseTokensAsInput() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .candidatesTokenCount(120)
+                        .toolUsePromptTokenCount(300)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(130, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataUsesTotalWhenCandidateCountIsMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .toolUsePromptTokenCount(300)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(130, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataUsesThinkingWhenCandidateAndTotalCountsAreMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .thoughtsTokenCount(10)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(500, usage.getInputTokens());
+        assertEquals(10, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataReadsCachedContentTokenCount() {
+        // Gemini 报告的 cachedContentTokenCount 必须透传到 ChatUsage.cachedTokens,
+        // 否则下游记账无法识别缓存命中、定价会按全量 prompt 估算。
+        Part textPart = Part.builder().text("Response text").build();
+
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        // cachedContentTokenCount 是 promptTokenCount 的子集(Gemini SDK 文档:
+                        // promptTokenCount 包含 cachedContentTokenCount),故 prompt 必须 > cached
+                        .promptTokenCount(500)
+                        .candidatesTokenCount(60)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(560)
+                        .cachedContentTokenCount(300)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-cached")
+                        .candidates(List.of(candidate))
+                        .usageMetadata(usageMetadata)
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(300, chatResponse.getUsage().getCachedTokens());
     }
 
     @Test

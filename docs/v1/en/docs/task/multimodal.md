@@ -1,4 +1,6 @@
-# Multimodal
+---
+title: Multimodal
+---
 
 Multimodal capabilities enable Agents to understand and generate images, audio, video, and other media content.
 
@@ -114,8 +116,8 @@ Msg multiImageMsg = Msg.builder()
 
 ```java
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 ReActAgent agent = ReActAgent.builder()
     .name("VisionAssistant")
@@ -145,10 +147,10 @@ System.out.println(response.getTextContent());
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.*;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 
@@ -230,5 +232,5 @@ DashScopeChatModel.builder()
 ## More Resources
 
 - **Complete Example Code**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
-- **Message Mechanism**: [message.md](../quickstart/message.md) - Learn about message structure
-- **Model Configuration**: [model.md](./model.md) - Learn about model configuration options
+- **Message Mechanism**: [message.md](/v1/en/docs/quickstart/key-concepts) - Learn about message structure
+- **Model Configuration**: [model.md](/v1/en/docs/task/model) - Learn about model configuration options

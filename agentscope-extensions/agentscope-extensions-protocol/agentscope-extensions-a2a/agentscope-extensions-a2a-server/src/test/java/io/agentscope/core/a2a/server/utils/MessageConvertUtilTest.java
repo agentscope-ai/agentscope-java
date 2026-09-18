@@ -32,6 +32,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +125,139 @@ class MessageConvertUtilTest {
     void testConstantValues() {
         assertEquals("_agentscope_msg_source", MessageConstants.SOURCE_NAME_METADATA_KEY);
         assertEquals("_agentscope_msg_id", MessageConstants.MSG_ID_METADATA_KEY);
+        assertEquals("_agentscope_stream_chunk", MessageConstants.STREAM_CHUNK_METADATA_KEY);
+    }
+
+    @Test
+    @DisplayName("Should mark converted parts as streaming chunks")
+    void testConvertFromContentBlocksWithStreamingChunkMetadata() {
+        Msg message =
+                Msg.builder()
+                        .id("msg-id")
+                        .name("test-agent")
+                        .content(List.of(TextBlock.builder().text("chunk").build()))
+                        .build();
+
+        List<Part<?>> parts = MessageConvertUtil.convertFromContentBlocks(message, true);
+
+        assertEquals(1, parts.size());
+        assertEquals(
+                Boolean.TRUE,
+                parts.get(0).getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+    }
+
+    @Test
+    @DisplayName("Should compact consecutive streaming chunks")
+    void testCompactStreamingChunks() {
+        Msg first =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Hel").build()))
+                        .build();
+        Msg second =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("lo").build()))
+                        .build();
+        Msg third =
+                Msg.builder()
+                        .id("msg-2")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text(" world").build()))
+                        .build();
+
+        List<Msg> result = MessageConvertUtil.compactStreamingChunks(List.of(first, second, third));
+
+        assertEquals(2, result.size());
+        assertEquals("Hello", result.get(0).getTextContent());
+        assertEquals(" world", result.get(1).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should compact empty and null streaming chunks")
+    void testCompactStreamingChunksWithEmptyAndNullValues() {
+        assertTrue(MessageConvertUtil.compactStreamingChunks(null).isEmpty());
+        assertTrue(MessageConvertUtil.compactStreamingChunks(List.of()).isEmpty());
+
+        Msg message =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("content").build()))
+                        .build();
+        List<Msg> input = new java.util.ArrayList<>();
+        input.add(null);
+        input.add(message);
+
+        List<Msg> result = MessageConvertUtil.compactStreamingChunks(input);
+
+        assertEquals(1, result.size());
+        assertEquals("content", result.get(0).getTextContent());
+    }
+
+    @Test
+    @DisplayName("Should compact thinking chunks and preserve mixed block boundaries")
+    void testCompactStreamingChunksWithThinkingAndMixedBlocks() {
+        Msg first =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(ThinkingBlock.builder().thinking("thin").build()))
+                        .build();
+        Msg second =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("king").build(),
+                                        TextBlock.builder().text(" answer").build()))
+                        .build();
+
+        List<Msg> result = MessageConvertUtil.compactStreamingChunks(List.of(first, second));
+
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).getContent().size());
+        ThinkingBlock thinkingBlock =
+                assertInstanceOf(ThinkingBlock.class, result.get(0).getContent().get(0));
+        assertEquals("thinking", thinkingBlock.getThinking());
+        assertEquals(" answer", ((TextBlock) result.get(0).getContent().get(1)).getText());
+    }
+
+    @Test
+    @DisplayName("Should compact chunks with null content and null blocks")
+    void testCompactStreamingChunksWithNullContentAndBlocks() {
+        Msg first =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content((List<ContentBlock>) null)
+                        .build();
+        List<ContentBlock> content = new java.util.ArrayList<>();
+        content.add(null);
+        content.add(TextBlock.builder().text("tail").build());
+        Msg second =
+                Msg.builder()
+                        .id("msg-1")
+                        .name("agent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(content)
+                        .build();
+
+        List<Msg> result = MessageConvertUtil.compactStreamingChunks(List.of(first, second));
+
+        assertEquals(1, result.size());
+        assertEquals(1, result.get(0).getContent().size());
+        assertEquals("tail", ((TextBlock) result.get(0).getContent().get(0)).getText());
     }
 
     @Test
@@ -216,6 +350,70 @@ class MessageConvertUtilTest {
         assertEquals(1, result.get(1).getContent().size());
         assertInstanceOf(TextBlock.class, result.get(1).getContent().get(0));
         assertEquals("text2", ((TextBlock) result.get(1).getContent().get(0)).getText());
+    }
+
+    @Test
+    @DisplayName("Should restore Msg role from part metadata")
+    void testConvertFromMessageToMsgsWithRoleMetadata() {
+        // Given
+        Message message = mock(Message.class);
+
+        Map<String, Object> partMetadata = new HashMap<>();
+        String msgId = "assistant-msg";
+        partMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msgId);
+        partMetadata.put(MessageConstants.MSG_ROLE_METADATA_KEY, MsgRole.ASSISTANT.name());
+        partMetadata.put(
+                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                MessageConstants.BlockContent.TYPE_THINKING);
+
+        TextPart part = new TextPart("thinking content", partMetadata);
+
+        when(message.getMetadata()).thenReturn(null);
+        when(message.getRole()).thenReturn(Message.Role.USER);
+        when(message.getParts()).thenReturn(List.of(part));
+
+        // When
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        Msg msg = result.get(0);
+        assertEquals(msgId, msg.getId());
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertEquals(1, msg.getContent().size());
+        assertInstanceOf(ThinkingBlock.class, msg.getContent().get(0));
+        assertEquals("thinking content", ((ThinkingBlock) msg.getContent().get(0)).getThinking());
+    }
+
+    @Test
+    @DisplayName("Should preserve roles when converting mixed history through A2A message")
+    void testRoundTripMixedHistoryPreservesRoles() {
+        Msg userMsg =
+                Msg.builder()
+                        .id("user-msg")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("please review").build()))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .id("assistant-msg")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(ThinkingBlock.builder().thinking("checking diff").build()))
+                        .build();
+
+        Message message =
+                MessageConvertUtil.convertFromMsgToMessage(
+                        List.of(userMsg, assistantMsg), taskId, contextId);
+        List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
+
+        assertEquals(Message.Role.USER, message.getRole());
+        assertEquals(2, result.size());
+        assertEquals(MsgRole.USER, result.get(0).getRole());
+        assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
+        assertInstanceOf(ThinkingBlock.class, result.get(1).getContent().get(0));
+        assertEquals(
+                "checking diff", ((ThinkingBlock) result.get(1).getContent().get(0)).getThinking());
     }
 
     @Test

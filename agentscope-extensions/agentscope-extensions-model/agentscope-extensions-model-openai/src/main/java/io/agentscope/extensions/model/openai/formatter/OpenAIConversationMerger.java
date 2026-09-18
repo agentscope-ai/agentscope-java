@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -254,6 +256,65 @@ public class OpenAIConversationMerger {
                     appendNamePrefix(textBuffer, agentName);
                     textBuffer
                             .append("[Audio - processing failed: ")
+                            .append(errorMsg)
+                            .append("]\n");
+                }
+
+            } else if (block instanceof DataBlock db) {
+                // Flush existing text
+                if (textBuffer.length() > 0) {
+                    allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                    textBuffer.setLength(0);
+                }
+
+                try {
+                    Source source = db.getSource();
+                    if (source == null) {
+                        log.warn("DataBlock has null source, skipping");
+                        if (includePrefix) {
+                            appendNamePrefix(textBuffer, agentName);
+                        }
+                        textBuffer.append("[Data - null source]\n");
+                    } else {
+                        String mimeType = MediaUtils.resolveMimeType(source);
+                        if (mimeType.startsWith("image/")) {
+                            allParts.add(
+                                    OpenAIContentPart.imageUrl(convertImageSourceToUrl(source)));
+                        } else if (mimeType.startsWith("video/")) {
+                            allParts.add(
+                                    OpenAIContentPart.videoUrl(convertVideoSourceToUrl(source)));
+                        } else if (mimeType.startsWith("audio/")) {
+                            if (source instanceof Base64Source b64) {
+                                String format = detectAudioFormat(b64.getMediaType());
+                                allParts.add(OpenAIContentPart.inputAudio(b64.getData(), format));
+                            } else {
+                                if (includePrefix) {
+                                    appendNamePrefix(textBuffer, agentName);
+                                }
+                                textBuffer
+                                        .append("[Audio URL: ")
+                                        .append(((URLSource) source).getUrl())
+                                        .append("]\n");
+                            }
+                        } else {
+                            if (includePrefix) {
+                                appendNamePrefix(textBuffer, agentName);
+                            }
+                            textBuffer
+                                    .append("[Media - unsupported MIME type: ")
+                                    .append(mimeType)
+                                    .append("]\n");
+                        }
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process DataBlock: {}", errorMsg);
+                    if (includePrefix) {
+                        appendNamePrefix(textBuffer, agentName);
+                    }
+                    textBuffer
+                            .append("[Media - processing failed: ")
                             .append(errorMsg)
                             .append("]\n");
                 }

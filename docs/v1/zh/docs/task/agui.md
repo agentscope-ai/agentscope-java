@@ -1,4 +1,6 @@
-# AG-UI 协议集成
+---
+title: AG-UI 协议
+---
 
 AG-UI 是一个前后端通信协议，用于将智能体暴露给 Web 前端。通过 AG-UI，你可以快速将 AgentScope 智能体接入支持该协议的前端框架。
 
@@ -149,11 +151,11 @@ function App() {
 
 ## 示例项目
 
-完整示例见 [agentscope-examples/integration/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/integration/agui)：
+完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/integration/agui
+cd agentscope-examples/agui
 mvn spring-boot:run
 ```
 

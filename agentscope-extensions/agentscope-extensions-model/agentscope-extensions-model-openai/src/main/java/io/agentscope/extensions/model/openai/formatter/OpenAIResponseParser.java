@@ -149,15 +149,11 @@ public class OpenAIResponseParser {
                     // Parse reasoning details (OpenRouter/Gemini specific)
                     // Collect signatures and text content from reasoning_details
                     Map<String, String> reasoningSignatures = new HashMap<>();
-                    Map<String, OpenAIReasoningDetail> reasoningDetailMap = new HashMap<>();
                     List<OpenAIReasoningDetail> reasoningDetails = message.getReasoningDetails();
                     StringBuilder reasoningTextBuilder = new StringBuilder();
 
                     if (reasoningDetails != null) {
                         for (OpenAIReasoningDetail detail : reasoningDetails) {
-                            if (detail.getId() != null) {
-                                reasoningDetailMap.put(detail.getId(), detail);
-                            }
                             if ("reasoning.encrypted".equals(detail.getType())
                                     && detail.getData() != null) {
                                 // Just collect signature, don't create ToolUseBlock
@@ -250,12 +246,22 @@ public class OpenAIResponseParser {
 
                                     Map<String, Object> argsMap = new HashMap<>();
                                     if (!arguments.isEmpty()) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> parsed =
-                                                JsonUtils.getJsonCodec()
-                                                        .fromJson(arguments, Map.class);
-                                        if (parsed != null) {
-                                            argsMap.putAll(parsed);
+                                        try {
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, Object> parsed =
+                                                    JsonUtils.getJsonCodec()
+                                                            .fromJson(arguments, Map.class);
+                                            if (parsed != null) {
+                                                argsMap.putAll(parsed);
+                                            }
+                                        } catch (Exception parseEx) {
+                                            log.warn(
+                                                    "Failed to parse tool call arguments as JSON;"
+                                                            + " preserving raw arguments: id={},"
+                                                            + " name={}, error={}",
+                                                    toolCallId,
+                                                    name,
+                                                    parseEx.getMessage());
                                         }
                                     }
 
@@ -264,13 +270,6 @@ public class OpenAIResponseParser {
                                         metadata.put(
                                                 ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                                 thoughtSignature);
-                                    }
-                                    // Store full reasoning detail for OpenRouter Gemini models
-                                    if (toolCallId != null
-                                            && reasoningDetailMap.containsKey(toolCallId)) {
-                                        metadata.put(
-                                                "reasoningDetail",
-                                                reasoningDetailMap.get(toolCallId));
                                     }
 
                                     contentBlocks.add(

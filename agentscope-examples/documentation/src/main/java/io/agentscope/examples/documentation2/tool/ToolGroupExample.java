@@ -17,13 +17,13 @@ package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;

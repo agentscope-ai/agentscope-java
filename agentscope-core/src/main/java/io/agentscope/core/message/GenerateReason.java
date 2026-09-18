@@ -69,6 +69,15 @@ public enum GenerateReason {
      */
     MIDDLEWARE_STOP_REQUESTED,
 
+    /**
+     * All tool calls were denied by the user and a hook requested the agent to stop.
+     *
+     * <p>Fired when every tool call from the most recent reasoning step was denied via HITL
+     * permission confirmation and an {@code AllToolsDeniedEvent} hook
+     * handler called {@code stopAgent()}.
+     */
+    ALL_TOOLS_DENIED,
+
     /** Agent was interrupted. */
     INTERRUPTED,
 

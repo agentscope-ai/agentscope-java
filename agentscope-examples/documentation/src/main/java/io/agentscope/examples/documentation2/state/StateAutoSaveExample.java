@@ -16,12 +16,12 @@
 package io.agentscope.examples.documentation2.state;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -50,8 +50,8 @@ import java.nio.file.Paths;
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.session.SessionAutoSaveExample
+ *   mvn exec:java -pl agentscope-examples/documentation \
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.state.StateAutoSaveExample
  * </pre>
  */
 public class StateAutoSaveExample {

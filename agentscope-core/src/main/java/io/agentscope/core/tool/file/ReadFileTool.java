@@ -18,6 +18,8 @@ package io.agentscope.core.tool.file;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -134,20 +136,17 @@ public class ReadFileTool {
                                         String.format("The path %s is not a file.", filePath));
                             }
 
-                            // Read all lines
-                            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
-                            logger.debug("Read {} lines from file: {}", lines.size(), filePath);
-
                             // Parse ranges if provided
                             if (ranges == null || ranges.trim().isEmpty()) {
                                 // Return entire file content
+                                ReadResult result = readLines(path, 1, Integer.MAX_VALUE);
                                 logger.debug(
-                                        "Returning entire file content ({} lines)", lines.size());
-                                String content = formatLinesWithNumbers(lines, 1, lines.size());
+                                        "Returning entire file content ({} lines)",
+                                        result.linesRead);
                                 return ToolResultBlock.text(
                                         String.format(
                                                 "The content of %s:\n```\n%s```",
-                                                filePath, content));
+                                                filePath, result.content));
                             }
 
                             // Parse the range
@@ -165,26 +164,26 @@ public class ReadFileTool {
                             int end = rangeArray[1];
 
                             // Handle negative indices (count from the end)
-                            if (start < 0) {
-                                start = lines.size() + start + 1;
-                            }
-                            if (end < 0) {
-                                end = lines.size() + end + 1;
+                            int totalLines = -1;
+                            if (start < 0 || end < 0) {
+                                totalLines = countLines(path);
+                                if (start < 0) {
+                                    start = totalLines + start + 1;
+                                }
+                                if (end < 0) {
+                                    end = totalLines + end + 1;
+                                }
                             }
 
                             // Validate range
                             if (start < 1) {
                                 start = 1;
                             }
-                            if (end > lines.size()) {
-                                end = lines.size();
+                            if (totalLines >= 0 && end > totalLines) {
+                                end = totalLines;
                             }
                             if (start > end) {
-                                logger.warn(
-                                        "Invalid range: start {} > end {} for file with {} lines",
-                                        start,
-                                        end,
-                                        lines.size());
+                                logger.warn("Invalid range: start {} > end {}", start, end);
                                 return ToolResultBlock.error(
                                         String.format(
                                                 "Invalid range: start line %d is greater than end"
@@ -194,13 +193,27 @@ public class ReadFileTool {
 
                             logger.debug("Viewing lines {}-{} from file: {}", start, end, filePath);
 
-                            // Extract the specified range
-                            String content = formatLinesWithNumbers(lines, start, end);
+                            ReadResult result = readLines(path, start, end);
+                            if (totalLines < 0 && result.linesRead < end) {
+                                end = result.linesRead;
+                            }
+                            if (start > end) {
+                                logger.warn(
+                                        "Invalid range: start {} > end {} for file with {} lines",
+                                        start,
+                                        end,
+                                        result.linesRead);
+                                return ToolResultBlock.error(
+                                        String.format(
+                                                "Invalid range: start line %d is greater than end"
+                                                        + " line %d.",
+                                                start, end));
+                            }
 
                             return ToolResultBlock.text(
                                     String.format(
                                             "The content of %s in lines [%d, %d]:\n```\n%s```",
-                                            filePath, start, end, content));
+                                            filePath, start, end, result.content));
                         })
                 .onErrorResume(
                         e -> {
@@ -332,25 +345,43 @@ public class ReadFileTool {
                         });
     }
 
-    /**
-     * Format lines with line numbers for display.
-     *
-     * @param lines All lines from the file
-     * @param start Start line number (1-based, inclusive)
-     * @param end End line number (1-based, inclusive)
-     * @return Formatted string with line numbers
-     */
-    private String formatLinesWithNumbers(List<String> lines, int start, int end) {
-        StringBuilder result = new StringBuilder();
+    private ReadResult readLines(Path path, int start, int end) throws IOException {
+        StringBuilder content = new StringBuilder();
+        int lineNumber = 0;
 
-        // Adjust to 0-based index
-        int startIdx = start - 1;
-        int endIdx = end - 1;
-
-        for (int i = startIdx; i <= endIdx && i < lines.size(); i++) {
-            result.append(String.format("%d: %s\n", i + 1, lines.get(i)));
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                if (lineNumber >= start) {
+                    content.append(lineNumber).append(": ").append(line).append('\n');
+                }
+                if (lineNumber >= end) {
+                    break;
+                }
+            }
         }
 
-        return result.toString();
+        return new ReadResult(content.toString(), lineNumber);
+    }
+
+    private int countLines(Path path) throws IOException {
+        int count = 0;
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            while (reader.readLine() != null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static final class ReadResult {
+        private final String content;
+        private final int linesRead;
+
+        private ReadResult(String content, int linesRead) {
+            this.content = content;
+            this.linesRead = linesRead;
+        }
     }
 }

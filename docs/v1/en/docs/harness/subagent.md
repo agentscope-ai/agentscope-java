@@ -1,4 +1,6 @@
-# Subagent
+---
+title: Subagent
+---
 
 ## Purpose
 
@@ -35,7 +37,9 @@ On every `PreReasoningEvent` turn, `SubagentsHook` injects into SYSTEM:
 1. Built-in `general-purpose`
 2. Programmatic declarations: `builder.subagent(SubagentDeclaration)`
 3. File declarations: `workspace/subagents/*.md` (loaded non-recursively by `AgentSpecLoader`)
-4. Custom factories: `builder.subagentFactory(name, factory)`
+4. Custom factories: `builder.subagentFactory(name, factory)` or
+   `builder.subagentFactory(name, description, factory)` to give the orchestrator a meaningful
+   description instead of the bare name (falls back to the name when omitted or blank)
 
 ---
 
@@ -241,7 +245,7 @@ When a declaration has `url(...)` configured:
 
 ## Related Pages
 
-- [Tool](./tool.md)
-- [Workspace](./workspace.md)
-- [Architecture](./architecture.md)
-- [Subagent Streaming](./streaming.md)
+- [Tool](/v1/en/docs/harness/tool)
+- [Workspace](/v1/en/docs/harness/workspace)
+- [Architecture](/v1/en/docs/harness/architecture)
+- [Subagent Streaming](/v1/en/docs/harness/streaming)

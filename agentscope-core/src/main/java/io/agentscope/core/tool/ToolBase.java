@@ -53,8 +53,7 @@ import reactor.core.publisher.Mono;
  *         .description("Read a file")
  *         .inputSchema(schema)
  *         .readOnly(true)
- *         .concurrencySafe(true)
- *         .build());
+ *         .concurrencySafe(true));
  * }</pre>
  */
 public abstract class ToolBase implements AgentTool {
@@ -143,6 +142,7 @@ public abstract class ToolBase implements AgentTool {
         return concurrencySafe;
     }
 
+    @Override
     public final boolean isReadOnly() {
         return readOnly;
     }

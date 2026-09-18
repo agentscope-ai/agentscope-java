@@ -1,6 +1,6 @@
 ---
-title: "Permission System"
-description: "Fine-grained control over which tools your agents can execute and when"
+title: Permission System
+description: Fine-grained control over which tools your agents can execute and when
 ---
 
 ## Overview
@@ -13,7 +13,7 @@ It combines static configuration with dynamic runtime analysis. Three components
 - **Mode** — a global static policy set at configuration time; decides the default behaviour for calls that match no rule (e.g. `EXPLORE` makes the agent read-only, `DONT_ASK` silently denies anything not matching a rule).
 - **Built-in Checks** — runtime analysis performed by the tool itself based on the actual input (implemented in `ToolBase#checkPermissions`). These are runtime checks rather than preconfigured patterns, so they are **non-bypassable** — they are not subject to mode or rules.
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -41,8 +41,10 @@ sequenceDiagram
     end
 ```
 
-:::{dropdown} Detailed decision flow
-```{mermaid}
+
+<Accordion title="Detailed decision flow">
+
+```mermaid
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])
@@ -75,11 +77,17 @@ flowchart TD
     style ASK2 fill:#ffd43b,color:#333
     style ASK3 fill:#ffd43b,color:#333
 ```
-:::
 
-:::{note}
+</Accordion>
+
+
+
+<Note>
+
 Deny rules and dangerous-path checks are **non-bypassable** — they apply even in `BYPASS` mode.
-:::
+
+</Note>
+
 
 ## Permission Mode
 
@@ -95,8 +103,12 @@ The `PermissionMode` enum (`io.agentscope.core.permission.PermissionMode`) suppo
 
 Set the mode on the agent builder via `permissionContext(...)`:
 
-::::{tab-set}
-:::{tab-item} Initial config
+
+<Tabs>
+
+
+<Tab title="Initial config">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.permission.PermissionContextState;
@@ -115,8 +127,12 @@ ReActAgent agent =
                 .permissionContext(permCtx)
                 .build();
 ```
-:::
-:::{tab-item} ACCEPT_EDITS with working dir
+
+</Tab>
+
+
+<Tab title="ACCEPT_EDITS with working dir">
+
 ```java
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionContextState;
@@ -130,8 +146,12 @@ PermissionContextState permCtx =
                         new AdditionalWorkingDirectory("/my/project", "userSettings"))
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 ## Permission Rule
 
@@ -141,7 +161,7 @@ Each rule has the fields below. When the engine evaluates a rule, it calls the t
 
 - **`toolName` · `String` · *required*** — The tool name the rule applies to: `todo_write` (built-in) or any custom tool name.
 
-- **`ruleContent` · `String | null` · *required*** — Match pattern — semantics depend on the tool, interpreted by the tool's `matchRule()`. `null` means the rule matches every invocation of that tool.
+- **`ruleContent` · `String | null` · *optional*** — Match pattern — semantics depend on the tool, interpreted by the tool's `matchRule()`. `null` means the rule matches every invocation of that tool.
 
 - **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`, `DENY`, `ASK`, or `PASSTHROUGH`
 
@@ -250,23 +270,30 @@ The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`
 
 ## HITL integration
 
-When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The caller inspects this, presents the pending operation to the user, and resumes the agent after collecting a decision.
+When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The returned `Msg` contains the `ToolUseBlock`s in `ASKING` state. The caller extracts them, presents the pending operation to the user, and resumes the agent with `ConfirmResult` objects.
 
 ### Interaction flow
 
 1. Configure ASK rules for tools that require human confirmation
 2. Agent pauses on ASK tools, returning `PERMISSION_ASKING`
-3. Caller checks `getGenerateReason()` and shows the pending tool calls to the user
-4. After user confirms, send a new message to resume the agent
+3. Extract `ToolUseBlock`s (with `ASKING` state) from the returned `Msg` and show them to the user
+4. Build `ConfirmResult` objects and attach them to the resume message via metadata
 
 ```java
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 // 1. Configure permissions: safe_read auto-allowed, dangerous_delete requires confirmation
 PermissionContextState permCtx =
@@ -296,15 +323,103 @@ Msg result = agent.call(new UserMessage("Delete /tmp/important.txt")).block();
 
 // 3. Check whether user confirmation is needed
 if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
-    // Show the pending tool calls to the user
-    result.getContent().forEach(block -> System.out.println("Pending: " + block));
+    // Extract the ASKING ToolUseBlocks from the returned Msg
+    List<ToolUseBlock> askingTools =
+            result.getContent().stream()
+                    .filter(b -> b instanceof ToolUseBlock)
+                    .map(ToolUseBlock.class::cast)
+                    .filter(t -> t.getState() == ToolCallState.ASKING)
+                    .toList();
 
-    // 4. Collect the user's decision and resume the agent
+    // Show pending operations to the user
+    askingTools.forEach(t -> System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+    // 4. Collect the user's decision, build ConfirmResult, and resume
     boolean approved = askUser();
-    String resumeText = approved ? "yes, proceed" : "no, cancel";
-    Msg finalResult = agent.call(new UserMessage(resumeText)).block();
+    List<ConfirmResult> confirmResults =
+            askingTools.stream()
+                    .map(t -> new ConfirmResult(approved, t))
+                    .toList();
+
+    Map<String, Object> meta = new HashMap<>();
+    meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+    Msg resumeMsg =
+            Msg.builder()
+                    .name("user")
+                    .role(MsgRole.USER)
+                    .textContent(approved ? "approved" : "denied")
+                    .metadata(meta)
+                    .build();
+
+    Msg finalResult = agent.call(List.of(resumeMsg)).block();
 }
 ```
+
+### All tools denied
+
+When the user denies **all** tool calls from a reasoning step in the confirmation UI, the agent continues to the next reasoning iteration by default — the model only sees "Permission denied by user" tool results, which often leads to unhelpful reasoning.
+
+To stop the agent in this scenario, wire up an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`. After stopping, `Msg.getGenerateReason()` returns `ALL_TOOLS_DENIED`.
+
+See [Middleware — Stop agent when all tools are denied](/v2/en/docs/building-blocks/middleware#stop-agent-when-all-tools-are-denied) for the implementation.
+### Streaming mode
+
+When using `streamEvents()`, you don't need to extract `ToolUseBlock`s from the returned `Msg` — the event stream delivers a `RequireUserConfirmEvent` that carries the pending tool calls directly:
+
+```java
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// Subscribe to the event stream
+agent.streamEvents(List.of(new UserMessage("Delete /tmp/important.txt")))
+        .doOnNext(event -> {
+            if (event instanceof RequireUserConfirmEvent confirmEvent) {
+                // Get pending ToolUseBlocks directly from the event
+                List<ToolUseBlock> pending = confirmEvent.getToolCalls();
+                pending.forEach(t ->
+                        System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+                // Collect user decision, store pending list for the resume call
+            }
+        })
+        .blockLast();
+
+// Resume is the same as with the blocking API: build ConfirmResult in metadata
+List<ConfirmResult> confirmResults =
+        pendingTools.stream()
+                .map(t -> new ConfirmResult(true, t))
+                .toList();
+Map<String, Object> meta = new HashMap<>();
+meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+Msg resumeMsg =
+        Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("approved")
+                .metadata(meta)
+                .build();
+agent.call(List.of(resumeMsg)).block();
+```
+
+If the resume is sent with `streamEvents(List.of(resumeMsg))`, the stream includes a
+`UserConfirmResultEvent` before the resumed tool execution. Use its `replyId` to associate
+the accepted results with the earlier `RequireUserConfirmEvent`; the event contains only
+the confirmations included in that resume call.
+
+Comparison of the two modes:
+
+| | Blocking `call()` | Streaming `streamEvents()` |
+|---|---|---|
+| Getting pending tools | Filter `ToolUseBlock`s (state `ASKING`) from `Msg.getContent()` | Get directly from `RequireUserConfirmEvent.getToolCalls()` |
+| Resuming | Same: build `ConfirmResult` in metadata and issue a new `call()` | Same |
+| Use case | REST APIs, simple synchronous services | WebSocket, SSE, real-time UIs |
 
 ### Unattended mode
 
@@ -328,8 +443,12 @@ Full runnable example: `agentscope-examples/documentation/.../hitl/PermissionHIT
 
 The examples below show how to configure `permissionContext` for typical deployment scenarios. Each recipe combines a mode with a rule set tuned for one use case.
 
-::::{tab-set}
-:::{tab-item} Read-only exploration
+
+<Tabs>
+
+
+<Tab title="Read-only exploration">
+
 ```java
 // EXPLORE mode: agent freely calls read-only tools; all writes are auto-denied.
 PermissionContextState explore =
@@ -345,8 +464,12 @@ ReActAgent explorer =
                 .permissionContext(explore)
                 .build();
 ```
-:::
-:::{tab-item} Unattended automation
+
+</Tab>
+
+
+<Tab title="Unattended automation">
+
 ```java
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
@@ -373,8 +496,12 @@ ReActAgent ciAgent =
                 .build();
 // Only explicitly allowed commands run; everything else is silently denied.
 ```
-:::
-:::{tab-item} Block dangerous commands
+
+</Tab>
+
+
+<Tab title="Block dangerous commands">
+
 ```java
 PermissionContextState bypassWithDeny =
         PermissionContextState.builder()
@@ -390,5 +517,8 @@ PermissionContextState bypassWithDeny =
                 .build();
 // Everything except the explicitly denied tools runs (deny rules can't be bypassed).
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>

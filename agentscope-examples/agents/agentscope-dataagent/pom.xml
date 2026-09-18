@@ -51,6 +51,11 @@
             <artifactId>agentscope-harness</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+
         <!-- IM channel implementations -->
         <dependency>
             <groupId>io.agentscope</groupId>

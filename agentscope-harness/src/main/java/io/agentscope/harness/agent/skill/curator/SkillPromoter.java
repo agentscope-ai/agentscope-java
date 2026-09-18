@@ -88,9 +88,10 @@ public class SkillPromoter {
         if (name == null || name.isBlank()) {
             return Mono.just(PromotionResult.invalid("name is required"));
         }
+        RuntimeContext effectiveCtx = ctx != null ? ctx : RuntimeContext.empty();
         AgentSkill draft;
         try {
-            draft = draftsRepo.getSkill(name);
+            draft = draftsRepo.getSkill(name, effectiveCtx);
         } catch (Exception e) {
             return Mono.just(PromotionResult.invalid("failed to load draft: " + e.getMessage()));
         }
@@ -101,7 +102,7 @@ public class SkillPromoter {
         // 1. Security scan (always — even when SkillManageTool already scanned, this is the
         //    last gate before going live). Pull resources off disk because the repository's
         //    {@code getSkill(name)} only loads SKILL.md.
-        java.util.Map<String, String> resources = loadDraftResources(name);
+        java.util.Map<String, String> resources = loadDraftResources(name, effectiveCtx);
         SkillSecurityScanner.ScanResult scan =
                 SkillSecurityScanner.scan(name, mdOf(draft), resources);
         if (!SkillSecurityScanner.shouldAllow(
@@ -113,15 +114,16 @@ public class SkillPromoter {
 
         // 2. Build candidate package and call the gate.
         SkillCandidate candidate = buildCandidate(draft, scan);
-        return gate.review(candidate, ctx)
-                .map(decision -> applyDecision(name, reviewerId, decision, scan));
+        return gate.review(candidate, effectiveCtx)
+                .map(decision -> applyDecision(name, reviewerId, decision, scan, effectiveCtx));
     }
 
     private PromotionResult applyDecision(
             String name,
             String reviewerId,
             SkillPromotionGate.PromotionDecision decision,
-            SkillSecurityScanner.ScanResult scan) {
+            SkillSecurityScanner.ScanResult scan,
+            RuntimeContext ctx) {
         if (decision instanceof SkillPromotionGate.PromotionDecision.Reject reject) {
             return PromotionResult.rejected(
                     "gate rejected: " + reject.reason() + " (by " + reject.reviewerId() + ")",
@@ -140,7 +142,7 @@ public class SkillPromoter {
         if (workspaceManager == null) {
             return PromotionResult.invalid("workspaceManager is null; cannot move directory");
         }
-        boolean moved = workspaceManager.moveSkill(RuntimeContext.empty(), src, dst);
+        boolean moved = workspaceManager.moveSkill(ctx, src, dst);
         if (!moved) {
             return PromotionResult.invalid("failed to move draft directory");
         }
@@ -232,7 +234,7 @@ public class SkillPromoter {
      * assets/) so the security scanner sees the full payload — the repository's
      * {@code getSkill} only deserialises SKILL.md.
      */
-    private java.util.Map<String, String> loadDraftResources(String skillName) {
+    private java.util.Map<String, String> loadDraftResources(String skillName, RuntimeContext ctx) {
         java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
         for (String sub : new String[] {"scripts", "references", "templates", "assets"}) {
             // Read each known support directory under <draftsDir>/<name>/<sub>/.
@@ -240,10 +242,7 @@ public class SkillPromoter {
             // filesystem for a glob match scoped to that subdirectory.
             String relDir = draftsDir + "/" + skillName + "/" + sub;
             try {
-                var glob =
-                        draftsRepo
-                                .filesystem()
-                                .glob(io.agentscope.core.agent.RuntimeContext.empty(), "*", relDir);
+                var glob = draftsRepo.filesystem().glob(ctx, "*", relDir);
                 if (!glob.isSuccess() || glob.matches() == null) {
                     continue;
                 }
@@ -256,14 +255,7 @@ public class SkillPromoter {
                     int idx = pathSlash.indexOf("/" + sub + "/");
                     if (idx < 0) continue;
                     String relPath = pathSlash.substring(idx + 1);
-                    var rr =
-                            draftsRepo
-                                    .filesystem()
-                                    .read(
-                                            io.agentscope.core.agent.RuntimeContext.empty(),
-                                            path,
-                                            0,
-                                            0);
+                    var rr = draftsRepo.filesystem().read(ctx, path, 0, 0);
                     if (rr.isSuccess() && rr.fileData() != null) {
                         out.put(relPath, rr.fileData().content());
                     }

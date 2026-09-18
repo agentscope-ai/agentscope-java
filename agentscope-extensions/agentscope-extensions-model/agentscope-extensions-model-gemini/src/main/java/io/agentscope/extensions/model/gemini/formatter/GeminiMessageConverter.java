@@ -22,6 +22,7 @@ import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -128,8 +129,19 @@ public class GeminiMessageConverter {
                     if (metadata != null
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
+                        if (signature instanceof byte[] bytes) {
+                            // In-memory: signature is already byte[]
+                            partBuilder.thoughtSignature(bytes);
+                        } else if (signature instanceof String base64 && !base64.isEmpty()) {
+                            // Persistence: the codec restores byte[] as a String
+                            try {
+                                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
+                            } catch (IllegalArgumentException e) {
+                                log.warn(
+                                        "Skipping invalid thought signature on tool call '{}'",
+                                        tub.getName(),
+                                        e);
+                            }
                         }
                     }
 
@@ -171,6 +183,9 @@ public class GeminiMessageConverter {
 
                 } else if (block instanceof VideoBlock vb) {
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
+
+                } else if (block instanceof DataBlock db) {
+                    parts.add(mediaConverter.convertToInlineDataPart(db));
 
                 } else if (block instanceof HintBlock hb) {
                     parts.add(Part.builder().text(hb.getHint()).build());
@@ -237,6 +252,10 @@ public class GeminiMessageConverter {
             } else if (block instanceof VideoBlock vb) {
                 String reference = convertMediaBlockToTextReference(vb, "video");
                 textualOutput.add(reference);
+
+            } else if (block instanceof DataBlock db) {
+                String reference = convertMediaBlockToTextReference(db, "data");
+                textualOutput.add(reference);
             }
             // Other block types are ignored
         }
@@ -302,6 +321,8 @@ public class GeminiMessageConverter {
             return ab.getSource();
         } else if (block instanceof VideoBlock vb) {
             return vb.getSource();
+        } else if (block instanceof DataBlock db) {
+            return db.getSource();
         }
         throw new IllegalArgumentException("Unsupported block type: " + block.getClass());
     }

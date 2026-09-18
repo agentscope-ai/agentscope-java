@@ -171,7 +171,8 @@ public class SessionSearchTool {
     public String sessionHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
-            @ToolParam(name = "sessionId", description = "AgentStateStore ID") String sessionId,
+            @ToolParam(name = "sessionId", description = "AgentStateStore Session ID")
+                    String sessionId,
             @ToolParam(
                             name = "lastN",
                             description = "Number of recent messages to return (default: 20)",
@@ -279,23 +280,45 @@ public class SessionSearchTool {
             tree.load();
 
             String relPath = workspaceManager.getWorkspace().relativize(logFile).toString();
-            for (SessionEntry.MessageEntry msg : tree.getMessageEntries()) {
+            for (SessionEntry entry : tree.getAllEntries()) {
                 if (results.size() >= limit) {
                     break;
                 }
-                String content = msg.getContent();
+                String content = searchableText(entry);
                 if (content != null && content.toLowerCase().contains(lowerQuery)) {
                     String preview =
                             content.length() > 200 ? content.substring(0, 200) + "..." : content;
+                    String roleLabel =
+                            entry instanceof SessionEntry.MessageEntry me
+                                    ? me.getRole()
+                                    : entry instanceof SessionEntry.ToolUseEntry
+                                            ? "TOOL_USE"
+                                            : entry instanceof SessionEntry.ToolResultEntry
+                                                    ? "TOOL_RESULT"
+                                                    : entry.getClass().getSimpleName();
                     results.add(
                             String.format(
                                     "  [%s] %s — [%s]: %s",
-                                    relPath, msg.getId(), msg.getRole(), preview));
+                                    relPath, entry.getId(), roleLabel, preview));
                 }
             }
         } catch (Exception e) {
             // skip corrupted files
         }
+    }
+
+    private static String searchableText(SessionEntry entry) {
+        if (entry instanceof SessionEntry.MessageEntry me) {
+            return me.getContent();
+        }
+        if (entry instanceof SessionEntry.ToolUseEntry use) {
+            return use.getName() + " " + (use.getInput() != null ? use.getInput().toString() : "");
+        }
+        if (entry instanceof SessionEntry.ToolResultEntry result) {
+            return (result.getName() != null ? result.getName() + " " : "")
+                    + (result.getOutput() != null ? result.getOutput() : "");
+        }
+        return null;
     }
 
     private String readLegacySession(Path file, int limit) {

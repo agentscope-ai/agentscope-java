@@ -16,18 +16,28 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -35,12 +45,18 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -72,6 +88,91 @@ class ReActAgentMiddlewareIntegrationTest {
                     ChatResponse.builder()
                             .content(List.<ContentBlock>of(TextBlock.builder().text(text).build()))
                             .build());
+        }
+    }
+
+    private static final class ToolThenFinalModel extends ChatModelBase {
+        private final AtomicInteger calls = new AtomicInteger();
+
+        @Override
+        public String getModelName() {
+            return "tool-then-final";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (calls.getAndIncrement() == 0) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("intermediate text")
+                                                        .build(),
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("lookup")
+                                                        .input(Map.of("query", "AgentScope"))
+                                                        .build()))
+                                .build());
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(
+                                    List.<ContentBlock>of(
+                                            TextBlock.builder().text("final answer").build()))
+                            .build());
+        }
+    }
+
+    private static final class LookupTool extends ToolBase {
+        LookupTool() {
+            super(
+                    "lookup",
+                    "Looks up a query",
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("query", Map.of("type", "string"))),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("allowed"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.text("lookup result"));
+        }
+    }
+
+    private static final class InterruptedAfterTextModel extends ChatModelBase {
+        @Override
+        public String getModelName() {
+            return "interrupted-after-text";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.concat(
+                    Flux.just(
+                            ChatResponse.builder()
+                                    .content(
+                                            List.<ContentBlock>of(
+                                                    TextBlock.builder().text("raw").build()))
+                                    .build()),
+                    Flux.error(new InterruptedException("interrupted after text")));
         }
     }
 
@@ -143,6 +244,35 @@ class ReActAgentMiddlewareIntegrationTest {
     }
 
     @Test
+    void finalAnswerFilterSuppressesIntermediateReactRoundText() {
+        ToolThenFinalModel model = new ToolThenFinalModel();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new LookupTool());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hello-system")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(new FinalAnswerFilterMiddleware())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(2, model.calls.get());
+        assertEquals(
+                List.of("final answer"),
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .map(TextBlockDeltaEvent::getDelta)
+                        .toList());
+        assertEquals(2L, events.stream().filter(ModelCallEndEvent.class::isInstance).count());
+        assertTrue(events.stream().anyMatch(ToolCallStartEvent.class::isInstance));
+    }
+
+    @Test
     void singleMiddlewareSeesReplyAndReasoningAndModelCall() {
         List<String> trace = new ArrayList<>();
         ReActAgent agent =
@@ -158,6 +288,43 @@ class ReActAgentMiddlewareIntegrationTest {
         assertTrue(trace.contains("A:reply:exit"), trace.toString());
         assertTrue(trace.contains("A:reasoning:exit"), trace.toString());
         assertTrue(trace.contains("A:modelCall:exit"), trace.toString());
+    }
+
+    @Test
+    void reasoningMiddlewareEventsAreForwardedExactlyOnce() {
+        MiddlewareBase hintMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onReasoning(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ReasoningInput input,
+                            Function<ReasoningInput, Flux<AgentEvent>> next) {
+                        HintBlockEvent hint =
+                                new HintBlockEvent(
+                                        "reply-hint", "block-hint", "child-agent", "completed");
+                        return Flux.concat(Flux.just(hint), next.apply(input));
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(hintMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        List<HintBlockEvent> hints =
+                events.stream()
+                        .filter(HintBlockEvent.class::isInstance)
+                        .map(HintBlockEvent.class::cast)
+                        .toList();
+        assertEquals(1, hints.size());
+        assertEquals("reply-hint", hints.get(0).getReplyId());
+        assertEquals("block-hint", hints.get(0).getBlockId());
+        assertEquals("child-agent", hints.get(0).getHintSource());
+        assertEquals("completed", hints.get(0).getHint());
+        assertEquals(
+                1,
+                events.stream().filter(ModelCallStartEvent.class::isInstance).count(),
+                "core model events must not be published twice");
     }
 
     @Test
@@ -192,6 +359,102 @@ class ReActAgentMiddlewareIntegrationTest {
                 reasoningEnters,
                 modelCallEnters,
                 "reasoning and modelCall enter counts must match");
+    }
+
+    @Test
+    void modelCallMiddlewareCanDropAllTextDeltas() {
+        MiddlewareBase droppingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .filter(event -> !(event instanceof TextBlockDeltaEvent));
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(droppingMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertFalse(events.stream().anyMatch(TextBlockDeltaEvent.class::isInstance));
+        assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void modelCallMiddlewareCanReplaceTextDeltaWithNull() {
+        MiddlewareBase nullingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            return new TextBlockDeltaEvent(
+                                                    textDelta.getReplyId(),
+                                                    textDelta.getBlockId(),
+                                                    null);
+                                        });
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(nullingMiddleware));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        TextBlockDeltaEvent textDelta =
+                events.stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertNull(textDelta.getDelta());
+    }
+
+    @Test
+    void transformedTextIsUsedForPartialMessageWhenModelCallIsInterrupted() {
+        MiddlewareBase replacingMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .map(
+                                        event -> {
+                                            if (!(event instanceof TextBlockDeltaEvent textDelta)) {
+                                                return event;
+                                            }
+                                            return new TextBlockDeltaEvent(
+                                                    textDelta.getReplyId(),
+                                                    textDelta.getBlockId(),
+                                                    "transformed");
+                                        });
+                    }
+                };
+        ReActAgent agent =
+                buildAgent(new InterruptedAfterTextModel(), List.of(replacingMiddleware));
+
+        agent.streamEvents(List.of()).onErrorResume(error -> Flux.empty()).blockLast();
+
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "transformed".equals(message.getTextContent())));
+        assertFalse(
+                agent.getAgentState().getContext().stream()
+                        .anyMatch(message -> "raw".equals(message.getTextContent())));
     }
 
     /**

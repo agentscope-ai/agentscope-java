@@ -1,10 +1,16 @@
-# Agent as Tool
+---
+title: Agent as Tool
+---
 
-```{admonition} Experimental Feature
-:class: warning
+<Warning>
+
+**Experimental Feature**
+
 
 This feature is currently experimental and the API may change. If you encounter any issues, please provide feedback via [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues).
-```
+
+</Warning>
+
 
 ## Overview
 
@@ -37,7 +43,7 @@ Parent Agent ──call──→ SubAgentTool ──create──→ Sub-agent
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 
 // Create model
 DashScopeChatModel model = DashScopeChatModel.builder()

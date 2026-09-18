@@ -16,11 +16,9 @@
 package io.agentscope.examples.documentation2.tool;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
@@ -28,6 +26,8 @@ import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
+import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 
 /**
@@ -54,7 +54,7 @@ import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
+ *   mvn exec:java -pl agentscope-examples/documentation \
  *       -Dexec.mainClass=io.agentscope.examples.documentation2.tool.PermissionContextExample
  * </pre>
  */

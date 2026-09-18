@@ -20,6 +20,7 @@ import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.ScanArgs;
 import io.lettuce.core.ScanCursor;
+import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.cluster.RedisClusterClient;
@@ -278,6 +279,22 @@ public class LettuceClientAdapter implements RedisClientAdapter {
     @FunctionalInterface
     private interface ScanFunction {
         KeyScanCursor<String> scan(ScanCursor cursor, ScanArgs scanArgs);
+    }
+
+    @Override
+    public long evalScript(String script, List<String> keys, List<String> args) {
+        Object result;
+        String[] keyArray = keys.toArray(new String[0]);
+        String[] argArray = args.toArray(new String[0]);
+        if (commands != null) {
+            result = commands.eval(script, ScriptOutputType.INTEGER, keyArray, argArray);
+        } else {
+            result = clusterCommands.eval(script, ScriptOutputType.INTEGER, keyArray, argArray);
+        }
+        if (result instanceof Number number) {
+            return number.longValue();
+        }
+        throw new IllegalStateException("Unexpected Lua script result: " + result);
     }
 
     @Override

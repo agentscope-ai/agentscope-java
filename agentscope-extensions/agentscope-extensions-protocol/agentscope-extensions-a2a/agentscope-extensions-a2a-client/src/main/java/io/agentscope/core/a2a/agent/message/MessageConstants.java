@@ -27,6 +27,8 @@ public class MessageConstants {
 
         public static final String TYPE_THINKING = "thinking";
 
+        public static final String TYPE_HINT = "hint";
+
         public static final String TYPE_IMAGE = "image";
 
         public static final String TYPE_AUDIO = "audio";
@@ -42,7 +44,15 @@ public class MessageConstants {
 
     public static final String MSG_ID_METADATA_KEY = "_agentscope_msg_id";
 
+    public static final String MSG_ROLE_METADATA_KEY = "_agentscope_msg_role";
+
     public static final String BLOCK_TYPE_METADATA_KEY = "_agentscope_block_type";
+
+    public static final String STREAM_CHUNK_METADATA_KEY = "_agentscope_stream_chunk";
+
+    public static final String HINT_ID_METADATA_KEY = "_agentscope_hint_id";
+
+    public static final String HINT_SOURCE_METADATA_KEY = "_agentscope_hint_source";
 
     public static final String TOOL_NAME_METADATA_KEY = "_agentscope_tool_name";
 

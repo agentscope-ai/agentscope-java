@@ -1,0 +1,27 @@
+# "ha" profile: production-leaning defaults (multiple replicas + leader election,
+# webhook enabled, API auth required, metrics ServiceMonitor).
+# Usage: helm install aistio ./helm/aistio \
+#   -f profiles/ha.yaml --set api.authToken=$(openssl rand -hex 24) \
+#   --set webhook.certManager.enabled=true --set webhook.certSecret=aistio-webhook-cert
+replicaCount: 2
+
+leaderElection:
+  enabled: true
+
+webhook:
+  enabled: true
+  certManager:
+    enabled: true
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: "1Gi"

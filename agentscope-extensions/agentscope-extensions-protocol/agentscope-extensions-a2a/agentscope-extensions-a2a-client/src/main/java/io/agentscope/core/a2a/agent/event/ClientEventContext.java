@@ -54,6 +54,7 @@ public class ClientEventContext {
     // Ensure that lifecycle events are triggered only once
     private final AtomicBoolean preReasoningFired = new AtomicBoolean(false);
     private final AtomicBoolean postReasoningFired = new AtomicBoolean(false);
+    private final AtomicBoolean terminalDelivered = new AtomicBoolean(false);
 
     public ClientEventContext(String currentRequestId, A2aAgent agent) {
         this.currentRequestId = currentRequestId;
@@ -94,6 +95,25 @@ public class ClientEventContext {
 
     public void setInputMessages(List<Msg> inputMessages) {
         this.inputMessages = inputMessages;
+    }
+
+    public boolean isTerminalDelivered() {
+        return terminalDelivered.get();
+    }
+
+    public boolean complete(Msg msg) {
+        if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
+            return false;
+        }
+        sink.success(msg);
+        return true;
+    }
+
+    public void completeExceptionally(Throwable error) {
+        if (sink == null || !terminalDelivered.compareAndSet(false, true)) {
+            return;
+        }
+        sink.error(error);
     }
 
     // ==========================================

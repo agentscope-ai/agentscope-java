@@ -36,8 +36,9 @@ import reactor.core.scheduler.Schedulers;
 /**
  * {@link MessageBus} implementation backed by {@link AbstractFilesystem}.
  *
- * <p>Works with any filesystem backend (local, remote, sandbox). Suitable for cross-process
- * scenarios where multiple JVMs share the same workspace directory.
+ * <p>Works with any filesystem backend (local, remote, sandbox). Cross-process delivery only
+ * works when the filesystem backend is actually shared (for example a remote/KV-backed store);
+ * a pure local disk backend remains single-process.
  *
  * <p>Mode D (pub/sub) is degraded to polling: {@link #subscribe} returns a {@code Flux} that emits
  * an empty signal every 3 seconds; {@link #publish} is a no-op.
@@ -215,9 +216,8 @@ public class WorkspaceMessageBus implements MessageBus {
 
     @Override
     public Flux<Map<String, Object>> subscribe(String key) {
-        return Flux.interval(POLL_INTERVAL)
-                .map(tick -> Map.<String, Object>of())
-                .subscribeOn(Schedulers.boundedElastic());
+        return Flux.interval(POLL_INTERVAL, Schedulers.boundedElastic())
+                .map(tick -> Map.<String, Object>of());
     }
 
     // ---- Internal helpers ----

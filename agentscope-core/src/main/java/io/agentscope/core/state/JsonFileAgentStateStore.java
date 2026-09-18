@@ -19,6 +19,9 @@ import io.agentscope.core.util.JsonUtils;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -135,9 +138,8 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try (BufferedWriter writer =
-                Files.newBufferedWriter(
+                newUtf8ReplacingWriter(
                         tmp,
-                        StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.TRUNCATE_EXISTING,
                         StandardOpenOption.WRITE)) {
@@ -151,11 +153,8 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
         try (BufferedWriter writer =
-                Files.newBufferedWriter(
-                        file,
-                        StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.APPEND)) {
+                newUtf8ReplacingWriter(
+                        file, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
             for (State item : items) {
                 writer.write(JsonUtils.getJsonCodec().toJson(item));
                 writer.newLine();
@@ -318,8 +317,30 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     private static void atomicWriteString(Path file, String content) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tmp, content, StandardCharsets.UTF_8);
+        try (BufferedWriter writer =
+                newUtf8ReplacingWriter(
+                        tmp,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE)) {
+            writer.write(content);
+        }
         Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static BufferedWriter newUtf8ReplacingWriter(Path file, StandardOpenOption... options)
+            throws IOException {
+        return new BufferedWriter(
+                new OutputStreamWriter(
+                        Files.newOutputStream(file, options), utf8ReplacingEncoder()));
+    }
+
+    private static CharsetEncoder utf8ReplacingEncoder() {
+        return StandardCharsets.UTF_8
+                .newEncoder()
+                .replaceWith(new byte[] {(byte) 0xEF, (byte) 0xBF, (byte) 0xBD})
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
     }
 
     private long countLines(Path file) {

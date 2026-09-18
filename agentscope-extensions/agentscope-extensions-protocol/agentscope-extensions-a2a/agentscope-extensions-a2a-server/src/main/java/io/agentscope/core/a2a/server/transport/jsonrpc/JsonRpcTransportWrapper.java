@@ -58,6 +58,7 @@ import java.util.concurrent.Flow;
 import org.reactivestreams.FlowAdapters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.BufferOverflowStrategy;
 import reactor.core.publisher.Flux;
 
 /**
@@ -76,6 +77,16 @@ import reactor.core.publisher.Flux;
 public class JsonRpcTransportWrapper implements TransportWrapper<String, Object> {
 
     private static final Logger log = LoggerFactory.getLogger(JsonRpcTransportWrapper.class);
+
+    private static final String STREAMING_BACKPRESSURE_BUFFER_SIZE_PROPERTY =
+            "agentscope.a2a.streaming.backpressure-buffer-size";
+
+    private static final int DEFAULT_STREAMING_BACKPRESSURE_BUFFER_SIZE = 8192;
+
+    private static final int STREAMING_BACKPRESSURE_BUFFER_SIZE =
+            Integer.getInteger(
+                    STREAMING_BACKPRESSURE_BUFFER_SIZE_PROPERTY,
+                    DEFAULT_STREAMING_BACKPRESSURE_BUFFER_SIZE);
 
     private final JSONRPCHandler jsonRpcHandler;
 
@@ -160,8 +171,36 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
             return Flux.just(generateErrorResponse(request, new UnsupportedOperationError()));
         }
 
-        return Flux.from(FlowAdapters.toPublisher(publisher))
+        String method = (String) context.getState().get(JSONRPCContextKeys.METHOD_NAME_KEY);
+        Object requestId = request.getId();
+        return applyStreamingBackpressureBuffer(
+                        Flux.from(FlowAdapters.toPublisher(publisher)), method, requestId)
                 .delaySubscription(Duration.ofMillis(10));
+    }
+
+    private Flux<? extends JSONRPCResponse<?>> applyStreamingBackpressureBuffer(
+            Flux<? extends JSONRPCResponse<?>> stream, String method, Object requestId) {
+        if (STREAMING_BACKPRESSURE_BUFFER_SIZE <= 0) {
+            return stream.onBackpressureBuffer();
+        }
+        return stream.onBackpressureBuffer(
+                STREAMING_BACKPRESSURE_BUFFER_SIZE,
+                response ->
+                        log.error(
+                                "JsonRpcTransportWrapper.stream backpressure buffer overflow:"
+                                        + " method={}, requestId={}, bufferSize={}, dropped={}",
+                                method,
+                                requestId,
+                                STREAMING_BACKPRESSURE_BUFFER_SIZE,
+                                summarizeResponse(response)),
+                BufferOverflowStrategy.ERROR);
+    }
+
+    private String summarizeResponse(JSONRPCResponse<?> response) {
+        if (response == null) {
+            return "responseType=null";
+        }
+        return "responseType=" + response.getClass().getName();
     }
 
     private JSONRPCResponse<?> handleNonStreamRequest(String body, ServerCallContext context)

@@ -36,18 +36,10 @@
     </properties>
 
     <dependencies>
-        <!-- AgentScope Core -->
+        <!-- Use the modular core; the all-in-one JAR also embeds optional extension classes. -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <optional>true</optional>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- Core AgentScope library -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope</artifactId>
         </dependency>
 
         <!-- Spring Boot auto-configuration SPI -->
@@ -68,26 +60,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-model-openai</artifactId>
-            <scope>test</scope>
-        </dependency>
-<!--        <dependency>-->
-<!--            <groupId>io.agentscope</groupId>-->
-<!--            <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--            <scope>test</scope>-->
-<!--        </dependency>-->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-model-gemini</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-model-anthropic</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

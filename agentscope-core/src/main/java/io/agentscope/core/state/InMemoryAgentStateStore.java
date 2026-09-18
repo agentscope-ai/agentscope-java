@@ -58,6 +58,48 @@ public class InMemoryAgentStateStore implements AgentStateStore {
     }
 
     @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        SessionData data = lookup(userId, sessionId);
+        if (data == null) {
+            return new VersionedState<>(null, 0L);
+        }
+        VersionedEntry entry = data.getVersionedSingleState(key);
+        if (entry == null) {
+            return new VersionedState<>(null, 0L);
+        }
+        State state = entry.value();
+        if (!type.isInstance(state)) {
+            throw new ClassCastException(
+                    "State for key '"
+                            + key
+                            + "' is of type "
+                            + state.getClass().getName()
+                            + ", expected "
+                            + type.getName());
+        }
+        return new VersionedState<>(type.cast(state), entry.version());
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            save(userId, sessionId, key, value);
+            SessionData data = lookup(userId, sessionId);
+            VersionedEntry entry = data != null ? data.getVersionedSingleState(key) : null;
+            return entry != null ? entry.version() : UNVERSIONED;
+        }
+        SessionData data = lookupOrCreate(userId, sessionId);
+        return data.casSingleState(key, value, expectedVersion);
+    }
+
+    @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
         SessionData data = lookupOrCreate(userId, sessionId);
         data.setListState(key, values);
@@ -166,16 +208,36 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         return sessionId;
     }
 
+    private record VersionedEntry(State value, long version) {}
+
     /** Internal class to hold session data. */
     private static class SessionData {
-        private final Map<String, State> singleStates = new ConcurrentHashMap<>();
+        private final Map<String, VersionedEntry> singleStates = new ConcurrentHashMap<>();
         private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
 
-        void setSingleState(String key, State value) {
-            singleStates.put(key, value);
+        synchronized void setSingleState(String key, State value) {
+            VersionedEntry prev = singleStates.get(key);
+            long next = prev == null ? 1L : prev.version() + 1L;
+            singleStates.put(key, new VersionedEntry(value, next));
+        }
+
+        synchronized long casSingleState(String key, State value, long expectedVersion) {
+            VersionedEntry prev = singleStates.get(key);
+            long current = prev == null ? 0L : prev.version();
+            if (current != expectedVersion) {
+                return UNVERSIONED;
+            }
+            long next = expectedVersion + 1L;
+            singleStates.put(key, new VersionedEntry(value, next));
+            return next;
         }
 
         State getSingleState(String key) {
+            VersionedEntry entry = singleStates.get(key);
+            return entry == null ? null : entry.value();
+        }
+
+        VersionedEntry getVersionedSingleState(String key) {
             return singleStates.get(key);
         }
 

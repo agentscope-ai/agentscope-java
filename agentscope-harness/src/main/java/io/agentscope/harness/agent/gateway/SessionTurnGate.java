@@ -15,35 +15,33 @@
  */
 package io.agentscope.harness.agent.gateway;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Semaphore;
-
 /**
- * Fair per-key mutual exclusion for gateway turns (user/channel inbound runs and subagent
- * notification).
+ * Per-key mutual exclusion for gateway turns (user/channel inbound runs and subagent notification).
+ *
+ * <p>Implementations include {@link LocalSessionTurnGate} (process-local fair semaphore) and
+ * control-plane hosted locks for cross-node coordination. When using a distributed turn gate,
+ * {@link io.agentscope.core.ReActAgent} {@code conflictPolicy} should be set to {@code FAIL} so
+ * concurrent state writes surface as errors rather than silent overwrites.
  */
-public final class SessionTurnGate {
-
-    private final ConcurrentHashMap<String, Semaphore> gates = new ConcurrentHashMap<>();
-
-    public void acquire(String key) throws InterruptedException {
-        gates.computeIfAbsent(key, k -> new Semaphore(1, true)).acquire();
-    }
-
-    public void release(String key) {
-        Semaphore s = gates.get(key);
-        if (s != null) {
-            s.release();
-        }
-    }
+public interface SessionTurnGate {
 
     /**
-     * Non-blocking check: returns {@code true} when a turn is currently held for the given key
-     * (i.e. a run is in progress). Used by {@link WakeupDispatcher} to skip sessions that are
-     * already active — their current run will drain the inbox naturally.
+     * Acquires the turn slot for the given key, blocking until available or throwing when busy.
+     *
+     * @param key canonical gate key (typically {@link MsgContext#canonicalKey()})
+     * @return a lease that must be closed to release the slot
+     * @throws InterruptedException if the waiting thread is interrupted
+     * @throws TurnBusyException if the slot is held and the implementation uses a short acquire
+     *     timeout (distributed gates)
      */
-    public boolean isRunning(String key) {
-        Semaphore s = gates.get(key);
-        return s != null && s.availablePermits() == 0;
-    }
+    TurnLease acquire(String key) throws InterruptedException, TurnBusyException;
+
+    /**
+     * Non-blocking check: returns {@code true} when a turn is currently held for the given key.
+     * Used by {@link WakeupDispatcher} to skip sessions that are already active.
+     *
+     * @param key canonical gate key
+     * @return {@code true} when a turn is in progress for the key
+     */
+    boolean isRunning(String key);
 }

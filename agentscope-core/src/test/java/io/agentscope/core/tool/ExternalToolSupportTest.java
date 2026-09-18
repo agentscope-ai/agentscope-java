@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
@@ -233,6 +234,76 @@ class ExternalToolSupportTest {
         // Verify schemas include both
         List<ToolSchema> schemas = toolkit.getToolSchemas();
         assertEquals(2, schemas.size());
+    }
+
+    @Test
+    @DisplayName("Should produce suspended result when executing SchemaOnlyTool via Toolkit")
+    void testSchemaOnlyToolExecutionReturnsSuspended() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("db_query")
+                        .description("Query database")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("sql", Map.of("type", "string")),
+                                        "required",
+                                        List.of("sql")))
+                        .build();
+        toolkit.registerSchema(schema);
+
+        Map<String, Object> input = Map.of("sql", "SELECT 1");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-ext-1")
+                        .name("db_query")
+                        .input(input)
+                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> results =
+                toolkit.callTools(List.of(toolCall), null, null, null)
+                        .block(java.time.Duration.ofSeconds(3));
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).isSuspended(), "External tool result should be suspended");
+        assertEquals("call-ext-1", results.get(0).getId());
+        assertEquals("db_query", results.get(0).getName());
+    }
+
+    @Test
+    @DisplayName(
+            "Should produce suspended result when executing @Tool(externalTool=true) via Toolkit")
+    void testAnnotationExternalToolExecutionReturnsSuspended() {
+        toolkit.registerTool(new AnnotationExternalToolExample());
+
+        Map<String, Object> input = Map.of("endpoint", "/api/test");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-ext-2")
+                        .name("call_api")
+                        .input(input)
+                        .content(io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> results =
+                toolkit.callTools(List.of(toolCall), null, null, null)
+                        .block(java.time.Duration.ofSeconds(3));
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).isSuspended(), "External tool result should be suspended");
+        assertEquals("call-ext-2", results.get(0).getId());
+    }
+
+    static class AnnotationExternalToolExample {
+        @Tool(name = "call_api", description = "Call external API", externalTool = true)
+        public String callApi(@ToolParam(name = "endpoint") String endpoint) {
+            throw new AssertionError("External tool body should never be invoked");
+        }
     }
 
     /** Sample internal tool for testing. */

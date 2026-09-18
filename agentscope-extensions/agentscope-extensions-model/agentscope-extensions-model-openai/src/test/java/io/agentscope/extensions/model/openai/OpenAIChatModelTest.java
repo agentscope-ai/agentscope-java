@@ -95,6 +95,25 @@ class OpenAIChatModelTest {
     }
 
     @Test
+    @DisplayName("Default builder enables native structured output")
+    void testNativeStructuredOutputDefaultTrue() {
+        OpenAIChatModel m = OpenAIChatModel.builder().apiKey("k").modelName("gpt-4").build();
+        assertTrue(m.supportsNativeStructuredOutput());
+    }
+
+    @Test
+    @DisplayName("Builder can disable native structured output for compatible gateways")
+    void testNativeStructuredOutputDisabled() {
+        OpenAIChatModel m =
+                OpenAIChatModel.builder()
+                        .apiKey("k")
+                        .modelName("gpt-4")
+                        .nativeStructuredOutput(false)
+                        .build();
+        assertFalse(m.supportsNativeStructuredOutput());
+    }
+
+    @Test
     @DisplayName("Should make non-streaming call successfully")
     void testNonStreamingCall() throws Exception {
         String responseJson =

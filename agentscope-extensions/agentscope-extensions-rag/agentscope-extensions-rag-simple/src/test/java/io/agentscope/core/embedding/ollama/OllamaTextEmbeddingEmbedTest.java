@@ -23,10 +23,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.embedding.EmbeddingException;
-import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingResponse;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
-import io.agentscope.core.model.OllamaHttpClient;
+import io.agentscope.extensions.model.ollama.OllamaHttpClient;
+import io.agentscope.extensions.model.ollama.dto.OllamaEmbeddingResponse;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

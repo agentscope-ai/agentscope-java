@@ -1,6 +1,6 @@
 ---
-title: "Permission System"
-description: "精细控制 agent 可以执行哪些 tool、何时执行"
+title: Permission System
+description: 精细控制 agent 可以执行哪些 tool、何时执行
 ---
 
 ## 概述
@@ -13,7 +13,7 @@ Permission system（`io.agentscope.core.permission`）拦截 agent 的每一次�
 - **Mode** —— 配置阶段设定的全局静态策略；决定所有不命中任何规则的调用的默认行为（例如 `EXPLORE` 让 agent 进入只读；`DONT_ASK` 静默拒绝未命中的调用）。
 - **Built-in Checks** —— 由 tool 自身在运行时基于真实输入做的动态分析（在 `ToolBase#checkPermissions` 中实现）。这些是运行时检查而非预配置模式，因此**不可绕过**，不受 mode 或 rules 覆盖。
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -41,8 +41,10 @@ sequenceDiagram
     end
 ```
 
-:::{dropdown} 详细决策流程
-```{mermaid}
+
+<Accordion title="详细决策流程">
+
+```mermaid
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])
@@ -75,11 +77,17 @@ flowchart TD
     style ASK2 fill:#ffd43b,color:#333
     style ASK3 fill:#ffd43b,color:#333
 ```
-:::
 
-:::{note}
+</Accordion>
+
+
+
+<Note>
+
 Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS` 模式下也照常生效。
-:::
+
+</Note>
+
 
 ## Permission Mode
 
@@ -95,8 +103,12 @@ Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS`
 
 可以在创建 agent 时通过 `permissionContext(...)` 设置 mode：
 
-::::{tab-set}
-:::{tab-item} 初始化时配置
+
+<Tabs>
+
+
+<Tab title="初始化时配置">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.permission.PermissionContextState;
@@ -115,8 +127,12 @@ ReActAgent agent =
                 .permissionContext(permCtx)
                 .build();
 ```
-:::
-:::{tab-item} ACCEPT_EDITS 配合工作目录
+
+</Tab>
+
+
+<Tab title="ACCEPT_EDITS 配合工作目录">
+
 ```java
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionContextState;
@@ -130,8 +146,12 @@ PermissionContextState permCtx =
                         new AdditionalWorkingDirectory("/my/project", "userSettings"))
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 ## Permission Rule
 
@@ -141,7 +161,7 @@ PermissionContextState permCtx =
 
 - **`toolName` · `String` · *required*** — 规则适用的 tool 名：内置 `todo_write`，或任意自定义 tool 名。
 
-- **`ruleContent` · `String | null` · *required*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
+- **`ruleContent` · `String | null` · *optional*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
 
 - **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`、`DENY`、`ASK` 或 `PASSTHROUGH`
 
@@ -250,23 +270,30 @@ public class MyTool extends ToolBase {
 
 ## 结合 HITL
 
-当权限引擎对某个工具调用返回 ASK 决策时，agent 不会直接执行，而是暂停并返回一个 `GenerateReason.PERMISSION_ASKING` 的响应。调用方据此向用户展示待确认的操作，收集决策后恢复 agent。
+当权限引擎对某个工具调用返回 ASK 决策时，agent 不会直接执行，而是暂停并返回一个 `GenerateReason.PERMISSION_ASKING` 的响应。返回的 `Msg` 中包含处于 `ASKING` 状态的 `ToolUseBlock`，调用方据此向用户展示待确认的操作，收集决策后通过 `ConfirmResult` 恢复 agent。
 
 ### 交互流程
 
 1. 配置 ASK 规则，标记需要人工确认的工具
 2. Agent 遇到 ASK 工具时暂停，返回 `PERMISSION_ASKING`
-3. 调用方检查 `getGenerateReason()`，向用户展示待执行的工具调用
-4. 用户确认后，发送新消息恢复 agent 继续执行
+3. 从返回的 `Msg` 中提取 `ToolUseBlock`（状态为 `ASKING`），向用户展示
+4. 构建 `ConfirmResult`，附在新消息的 metadata 中恢复 agent
 
 ```java
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 // 1. 配置权限：safe_read 自动放行，dangerous_delete 需要确认
 PermissionContextState permCtx =
@@ -296,15 +323,103 @@ Msg result = agent.call(new UserMessage("Delete /tmp/important.txt")).block();
 
 // 3. 检查是否需要用户确认
 if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
-    // 向用户展示待确认的工具调用
-    result.getContent().forEach(block -> System.out.println("Pending: " + block));
+    // 从返回的 Msg 中提取待确认的 ToolUseBlock
+    List<ToolUseBlock> askingTools =
+            result.getContent().stream()
+                    .filter(b -> b instanceof ToolUseBlock)
+                    .map(ToolUseBlock.class::cast)
+                    .filter(t -> t.getState() == ToolCallState.ASKING)
+                    .toList();
 
-    // 4. 收集用户决策后恢复 agent
+    // 向用户展示
+    askingTools.forEach(t -> System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+    // 4. 收集用户决策，构建 ConfirmResult 恢复 agent
     boolean approved = askUser();
-    String resumeText = approved ? "yes, proceed" : "no, cancel";
-    Msg finalResult = agent.call(new UserMessage(resumeText)).block();
+    List<ConfirmResult> confirmResults =
+            askingTools.stream()
+                    .map(t -> new ConfirmResult(approved, t))
+                    .toList();
+
+    Map<String, Object> meta = new HashMap<>();
+    meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+    Msg resumeMsg =
+            Msg.builder()
+                    .name("user")
+                    .role(MsgRole.USER)
+                    .textContent(approved ? "approved" : "denied")
+                    .metadata(meta)
+                    .build();
+
+    Msg finalResult = agent.call(List.of(resumeMsg)).block();
 }
 ```
+
+### 全部工具被拒绝
+
+当用户在确认界面拒绝了本轮推理产出的**全部**工具调用时，agent 默认会继续下一轮推理 —— 此时模型只能看到 "Permission denied by user" 的工具结果，容易产生无效推理。
+
+如果需要在这种场景下停止 agent，可以装备一个 `onActing` middleware 观察 `AllToolsDeniedEvent` 并发出 `RequestStopEvent`。停止后 `Msg.getGenerateReason()` 返回 `ALL_TOOLS_DENIED`。
+
+具体实现参见 [Middleware — 全部工具被拒绝时停止 agent](/v2/zh/docs/building-blocks/middleware#全部工具被拒绝时停止-agent)。
+### Streaming 模式
+
+使用 `streamEvents()` 时，不需要从返回的 `Msg` 提取 `ToolUseBlock` —— 通过事件流直接获得 `RequireUserConfirmEvent`，它携带了待确认的工具调用列表：
+
+```java
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// 订阅事件流
+agent.streamEvents(List.of(new UserMessage("Delete /tmp/important.txt")))
+        .doOnNext(event -> {
+            if (event instanceof RequireUserConfirmEvent confirmEvent) {
+                // 直接从事件中获取待确认的 ToolUseBlocks
+                List<ToolUseBlock> pending = confirmEvent.getToolCalls();
+                pending.forEach(t ->
+                        System.out.println("Pending: " + t.getName() + " " + t.getInput()));
+
+                // 收集用户决策后，在下一次 call 时恢复
+                // （存储 pending 列表，在后续 call 时使用）
+            }
+        })
+        .blockLast();
+
+// 恢复方式与 blocking API 相同：构建 ConfirmResult 附在 metadata 中
+List<ConfirmResult> confirmResults =
+        pendingTools.stream()
+                .map(t -> new ConfirmResult(true, t))
+                .toList();
+Map<String, Object> meta = new HashMap<>();
+meta.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
+Msg resumeMsg =
+        Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .textContent("approved")
+                .metadata(meta)
+                .build();
+agent.call(List.of(resumeMsg)).block();
+```
+
+如果使用 `streamEvents(List.of(resumeMsg))` 发起恢复，事件流会在恢复执行工具之前包含
+`UserConfirmResultEvent`。使用它的 `replyId` 将本次接受的确认结果关联到之前的
+`RequireUserConfirmEvent`；该事件只包含本次恢复消息携带的确认结果。
+
+两种模式的区别：
+
+| | Blocking `call()` | Streaming `streamEvents()` |
+|---|---|---|
+| 获取待确认工具 | 从返回的 `Msg.getContent()` 中筛选 `ToolUseBlock`（状态为 `ASKING`） | 从 `RequireUserConfirmEvent.getToolCalls()` 直接获取 |
+| 恢复方式 | 相同：构建 `ConfirmResult` 附在 metadata 中发起新的 `call()` | 相同 |
+| 适用场景 | REST API、简单同步服务 | WebSocket、SSE、实时 UI |
 
 ### 无人值守模式
 
@@ -328,8 +443,12 @@ PermissionContextState headless =
 
 下面的示例展示了如何为常见部署场景配置 `permissionContext`。每个配方把一种 mode 与一组规则结合，匹配特定的使用场景。
 
-::::{tab-set}
-:::{tab-item} 只读探索
+
+<Tabs>
+
+
+<Tab title="只读探索">
+
 ```java
 // EXPLORE 模式：agent 可以自由调用只读工具，所有写工具会被自动拒绝。
 PermissionContextState explore =
@@ -345,8 +464,12 @@ ReActAgent explorer =
                 .permissionContext(explore)
                 .build();
 ```
-:::
-:::{tab-item} 无人值守自动化
+
+</Tab>
+
+
+<Tab title="无人值守自动化">
+
 ```java
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
@@ -373,8 +496,12 @@ ReActAgent ciAgent =
                 .build();
 // 只有显式放行的命令会执行；其余调用被静默拒绝
 ```
-:::
-:::{tab-item} 阻止危险命令
+
+</Tab>
+
+
+<Tab title="阻止危险命令">
+
 ```java
 PermissionContextState bypassWithDeny =
         PermissionContextState.builder()
@@ -390,5 +517,8 @@ PermissionContextState bypassWithDeny =
                 .build();
 // 除显式拒绝的工具外，其余均放行（deny 规则不可绕过）
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
