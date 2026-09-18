@@ -2356,7 +2356,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * the same agentId reuses its directory across rebuilds and no per-build accumulation
          * occurs; across JVM restarts / replicas a new nonce root is created. Deployments that
          * rebuild agents frequently should either rely on the OS tmp reaper or purge
-         * {@code ${java.io.tmpdir}/agentscope-workspace} themselves — e.g. at process start.</li>
+         * {@code ${java.io.tmpdir}/agentscope-workspace} themselves — e.g. at process start.</p>
          *
          * @return this builder
          */
