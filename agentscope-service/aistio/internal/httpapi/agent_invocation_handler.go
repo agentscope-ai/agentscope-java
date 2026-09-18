@@ -273,6 +273,12 @@ func withChannelOwner(session *store.Session, ownerRef string) *store.Session {
 		// An unreadable payload is not worth failing the turn over; the owner is the key that has
 		// to be right, so fall back to a payload carrying just it.
 		_ = json.Unmarshal(session.TaskContext, &metadata)
+		if metadata == nil {
+			// A literal `null` decodes without an error and leaves the map nil, which the
+			// assignment below would turn into a panic. Every other malformed shape returns an
+			// error and leaves the initialised map alone.
+			metadata = map[string]any{}
+		}
 	}
 	metadata["channelOwnerRef"] = ownerRef
 	payload, _ := json.Marshal(metadata)

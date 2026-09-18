@@ -86,6 +86,26 @@ func TestWithChannelOwnerPreservesExistingMetadata(t *testing.T) {
 	}
 }
 
+func TestWithChannelOwnerSurvivesAnUnusablePayload(t *testing.T) {
+	// `null` is the interesting one: it decodes into a nil map without an error, so the owner
+	// assignment used to panic. The rest return a type error and leave the map initialised.
+	for _, payload := range []string{"null", "123", `"str"`, "[1,2]", "{not json"} {
+		t.Run(payload, func(t *testing.T) {
+			session := &store.Session{TaskContext: json.RawMessage(payload)}
+
+			adopted := withChannelOwner(session, "owner-1")
+
+			var metadata map[string]any
+			if err := json.Unmarshal(adopted.TaskContext, &metadata); err != nil {
+				t.Fatalf("adopted payload for %q is not JSON: %v", payload, err)
+			}
+			if metadata["channelOwnerRef"] != "owner-1" {
+				t.Fatalf("owner missing for payload %q: %v", payload, metadata)
+			}
+		})
+	}
+}
+
 func TestChannelSessionRequiresAnExternalKey(t *testing.T) {
 	st, agent, _, _ := setupConversationAgent(t)
 	agent.OwnerRef = "owner"
