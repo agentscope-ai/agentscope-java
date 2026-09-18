@@ -16,6 +16,7 @@
 package io.agentscope.core.util;
 
 import java.util.IdentityHashMap;
+import java.util.function.Predicate;
 
 /**
  * Utility methods for exception handling.
@@ -81,8 +82,7 @@ public final class ExceptionUtils {
      * @param predicate tested against every throwable in the chain
      * @return {@code true} if any chain element satisfies the predicate
      */
-    public static boolean containsCause(
-            Throwable error, java.util.function.Predicate<Throwable> predicate) {
+    public static boolean containsCause(Throwable error, Predicate<Throwable> predicate) {
         IdentityHashMap<Throwable, Boolean> visited = new IdentityHashMap<>();
         Throwable current = error;
         while (current != null && visited.put(current, Boolean.TRUE) == null) {
