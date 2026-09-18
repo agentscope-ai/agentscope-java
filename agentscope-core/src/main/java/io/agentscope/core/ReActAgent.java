@@ -1830,8 +1830,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .toList();
 
             if (!providedResults.isEmpty()) {
-                // User provided tool results -> validate and add
-                validateAndAddToolResults(msgs, pendingIds);
+                // User provided tool results -> validate and add. Correlate the pending
+                // tool_use batch with the provided results BEFORE persisting, so a
+                // returnDirect short-circuit (same predicate as the in-framework path) can
+                // persist the placeholder-shaped tool_result directly. Only a batch resolved
+                // entirely by this resume short-circuits; a partially resolved batch (across
+                // earlier resumes, or mixed with framework-executed tools) is always fed
+                // back to the model.
+                List<ToolUseBlock> pendingBatch =
+                        MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+                List<ToolUseBlock> originalBatch =
+                        MessageUtils.extractRecentToolCalls(state.contextMutable(), getName());
+                String externalReplyId =
+                        resolvePendingRequestReplyId(
+                                Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> externalPairs =
+                        pairProvidedToolResults(pendingBatch, providedResults);
+                boolean returnDirectResume =
+                        !originalBatch.isEmpty()
+                                && pendingBatch.size() == originalBatch.size()
+                                && externalPairs.size() == pendingBatch.size()
+                                && externalPairs.stream().allMatch(this::isReturnDirectToolCall);
+                validateAndAddToolResults(
+                        returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs, pendingIds);
+                if (returnDirectResume) {
+                    return Mono.just(finalizeReturnDirect(externalPairs, externalReplyId));
+                }
                 return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
                         ? resumeAgent()
                         : coreAgent();
@@ -2228,6 +2252,54 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             }
             state.contextMutable().addAll(msgs);
+        }
+
+        /**
+         * Correlate the pending tool_use batch (in declaration order) with the tool results
+         * supplied by the caller, aligned by id. Returns only the pairs that have a matching
+         * result; a partial supply yields fewer pairs than the batch.
+         */
+        private List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairProvidedToolResults(
+                List<ToolUseBlock> pendingBatch, List<ToolResultBlock> providedResults) {
+            Map<String, ToolResultBlock> resultsById = new HashMap<>();
+            for (ToolResultBlock result : providedResults) {
+                resultsById.put(result.getId(), result);
+            }
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs = new ArrayList<>();
+            for (ToolUseBlock toolUse : pendingBatch) {
+                ToolResultBlock result = resultsById.get(toolUse.getId());
+                if (result != null) {
+                    pairs.add(Map.entry(toolUse, result));
+                }
+            }
+            return pairs;
+        }
+
+        /**
+         * Build placeholder-shaped copies of the caller-supplied messages for a returnDirect
+         * short-circuit: every {@link ToolResultBlock}'s output is replaced with the
+         * returnDirect placeholder sentence (id/name/state preserved) while non-tool-result
+         * content passes through unchanged. New {@link Msg}s are built — the caller's objects
+         * are never mutated — keeping the context invariant {@code [tool_use,
+         * tool_result(placeholder), assistant(full result)]}.
+         */
+        private List<Msg> placeholderToolResultMsgs(List<Msg> msgs) {
+            List<Msg> replaced = new ArrayList<>(msgs.size());
+            for (Msg msg : msgs) {
+                replaced.add(
+                        msg.withContent(
+                                msg.getContent().stream()
+                                        .map(this::placeholderToolResultContent)
+                                        .toList()));
+            }
+            return replaced;
+        }
+
+        private ContentBlock placeholderToolResultContent(ContentBlock block) {
+            if (!(block instanceof ToolResultBlock result)) {
+                return block;
+            }
+            return placeholderResultBlock(result.getId(), result.getName(), result.getState());
         }
 
         /**
@@ -2818,12 +2890,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     }
 
                                                     if (returnDirect) {
-                                                        Msg result =
-                                                                buildReturnDirectResultMsg(
-                                                                        successPairs);
-                                                        state.contextMutable().add(result);
-                                                        logReturnDirect(successPairs);
-                                                        return Mono.just(result);
+                                                        return Mono.just(
+                                                                finalizeReturnDirect(
+                                                                        successPairs, replyId));
                                                     }
 
                                                     if (!pendingPairs.isEmpty()) {
@@ -3524,6 +3593,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
                                 Msg resultMsg = e.getToolResultMsg();
                                 if (returnDirect && !e.isStopRequested()) {
+                                    if (e.getToolResult() != updatedResult
+                                            || e.getToolResultMsg() != toolMsg) {
+                                        log.warn(
+                                                "returnDirect: discarding PostActing hook rewrite"
+                                                        + " for tool '{}' - apply transformations"
+                                                        + " at the tool/converter level"
+                                                        + " instead",
+                                                toolUse.getName());
+                                    }
                                     resultMsg =
                                             buildReturnDirectPlaceholderMsg(toolUse, updatedResult);
                                     log.debug(
@@ -3551,13 +3629,69 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Builds the placeholder tool_result, replacing only the output while keeping id/name/state. */
         private Msg buildReturnDirectPlaceholderMsg(ToolUseBlock toolUse, ToolResultBlock result) {
             ToolResultBlock placeholder =
-                    ToolResultBlock.builder()
-                            .id(toolUse.getId())
-                            .name(toolUse.getName())
-                            .output(TextBlock.builder().text(RETURN_DIRECT_PLACEHOLDER).build())
-                            .state(result.getState())
-                            .build();
+                    placeholderResultBlock(toolUse.getId(), toolUse.getName(), result.getState());
             return ToolResultMessageBuilder.buildToolResultMsg(placeholder, toolUse, getName());
+        }
+
+        /**
+         * The placeholder-shaped {@link ToolResultBlock} persisted in place of a returnDirect
+         * tool's real result: same id/name/state, output swapped for the placeholder sentence.
+         */
+        private ToolResultBlock placeholderResultBlock(
+                String id, String name, ToolResultState state) {
+            return ToolResultBlock.builder()
+                    .id(id)
+                    .name(name)
+                    .output(TextBlock.builder().text(RETURN_DIRECT_PLACEHOLDER).build())
+                    .state(state)
+                    .build();
+        }
+
+        /**
+         * Finalize a returnDirect turn: synthesize the closing assistant message, persist it,
+         * emit the closing text events, and log.
+         *
+         * <p>Shared by the in-framework path ({@code acting}) and the external-resume path
+         * ({@code doCallInner}), so both produce identical message, context, return-contract,
+         * and event-stream shapes. {@code replyId} correlates the emitted events with the
+         * originating reply (the acting replyId, or the suspended external-execution request).
+         */
+        private Msg finalizeReturnDirect(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
+            Msg result = buildReturnDirectResultMsg(pairs);
+            state.contextMutable().add(result);
+            publishReturnDirectTextEvents(result, replyId);
+            logReturnDirect(pairs);
+            return result;
+        }
+
+        /**
+         * Emit the standard text-block lifecycle ({@code TextBlockStart/Delta/End}) for the
+         * returnDirect closing message, so event-stream consumers (AG-UI, A2A, ...) see the
+         * same projection they would for a model-generated final answer.
+         *
+         * <p>The delta carries {@link AgentEvent#METADATA_GENERATE_REASON} set to {@code
+         * TOOL_RETURN_DIRECT} for audit purposes. Non-text blocks (images, data) emit nothing
+         * and keep travelling via the Msg-level {@code AgentResultEvent}. Events are published
+         * synchronously before the closing message is returned, hence ahead of {@code
+         * AgentResultEvent}/{@code AgentEndEvent}.
+         */
+        private void publishReturnDirectTextEvents(Msg closingMsg, String replyId) {
+            String effectiveReplyId =
+                    replyId == null || replyId.isEmpty()
+                            ? UUID.randomUUID().toString().replace("-", "")
+                            : replyId;
+            for (TextBlock block : closingMsg.getContentBlocks(TextBlock.class)) {
+                String blockId = UUID.randomUUID().toString().replace("-", "");
+                publishEvent(new TextBlockStartEvent(effectiveReplyId, blockId));
+                publishEvent(
+                        new TextBlockDeltaEvent(effectiveReplyId, blockId, block.getText())
+                                .withMetadata(
+                                        Map.of(
+                                                AgentEvent.METADATA_GENERATE_REASON,
+                                                GenerateReason.TOOL_RETURN_DIRECT.name())));
+                publishEvent(new TextBlockEndEvent(effectiveReplyId, blockId));
+            }
         }
 
         /**
@@ -3578,20 +3712,39 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>For multiple tools the output blocks are concatenated in execution order (= {@code
          * pairs} order = the model's tool_calls order) without inlining tool names or adding
-         * separator blocks; clients correlate blocks to tools via block order + the event stream's
-         * tool id/name. A tool with empty output contributes a {@code "(no output)"} text block so
-         * ordering never shifts and the closing message is never empty.
+         * separator blocks. Just like a model-generated summary, the closing message carries no
+         * per-block provenance: consumers correlate blocks to tools (when needed) via block
+         * order plus the tool id/name carried by the event stream's tool-result events, never
+         * by assuming the turn was short-circuited.
+         *
+         * <p>A tool whose result contains <em>zero</em> content blocks (possible only via a custom
+         * converter returning an empty output list) contributes nothing to the closing message —
+         * mirroring how a model summary skips a tool that produced no output — and matches the
+         * event stream, which emits no text projection for such results either. An empty-text
+         * block (e.g. {@code TextBlock("")} from an MCP tool) is a block and passes through
+         * unchanged. Only when the whole batch yields zero blocks is a single {@code "(no
+         * output)"} placeholder inserted, keeping the closing message non-empty for providers
+         * that reject empty assistant content; callers can tell it apart from a real tool
+         * output via {@link GenerateReason#TOOL_RETURN_DIRECT} and the {@code
+         * _tool_return_direct} metadata. Tool authors declaring {@code returnDirect} should
+         * ensure successful results always carry presentable blocks, so the placeholder stays a
+         * defensive fallback rather than an expected outcome.
+         *
+         * <p>Boundary: the message is assembled from the pre-hook execution results. Rewrites made
+         * by the (deprecated, for-removal) PostActing hook are intentionally ignored, as are
+         * {@code onModelCall} middleware text transformations, since no model call occurs. Use
+         * the tool's result converter (or an {@code AgentTool} decorator) for content
+         * transformation/redaction: transformations at the source apply uniformly to both the
+         * in-framework and the external-resume path.
          */
         private Msg buildReturnDirectResultMsg(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs) {
             List<ContentBlock> content = new ArrayList<>();
             for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : pairs) {
-                List<ContentBlock> output = pair.getValue().getOutput();
-                if (output.isEmpty()) {
-                    content.add(TextBlock.builder().text("(no output)").build());
-                } else {
-                    content.addAll(output);
-                }
+                content.addAll(pair.getValue().getOutput());
+            }
+            if (content.isEmpty()) {
+                content.add(TextBlock.builder().text("(no output)").build());
             }
             return AssistantMessage.builder()
                     .name(getName())

@@ -22,6 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.TextBlockEndEvent;
+import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
@@ -47,6 +54,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +62,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -107,6 +117,7 @@ class ReActAgentReturnDirectTest {
         private ToolResultBlock result;
         private boolean deny;
         private boolean suspended;
+        private long delayMillis;
 
         TestTool(String name, boolean returnDirect, ToolResultBlock result) {
             super(
@@ -128,6 +139,11 @@ class ReActAgentReturnDirectTest {
             return this;
         }
 
+        TestTool delayed(long millis) {
+            this.delayMillis = millis;
+            return this;
+        }
+
         @Override
         public Mono<PermissionDecision> checkPermissions(
                 Map<String, Object> toolInput, PermissionContextState context) {
@@ -142,7 +158,9 @@ class ReActAgentReturnDirectTest {
             if (suspended) {
                 return Mono.just(ToolResultBlock.suspended(param.getToolUseBlock()));
             }
-            return Mono.just(result);
+            return delayMillis > 0
+                    ? Mono.just(result).delayElement(Duration.ofMillis(delayMillis))
+                    : Mono.just(result);
         }
     }
 
@@ -245,6 +263,29 @@ class ReActAgentReturnDirectTest {
                 .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                 .filter(b -> text.equals(b.getText()))
                 .count();
+    }
+
+    /** Resume payload carrying externally produced tool results, mirroring the HITL pattern. */
+    private static Msg externalResultMsg(ToolResultBlock... results) {
+        return Msg.builder().role(MsgRole.TOOL).content(List.of(results)).build();
+    }
+
+    private static ToolResultBlock successResult(String id, String name, String text) {
+        return ToolResultBlock.builder()
+                .id(id)
+                .name(name)
+                .output(TextBlock.builder().text(text).build())
+                .state(ToolResultState.SUCCESS)
+                .build();
+    }
+
+    private static int indexOf(List<AgentEvent> events, Class<?> type) {
+        for (int i = 0; i < events.size(); i++) {
+            if (type.isInstance(events.get(i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     // ==== Tests ====
@@ -523,6 +564,43 @@ class ReActAgentReturnDirectTest {
     }
 
     @Test
+    void partiallyEmptyBatchOmitsPlaceholder() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUsesResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("empty")
+                                                                        .input(Map.of())
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("text")
+                                                                        .input(Map.of())
+                                                                        .build())))));
+        Toolkit toolkit =
+                toolkitWith(
+                        new TestTool("empty", true, ToolResultBlock.of(List.of())),
+                        new TestTool("text", true, ToolResultBlock.text("real")));
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, result.getGenerateReason());
+        // The zero-block tool contributes nothing — like a model summary skipping it — and no
+        // placeholder is injected while the batch still has output.
+        assertEquals(1, result.getContent().size());
+        assertEquals("real", result.getTextContent());
+        assertEquals(
+                0, countText(agent, "(no output)"), "no placeholder while the batch has output");
+    }
+
+    @Test
     void errorTextPrefixIsDetectedDespiteRunningState() {
         ScriptedModel model =
                 new ScriptedModel(
@@ -596,5 +674,322 @@ class ReActAgentReturnDirectTest {
         assertEquals(GenerateReason.TOOL_RETURN_DIRECT, result.getGenerateReason());
         // The default @Tool converter JSON-serializes the String result, hence the quotes.
         assertTrue(result.getTextContent().contains("direct:hi"));
+    }
+
+    // ==== External-resume closure (caller supplies results after TOOL_SUSPENDED) ====
+
+    @Test
+    void externalResumeShortCircuitsReturnDirect() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        Toolkit toolkit = toolkitWith(new TestTool("ext", true, null).suspended());
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        Msg suspended = agent.call(List.of()).block();
+        assertNotNull(suspended);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+
+        Msg resumed =
+                agent.call(List.of(externalResultMsg(successResult("tc1", "ext", "ext-result"))))
+                        .block();
+
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, resumed.getGenerateReason());
+        assertEquals("ext-result", resumed.getTextContent());
+        assertEquals(
+                1,
+                model.callCount(),
+                "external resume short-circuit must skip the closing model call");
+
+        // Context keeps the three-message invariant: tool_use / placeholder tool_result /
+        // closing assistant carrying the full result.
+        Msg toolMsg = findToolResultMsg(agent, "tc1");
+        assertNotNull(toolMsg);
+        ToolResultBlock toolResult = toolMsg.getContentBlocks(ToolResultBlock.class).get(0);
+        assertEquals("tc1", toolResult.getId());
+        assertEquals("ext", toolResult.getName());
+        assertEquals(ToolResultState.SUCCESS, toolResult.getState());
+        assertEquals(
+                RETURN_DIRECT_PLACEHOLDER,
+                ((TextBlock) toolResult.getOutput().get(0)).getText(),
+                "supplied tool_result must be replaced with the placeholder");
+        Msg closing = findLastAssistantMsg(agent);
+        assertEquals("ext-result", closing.getTextContent());
+        assertEquals(
+                Boolean.TRUE, closing.getMetadata().get(MessageMetadataKeys.TOOL_RETURN_DIRECT));
+        assertEquals(1, countText(agent, "ext-result"), "full result must not be duplicated");
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ToolResultState.class,
+            names = {"ERROR", "DENIED"})
+    void externalResumeWithNonSuccessResultDoesNotShortCircuit(ToolResultState state) {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ext", Map.of())),
+                                () -> Flux.just(textResponse("recovered"))));
+        Toolkit toolkit = toolkitWith(new TestTool("ext", true, null).suspended());
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        agent.call(List.of()).block();
+        ToolResultBlock nonSuccess =
+                ToolResultBlock.builder()
+                        .id("tc1")
+                        .name("ext")
+                        .output(TextBlock.builder().text("failed externally").build())
+                        .state(state)
+                        .build();
+
+        Msg resumed = agent.call(List.of(externalResultMsg(nonSuccess))).block();
+
+        assertNotNull(resumed);
+        assertEquals(GenerateReason.MODEL_STOP, resumed.getGenerateReason());
+        assertEquals("recovered", resumed.getTextContent());
+        assertEquals(
+                2,
+                model.callCount(),
+                state + " results must be fed back to the model, not returned as the answer");
+    }
+
+    @Test
+    void externalResumeWithMixedBatchDoesNotShortCircuit() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUsesResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("direct")
+                                                                        .input(Map.of())
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("normal")
+                                                                        .input(Map.of())
+                                                                        .build()))),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit toolkit =
+                toolkitWith(
+                        new TestTool("direct", true, null).suspended(),
+                        new TestTool("normal", false, null).suspended());
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        Msg suspended = agent.call(List.of()).block();
+        assertNotNull(suspended);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+
+        Msg resumed =
+                agent.call(
+                                List.of(
+                                        externalResultMsg(
+                                                successResult("tc1", "direct", "direct-out"),
+                                                successResult("tc2", "normal", "normal-out"))))
+                        .block();
+
+        assertNotNull(resumed);
+        assertNotEquals(GenerateReason.TOOL_RETURN_DIRECT, resumed.getGenerateReason());
+        assertEquals(GenerateReason.MODEL_STOP, resumed.getGenerateReason());
+        assertEquals("done", resumed.getTextContent());
+
+        // Mixed batches keep the real (non-placeholder) results in context.
+        Msg directResultMsg = findToolResultMsg(agent, "tc1");
+        assertNotNull(directResultMsg);
+        assertEquals(
+                "direct-out",
+                ((TextBlock)
+                                directResultMsg
+                                        .getContentBlocks(ToolResultBlock.class)
+                                        .get(0)
+                                        .getOutput()
+                                        .get(0))
+                        .getText());
+    }
+
+    @Test
+    void externalAndInternalPathsAreIsomorphic() {
+        // Internal path: the framework executes the returnDirect tool itself.
+        ScriptedModel internalModel =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        ReActAgent internalAgent =
+                buildAgent(
+                        internalModel,
+                        toolkitWith(new TestTool("ext", true, ToolResultBlock.text("sunny"))));
+        Msg internal = internalAgent.call(List.of()).block();
+
+        // External path: the tool suspends and the caller supplies the result.
+        ScriptedModel externalModel =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        ReActAgent externalAgent =
+                buildAgent(externalModel, toolkitWith(new TestTool("ext", true, null).suspended()));
+        externalAgent.call(List.of()).block();
+        Msg external =
+                externalAgent
+                        .call(List.of(externalResultMsg(successResult("tc1", "ext", "sunny"))))
+                        .block();
+
+        assertNotNull(internal);
+        assertNotNull(external);
+        // Return contract.
+        assertEquals(internal.getGenerateReason(), external.getGenerateReason());
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, external.getGenerateReason());
+        assertEquals(internal.getTextContent(), external.getTextContent());
+        // Metadata: same keys, same flags.
+        Msg internalClosing = findLastAssistantMsg(internalAgent);
+        Msg externalClosing = findLastAssistantMsg(externalAgent);
+        assertEquals(
+                internalClosing.getMetadata().keySet(), externalClosing.getMetadata().keySet());
+        // Context shape: [assistant(tool_use), tool(placeholder), assistant(full result)].
+        List<Msg> internalContext = contextOf(internalAgent);
+        List<Msg> externalContext = contextOf(externalAgent);
+        assertEquals(3, internalContext.size());
+        assertEquals(3, externalContext.size());
+        for (int i = 0; i < 3; i++) {
+            assertEquals(internalContext.get(i).getRole(), externalContext.get(i).getRole());
+            assertEquals(
+                    internalContext.get(i).getContentBlocks(ToolUseBlock.class).size(),
+                    externalContext.get(i).getContentBlocks(ToolUseBlock.class).size());
+            assertEquals(
+                    internalContext.get(i).getContentBlocks(ToolResultBlock.class).size(),
+                    externalContext.get(i).getContentBlocks(ToolResultBlock.class).size());
+        }
+        assertEquals(
+                RETURN_DIRECT_PLACEHOLDER,
+                ((TextBlock)
+                                externalContext
+                                        .get(1)
+                                        .getContentBlocks(ToolResultBlock.class)
+                                        .get(0)
+                                        .getOutput()
+                                        .get(0))
+                        .getText());
+    }
+
+    @Test
+    void internalReturnDirectEmitsClosingTextEventsBeforeAgentResult() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "weather", Map.of()))));
+        Toolkit toolkit = toolkitWith(new TestTool("weather", true, ToolResultBlock.text("sunny")));
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int iStart = indexOf(events, TextBlockStartEvent.class);
+        int iDelta = indexOf(events, TextBlockDeltaEvent.class);
+        int iEnd = indexOf(events, TextBlockEndEvent.class);
+        int iResult = indexOf(events, AgentResultEvent.class);
+        assertTrue(iStart >= 0, "closing TextBlockStartEvent must be emitted");
+        assertTrue(iDelta > iStart, "closing delta must follow its start");
+        assertTrue(iEnd > iDelta, "closing end must follow its delta");
+        assertTrue(iResult > iEnd, "closing text events must precede AgentResultEvent");
+
+        TextBlockStartEvent start = (TextBlockStartEvent) events.get(iStart);
+        TextBlockDeltaEvent delta = (TextBlockDeltaEvent) events.get(iDelta);
+        TextBlockEndEvent end = (TextBlockEndEvent) events.get(iEnd);
+        assertEquals(start.getBlockId(), delta.getBlockId());
+        assertEquals(delta.getBlockId(), end.getBlockId());
+        assertEquals(start.getReplyId(), delta.getReplyId());
+        assertEquals("sunny", delta.getDelta(), "delta must carry the full closing text");
+        assertEquals(
+                GenerateReason.TOOL_RETURN_DIRECT.name(),
+                delta.getMetadata().get(AgentEvent.METADATA_GENERATE_REASON),
+                "delta metadata must mark the substitution reason for audit");
+    }
+
+    @Test
+    void externalResumeClosingEventsCorrelateToSuspendedReplyId() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        Toolkit toolkit = toolkitWith(new TestTool("ext", true, null).suspended());
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        List<AgentEvent> suspendEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(suspendEvents);
+        int iRequire = indexOf(suspendEvents, RequireExternalExecutionEvent.class);
+        assertTrue(iRequire >= 0, "RequireExternalExecutionEvent expected");
+        String suspendedReplyId =
+                ((RequireExternalExecutionEvent) suspendEvents.get(iRequire)).getReplyId();
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(
+                                List.of(
+                                        externalResultMsg(
+                                                successResult("tc1", "ext", "ext-result"))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iExternalResult = indexOf(resumeEvents, ExternalExecutionResultEvent.class);
+        int iStart = indexOf(resumeEvents, TextBlockStartEvent.class);
+        int iDelta = indexOf(resumeEvents, TextBlockDeltaEvent.class);
+        int iEnd = indexOf(resumeEvents, TextBlockEndEvent.class);
+        int iResult = indexOf(resumeEvents, AgentResultEvent.class);
+        assertTrue(iExternalResult >= 0, "ExternalExecutionResultEvent must still be emitted");
+        assertTrue(iStart > iExternalResult, "closing events follow the external-result event");
+        assertTrue(iDelta > iStart);
+        assertTrue(iEnd > iDelta);
+        assertTrue(iResult > iEnd, "closing text events must precede AgentResultEvent");
+
+        TextBlockDeltaEvent delta = (TextBlockDeltaEvent) resumeEvents.get(iDelta);
+        assertEquals(
+                suspendedReplyId,
+                delta.getReplyId(),
+                "closing events must correlate to the suspended request's replyId");
+        assertEquals("ext-result", delta.getDelta());
+        assertEquals(
+                GenerateReason.TOOL_RETURN_DIRECT.name(),
+                delta.getMetadata().get(AgentEvent.METADATA_GENERATE_REASON));
+    }
+
+    @Test
+    void parallelSkewPreservesDeclarationOrder() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUsesResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc1")
+                                                                        .name("slow")
+                                                                        .input(Map.of())
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc2")
+                                                                        .name("fast")
+                                                                        .input(Map.of())
+                                                                        .build())))));
+        DataBlock image =
+                DataBlock.builder().source(new URLSource("https://example.com/a.png")).build();
+        ToolResultBlock slowResult =
+                ToolResultBlock.of(List.of(TextBlock.builder().text("slow-text").build(), image));
+        Toolkit toolkit =
+                toolkitWith(
+                        new TestTool("slow", true, slowResult).delayed(300),
+                        new TestTool("fast", true, ToolResultBlock.text("fast-text")));
+        ReActAgent agent = buildAgent(model, toolkit);
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, result.getGenerateReason());
+        // Content order follows tool_calls declaration order, not completion order (slow is
+        // delayed, fast finishes first).
+        List<TextBlock> textBlocks = result.getContentBlocks(TextBlock.class);
+        assertEquals(2, textBlocks.size());
+        assertEquals("slow-text", textBlocks.get(0).getText());
+        assertEquals("fast-text", textBlocks.get(1).getText());
+        assertEquals(3, result.getContent().size(), "slow-text + image + fast-text");
     }
 }
