@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.3-SNAPSHOT</revision>
+        <revision>2.0.4-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -243,6 +243,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-postgresql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions MongoDB (AgentStateStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-mongodb</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

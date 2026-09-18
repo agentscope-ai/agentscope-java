@@ -71,6 +71,14 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT_REMINDER_TYPE = "_structured_output_reminder_type";
 
     /**
+     * Metadata key to indicate that summary generation failed after reaching max iterations.
+     *
+     * <p><b>Type:</b> Boolean
+     * <p><b>Internal use only</b>
+     */
+    public static final String SUMMARY_FAILED = "_summary_failed";
+
+    /**
      * Metadata key for chat usage statistics.
      *
      * <p>Contains token usage information (input tokens, output tokens, and time)

@@ -50,6 +50,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
@@ -843,6 +844,57 @@ class MilvusStoreTest {
         }
     }
 
+    private MilvusStore createMockStoreForSearchWithMetric(
+            IndexParam.MetricType metricType, float... scores) throws VectorStoreException {
+        return createMockStoreForSearchWithMetric(metricType, null, scores);
+    }
+
+    private MilvusStore createMockStoreForSearchWithMetric(
+            IndexParam.MetricType metricType,
+            AtomicReference<SearchReq> capturedSearchRequest,
+            float... scores)
+            throws VectorStoreException {
+        try (MockedConstruction<MilvusClientV2> ignored =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            List<SearchResp.SearchResult> mockResults = new ArrayList<>();
+                            for (int i = 0; i < scores.length; i++) {
+                                SearchResp.SearchResult mockResult =
+                                        mock(SearchResp.SearchResult.class);
+                                when(mockResult.getScore()).thenReturn(scores[i]);
+                                Map<String, Object> entity = new HashMap<>();
+                                entity.put("doc_id", "doc-" + i);
+                                entity.put("chunk_id", 0);
+                                entity.put(
+                                        "content", "{\"type\":\"text\",\"text\":\"Test content\"}");
+                                when(mockResult.getEntity()).thenReturn(entity);
+                                mockResults.add(mockResult);
+                            }
+
+                            SearchResp searchResp = mock(SearchResp.class);
+                            when(searchResp.getSearchResults()).thenReturn(List.of(mockResults));
+                            when(mock.search(any(SearchReq.class)))
+                                    .thenAnswer(
+                                            invocation -> {
+                                                if (capturedSearchRequest != null) {
+                                                    capturedSearchRequest.set(
+                                                            invocation.getArgument(0));
+                                                }
+                                                return searchResp;
+                                            });
+                        })) {
+            return MilvusStore.builder()
+                    .uri(TEST_URI)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .metricType(metricType)
+                    .build();
+        }
+    }
+
     @Test
     @DisplayName("Should return error for null query embedding")
     void testSearchNullQueryEmbedding() throws VectorStoreException {
@@ -995,6 +1047,76 @@ class MilvusStoreTest {
                         results -> {
                             assertNotNull(results);
                             assertTrue(results.isEmpty());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should normalize L2 distances to higher-is-better scores")
+    void testSearchNormalizesL2DistanceScores() throws VectorStoreException {
+        store = createMockStoreForSearchWithMetric(IndexParam.MetricType.L2, 1.0f, 3.0f);
+        double[] query = new double[] {1.0, 0.0, 0.0};
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.0)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertEquals(2, results.size());
+                            assertEquals(0.5, results.get(0).getScore(), 0.001);
+                            assertEquals(0.25, results.get(1).getScore(), 0.001);
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should use configured metric type when searching Milvus")
+    void testSearchUsesConfiguredMetricType() throws VectorStoreException {
+        AtomicReference<SearchReq> capturedSearchRequest = new AtomicReference<>();
+        store =
+                createMockStoreForSearchWithMetric(
+                        IndexParam.MetricType.L2, capturedSearchRequest, 1.0f);
+        double[] query = new double[] {1.0, 0.0, 0.0};
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.0)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertNotNull(capturedSearchRequest.get());
+                            assertEquals(
+                                    IndexParam.MetricType.L2,
+                                    capturedSearchRequest.get().getMetricType());
+                            assertEquals(1, results.size());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should apply score threshold after normalizing L2 distances")
+    void testSearchAppliesThresholdToNormalizedL2Scores() throws VectorStoreException {
+        store = createMockStoreForSearchWithMetric(IndexParam.MetricType.L2, 1.0f, 3.0f);
+        double[] query = new double[] {1.0, 0.0, 0.0};
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.4)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertEquals(1, results.size());
+                            assertEquals(0.5, results.get(0).getScore(), 0.001);
                         })
                 .verifyComplete();
     }

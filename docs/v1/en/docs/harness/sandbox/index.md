@@ -1,6 +1,8 @@
-# Sandbox
+---
+title: Sandbox
+---
 
-[Filesystem](../filesystem.md) explains where an agent's "files and commands" come from. When these operations must be **isolated from the host process**, executed in a **replaceable execution environment** (local Unix, Docker, etc.), and able to **restore the same workspace state** across multiple `call`s, use the **sandbox mode** described here (`filesystem(SandboxFilesystemSpec)`).
+[Filesystem](/v1/en/docs/harness/filesystem) explains where an agent's "files and commands" come from. When these operations must be **isolated from the host process**, executed in a **replaceable execution environment** (local Unix, Docker, etc.), and able to **restore the same workspace state** across multiple `call`s, use the **sandbox mode** described here (`filesystem(SandboxFilesystemSpec)`).
 
 ## 1. What Sandbox Solves
 
@@ -23,7 +25,7 @@ For steps to implement a custom non-Docker isolation backend (`SandboxClient`, `
 
 ## 3. Isolation Dimensions (`IsolationScope`)
 
-`IsolationScope` controls **the persistence key for sandbox state** (sandbox mode) and **the namespace prefix for shared storage** (store mode, see [Filesystem mode 1](../filesystem.md)). Both modes share the same enum with consistent semantics.
+`IsolationScope` controls **the persistence key for sandbox state** (sandbox mode) and **the namespace prefix for shared storage** (store mode, see [Filesystem mode 1](/v1/en/docs/harness/filesystem)). Both modes share the same enum with consistent semantics.
 
 | Scope | Persistence key source | Behavior when missing | Typical use case |
 |-------|----------------------|----------------------|-----------------|
@@ -470,12 +472,12 @@ If `requireDistributed` is true but the current `effectiveSession` is still `Wor
 
 ## 11. Choosing Between the Three Filesystem Modes
 
-Sandbox is one of three **declarative** configuration options. For a full comparison see [Filesystem](../filesystem.md#three-declarative-modes); here are the key decision points:
+Sandbox is one of three **declarative** configuration options. For a full comparison see [Filesystem](/v1/en/docs/harness/filesystem#three-declarative-modes); here are the key decision points:
 
 | You primarily need | Recommended mode |
 |-------------------|-----------------|
-| Multi-instance sharing of `MEMORY.md`, session logs, etc. to KV, **without** running shell on host | `RemoteFilesystemSpec` (see [Filesystem — Mode 1](../filesystem.md)) |
-| Single-process/local, trusted shell, **without** a separate sandbox | `LocalFilesystemSpec` or default local + shell (see [Filesystem — Mode 3](../filesystem.md)) |
+| Multi-instance sharing of `MEMORY.md`, session logs, etc. to KV, **without** running shell on host | `RemoteFilesystemSpec` (see [Filesystem — Mode 1](/v1/en/docs/harness/filesystem)) |
+| Single-process/local, trusted shell, **without** a separate sandbox | `LocalFilesystemSpec` or default local + shell (see [Filesystem — Mode 3](/v1/en/docs/harness/filesystem)) |
 | **Isolated execution**, commands and files in sandbox, **long-session recovery**, optional **snapshots + cluster** | **`SandboxFilesystemSpec` (this page) + optional `sandboxDistributed`** |
 
 ## 12. Subagents
@@ -484,7 +486,7 @@ When `SubagentsHook` is enabled, if the parent agent is built in sandbox mode, *
 
 ## 13. Related Pages
 
-- [Filesystem](../filesystem.md) — class hierarchy, three modes, `abstractFilesystem` escape hatch
-- [Tool](../tool.md) — `FilesystemTool`, `ShellExecuteTool` parameters
-- [Session](../session.md) — `Session` and `WorkspaceSession`
-- [Architecture](../architecture.md) — hook collaboration and lifecycle
+- [Filesystem](/v1/en/docs/harness/filesystem) — class hierarchy, three modes, `abstractFilesystem` escape hatch
+- [Tool](/v1/en/docs/harness/tool) — `FilesystemTool`, `ShellExecuteTool` parameters
+- [Session](/v1/en/docs/harness/session) — `Session` and `WorkspaceSession`
+- [Architecture](/v1/en/docs/harness/architecture) — hook collaboration and lifecycle

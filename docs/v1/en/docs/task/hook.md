@@ -1,4 +1,6 @@
-# Hook
+---
+title: Hook System
+---
 
 Hooks provide extension points to monitor and modify agent behavior at specific execution stages.
 

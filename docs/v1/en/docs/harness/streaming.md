@@ -1,6 +1,8 @@
-# Subagent Streaming
+---
+title: Subagent Streaming
+---
 
-> **Prerequisite**: [Streaming basics](../task/streaming.md) — `stream()` API, `EventType`, `StreamOptions`, SSE integration. This page focuses on `HarnessAgent`'s **child-agent event forwarding** mechanism.
+> **Prerequisite**: [Streaming basics](/v1/en/docs/task/streaming) — `stream()` API, `EventType`, `StreamOptions`, SSE integration. This page focuses on `HarnessAgent`'s **child-agent event forwarding** mechanism.
 
 When a parent `HarnessAgent.stream()` triggers `agent_spawn` or `agent_send`, **all intermediate events** from the child agent are injected into the parent `Flux<Event>` in real time, tagged with an `EventSource` that identifies their origin — no extra configuration needed.
 
@@ -217,6 +219,6 @@ events.onErrorResume(e -> {
 
 ## Related Documents
 
-- [Streaming Basics](../task/streaming.md) — `stream()` API, `EventType`, full `StreamOptions` reference
-- [Subagent](./subagent.md) — Subagent declarations, `agent_spawn` / `agent_send` parameters
-- [Architecture](./architecture.md) — `SubagentEventBus`, Reactor Context injection, and `StreamingHook` lifecycle
+- [Streaming Basics](/v1/en/docs/task/streaming) — `stream()` API, `EventType`, full `StreamOptions` reference
+- [Subagent](/v1/en/docs/harness/subagent) — Subagent declarations, `agent_spawn` / `agent_send` parameters
+- [Architecture](/v1/en/docs/harness/architecture) — `SubagentEventBus`, Reactor Context injection, and `StreamingHook` lifecycle

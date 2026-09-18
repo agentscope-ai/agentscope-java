@@ -21,9 +21,8 @@ import java.nio.charset.StandardCharsets;
 /**
  * One Level-2 session event, mirroring the ASDP {@code SessionEventMsg}.
  *
- * <p>The event stream only carries summaries — {@code content} and {@code toolOutput} are truncated
- * to {@link #MAX_SUMMARY_LEN} characters. Full message bodies are pulled on demand over the Level-3
- * HTTP contract instead of being pushed.
+ * <p>The durable event stream is the canonical conversation history, so message and tool payloads
+ * are preserved rather than depending on the optional Level-3 message-query capability.
  *
  * <p>{@code seq} increases monotonically within a session and is the control plane's idempotency
  * key; it is assigned by the bridge, not by adapters.
@@ -41,12 +40,6 @@ public final class SessionEvent {
     public static final String ROLE_ASSISTANT = "assistant";
     public static final String ROLE_SYSTEM = "system";
     public static final String ROLE_TOOL = "tool";
-
-    /** Summary length cap, aligned with the Python SDK and sdk-design §3.3. */
-    public static final int MAX_SUMMARY_LEN = 500;
-
-    /** Cap on serialized tool input, so a large payload cannot dominate the stream. */
-    public static final int MAX_TOOL_INPUT_BYTES = 4096;
 
     private final String sessionId;
     private final String eventType;
@@ -68,10 +61,10 @@ public final class SessionEvent {
         this.eventType = orEmpty(builder.eventType);
         this.occurredAt = builder.occurredAt > 0 ? builder.occurredAt : System.currentTimeMillis();
         this.role = orEmpty(builder.role);
-        this.content = truncate(builder.content, MAX_SUMMARY_LEN);
+        this.content = orEmpty(builder.content);
         this.toolName = orEmpty(builder.toolName);
-        this.toolInput = truncate(builder.toolInput, MAX_TOOL_INPUT_BYTES);
-        this.toolOutput = truncate(builder.toolOutput, MAX_SUMMARY_LEN);
+        this.toolInput = builder.toolInput == null ? null : builder.toolInput.clone();
+        this.toolOutput = orEmpty(builder.toolOutput);
         this.tokensIn = Math.max(0, builder.tokensIn);
         this.tokensOut = Math.max(0, builder.tokensOut);
         this.durationMs = Math.max(0, builder.durationMs);
@@ -157,22 +150,6 @@ public final class SessionEvent {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
-    }
-
-    private static String truncate(String value, int limit) {
-        if (value == null) {
-            return "";
-        }
-        return value.length() <= limit ? value : value.substring(0, limit);
-    }
-
-    private static byte[] truncate(byte[] value, int limit) {
-        if (value == null || value.length <= limit) {
-            return value;
-        }
-        byte[] out = new byte[limit];
-        System.arraycopy(value, 0, out, 0, limit);
-        return out;
     }
 
     /** Mutable builder for {@link SessionEvent}. */

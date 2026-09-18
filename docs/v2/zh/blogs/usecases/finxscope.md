@@ -1,8 +1,6 @@
 ---
-hide-toc: true
+title: FinXScope：基于 AgentScope 构建金融级智能体底座
 ---
-
-# 基于 AgentScope 构建金融级智能体底座实战
 
 > 作者：孟辰(半堂)，文军(思越)，凌乐真(乐真)，徐磊(崇树)，林源(逆仞)
 

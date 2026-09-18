@@ -1,4 +1,6 @@
-# Kimi Model
+---
+title: Kimi
+---
 
 `agentscope-extensions-model-openai` provides first-class Kimi (Moonshot AI) support through the OpenAI-compatible model stack. Add the OpenAI model extension module, then use `kimi:<model>` with `ModelRegistry`.
 

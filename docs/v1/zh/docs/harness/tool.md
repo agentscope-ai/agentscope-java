@@ -1,4 +1,6 @@
-# 工具（Tool）
+---
+title: 工具
+---
 
 ## 作用
 
@@ -6,7 +8,7 @@ harness 层默认为 agent 提供一套“足够走完一个闭环”的内置�
 
 ## 注册路径
 
-```{mermaid}
+```mermaid
 graph LR
     Build[HarnessAgent.build] --> R1[FilesystemTool]
     Build --> R2[MemorySearchTool]
@@ -88,7 +90,7 @@ Session mode 下，这三个名会变为 `sessions_spawn` / `sessions_send` / `s
 |------|------|------|
 | `execute` | 走后端 `execute()`，返 stdout + exit code | `command`, `working_directory`（可选，实际拼接为 `cd <dir> && <cmd>`）, `timeout`（秒，默认 30）|
 
-> **注意**：@Tool 未显式设 `name`，默认取方法名，所以 LLM 看到的工具名是 `execute`。如果后续统一为 `shell_execute` 是个小重构，参见 [roadmap](./roadmap.md)。
+> **注意**：@Tool 未显式设 `name`，默认取方法名，所以 LLM 看到的工具名是 `execute`。如果后续统一为 `shell_execute` 是个小重构，参见 [roadmap](/v1/zh/docs/harness/overview)。
 
 ```
 execute command="find . -name '*.java' | wc -l"
@@ -98,7 +100,7 @@ execute command="git status" working_directory="app"   # 拼为 cd app && git st
 
 ## 相关文档
 
-- [文件系统](./filesystem.md) — 后端实现与沙箱接口
-- [记忆](./memory.md) — `memory_search` / `memory_get` 背后的 FTS5 与双层记忆
-- [会话](./session.md) — `session_*` 系列背后的 `WorkspaceSession` / `SessionTree` 双轨
-- [子 Agent](./subagent.md) — `agent_spawn` / `agent_send` / `task_*` 的调度与生命周期
+- [文件系统](/v1/zh/docs/harness/filesystem) — 后端实现与沙箱接口
+- [记忆](/v1/zh/docs/harness/memory) — `memory_search` / `memory_get` 背后的 FTS5 与双层记忆
+- [会话](/v1/zh/docs/harness/session) — `session_*` 系列背后的 `WorkspaceSession` / `SessionTree` 双轨
+- [子 Agent](/v1/zh/docs/harness/subagent) — `agent_spawn` / `agent_send` / `task_*` 的调度与生命周期
