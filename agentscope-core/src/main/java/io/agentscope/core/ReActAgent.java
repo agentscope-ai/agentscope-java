@@ -2569,10 +2569,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // so the null-raw case is investigable.
                                     String kinds =
                                             soFailedAttempts.stream()
-                                                    .map(a -> a.kind().name())
-                                                    .collect(
-                                                            java.util.stream.Collectors.joining(
-                                                                    ","));
+                                                    .map(a -> String.valueOf(a.kind()))
+                                                    .collect(Collectors.joining(","));
                                     log.error(
                                             "Unknown-domain failure exhausted retries without"
                                                     + " a recorded cause: after {} attempt(s),"
