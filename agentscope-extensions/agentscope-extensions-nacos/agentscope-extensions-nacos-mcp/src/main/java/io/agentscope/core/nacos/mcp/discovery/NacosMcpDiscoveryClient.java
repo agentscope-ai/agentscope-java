@@ -43,6 +43,8 @@ import java.util.Properties;
  */
 public class NacosMcpDiscoveryClient {
 
+    private static final int MAX_PORT = 65535;
+
     private final AiService aiService;
 
     /**
@@ -108,7 +110,8 @@ public class NacosMcpDiscoveryClient {
      * Resolves the load-balancable endpoints of an MCP server from its detail info.
      *
      * <p>Backend endpoints are preferred; if the MCP server exposes no backend endpoints, the
-     * frontend endpoints are used instead.
+     * frontend endpoints are used instead. Entries without an address, or with a port outside
+     * {@code 1..65535}, are skipped.
      *
      * @param detailInfo the MCP server detail info from the Nacos registry
      * @return the resolved endpoints, may be empty but never null
@@ -130,7 +133,15 @@ public class NacosMcpDiscoveryClient {
                         ? detailInfo.getRemoteServerConfig().getExportPath()
                         : null;
         for (McpEndpointInfo endpointInfo : endpointInfos) {
-            if (endpointInfo == null || endpointInfo.getAddress() == null) {
+            if (endpointInfo == null
+                    || endpointInfo.getAddress() == null
+                    || endpointInfo.getAddress().isEmpty()) {
+                continue;
+            }
+            int port = endpointInfo.getPort();
+            if (port <= 0 || port > MAX_PORT) {
+                // A bad port would otherwise surface much later as a malformed URL inside the
+                // transport, e.g. http://10.0.0.1:0/mcp.
                 continue;
             }
             result.add(NacosMcpEndpoint.from(endpointInfo, exportPath));

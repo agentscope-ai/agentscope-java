@@ -27,7 +27,6 @@ import io.agentscope.core.nacos.mcp.discovery.NacosMcpDiscoveryClient;
 import io.agentscope.core.nacos.mcp.loadbalance.NacosLoadBalancedMcpClientWrapper;
 import io.agentscope.spring.boot.nacos.properties.mcp.AgentScopeMcpNacosProperties;
 import io.agentscope.spring.boot.nacos.properties.mcp.NacosMcpConnectionProperties.LoadBalanceStrategy;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -135,8 +134,8 @@ class AgentscopeMcpNacosAutoConfigurationTest {
                                 assertThat(amap.getVersion()).isEqualTo("2.0.0");
 
                                 // wrappers are not initialized during context startup
-                                assertThat(weather.getCurrentEndpoints()).isEmpty();
-                                assertThat(amap.getCurrentEndpoints()).isEmpty();
+                                assertThat(weather.getRegisteredEndpoints()).isEmpty();
+                                assertThat(amap.getRegisteredEndpoints()).isEmpty();
                             });
         }
     }
@@ -212,8 +211,29 @@ class AgentscopeMcpNacosAutoConfigurationTest {
     }
 
     @Test
-    void shouldBackOffWhenUserProvidesCustomNacosMcpClients() {
-        NacosMcpClients custom = new NacosMcpClients(List.of());
+    void shouldFailWhenConnectionServiceNameIsMissing() {
+        try (MockedStatic<AiFactory> mockedStatic = Mockito.mockStatic(AiFactory.class)) {
+            mockedStatic.when(() -> AiFactory.createAiService(any())).thenReturn(mockAiService);
+
+            runner().withPropertyValues(
+                            "agentscope.nacos.mcp.enabled=true",
+                            "agentscope.nacos.mcp.connections.weather.version=1.0.0")
+                    .run(
+                            context -> {
+                                assertThat(context).hasFailed();
+                                assertThat(context.getStartupFailure())
+                                        .hasStackTraceContaining("weather")
+                                        .hasStackTraceContaining(
+                                                "agentscope.nacos.mcp.connections.weather"
+                                                        + ".service-name");
+                            });
+        }
+    }
+
+    @Test
+    void shouldCloseUserProvidedNacosMcpClientsOnShutdown() {
+        NacosMcpClients custom = mock(NacosMcpClients.class);
+
         try (MockedStatic<AiFactory> mockedStatic = Mockito.mockStatic(AiFactory.class)) {
             mockedStatic.when(() -> AiFactory.createAiService(any())).thenReturn(mockAiService);
 
@@ -225,7 +245,11 @@ class AgentscopeMcpNacosAutoConfigurationTest {
                             context -> {
                                 assertThat(context).hasSingleBean(NacosMcpClients.class);
                                 assertThat(context.getBean(NacosMcpClients.class)).isSameAs(custom);
+                                verify(custom, Mockito.never()).close();
                             });
         }
+
+        // the context is closed once the consumer returns, so Spring must have closed the bean
+        verify(custom).close();
     }
 }

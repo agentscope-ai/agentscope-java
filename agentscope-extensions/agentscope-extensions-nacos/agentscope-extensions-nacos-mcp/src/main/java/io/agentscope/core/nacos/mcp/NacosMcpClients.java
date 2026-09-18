@@ -16,7 +16,6 @@
 package io.agentscope.core.nacos.mcp;
 
 import io.agentscope.core.nacos.mcp.loadbalance.NacosLoadBalancedMcpClientWrapper;
-import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -26,14 +25,20 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A group of {@link NacosLoadBalancedMcpClientWrapper}s created from the Nacos MCP registry
- * configuration, with a convenience method to register them all into a {@link Toolkit}.
+ * configuration.
  *
- * <p>This holder exists so that the wrappers can be injected as a single unambiguous bean, and so
- * that wiring Nacos-discovered MCP tools into an agent takes one line:
+ * <p>This holder exists so that the wrappers can be injected as a single unambiguous bean. Pick the
+ * connections an agent needs with {@link #get(String)} and register them into its Toolkit:
  * <pre>{@code
  * HarnessAgent agent = HarnessAgent.builder().toolkit(new Toolkit())...build();
- * nacosMcpClients.registerTo(agent.getToolkit());
+ * NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+ * weather.initialize().block();
+ * agent.getToolkit().registerMcpClient(weather).block();
  * }</pre>
+ *
+ * <p>A Toolkit registration publishes the tools that are available at that moment: endpoint scale
+ * in/out is applied by each wrapper in the background from Nacos push, but a server that only
+ * appears after registration, or a server whose tool set changes later, has to be registered again.
  *
  * <p>Closing this holder closes all the wrappers it contains.
  */
@@ -85,37 +90,6 @@ public class NacosMcpClients implements Iterable<NacosLoadBalancedMcpClientWrapp
      */
     public boolean isEmpty() {
         return clients.isEmpty();
-    }
-
-    /**
-     * Registers all wrappers into the given Toolkit, turning the remote MCP tools into AgentScope
-     * tools.
-     *
-     * <p>A wrapper that fails to register (for example because the MCP server is not available yet)
-     * is logged and skipped, so that one broken connection does not prevent the others from being
-     * registered.
-     *
-     * @param toolkit the Toolkit the agent actually holds
-     */
-    public void registerTo(Toolkit toolkit) {
-        if (toolkit == null) {
-            throw new IllegalArgumentException("Toolkit must not be null");
-        }
-        for (NacosLoadBalancedMcpClientWrapper client : clients) {
-            try {
-                toolkit.registerMcpClient(client).block();
-                logger.info(
-                        "Registered Nacos MCP client '{}' into Toolkit with {} endpoint(s)",
-                        client.getName(),
-                        client.getCurrentEndpoints().size());
-            } catch (Exception e) {
-                logger.error(
-                        "Failed to register Nacos MCP client '{}' into Toolkit,"
-                                + " its tools are unavailable",
-                        client.getName(),
-                        e);
-            }
-        }
     }
 
     /**

@@ -106,7 +106,7 @@ AgentSkill skill = repo.getSkill("calculator");
 
 ## MCP 服务发现
 
-`agentscope-extensions-nacos-mcp` 从 Nacos MCP Registry 订阅一个 MCP Server，把它注册的多个后端实例聚合成一个带负载均衡的 MCP 客户端。实例扩缩容由 Nacos 推送，无需重启 Agent。
+`agentscope-extensions-nacos-mcp` 从 Nacos MCP Registry 订阅一个 MCP Server，把它注册的多个后端实例聚合成一个带负载均衡的 MCP 客户端。实例扩缩容由 Nacos 推送在运行期生效；某次调用打到不健康的实例时，会自动切到其余已连通的实例。
 
 > 需要 Nacos 3.x 并启用 MCP Registry 能力。
 
@@ -140,12 +140,25 @@ client.initialize().block();
 toolkit.registerMcpClient(client).block();
 ```
 
-工具调用会分发到该 MCP Server 的某个实例上，具体由 `EndpointSelector` 决定，内置两种：
+工具调用会分发到某个已连通的实例上，具体由 `EndpointSelector` 决定，内置两种：
 
 | 策略 | 适用场景 |
 | --- | --- |
 | `RoundRobinEndpointSelector` | 默认。调用轮流打到各实例，要求实例无状态 |
-| `StickyEndpointSelector` | 尽量固定一个实例，适合有状态的服务 |
+| `StickyEndpointSelector` | 每个逻辑 MCP 客户端固定一个实例，适合有状态的服务 |
+
+### 工具注册是快照
+
+端点变化在后台生效，但 `Toolkit.registerMcpClient(...)` 只发布注册那一刻发现的工具列表。所以从 `NacosMcpClients` 里取出需要的连接后自行注册；如果 MCP Server 可能还在启动，可以先等第一个实例连通：
+
+```java
+NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+weather.initialize().block();
+weather.awaitConnectedEndpoint(Duration.ofSeconds(30));  // 可选，有界等待首个实例连通
+toolkit.registerMcpClient(weather).block();
+```
+
+注册之后才出现的 Server、或工具集后来发生变化的 Server，需要重新注册一次；仅仅是实例扩缩容不需要。
 
 ### Spring Boot 自动配置
 
@@ -167,7 +180,7 @@ agentscope:
           load-balance: sticky
 ```
 
-装配好的 `NacosMcpClients` 一次性注册进 Agent 的 Toolkit：
+把需要的连接注册进 Agent 的 Toolkit：
 
 ```java
 @Bean
@@ -176,7 +189,9 @@ public HarnessAgent harnessAgent(NacosMcpClients nacosMcpClients) {
         .name("Assistant")
         .model("dashscope:qwen-max")
         .build();
-    nacosMcpClients.registerTo(agent.getToolkit());   // 单个连接失败不影响其他连接
+    NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+    weather.initialize().block();
+    agent.getToolkit().registerMcpClient(weather).block();
     return agent;
 }
 ```

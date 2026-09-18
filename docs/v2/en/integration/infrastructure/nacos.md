@@ -106,7 +106,7 @@ Version/label resolution order: `Properties` provided to the constructor → JVM
 
 ## MCP server discovery
 
-`agentscope-extensions-nacos-mcp` subscribes to an MCP server in the Nacos MCP registry and aggregates its backend instances into a single load-balanced MCP client. Scaling the server is picked up from Nacos push, with no Agent restart.
+`agentscope-extensions-nacos-mcp` subscribes to an MCP server in the Nacos MCP registry and aggregates its backend instances into a single load-balanced MCP client. Instances scaling in/out are picked up from Nacos push at runtime, and a tool call that hits an unhealthy instance fails over to the remaining connected ones.
 
 > Requires a Nacos 3.x server with the MCP registry capability enabled.
 
@@ -140,12 +140,25 @@ client.initialize().block();
 toolkit.registerMcpClient(client).block();
 ```
 
-Tool calls are dispatched to one of the MCP server's instances, decided by an `EndpointSelector`. Two are built in:
+Tool calls are dispatched to one of the connected instances, decided by an `EndpointSelector`. Two are built in:
 
 | Strategy | When to use |
 | --- | --- |
 | `RoundRobinEndpointSelector` | Default. Rotates calls across instances; requires stateless instances |
-| `StickyEndpointSelector` | Prefers one instance; suits stateful servers |
+| `StickyEndpointSelector` | Pins one instance per logical MCP client; suits stateful servers |
+
+### Tool registration is a snapshot
+
+Endpoint changes are applied in the background, but `Toolkit.registerMcpClient(...)` publishes the tool list discovered at registration time. So pick the connection you need from `NacosMcpClients` and register it yourself, waiting for a first endpoint to come up if the MCP server may still be starting:
+
+```java
+NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+weather.initialize().block();
+weather.awaitConnectedEndpoint(Duration.ofSeconds(30));   // optional, bounded wait for a first instance
+toolkit.registerMcpClient(weather).block();
+```
+
+A server that appears after registration, or a server whose tool set changes later, needs a fresh `registerMcpClient` call: endpoint scale in/out alone does not require it.
 
 ### Spring Boot autoconfiguration
 
@@ -167,7 +180,7 @@ agentscope:
           load-balance: sticky
 ```
 
-Register the assembled `NacosMcpClients` into the Agent's Toolkit in one call:
+Register the connection you need into the Agent's Toolkit:
 
 ```java
 @Bean
@@ -176,7 +189,9 @@ public HarnessAgent harnessAgent(NacosMcpClients nacosMcpClients) {
         .name("Assistant")
         .model("dashscope:qwen-max")
         .build();
-    nacosMcpClients.registerTo(agent.getToolkit());   // a failing connection does not block the others
+    NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+    weather.initialize().block();
+    agent.getToolkit().registerMcpClient(weather).block();
     return agent;
 }
 ```

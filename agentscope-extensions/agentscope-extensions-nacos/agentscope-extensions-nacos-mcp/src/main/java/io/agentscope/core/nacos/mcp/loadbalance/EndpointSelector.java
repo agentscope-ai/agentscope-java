@@ -23,8 +23,9 @@ import java.util.List;
  *
  * <p>Implementations decide how tool calls are distributed across the backend instances
  * discovered from the Nacos MCP registry. The default implementation is
- * {@link RoundRobinEndpointSelector}; {@link StickyEndpointSelector} can be used when
- * consecutive calls of one session should stick to the same instance.
+ * {@link RoundRobinEndpointSelector}; {@link StickyEndpointSelector} pins one backend per
+ * {@link NacosLoadBalancedMcpClientWrapper}, which is not the same as per-session affinity: every
+ * tool call issued through the wrapper, from any agent or session, sticks to the same instance.
  */
 public interface EndpointSelector {
 

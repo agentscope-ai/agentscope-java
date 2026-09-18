@@ -20,15 +20,16 @@ import java.util.List;
 
 /**
  * A sticky {@link EndpointSelector} that keeps selecting the same endpoint as long as it stays
- * available, providing session affinity for stateful MCP servers.
+ * available, pinning a stateful MCP server to one backend instance.
  *
  * <p>On the first selection the first candidate is chosen and remembered. Subsequent selections
  * return the remembered endpoint while it still exists among the candidates; once it disappears
  * (e.g. the instance is scaled in), the selector fails over to the first remaining candidate.
  *
  * <p>Note that stickiness is maintained per selector instance, i.e. per
- * {@link NacosLoadBalancedMcpClientWrapper}. All tool calls issued through one wrapper stick to
- * one backend instance.
+ * {@link NacosLoadBalancedMcpClientWrapper}: it is one pinned backend per logical MCP client, not
+ * per-session affinity. All tool calls issued through one wrapper stick to one backend instance,
+ * whatever agent or session issued them.
  */
 public class StickyEndpointSelector implements EndpointSelector {
 

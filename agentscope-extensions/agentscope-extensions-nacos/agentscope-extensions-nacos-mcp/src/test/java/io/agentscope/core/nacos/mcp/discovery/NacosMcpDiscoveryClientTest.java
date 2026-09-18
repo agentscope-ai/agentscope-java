@@ -239,13 +239,35 @@ class NacosMcpDiscoveryClientTest {
         void shouldSkipUnusableEndpointEntries() {
             McpEndpointInfo withoutAddress = new McpEndpointInfo();
             withoutAddress.setPort(8080);
+            McpEndpointInfo blankAddress = endpoint("", 8080);
             McpServerDetailInfo detail =
-                    detail(Arrays.asList(endpoint("10.0.0.1", 8080), null, withoutAddress), null);
+                    detail(
+                            Arrays.asList(
+                                    endpoint("10.0.0.1", 8080), null, withoutAddress, blankAddress),
+                            null);
 
             List<NacosMcpEndpoint> endpoints = NacosMcpDiscoveryClient.resolveEndpoints(detail);
 
             assertEquals(1, endpoints.size());
             assertEquals("10.0.0.1", endpoints.get(0).getAddress());
+        }
+
+        @Test
+        @DisplayName("Should skip endpoints with an unusable port")
+        void shouldSkipEndpointsWithUnusablePort() {
+            McpServerDetailInfo detail =
+                    detail(
+                            Arrays.asList(
+                                    endpoint("10.0.0.1", 0),
+                                    endpoint("10.0.0.2", -1),
+                                    endpoint("10.0.0.3", 65536),
+                                    endpoint("10.0.0.4", 8080)),
+                            null);
+
+            List<NacosMcpEndpoint> endpoints = NacosMcpDiscoveryClient.resolveEndpoints(detail);
+
+            assertEquals(1, endpoints.size());
+            assertEquals("10.0.0.4", endpoints.get(0).getAddress());
         }
 
         @Test

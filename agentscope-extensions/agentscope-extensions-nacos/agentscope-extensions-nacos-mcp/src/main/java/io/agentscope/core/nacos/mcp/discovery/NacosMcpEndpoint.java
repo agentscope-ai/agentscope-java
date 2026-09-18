@@ -39,14 +39,32 @@ public class NacosMcpEndpoint {
      *
      * @param address the host or IP address of the endpoint
      * @param port the port of the endpoint
-     * @param path the export path of the MCP server (e.g. {@code /mcp})
+     * @param path the export path of the MCP server (e.g. {@code /mcp}); it is normalized to always
+     *     start with {@code /} and never end with one, so that {@code mcp}, {@code /mcp} and
+     *     {@code /mcp/} describe the same endpoint
      * @param scheme the HTTP scheme, either {@code http} or {@code https}
      */
     public NacosMcpEndpoint(String address, int port, String path, String scheme) {
         this.address = address;
         this.port = port;
-        this.path = (path == null || path.isEmpty()) ? "/" : path;
+        this.path = normalizePath(path);
         this.scheme = scheme;
+    }
+
+    /**
+     * Normalizes an export path so that it can be concatenated after {@code host:port}: an empty or
+     * null path becomes {@code /}, a path without a leading slash gets one, and a trailing slash is
+     * dropped.
+     */
+    private static String normalizePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return "/";
+        }
+        String normalized = path.startsWith("/") ? path : "/" + path;
+        while (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     /**
@@ -76,10 +94,14 @@ public class NacosMcpEndpoint {
     /**
      * Returns a unique key identifying this endpoint, used to diff endpoint changes.
      *
-     * @return the endpoint key in the form of {@code address@@port@@path}
+     * <p>The scheme is part of the key: an MCP server that flips from {@code http} to {@code https}
+     * on the same address, port and path becomes a different endpoint, so the reconcile closes the
+     * stale connection instead of keeping it.
+     *
+     * @return the endpoint key in the form of {@code scheme@@address@@port@@path}
      */
     public String key() {
-        return address + "@@" + port + "@@" + path;
+        return scheme + "@@" + address + "@@" + port + "@@" + path;
     }
 
     /**

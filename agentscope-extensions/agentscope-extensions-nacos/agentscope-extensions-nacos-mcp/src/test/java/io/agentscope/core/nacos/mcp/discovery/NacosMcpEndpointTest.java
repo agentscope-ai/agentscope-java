@@ -16,6 +16,7 @@
 package io.agentscope.core.nacos.mcp.discovery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import com.alibaba.nacos.api.ai.model.mcp.McpEndpointInfo;
 import org.junit.jupiter.api.DisplayName;
@@ -34,10 +35,30 @@ class NacosMcpEndpointTest {
     }
 
     @Test
-    @DisplayName("Should build key from address, port and path")
+    @DisplayName("Should normalize the path to a single leading slash without a trailing one")
+    void shouldNormalizePath() {
+        assertEquals("/mcp", new NacosMcpEndpoint("127.0.0.1", 8080, "mcp", "http").getPath());
+        assertEquals("/mcp", new NacosMcpEndpoint("127.0.0.1", 8080, "/mcp/", "http").getPath());
+        assertEquals("/", new NacosMcpEndpoint("127.0.0.1", 8080, "/", "http").getPath());
+        assertEquals(
+                "http://127.0.0.1:8080/mcp",
+                new NacosMcpEndpoint("127.0.0.1", 8080, "mcp", "http").url());
+    }
+
+    @Test
+    @DisplayName("Should build key from scheme, address, port and path")
     void shouldBuildKey() {
         NacosMcpEndpoint endpoint = new NacosMcpEndpoint("127.0.0.1", 8080, "/mcp", "http");
-        assertEquals("127.0.0.1@@8080@@/mcp", endpoint.key());
+        assertEquals("http@@127.0.0.1@@8080@@/mcp", endpoint.key());
+    }
+
+    @Test
+    @DisplayName("Should treat a scheme change on the same address as a different endpoint")
+    void shouldIncludeSchemeInKey() {
+        NacosMcpEndpoint http = new NacosMcpEndpoint("127.0.0.1", 8080, "/mcp", "http");
+        NacosMcpEndpoint https = new NacosMcpEndpoint("127.0.0.1", 8080, "/mcp", "https");
+
+        assertNotEquals(http.key(), https.key());
     }
 
     @Test

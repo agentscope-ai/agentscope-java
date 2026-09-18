@@ -54,12 +54,16 @@ import org.springframework.context.annotation.Bean;
  * Nacos clusters can be configured for each capability.
  *
  * <p>Each entry under {@code agentscope.nacos.mcp.connections} becomes one load-balanced MCP
- * client. Applications register them into the Toolkit their agent actually holds:
+ * client. Applications pick the connections they need and register them into the Toolkit their
+ * agent actually holds:
  * <pre>{@code
  * @Bean
  * public HarnessAgent harnessAgent(NacosMcpClients nacosMcpClients) {
  *     HarnessAgent agent = HarnessAgent.builder().toolkit(new Toolkit())...build();
- *     nacosMcpClients.registerTo(agent.getToolkit());
+ *     NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+ *     weather.initialize().block();
+ *     weather.awaitConnectedEndpoint(Duration.ofSeconds(30));  // optional: wait for a first instance
+ *     agent.getToolkit().registerMcpClient(weather).block();
  *     return agent;
  * }
  * }</pre>
@@ -83,8 +87,6 @@ public class AgentscopeMcpNacosAutoConfiguration implements Closeable {
             LoggerFactory.getLogger(AgentscopeMcpNacosAutoConfiguration.class);
 
     private final AiService mcpAiService;
-
-    private final List<NacosLoadBalancedMcpClientWrapper> mcpClients = new ArrayList<>();
 
     /**
      * Constructs a new instance of {@link AgentscopeMcpNacosAutoConfiguration}.
@@ -117,22 +119,37 @@ public class AgentscopeMcpNacosAutoConfiguration implements Closeable {
      * Creates one load-balanced MCP client wrapper per configured connection and groups them into
      * a {@link NacosMcpClients} holder.
      *
-     * <p>The wrappers are not initialized here; initialization happens when a Toolkit registers
-     * them via {@link NacosMcpClients#registerTo(io.agentscope.core.tool.Toolkit)}.
+     * <p>The wrappers are not initialized here; initialization happens when the application
+     * registers them into a Toolkit.
+     *
+     * <p>The returned holder is an {@link AutoCloseable} bean, so Spring closes all wrappers (and
+     * their Nacos subscriptions) on shutdown, including when the application supplies its own
+     * {@link NacosMcpClients} bean and this method backs off.
      *
      * @param discoveryClient the Nacos MCP discovery client
      * @param mcpNacosProperties the MCP Nacos properties
      * @return the holder of load-balanced MCP client wrappers
      */
-    @Bean
+    @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean
     public NacosMcpClients nacosMcpClients(
             NacosMcpDiscoveryClient discoveryClient,
             AgentScopeMcpNacosProperties mcpNacosProperties) {
+        List<NacosLoadBalancedMcpClientWrapper> clients = new ArrayList<>();
         for (Map.Entry<String, NacosMcpConnectionProperties> entry :
                 mcpNacosProperties.getConnections().entrySet()) {
             String clientName = entry.getKey();
             NacosMcpConnectionProperties connection = entry.getValue();
+            String serviceName = connection == null ? null : connection.getServiceName();
+            if (serviceName == null || serviceName.trim().isEmpty()) {
+                throw new IllegalStateException(
+                        "Missing MCP server service-name for Nacos MCP connection '"
+                                + clientName
+                                + "'; set agentscope.nacos.mcp.connections."
+                                + clientName
+                                + ".service-name to the name of the MCP server registered in"
+                                + " Nacos");
+            }
             NacosMcpConnectionProperties.LoadBalanceStrategy strategy =
                     connection.getLoadBalance() != null
                             ? connection.getLoadBalance()
@@ -141,32 +158,26 @@ public class AgentscopeMcpNacosAutoConfiguration implements Closeable {
                     strategy == NacosMcpConnectionProperties.LoadBalanceStrategy.STICKY
                             ? new StickyEndpointSelector()
                             : new RoundRobinEndpointSelector();
-            mcpClients.add(
+            clients.add(
                     NacosLoadBalancedMcpClientWrapper.builder(clientName)
-                            .serverName(connection.getServiceName())
+                            .serverName(serviceName)
                             .version(connection.getVersion())
                             .discoveryClient(discoveryClient)
                             .endpointSelector(selector)
                             .build());
         }
-        return new NacosMcpClients(mcpClients);
+        return new NacosMcpClients(clients);
     }
 
     /**
-     * Closes the Nacos MCP service and all MCP client wrappers.
+     * Shuts down the dedicated Nacos MCP service. The MCP client wrappers are closed by Spring
+     * through the {@code destroyMethod} of the {@link NacosMcpClients} bean.
      *
      * @throws IOException if there is an error during the shutdown process
      */
     @Override
     @PreDestroy
     public void close() throws IOException {
-        for (NacosLoadBalancedMcpClientWrapper client : mcpClients) {
-            try {
-                client.close();
-            } catch (Exception e) {
-                log.error("Error closing Nacos MCP client '{}'", client.getName(), e);
-            }
-        }
         if (null != mcpAiService) {
             try {
                 mcpAiService.shutdown();

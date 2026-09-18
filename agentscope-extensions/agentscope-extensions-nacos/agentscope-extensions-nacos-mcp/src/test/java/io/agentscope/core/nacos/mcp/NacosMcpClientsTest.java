@@ -119,11 +119,4 @@ class NacosMcpClientsTest {
         verify(broken).close();
         verify(ok).close();
     }
-
-    @Test
-    @DisplayName("Should reject a null toolkit on registerTo")
-    void shouldRejectNullToolkit() {
-        NacosMcpClients clients = new NacosMcpClients(List.of(client("weather")));
-        assertThrows(IllegalArgumentException.class, () -> clients.registerTo(null));
-    }
 }

@@ -52,6 +52,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AgentScopeMcpNacosProperties extends BaseNacosProperties {
 
     /**
+     * Whether the Nacos MCP discovery integration is enabled. Gates the auto-configuration through
+     * {@code agentscope.nacos.mcp.enabled}.
+     */
+    private boolean enabled = false;
+
+    /**
      * The default load balancing strategy applied to connections that do not override it.
      */
     private NacosMcpConnectionProperties.LoadBalanceStrategy loadBalance =
@@ -62,6 +68,14 @@ public class AgentScopeMcpNacosProperties extends BaseNacosProperties {
      * logical MCP client name, the value describes the registered MCP server to subscribe.
      */
     private Map<String, NacosMcpConnectionProperties> connections = new LinkedHashMap<>();
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 
     public NacosMcpConnectionProperties.LoadBalanceStrategy getLoadBalance() {
         return loadBalance;

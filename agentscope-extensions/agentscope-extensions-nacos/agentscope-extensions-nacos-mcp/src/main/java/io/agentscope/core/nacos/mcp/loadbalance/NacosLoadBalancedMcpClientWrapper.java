@@ -28,13 +28,20 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -43,9 +50,17 @@ import reactor.core.publisher.Mono;
  *
  * <p>This wrapper subscribes to an MCP server registered in Nacos, maintains one underlying MCP
  * client connection per backend endpoint, and keeps the connection set in sync with endpoint
- * changes pushed by Nacos (instances scaling in/out). Each {@link #callTool} invocation picks an
- * endpoint through the configured {@link EndpointSelector} (round-robin by default) and delegates
- * to the corresponding connection.
+ * changes pushed by Nacos (instances scaling in/out). Each {@link #callTool} invocation picks a
+ * connected endpoint through the configured {@link EndpointSelector} (round-robin by default) and
+ * delegates to the corresponding connection. If the selected endpoint fails, the call fails over
+ * to the remaining connected endpoints instead of failing outright, so an instance that is still
+ * starting up or already shutting down does not break the call as long as one endpoint is healthy.
+ *
+ * <p>Endpoint changes propagate at runtime. Note that the tool list published into a
+ * {@code Toolkit} is a snapshot taken at registration time: a server that only becomes available
+ * after the application started (or whose tool set changes later) needs the wrapper to be
+ * re-registered. {@link #awaitConnectedEndpoint(Duration)} waits for a first connection and is the
+ * recommended way to avoid publishing an empty tool set while the server is still starting up.
  *
  * <p>Because the wrapper is itself a {@link McpClientWrapper}, it can be registered into a
  * {@code Toolkit} directly, and all remote MCP tools are converted into AgentScope tools
@@ -75,11 +90,35 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
 
     private final EndpointSelector endpointSelector;
 
-    private final Duration requestTimeout;
+    private final EndpointClientFactory clientFactory;
 
-    private final Duration initializationTimeout;
-
+    /** One MCP connection per endpoint key; only mutated while holding {@link #reconcileLock}. */
     private final Map<String, McpClientWrapper> endpointClients = new ConcurrentHashMap<>();
+
+    /**
+     * Serializes every mutation of {@link #endpointClients} and {@link #registeredEndpoints}. The
+     * mutations themselves run on {@link #reconciler}, so this lock is uncontended in practice; it
+     * also gives {@link #close()} and {@link #initialize()} a single monitor to synchronize on.
+     */
+    private final ReentrantLock reconcileLock = new ReentrantLock();
+
+    /**
+     * Applies registry snapshots one at a time, off the caller thread. Nacos delivers pushes on
+     * its own dispatcher thread, and connecting an endpoint blocks on the transport handshake, so
+     * doing that work inline would stall event delivery for every other subscriber of the same
+     * Nacos client. A single thread also guarantees that snapshots are applied in submission
+     * order.
+     */
+    private final ExecutorService reconciler =
+            Executors.newSingleThreadExecutor(
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "nacos-mcp-reconciler-" + name);
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+
+    /** Monitor for waiters of {@link #awaitConnectedEndpoint(Duration)}. */
+    private final Object endpointReadyMonitor = new Object();
 
     private final AbstractNacosMcpServerListener listener =
             new AbstractNacosMcpServerListener() {
@@ -89,29 +128,44 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                     if (detailInfo == null) {
                         return;
                     }
-                    try {
-                        updateEndpoints(detailInfo);
-                    } catch (Exception e) {
-                        logger.error(
-                                "Failed to update endpoints for MCP server '{}'", serverName, e);
-                    }
+                    // Never reconcile on the Nacos dispatcher thread.
+                    submitReconcile(detailInfo, false);
                 }
             };
 
-    private volatile List<NacosMcpEndpoint> currentEndpoints = Collections.emptyList();
+    /**
+     * The endpoints as last reported by Nacos, whether or not their connections are established.
+     */
+    private volatile List<NacosMcpEndpoint> registeredEndpoints = Collections.emptyList();
 
     private volatile String currentProtocol;
 
     private volatile boolean subscribed;
 
-    private NacosLoadBalancedMcpClientWrapper(Builder builder) {
+    private volatile boolean closed;
+
+    /** Guarded by {@link #reconcileLock}; set when a Nacos push has been applied. */
+    private boolean pushApplied;
+
+    /**
+     * Creates a wrapper, allowing the test suite to substitute the per-endpoint MCP client factory.
+     *
+     * @param builder the configured builder
+     * @param clientFactory the factory creating one MCP client per endpoint
+     */
+    NacosLoadBalancedMcpClientWrapper(Builder builder, EndpointClientFactory clientFactory) {
         super(builder.name);
+        if (builder.discoveryClient == null) {
+            throw new IllegalArgumentException("discoveryClient must be configured");
+        }
+        if (builder.serverName == null || builder.serverName.trim().isEmpty()) {
+            throw new IllegalArgumentException("serverName must be configured");
+        }
         this.discoveryClient = builder.discoveryClient;
         this.serverName = builder.serverName;
         this.version = builder.version;
         this.endpointSelector = builder.endpointSelector;
-        this.requestTimeout = builder.requestTimeout;
-        this.initializationTimeout = builder.initializationTimeout;
+        this.clientFactory = clientFactory != null ? clientFactory : defaultClientFactory(builder);
     }
 
     /**
@@ -130,6 +184,8 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
      *
      * <p>If no endpoint is available yet, initialization still succeeds and the wrapper stays
      * empty until Nacos pushes endpoints; tool calls fail until at least one endpoint is up.
+     * Endpoints that appear later are connected in the background, but the tools published into a
+     * Toolkit are the ones discovered at registration time.
      *
      * @return a Mono that completes when initialization is finished
      */
@@ -144,28 +200,45 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                 name,
                 serverName);
 
-        return Mono.fromCallable(
-                        () -> {
-                            McpServerDetailInfo detailInfo =
-                                    discoveryClient.subscribe(serverName, version, listener);
-                            subscribed = true;
-                            if (detailInfo == null) {
-                                logger.warn(
-                                        "No MCP server '{}' found in Nacos during initialization,"
-                                                + " waiting for endpoints to be pushed",
-                                        serverName);
-                                return Collections.<NacosMcpEndpoint>emptyList();
-                            }
-                            currentProtocol = detailInfo.getProtocol();
-                            return NacosMcpDiscoveryClient.resolveEndpoints(detailInfo);
-                        })
+        return Mono.fromCallable(this::subscribe)
                 .flatMap(
-                        endpoints ->
-                                addEndpoints(endpoints)
-                                        .doOnSuccess(v -> currentEndpoints = endpoints))
+                        detailInfo -> {
+                            if (detailInfo == null) {
+                                return Mono.<Void>empty();
+                            }
+                            // Route the initial snapshot through the reconciler so that it cannot
+                            // race a push that was delivered while subscribe() was in flight.
+                            return Mono.defer(
+                                    () -> Mono.fromFuture(submitReconcile(detailInfo, true)));
+                        })
                 .doOnSuccess(v -> initialized = true)
-                .doOnError(e -> logger.error("Failed to initialize MCP client '{}'", name, e))
-                .then();
+                .doOnError(e -> logger.error("Failed to initialize MCP client '{}'", name, e));
+    }
+
+    /**
+     * Activates the wrapper by handing the initial registry snapshot to the reconciler, which is
+     * also used for Nacos pushes. A push that arrives while the subscription is being established
+     * is newer than the snapshot, so the snapshot is dropped in that case.
+     */
+    private McpServerDetailInfo subscribe() throws NacosException {
+        McpServerDetailInfo detailInfo;
+        reconcileLock.lock();
+        try {
+            if (closed) {
+                throw new IllegalStateException("MCP client '" + name + "' is closed");
+            }
+            detailInfo = discoveryClient.subscribe(serverName, version, listener);
+            subscribed = true;
+        } finally {
+            reconcileLock.unlock();
+        }
+        if (detailInfo == null) {
+            logger.warn(
+                    "No MCP server '{}' found in Nacos during initialization,"
+                            + " waiting for endpoints to be pushed",
+                    serverName);
+        }
+        return detailInfo;
     }
 
     /**
@@ -192,7 +265,11 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
     }
 
     /**
-     * Invokes a tool on one endpoint selected by the configured {@link EndpointSelector}.
+     * Invokes a tool on a connected endpoint selected by the configured {@link EndpointSelector}.
+     *
+     * <p>Only endpoints with an established connection are candidates. If the selected endpoint
+     * fails the call, the remaining connected endpoints are tried in turn, so one unhealthy
+     * instance does not fail the call while a healthy one is available.
      *
      * @param toolName the name of the tool to call
      * @param arguments the arguments to pass to the tool
@@ -207,24 +284,116 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
         }
 
-        List<NacosMcpEndpoint> endpoints = currentEndpoints;
-        if (endpoints.isEmpty()) {
+        List<NacosMcpEndpoint> candidates = connectedCandidates();
+        if (candidates.isEmpty()) {
             return Mono.error(
                     new IllegalStateException(
-                            "No endpoint available for MCP server '" + serverName + "'"));
+                            "No connected endpoint available for MCP server '"
+                                    + serverName
+                                    + "' ("
+                                    + registeredEndpoints.size()
+                                    + " endpoint(s) registered)"));
         }
 
-        NacosMcpEndpoint endpoint = endpointSelector.select(endpoints);
-        McpClientWrapper client = endpointClients.get(endpoint.key());
-        if (client == null || !client.isInitialized()) {
+        return callCandidates(candidates, 0, toolName, arguments, meta);
+    }
+
+    private Mono<McpSchema.CallToolResult> callCandidates(
+            List<NacosMcpEndpoint> candidates,
+            int index,
+            String toolName,
+            Map<String, Object> arguments,
+            Map<String, Object> meta) {
+        if (index >= candidates.size()) {
             return Mono.error(
                     new IllegalStateException(
-                            "Selected endpoint '" + endpoint + "' is not connected"));
+                            "All "
+                                    + candidates.size()
+                                    + " connected endpoint(s) of MCP server '"
+                                    + serverName
+                                    + "' failed to call tool '"
+                                    + toolName
+                                    + "'"));
+        }
+
+        NacosMcpEndpoint endpoint = candidates.get(index);
+        McpClientWrapper client = endpointClients.get(endpoint.key());
+        if (!isUsable(client)) {
+            return callCandidates(candidates, index + 1, toolName, arguments, meta);
         }
 
         logger.debug(
                 "Calling MCP tool '{}' on client '{}', endpoint '{}'", toolName, name, endpoint);
-        return client.callTool(toolName, arguments, meta);
+        return client.callTool(toolName, arguments, meta)
+                .onErrorResume(
+                        e -> {
+                            logger.warn(
+                                    "Tool '{}' failed on endpoint '{}' of MCP server '{}',"
+                                            + " failing over to the next connected endpoint",
+                                    toolName,
+                                    endpoint,
+                                    serverName,
+                                    e);
+                            return callCandidates(candidates, index + 1, toolName, arguments, meta);
+                        });
+    }
+
+    /**
+     * Returns the connected endpoints ordered for a tool call: the endpoint picked by the
+     * configured {@link EndpointSelector} first, then the remaining connected endpoints.
+     */
+    private List<NacosMcpEndpoint> connectedCandidates() {
+        List<NacosMcpEndpoint> endpoints = registeredEndpoints;
+        if (endpoints.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<NacosMcpEndpoint> candidates = new ArrayList<>(endpoints.size());
+        NacosMcpEndpoint preferred = endpointSelector.select(endpoints);
+        if (isUsable(endpointClients.get(preferred.key()))) {
+            candidates.add(preferred);
+        }
+        for (NacosMcpEndpoint endpoint : endpoints) {
+            if (endpoint.key().equals(preferred.key())) {
+                continue;
+            }
+            if (isUsable(endpointClients.get(endpoint.key()))) {
+                candidates.add(endpoint);
+            }
+        }
+        return candidates;
+    }
+
+    /**
+     * Waits until at least one endpoint of this MCP server is connected.
+     *
+     * <p>Registration into a Toolkit captures the tools that are available at that moment, so a
+     * caller that wants the tools of a server which is still starting up can wait here instead of
+     * registering an empty tool set.
+     *
+     * @param timeout how long to wait for the first connected endpoint
+     * @return true if at least one endpoint is connected, false on timeout or when the wrapper is
+     *     closed
+     */
+    public boolean awaitConnectedEndpoint(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout must not be null");
+        long deadline = System.nanoTime() + timeout.toNanos();
+        synchronized (endpointReadyMonitor) {
+            while (!closed && connectedEndpointCount() == 0) {
+                long remainingNanos = deadline - System.nanoTime();
+                if (remainingNanos <= 0) {
+                    break;
+                }
+                long waitMillis = Math.max(1L, Math.min(remainingNanos / 1_000_000L, 200L));
+                try {
+                    endpointReadyMonitor.wait(waitMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        return connectedEndpointCount() > 0;
     }
 
     /**
@@ -232,29 +401,50 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        if (subscribed) {
-            try {
-                discoveryClient.unsubscribe(serverName, version, listener);
-            } catch (NacosException e) {
-                logger.warn("Failed to unsubscribe MCP server '{}' from Nacos", serverName, e);
+        closed = true;
+        reconcileLock.lock();
+        try {
+            if (subscribed) {
+                try {
+                    discoveryClient.unsubscribe(serverName, version, listener);
+                } catch (NacosException e) {
+                    logger.warn("Failed to unsubscribe MCP server '{}' from Nacos", serverName, e);
+                }
+                subscribed = false;
             }
-            subscribed = false;
+            closeAllEndpointClients();
+            registeredEndpoints = Collections.emptyList();
+            initialized = false;
+            cachedTools.clear();
+        } finally {
+            reconcileLock.unlock();
         }
-        endpointClients.values().forEach(McpClientWrapper::close);
-        endpointClients.clear();
-        currentEndpoints = Collections.emptyList();
-        initialized = false;
-        cachedTools.clear();
+        signalEndpointReady();
+        reconciler.shutdown();
         logger.info("Closed Nacos load-balanced MCP client '{}'", name);
     }
 
     /**
-     * Returns the endpoints currently connected by this wrapper.
+     * Returns the endpoints currently reported by Nacos for this MCP server, whether or not their
+     * connections are established.
      *
-     * @return an unmodifiable view of the current endpoints
+     * <p>An endpoint that fails to connect (instance down, transport handshake timeout) stays in
+     * this list and is retried on the next Nacos push, but it is not used to dispatch tool calls.
+     * Use {@link #getConnectedEndpointCount()} for the number of endpoints actually serving calls.
+     *
+     * @return an unmodifiable view of the endpoints reported by the registry
      */
-    public List<NacosMcpEndpoint> getCurrentEndpoints() {
-        return Collections.unmodifiableList(currentEndpoints);
+    public List<NacosMcpEndpoint> getRegisteredEndpoints() {
+        return Collections.unmodifiableList(registeredEndpoints);
+    }
+
+    /**
+     * Returns the number of endpoints that currently have an established connection.
+     *
+     * @return the number of connected endpoints
+     */
+    public int getConnectedEndpointCount() {
+        return connectedEndpointCount();
     }
 
     /**
@@ -275,90 +465,155 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
         return version;
     }
 
-    private synchronized void updateEndpoints(McpServerDetailInfo detailInfo) {
-        String newProtocol = detailInfo.getProtocol();
-        List<NacosMcpEndpoint> newEndpoints = NacosMcpDiscoveryClient.resolveEndpoints(detailInfo);
-
-        if (!Objects.equals(currentProtocol, newProtocol)) {
-            logger.info(
-                    "MCP server '{}' protocol changed from '{}' to '{}', rebuilding all endpoint"
-                            + " connections",
-                    serverName,
-                    currentProtocol,
-                    newProtocol);
-            currentProtocol = newProtocol;
-            closeAllEndpointClients();
-            currentEndpoints = Collections.emptyList();
-            addEndpoints(newEndpoints).doOnSuccess(v -> currentEndpoints = newEndpoints).block();
-            return;
-        }
-
-        List<NacosMcpEndpoint> toAdd = new ArrayList<>();
-        for (NacosMcpEndpoint endpoint : newEndpoints) {
-            if (!endpointClients.containsKey(endpoint.key())) {
-                toAdd.add(endpoint);
+    /**
+     * Applies one registry snapshot: connects endpoints that appeared, closes endpoints that were
+     * scaled in, and rebuilds every connection when the transport protocol changed.
+     *
+     * <p>Runs on {@link #reconciler} while holding {@link #reconcileLock}, so it is the only writer
+     * of {@link #endpointClients} and may block on connection setup.
+     */
+    private void reconcile(McpServerDetailInfo detailInfo, boolean initialSnapshot) {
+        reconcileLock.lock();
+        try {
+            if (closed) {
+                return;
             }
-        }
-        for (NacosMcpEndpoint endpoint : currentEndpoints) {
-            if (!containsKey(newEndpoints, endpoint.key())) {
-                logger.info(
-                        "Endpoint '{}' of MCP server '{}' removed from Nacos, closing connection",
-                        endpoint,
+            if (initialSnapshot && pushApplied) {
+                // A push delivered while subscribe() was in flight is newer than the snapshot we
+                // hold; applying it would resurrect endpoints that were just scaled in.
+                logger.debug(
+                        "Skipping the initial snapshot of MCP server '{}',"
+                                + " a newer push was already applied",
                         serverName);
-                McpClientWrapper removed = endpointClients.remove(endpoint.key());
-                if (removed != null) {
-                    removed.close();
+                return;
+            }
+            if (!initialSnapshot) {
+                pushApplied = true;
+            }
+
+            String newProtocol = detailInfo.getProtocol();
+            List<NacosMcpEndpoint> newEndpoints =
+                    deduplicate(NacosMcpDiscoveryClient.resolveEndpoints(detailInfo));
+
+            if (currentProtocol != null && !Objects.equals(currentProtocol, newProtocol)) {
+                logger.info(
+                        "MCP server '{}' protocol changed from '{}' to '{}', rebuilding all"
+                                + " endpoint connections",
+                        serverName,
+                        currentProtocol,
+                        newProtocol);
+                closeAllEndpointClients();
+            }
+            currentProtocol = newProtocol;
+
+            Set<String> newKeys = new LinkedHashSet<>();
+            for (NacosMcpEndpoint endpoint : newEndpoints) {
+                newKeys.add(endpoint.key());
+            }
+            for (String key : new ArrayList<>(endpointClients.keySet())) {
+                if (!newKeys.contains(key)) {
+                    logger.info(
+                            "Endpoint '{}' of MCP server '{}' was removed from the registry,"
+                                    + " closing its connection",
+                            key,
+                            serverName);
+                    closeEndpoint(key);
                 }
             }
-        }
 
-        if (!toAdd.isEmpty()) {
-            logger.info(
-                    "Adding {} new endpoint(s) for MCP server '{}': {}",
-                    toAdd.size(),
+            registeredEndpoints = newEndpoints;
+
+            for (NacosMcpEndpoint endpoint : newEndpoints) {
+                if (closed) {
+                    return;
+                }
+                McpClientWrapper existing = endpointClients.get(endpoint.key());
+                if (existing != null && existing.isInitialized()) {
+                    continue;
+                }
+                if (existing != null) {
+                    // A previous connect attempt never came up; drop it and retry.
+                    closeEndpoint(endpoint.key());
+                }
+                connectEndpoint(endpoint);
+            }
+        } finally {
+            reconcileLock.unlock();
+        }
+    }
+
+    private void connectEndpoint(NacosMcpEndpoint endpoint) {
+        McpClientWrapper client = null;
+        boolean registered = false;
+        try {
+            client =
+                    clientFactory
+                            .create(endpointClientName(endpoint), endpoint, currentProtocol)
+                            .block();
+            if (client == null) {
+                throw new IllegalStateException(
+                        "Endpoint client factory returned null for '" + endpoint + "'");
+            }
+            client.initialize().block();
+
+            McpClientWrapper winner = endpointClients.putIfAbsent(endpoint.key(), client);
+            registered = winner == null;
+            if (winner != null) {
+                // Another pass connected this endpoint first; never leak the loser.
+                logger.debug(
+                        "Endpoint '{}' of MCP server '{}' was already connected,"
+                                + " closing the duplicate connection",
+                        endpoint,
+                        serverName);
+                closeQuietly(client, endpoint);
+            } else {
+                logger.info("Connected endpoint '{}' of MCP server '{}'", endpoint, serverName);
+            }
+        } catch (Exception e) {
+            if (client != null && !registered) {
+                closeQuietly(client, endpoint);
+            }
+            logger.warn(
+                    "Failed to connect endpoint '{}' of MCP server '{}',"
+                            + " it will be retried on the next Nacos push",
+                    endpoint,
                     serverName,
-                    toAdd);
-            addEndpoints(toAdd).block();
+                    e);
+            return;
         }
-        currentEndpoints = newEndpoints;
+        if (registered) {
+            signalEndpointReady();
+        }
     }
 
-    private Mono<Void> addEndpoints(List<NacosMcpEndpoint> endpoints) {
-        return Flux.fromIterable(endpoints)
-                .filter(endpoint -> !endpointClients.containsKey(endpoint.key()))
-                .flatMap(
-                        endpoint ->
-                                createEndpointClient(endpoint)
-                                        .flatMap(client -> client.initialize().thenReturn(client))
-                                        .doOnNext(
-                                                client ->
-                                                        endpointClients.put(endpoint.key(), client))
-                                        .onErrorResume(
-                                                e -> {
-                                                    logger.warn(
-                                                            "Failed to connect endpoint '{}' of"
-                                                                    + " MCP server '{}', it will be"
-                                                                    + " retried on next Nacos push",
-                                                            endpoint,
-                                                            serverName,
-                                                            e);
-                                                    return Mono.empty();
-                                                }))
-                .then();
+    private CompletableFuture<Void> submitReconcile(
+            McpServerDetailInfo detailInfo, boolean initialSnapshot) {
+        if (closed) {
+            return CompletableFuture.completedFuture(null);
+        }
+        try {
+            return CompletableFuture.runAsync(
+                    () -> reconcile(detailInfo, initialSnapshot), reconciler);
+        } catch (RejectedExecutionException e) {
+            // close() shut the reconciler down in the meantime.
+            return CompletableFuture.completedFuture(null);
+        }
     }
 
-    private Mono<McpClientWrapper> createEndpointClient(NacosMcpEndpoint endpoint) {
-        String clientName = name + "-" + endpoint.key();
-        McpClientBuilder builder =
-                McpClientBuilder.create(clientName)
-                        .timeout(requestTimeout)
-                        .initializationTimeout(initializationTimeout);
-        if (AiConstants.Mcp.MCP_PROTOCOL_SSE.equals(currentProtocol)) {
-            builder.sseTransport(endpoint.url());
-        } else {
-            builder.streamableHttpTransport(endpoint.url());
+    private static List<NacosMcpEndpoint> deduplicate(List<NacosMcpEndpoint> endpoints) {
+        Map<String, NacosMcpEndpoint> byKey = new LinkedHashMap<>();
+        for (NacosMcpEndpoint endpoint : endpoints) {
+            byKey.putIfAbsent(endpoint.key(), endpoint);
         }
-        return builder.buildAsync();
+        return new ArrayList<>(byKey.values());
+    }
+
+    private String endpointClientName(NacosMcpEndpoint endpoint) {
+        return name + "-" + endpoint.key();
+    }
+
+    private static boolean isUsable(McpClientWrapper client) {
+        return client != null && client.isInitialized();
     }
 
     private McpClientWrapper anyInitializedClient() {
@@ -370,18 +625,75 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
         return null;
     }
 
-    private void closeAllEndpointClients() {
-        endpointClients.values().forEach(McpClientWrapper::close);
-        endpointClients.clear();
-    }
-
-    private static boolean containsKey(List<NacosMcpEndpoint> endpoints, String key) {
-        for (NacosMcpEndpoint endpoint : endpoints) {
-            if (endpoint.key().equals(key)) {
-                return true;
+    private int connectedEndpointCount() {
+        int count = 0;
+        for (McpClientWrapper client : endpointClients.values()) {
+            if (client.isInitialized()) {
+                count++;
             }
         }
-        return false;
+        return count;
+    }
+
+    private void closeEndpoint(String key) {
+        McpClientWrapper removed = endpointClients.remove(key);
+        if (removed != null) {
+            closeQuietly(removed, removed.getName());
+        }
+    }
+
+    private void closeAllEndpointClients() {
+        for (String key : new ArrayList<>(endpointClients.keySet())) {
+            closeEndpoint(key);
+        }
+    }
+
+    private void closeQuietly(McpClientWrapper client, Object endpoint) {
+        try {
+            client.close();
+        } catch (Exception e) {
+            logger.warn("Error closing MCP connection for endpoint '{}'", endpoint, e);
+        }
+    }
+
+    private void signalEndpointReady() {
+        synchronized (endpointReadyMonitor) {
+            endpointReadyMonitor.notifyAll();
+        }
+    }
+
+    private static EndpointClientFactory defaultClientFactory(Builder builder) {
+        return (clientName, endpoint, protocol) -> {
+            McpClientBuilder mcpClientBuilder =
+                    McpClientBuilder.create(clientName)
+                            .timeout(builder.requestTimeout)
+                            .initializationTimeout(builder.initializationTimeout);
+            if (AiConstants.Mcp.MCP_PROTOCOL_SSE.equals(protocol)) {
+                mcpClientBuilder.sseTransport(endpoint.url());
+            } else {
+                mcpClientBuilder.streamableHttpTransport(endpoint.url());
+            }
+            return mcpClientBuilder.buildAsync();
+        };
+    }
+
+    /**
+     * Creates an MCP client for one endpoint. Exists so that tests can observe reconciliation
+     * without opening real connections.
+     */
+    @FunctionalInterface
+    interface EndpointClientFactory {
+
+        /**
+         * Creates the MCP client serving one endpoint.
+         *
+         * @param clientName the name of the client to create
+         * @param endpoint the endpoint to connect to
+         * @param protocol the MCP transport protocol, either {@code sse} or streamable HTTP
+         * @return a Mono emitting the created client
+         */
+        Mono<McpClientWrapper> create(
+                String clientName, NacosMcpEndpoint endpoint, String protocol);
     }
 
     /**
@@ -486,13 +798,7 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
          * @return a new wrapper instance
          */
         public NacosLoadBalancedMcpClientWrapper build() {
-            if (discoveryClient == null) {
-                throw new IllegalArgumentException("discoveryClient must be configured");
-            }
-            if (serverName == null || serverName.trim().isEmpty()) {
-                throw new IllegalArgumentException("serverName must be configured");
-            }
-            return new NacosLoadBalancedMcpClientWrapper(this);
+            return new NacosLoadBalancedMcpClientWrapper(this, null);
         }
     }
 }
