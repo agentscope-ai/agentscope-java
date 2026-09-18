@@ -179,18 +179,35 @@ func disconnectWeixinTx(ctx context.Context, tx pgx.Tx, ch channelRow) error {
 
 // Desired runtime properties are reconstructed from the managed connection and
 // current Vault metadata; raw channel properties cannot pick another credential.
-func (s *Server) weixinRuntimeProperties(ctx context.Context, channelID string) (gin.H, error) {
-	var account, user, base, credential string
-	var revision int64
-	err := s.db.Pool.QueryRow(ctx, `SELECT w.account_id,w.ilink_user_id,w.base_url,w.credential_id,cr.revision
+// weixinRuntimeProperties returns the scheduler-facing properties of every weixin channel that
+// still has a usable connection, keyed by channel id. Channels with no usable connection are
+// simply absent from the result.
+func (s *Server) weixinRuntimeProperties(ctx context.Context, channelIDs []string) (map[string]gin.H, error) {
+	out := make(map[string]gin.H, len(channelIDs))
+	if len(channelIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Pool.Query(ctx, `SELECT w.channel_id,w.account_id,w.ilink_user_id,w.base_url,w.credential_id,cr.revision
  FROM weixin_connections w JOIN channels ch ON ch.channel_id=w.channel_id AND ch.owner_id=w.owner_id
  JOIN vault_credentials cr ON cr.credential_id=w.credential_id AND cr.vault_id=w.vault_id AND cr.type='weixin_bot' AND cr.target=w.channel_id
  JOIN vaults v ON v.vault_id=w.vault_id AND v.owner_id=w.owner_id AND v.archived_at IS NULL
- WHERE w.channel_id=$1 AND ch.type='weixin' AND ch.disabled=false AND w.account_id IS NOT NULL`, channelID).Scan(&account, &user, &base, &credential, &revision)
+ WHERE w.channel_id = ANY($1) AND ch.type='weixin' AND ch.disabled=false AND w.account_id IS NOT NULL`, channelIDs)
 	if err != nil {
 		return nil, err
 	}
-	return gin.H{"accountId": account, "ilinkUserId": user, "baseUrl": base, "credentialRef": credential, "credentialRevision": revision}, nil
+	defer rows.Close()
+	for rows.Next() {
+		var id, account, user, base, credential string
+		var revision int64
+		if err := rows.Scan(&id, &account, &user, &base, &credential, &revision); err != nil {
+			return nil, err
+		}
+		out[id] = gin.H{"accountId": account, "ilinkUserId": user, "baseUrl": base, "credentialRef": credential, "credentialRevision": revision}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 func (s *Server) internalWeixinCredential(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")

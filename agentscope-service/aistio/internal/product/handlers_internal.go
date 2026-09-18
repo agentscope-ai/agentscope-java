@@ -975,25 +975,39 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 		return
 	}
 	rows.Close()
+	weixinIDs := make([]string, 0)
 	for id, value := range out {
-		cfg := value.(gin.H)
-		if cfg["type"] != "weixin" {
-			continue
+		if value.(gin.H)["type"] == "weixin" {
+			weixinIDs = append(weixinIDs, id)
 		}
-		props, err := s.weixinRuntimeProperties(c.Request.Context(), id)
-		if errors.Is(err, pgx.ErrNoRows) {
+	}
+	// One lookup for every weixin channel instead of one per channel: this endpoint is polled by
+	// every scheduler replica, so a per-channel query cost channels x replicas.
+	props, err := s.weixinRuntimeProperties(c.Request.Context(), weixinIDs)
+	if err != nil {
+		writeErr(c, 500, "channel configuration unavailable")
+		return
+	}
+	for _, id := range weixinIDs {
+		value, ok := props[id]
+		if !ok {
+			// A channel without a usable connection is dropped from the payload rather than
+			// failing the whole response: otherwise one channel's missing credential leaves every
+			// replica with no configuration at all. ErrNoRows behaved this way before; a broken
+			// join now does too.
+			log.Printf("weixin channel %s has no usable connection; omitted from channel config", id)
 			delete(out, id)
 			continue
 		}
-		if err != nil {
-			writeErr(c, 500, "channel configuration unavailable")
-			return
-		}
-		cfg["properties"] = props
+		out[id].(gin.H)["properties"] = value
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, out)
 }
+
+// channelRuntimeStaleReportMs bounds how old the last accepted report may be before a lease-less
+// failure report is allowed to overwrite it. It is several scheduler poll intervals wide.
+const channelRuntimeStaleReportMs = 2 * 60 * 1000
 
 type channelRuntimeReport struct {
 	Channels []channelRuntimeObservation `json:"channels"`
@@ -1060,8 +1074,20 @@ func (s *Server) applyChannelRuntimeObservation(ctx context.Context, item channe
 			if item.Error == nil || strings.TrimSpace(*item.Error) == "" {
 				return nil
 			}
-			if _, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=false,runtime_error=$1,runtime_updated_at=$2 WHERE channel_id=$3`,
-				strings.TrimSpace(*item.Error), now, item.ChannelID); err != nil {
+			// Fence the write the way the leased path does. A replica that merely failed to build
+			// the channel must not flap the status of the replica that holds the lease, so the
+			// report only lands when no lease holder is recorded or the last accepted report is
+			// already stale. The staleness arm keeps a holder that died without being cleared from
+			// hiding a failed start forever; the scheduler reports every 15s by default, so a
+			// healthy leader is never this old.
+			if _, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=false,runtime_error=$1,runtime_updated_at=$2
+			 WHERE channel_id=$3
+			  AND (NOT EXISTS (SELECT 1 FROM weixin_connections c
+			                    WHERE c.channel_id=channels.channel_id
+			                      AND NULLIF(c.runtime_lease_holder,'') IS NOT NULL)
+			       OR runtime_updated_at IS NULL
+			       OR runtime_updated_at < $4)`,
+				strings.TrimSpace(*item.Error), now, item.ChannelID, now-channelRuntimeStaleReportMs); err != nil {
 				return err
 			}
 			return tx.Commit(ctx)

@@ -107,19 +107,25 @@ func TestWeixinRuntimeSurfacesAStartFailureWithoutLeaseAuthority(t *testing.T) {
 			t.Fatalf("unexpected runtime state: started=%v error=%s", ch.RuntimeStarted, deref(ch.RuntimeError))
 		}
 	}
+	failureReport := gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
+		"started": false, "error": "credentialRevision is missing or not a number"}
 
-	// The active replica claims the lease first, so there is authority to protect.
+	// Nobody holds the lease yet: a channel that failed to build reports the failure and it lands,
+	// instead of being dropped like a healthy standby.
+	report(failureReport)
+	assertChannelState(false, "credentialRevision is missing or not a number")
+
+	// The active replica claims the lease and reports healthy.
 	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
 		"leaseGeneration": int64(2), "leaseHolder": "active", "sequence": int64(3), "started": true})
 	assertChannelState(true, "")
 
-	// A replica whose channel failed to build or start never holds a lease: it must still surface
-	// the failure instead of being dropped like a healthy standby.
-	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
-		"started": false, "error": "credentialRevision is missing or not a number"})
-	assertChannelState(false, "credentialRevision is missing or not a number")
+	// A lease-less report must not flap that state: a replica whose channel failed to build sees no
+	// lease of its own, but the replica that holds the lease is the authority.
+	report(failureReport)
+	assertChannelState(true, "")
 
-	// ... and it must not touch the lease authority the active replica owns.
+	// ... and it must not touch the lease authority the active replica owns either.
 	var holder string
 	var generation, sequence int64
 	if err := f.s.db.Pool.QueryRow(t.Context(),
@@ -135,5 +141,5 @@ func TestWeixinRuntimeSurfacesAStartFailureWithoutLeaseAuthority(t *testing.T) {
 	// A lease-less report carrying no error is still a healthy standby and stays ignored.
 	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
 		"started": true})
-	assertChannelState(false, "credentialRevision is missing or not a number")
+	assertChannelState(true, "")
 }
