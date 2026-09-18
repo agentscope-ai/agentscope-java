@@ -141,7 +141,7 @@ func (r *sessionRepo) List(ctx context.Context, f store.SessionFilter) ([]*store
 		args = append(args, access.User)
 		conds = append(conds, fmt.Sprintf(`((agent_task_id IS NOT NULL AND EXISTS(SELECT 1 FROM agent_tasks t WHERE t.id=sessions.agent_task_id AND issue_access_allowed(t.issue_id,$%d::text[])))
 			OR (agent_task_id IS NULL AND EXISTS(SELECT 1 FROM chat_conversations ch WHERE ch.session_fk=sessions.id AND ch.creator_ref=ANY($%d::text[])))
-			OR (agent_task_id IS NULL AND origin_type='channel' AND NULLIF(task_context->>'channelOwnerRef','')=$%d))`, n, n, n+1))
+			OR (agent_task_id IS NULL AND origin_type='channel' AND (NULLIF(task_context->>'channelOwnerRef','')=$%d OR NULLIF(task_context->>'channelOwnerRef','')=ANY($%d::text[]))))`, n, n, n+1, n))
 	}
 	q := `SELECT ` + sessionColumns + ` FROM sessions`
 	if len(conds) > 0 {
