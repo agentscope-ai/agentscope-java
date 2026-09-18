@@ -219,7 +219,20 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			}
 			if len(existing) > 0 {
 				current := existing[0]
-				if len(existing) != 1 || current.BindingID != binding.ID || current.OriginType != originType || current.OriginRef != originRef || store.ChannelSessionOwnerRef(current) != agent.OwnerRef {
+				if len(existing) != 1 || current.BindingID != binding.ID || current.OriginType != originType || current.OriginRef != originRef {
+					return nil, store.ErrConflict
+				}
+				ownerRef := store.ChannelSessionOwnerRef(current)
+				if ownerRef == "" {
+					// A row written before channelOwnerRef existed - an earlier head of this
+					// branch, or a replica still running the old code during a rolling deploy -
+					// carries no owner. The binding, origin type and origin ref already matched, so
+					// it is this conversation: adopt it for this agent instead of failing the turn
+					// with a conflict it could never recover from. Writing through the upsert keeps
+					// phase, busy and timestamps as stored.
+					return s.store.Sessions().Upsert(ctx, withChannelOwner(current, agent.OwnerRef, originRef))
+				}
+				if ownerRef != agent.OwnerRef {
 					return nil, store.ErrConflict
 				}
 				// Resolving a conversation is not a new runtime observation. Keep
@@ -247,6 +260,15 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			TaskContext: payload, StartedAt: &now, LastActiveAt: &now})
 	}
 	return nil, fmt.Errorf("no conversation-capable runtime candidate is available")
+}
+
+// withChannelOwner returns a copy of the session that records the verified channel owner, leaving
+// every other column as stored.
+func withChannelOwner(session *store.Session, ownerRef, originRef string) *store.Session {
+	adopted := *session
+	payload, _ := json.Marshal(gin.H{"originType": "channel", "originRef": originRef, "channelOwnerRef": ownerRef})
+	adopted.TaskContext = payload
+	return &adopted
 }
 
 func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.Session, message,
