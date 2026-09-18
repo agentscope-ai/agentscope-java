@@ -422,4 +422,71 @@ class ReasoningContextTest {
         // Verify text is accumulated correctly
         assertEquals("Let me check the weather for you.", context.getAccumulatedText());
     }
+
+    @Test
+    @DisplayName("Should mark incomplete tool arguments when the model reaches its length limit")
+    void testLengthLimitedIncompleteToolCallIsMarked() {
+        ToolUseBlock partialToolCall =
+                ToolUseBlock.builder()
+                        .id("call_partial")
+                        .name("write_file")
+                        .content("{\"path\":\"index.html\",\"content\":\"")
+                        .build();
+
+        context.processChunk(
+                ChatResponse.builder().id("msg-1").content(List.of(partialToolCall)).build());
+        context.processChunk(
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of())
+                        .finishReason("length")
+                        .build());
+
+        Msg finalMsg = context.buildFinalMessage();
+        assertNotNull(finalMsg);
+        assertEquals("length", context.getFinishReason());
+        assertEquals("length", finalMsg.getMetadata().get(MessageMetadataKeys.MODEL_FINISH_REASON));
+
+        ToolUseBlock finalToolCall = finalMsg.getFirstContentBlock(ToolUseBlock.class);
+        assertNotNull(finalToolCall);
+        assertEquals("{}", finalToolCall.getContent());
+        assertTrue(
+                Boolean.TRUE.equals(
+                        finalToolCall
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_RAW_CONTENT_INCOMPLETE)));
+        assertTrue(
+                Boolean.TRUE.equals(
+                        finalToolCall
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_OUTPUT_LENGTH_LIMIT)));
+    }
+
+    @Test
+    @DisplayName("Should preserve the legacy fallback when the finish reason is unavailable")
+    void testIncompleteToolCallWithoutFinishReasonKeepsLegacyFallback() {
+        ToolUseBlock partialToolCall =
+                ToolUseBlock.builder()
+                        .id("call_partial")
+                        .name("write_file")
+                        .content("{\"path\":\"index.html\"")
+                        .build();
+
+        context.processChunk(
+                ChatResponse.builder().id("msg-1").content(List.of(partialToolCall)).build());
+
+        ToolUseBlock finalToolCall =
+                context.buildFinalMessage().getFirstContentBlock(ToolUseBlock.class);
+        assertNotNull(finalToolCall);
+        assertEquals("{}", finalToolCall.getContent());
+        assertTrue(
+                Boolean.TRUE.equals(
+                        finalToolCall
+                                .getMetadata()
+                                .get(ToolUseBlock.METADATA_RAW_CONTENT_INCOMPLETE)));
+        assertTrue(
+                !finalToolCall
+                        .getMetadata()
+                        .containsKey(ToolUseBlock.METADATA_OUTPUT_LENGTH_LIMIT));
+    }
 }
