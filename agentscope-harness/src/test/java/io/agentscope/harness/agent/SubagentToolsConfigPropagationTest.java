@@ -15,15 +15,20 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
+import io.agentscope.harness.agent.tools.ToolsConfigLoader;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -33,16 +38,122 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mockito;
 
 /**
  * Regression tests for #3178: the child's {@link ToolsConfig} must be derived from the <em>resolved
  * </em> parent config so that a parent whose MCP servers come from workspace {@code tools.json}
  * still propagates them, and an empty allow-list is a true MCP opt-out.
  *
- * <p>These are pure unit tests — they exercise {@link HarnessAgentBuilderSupport#childToolsConfig}
- * directly, with no MCP server, model or workspace involved.
+ * <p>Includes config-resolution unit tests and spawned-child regressions using temporary
+ * workspaces and mocked models, without connecting to MCP servers.
  */
 class SubagentToolsConfigPropagationTest {
+
+    @ParameterizedTest
+    @CsvSource({"reader,true", "reader,false", "general-purpose,true", "general-purpose,false"})
+    void spawnedSharedChildHonoursParentToolsConfigSwitch(
+            String agentName, boolean disabled, @TempDir Path workspace) throws Exception {
+        writeToolsJson(workspace, "{\"deny\":[\"read_file\"]}");
+        var parentBuilder =
+                HarnessAgent.builder()
+                        .model(Mockito.mock(Model.class))
+                        .workspace(workspace)
+                        .disableDynamicSubagents()
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("reader")
+                                        .description("read only")
+                                        .inlineAgentsBody("read only")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .build());
+        if (disabled) parentBuilder.disableToolsConfig();
+
+        try (var loader = Mockito.mockStatic(ToolsConfigLoader.class, Mockito.CALLS_REAL_METHODS);
+                var parent = parentBuilder.build();
+                var child =
+                        (HarnessAgent)
+                                parent.getSubagentAgentManager()
+                                        .createAgentIfPresent(agentName, RuntimeContext.empty())
+                                        .orElseThrow()) {
+            assertEquals(disabled, child.getToolkit().getToolNames().contains("read_file"));
+            // Enabled: only the parent reads the file. Disabled: neither agent reads it,
+            // so environment substitution and MCP credentials cannot escape the switch.
+            loader.verify(
+                    () -> ToolsConfigLoader.load(Mockito.any(WorkspaceManager.class)),
+                    Mockito.times(disabled ? 0 : 1));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"absent", "empty", "read_file"})
+    void disabledParentOverrideDoesNotBypassDeclarationFilters(
+            String tools, @TempDir Path workspace) throws Exception {
+        writeToolsJson(workspace, "{\"deny\":[\"read_file\"]}");
+        var ignoredOverride = new ToolsConfig();
+        ignoredOverride.setDeny(List.of("read_file"));
+        var parent =
+                HarnessAgent.builder()
+                        .model(Mockito.mock(Model.class))
+                        .workspace(workspace)
+                        .toolsConfig(ignoredOverride)
+                        .disableToolsConfig();
+        var declaration =
+                SubagentDeclaration.builder()
+                        .name("reader")
+                        .description("read only")
+                        .inlineAgentsBody("read only")
+                        .workspaceMode(WorkspaceMode.SHARED);
+        if (!tools.equals("absent")) {
+            declaration.tools(tools.equals("empty") ? List.of() : List.of("read_file"));
+        }
+        try (var loader = Mockito.mockStatic(ToolsConfigLoader.class, Mockito.CALLS_REAL_METHODS);
+                var child =
+                        (HarnessAgent)
+                                HarnessAgentBuilderSupport.buildDeclaredFactory(
+                                                parent, declaration.build(), workspace, null)
+                                        .create(RuntimeContext.empty())) {
+            assertTrue(child.getToolkit().getToolNames().contains("read_file"));
+            if (tools.equals("read_file")) {
+                assertEquals(java.util.Set.of("read_file"), child.getToolkit().getToolNames());
+            }
+            loader.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void disabledParentStillAllowsIsolatedChildToLoadItsOwnConfig(@TempDir Path workspace)
+            throws Exception {
+        Path childWorkspace = workspace.resolve("agents/reader/workspace");
+        writeToolsJson(workspace, "{\"deny\":[\"read_file\"]}");
+        writeToolsJson(childWorkspace, "{\"deny\":[\"execute\"]}");
+        var parent =
+                HarnessAgent.builder()
+                        .model(Mockito.mock(Model.class))
+                        .workspace(workspace)
+                        .disableToolsConfig();
+        var declaration =
+                SubagentDeclaration.builder()
+                        .name("reader")
+                        .description("read only")
+                        .inlineAgentsBody("read only")
+                        .workspaceMode(WorkspaceMode.ISOLATED)
+                        .build();
+        try (var loader = Mockito.mockStatic(ToolsConfigLoader.class, Mockito.CALLS_REAL_METHODS);
+                var child =
+                        (HarnessAgent)
+                                HarnessAgentBuilderSupport.buildDeclaredFactory(
+                                                parent, declaration, workspace, null)
+                                        .create(RuntimeContext.empty())) {
+            assertTrue(child.getToolkit().getToolNames().contains("read_file"));
+            assertFalse(child.getToolkit().getToolNames().contains("execute"));
+            loader.verify(() -> ToolsConfigLoader.load(child.getWorkspaceManager()));
+            loader.verify(() -> ToolsConfigLoader.load(Mockito.any(WorkspaceManager.class)));
+        }
+    }
 
     private static ToolsConfig parentWithMcp() {
         ToolsConfig parent = new ToolsConfig();

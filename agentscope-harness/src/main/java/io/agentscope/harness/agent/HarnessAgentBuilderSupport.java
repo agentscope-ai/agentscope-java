@@ -426,7 +426,8 @@ final class HarnessAgentBuilderSupport {
             SandboxBackedFilesystem sandboxFs,
             io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         final Model capturedModel = b.model;
-        final var capturedToolsConfig = effectiveToolsConfig;
+        final boolean capturedDisableToolsConfig = b.disableToolsConfig;
+        final var capturedToolsConfig = capturedDisableToolsConfig ? null : effectiveToolsConfig;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
@@ -500,6 +501,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
             if (capturedToolsConfig != null) sub.toolsConfig(capturedToolsConfig);
+            if (capturedDisableToolsConfig) sub.disableToolsConfig();
             capturedRoutes.forEach(sub::filesystemRoute);
             if (capturedBackend == null && capturedRemoteSpec != null)
                 sub.filesystem(capturedRemoteSpec);
@@ -567,7 +569,8 @@ final class HarnessAgentBuilderSupport {
             SandboxBackedFilesystem sandboxFs,
             io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         final Model capturedModel = b.model;
-        final var capturedToolsConfig = effectiveToolsConfig;
+        final boolean capturedDisableToolsConfig = b.disableToolsConfig;
+        final var capturedToolsConfig = capturedDisableToolsConfig ? null : effectiveToolsConfig;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
@@ -675,6 +678,10 @@ final class HarnessAgentBuilderSupport {
             var childTools =
                     childToolsConfig(capturedToolsConfig, decl.getTools(), decl.isToolsDeclared());
             if (childTools != null) sub.toolsConfig(childTools);
+            // Keep declaration filters, but do not reload a disabled parent tools.json through
+            // the shared workspace when no declaration-derived override exists.
+            else if (capturedDisableToolsConfig && decl.getWorkspaceMode() == WorkspaceMode.SHARED)
+                sub.disableToolsConfig();
             capturedRoutes.forEach(sub::filesystemRoute);
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {
                 sub.abstractFilesystem(capturedSharedBackend);
