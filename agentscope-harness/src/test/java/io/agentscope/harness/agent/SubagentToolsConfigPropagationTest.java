@@ -56,19 +56,38 @@ class SubagentToolsConfigPropagationTest {
     }
 
     @Test
-    void emptyAllowListIsATrueOptOutAndDoesNotInheritMcp() {
-        ToolsConfig child = HarnessAgentBuilderSupport.childToolsConfig(parentWithMcp(), List.of());
+    void explicitEmptyAllowListIsATrueOptOutAndDoesNotInheritMcp() {
+        ToolsConfig child =
+                HarnessAgentBuilderSupport.childToolsConfig(parentWithMcp(), List.of(), true);
 
-        assertNotNull(child, "an empty allow-list must still yield an explicit child config");
+        assertNotNull(child, "an explicit empty allow-list must yield an explicit child config");
         assertTrue(
                 child.getMcpServers() == null || child.getMcpServers().isEmpty(),
-                "an empty allow-list must not inherit the parent's MCP servers (#3178)");
+                "an explicit empty allow-list must not inherit the parent's MCP servers (#3178)");
+    }
+
+    @Test
+    void absentAllowListInheritsTheResolvedParentConfigUnchanged() {
+        ToolsConfig parent = parentWithMcp();
+        ToolsConfig child = HarnessAgentBuilderSupport.childToolsConfig(parent, List.of(), false);
+
+        assertTrue(
+                child == parent,
+                "an absent tools list must inherit the parent config unchanged — otherwise every"
+                        + " existing declaration silently loses its tools");
+        assertTrue(child.getMcpServers().containsKey("industry-data"));
+
+        assertNull(
+                HarnessAgentBuilderSupport.childToolsConfig(null, List.of(), false),
+                "an absent tools list with no parent config must stay null so the child can load"
+                        + " its own workspace tools.json");
     }
 
     @Test
     void nonEmptyAllowListKeepsMcpServersSoTheChildCanReRegisterThem() {
         ToolsConfig child =
-                HarnessAgentBuilderSupport.childToolsConfig(parentWithMcp(), List.of("query_data"));
+                HarnessAgentBuilderSupport.childToolsConfig(
+                        parentWithMcp(), List.of("query_data"), true);
 
         assertNotNull(child);
         assertNotNull(child.getMcpServers(), "parent MCP servers must be propagated");
@@ -88,7 +107,7 @@ class SubagentToolsConfigPropagationTest {
 
         ToolsConfig child =
                 HarnessAgentBuilderSupport.childToolsConfig(
-                        parent, List.of("query_data", "no_such_tool"));
+                        parent, List.of("query_data", "no_such_tool"), true);
 
         assertNotNull(child.getAllow());
         assertTrue(child.getAllow().contains("query_data"));
@@ -98,9 +117,11 @@ class SubagentToolsConfigPropagationTest {
     }
 
     @Test
-    void nullParentIsToleratedForBothEmptyAndNonEmptyAllowLists() {
-        assertNotNull(HarnessAgentBuilderSupport.childToolsConfig(null, List.of("query_data")));
-        assertNotNull(HarnessAgentBuilderSupport.childToolsConfig(null, List.of()));
+    void nullParentIsToleratedForDeclaredAndAbsentAllowLists() {
+        assertNotNull(
+                HarnessAgentBuilderSupport.childToolsConfig(null, List.of("query_data"), true));
+        assertNotNull(HarnessAgentBuilderSupport.childToolsConfig(null, List.of(), true));
+        assertNull(HarnessAgentBuilderSupport.childToolsConfig(null, null, false));
     }
 
     // ---------------------------------------------------------------------
@@ -136,7 +157,8 @@ class SubagentToolsConfigPropagationTest {
             // The whole #3178 chain, end to end at unit level: a workspace-configured parent now
             // hands its MCP servers to a declared child that allow-lists an MCP tool.
             ToolsConfig child =
-                    HarnessAgentBuilderSupport.childToolsConfig(effective, List.of("query_data"));
+                    HarnessAgentBuilderSupport.childToolsConfig(
+                            effective, List.of("query_data"), true);
             assertNotNull(
                     child.getMcpServers(), "the child must be able to re-register the server");
             assertTrue(child.getMcpServers().containsKey("industry-data"));
@@ -185,28 +207,52 @@ class SubagentToolsConfigPropagationTest {
                         HarnessAgent.builder(), null));
     }
 
+    @Test
+    void disableToolsConfigKeepsWorkspaceToolsJsonAwayFromSubagents(@TempDir Path workspace)
+            throws Exception {
+        writeToolsJson(
+                workspace,
+                """
+                { "mcpServers": { "industry-data": { "transport": "http",
+                  "url": "https://example.invalid/mcp" } } }
+                """);
+
+        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+            assertNotNull(
+                    HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
+                            HarnessAgent.builder(), wm),
+                    "sanity: the workspace config is otherwise resolvable");
+            assertNull(
+                    HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
+                            HarnessAgent.builder().disableToolsConfig(), wm),
+                    "disableToolsConfig() must also keep tools.json (and the ${ENV} credentials it"
+                            + " carries) away from subagents");
+        }
+    }
+
     // ---------------------------------------------------------------------
     //  Empty-allow-list branch coverage and the backwards-compatible
     //  overloads that the public builder entry points still funnel through.
     // ---------------------------------------------------------------------
 
     @Test
-    void nullAllowListOptsOutAndToleratesAParentWithoutAnyMcpServers() {
+    void declaredEmptyAllowListToleratesAParentWithoutAnyMcpServers() {
         ToolsConfig parentWithoutServers = new ToolsConfig();
         parentWithoutServers.setMcpServers(null);
 
-        ToolsConfig fromNullAllow =
-                HarnessAgentBuilderSupport.childToolsConfig(parentWithoutServers, null);
-        assertNotNull(fromNullAllow);
+        ToolsConfig fromDeclaredEmpty =
+                HarnessAgentBuilderSupport.childToolsConfig(parentWithoutServers, List.of(), true);
+        assertNotNull(fromDeclaredEmpty);
         assertTrue(
-                fromNullAllow.getMcpServers() == null || fromNullAllow.getMcpServers().isEmpty(),
-                "a null allow-list must not inherit the parent's MCP servers");
+                fromDeclaredEmpty.getMcpServers() == null
+                        || fromDeclaredEmpty.getMcpServers().isEmpty(),
+                "an explicit empty allow-list must not inherit the parent's MCP servers");
 
         ToolsConfig parentWithEmptyServers = new ToolsConfig();
         parentWithEmptyServers.setMcpServers(Map.of());
-        ToolsConfig fromEmptyAllow =
-                HarnessAgentBuilderSupport.childToolsConfig(parentWithEmptyServers, List.of());
-        assertTrue(fromEmptyAllow.getMcpServers().isEmpty());
+        ToolsConfig fromNullAllow =
+                HarnessAgentBuilderSupport.childToolsConfig(parentWithEmptyServers, null, true);
+        assertTrue(fromNullAllow.getMcpServers().isEmpty());
     }
 
     @Test

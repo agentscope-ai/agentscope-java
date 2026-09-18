@@ -115,7 +115,6 @@ import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
 import io.agentscope.harness.agent.tools.ToolFilter;
 import io.agentscope.harness.agent.tools.ToolsConfig;
-import io.agentscope.harness.agent.tools.ToolsConfigLoader;
 import io.agentscope.harness.agent.transcript.FilesystemTranscriptStore;
 import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
@@ -2631,12 +2630,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 capturedTeamsMw = teamsMw;
             }
 
+            // ---- workspace/tools.json: resolved once, before the subagent middlewares are
+            // built, so the main toolkit and every child factory observe the same config (#3178).
+            // Reading it again further down would let the two disagree if the file changed
+            // mid-build, and would leak it past disableToolsConfig().
+            ToolsConfig resolvedToolsConfig =
+                    HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(this, wsManager);
+
             Object capturedSubagentMw = null;
             if (!leafSubagent && !disableSubagents && model != null) {
                 if (filesystem != null && !disableDynamicSubagents) {
                     DynamicSubagentsMiddleware dynMw =
                             HarnessAgentBuilderSupport.buildDynamicSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this,
+                                    wsManager,
+                                    resolvedWorkspace,
+                                    capturedSandboxFs,
+                                    resolvedToolsConfig);
                     if (dynMw != null) {
                         if (messageBus != null) {
                             wireTaskRepositoryMessageBus(
@@ -2651,7 +2661,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 } else {
                     SubagentsMiddleware subagentsMw =
                             HarnessAgentBuilderSupport.buildSubagentsMiddleware(
-                                    this, wsManager, resolvedWorkspace, capturedSandboxFs);
+                                    this,
+                                    wsManager,
+                                    resolvedWorkspace,
+                                    capturedSandboxFs,
+                                    resolvedToolsConfig);
                     if (subagentsMw != null) {
                         if (messageBus != null) {
                             subagentsMw.wireMessageBus(messageBus, agentId);
@@ -2756,15 +2770,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 planExtraAllowed));
             }
 
-            // ---- workspace/tools.json: MCP servers + allow/deny filter ----
-            ToolsConfig resolvedToolsConfig = null;
-            if (!disableToolsConfig) {
-                if (toolsConfigOverride != null) {
-                    resolvedToolsConfig = toolsConfigOverride;
-                } else if (wsManager != null) {
-                    resolvedToolsConfig = ToolsConfigLoader.load(wsManager).orElse(null);
-                }
-            }
+            // ---- workspace/tools.json: MCP servers + allow/deny filter (resolved above) ----
             if (resolvedToolsConfig != null) {
                 McpServerRegistrar.register(
                         agentToolkit,

@@ -98,6 +98,13 @@ public final class SubagentDeclaration {
     private final Boolean exposeToUser;
     private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
+
+    /**
+     * Whether {@link #tools} was explicitly provided. Distinguishes an absent {@code tools} key
+     * ("inherit all parent tools") from an explicitly empty list ("inherit no tools").
+     */
+    private final boolean toolsDeclared;
+
     private final List<String> skills;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
@@ -144,6 +151,7 @@ public final class SubagentDeclaration {
         this.exposeToUser = b.exposeToUser;
         this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
+        this.toolsDeclared = b.tools != null;
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
@@ -313,10 +321,22 @@ public final class SubagentDeclaration {
 
     /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
-     * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
+     * remain on the subagent's inherited toolkit.
+     *
+     * <p>When the key is <em>absent</em> ({@link #isToolsDeclared()} is {@code false}) all parent
+     * tools are inherited. When the key is present but empty the subagent inherits no tools —
+     * child-local tool registrations are unaffected.
      */
     public List<String> getTools() {
         return tools;
+    }
+
+    /**
+     * Whether the declaration explicitly provided a {@code tools} list, even an empty one. See
+     * {@link #getTools()} for the resulting semantics.
+     */
+    public boolean isToolsDeclared() {
+        return toolsDeclared;
     }
 
     public List<String> getSkills() {
