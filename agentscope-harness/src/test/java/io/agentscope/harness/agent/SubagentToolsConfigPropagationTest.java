@@ -17,14 +17,20 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Regression tests for #3178: the child's {@link ToolsConfig} must be derived from the <em>resolved
@@ -93,5 +99,87 @@ class SubagentToolsConfigPropagationTest {
     void nullParentIsToleratedForBothEmptyAndNonEmptyAllowLists() {
         assertNotNull(HarnessAgentBuilderSupport.childToolsConfig(null, List.of("query_data")));
         assertNotNull(HarnessAgentBuilderSupport.childToolsConfig(null, List.of()));
+    }
+
+    // ---------------------------------------------------------------------
+    //  resolveEffectiveToolsConfig: the #3178 root cause lives here
+    // ---------------------------------------------------------------------
+
+    private static void writeToolsJson(Path workspace, String json) throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("tools.json"), json, StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void resolvesMcpServersFromWorkspaceToolsJsonAndHandsThemToTheDeclaredChild(
+            @TempDir Path workspace) throws Exception {
+        writeToolsJson(
+                workspace,
+                """
+                { "mcpServers": { "industry-data": { "transport": "http",
+                  "url": "https://example.invalid/mcp" } } }
+                """);
+
+        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+            HarnessAgent.Builder b = HarnessAgent.builder();
+            ToolsConfig effective = HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(b, wm);
+
+            assertNotNull(
+                    effective, "a workspace tools.json must be resolved before factories build");
+            assertNotNull(effective.getMcpServers(), "the resolved config must carry mcpServers");
+            assertTrue(
+                    effective.getMcpServers().containsKey("industry-data"),
+                    "mcpServers from tools.json must survive resolution");
+
+            // The whole #3178 chain, end to end at unit level: a workspace-configured parent now
+            // hands its MCP servers to a declared child that allow-lists an MCP tool.
+            ToolsConfig child =
+                    HarnessAgentBuilderSupport.childToolsConfig(effective, List.of("query_data"));
+            assertNotNull(
+                    child.getMcpServers(), "the child must be able to re-register the server");
+            assertTrue(child.getMcpServers().containsKey("industry-data"));
+        }
+    }
+
+    @Test
+    void builderOverrideWinsOverWorkspaceToolsJson(@TempDir Path workspace) throws Exception {
+        writeToolsJson(
+                workspace,
+                """
+                { "mcpServers": { "from-json": { "transport": "http",
+                  "url": "https://example.invalid/a" } } }
+                """);
+
+        ToolsConfig override = new ToolsConfig();
+        Map<String, McpServerConfig> servers = new LinkedHashMap<>();
+        McpServerConfig cfg = new McpServerConfig();
+        cfg.setTransport("http");
+        cfg.setUrl("https://example.invalid/b");
+        servers.put("from-builder", cfg);
+        override.setMcpServers(servers);
+
+        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+            ToolsConfig effective =
+                    HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
+                            HarnessAgent.builder().toolsConfig(override), wm);
+
+            assertNotNull(effective);
+            assertTrue(effective.getMcpServers().containsKey("from-builder"));
+            assertFalse(
+                    effective.getMcpServers().containsKey("from-json"),
+                    "the builder override must take precedence over tools.json");
+        }
+    }
+
+    @Test
+    void noOverrideAndNoToolsJsonResolvesToNull(@TempDir Path workspace) throws Exception {
+        try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
+            assertNull(
+                    HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
+                            HarnessAgent.builder(), wm));
+        }
+        assertNull(
+                HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
+                        HarnessAgent.builder(), null));
     }
 }
