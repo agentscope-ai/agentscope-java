@@ -235,6 +235,23 @@ class ToolGroupManagerTest {
     }
 
     @Test
+    void testIsActiveToolWithExplicitGroups() {
+        // Arrange
+        manager.createToolGroup("group1", "Group 1", false);
+        manager.createToolGroup("group2", "Group 2", false);
+        manager.addToolToGroup("group1", "tool1");
+        manager.addToolToGroup("group2", "tool1");
+
+        // Act & Assert
+        assertFalse(manager.isActiveTool(null, List.of()));
+        assertTrue(manager.isActiveTool("ungroupedTool", null));
+        assertFalse(manager.isActiveTool("tool1", null));
+        assertFalse(manager.isActiveTool("tool1", List.of()));
+        assertTrue(manager.isActiveTool("tool1", List.of("group2")));
+        assertFalse(manager.isActiveTool("tool1", List.of("otherGroup")));
+    }
+
+    @Test
     void testIsInActiveGroupToolNotAnyTool() {
         // Arrange
         manager.createToolGroup("group1", "Group 1", true);
