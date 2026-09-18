@@ -31,7 +31,7 @@ import io.agentscope.harness.agent.gateway.channel.RouteResult;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -69,12 +69,15 @@ public final class WeComChannel implements Channel {
 
     /**
      * Yields the access-token store of one credential generation, and is called once per rebuild of
-     * the outbound group. The store contract binds one instance to one credential: reusing an
-     * instance across generations would let a request that still holds the previous outbound client
-     * write a token minted from the rotated-out credentials into the slot the new generation reads,
-     * so the new outbound client would send with the old generation's token.
+     * the outbound group with that generation's properties. The store contract binds one instance
+     * to one credential: reusing an instance across generations would let a request that still
+     * holds the previous outbound client write a token minted from the rotated-out credentials into
+     * the slot the new generation reads, so the new outbound client would send with the old
+     * generation's token. The properties let implementations scope shared storage (for example a
+     * Redis key hashed from the credential fields): instances on different processes holding the
+     * same generation share one slot, while a rotation moves to a fresh one.
      */
-    private final Supplier<AccessTokenStore> tokenStoreFactory;
+    private final Function<WeComChannelProperties, AccessTokenStore> tokenStoreFactory;
 
     /** Serializes credential replacement; reads of {@link #credentials} are lock-free. */
     private final Object credentialLock = new Object();
@@ -91,7 +94,7 @@ public final class WeComChannel implements Channel {
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             WeComChannelRegistry registry,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<WeComChannelProperties, AccessTokenStore> tokenStoreFactory) {
         this.channelId = Objects.requireNonNull(channelId, "channelId");
         this.config = Objects.requireNonNull(config, "config");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
@@ -173,20 +176,22 @@ public final class WeComChannel implements Channel {
                 routing,
                 WeComChannelProperties.from(channelId, rawProperties),
                 idempotency,
-                () -> tokenStore);
+                properties -> tokenStore);
     }
 
     /**
      * Factory for callers that already hold resolved {@link WeComChannelProperties}.
      *
-     * @param tokenStoreFactory yields the access-token store for each credential generation
+     * @param tokenStoreFactory yields the access-token store for each credential generation, called
+     *     with that generation's properties; each call must return a store serving only that
+     *     generation's credential
      */
     static WeComChannel fromProperties(
             String channelId,
             ChannelConfig routing,
             WeComChannelProperties properties,
             InboundEventDeduplicator idempotency,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<WeComChannelProperties, AccessTokenStore> tokenStoreFactory) {
         Objects.requireNonNull(channelId, "channelId");
         Objects.requireNonNull(routing, "routing");
         Objects.requireNonNull(properties, "properties");
@@ -362,7 +367,7 @@ public final class WeComChannel implements Channel {
             String channelId,
             WeComChannelProperties properties,
             Credentials previous,
-            Supplier<AccessTokenStore> tokenStoreFactory) {
+            Function<WeComChannelProperties, AccessTokenStore> tokenStoreFactory) {
         boolean callbackUnchanged =
                 previous != null && callbackCredentialsEqual(previous.properties(), properties);
         boolean appUnchanged =
@@ -390,7 +395,7 @@ public final class WeComChannel implements Channel {
                                         properties.apiBase(),
                                         properties.corpId(),
                                         properties.secret(),
-                                        tokenStoreFactory.get()),
+                                        tokenStoreFactory.apply(properties)),
                                 properties.agentId());
         return new Credentials(properties, crypto, outbound, mapper);
     }

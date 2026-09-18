@@ -27,6 +27,9 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
+import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
@@ -151,6 +154,42 @@ class WeComTenantChannelManagerTest {
         assertSame(before.crypto(), channel.credentials().crypto());
         // A rotated secret invalidates the access token minted from it.
         assertNotSame(before.outboundClient(), channel.credentials().outboundClient());
+    }
+
+    @Test
+    void tokenStoreFactorySeesTenantAndGenerationAndRunsOncePerGeneration() {
+        List<String> factoryCalls = new ArrayList<>();
+        List<AccessTokenStore> stores = new ArrayList<>();
+        WeComTenantChannelManager instrumented =
+                new WeComTenantChannelManager(
+                        resolver,
+                        ChannelConfig.of("wecom", "main"),
+                        gateway,
+                        new IdempotencyStore(),
+                        (key, properties) -> {
+                            factoryCalls.add(key + ":" + properties.secret());
+                            InMemoryAccessTokenStore store = new InMemoryAccessTokenStore();
+                            stores.add(store);
+                            return store;
+                        });
+
+        WeComChannelProperties initial = properties("token-1", "secret-1");
+        tenants.put(tenantKey, initial);
+        instrumented.channelFor(tenantKey).orElseThrow();
+        instrumented.channelFor(tenantKey).orElseThrow();
+        // A callback-token-only rotation leaves the outbound runtime — and its store — in place.
+        tenants.put(tenantKey, rotate(initial, "token-2", initial.secret()));
+        instrumented.channelFor(tenantKey).orElseThrow();
+        // An app-credential rotation rebuilds the outbound runtime onto a new generation.
+        tenants.put(tenantKey, rotate(initial, "token-2", "secret-2"));
+        instrumented.channelFor(tenantKey).orElseThrow();
+
+        assertEquals(List.of(tenantKey + ":secret-1", tenantKey + ":secret-2"), factoryCalls);
+        // One store instance per credential generation: a generation's slot must not be reachable
+        // from another generation's requests.
+        assertEquals(2, stores.size());
+        assertNotSame(stores.get(0), stores.get(1));
+        instrumented.evict(tenantKey);
     }
 
     @Test

@@ -277,7 +277,7 @@ class WeComCallbackControllerTest {
                         ChannelConfig.of(channelId, "main"),
                         props,
                         new IdempotencyStore(),
-                        InMemoryAccessTokenStore::new);
+                        properties -> new InMemoryAccessTokenStore());
         channel.init(gateway);
         channel.start();
         try {
