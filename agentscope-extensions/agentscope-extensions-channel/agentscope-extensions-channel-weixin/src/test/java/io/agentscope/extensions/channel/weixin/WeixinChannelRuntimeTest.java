@@ -218,9 +218,13 @@ class WeixinChannelRuntimeTest {
                 });
 
         assertTrue(waitFor(() -> failed.get() > 0), "the throttled message was never failed");
+        // Wait for the report before stopping: a stop that lands first makes the poll loop skip
+        // the notification, which is correct shutdown behaviour but not what this test asserts.
+        assertTrue(
+                waitFor(() -> !transientFailures.isEmpty()),
+                "throttling must surface a transient failure");
         channel.stop();
         assertEquals(20, dispatches.get(), "the peer throttle must stop before the 21st event");
-        assertFalse(transientFailures.isEmpty(), "throttling must surface a transient failure");
         assertTrue(
                 transientFailures.stream().noneMatch(reason -> reason.contains("hello")),
                 "failure reasons must stay payload-free: " + transientFailures);
