@@ -2,9 +2,19 @@
 title: "Environments: execution locations"
 ---
 
-[简体中文](/v2/zh/service/environments)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 **Resources → Environments** defines where Managed Agents execute file, Shell and other tools. It is separate from a definition Workspace and from a Hosted Agent's Runtime Host.
+
+## Interface tour
+
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/imgs/service/environments.png" alt="Local and self_hosted environment examples" />
+</Frame>
+
+Choose an environment according to where execution should happen. **Local development** represents local execution, while **Research worker** is an example self_hosted configuration. Creating the record still requires starting and connecting its Worker.
 
 ## Choose a type
 
@@ -21,7 +31,9 @@ In Docker, Local means inside the Dataplane container, not arbitrary access to t
 
 Create an Environment with a name and type, then edit its backend-specific JSON connection settings. Type is read-only after creation. Credentials and capabilities must match the selected backend; Runtime Host enrollment credentials are not Worker credentials.
 
-Select it in the Agent's advanced settings or environment binding. Verify connection, working directory and permissions with a read-only file operation before enabling writes or commands.
+Open a Managed Agent in **DESIGN → Agents** and select **Runtime → Session defaults → Default environment**, saved as `defaultEnvironmentId`. The creation form also exposes the choice in Advanced settings. A Session API request can use `environmentId` to select an environment for that Session.
+
+After saving, start a new Chat and verify the connection, working directory and permissions with a read-only file operation, then check writes or commands. This binding selects tool execution; Managed model inference remains in the Dataplane even with self_hosted execution.
 
 ## Self-hosted execution
 
@@ -46,6 +58,22 @@ An administrator supplies `BUILDER_E2B_API_KEY` through deployment configuration
 ```
 
 Select a custom E2B template for additional executables. `workspaceRoot` controls the sandbox path; `persistenceMode` can be `TAR` or `NATIVE_SNAPSHOT`. Verify save/restore with the chosen template and backend. The remote type is filesystem-only, not a remote Shell Worker.
+
+### Sandbox parameters
+
+Set these fields in the Environment's Config. Omitted E2B connection settings inherit administrator deployment configuration.
+
+| Field | Meaning and fallback |
+| --- | --- |
+| `templateId` | E2B template; `base` without a deployment override |
+| `workspaceRoot` | Sandbox working path; `/home/user` without a deployment override |
+| `sandboxTimeoutSeconds` | Sandbox lifetime timeout in seconds; 300 without a deployment override |
+| `isolationScope` | Harness filesystem isolation scope; defaults to `SESSION` |
+| `persistenceMode` | `TAR` or `NATIVE_SNAPSHOT`; defaults to TAR unless overridden in deployment |
+| `apiBaseUrl` / `domain` | Custom E2B endpoint settings; usually inherited from deployment |
+| `apiKey` | Per-environment E2B credential override; usually configured centrally |
+
+Adding `packages`, Docker image or network fields to Config does not install dependencies or enforce network restrictions. Prepare programs in the E2B template and apply network policy in the actual backend. These sandbox settings do not configure local or self_hosted containers.
 
 ## Run a self-hosted Worker from the published image
 
