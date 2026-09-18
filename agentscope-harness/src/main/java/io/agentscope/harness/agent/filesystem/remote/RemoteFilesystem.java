@@ -116,14 +116,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
      * <p>Fallback semantics differ per operation:
      *
      * <ul>
-     *   <li>{@code ls}, {@code glob}, {@code exists} — when the index has no matching prefix
-     *       the operation falls back to a full remote-store scan, so results remain correct
-     *       even if this node's index is stale.
-     *   <li>{@code grep} — when the index is non-{@code null} the operation first enumerates
-     *       candidates from the index. If the index path yields zero matches, the operation
-     *       falls back to a full remote-store scan so that sibling-node writes not yet seen by
-     *       this node's index are not silently missed. Content for each candidate is always
-     *       fetched authoritatively from the remote store.
+     *   <li>{@code ls}, {@code glob}, {@code grep} — when the index fast path yields zero
+     *       matches or entries (or the index has no matching prefix), the operation falls back
+     *       to a full remote-store scan. Non-empty index results are still returned directly,
+     *       so a partially populated index does not guarantee complete results across nodes.
+     *       Content for grep candidates is always fetched authoritatively from the remote store.
+     *   <li>{@code exists} — when the index does not contain the path, the operation falls back
+     *       to the remote store.
      * </ul>
      *
      * @param index workspace index; {@code null} disables index-backed fast paths
@@ -171,8 +170,12 @@ public class RemoteFilesystem implements AbstractFilesystem {
             for (String subdir : subdirs) {
                 infos.add(FileInfo.ofDir(subdir, ""));
             }
-            infos.sort(Comparator.comparing(FileInfo::path));
-            return LsResult.success(infos);
+            // An empty index result is not authoritative: entries may have disappeared
+            // since hasPrefix(), or this node may not have observed remote writes.
+            if (!infos.isEmpty()) {
+                infos.sort(Comparator.comparing(FileInfo::path));
+                return LsResult.success(infos);
+            }
         }
 
         // Fallback: full remote scan
@@ -458,8 +461,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
                     results.add(FileInfo.ofFile(key, 0, ""));
                 }
             }
-            results.sort(Comparator.comparing(FileInfo::path));
-            return GlobResult.success(results);
+            // No matching index candidates does not imply no matching remote files.
+            if (!results.isEmpty()) {
+                results.sort(Comparator.comparing(FileInfo::path));
+                return GlobResult.success(results);
+            }
         }
 
         // Fallback: full remote scan
