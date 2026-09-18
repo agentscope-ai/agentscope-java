@@ -113,12 +113,16 @@ public class ManagedSessionChannelBridge {
     /** Resolves the active session for the conversation, creating one on first contact. */
     private SessionRegistration findOrCreateSession(
             String ownerId, String agentId, String externalKey) {
+        if (externalKey == null || externalKey.isBlank()) {
+            // The control plane no longer mints a key, so sending one-less requests would just be
+            // rejected after a round trip. Callers build the key with ChannelExternalKeys.
+            throw new IllegalArgumentException(
+                    "externalKey is required: the control plane does not mint session keys");
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ownerId", ownerId);
         body.put("agentId", agentId);
-        if (externalKey != null && !externalKey.isBlank()) {
-            body.put("externalKey", externalKey);
-        }
+        body.put("externalKey", externalKey);
         return controlPlane
                 .post()
                 .uri("/api/internal/managed-sessions/find-or-create")
