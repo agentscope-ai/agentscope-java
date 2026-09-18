@@ -166,50 +166,53 @@ class RuntimeContextTest {
     }
 
     @Test
-    @DisplayName("onStateLoaded defaults to null")
-    void onStateLoaded_defaultsToNull() {
+    @DisplayName("onAgentStateBound defaults to null")
+    void onAgentStateBound_defaultsToNull() {
         RuntimeContext ctx = RuntimeContext.empty();
-        assertNull(ctx.getOnStateLoaded());
+        assertNull(ctx.getOnAgentStateBound());
     }
 
     @Test
-    @DisplayName("builder.onStateLoaded propagates the callback to the built context")
-    void onStateLoaded_builderPropagatesCallback() {
+    @DisplayName("builder.onAgentStateBound propagates the callback to the built context")
+    void onAgentStateBound_builderPropagatesCallback() {
         BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> {};
-        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(callback).build();
-        assertSame(callback, ctx.getOnStateLoaded());
+        RuntimeContext ctx = RuntimeContext.builder().onAgentStateBound(callback).build();
+        assertSame(callback, ctx.getOnAgentStateBound());
     }
 
     @Test
-    @DisplayName("setOnStateLoaded replaces and clears the callback")
-    void onStateLoaded_setterReplacesAndClears() {
+    @DisplayName("setOnAgentStateBound replaces and clears the callback")
+    void onAgentStateBound_setterReplacesAndClears() {
         BiConsumer<RuntimeContext, List<Msg>> first = (c, m) -> {};
         BiConsumer<RuntimeContext, List<Msg>> second = (c, m) -> {};
-        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(first).build();
-        assertSame(first, ctx.getOnStateLoaded());
+        RuntimeContext ctx = RuntimeContext.builder().onAgentStateBound(first).build();
+        assertSame(first, ctx.getOnAgentStateBound());
 
-        ctx.setOnStateLoaded(second);
-        assertSame(second, ctx.getOnStateLoaded());
+        ctx.setOnAgentStateBound(second);
+        assertSame(second, ctx.getOnAgentStateBound());
 
-        ctx.setOnStateLoaded(null);
-        assertNull(ctx.getOnStateLoaded());
+        ctx.setOnAgentStateBound(null);
+        assertNull(ctx.getOnAgentStateBound());
     }
 
     @Test
-    @DisplayName("builder(source) preserves the onStateLoaded callback")
-    void onStateLoaded_builderCopyPreservesCallback() {
+    @DisplayName("builder(source) does not inherit the onAgentStateBound callback")
+    void onAgentStateBound_builderCopyDoesNotInheritCallback() {
         BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> {};
-        RuntimeContext source = RuntimeContext.builder().onStateLoaded(callback).build();
+        RuntimeContext source = RuntimeContext.builder().onAgentStateBound(callback).build();
         RuntimeContext copy = RuntimeContext.builder(source).build();
-        assertSame(callback, copy.getOnStateLoaded());
+        // The callback is entry-call scoped and must not leak into derived contexts
+        // (subagent / tool-execution contexts) where it would fire against the child's state.
+        assertNull(copy.getOnAgentStateBound());
+        assertSame(callback, source.getOnAgentStateBound());
     }
 
     @Test
-    @DisplayName("onStateLoaded callback receives the context and mutable message list")
-    void onStateLoaded_callbackReceivesContextAndMsgs() {
+    @DisplayName("onAgentStateBound callback receives the context and mutable message list")
+    void onAgentStateBound_callbackReceivesContextAndMsgs() {
         RuntimeContext ctx = RuntimeContext.empty();
         AtomicInteger fired = new AtomicInteger();
-        ctx.setOnStateLoaded(
+        ctx.setOnAgentStateBound(
                 (c, m) -> {
                     fired.incrementAndGet();
                     assertSame(c, ctx);
@@ -219,35 +222,36 @@ class RuntimeContextTest {
         List<Msg> msgs = new ArrayList<>(List.of(new UserMessage("hi")));
 
         ctx.setAgentState(state);
-        ctx.getOnStateLoaded().accept(ctx, msgs);
+        ctx.getOnAgentStateBound().accept(ctx, msgs);
 
         assertEquals(1, fired.get());
         assertTrue(msgs.isEmpty());
     }
 
     @Test
-    @DisplayName("onStateLoaded callback can read the agent state just set on the context")
-    void onStateLoaded_callbackReadsFreshlySetState() {
+    @DisplayName("onAgentStateBound callback can read the agent state just set on the context")
+    void onAgentStateBound_callbackReadsFreshlySetState() {
         AgentState state = AgentState.builder().summary("loaded").build();
         AtomicReference<AgentState> seen = new AtomicReference<>();
         BiConsumer<RuntimeContext, List<Msg>> callback = (c, m) -> seen.set(c.getAgentState());
-        RuntimeContext ctx = RuntimeContext.builder().onStateLoaded(callback).build();
+        RuntimeContext ctx = RuntimeContext.builder().onAgentStateBound(callback).build();
         ctx.setAgentState(state);
-        ctx.getOnStateLoaded().accept(ctx, List.of());
+        ctx.getOnAgentStateBound().accept(ctx, List.of());
 
         assertSame(state, seen.get());
     }
 
     @Test
-    @DisplayName("onStateLoaded can be registered on a copied context without affecting the source")
-    void onStateLoaded_copyIsIndependentAfterRegistration() {
+    @DisplayName(
+            "onAgentStateBound can be registered on a copied context without affecting the source")
+    void onAgentStateBound_copyIsIndependentAfterRegistration() {
         BiConsumer<RuntimeContext, List<Msg>> original = (c, m) -> {};
-        RuntimeContext source = RuntimeContext.builder().onStateLoaded(original).build();
+        RuntimeContext source = RuntimeContext.builder().onAgentStateBound(original).build();
         BiConsumer<RuntimeContext, List<Msg>> override = (c, m) -> {};
-        RuntimeContext copy = RuntimeContext.builder(source).onStateLoaded(override).build();
+        RuntimeContext copy = RuntimeContext.builder(source).onAgentStateBound(override).build();
 
-        assertSame(override, copy.getOnStateLoaded());
-        assertSame(original, source.getOnStateLoaded());
+        assertSame(override, copy.getOnAgentStateBound());
+        assertSame(original, source.getOnAgentStateBound());
     }
 
     @Test

@@ -162,7 +162,7 @@ public class AguiRequestProcessor {
 
                             try {
                                 // Full input is forwarded; message dedup against persisted
-                                // AgentState context is handled by the onStateLoaded callback
+                                // AgentState context is handled by the onAgentStateBound callback
                                 // registered in AguiAgentAdapter.buildRuntimeContext().
                                 RunAgentInput effectiveInput = input;
                                 RuntimeContext effectiveRuntimeContext =

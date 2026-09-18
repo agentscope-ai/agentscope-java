@@ -746,10 +746,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
-        // state 加载完成，触发 onStateLoaded 回调
-        BiConsumer<RuntimeContext, List<Msg>> onStateLoaded = ctx.getOnStateLoaded();
-        if (onStateLoaded != null) {
-            onStateLoaded.accept(ctx, msgs);
+        // Per-call state bound; fire the onAgentStateBound callback. The hook may modify the
+        // incoming message list in place — runLifecycleBody already handed us a private mutable
+        // copy whenever a callback is registered (see AgentBase#runLifecycleBody).
+        BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound = ctx.getOnAgentStateBound();
+        if (onAgentStateBound != null) {
+            onAgentStateBound.accept(ctx, msgs);
         }
         this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);

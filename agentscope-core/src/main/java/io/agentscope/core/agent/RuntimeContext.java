@@ -49,12 +49,13 @@ public class RuntimeContext {
     private volatile AgentState agentState;
 
     /**
-     * Callback fired after {@link #agentState} is loaded and set on this context (inside the
-     * agent's {@code beforeAgentExecution}, right after {@link #setAgentState(AgentState)}). The
-     * callback receives this RuntimeContext and the mutable incoming message list — it may modify
-     * either in place. {@code null} when no callback is registered.
+     * Callback fired after the call-scoped {@link #agentState} is bound to this context (inside
+     * the agent's {@code beforeAgentExecution}, right after {@link #setAgentState(AgentState)}),
+     * on every call including brand-new sessions. The callback receives this RuntimeContext and
+     * the incoming message list (a private mutable copy whenever a callback is registered) — it
+     * may modify either in place. {@code null} when no callback is registered.
      */
-    private volatile BiConsumer<RuntimeContext, List<Msg>> onStateLoaded;
+    private volatile BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
 
     /** String-keyed extras (legacy and generic extension). */
     private final ConcurrentMap<String, Object> stringAttributes;
@@ -74,7 +75,7 @@ public class RuntimeContext {
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
-        this.onStateLoaded = builder.onStateLoaded;
+        this.onAgentStateBound = builder.onAgentStateBound;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -128,22 +129,32 @@ public class RuntimeContext {
     }
 
     /**
-     * Returns the callback fired after AgentState is loaded and set on this context, or {@code null}
-     * if none is registered.
+     * Returns the callback fired after the call-scoped AgentState is bound to this context, or
+     * {@code null} if none is registered.
      */
-    public BiConsumer<RuntimeContext, List<Msg>> getOnStateLoaded() {
-        return onStateLoaded;
+    public BiConsumer<RuntimeContext, List<Msg>> getOnAgentStateBound() {
+        return onAgentStateBound;
     }
 
     /**
-     * Registers a callback fired after AgentState is loaded (inside {@code beforeAgentExecution},
-     * right after {@link #setAgentState(AgentState)}). The callback receives this RuntimeContext and
-     * the mutable incoming message list — it may modify either in place.
+     * Registers a callback fired after the call-scoped AgentState is bound (inside {@code
+     * beforeAgentExecution}, right after {@link #setAgentState(AgentState)}), on every call
+     * including brand-new sessions.
      *
-     * @param onStateLoaded the callback, or {@code null} to clear
+     * <p>The callback receives this RuntimeContext and the incoming message list. The agent hands
+     * the callback a private mutable copy of the list, so in-place modification (e.g. trimming
+     * messages already persisted in {@link #getAgentState()}) is safe and takes effect for the
+     * rest of the call.
+     *
+     * <p>The callback is entry-call scoped: it is registered per {@code call()} / {@code stream()}
+     * invocation and is deliberately not inherited by contexts derived via {@link
+     * Builder#from(RuntimeContext)} (e.g. subagent or tool-execution contexts) — register it
+     * explicitly where it is needed.
+     *
+     * @param onAgentStateBound the callback, or {@code null} to clear
      */
-    public void setOnStateLoaded(BiConsumer<RuntimeContext, List<Msg>> onStateLoaded) {
-        this.onStateLoaded = onStateLoaded;
+    public void setOnAgentStateBound(BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound) {
+        this.onAgentStateBound = onAgentStateBound;
     }
 
     /**
@@ -360,7 +371,7 @@ public class RuntimeContext {
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
-        private BiConsumer<RuntimeContext, List<Msg>> onStateLoaded;
+        private BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -378,13 +389,15 @@ public class RuntimeContext {
         }
 
         /**
-         * Registers the {@link RuntimeContext#getOnStateLoaded()} callback on the built context.
+         * Registers the {@link RuntimeContext#getOnAgentStateBound()} callback on the built
+         * context. The callback is entry-call scoped and not inherited by {@link
+         * #from(RuntimeContext)} — register it explicitly on each context that needs it.
          *
-         * @param onStateLoaded the callback, or {@code null} to leave unset
+         * @param onAgentStateBound the callback, or {@code null} to leave unset
          * @return this builder
          */
-        public Builder onStateLoaded(BiConsumer<RuntimeContext, List<Msg>> onStateLoaded) {
-            this.onStateLoaded = onStateLoaded;
+        public Builder onAgentStateBound(BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound) {
+            this.onAgentStateBound = onAgentStateBound;
             return this;
         }
 
@@ -426,7 +439,10 @@ public class RuntimeContext {
             this.sessionId = source.sessionId;
             this.userId = source.userId;
             this.agentState = source.agentState;
-            this.onStateLoaded = source.onStateLoaded;
+            // Deliberately NOT copying onAgentStateBound: the callback is entry-call scoped
+            // (registered per call/stream invocation) and must not leak into derived contexts
+            // such as subagent or tool-execution contexts, where it would fire against the
+            // child's state. Register it explicitly via onAgentStateBound(...) where needed.
             this.toolExecutionContext = source.toolExecutionContext;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
