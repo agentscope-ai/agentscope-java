@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.ToolsConfig;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -181,5 +183,62 @@ class SubagentToolsConfigPropagationTest {
         assertNull(
                 HarnessAgentBuilderSupport.resolveEffectiveToolsConfig(
                         HarnessAgent.builder(), null));
+    }
+
+    // ---------------------------------------------------------------------
+    //  Empty-allow-list branch coverage and the backwards-compatible
+    //  overloads that the public builder entry points still funnel through.
+    // ---------------------------------------------------------------------
+
+    @Test
+    void nullAllowListOptsOutAndToleratesAParentWithoutAnyMcpServers() {
+        ToolsConfig parentWithoutServers = new ToolsConfig();
+        parentWithoutServers.setMcpServers(null);
+
+        ToolsConfig fromNullAllow =
+                HarnessAgentBuilderSupport.childToolsConfig(parentWithoutServers, null);
+        assertNotNull(fromNullAllow);
+        assertTrue(
+                fromNullAllow.getMcpServers() == null || fromNullAllow.getMcpServers().isEmpty(),
+                "a null allow-list must not inherit the parent's MCP servers");
+
+        ToolsConfig parentWithEmptyServers = new ToolsConfig();
+        parentWithEmptyServers.setMcpServers(Map.of());
+        ToolsConfig fromEmptyAllow =
+                HarnessAgentBuilderSupport.childToolsConfig(parentWithEmptyServers, List.of());
+        assertTrue(fromEmptyAllow.getMcpServers().isEmpty());
+    }
+
+    @Test
+    void compatBuildersFallBackToTheBuilderOverride(@TempDir Path workspace) {
+        HarnessAgent.Builder b = HarnessAgent.builder().toolsConfig(parentWithMcp());
+
+        assertNotNull(
+                HarnessAgentBuilderSupport.buildGeneralPurposeFactory(b, workspace, null),
+                "the 3-arg general-purpose builder must keep serving existing callers");
+
+        List<SubagentEntry> staticEntries =
+                HarnessAgentBuilderSupport.buildStaticSubagentEntries(b, workspace, null);
+        assertFalse(staticEntries.isEmpty(), "static entries must still include general-purpose");
+    }
+
+    @Test
+    void staticEntriesBuildTheDeclaredSubagentFromTheEffectiveConfig(@TempDir Path workspace) {
+        SubagentDeclaration decl =
+                SubagentDeclaration.builder()
+                        .name("reader")
+                        .description("read only")
+                        .inlineAgentsBody("read only")
+                        .tools(List.of("read_file"))
+                        .build();
+        HarnessAgent.Builder b = HarnessAgent.builder().subagent(decl);
+
+        List<SubagentEntry> entries =
+                HarnessAgentBuilderSupport.buildStaticSubagentEntries(
+                        b, workspace, null, parentWithMcp());
+
+        assertTrue(
+                entries.stream().anyMatch(e -> "reader".equals(e.name())),
+                "the declared subagent must be present when built from an effective config");
     }
 }
