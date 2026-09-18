@@ -75,7 +75,25 @@ class KubernetesSandboxTest {
         assertEquals("out", result.stdout());
         ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
         verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
-        assertEquals("cd '/workspace' && (echo hi)", cmd.getValue());
+        assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
+    }
+
+    @Test
+    void doExecKeepsClosingParenOffHeredocTerminatorLine() throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("done", "", 0));
+
+        String command = "cat <<'EOF'\nhello\nEOF";
+        ExecResult result = sandbox.doExec(null, command, 30);
+
+        assertEquals(0, result.exitCode());
+        ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
+        verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
+        String wrapped = cmd.getValue();
+        assertEquals("cd '/workspace' && (\n" + command + "\n)", wrapped);
+        // Closing ')' must not glue onto the heredoc terminator.
+        assertTrue(wrapped.endsWith("\nEOF\n)"));
+        assertTrue(!wrapped.contains("EOF)"));
     }
 
     @Test
