@@ -1048,7 +1048,25 @@ func (s *Server) applyChannelRuntimeObservation(ctx context.Context, item channe
 		return err
 	}
 	if typ == "weixin" {
-		if disabled || item.AccountID == "" || item.LeaseHolder == "" || item.CredentialRevision <= 0 || item.LeaseGeneration <= 0 || item.Sequence <= 0 {
+		if disabled {
+			return nil
+		}
+		if item.LeaseHolder == "" {
+			// A channel that failed to build or start never acquires a lease, so it reports the
+			// failure without lease authority. Record it on the channel row - an operator has to
+			// be able to see a failing channel - while leaving the connection's lease fields to
+			// the replica that actually holds the lease. A lease-less report without an error is
+			// a healthy standby and stays ignored.
+			if item.Error == nil || strings.TrimSpace(*item.Error) == "" {
+				return nil
+			}
+			if _, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=false,runtime_error=$1,runtime_updated_at=$2 WHERE channel_id=$3`,
+				strings.TrimSpace(*item.Error), now, item.ChannelID); err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
+		}
+		if item.AccountID == "" || item.CredentialRevision <= 0 || item.LeaseGeneration <= 0 || item.Sequence <= 0 {
 			return nil
 		}
 		accepted, err := tx.Exec(ctx, `UPDATE weixin_connections SET runtime_lease_generation=$1,

@@ -16,6 +16,8 @@
 package io.agentscope.builder.web.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -135,5 +137,110 @@ class SchedulerWeixinRuntimeTest {
             runtime.stop();
             server.stop(0);
         }
+    }
+
+    @Test
+    @Timeout(30)
+    void unreadableCredentialRevisionIsReportedInsteadOfAbortingTheReport() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        String config =
+                json.writeValueAsString(
+                        Map.of(
+                                "wx",
+                                Map.of(
+                                        "type",
+                                        "weixin",
+                                        "defaultAgentId",
+                                        "main",
+                                        "properties",
+                                        Map.of(
+                                                "accountId",
+                                                "account",
+                                                "credentialRevision",
+                                                "not-a-number",
+                                                "baseUrl",
+                                                baseUrl))));
+        AtomicReference<JsonNode> report = new AtomicReference<>();
+        CountDownLatch reported = new CountDownLatch(1);
+        server.createContext(
+                "/",
+                exchange -> {
+                    String path = exchange.getRequestURI().getPath();
+                    String body;
+                    if (path.equals("/api/internal/channels/config")) {
+                        body = config;
+                    } else if (path.equals("/api/internal/channels/runtime")) {
+                        report.compareAndSet(null, json.readTree(exchange.getRequestBody()));
+                        reported.countDown();
+                        body = "{}";
+                    } else {
+                        exchange.getRequestBody().readAllBytes();
+                        body = "{}";
+                    }
+                    writeJson(exchange, body);
+                });
+        server.start();
+        var runtime =
+                new SchedulerChannelRuntime(
+                        new ChannelManager(),
+                        noOpGateway(),
+                        WebClient.create(baseUrl),
+                        json,
+                        new ChannelRuntimeCatalog(),
+                        WeixinStateStore.inMemory(),
+                        1,
+                        1,
+                        0);
+        try {
+            runtime.start();
+            assertTrue(reported.await(10, TimeUnit.SECONDS), "no runtime report was sent");
+            JsonNode item = report.get().path("channels").get(0);
+            assertEquals("wx", item.path("channelId").asText());
+            assertFalse(item.path("started").asBoolean(), "a channel that failed to start");
+            assertEquals(
+                    "credentialRevision is missing or not a number",
+                    item.path("error").asText(),
+                    "the specific build failure must survive into the report");
+        } finally {
+            runtime.stop();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void credentialRevisionIsReadLenientlyPerEntry() {
+        assertEquals(
+                7L, SchedulerChannelRuntime.credentialRevision(Map.of("credentialRevision", 7)));
+        assertEquals(
+                7L,
+                SchedulerChannelRuntime.credentialRevision(Map.of("credentialRevision", " 7 ")));
+        assertNull(
+                SchedulerChannelRuntime.credentialRevision(
+                        Map.of("credentialRevision", "not-a-number")));
+        assertNull(SchedulerChannelRuntime.credentialRevision(Map.of()));
+        assertNull(SchedulerChannelRuntime.credentialRevision(null));
+    }
+
+    private static void writeJson(com.sun.net.httpserver.HttpExchange exchange, String body)
+            throws java.io.IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private static Gateway noOpGateway() {
+        return new Gateway() {
+            @Override
+            public void bindMainAgent(HarnessAgent agent) {}
+
+            @Override
+            public Mono<Msg> run(MsgContext context, List<Msg> messages) {
+                return Mono.empty();
+            }
+        };
     }
 }

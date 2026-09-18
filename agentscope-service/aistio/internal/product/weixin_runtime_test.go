@@ -83,3 +83,57 @@ func TestWeixinRuntimeReportsRejectStaleOwnersAndCredentials(t *testing.T) {
 	report(3, 2, 2, "new", true, "")
 	assertState(false, "")
 }
+
+func TestWeixinRuntimeSurfacesAStartFailureWithoutLeaseAuthority(t *testing.T) {
+	f := newWeixinFixture(t)
+	path := f.authorize()
+	f.request("POST", path+"/complete", nil, 200)
+
+	report := func(body gin.H) {
+		t.Helper()
+		out := f.call("POST", "/api/internal/channels/runtime", gin.H{"channels": []any{body}},
+			map[string]string{"X-Builder-Internal-Token": "test-internal"})
+		if out.Code != http.StatusNoContent {
+			t.Fatalf("report failed: %d", out.Code)
+		}
+	}
+	assertChannelState := func(started bool, errorCode string) {
+		t.Helper()
+		ch, err := f.s.loadChannel(t.Context(), f.channel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ch.RuntimeStarted != started || deref(ch.RuntimeError) != errorCode {
+			t.Fatalf("unexpected runtime state: started=%v error=%s", ch.RuntimeStarted, deref(ch.RuntimeError))
+		}
+	}
+
+	// The active replica claims the lease first, so there is authority to protect.
+	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
+		"leaseGeneration": int64(2), "leaseHolder": "active", "sequence": int64(3), "started": true})
+	assertChannelState(true, "")
+
+	// A replica whose channel failed to build or start never holds a lease: it must still surface
+	// the failure instead of being dropped like a healthy standby.
+	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
+		"started": false, "error": "credentialRevision is missing or not a number"})
+	assertChannelState(false, "credentialRevision is missing or not a number")
+
+	// ... and it must not touch the lease authority the active replica owns.
+	var holder string
+	var generation, sequence int64
+	if err := f.s.db.Pool.QueryRow(t.Context(),
+		`SELECT runtime_lease_holder, runtime_lease_generation, runtime_report_sequence
+		 FROM weixin_connections WHERE channel_id=$1`,
+		f.channel).Scan(&holder, &generation, &sequence); err != nil {
+		t.Fatal(err)
+	}
+	if holder != "active" || generation != 2 || sequence != 3 {
+		t.Fatalf("lease authority changed: holder=%q generation=%d sequence=%d", holder, generation, sequence)
+	}
+
+	// A lease-less report carrying no error is still a healthy standby and stays ignored.
+	report(gin.H{"channelId": f.channel, "accountId": f.account, "credentialRevision": int64(1),
+		"started": true})
+	assertChannelState(false, "credentialRevision is missing or not a number")
+}
