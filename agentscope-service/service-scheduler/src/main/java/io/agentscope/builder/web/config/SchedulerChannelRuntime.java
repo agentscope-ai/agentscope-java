@@ -239,7 +239,9 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             if (channel == null) {
                 lastConfigFingerprints.remove(channelId);
                 runtimeListenerTokens.remove(channelId);
-                lastErrors.put(channelId, "failed to build channel");
+                // Keep the specific reason buildChannel recorded; the generic text is only for
+                // the paths that return null without one (unknown type).
+                lastErrors.putIfAbsent(channelId, "failed to build channel");
                 continue;
             }
             try {
@@ -277,18 +279,38 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             RuntimeObservation observation = observations.get(id);
             boolean weixin = WeixinChannel.TYPE.equals(entry.getValue().getType());
             // A standby has no observation authority and must not overwrite the active replica.
-            if (weixin && (observation == null || observation.lease() == null)) continue;
+            if (weixin && (observation == null || observation.lease() == null)) {
+                // A channel that failed to build or start never acquires a lease either, so it has
+                // no observation and would be dropped from the report entirely. Surface it instead:
+                // an operator must be able to tell a failing channel from one that was never
+                // configured. A healthy standby has no recorded error and stays silent.
+                if (errors.containsKey(id)) {
+                    items.add(
+                            weixinStartFailure(
+                                    id,
+                                    entry.getValue(),
+                                    errors.get(id) == null
+                                            ? "channel failed to start"
+                                            : errors.get(id)));
+                }
+                continue;
+            }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("channelId", id);
             if (weixin) {
+                Long credentialRevision = credentialRevision(entry.getValue().getProperties());
+                if (credentialRevision == null) {
+                    // One unreadable entry must not stop every other channel's state from
+                    // reaching the control plane.
+                    items.add(
+                            weixinStartFailure(
+                                    id,
+                                    entry.getValue(),
+                                    "credentialRevision is missing or not a number"));
+                    continue;
+                }
                 item.put("accountId", entry.getValue().getProperties().get("accountId"));
-                item.put(
-                        "credentialRevision",
-                        Long.parseLong(
-                                String.valueOf(
-                                        entry.getValue()
-                                                .getProperties()
-                                                .get("credentialRevision"))));
+                item.put("credentialRevision", credentialRevision);
                 item.put("leaseHolder", observation.lease().holderId());
                 item.put("leaseGeneration", observation.lease().generation());
                 item.put("sequence", observation.sequence());
@@ -352,8 +374,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                                 controlPlane,
                                 objectMapper,
                                 channelId,
-                                Long.parseLong(
-                                        String.valueOf(properties.get("credentialRevision")))),
+                                requireCredentialRevision(properties)),
                         weixinStateStore,
                         managedWeixinRuntimeListener(channelId, listenerToken));
             }
@@ -367,6 +388,61 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
             lastErrors.put(channelId, ex.getMessage());
             return null;
         }
+    }
+
+    /**
+     * A Weixin channel that failed to build or start never acquires a lease, so it reports the
+     * failure without lease authority: the control plane records it on the channel row and leaves
+     * the connection's lease fields to the replica that actually holds the lease.
+     */
+    private static Map<String, Object> weixinStartFailure(
+            String id, ChannelConfigEntry entry, String error) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("channelId", id);
+        Object accountId = entry.getProperties().get("accountId");
+        if (accountId != null) {
+            item.put("accountId", accountId);
+        }
+        Long credentialRevision = credentialRevision(entry.getProperties());
+        if (credentialRevision != null) {
+            item.put("credentialRevision", credentialRevision);
+        }
+        item.put("started", false);
+        item.put("error", error);
+        return item;
+    }
+
+    /**
+     * Reads the credential revision without letting one malformed entry abort the whole status
+     * report — a missing or non-numeric value must not stop every other channel's state from
+     * reaching the control plane. Returns {@code null} when the value cannot be read.
+     */
+    static Long credentialRevision(Map<String, Object> properties) {
+        Object raw = properties == null ? null : properties.get("credentialRevision");
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(raw).trim());
+        } catch (NumberFormatException invalid) {
+            return null;
+        }
+    }
+
+    /**
+     * The control plane fences credentials by revision, so a channel without a readable revision
+     * must not start. A described error keeps the failure local to this channel: the caller
+     * records it against the id instead of letting a raw {@code NumberFormatException} escape.
+     */
+    private static long requireCredentialRevision(Map<String, Object> properties) {
+        Long revision = credentialRevision(properties);
+        if (revision == null) {
+            throw new IllegalArgumentException("credentialRevision is missing or not a number");
+        }
+        return revision;
     }
 
     private Map<String, ChannelConfigEntry> fetchChannelConfigWithRetry() {
