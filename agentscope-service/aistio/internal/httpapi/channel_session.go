@@ -47,6 +47,11 @@ func (s *Server) internalFindOrCreateManagedSession(c *gin.Context) {
 		// fresh session on every call, which grows the session table without bound behind a
 		// long-lived internal token and defeats the find-or-create lock below. The bridge builds
 		// the key with ChannelExternalKeys before calling.
+		//
+		// Deploy order: the control plane must not take this build before every scheduler replica
+		// sends a key, because a replica that still omits one used to be carried by the minted key
+		// and now fails here. The endpoint is new in the same change, so the skew is limited to
+		// environments that ran an earlier build of this branch.
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "externalKey is required"})
 		return
 	}
