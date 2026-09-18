@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
+import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.tools.McpServerConfig;
@@ -52,6 +53,29 @@ import org.mockito.Mockito;
  * workspaces and mocked models, without connecting to MCP servers.
  */
 class SubagentToolsConfigPropagationTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void fileDeclarationPreservesAbsentVersusEmptyTools(
+            boolean toolsDeclared, @TempDir Path workspace) throws Exception {
+        Path spec = workspace.resolve("reader.md");
+        Files.writeString(
+                spec,
+                "---\ndescription: Read only\n"
+                        + (toolsDeclared ? "tools: []\n" : "")
+                        + "---\nRead the workspace.\n",
+                StandardCharsets.UTF_8);
+        SubagentDeclaration declaration = AgentSpecLoader.loadFromFile(spec, workspace);
+        assertNotNull(declaration);
+        assertEquals(toolsDeclared, declaration.isToolsDeclared());
+        assertTrue(declaration.getTools().isEmpty());
+
+        ToolsConfig child =
+                HarnessAgentBuilderSupport.childToolsConfig(
+                        parentWithMcp(), declaration.getTools(), declaration.isToolsDeclared());
+        assertNotNull(child);
+        assertEquals(!toolsDeclared, child.getMcpServers().containsKey("industry-data"));
+    }
 
     @ParameterizedTest
     @CsvSource({"reader,true", "reader,false", "general-purpose,true", "general-purpose,false"})

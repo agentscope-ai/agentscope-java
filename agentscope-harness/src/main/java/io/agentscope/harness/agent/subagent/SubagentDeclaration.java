@@ -326,6 +326,13 @@ public final class SubagentDeclaration {
      * <p>When the key is <em>absent</em> ({@link #isToolsDeclared()} is {@code false}) all parent
      * tools are inherited. When the key is present but empty the subagent inherits no tools —
      * child-local tool registrations are unaffected.
+     *
+     * <p>A non-null parent tools configuration is propagated as a child builder override, after
+     * applying this declaration's tool selection. It takes precedence over the child's own
+     * {@code tools.json}, including in {@link WorkspaceMode#ISOLATED} mode; the configurations
+     * are not merged. This also applies when the parent configuration comes from its workspace
+     * {@code tools.json}. With no parent configuration and no declared tools list, the child can
+     * load its own workspace configuration.
      */
     public List<String> getTools() {
         return tools;
