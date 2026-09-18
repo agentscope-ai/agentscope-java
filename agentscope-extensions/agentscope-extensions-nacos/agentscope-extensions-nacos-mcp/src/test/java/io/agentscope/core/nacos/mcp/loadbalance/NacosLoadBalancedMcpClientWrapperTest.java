@@ -545,64 +545,52 @@ class NacosLoadBalancedMcpClientWrapperTest {
         }
 
         @Test
-        @DisplayName("Should fail over to a healthy endpoint when the selected one fails")
-        void shouldFailOverToHealthyEndpoint() throws NacosException {
-            McpEndpointInfo dead = endpoint("127.0.0.1", 18081);
+        @DisplayName("Should propagate a failing call instead of replaying it on another endpoint")
+        void shouldNotReplayFailedCall() throws NacosException {
+            McpEndpointInfo failing = endpoint("127.0.0.1", 18081);
             McpEndpointInfo healthy = endpoint("127.0.0.1", 18082);
             stubProvider =
                     endpoint ->
-                            endpoint.key().equals(resolved(dead).key())
+                            endpoint.key().equals(resolved(failing).key())
                                     ? new StubMcpClient(endpoint, false, true)
                                     : new StubMcpClient(endpoint);
-            stubSubscription(detail(AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE, dead, healthy));
+            stubSubscription(detail(AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE, failing, healthy));
             NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
             wrapper.initialize().block();
 
-            // round-robin selects the first endpoint, which fails the call
-            assertDoesNotThrow(() -> wrapper.callTool("get_weather", Map.of()).block());
+            // round-robin selects the first endpoint, whose call fails
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> wrapper.callTool("get_weather", Map.of()).block());
 
-            assertEquals(1, stub(dead).callCount.get());
-            assertEquals(1, stub(healthy).callCount.get());
+            // the endpoint error is propagated untouched and the call is not replayed elsewhere
+            assertEquals("endpoint is down", error.getMessage());
+            assertEquals(1, stub(failing).callCount.get());
+            assertEquals(0, stub(healthy).callCount.get());
         }
 
         @Test
-        @DisplayName("Should fail over for tool calls carrying metadata")
-        void shouldFailOverForToolCallsWithMeta() throws NacosException {
-            McpEndpointInfo dead = endpoint("127.0.0.1", 18081);
+        @DisplayName("Should propagate a failing call with metadata without replaying it")
+        void shouldNotReplayFailedCallWithMeta() throws NacosException {
+            McpEndpointInfo failing = endpoint("127.0.0.1", 18081);
             McpEndpointInfo healthy = endpoint("127.0.0.1", 18082);
             stubProvider =
                     endpoint ->
-                            endpoint.key().equals(resolved(dead).key())
+                            endpoint.key().equals(resolved(failing).key())
                                     ? new StubMcpClient(endpoint, false, true)
                                     : new StubMcpClient(endpoint);
-            stubSubscription(detail(AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE, dead, healthy));
-            NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
-            wrapper.initialize().block();
-
-            assertDoesNotThrow(
-                    () ->
-                            wrapper.callTool("get_weather", Map.of("city", "Hangzhou"), Map.of())
-                                    .block());
-
-            assertEquals(1, stub(healthy).callCount.get());
-        }
-
-        @Test
-        @DisplayName("Should fail the call only when every connected endpoint fails")
-        void shouldFailWhenEveryEndpointFails() throws NacosException {
-            McpEndpointInfo first = endpoint("127.0.0.1", 18081);
-            McpEndpointInfo second = endpoint("127.0.0.1", 18082);
-            stubProvider = endpoint -> new StubMcpClient(endpoint, false, true);
-            stubSubscription(detail(AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE, first, second));
+            stubSubscription(detail(AiConstants.Mcp.MCP_PROTOCOL_STREAMABLE, failing, healthy));
             NacosLoadBalancedMcpClientWrapper wrapper = wrapper();
             wrapper.initialize().block();
 
             assertThrows(
                     IllegalStateException.class,
-                    () -> wrapper.callTool("get_weather", Map.of()).block());
+                    () ->
+                            wrapper.callTool("get_weather", Map.of("city", "Hangzhou"), Map.of())
+                                    .block());
 
-            assertEquals(1, stub(first).callCount.get());
-            assertEquals(1, stub(second).callCount.get());
+            assertEquals(0, stub(healthy).callCount.get());
         }
 
         @Test

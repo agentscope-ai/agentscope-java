@@ -71,7 +71,8 @@ public class NacosMcpClients implements Iterable<NacosLoadBalancedMcpClientWrapp
      * {@code agentscope.nacos.mcp.connections}).
      *
      * @param clientName the logical MCP client name
-     * @return the wrapper, or null if no connection with that name is configured
+     * @return the wrapper, never null
+     * @throws IllegalArgumentException if no connection with that name is configured
      */
     public NacosLoadBalancedMcpClientWrapper get(String clientName) {
         for (NacosLoadBalancedMcpClientWrapper client : clients) {
@@ -79,7 +80,19 @@ public class NacosMcpClients implements Iterable<NacosLoadBalancedMcpClientWrapp
                 return client;
             }
         }
-        return null;
+        throw new IllegalArgumentException(
+                "No Nacos MCP connection named '"
+                        + clientName
+                        + "'; configured connections: "
+                        + configuredNames());
+    }
+
+    private List<String> configuredNames() {
+        List<String> names = new ArrayList<>(clients.size());
+        for (NacosLoadBalancedMcpClientWrapper client : clients) {
+            names.add(client.getName());
+        }
+        return names;
     }
 
     /**

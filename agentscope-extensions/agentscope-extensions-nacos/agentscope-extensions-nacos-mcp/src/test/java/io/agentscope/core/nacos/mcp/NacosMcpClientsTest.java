@@ -17,7 +17,6 @@ package io.agentscope.core.nacos.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,11 +53,11 @@ class NacosMcpClientsTest {
     void shouldBeEmptyWhenNoClient() {
         NacosMcpClients clients = new NacosMcpClients(List.of());
         assertTrue(clients.isEmpty());
-        assertNull(clients.get("weather"));
+        assertThrows(IllegalArgumentException.class, () -> clients.get("weather"));
     }
 
     @Test
-    @DisplayName("Should look up a client by name and return null for unknown name")
+    @DisplayName("Should look up a client by name")
     void shouldGetClientByName() {
         NacosLoadBalancedMcpClientWrapper weather = client("weather");
         NacosLoadBalancedMcpClientWrapper amap = client("amap");
@@ -67,7 +66,19 @@ class NacosMcpClientsTest {
         assertFalse(clients.isEmpty());
         assertSame(weather, clients.get("weather"));
         assertSame(amap, clients.get("amap"));
-        assertNull(clients.get("unknown"));
+    }
+
+    @Test
+    @DisplayName("Should reject an unknown client name and list the configured ones")
+    void shouldRejectUnknownClientName() {
+        NacosMcpClients clients = new NacosMcpClients(List.of(client("weather"), client("amap")));
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> clients.get("wehter"));
+
+        assertTrue(error.getMessage().contains("wehter"));
+        assertTrue(error.getMessage().contains("weather"));
+        assertTrue(error.getMessage().contains("amap"));
     }
 
     @Test

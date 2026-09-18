@@ -50,11 +50,15 @@ import reactor.core.publisher.Mono;
  *
  * <p>This wrapper subscribes to an MCP server registered in Nacos, maintains one underlying MCP
  * client connection per backend endpoint, and keeps the connection set in sync with endpoint
- * changes pushed by Nacos (instances scaling in/out). Each {@link #callTool} invocation picks a
- * connected endpoint through the configured {@link EndpointSelector} (round-robin by default) and
- * delegates to the corresponding connection. If the selected endpoint fails, the call fails over
- * to the remaining connected endpoints instead of failing outright, so an instance that is still
- * starting up or already shutting down does not break the call as long as one endpoint is healthy.
+ * changes pushed by Nacos (instances scaling in/out). Each {@link #callTool} invocation picks one
+ * of the <em>connected</em> endpoints through the configured {@link EndpointSelector} (round-robin
+ * by default) and delegates to the corresponding connection, so an instance that never connected
+ * is never selected.
+ *
+ * <p>A failing call is not replayed on another endpoint. The wrapper therefore guarantees that a
+ * tool is executed at most once, and the error is propagated to the caller; retrying is left to
+ * the layer above, which knows whether a tool is idempotent (see {@code Toolkit}'s execution
+ * configuration, and the {@code retryOn} predicate it accepts).
  *
  * <p>Endpoint changes propagate at runtime, but the tool list published into a {@code Toolkit} is a
  * snapshot taken at registration time: a server that only becomes available after the application
@@ -124,8 +128,20 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                     if (detailInfo == null) {
                         return;
                     }
-                    // Never reconcile on the Nacos dispatcher thread.
-                    submitReconcile(detailInfo, false);
+                    // Never reconcile on the Nacos dispatcher thread. The future is not awaited
+                    // anywhere, so observe it here: a failing push must not vanish silently.
+                    submitReconcile(detailInfo, false)
+                            .whenComplete(
+                                    (ignored, error) -> {
+                                        if (error != null) {
+                                            logger.error(
+                                                    "Failed to apply the endpoint snapshot of MCP"
+                                                            + " server '{}', the previous endpoints"
+                                                            + " stay in place",
+                                                    serverName,
+                                                    error);
+                                        }
+                                    });
                 }
             };
 
@@ -263,9 +279,11 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
     /**
      * Invokes a tool on a connected endpoint selected by the configured {@link EndpointSelector}.
      *
-     * <p>Only endpoints with an established connection are candidates. If the selected endpoint
-     * fails the call, the remaining connected endpoints are tried in turn, so one unhealthy
-     * instance does not fail the call while a healthy one is available.
+     * <p>Only endpoints with an established connection are candidates, so an instance that never
+     * connected is never selected. A failing call is not replayed on another endpoint: the error is
+     * propagated to the caller, which guarantees that a tool is executed at most once by this
+     * wrapper. Retrying is the caller's decision, so a caller that knows its tools are idempotent
+     * can opt into retries through its own execution configuration.
      *
      * @param toolName the name of the tool to call
      * @param arguments the arguments to pass to the tool
@@ -280,8 +298,8 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
         }
 
-        List<NacosMcpEndpoint> candidates = connectedCandidates();
-        if (candidates.isEmpty()) {
+        List<NacosMcpEndpoint> connected = connectedEndpoints();
+        if (connected.isEmpty()) {
             return Mono.error(
                     new IllegalStateException(
                             "No connected endpoint available for MCP server '"
@@ -291,73 +309,40 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                                     + " endpoint(s) registered)"));
         }
 
-        return callCandidates(candidates, 0, toolName, arguments, meta);
-    }
-
-    private Mono<McpSchema.CallToolResult> callCandidates(
-            List<NacosMcpEndpoint> candidates,
-            int index,
-            String toolName,
-            Map<String, Object> arguments,
-            Map<String, Object> meta) {
-        if (index >= candidates.size()) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "All "
-                                    + candidates.size()
-                                    + " connected endpoint(s) of MCP server '"
-                                    + serverName
-                                    + "' failed to call tool '"
-                                    + toolName
-                                    + "'"));
-        }
-
-        NacosMcpEndpoint endpoint = candidates.get(index);
+        NacosMcpEndpoint endpoint = endpointSelector.select(connected);
         McpClientWrapper client = endpointClients.get(endpoint.key());
         if (!isUsable(client)) {
-            return callCandidates(candidates, index + 1, toolName, arguments, meta);
+            return Mono.error(
+                    new IllegalStateException(
+                            "Endpoint '"
+                                    + endpoint
+                                    + "' of MCP server '"
+                                    + serverName
+                                    + "' is no longer connected"));
         }
 
         logger.debug(
                 "Calling MCP tool '{}' on client '{}', endpoint '{}'", toolName, name, endpoint);
-        return client.callTool(toolName, arguments, meta)
-                .onErrorResume(
-                        e -> {
-                            logger.warn(
-                                    "Tool '{}' failed on endpoint '{}' of MCP server '{}',"
-                                            + " failing over to the next connected endpoint",
-                                    toolName,
-                                    endpoint,
-                                    serverName,
-                                    e);
-                            return callCandidates(candidates, index + 1, toolName, arguments, meta);
-                        });
+        return client.callTool(toolName, arguments, meta);
     }
 
     /**
-     * Returns the connected endpoints ordered for a tool call: the endpoint picked by the
-     * configured {@link EndpointSelector} first, then the remaining connected endpoints.
+     * Returns the endpoints whose connection is established, which are the only candidates a tool
+     * call may be dispatched to.
      */
-    private List<NacosMcpEndpoint> connectedCandidates() {
+    private List<NacosMcpEndpoint> connectedEndpoints() {
         List<NacosMcpEndpoint> endpoints = registeredEndpoints;
         if (endpoints.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<NacosMcpEndpoint> candidates = new ArrayList<>(endpoints.size());
-        NacosMcpEndpoint preferred = endpointSelector.select(endpoints);
-        if (isUsable(endpointClients.get(preferred.key()))) {
-            candidates.add(preferred);
-        }
+        List<NacosMcpEndpoint> connected = new ArrayList<>(endpoints.size());
         for (NacosMcpEndpoint endpoint : endpoints) {
-            if (endpoint.key().equals(preferred.key())) {
-                continue;
-            }
             if (isUsable(endpointClients.get(endpoint.key()))) {
-                candidates.add(endpoint);
+                connected.add(endpoint);
             }
         }
-        return candidates;
+        return connected;
     }
 
     /**
@@ -537,8 +522,8 @@ public class NacosLoadBalancedMcpClientWrapper extends McpClientWrapper {
                 closeQuietly(client, endpoint);
             }
             logger.warn(
-                    "Failed to connect endpoint '{}' of MCP server '{}',"
-                            + " it will be retried on the next Nacos push",
+                    "Failed to connect endpoint '{}' of MCP server '{}', tool calls stay on the"
+                            + " connected endpoints until Nacos reports this endpoint again",
                     endpoint,
                     serverName,
                     e);

@@ -106,7 +106,7 @@ AgentSkill skill = repo.getSkill("calculator");
 
 ## MCP 服务发现
 
-`agentscope-extensions-nacos-mcp` 从 Nacos MCP Registry 订阅一个 MCP Server，把它注册的多个后端实例聚合成一个带负载均衡的 MCP 客户端。实例扩缩容由 Nacos 推送在运行期生效；某次调用打到不健康的实例时，会自动切到其余已连通的实例。
+`agentscope-extensions-nacos-mcp` 从 Nacos MCP Registry 订阅一个 MCP Server，把它注册的多个后端实例聚合成一个带负载均衡的 MCP 客户端。实例扩缩容由 Nacos 推送在运行期生效；工具调用只会发给**已连接**的实例，从没连上的实例不会被选中。
 
 > 需要 Nacos 3.x 并启用 MCP Registry 能力。
 
@@ -146,6 +146,25 @@ toolkit.registerMcpClient(client).block();
 | --- | --- |
 | `RoundRobinEndpointSelector` | 默认。调用轮流打到各实例，要求实例无状态 |
 | `StickyEndpointSelector` | 每个逻辑 MCP 客户端固定一个实例，适合有状态的服务 |
+
+### 调用失败不重放
+
+本模块**不会**在调用失败后换实例重放。选中的实例失败时，异常原样抛给上层 —— 这样单个工具最多被执行一次，写入类工具不会因为库内重试而重复提交。是否需要重试由上层决定，例如通过 `Toolkit` 的执行配置显式打开并限定可重试的错误类型：
+
+```java
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolkitConfig;
+
+ToolkitConfig.builder()
+    .executionConfig(
+        ExecutionConfig.builder()
+            .maxAttempts(2)                            // 默认 1，即不重试
+            .retryOn(e -> e instanceof IOException)    // 只重试连接类错误
+            .build())
+    .build();
+```
+
+重试会重新走一次 `callTool`，在 `RoundRobinEndpointSelector` 下通常会落到另一个实例，因此"不健康实例不影响调用"这个目的仍可由上层达成，只是重试次数和范围由调用方掌控。
 
 ### 工具注册是快照
 

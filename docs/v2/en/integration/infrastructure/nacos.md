@@ -106,7 +106,7 @@ Version/label resolution order: `Properties` provided to the constructor → JVM
 
 ## MCP server discovery
 
-`agentscope-extensions-nacos-mcp` subscribes to an MCP server in the Nacos MCP registry and aggregates its backend instances into a single load-balanced MCP client. Instances scaling in/out are picked up from Nacos push at runtime, and a tool call that hits an unhealthy instance fails over to the remaining connected ones.
+`agentscope-extensions-nacos-mcp` subscribes to an MCP server in the Nacos MCP registry and aggregates its backend instances into a single load-balanced MCP client. Instances scaling in/out are picked up from Nacos push at runtime, and a tool call is only ever dispatched to a **connected** instance, so an instance that never connected is never selected.
 
 > Requires a Nacos 3.x server with the MCP registry capability enabled.
 
@@ -146,6 +146,25 @@ Tool calls are dispatched to one of the connected instances, decided by an `Endp
 | --- | --- |
 | `RoundRobinEndpointSelector` | Default. Rotates calls across instances; requires stateless instances |
 | `StickyEndpointSelector` | Pins one instance per logical MCP client; suits stateful servers |
+
+### A failing call is not replayed
+
+This module does **not** retry a failed call on another instance. When the selected instance fails, the error is propagated to the caller as-is, which guarantees that a tool is executed at most once and keeps a write-like tool from being submitted twice by retries inside the library. Whether to retry is the caller's decision, for example through `Toolkit`'s execution configuration:
+
+```java
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolkitConfig;
+
+ToolkitConfig.builder()
+    .executionConfig(
+        ExecutionConfig.builder()
+            .maxAttempts(2)                            // default is 1, i.e. no retry
+            .retryOn(e -> e instanceof IOException)    // retry connection-level errors only
+            .build())
+    .build();
+```
+
+A retry runs through `callTool` again and, under `RoundRobinEndpointSelector`, usually lands on a different instance: "an unhealthy instance does not break the call" is therefore still achievable, but the attempt count and the errors that qualify are owned by the caller.
 
 ### Tool registration is a snapshot
 
