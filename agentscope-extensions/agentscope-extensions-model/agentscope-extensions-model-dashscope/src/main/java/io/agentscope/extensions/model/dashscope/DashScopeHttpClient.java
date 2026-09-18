@@ -31,8 +31,11 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
@@ -82,6 +85,7 @@ public class DashScopeHttpClient {
     private final String baseUrl;
     private final String publicKeyId;
     private final String publicKey;
+    private final Set<String> userMultimodalPatterns;
 
     /**
      * Create a new DashScopeHttpClient.
@@ -98,11 +102,46 @@ public class DashScopeHttpClient {
             String baseUrl,
             String publicKeyId,
             String publicKey) {
+        this(transport, apiKey, baseUrl, publicKeyId, publicKey, null);
+    }
+
+    /**
+     * Create a new DashScopeHttpClient with user-supplied multimodal model patterns.
+     *
+     * @param transport the HTTP transport to use
+     * @param apiKey the DashScope API key
+     * @param baseUrl the base URL (null for default)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param userMultimodalPatterns case-insensitive substring patterns that extend the
+     *     built-in multimodal model detection (null or empty to disable)
+     */
+    public DashScopeHttpClient(
+            HttpTransport transport,
+            String apiKey,
+            String baseUrl,
+            String publicKeyId,
+            String publicKey,
+            Collection<String> userMultimodalPatterns) {
         this.transport = transport;
         this.apiKey = apiKey;
         this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
         this.publicKeyId = publicKeyId;
         this.publicKey = publicKey;
+        this.userMultimodalPatterns =
+                userMultimodalPatterns == null || userMultimodalPatterns.isEmpty()
+                        ? Set.of()
+                        : normalizePatterns(userMultimodalPatterns);
+    }
+
+    private static Set<String> normalizePatterns(Collection<String> patterns) {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String pattern : patterns) {
+            if (pattern != null && !pattern.isBlank()) {
+                normalized.add(pattern.trim().toLowerCase());
+            }
+        }
+        return normalized;
     }
 
     /**
@@ -330,7 +369,8 @@ public class DashScopeHttpClient {
      *   <li>If endpointType is {@link EndpointType#MULTIMODAL} → multimodal API</li>
      *   <li>If endpointType is {@link EndpointType#AUTO}:
      *     <ul>
-     *       <li>Models recognized by {@link #isMultimodalModel(String)} → multimodal API</li>
+     *       <li>Models recognized by {@link #isMultimodalModel(String)} or matching
+     *           user-supplied multimodal model patterns → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -353,7 +393,7 @@ public class DashScopeHttpClient {
         if (modelName == null) {
             return TEXT_GENERATION_ENDPOINT;
         }
-        if (isMultimodalModel(modelName)) {
+        if (isMultimodalModel(modelName) || matchesUserPattern(modelName)) {
             log.debug("Using multimodal API (auto-detected) for model: {}", modelName);
             return MULTIMODAL_GENERATION_ENDPOINT;
         }
@@ -438,8 +478,32 @@ public class DashScopeHttpClient {
         if (endpointType == EndpointType.TEXT) {
             return false;
         }
-        // AUTO: use model name detection
-        return isMultimodalModel(modelName);
+        // AUTO: use model name detection, extended by user-supplied patterns
+        return isMultimodalModel(modelName) || matchesUserPattern(modelName);
+    }
+
+    /**
+     * Check whether a model name matches one of the user-supplied multimodal patterns.
+     *
+     * <p>Patterns are compared as case-insensitive substrings against the (trimmed) model
+     * name, mirroring the {@code contains}-style rules used by
+     * {@link #isMultimodalModel(String)}. Returns {@code false} when no patterns are
+     * configured or the model name is {@code null}.
+     *
+     * @param modelName the model name
+     * @return true if the model name matches a user-supplied multimodal pattern
+     */
+    private boolean matchesUserPattern(String modelName) {
+        if (modelName == null || userMultimodalPatterns.isEmpty()) {
+            return false;
+        }
+        String lowerModelName = modelName.trim().toLowerCase();
+        for (String pattern : userMultimodalPatterns) {
+            if (lowerModelName.contains(pattern)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -758,6 +822,7 @@ public class DashScopeHttpClient {
         private String baseUrl;
         private String publicKeyId;
         private String publicKey;
+        private Collection<String> userMultimodalPatterns;
 
         /**
          * Set the HTTP transport.
@@ -821,6 +886,32 @@ public class DashScopeHttpClient {
         }
 
         /**
+         * Set additional case-insensitive substring patterns for multimodal model detection.
+         *
+         * <p>When {@link EndpointType#AUTO} routing is used, a model name matching any of
+         * these patterns (as a substring, case-insensitively) is routed to the multimodal
+         * generation API, in addition to the built-in model-name rules of
+         * {@link DashScopeHttpClient#isMultimodalModel(String)}. This allows users to extend
+         * detection for models not yet covered by the built-in whitelist (e.g.
+         * {@code "deepseek-v4.1"} without waiting for a framework update).
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeHttpClient client = DashScopeHttpClient.builder()
+         *     .apiKey("sk-xxx")
+         *     .multimodalModelPatterns(List.of("deepseek-v4"))
+         *     .build();
+         * }</pre>
+         *
+         * @param userMultimodalPatterns case-insensitive substring patterns (may be null)
+         * @return this builder
+         */
+        public Builder multimodalModelPatterns(Collection<String> userMultimodalPatterns) {
+            this.userMultimodalPatterns = userMultimodalPatterns;
+            return this;
+        }
+
+        /**
          * Build the DashScopeHttpClient.
          *
          * <p>If no transport is specified, the default transport from
@@ -836,7 +927,8 @@ public class DashScopeHttpClient {
             if (transport == null) {
                 transport = HttpTransportFactory.getDefault();
             }
-            return new DashScopeHttpClient(transport, apiKey, baseUrl, publicKeyId, publicKey);
+            return new DashScopeHttpClient(
+                    transport, apiKey, baseUrl, publicKeyId, publicKey, userMultimodalPatterns);
         }
     }
 
