@@ -2,30 +2,22 @@
 title: "Use cases"
 ---
 
-[简体中文](/v2/zh/service/usecases)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-This section reserves space for complete scenario tutorials. The scenarios below are planned, not completed end-to-end implementations. Each will include sample inputs, prerequisites, configuration, deliverables, acceptance criteria and troubleshooting for reproducibility.
+Connect Agent creation, application integration, Team collaboration, task feedback, and human acceptance through three complete business scenarios. Start with the path closest to your deployment model.
 
-## Software collaboration
+| Scenario | Team | Delivery |
+| --- | --- | --- |
+| [GitHub Issue to merged PR](/v2/en/service/cases/sdlc-team) | All Hosted: Leader, Developer, Reviewer, QA | Analysis, implementation, PR, CI, rework, approval, merge evidence |
+| [Order fulfillment exceptions](/v2/en/service/cases/order-fulfillment) | All External: AgentScope business applications | Cross-system investigation, plan, approval, action, verification |
+| [Customer needs to a proposal](/v2/en/service/cases/presales-team) | Managed first; extend with External and Hosted | Sourced proposal, PoC plan, review, mixed implementation |
 
-A Hosted implementer, Managed reviewer and Team Lead will work from a bug Issue through code changes, checks, Artifacts and human acceptance. The focus is traceability, recoverable failures and evidence-based review.
+## How to use these cases
 
-Practice now with [Hosted Agents](/v2/en/service/hosted-agent) and [Team collaboration](/v2/en/service/team-collaboration).
+Each case includes roles, prerequisites, steps, inputs, failure paths, and acceptance. Engineering provides Java starter files, checks, an Issue, and CI template. Fulfillment provides business fixtures and SDK integration fragments; implement or connect the business tools. Presales provides customer requirements and knowledge ready for Memory.
 
-## Research and reporting
+Complete [quickstart](/v2/en/service/first-session) and validate individual Agents before building a Team. GitHub commands create or change objects in an exercise repository, so configure identities and authorization scope first. Business and customer fixtures are fictional.
 
-Public sample material will support retrieval, source comparison and report synthesis using Memory and Workspace, including uncertainty and missing-input handling. Deliverables will include a sourced report, evidence index and acceptance checklist.
-
-Practice now with [your first deliverable](/v2/en/service/first-session) and [Managed Agents](/v2/en/service/managed-agent).
-
-## Scheduled reports and event response
-
-Schedules and webhooks will create report Issues with deduplication, queueing, retries, subscriptions and acceptance. Verification will cover repeated-event side effects and tracing deliveries to runs.
-
-Practice now with [Automations](/v2/en/service/automation) and [Inbox](/v2/en/service/inbox).
-
-## Business application integration
-
-An example application will demonstrate asynchronous jobs, multi-turn conversations, SSE, credential rotation and Endpoint release changes using fixed sample input and explicit success/failure handling.
-
-Practice now with [Endpoints](/v2/en/service/endpoints) and [API reference](/v2/en/service/api-reference).
+The Java fixture was validated before and after repair. Real GitHub, enterprise systems, models, and Team execution require acceptance in your environment. Inputs and expected results are not live execution records. Retain versions, inputs, Issue/Run/Invocation IDs, commits, and real artifacts for future regression checks.

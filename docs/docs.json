@@ -95,26 +95,108 @@
                     "group": "Getting started",
                     "pages": [
                       "v2/en/service/index",
-                      "v2/en/service/concepts",
                       "v2/en/service/first-session"
                     ]
                   },
                   {
-                    "group": "WORK",
+                    "group": "Installation and deployment",
                     "pages": [
-                      "v2/en/service/chat",
-                      "v2/en/service/issues",
-                      "v2/en/service/inbox",
-                      "v2/en/service/automation"
+                      "v2/en/service/quickstart",
+                      "v2/en/service/kubernetes"
                     ]
                   },
                   {
-                    "group": "DESIGN",
+                    "group": "Agent and task management",
                     "pages": [
-                      "v2/en/service/agents",
-                      "v2/en/service/teams",
-                      "v2/en/service/workflows",
-                      "v2/en/service/channels",
+                      {
+                        "group": "Register or create an Agent",
+                        "root": "v2/en/service/agents",
+                        "pages": [
+                          "v2/en/service/create-managed-agent",
+                          "v2/en/service/register-agentscope-agent",
+                          "v2/en/service/connect-hosted-agent"
+                        ]
+                      },
+                      {
+                        "group": "Assign tasks to Agents",
+                        "pages": [
+                          "v2/en/service/endpoints",
+                          "v2/en/service/issues"
+                        ]
+                      },
+                      {
+                        "group": "Handle task feedback",
+                        "pages": [
+                          "v2/en/service/sse-events",
+                          "v2/en/service/inbox"
+                        ]
+                      },
+                      {
+                        "group": "Multi-Agent orchestration",
+                        "pages": [
+                          "v2/en/service/create-team",
+                          "v2/en/service/workflows"
+                        ]
+                      },
+                      {
+                        "group": "Events and automation",
+                        "pages": [
+                          "v2/en/service/automation",
+                          "v2/en/service/channels"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Use cases",
+                    "pages": [
+                      "v2/en/service/usecases",
+                      "v2/en/service/cases/sdlc-team",
+                      "v2/en/service/cases/order-fulfillment",
+                      "v2/en/service/cases/presales-team"
+                    ]
+                  },
+                  {
+                    "group": "Reference",
+                    "pages": [
+                      {
+                        "group": "Managed Agent",
+                        "pages": [
+                          "v2/en/service/managed-agent",
+                          "v2/en/service/managed-agent-configuration",
+                          "v2/en/service/managed-agent-capabilities",
+                          "v2/en/service/managed-agent-execution",
+                          "v2/en/service/managed-harness-task-outcomes"
+                        ]
+                      },
+                      {
+                        "group": "External Agent",
+                        "pages": [
+                          "v2/en/service/external-agent",
+                          "v2/en/service/external-agent-configuration",
+                          "v2/en/service/external-agent-frameworks",
+                          "v2/en/service/external-agent-execution"
+                        ]
+                      },
+                      {
+                        "group": "Hosted Agent",
+                        "pages": [
+                          "v2/en/service/hosted-agent",
+                          "v2/en/service/runtime-host",
+                          "v2/en/service/hosted-agent-configuration",
+                          "v2/en/service/hosted-agent-providers",
+                          "v2/en/service/hosted-agent-execution"
+                        ]
+                      },
+                      {
+                        "group": "Team",
+                        "pages": [
+                          "v2/en/service/teams",
+                          "v2/en/service/team-collaboration",
+                          "v2/en/service/team-configuration",
+                          "v2/en/service/team-execution"
+                        ]
+                      },
                       {
                         "group": "Resources",
                         "pages": [
@@ -123,45 +205,29 @@
                           "v2/en/service/memory",
                           "v2/en/service/vault"
                         ]
+                      },
+                      {
+                        "group": "API and SDK",
+                        "pages": [
+                          "v2/en/service/api-reference",
+                          "v2/en/service/integrations"
+                        ]
+                      },
+                      {
+                        "group": "Execution and access",
+                        "pages": [
+                          "v2/en/service/sessions",
+                          "v2/en/service/access"
+                        ]
+                      },
+                      {
+                        "group": "Configuration and operations",
+                        "pages": [
+                          "v2/en/service/configuration",
+                          "v2/en/service/operations",
+                          "v2/en/service/troubleshooting"
+                        ]
                       }
-                    ]
-                  },
-                  {
-                    "group": "Installation",
-                    "pages": [
-                      "v2/en/service/quickstart",
-                      "v2/en/service/docker",
-                      "v2/en/service/kubernetes",
-                      "v2/en/service/operations"
-                    ]
-                  },
-                  {
-                    "group": "Integration guides",
-                    "pages": [
-                      "v2/en/service/managed-agent",
-                      "v2/en/service/hosted-agent",
-                      "v2/en/service/external-agent",
-                      "v2/en/service/team-collaboration",
-                      "v2/en/service/endpoints",
-                      "v2/en/service/runtime-host",
-                      "v2/en/service/integrations"
-                    ]
-                  },
-                  {
-                    "group": "Use cases",
-                    "pages": [
-                      "v2/en/service/usecases"
-                    ]
-                  },
-                  {
-                    "group": "Reference",
-                    "pages": [
-                      "v2/en/service/api-reference",
-                      "v2/en/service/configuration",
-                      "v2/en/service/access",
-                      "v2/en/service/sessions",
-                      "v2/en/service/managed-harness-task-outcomes",
-                      "v2/en/service/troubleshooting"
                     ]
                   },
                   {
@@ -297,6 +363,10 @@
                   {
                     "group": "Blogs",
                     "pages": [
+                      "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
+                      "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
+                      "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
+                      "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
                       "v2/en/blogs/agentscope-v2-release",
                       "v2/en/blogs/agentscope-v2-explained",
                       "v2/en/blogs/agentscope-v1-harness",
@@ -518,73 +588,139 @@
                     "group": "开始使用",
                     "pages": [
                       "v2/zh/service/index",
-                      "v2/zh/service/concepts",
                       "v2/zh/service/first-session"
-                    ]
-                  },
-                  {
-                    "group": "WORK",
-                    "pages": [
-                      "v2/zh/service/chat",
-                      "v2/zh/service/issues",
-                      "v2/zh/service/inbox",
-                      "v2/zh/service/automation"
-                    ]
-                  },
-                  {
-                    "group": "DESIGN",
-                    "pages": [
-                      "v2/zh/service/agents",
-                      "v2/zh/service/teams",
-                      "v2/zh/service/workflows",
-                      "v2/zh/service/channels",
-                      {
-                        "group": "Resources · 资源",
-                        "pages": [
-                          "v2/zh/service/workspaces",
-                          "v2/zh/service/environments",
-                          "v2/zh/service/memory",
-                          "v2/zh/service/vault"
-                        ]
-                      }
                     ]
                   },
                   {
                     "group": "安装与部署",
                     "pages": [
                       "v2/zh/service/quickstart",
-                      "v2/zh/service/docker",
-                      "v2/zh/service/kubernetes",
-                      "v2/zh/service/operations"
+                      "v2/zh/service/kubernetes"
                     ]
                   },
                   {
-                    "group": "接入与能力扩展",
+                    "group": "智能体与任务管理",
                     "pages": [
-                      "v2/zh/service/managed-agent",
-                      "v2/zh/service/hosted-agent",
-                      "v2/zh/service/external-agent",
-                      "v2/zh/service/team-collaboration",
-                      "v2/zh/service/endpoints",
-                      "v2/zh/service/runtime-host",
-                      "v2/zh/service/integrations"
+                      {
+                        "group": "注册或者创建 Agent",
+                        "root": "v2/zh/service/agents",
+                        "pages": [
+                          "v2/zh/service/create-managed-agent",
+                          "v2/zh/service/register-agentscope-agent",
+                          "v2/zh/service/connect-hosted-agent"
+                        ]
+                      },
+                      {
+                        "group": "给 Agent 分派任务",
+                        "pages": [
+                          "v2/zh/service/endpoints",
+                          "v2/zh/service/issues"
+                        ]
+                      },
+                      {
+                        "group": "处理任务反馈",
+                        "pages": [
+                          "v2/zh/service/sse-events",
+                          "v2/zh/service/inbox"
+                        ]
+                      },
+                      {
+                        "group": "多 Agent 编排",
+                        "pages": [
+                          "v2/zh/service/create-team",
+                          "v2/zh/service/workflows"
+                        ]
+                      },
+                      {
+                        "group": "事件驱动与自动化任务",
+                        "pages": [
+                          "v2/zh/service/automation",
+                          "v2/zh/service/channels"
+                        ]
+                      }
                     ]
                   },
                   {
                     "group": "场景案例",
                     "pages": [
-                      "v2/zh/service/usecases"
+                      "v2/zh/service/usecases",
+                      "v2/zh/service/cases/sdlc-team",
+                      "v2/zh/service/cases/order-fulfillment",
+                      "v2/zh/service/cases/presales-team"
                     ]
                   },
                   {
                     "group": "参考手册",
                     "pages": [
-                      "v2/zh/service/api-reference",
-                      "v2/zh/service/configuration",
-                      "v2/zh/service/access",
-                      "v2/zh/service/sessions",
-                      "v2/zh/service/managed-harness-task-outcomes",
-                      "v2/zh/service/troubleshooting"
+                      {
+                        "group": "Managed Agent",
+                        "pages": [
+                          "v2/zh/service/managed-agent",
+                          "v2/zh/service/managed-agent-configuration",
+                          "v2/zh/service/managed-agent-capabilities",
+                          "v2/zh/service/managed-agent-execution",
+                          "v2/zh/service/managed-harness-task-outcomes"
+                        ]
+                      },
+                      {
+                        "group": "External Agent",
+                        "pages": [
+                          "v2/zh/service/external-agent",
+                          "v2/zh/service/external-agent-configuration",
+                          "v2/zh/service/external-agent-frameworks",
+                          "v2/zh/service/external-agent-execution"
+                        ]
+                      },
+                      {
+                        "group": "Hosted Agent",
+                        "pages": [
+                          "v2/zh/service/hosted-agent",
+                          "v2/zh/service/runtime-host",
+                          "v2/zh/service/hosted-agent-configuration",
+                          "v2/zh/service/hosted-agent-providers",
+                          "v2/zh/service/hosted-agent-execution"
+                        ]
+                      },
+                      {
+                        "group": "Team",
+                        "pages": [
+                          "v2/zh/service/teams",
+                          "v2/zh/service/team-collaboration",
+                          "v2/zh/service/team-configuration",
+                          "v2/zh/service/team-execution"
+                        ]
+                      },
+                      {
+                        "group": "资源配置",
+                        "pages": [
+                          "v2/zh/service/workspaces",
+                          "v2/zh/service/environments",
+                          "v2/zh/service/memory",
+                          "v2/zh/service/vault"
+                        ]
+                      },
+                      {
+                        "group": "API 与 SDK",
+                        "pages": [
+                          "v2/zh/service/api-reference",
+                          "v2/zh/service/integrations"
+                        ]
+                      },
+                      {
+                        "group": "执行与权限",
+                        "pages": [
+                          "v2/zh/service/sessions",
+                          "v2/zh/service/access"
+                        ]
+                      },
+                      {
+                        "group": "配置与运维",
+                        "pages": [
+                          "v2/zh/service/configuration",
+                          "v2/zh/service/operations",
+                          "v2/zh/service/troubleshooting"
+                        ]
+                      }
                     ]
                   },
                   {
@@ -720,6 +856,10 @@
                   {
                     "group": "博客",
                     "pages": [
+                      "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
+                      "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
+                      "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
+                      "v2/zh/blogs/how-to-build-agent-harness/04-controlled-execution",
                       "v2/zh/blogs/agentscope-v2-release",
                       "v2/zh/blogs/agentscope-v2-explained",
                       "v2/zh/blogs/agentscope-v1-harness",
@@ -893,6 +1033,36 @@
     }
   },
   "redirects": [
+    {
+      "source": "/v2/en/service/cases/release-brief",
+      "destination": "/v2/en/service/cases/presales-team",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/build-webhook",
+      "destination": "/v2/en/service/cases/order-fulfillment",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/cases/coding-team",
+      "destination": "/v2/en/service/cases/sdlc-team",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/release-brief",
+      "destination": "/v2/zh/service/cases/presales-team",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/build-webhook",
+      "destination": "/v2/zh/service/cases/order-fulfillment",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/cases/coding-team",
+      "destination": "/v2/zh/service/cases/sdlc-team",
+      "permanent": true
+    },
     {
       "source": "/v1/en/blogs/agentscope-v1-harness.html",
       "destination": "/v1/en/blogs/agentscope-v1-harness",
@@ -2475,7 +2645,7 @@
     },
     {
       "source": "/v2/en/service/concepts.html",
-      "destination": "/v2/en/service/concepts",
+      "destination": "/v2/en/service/index",
       "permanent": true
     },
     {
@@ -2485,7 +2655,7 @@
     },
     {
       "source": "/v2/en/service/docker.html",
-      "destination": "/v2/en/service/docker",
+      "destination": "/v2/en/service/quickstart",
       "permanent": true
     },
     {
@@ -3040,7 +3210,7 @@
     },
     {
       "source": "/v2/zh/service/concepts.html",
-      "destination": "/v2/zh/service/concepts",
+      "destination": "/v2/zh/service/index",
       "permanent": true
     },
     {
@@ -3050,7 +3220,7 @@
     },
     {
       "source": "/v2/zh/service/docker.html",
-      "destination": "/v2/zh/service/docker",
+      "destination": "/v2/zh/service/quickstart",
       "permanent": true
     },
     {
@@ -3206,6 +3376,34 @@
     {
       "source": "/zh/:slug*",
       "destination": "/v1/zh/:slug*",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/concepts",
+      "destination": "/v2/en/service/index"
+    },
+    {
+      "source": "/v2/zh/service/concepts",
+      "destination": "/v2/zh/service/index"
+    },
+    {
+      "source": "/v2/zh/service/docker",
+      "destination": "/v2/zh/service/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/docker",
+      "destination": "/v2/en/service/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/service/chat",
+      "destination": "/v2/zh/service/issues",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/service/chat",
+      "destination": "/v2/en/service/issues",
       "permanent": true
     }
   ]

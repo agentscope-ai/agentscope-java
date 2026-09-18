@@ -163,7 +163,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // 启用思考模式，并自动启用流式输出
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // 思考 token 预算
                 .build())
