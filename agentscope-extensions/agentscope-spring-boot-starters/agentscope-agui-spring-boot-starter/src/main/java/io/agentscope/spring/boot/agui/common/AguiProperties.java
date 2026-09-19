@@ -41,6 +41,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     emit-token-usage: false
  *     emit-run-finished-after-error: false
  *     interrupt-on-disconnect: true
+ *     snapshot-store-enabled: false
+ *     snapshot-max-threads: 1000
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -128,6 +130,20 @@ public class AguiProperties {
 
     /** Whether to interrupt the agent when the client disconnects. */
     private boolean interruptOnDisconnect = true;
+
+    /**
+     * Whether the AG-UI presentation snapshot store is enabled. When enabled, an in-memory
+     * {@code AguiSnapshotStore} bean is created and the {@code POST {path-prefix}/connect} hydrate
+     * route is registered so reconnecting clients can rebuild the visible conversation without
+     * re-running the agent. Default is {@code false} to keep existing clients byte-identical.
+     */
+    private boolean snapshotStoreEnabled = false;
+
+    /**
+     * Maximum number of threads retained by the in-memory snapshot store. Only used when
+     * {@link #isSnapshotStoreEnabled()} is true.
+     */
+    private int snapshotMaxThreads = 1000;
 
     public String getPathPrefix() {
         return pathPrefix;
@@ -271,5 +287,21 @@ public class AguiProperties {
 
     public void setInterruptOnDisconnect(boolean interruptOnDisconnect) {
         this.interruptOnDisconnect = interruptOnDisconnect;
+    }
+
+    public boolean isSnapshotStoreEnabled() {
+        return snapshotStoreEnabled;
+    }
+
+    public void setSnapshotStoreEnabled(boolean snapshotStoreEnabled) {
+        this.snapshotStoreEnabled = snapshotStoreEnabled;
+    }
+
+    public int getSnapshotMaxThreads() {
+        return snapshotMaxThreads;
+    }
+
+    public void setSnapshotMaxThreads(int snapshotMaxThreads) {
+        this.snapshotMaxThreads = snapshotMaxThreads;
     }
 }

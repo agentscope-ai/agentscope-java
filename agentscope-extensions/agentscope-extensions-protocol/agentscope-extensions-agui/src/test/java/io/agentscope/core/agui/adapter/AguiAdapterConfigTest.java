@@ -26,6 +26,9 @@ import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.BaseEventPropertiesEnricher;
 import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.agui.store.AguiSnapshotStore;
+import io.agentscope.core.agui.store.InMemoryAguiSnapshotStore;
+import io.agentscope.core.agui.store.SnapshotRecordingEnricher;
 import io.agentscope.core.event.AgentEvent;
 import java.time.Duration;
 import java.util.Collections;
@@ -322,6 +325,49 @@ class AguiAdapterConfigTest {
         AguiAdapterConfig config = AguiAdapterConfig.builder().build();
 
         assertFalse(config.isBaseEventPropertiesEnricherEnabled());
+        assertTrue(config.getEventEnrichers().isEmpty());
+    }
+
+    @Test
+    void testSnapshotStoreDisabledByDefault() {
+        AguiAdapterConfig config = AguiAdapterConfig.builder().build();
+
+        assertFalse(config.isSnapshotStoreEnabled());
+        assertNull(config.getSnapshotStore());
+        // No SnapshotRecordingEnricher in the chain by default.
+        assertTrue(
+                config.getEventEnrichers().stream()
+                        .noneMatch(e -> e instanceof SnapshotRecordingEnricher));
+    }
+
+    @Test
+    void testSnapshotRecordingEnricherAppendedLastWhenEnabled() {
+        AguiEventEnricher custom = (source, events, context) -> events;
+        AguiSnapshotStore store = new InMemoryAguiSnapshotStore();
+        AguiAdapterConfig config =
+                AguiAdapterConfig.builder()
+                        .baseEventPropertiesEnricherEnabled(true)
+                        .addEventEnricher(custom)
+                        .snapshotStoreEnabled(true)
+                        .snapshotStore(store)
+                        .build();
+
+        assertTrue(config.isSnapshotStoreEnabled());
+        assertSame(store, config.getSnapshotStore());
+
+        // Base enricher, then custom, then the recorder last.
+        assertEquals(3, config.getEventEnrichers().size());
+        assertTrue(config.getEventEnrichers().get(0) instanceof BaseEventPropertiesEnricher);
+        assertSame(custom, config.getEventEnrichers().get(1));
+        assertTrue(config.getEventEnrichers().get(2) instanceof SnapshotRecordingEnricher);
+    }
+
+    @Test
+    void testSnapshotStoreEnabledWithoutStoreAddsNoEnricher() {
+        AguiAdapterConfig config = AguiAdapterConfig.builder().snapshotStoreEnabled(true).build();
+
+        assertTrue(config.isSnapshotStoreEnabled());
+        assertNull(config.getSnapshotStore());
         assertTrue(config.getEventEnrichers().isEmpty());
     }
 
