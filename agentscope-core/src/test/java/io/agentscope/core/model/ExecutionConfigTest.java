@@ -18,6 +18,8 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.model.transport.HttpTransportException;
+import java.net.SocketException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -57,6 +59,30 @@ class ExecutionConfigTest {
         assertFalse(ExecutionConfig.RETRYABLE_ERRORS.test(new TestModelHttpException(null)));
     }
 
+    @Test
+    @DisplayName("Should retry model HTTP exception without status code wrapping transport error")
+    void shouldRetryModelHttpExceptionWithoutStatusCodeWrappingTransportError() {
+        // Reproduces issue #3057: streaming transport failures are wrapped by model
+        // exceptions without an HTTP status code (e.g. OpenAIException), so the cause
+        // chain must be consulted instead of treating them as permanent client errors.
+        HttpTransportException transportError =
+                new HttpTransportException(
+                        "SSE/NDJSON stream failed: Connection reset",
+                        new SocketException("Connection reset"));
+        TestModelHttpException wrapped = new TestModelHttpException(null, transportError);
+
+        assertTrue(ExecutionConfig.RETRYABLE_ERRORS.test(wrapped));
+    }
+
+    @Test
+    @DisplayName("Should retry model HTTP exception without status code wrapping IO error")
+    void shouldRetryModelHttpExceptionWithoutStatusCodeWrappingIoError() {
+        TestModelHttpException wrapped =
+                new TestModelHttpException(null, new SocketException("Connection reset"));
+
+        assertTrue(ExecutionConfig.RETRYABLE_ERRORS.test(wrapped));
+    }
+
     private static final class TestModelHttpException extends RuntimeException
             implements ModelHttpException {
 
@@ -64,6 +90,11 @@ class ExecutionConfigTest {
 
         private TestModelHttpException(Integer statusCode) {
             super("HTTP " + statusCode);
+            this.statusCode = statusCode;
+        }
+
+        private TestModelHttpException(Integer statusCode, Throwable cause) {
+            super("HTTP " + statusCode, cause);
             this.statusCode = statusCode;
         }
 
