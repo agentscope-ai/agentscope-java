@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.ollama.formatter;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ImageBlock;
@@ -524,6 +525,22 @@ class OllamaChatFormatterTest {
         assertEquals(model, request.getModel());
         assertEquals(messages, request.getMessages());
         assertEquals(stream, request.getStream());
+    }
+
+    @Test
+    @DisplayName("Should clear thinking from outbound messages when building request")
+    void testBuildRequestClearsThinkingFromOutboundMessages() {
+        OllamaMessage userMsg = new OllamaMessage("user", "Hello");
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "Hi there");
+        assistantMsg.setThinking("Internal chain-of-thought");
+
+        List<OllamaMessage> messages = Arrays.asList(userMsg, assistantMsg);
+        OllamaRequest request =
+                formatter.buildRequest("test-model", messages, false, null, null, null, null);
+
+        assertNotNull(request);
+        assertEquals(2, request.getMessages().size());
+        assertNull(request.getMessages().get(1).getThinking());
     }
 
     // Helper method to concatenate lists
