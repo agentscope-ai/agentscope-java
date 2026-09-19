@@ -623,6 +623,56 @@ only in-process signal of the switch, since the primary's error never reaches th
 the middlewares. Implementations must be non-blocking and thread-safe; exceptions they throw are
 logged and ignored without affecting the switch.
 
+#### Multi-level fallback chain (fallbackModels)
+
+For more than one fallback, or when you want failure classification and per-candidate cooldown,
+use `fallbackModels(...)` — an ordered chain tried in sequence. When the active candidate fails
+with a failure that switching can recover from (429 / 5xx / timeout / network / 401 / 403), the
+chain transparently moves to the next candidate. Request-side failures (400 / 422 and other 4xx)
+fail fast without consuming the chain, since they would fail identically on every candidate.
+
+```java
+// Resolve fallback models the same way .model(String) does (reads API keys from env vars).
+import io.agentscope.core.model.ModelRegistry;
+
+ReActAgent.builder()
+        .model("dashscope:qwen-plus")
+        // each failing candidate moves to the next one, in order
+        .fallbackModels(
+                List.of(
+                        ModelRegistry.resolve("dashscope:qwen-max"),    // 1st fallback
+                        ModelRegistry.resolve("openai:gpt-4o-mini")))   // 2nd fallback
+        .build();
+```
+
+Key semantics (implemented by `io.agentscope.core.model.FallbackChainModel`):
+
+- Candidates keep their own **cooldown** state: after a failure a candidate is skipped for a
+  cooldown window (default 30s), then automatically becomes eligible again — recovery is verified
+  by real traffic, no scheduler or background threads are involved. **Auth failures (401/403)
+  are not cooled** — a wrong credential will not fix itself inside the window, and the real auth
+  error should surface instead of a cooldown message.
+- **Mid-stream failures** (after the first chunk was delivered) are deliberately not retried on a
+  fallback: switching mid-response can duplicate already-delivered content. Only transport-class
+  failures cool the candidate — a request-shaped mid-stream error says nothing about the
+  candidate's health and must not park it for every concurrent session.
+- Capability queries (`getModelName`, `supportsNativeStructuredOutput`,
+  `getContextWindowSize`) report the **primary** model — the chain's stable identity — so they
+  never observe another concurrent call's active candidate. Use the `FailoverListener` (or the
+  warn logs) to see which candidate actually served a call. Candidates should therefore be
+  **capability-compatible** with the primary (same or larger context window, same
+  structured-output support). The builder warns at build time when a candidate's known
+  capabilities look incompatible: an explicitly smaller context window, or structured-output
+  support the candidate declares that the primary does not have. The reverse direction (a
+  candidate merely lacking the primary's support) is not reported because
+  `supportsNativeStructuredOutput()` has no "unknown" state — a default `false` is
+  indistinguishable from genuine lack of support, so warning there would be noise on legitimate
+  mixed-provider chains; check the selected model's capabilities yourself if you mix providers
+  with different structured-output support.
+- The chain applies inside `ReActAgent` only; the legacy single `fallbackModel` path is unchanged
+  and is still used when no chain is configured. The wrapper itself is public and can also be
+  wired directly via `model(new FallbackChainModel(primary, fallbacks))` for full control.
+
 ### Skills
 
 Skills are hot-loadable Markdown prompt modules that the LLM activates on demand:
