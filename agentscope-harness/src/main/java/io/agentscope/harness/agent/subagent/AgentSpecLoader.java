@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,6 +57,10 @@ import org.slf4j.LoggerFactory;
  * model: qwen3-max          # optional model override
  * maxIters: 12              # optional (default 10)
  * tools: [read_file, grep_files, edit_file]   # optional allowlist
+ * compaction:              # absent/null: inherit; false: disable; true: defaults
+ *   triggerMessages: 20
+ *   keepMessages: 5
+ *   keepTokens: 0         # use the message-count keep window
  * ---
  *
  * # Inline body (only when workspace.path is absent)
@@ -337,6 +342,13 @@ public final class AgentSpecLoader {
                         .tools(tools.isEmpty() ? null : tools)
                         .skills(skills.isEmpty() ? null : skills);
 
+        try {
+            applyCompaction(fm.get("compaction"), builder);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid compaction configuration for '{}': {}", name, e.getMessage());
+            return null;
+        }
+
         if (workspacePath != null) {
             builder.workspace(workspacePath);
         } else {
@@ -349,6 +361,69 @@ public final class AgentSpecLoader {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static void applyCompaction(Object value, SubagentDeclaration.Builder declaration) {
+        if (value == null) {
+            return;
+        }
+        if (Boolean.FALSE.equals(value)) {
+            declaration.disableCompaction();
+            return;
+        }
+        CompactionConfig.Builder config = CompactionConfig.builder();
+        if (Boolean.TRUE.equals(value)) {
+            declaration.compaction(config.build());
+            return;
+        }
+        if (!(value instanceof Map<?, ?> fields)) {
+            throw new IllegalArgumentException("compaction must be a boolean or mapping");
+        }
+        for (Map.Entry<?, ?> field : fields.entrySet()) {
+            String key = String.valueOf(field.getKey());
+            Object setting = field.getValue();
+            switch (key) {
+                case "triggerMessages" -> config.triggerMessages(compactionInt(key, setting));
+                case "triggerTokens" -> config.triggerTokens(compactionInt(key, setting));
+                case "reserved" -> config.reserved(compactionInt(key, setting));
+                case "keepMessages" -> config.keepMessages(compactionInt(key, setting));
+                case "keepTokens" -> config.keepTokens(compactionInt(key, setting));
+                case "keepTokensMin" -> config.keepTokensMin(compactionInt(key, setting));
+                case "keepTokensMax" -> config.keepTokensMax(compactionInt(key, setting));
+                case "keepTokensRatio" -> {
+                    if (!(setting instanceof Number number)
+                            || !Double.isFinite(number.doubleValue())) {
+                        throw new IllegalArgumentException(key + " must be a finite number");
+                    }
+                    config.keepTokensRatio(number.doubleValue());
+                }
+                case "summaryPrompt" -> {
+                    if (!(setting instanceof String prompt)) {
+                        throw new IllegalArgumentException(key + " must be a string");
+                    }
+                    config.summaryPrompt(prompt);
+                }
+                case "flushBeforeCompact", "offloadBeforeCompact" -> {
+                    if (!(setting instanceof Boolean enabled)) {
+                        throw new IllegalArgumentException(key + " must be a boolean");
+                    }
+                    if ("flushBeforeCompact".equals(key)) {
+                        config.flushBeforeCompact(enabled);
+                    } else {
+                        config.offloadBeforeCompact(enabled);
+                    }
+                }
+                default -> throw new IllegalArgumentException("Unknown compaction field: " + key);
+            }
+        }
+        declaration.compaction(config.build());
+    }
+
+    private static int compactionInt(String key, Object value) {
+        if (value instanceof Number number && number.doubleValue() == number.intValue()) {
+            return number.intValue();
+        }
+        throw new IllegalArgumentException(key + " must be a 32-bit integer");
+    }
 
     private static String stripMdExtension(String filename) {
         if (filename.endsWith(".md")) {

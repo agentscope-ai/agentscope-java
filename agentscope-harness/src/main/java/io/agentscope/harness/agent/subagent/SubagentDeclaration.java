@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -99,6 +100,8 @@ public final class SubagentDeclaration {
     private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
     private final List<String> skills;
+    private final CompactionConfig compactionConfig;
+    private final boolean disableCompaction;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
     private final String url;
@@ -145,6 +148,8 @@ public final class SubagentDeclaration {
         this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
+        this.compactionConfig = b.compactionConfig;
+        this.disableCompaction = b.disableCompaction;
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
         this.remoteStreaming = b.remoteStreaming;
@@ -323,6 +328,21 @@ public final class SubagentDeclaration {
         return skills;
     }
 
+    /**
+     * Optional compaction configuration for this subagent.
+     *
+     * <p>When {@code null}, the subagent inherits the parent configuration unless
+     * {@link #isCompactionDisabled()} is {@code true}.
+     */
+    public CompactionConfig getCompactionConfig() {
+        return compactionConfig;
+    }
+
+    /** Whether this declaration explicitly disables compaction for the local subagent. */
+    public boolean isCompactionDisabled() {
+        return disableCompaction;
+    }
+
     /** Returns {@code true} when this declaration targets a remote task HTTP server. */
     public boolean isRemote() {
         return url != null && !url.isBlank();
@@ -410,6 +430,8 @@ public final class SubagentDeclaration {
         private Boolean enablePendingToolRecovery;
         private List<String> tools;
         private List<String> skills;
+        private CompactionConfig compactionConfig;
+        private boolean disableCompaction;
         private String url;
         private Map<String, String> headers;
         private Boolean remoteStreaming;
@@ -596,6 +618,26 @@ public final class SubagentDeclaration {
 
         public Builder skills(List<String> skills) {
             this.skills = skills;
+            return this;
+        }
+
+        /**
+         * Sets a compaction configuration for this subagent.
+         *
+         * <p>An explicit declaration-level configuration takes precedence over the parent agent's
+         * compaction configuration and can enable compaction for this subagent even when the parent
+         * disables it.
+         */
+        public Builder compaction(CompactionConfig compactionConfig) {
+            this.compactionConfig = compactionConfig;
+            this.disableCompaction = false;
+            return this;
+        }
+
+        /** Disables compaction for this subagent, overriding the parent's configuration. */
+        public Builder disableCompaction() {
+            this.compactionConfig = null;
+            this.disableCompaction = true;
             return this;
         }
 
