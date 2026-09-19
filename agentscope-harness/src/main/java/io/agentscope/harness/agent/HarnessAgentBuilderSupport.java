@@ -198,7 +198,10 @@ final class HarnessAgentBuilderSupport {
      * {@code workspace/subagents/*.md}, and custom factories.
      */
     static List<SubagentEntry> buildSubagentEntries(
-            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b,
+            Path resolvedWorkspace,
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         List<SubagentDeclaration> allDeclarations = new ArrayList<>(b.subagentDeclarations);
 
         Path subagentsDir = resolvedWorkspace.resolve("subagents");
@@ -214,7 +217,8 @@ final class HarnessAgentBuilderSupport {
                         "general-purpose",
                         "General-purpose subagent with same capabilities as the main agent."
                                 + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                        buildGeneralPurposeFactory(
+                                b, resolvedWorkspace, sandboxFs, effectiveToolsConfig),
                         null));
 
         for (SubagentDeclaration decl : allDeclarations) {
@@ -222,7 +226,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             decl.getName(),
                             decl.getDescription(),
-                            buildDeclaredFactory(b, decl, resolvedWorkspace, sandboxFs),
+                            buildDeclaredFactory(
+                                    b, decl, resolvedWorkspace, sandboxFs, effectiveToolsConfig),
                             decl));
         }
 
@@ -240,6 +245,16 @@ final class HarnessAgentBuilderSupport {
         }
 
         return entries;
+    }
+
+    /**
+     * Backwards-compatible overload: falls back to the builder's programmatic override only.
+     * Prefer {@link #buildSubagentEntries(HarnessAgent.Builder, Path, SandboxBackedFilesystem,
+     * io.agentscope.harness.agent.tools.ToolsConfig)} so a workspace {@code tools.json} is honoured.
+     */
+    static List<SubagentEntry> buildSubagentEntries(
+            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+        return buildSubagentEntries(b, resolvedWorkspace, sandboxFs, b.toolsConfigOverride);
     }
 
     /**
@@ -249,7 +264,10 @@ final class HarnessAgentBuilderSupport {
      * register them twice.
      */
     static List<SubagentEntry> buildStaticSubagentEntries(
-            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b,
+            Path resolvedWorkspace,
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         List<SubagentEntry> entries = new ArrayList<>();
 
         entries.add(
@@ -257,7 +275,8 @@ final class HarnessAgentBuilderSupport {
                         "general-purpose",
                         "General-purpose subagent with same capabilities as the main agent."
                                 + " Use for any isolated task that can be fully delegated.",
-                        buildGeneralPurposeFactory(b, resolvedWorkspace, sandboxFs),
+                        buildGeneralPurposeFactory(
+                                b, resolvedWorkspace, sandboxFs, effectiveToolsConfig),
                         null));
 
         for (SubagentDeclaration decl : b.subagentDeclarations) {
@@ -265,7 +284,8 @@ final class HarnessAgentBuilderSupport {
                     new SubagentEntry(
                             decl.getName(),
                             decl.getDescription(),
-                            buildDeclaredFactory(b, decl, resolvedWorkspace, sandboxFs),
+                            buildDeclaredFactory(
+                                    b, decl, resolvedWorkspace, sandboxFs, effectiveToolsConfig),
                             decl));
         }
 
@@ -285,33 +305,137 @@ final class HarnessAgentBuilderSupport {
         return entries;
     }
 
-    private static io.agentscope.harness.agent.tools.ToolsConfig childToolsConfig(
-            io.agentscope.harness.agent.tools.ToolsConfig parent, List<String> allow) {
-        if (allow == null || allow.isEmpty()) return parent;
+    /**
+     * Backwards-compatible overload: falls back to the builder's programmatic override only.
+     * Prefer {@link #buildStaticSubagentEntries(HarnessAgent.Builder, Path,
+     * SandboxBackedFilesystem, io.agentscope.harness.agent.tools.ToolsConfig)}.
+     */
+    static List<SubagentEntry> buildStaticSubagentEntries(
+            HarnessAgent.Builder b, Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
+        return buildStaticSubagentEntries(b, resolvedWorkspace, sandboxFs, b.toolsConfigOverride);
+    }
+
+    /**
+     * Builds the child's {@link io.agentscope.harness.agent.tools.ToolsConfig} from the resolved
+     * parent config and the declaration's tool allow-list.
+     *
+     * <p>An <b>absent</b> allow-list ({@code allowDeclared=false}) inherits the resolved parent
+     * config values in a separate config with copied lists and server map — matching
+     * {@link SubagentDeclaration#getTools()} and
+     * {@link #allowlistedInheritedToolkit}, so declarations that never listed tools keep their
+     * behaviour. An <b>explicitly empty</b> list is a true opt-out: the child inherits no MCP
+     * servers (and no allow-list) from the parent, with a WARN so the drop is visible (#3178). A
+     * <b>non-empty</b> allow-list keeps the strict filter, and the parent's MCP servers are still
+     * copied wholesale so the child can re-register them — the map keys are MCP <em>server</em>
+     * names, not tool names, so filtering them by the tool allow-list would drop every server and
+     * reintroduce the very bug this method fixes.
+     */
+    static io.agentscope.harness.agent.tools.ToolsConfig childToolsConfig(
+            io.agentscope.harness.agent.tools.ToolsConfig parent,
+            List<String> allow,
+            boolean allowDeclared) {
+        if (!allowDeclared) {
+            if (parent == null) return null;
+            var inherited = new io.agentscope.harness.agent.tools.ToolsConfig();
+            inherited.setAllow(copyList(parent.getAllow()));
+            inherited.setDeny(copyList(parent.getDeny()));
+            inherited.setMcpServers(parent.getMcpServers());
+            inherited.setStrictAllow(parent.isStrictAllow());
+            inherited.setDefaultToolsEnabled(parent.isDefaultToolsEnabled());
+            return inherited;
+        }
+        if (allow == null || allow.isEmpty()) {
+            var optOut = new io.agentscope.harness.agent.tools.ToolsConfig();
+            optOut.setMcpServers(Map.of());
+            if (parent != null) {
+                optOut.setDeny(copyList(parent.getDeny()));
+                if (parent.getMcpServers() != null && !parent.getMcpServers().isEmpty()) {
+                    log.warn(
+                            "Subagent declares an empty tools allow-list: parent MCP servers {} are"
+                                + " no longer inherited. List the required MCP tool names in the"
+                                + " declaration to restore them (#3178).",
+                            parent.getMcpServers().keySet());
+                }
+            }
+            return optOut;
+        }
         var child = new io.agentscope.harness.agent.tools.ToolsConfig();
         child.setStrictAllow(true);
         child.setDefaultToolsEnabled(false);
-        child.setAllow(
-                allow.stream()
-                        .filter(
-                                name ->
-                                        io.agentscope.harness.agent.tools.ToolFilter.isAllowed(
-                                                name, parent))
-                        .toList());
+        List<String> kept = new ArrayList<>(allow.size());
+        for (String name : allow) {
+            if (io.agentscope.harness.agent.tools.ToolFilter.isAllowed(name, parent)) {
+                kept.add(name);
+            } else {
+                log.warn(
+                        "Subagent tools allow-list entry '{}' is not available from the parent"
+                                + " toolkit and was dropped",
+                        name);
+            }
+        }
+        child.setAllow(kept);
         if (parent != null) {
-            child.setDeny(parent.getDeny());
+            child.setDeny(copyList(parent.getDeny()));
             child.setMcpServers(parent.getMcpServers());
         }
         return child;
+    }
+
+    /** Defensive copy: {@link io.agentscope.harness.agent.tools.ToolsConfig} stores lists as-is. */
+    private static List<String> copyList(List<String> list) {
+        return list == null ? null : List.copyOf(list);
+    }
+
+    /**
+     * Resolves the effective parent {@link io.agentscope.harness.agent.tools.ToolsConfig} that
+     * subagent factories must propagate.
+     *
+     * <p>Precedence mirrors {@code HarnessAgent.build()}: the {@code disableToolsConfig()} opt-out
+     * wins — a deliberately disabled workspace {@code tools.json} (and any {@code ${ENV}}
+     * credentials it carries) must not reach subagents either — then the explicit builder override,
+     * otherwise the workspace {@code tools.json} is read through the same loader. Resolving this
+     * <em>before</em> the factories are built is the fix for #3178 — capturing only
+     * {@code b.toolsConfigOverride} meant a parent whose MCP servers came from {@code tools.json}
+     * propagated {@code null}, so declared children lost every MCP tool.
+     *
+     * @return the resolved config, or {@code null} when no source provides one
+     */
+    static io.agentscope.harness.agent.tools.ToolsConfig resolveEffectiveToolsConfig(
+            HarnessAgent.Builder b, WorkspaceManager wsManager) {
+        if (b.disableToolsConfig) {
+            return null;
+        }
+        if (b.toolsConfigOverride != null) {
+            return b.toolsConfigOverride;
+        }
+        if (wsManager == null) {
+            return null;
+        }
+        return io.agentscope.harness.agent.tools.ToolsConfigLoader.load(wsManager).orElse(null);
+    }
+
+    /**
+     * Backwards-compatible overload: uses the builder's programmatic override only. Callers able to
+     * resolve the effective config (builder override, else workspace {@code tools.json}) should use
+     * {@link #buildGeneralPurposeFactory(HarnessAgent.Builder, Path, SandboxBackedFilesystem,
+     * io.agentscope.harness.agent.tools.ToolsConfig)}.
+     */
+    static SubagentFactory buildGeneralPurposeFactory(
+            HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
+        return buildGeneralPurposeFactory(b, workspace, sandboxFs, b.toolsConfigOverride);
     }
 
     /**
      * Builds a factory for the built-in general-purpose subagent.
      */
     static SubagentFactory buildGeneralPurposeFactory(
-            HarnessAgent.Builder b, Path workspace, SandboxBackedFilesystem sandboxFs) {
+            HarnessAgent.Builder b,
+            Path workspace,
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         final Model capturedModel = b.model;
-        final var capturedToolsConfig = b.toolsConfigOverride;
+        final boolean capturedDisableToolsConfig = b.disableToolsConfig;
+        final var capturedToolsConfig = capturedDisableToolsConfig ? null : effectiveToolsConfig;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
@@ -385,6 +509,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedSkillFilter != null) sub.skillFilter(capturedSkillFilter);
             capturedAdditionalContextFiles.forEach(sub::additionalContextFile);
             if (capturedToolsConfig != null) sub.toolsConfig(capturedToolsConfig);
+            if (capturedDisableToolsConfig) sub.disableToolsConfig();
             capturedRoutes.forEach(sub::filesystemRoute);
             if (capturedBackend == null && capturedRemoteSpec != null)
                 sub.filesystem(capturedRemoteSpec);
@@ -429,15 +554,31 @@ final class HarnessAgentBuilderSupport {
     }
 
     /**
-     * Builds a factory for a user-declared subagent from a {@link SubagentDeclaration}.
+     * Backwards-compatible overload: uses the builder's programmatic override only. Callers able to
+     * resolve the effective config (builder override, else workspace {@code tools.json}) should use
+     * {@link #buildDeclaredFactory(HarnessAgent.Builder, SubagentDeclaration, Path,
+     * SandboxBackedFilesystem, io.agentscope.harness.agent.tools.ToolsConfig)}.
      */
     static SubagentFactory buildDeclaredFactory(
             HarnessAgent.Builder b,
             SubagentDeclaration decl,
             Path mainWorkspace,
             SandboxBackedFilesystem sandboxFs) {
+        return buildDeclaredFactory(b, decl, mainWorkspace, sandboxFs, b.toolsConfigOverride);
+    }
+
+    /**
+     * Builds a factory for a user-declared subagent from a {@link SubagentDeclaration}.
+     */
+    static SubagentFactory buildDeclaredFactory(
+            HarnessAgent.Builder b,
+            SubagentDeclaration decl,
+            Path mainWorkspace,
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
         final Model capturedModel = b.model;
-        final var capturedToolsConfig = b.toolsConfigOverride;
+        final boolean capturedDisableToolsConfig = b.disableToolsConfig;
+        final var capturedToolsConfig = capturedDisableToolsConfig ? null : effectiveToolsConfig;
         final var capturedSkillFilter = b.skillFilter;
         final var capturedPermissions = b.permissionContextOverride;
         final var capturedDisableDefaultSkills = b.disableDefaultWorkspaceSkills;
@@ -514,7 +655,9 @@ final class HarnessAgentBuilderSupport {
                             .model(effectiveModel)
                             .toolkit(
                                     allowlistedInheritedToolkit(
-                                            capturedParentToolkit, decl.getTools()))
+                                            capturedParentToolkit,
+                                            decl.getTools(),
+                                            decl.isToolsDeclared()))
                             .workspace(runtimeWorkspace)
                             .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
@@ -540,8 +683,13 @@ final class HarnessAgentBuilderSupport {
                 sub.generateOptions(capturedGenOpts);
             }
 
-            var childTools = childToolsConfig(capturedToolsConfig, decl.getTools());
+            var childTools =
+                    childToolsConfig(capturedToolsConfig, decl.getTools(), decl.isToolsDeclared());
             if (childTools != null) sub.toolsConfig(childTools);
+            // Keep declaration filters, but do not reload a disabled parent tools.json through
+            // the shared workspace when no declaration-derived override exists.
+            else if (capturedDisableToolsConfig && decl.getWorkspaceMode() == WorkspaceMode.SHARED)
+                sub.disableToolsConfig();
             capturedRoutes.forEach(sub::filesystemRoute);
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {
                 sub.abstractFilesystem(capturedSharedBackend);
@@ -641,18 +789,25 @@ final class HarnessAgentBuilderSupport {
     }
 
     /** Returns a defensive copy of inherited parent tools filtered by the optional allowlist. */
-    static Toolkit allowlistedInheritedToolkit(Toolkit parentToolkit, List<String> allowlist) {
+    /**
+     * Copies the parent toolkit and, when {@code allowDeclared} is set, keeps only the listed
+     * tools. An absent allow-list ({@code allowDeclared=false}) inherits the parent toolkit
+     * unchanged; an explicitly empty one removes every tool, matching
+     * {@link #childToolsConfig}.
+     */
+    static Toolkit allowlistedInheritedToolkit(
+            Toolkit parentToolkit, List<String> allowlist, boolean allowDeclared) {
         Toolkit toolkit =
                 parentToolkit != null
                         ? parentToolkit.copy()
                         : HarnessAgent.Builder.newDefaultToolkit();
-        if (allowlist == null || allowlist.isEmpty()) {
+        if (!allowDeclared) {
             return toolkit;
         }
         List<String> toRemove =
                 toolkit.getToolSchemas().stream()
                         .map(ToolSchema::getName)
-                        .filter(name -> !allowlist.contains(name))
+                        .filter(name -> allowlist == null || !allowlist.contains(name))
                         .toList();
         toRemove.forEach(toolkit::removeTool);
         return toolkit;
@@ -794,8 +949,10 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
-            SandboxBackedFilesystem sandboxFs) {
-        List<SubagentEntry> entries = buildSubagentEntries(b, workspace, sandboxFs);
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
+        List<SubagentEntry> entries =
+                buildSubagentEntries(b, workspace, sandboxFs, effectiveToolsConfig);
         TaskRepository repo = resolveTaskRepository(b, wsManager);
 
         if (b.externalSubagentTool != null) {
@@ -804,7 +961,7 @@ final class HarnessAgentBuilderSupport {
 
         AbstractFilesystem fs = wsManager.getFilesystem();
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
-                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
+                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs, effectiveToolsConfig);
         return new SubagentsMiddleware(entries, repo, wsManager, fs, workspace, factoryFn);
     }
 
@@ -812,13 +969,15 @@ final class HarnessAgentBuilderSupport {
             HarnessAgent.Builder b,
             WorkspaceManager wsManager,
             Path workspace,
-            SandboxBackedFilesystem sandboxFs) {
-        List<SubagentEntry> staticEntries = buildStaticSubagentEntries(b, workspace, sandboxFs);
+            SandboxBackedFilesystem sandboxFs,
+            io.agentscope.harness.agent.tools.ToolsConfig effectiveToolsConfig) {
+        List<SubagentEntry> staticEntries =
+                buildStaticSubagentEntries(b, workspace, sandboxFs, effectiveToolsConfig);
         TaskRepository repo = resolveTaskRepository(b, wsManager);
 
         AbstractFilesystem fs = wsManager.getFilesystem();
         Function<SubagentDeclaration, SubagentFactory> factoryFn =
-                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs);
+                decl -> buildDeclaredFactory(b, decl, workspace, sandboxFs, effectiveToolsConfig);
         DefaultAgentManager manager = new DefaultAgentManager(staticEntries, wsManager);
         return new DynamicSubagentsMiddleware(
                 staticEntries, fs, workspace, factoryFn, manager, b.externalSubagentTool, repo);
