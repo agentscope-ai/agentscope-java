@@ -255,33 +255,104 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 Base64.getEncoder()
                         .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
-                    + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
+        // Edit script is assembled with real newlines, then base64-encoded and piped via stdin
+        // to `python3 -`; the payload is written to a unique mktemp file first (to avoid ARG_MAX
+        // limits), then passed as argv[1].
+        //
+        // Do NOT revert to `python3 -c "...\n..."` inline form: under `bash -lc`, \n inside
+        // double quotes is a literal backslash+n (not a newline), so the entire script collapses
+        // into one line and Python fails with:
+        //   SyntaxError: unexpected character after line continuation character
+        // This makes edit_file 100% non-functional in sandbox environments (the model falls back
+        // to write_file, which refuses to overwrite existing files, so no file can be modified).
+        // Using temp file + pipe avoids all quoting/escaping issues and ARG_MAX limits.
+        String script =
+                "import sys, os, base64, json\n"
+                    + "payload = json.loads(base64.b64decode(open(sys.argv[1],"
+                    + " \"rb\").read().strip()).decode('utf-8'))\n"
+                    + "path, old, new = payload['path'], payload['old'], payload['new']\n"
+                    + "replace_all = payload.get('replace_all', False)\n"
+                    + "if not os.path.isfile(path):\n"
+                    + "    print(json.dumps({'error': 'file_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\n"
+                    + "count = text.count(old)\n"
+                    + "if count == 0:\n"
+                    + "    print(json.dumps({'error': 'string_not_found'}))\n"
+                    + "    sys.exit(0)\n"
+                    + "if count > 1 and not replace_all:\n"
+                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\n"
+                    + "    sys.exit(0)\n"
                     + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
+                    + " 1)\n"
+                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\n"
+                    + "print(json.dumps({'count': count}))\n";
+        String scriptB64 =
+                Base64.getEncoder()
+                        .encodeToString(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // mktemp yields a unique 0600 file per call. This avoids two hazards of a predictable
+        // /tmp/.agentscope-edit-$$ name: the payload (which can contain secrets copied out of the
+        // edited file) being world-readable under the default umask, and two concurrent edits
+        // clobbering each other when a backend reuses a single shell session (where $$ is
+        // constant across calls). ${TMPDIR:-/tmp} keeps edit() working when /tmp is relocated via
+        // TMPDIR; the fallback pins an explicit /tmp template rather than a bare `mktemp` (which
+        // BSD/macOS reject outright, and which on GNU/BusyBox still consults the same broken
+        // $TMPDIR) so a missing or read-only TMPDIR degrades to /tmp instead of failing every call.
+        // The EXIT trap removes the payload on normal exit; the INT/TERM traps exit (rather than
+        // just unlinking and letting the pipeline read a now-missing file), so a SIGTERM from a
+        // sandbox timeout both interrupts the run and triggers the EXIT cleanup. SIGKILL cannot be
+        // trapped, so the plaintext can only linger if the shell is hard-killed.
+        String cmd =
+                "T=$(mktemp \"${TMPDIR:-/tmp}/.agentscope-edit.XXXXXX\" 2>/dev/null"
+                        + " || mktemp /tmp/.agentscope-edit.XXXXXX) || exit 1\n"
+                        + "trap 'rm -f \"$T\"' EXIT\n"
+                        + "trap 'exit 130' INT\n"
+                        + "trap 'exit 143' TERM\n"
+                        + "cat > \"$T\" <<'__EDIT_EOF__'\n"
                         + payloadB64
-                        + "\n__EDIT_EOF__\n";
+                        + "\n__EDIT_EOF__\n"
+                        + "printf '%s\\n' "
+                        + scriptB64
+                        + " | base64 -d | python3 - \"$T\" 2>&1";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         String output = result.output() != null ? result.output().strip() : "";
+
+        // The edit script exits 0 on every legitimate outcome (a success, or an {"error":...}
+        // JSON for file_not_found / string_not_found / multiple_occurrences). So a non-zero exit
+        // means the command itself failed to run — mktemp could not create the temp file (exit 1,
+        // empty output), python3 was missing (127), etc. Keying off exitCode closes the
+        // empty-output hole that a substring heuristic on output alone leaves open (an empty
+        // message would otherwise fall through to the opaque "unexpected server response" branch —
+        // exactly the opacity this path exists to remove). A null exit code means the backend
+        // could not report one (unknown, not failed); like the other call sites in this class
+        // (:146, :206) a missing code is not by itself a hard failure, so a successful edit on a
+        // backend that omits the exit code — proven by the {"count":...} payload it printed — is
+        // honored as success below rather than turned into a false "failed to execute" that would
+        // make the model retry and double-apply the replacement. The one exception is a null code
+        // WITH no output at all: nothing was reported, so it is surfaced as an explicit failure
+        // here instead of the blank-tailed opaque branch. The output-shape check still catches the
+        // rare broken shell that exits 0 while emitting a Python traceback / SyntaxError.
+        Integer exitCode = result.exitCode();
+        boolean noCodeNoOutput = exitCode == null && output.isEmpty();
+        if ((exitCode != null && exitCode != 0)
+                || looksLikeExecutionFailure(output)
+                || noCodeNoOutput) {
+            String detail;
+            if (!output.isEmpty()) {
+                detail = output.substring(0, Math.min(200, output.length()));
+            } else if (exitCode == null) {
+                detail = "backend reported neither an exit code nor any output";
+            } else {
+                detail = "exit code " + exitCode;
+            }
+            return EditResult.fail(
+                    "Error editing file '"
+                            + filePath
+                            + "': edit command failed to execute: "
+                            + detail);
+        }
 
         if (output.contains("\"error\"")) {
             if (output.contains("file_not_found")) {
@@ -490,6 +561,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     private static long parseEpochSeconds(String s) {
         long epochSec = parseLongSafe(s);
         return epochSec * 1000;
+    }
+
+    private static boolean looksLikeExecutionFailure(String output) {
+        return output.contains("Traceback (most recent call last)")
+                || output.contains("SyntaxError")
+                || output.contains("No such file or directory")
+                || output.contains(": not found");
     }
 
     private static String jsonEscape(String s) {
