@@ -1902,7 +1902,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * {@code 3} we stop forcing and finish without structured data to avoid a deadlock loop.
          */
         int soForceToolChoiceCount;
-      
+
         /** Placeholder sentence written to the tool_result of a returnDirect tool. */
         private static final String RETURN_DIRECT_PLACEHOLDER =
                 "Tool call completed. The result has been presented to the user as the final output"
