@@ -48,32 +48,32 @@ public class StateBackedMemory implements Memory {
 
     @Override
     public List<Msg> getMessages() {
-        return new ArrayList<>(state.contextMutable());
+        return new ArrayList<>(state.getContext());
     }
 
     @Override
     public void deleteMessage(int index) {
         List<Msg> ctx = state.contextMutable();
-        if (index >= 0 && index < ctx.size()) {
-            ctx.remove(index);
+        synchronized (ctx) {
+            if (index >= 0 && index < ctx.size()) {
+                ctx.remove(index);
+            }
         }
     }
 
     @Override
     public void clear() {
-        state.contextMutable().clear();
+        state.replaceContext(List.of());
     }
 
     @Override
     public void saveTo(AgentStateStore stateStore, String userId, String sessionId) {
-        stateStore.save(
-                userId, sessionId, "memory_messages", new ArrayList<>(state.contextMutable()));
+        stateStore.save(userId, sessionId, "memory_messages", new ArrayList<>(state.getContext()));
     }
 
     @Override
     public void loadFrom(AgentStateStore stateStore, String userId, String sessionId) {
         List<Msg> loaded = stateStore.getList(userId, sessionId, "memory_messages", Msg.class);
-        state.contextMutable().clear();
-        state.contextMutable().addAll(loaded);
+        state.replaceContext(loaded);
     }
 }

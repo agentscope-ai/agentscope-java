@@ -103,11 +103,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
                     CompactionConfig effectiveConfig = resolveEffectiveConfig();
 
-                    MemoryFlushManager flushManager =
-                            new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
-                            new ConversationCompactor(model, flushManager);
+                            createConversationCompactor(
+                                    workspaceManager,
+                                    model,
+                                    MemoryFlushManager.DEFAULT_FLUSH_PROMPT);
                     final Msg sys = systemMsg;
+                    AgentState state = RuntimeContext.resolveAgentState(rc, reActAgent);
+                    List<Msg> contextSnapshot = state != null ? state.getContext() : List.of();
 
                     // Only compaction may degrade; downstream reasoning errors must propagate.
                     return compactor
@@ -129,12 +132,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                             return next.apply(input);
                                         }
                                         List<Msg> compacted = optResult.get();
-                                        applyToContext(
-                                                RuntimeContext.resolveAgentState(rc, reActAgent),
-                                                compacted);
-                                        log.debug(
-                                                "Compacted to {} messages before reasoning",
-                                                compacted.size());
+                                        // The turn reasons over the compacted messages even when
+                                        // the persisted context could not be replaced, so the
+                                        // summary that was already paid for is still used.
+                                        if (applyToContext(state, contextSnapshot, compacted)) {
+                                            log.debug(
+                                                    "Compacted to {} messages before reasoning",
+                                                    compacted.size());
+                                        }
                                         List<Msg> newMessages = new ArrayList<>();
                                         if (sys != null) {
                                             newMessages.add(sys);
@@ -217,18 +222,49 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         return config.withEffective(effectiveTrigger, effectiveKeep);
     }
 
-    private static void applyToContext(AgentState state, List<Msg> compacted) {
+    /**
+     * Applies the compacted messages to the live context, keeping messages appended after the
+     * snapshot was taken.
+     *
+     * <p>A rejected replacement is reported at {@code WARN} with the sizes involved and is not
+     * retried: rejection means the context changed while the summary was in flight, so the
+     * compacted result no longer describes the current head. The outcome is returned so the caller
+     * cannot mistake a rejected replacement for a successful compaction — the persisted context
+     * then stays over budget and the next turn pays for another compaction.
+     *
+     * @return {@code true} when the compacted messages are now in the context
+     */
+    static boolean applyToContext(AgentState state, List<Msg> snapshot, List<Msg> compacted) {
         if (state == null) {
             log.warn("Cannot apply compacted messages: AgentState is null");
-            return;
+            return false;
         }
         try {
-            List<Msg> ctx = state.contextMutable();
-            ctx.clear();
-            ctx.addAll(compacted);
+            if (!state.replaceContextPreservingAppends(snapshot, compacted)) {
+                log.warn(
+                        "Compaction was not applied: the context changed while the summary was"
+                                + " being generated (snapshot={} messages, current={} messages,"
+                                + " compacted={} messages). The persisted context is left unchanged"
+                                + " and stays over budget, so compaction runs again on the next"
+                                + " turn.",
+                        snapshot == null ? 0 : snapshot.size(),
+                        state.getContext().size(),
+                        compacted == null ? 0 : compacted.size());
+                return false;
+            }
             log.debug("Applied compacted messages to state ({} messages)", compacted.size());
+            return true;
         } catch (Exception e) {
-            log.warn("Failed to apply compacted messages to state: {}", e.getMessage());
+            log.warn("Failed to apply compacted messages to state: {}", e.getMessage(), e);
+            return false;
         }
+    }
+
+    /** Creates the conversation compactor with an optional configured flush prompt. */
+    public static ConversationCompactor createConversationCompactor(
+            WorkspaceManager workspaceManager, Model model, String flushPrompt) {
+        MemoryFlushManager flushManager =
+                new MemoryFlushManager(workspaceManager, model, flushPrompt);
+        return new ConversationCompactor(model, flushManager);
     }
 }

@@ -37,6 +37,8 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -48,6 +50,8 @@ import reactor.core.scheduler.Schedulers;
  * pushed off the request thread via {@link Schedulers#boundedElastic()}.
  */
 public final class SessionOperations {
+
+    private static final Logger log = LoggerFactory.getLogger(SessionOperations.class);
 
     private final AgentRegistry registry;
     private final SummarizationStrategy summarizer;
@@ -164,7 +168,7 @@ public final class SessionOperations {
                 .flatMap(
                         react -> {
                             AgentState state = react.getAgentState();
-                            List<Msg> context = state.contextMutable();
+                            List<Msg> context = state.getContext();
                             int before = context.size();
                             String previousSummary =
                                     state.getSummary() == null ? "" : state.getSummary();
@@ -195,19 +199,34 @@ public final class SessionOperations {
                                                                         + "\n\n"
                                                                         + newSummary;
                                                 state.setSummary(merged);
-                                                // truncate in-place
+                                                // Keep the tail; concurrent appends are preserved.
                                                 List<Msg> kept =
                                                         new ArrayList<>(
                                                                 context.subList(
                                                                         before - keepLast, before));
-                                                context.clear();
-                                                context.addAll(kept);
+                                                if (!state.replaceContextPreservingAppends(
+                                                        context, kept)) {
+                                                    state.setSummary(previousSummary);
+                                                    log.warn(
+                                                            "Compact skipped for session {}:"
+                                                                    + " context changed during"
+                                                                    + " summarization",
+                                                            state.getSessionId());
+                                                    return Mono.just(
+                                                            new CompactResponse(
+                                                                    state.getSessionId(),
+                                                                    before,
+                                                                    state.getContext().size(),
+                                                                    summaryBefore,
+                                                                    summaryBefore));
+                                                }
+                                                int after = state.getContext().size();
                                                 return persist(react, state)
                                                         .thenReturn(
                                                                 new CompactResponse(
                                                                         state.getSessionId(),
                                                                         before,
-                                                                        context.size(),
+                                                                        after,
                                                                         summaryBefore,
                                                                         merged.length()));
                                             });
