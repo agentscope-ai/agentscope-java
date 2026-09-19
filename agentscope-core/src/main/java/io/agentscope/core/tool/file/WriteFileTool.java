@@ -248,8 +248,11 @@ public class WriteFileTool {
                             name = "ranges",
                             description =
                                     "The range of lines to be replaced as [start, end], e.g.,"
-                                            + " '[1,5]' or '1,5'. If null or empty, the entire file"
-                                            + " will be overwritten.",
+                                            + " '[1,5]' or '1,5'. Lines are 1-based and"
+                                            + " inclusive; negative indices are NOT supported"
+                                            + " for writes (view_text_file accepts them, this"
+                                            + " tool does not). If null or empty, the entire"
+                                            + " file will be overwritten.",
                             required = false)
                     String ranges) {
 
@@ -375,8 +378,12 @@ public class WriteFileTool {
                                             originalLines.subList(end, originalLines.size()));
                                 }
 
-                                // Write the new content
+                                // Write the new content, preserving the original file's
+                                // trailing line terminator so line counts stay stable.
                                 String joinedContent = String.join("\n", newContent);
+                                if (Files.readString(path, StandardCharsets.UTF_8).endsWith("\n")) {
+                                    joinedContent += "\n";
+                                }
                                 Files.writeString(path, joinedContent, StandardCharsets.UTF_8);
                                 logger.info(
                                         "Successfully replaced lines {}-{} in file: {}",

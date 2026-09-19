@@ -16,7 +16,7 @@
 package io.agentscope.core.tool.file;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -45,11 +45,29 @@ class WriteFileToolTest {
     }
 
     @Test
-    void replacesSpecifiedRange() {
+    void replacesSpecifiedRangeAndPreservesTrailingNewline() {
         ToolResultBlock result = tool.writeTextFile(file.toString(), "NEW", "2,3").block();
 
         assertEquals(ToolResultState.RUNNING, result.getState());
-        assertEquals("one\nNEW\nfour\nfive", readFile());
+        assertEquals("one\nNEW\nfour\nfive\n", readFile());
+    }
+
+    @Test
+    void doesNotAddTrailingNewlineWhenOriginalHadNone() throws IOException {
+        Files.writeString(file, "one\ntwo\nthree", StandardCharsets.UTF_8);
+
+        ToolResultBlock result = tool.writeTextFile(file.toString(), "NEW", "1,1").block();
+
+        assertEquals(ToolResultState.RUNNING, result.getState());
+        assertEquals("NEW\ntwo\nthree", readFile());
+    }
+
+    @Test
+    void clampsEndBeyondFileLengthToEndOfFile() {
+        ToolResultBlock result = tool.writeTextFile(file.toString(), "NEW", "3,999").block();
+
+        assertEquals(ToolResultState.RUNNING, result.getState());
+        assertEquals("one\ntwo\nNEW\n", readFile());
     }
 
     @Test
@@ -91,8 +109,9 @@ class WriteFileToolTest {
         ToolResultBlock result =
                 tool.writeTextFile(newFile.toString(), "fresh content", null).block();
 
-        assertNotEquals(ToolResultState.ERROR, result.getState());
-        assertEquals("fresh content", Files.exists(newFile) ? readFile(newFile) : null);
+        assertEquals(ToolResultState.RUNNING, result.getState());
+        assertTrue(Files.exists(newFile));
+        assertEquals("fresh content", readFile(newFile));
     }
 
     private String readFile() {
