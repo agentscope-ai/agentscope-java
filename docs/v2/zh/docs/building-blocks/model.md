@@ -416,6 +416,21 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 `DashScopeChatModel` 同样支持此配置。对于 OpenAI 原生模型（GPT-4o 等）无需设置。
 
+#### 提供商不支持指定 `tool_choice` 的场景
+
+结构化输出降级路径需要强制模型调用 `generate_response` 工具时，支持指定具体函数名 `tool_choice` 的提供商会收到硬约束；不支持的提供商（只接受 `tool_choice: auto` 或完全忽略，如 GLM / MiniMax 类端点）则改用提示词提醒。该能力通过 `supportsToolChoiceSpecific` 选项声明，默认为 `true`。如果将通用 OpenAI 提供商指向一个会静默忽略指定 tool_choice 的网关，请将其设为 `false`——否则 Agent 会反复重试一个网关从未生效的约束，可能一直循环直到放弃并丢失结构化数据：
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey("...")
+        .baseUrl("https://your-gateway.example.com/v1")
+        .modelName("your-model")
+        .supportsToolChoiceSpecific(false)
+        .build();
+```
+
+GLM 和 MiniMax 专用提供商已默认设为 `false`；该选项主要用于自定义的 OpenAI 兼容端点，也可以通过提供商配置的高级选项设置（`.option("supportsToolChoiceSpecific", false)`）。
+
 ### Formatter
 
 **Formatter** 负责把 AgentScope 的 `Msg` 对象转换为各提供商 API 期望的请求载荷。它通过 Chat Model builder 的 `formatter(...)` 字段配置。每个提供商内置两种 formatter：

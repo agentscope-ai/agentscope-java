@@ -236,6 +236,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private int contextWindowSize = -1;
         private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
+        private Boolean supportsToolChoiceSpecific;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -424,6 +425,23 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether this model supports forcing a specific tool call via {@code tool_choice}
+         * (i.e. {@link io.agentscope.core.model.ToolChoice.Specific}).
+         *
+         * <p>Defaults to {@code true}. Set to {@code false} for OpenAI-compatible providers
+         * (e.g. GLM, MiniMax) that only accept {@code tool_choice="auto"}; the agent will fall
+         * back to a prompt-reminder strategy when it needs to force the {@code generate_response}
+         * tool.
+         *
+         * @param supportsToolChoiceSpecific false if {@code ToolChoice.Specific} is unsupported
+         * @return this builder instance
+         */
+        public Builder supportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+            this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
+            return this;
+        }
+
+        /**
          * Builds the OpenAIChatModel instance.
          *
          * @return configured OpenAIChatModel instance
@@ -469,6 +487,9 @@ public class OpenAIChatModel extends ChatModelBase {
                     nativeStructuredOutput != null ? nativeStructuredOutput : true);
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
+            if (supportsToolChoiceSpecific != null) {
+                model.setSupportsToolChoiceSpecific(supportsToolChoiceSpecific);
             }
             return model;
         }
