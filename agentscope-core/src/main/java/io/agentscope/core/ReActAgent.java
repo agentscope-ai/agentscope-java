@@ -145,6 +145,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -250,6 +251,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /** Default active groups captured after builder-time toolkit configuration is complete. */
     private final List<String> initialActiveToolGroups;
 
+    /**
+     * Calls currently between {@link #beforeAgentExecution} and {@link #afterAgentExecution}. Used
+     * to decide whether a toolkit activation change observed at call entry can only have come
+     * from outside a call (see {@link #warnIfToolkitGroupsChangedOutsideCall()}). Best-effort
+     * diagnostics only: it gates a one-shot log line and never affects behaviour.
+     */
+    private final AtomicInteger inFlightCalls = new AtomicInteger();
+
+    /**
+     * Toolkit active groups as last synchronised at a call boundary (call entry / call end). The
+     * toolkit's activation flags are per-call scratch state derived from the session's {@link
+     * AgentState}; a difference at the next call entry means they were mutated between calls,
+     * which has no effect on the session's tool surface.
+     */
+    private volatile List<String> toolkitGroupsAtLastCallBoundary;
+
+    /** One-shot guard so the out-of-call toolkit mutation warning is logged once per agent. */
+    private final AtomicBoolean warnedToolkitGroupsChangedOutsideCall = new AtomicBoolean();
+
     private final ToolExecutionContext toolExecutionContext;
 
     private final List<MiddlewareBase> middlewares;
@@ -331,6 +351,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
+        this.toolkitGroupsAtLastCallBoundary = this.initialActiveToolGroups;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -694,9 +715,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         CallExecution scope = new CallExecution(loaded, loadedEngine, slot, loadedVersion);
         if (toolkit != null) {
+            // The toolkit's activation flags are per-call scratch state seeded from the session:
+            // the model-facing tool surface is resolved from state.getToolContext() (see
+            // reasoning()), and in-call changes (meta tool, skills) flow back via
+            // syncToolkitToState. Anything written to the flags between calls is discarded here.
             toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
+            toolkitGroupsAtLastCallBoundary = toolkit.getActiveGroups();
         }
         return scope;
+    }
+
+    /**
+     * Logs (once per agent) when the toolkit's active groups differ from the value last observed
+     * at a call boundary while no call is in flight. That can only happen when developer code
+     * mutated the agent's toolkit between calls (e.g. {@code agent.getToolkit().updateToolGroups}),
+     * which is silently overwritten by {@link #activateSlotForContext} and therefore never reaches
+     * the model — the per-session APIs ({@link #updateToolGroups(String, String, List, boolean)}
+     * / {@link #setActiveToolGroups(String, String, List)}) are the supported way to do that.
+     */
+    private void warnIfToolkitGroupsChangedOutsideCall() {
+        if (toolkit == null || warnedToolkitGroupsChangedOutsideCall.get()) {
+            return;
+        }
+        List<String> expected = toolkitGroupsAtLastCallBoundary;
+        List<String> actual = toolkit.getActiveGroups();
+        if (expected == null || new HashSet<>(expected).equals(new HashSet<>(actual))) {
+            return;
+        }
+        if (warnedToolkitGroupsChangedOutsideCall.compareAndSet(false, true)) {
+            log.warn(
+                    "Toolkit active groups of agent '{}' were changed outside of a call ({} -> {})."
+                        + " The toolkit's activation flags are per-call scratch state seeded from"
+                        + " each session's AgentState and are reset at call entry, so this change"
+                        + " does not affect the tools exposed to the model. Use"
+                        + " ReActAgent#updateToolGroups(userId, sessionId, groups, active) or"
+                        + " ReActAgent#setActiveToolGroups(userId, sessionId, groups) to change a"
+                        + " session's active tool groups.",
+                    getName(),
+                    expected,
+                    actual);
+        }
     }
 
     // ==================== Config assembly helpers ====================
@@ -740,6 +798,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // that slot's cached state / permissionEngine. The returned reference is the authoritative
         // per-call scope (carried on the Reactor Context); the instance field is only a
         // side-channel default for out-of-call accessors.
+        if (inFlightCalls.getAndIncrement() == 0) {
+            // No other call is in flight, so any toolkit activation drift since the last call
+            // boundary must come from developer code mutating the toolkit between calls.
+            warnIfToolkitGroupsChangedOutsideCall();
+        }
         CallExecution scope = activateSlotForContext(ctx);
         // Expose the call-scoped AgentState on the RuntimeContext so middlewares / tools resolve
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
@@ -821,6 +884,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     protected void afterAgentExecution() {
         this.activeRc = null;
         unbindRuntimeContextFromHooks();
+        // Snapshot the flags as left by this call (meta tool / skill activations included) so the
+        // next call entry only flags changes made outside of any call.
+        if (toolkit != null) {
+            toolkitGroupsAtLastCallBoundary = toolkit.getActiveGroups();
+        }
+        // Floor at zero: a call cancelled while waiting on the same-session gate never ran
+        // beforeAgentExecution but still reaches this cleanup.
+        inFlightCalls.updateAndGet(n -> Math.max(0, n - 1));
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -4031,7 +4102,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== Getters ====================
 
-    /** Returns this agent's toolkit (a per-instance deep copy made at build time). */
+    /**
+     * Returns this agent's toolkit (a per-instance deep copy made at build time).
+     *
+     * <p>Tool group activation is per session, not per toolkit: the toolkit's activation flags are
+     * re-seeded from the session's {@link AgentState} at every call entry, so calling {@link
+     * Toolkit#updateToolGroups(List, boolean)} on the returned instance between calls does not
+     * change the tools exposed to the model. Use {@link #updateToolGroups(String, String, List,
+     * boolean)} or {@link #setActiveToolGroups(String, String, List)} instead.
+     */
     public Toolkit getToolkit() {
         return toolkit;
     }
@@ -4318,6 +4397,150 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     public PermissionMode getPermissionMode(String userId, String sessionId) {
         String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
         return getAgentState(userId, sid).getPermissionContext().getMode();
+    }
+
+    /**
+     * Returns the tool groups currently activated for the given {@code (userId, sessionId)}
+     * session — the authoritative per-session activation list that {@code call} uses to build the
+     * model-visible tool schemas.
+     *
+     * <p>This is distinct from {@code getToolkit().getActiveGroups()}: the toolkit's activation
+     * flags are per-call scratch state seeded from this list at call entry and are not a reliable
+     * view of any session between calls.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @return the session's activated tool group names (never {@code null})
+     */
+    public List<String> getActiveToolGroups(String userId, String sessionId) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        return getAgentState(userId, sid).getToolContext().getActivatedGroups();
+    }
+
+    /**
+     * Returns the activated tool groups for the session identified by the given
+     * {@link RuntimeContext}. See {@link #getActiveToolGroups(String, String)}.
+     */
+    public List<String> getActiveToolGroups(RuntimeContext ctx) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        return getActiveToolGroups(uid, sid);
+    }
+
+    /**
+     * Activates or deactivates tool groups for one {@code (userId, sessionId)} session and persists
+     * the change so the next {@code call} on that session exposes (or hides) the groups' tools.
+     *
+     * <p>This is the per-session counterpart of {@link Toolkit#updateToolGroups(List, boolean)}.
+     * Mutating the agent's toolkit directly between calls has no effect on the model-visible
+     * tools: each session's activation list lives in its {@link AgentState} and the toolkit's
+     * flags are reset from it at every call entry. Other sessions are not affected.
+     *
+     * <p>When an {@link AgentStateStore} is configured and the session has already been
+     * persisted, the latest persisted state is reloaded before the update so the change is
+     * applied on top of the newest state. Invoke it after the session's current call has
+     * completed; an in-flight call is not cancelled and may not observe the change.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param groupNames tool group names to activate or deactivate; each must exist on the toolkit
+     * @param active {@code true} to activate, {@code false} to deactivate
+     * @throws IllegalArgumentException if any group is not registered on this agent's toolkit
+     */
+    public void updateToolGroups(
+            String userId, String sessionId, List<String> groupNames, boolean active) {
+        Objects.requireNonNull(groupNames, "groupNames must not be null");
+        validateToolGroupsExist(groupNames);
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = loadLatestAgentState(userId, sid);
+        List<String> groups = new ArrayList<>(state.getToolContext().getActivatedGroups());
+        for (String groupName : groupNames) {
+            if (active) {
+                if (!groups.contains(groupName)) {
+                    groups.add(groupName);
+                }
+            } else {
+                groups.remove(groupName);
+            }
+        }
+        state.getToolContext().setActivatedGroups(groups);
+        saveAgentState(userId, sid);
+    }
+
+    /**
+     * Activates or deactivates tool groups for the session identified by the given
+     * {@link RuntimeContext}. See {@link #updateToolGroups(String, String, List, boolean)}.
+     */
+    public void updateToolGroups(RuntimeContext ctx, List<String> groupNames, boolean active) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        updateToolGroups(uid, sid, groupNames, active);
+    }
+
+    /**
+     * Replaces the activated tool groups for one {@code (userId, sessionId)} session with exactly
+     * {@code groupNames} and persists the change. Groups not listed are deactivated for that
+     * session; ungrouped tools are unaffected. See
+     * {@link #updateToolGroups(String, String, List, boolean)} for the incremental variant and
+     * the persistence / in-flight-call caveats, which apply here as well.
+     *
+     * @param userId user identity for the slot (may be {@code null})
+     * @param sessionId session identity (falls back to the default session id when {@code null})
+     * @param groupNames the complete list of tool groups to keep active; each must exist on the
+     *     toolkit
+     * @throws IllegalArgumentException if any group is not registered on this agent's toolkit
+     */
+    public void setActiveToolGroups(String userId, String sessionId, List<String> groupNames) {
+        Objects.requireNonNull(groupNames, "groupNames must not be null");
+        validateToolGroupsExist(groupNames);
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        AgentState state = loadLatestAgentState(userId, sid);
+        state.getToolContext().setActivatedGroups(new ArrayList<>(new LinkedHashSet<>(groupNames)));
+        saveAgentState(userId, sid);
+    }
+
+    /**
+     * Replaces the activated tool groups for the session identified by the given
+     * {@link RuntimeContext}. See {@link #setActiveToolGroups(String, String, List)}.
+     */
+    public void setActiveToolGroups(RuntimeContext ctx, List<String> groupNames) {
+        String uid = ctx != null ? ctx.getUserId() : null;
+        String sid = ctx != null ? ctx.getSessionId() : null;
+        setActiveToolGroups(uid, sid, groupNames);
+    }
+
+    private void validateToolGroupsExist(List<String> groupNames) {
+        for (String groupName : groupNames) {
+            if (groupName == null || toolkit.getToolGroup(groupName) == null) {
+                throw new IllegalArgumentException(
+                        String.format("Tool group '%s' does not exist", groupName));
+            }
+        }
+    }
+
+    /**
+     * Resolves the {@link AgentState} to mutate for an out-of-call "get → mutate → save" update on
+     * one slot. When an {@link AgentStateStore} is configured and the session has already been
+     * persisted, the latest persisted state is reloaded and re-cached first so the mutation is
+     * applied on top of the newest state rather than a stale local copy (the same reload {@code
+     * call} performs at entry); otherwise the cached or fresh slot state is used.
+     */
+    private AgentState loadLatestAgentState(String userId, String sessionId) {
+        if (stateStore != null && stateStore.exists(userId, sessionId)) {
+            String slot = slotKey(userId, sessionId);
+            VersionedState<AgentState> versioned =
+                    loadOrCreateAgentStateForSlot(
+                            stateStore,
+                            userId,
+                            sessionId,
+                            initialPermissionContext,
+                            getAgentId(),
+                            initialActiveToolGroups);
+            stateCache.put(slot, versioned.value());
+            slotVersions.put(slot, versioned.version());
+            return versioned.value();
+        }
+        return getAgentState(userId, sessionId);
     }
 
     /**
