@@ -19,6 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.RetrySpecs;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
@@ -29,13 +30,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
-import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.retry.Retry;
+import reactor.util.retry.RetryBackoffSpec;
 
 /**
  * Unified executor for tool execution with infrastructure concerns.
@@ -436,20 +436,9 @@ class ToolExecutor {
         }
 
         Integer maxAttempts = config.getMaxAttempts();
-        Duration initialBackoff =
-                config.getInitialBackoff() != null
-                        ? config.getInitialBackoff()
-                        : Duration.ofSeconds(1);
-        Duration maxBackoff =
-                config.getMaxBackoff() != null ? config.getMaxBackoff() : Duration.ofSeconds(10);
-        Predicate<Throwable> retryOn =
-                config.getRetryOn() != null ? config.getRetryOn() : error -> true;
 
-        Retry retrySpec =
-                Retry.backoff(maxAttempts - 1, initialBackoff)
-                        .maxBackoff(maxBackoff)
-                        .jitter(0.5)
-                        .filter(retryOn)
+        RetryBackoffSpec retrySpec =
+                RetrySpecs.build(config)
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(
@@ -463,8 +452,11 @@ class ToolExecutor {
                                                 signal.failure()));
 
         logger.debug(
-                "Applied retry config: maxAttempts={} for tool: {}",
+                "Applied retry config: maxAttempts={}, multiplier={}, initialBackoff={} for tool:"
+                        + " {}",
                 maxAttempts,
+                retrySpec.multiplier,
+                retrySpec.minBackoff,
                 toolCall.getName());
 
         return execution.retryWhen(retrySpec);

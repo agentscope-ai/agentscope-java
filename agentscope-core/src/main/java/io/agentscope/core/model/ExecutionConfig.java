@@ -211,7 +211,12 @@ public class ExecutionConfig {
     /**
      * Gets the backoff multiplier.
      *
-     * @return the backoff multiplier, or null if not set
+     * <p>When non-null, this value is applied to the exponential backoff via
+     * {@link RetrySpecs#build(ExecutionConfig)} (which delegates to Reactor's
+     * {@code RetryBackoffSpec.multiplier(...)}). When {@code null}, the default
+     * multiplier of {@code 2.0} is used.
+     *
+     * @return the backoff multiplier, or null if not set (defaults to {@code 2.0} at retry time)
      */
     public Double getBackoffMultiplier() {
         return backoffMultiplier;

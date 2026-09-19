@@ -16,11 +16,10 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
-import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.util.retry.Retry;
+import reactor.util.retry.RetryBackoffSpec;
 
 /**
  * Utility class for common Model operations.
@@ -54,7 +53,8 @@ public final class ModelUtils {
      * <p><b>Retry Behavior:</b>
      * <ul>
      *   <li>If RetryConfig is provided, failed requests will be retried with exponential backoff
-     *   <li>Retries respect the maxAttempts, initialBackoff, and maxBackoff settings
+     *   <li>Retries respect the maxAttempts, initialBackoff, maxBackoff and backoffMultiplier
+     *       settings (the retry spec is built by {@link RetrySpecs})
      *   <li>Only errors matching the retryOn predicate will be retried
      *   <li>Each retry is logged with attempt number and failure reason
      * </ul>
@@ -96,26 +96,8 @@ public final class ModelUtils {
             // Apply retry if configured (maxAttempts > 1 means retry is enabled)
             Integer maxAttempts = execConfig.getMaxAttempts();
             if (maxAttempts != null && maxAttempts > 1) {
-                Duration initialBackoff = execConfig.getInitialBackoff();
-                Duration maxBackoff = execConfig.getMaxBackoff();
-                Predicate<Throwable> retryOn = execConfig.getRetryOn();
-
-                // Use defaults if not specified
-                if (initialBackoff == null) {
-                    initialBackoff = Duration.ofSeconds(1);
-                }
-                if (maxBackoff == null) {
-                    maxBackoff = Duration.ofSeconds(10);
-                }
-                if (retryOn == null) {
-                    retryOn = error -> true; // retry all errors by default
-                }
-
-                Retry retrySpec =
-                        Retry.backoff(maxAttempts - 1, initialBackoff)
-                                .maxBackoff(maxBackoff)
-                                .jitter(0.5)
-                                .filter(retryOn)
+                RetryBackoffSpec retrySpec =
+                        RetrySpecs.build(execConfig)
                                 .doBeforeRetry(
                                         signal ->
                                                 LOG.warn(
@@ -128,9 +110,11 @@ public final class ModelUtils {
 
                 responseFlux = responseFlux.retryWhen(retrySpec);
                 LOG.debug(
-                        "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
+                        "Applied retry config: maxAttempts={}, multiplier={}, initialBackoff={}"
+                                + " for model: {}",
                         maxAttempts,
-                        initialBackoff,
+                        retrySpec.multiplier,
+                        retrySpec.minBackoff,
                         modelName);
             }
         }
