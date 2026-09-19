@@ -133,6 +133,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -1032,6 +1033,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return source;
         }
         RuntimeContext.Builder b = RuntimeContext.builder(source).sessionId(ctxSessionId);
+        // The onAgentStateBound hook is entry-call scoped and deliberately not copied by
+        // Builder.from(). This derivation delegates the SAME entry call to the inner agent,
+        // so carry the hook over explicitly (subagent / tool-execution derivations do not).
+        BiConsumer<RuntimeContext, List<Msg>> boundHook = source.getOnAgentStateBound();
+        if (boundHook != null) {
+            b.onAgentStateBound(boundHook);
+        }
         b.put(SandboxContext.class, sandboxCtx);
         if (sourceFs == null && fs != null) {
             b.put(AbstractFilesystem.class, fs);

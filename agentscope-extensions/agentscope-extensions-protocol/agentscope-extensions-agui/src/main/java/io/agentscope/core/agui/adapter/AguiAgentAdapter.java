@@ -32,14 +32,17 @@ import io.agentscope.core.agui.model.ToolMergeMode;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.MessageUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -51,8 +54,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
@@ -78,6 +84,8 @@ import reactor.core.publisher.Flux;
  * </ul>
  */
 public class AguiAgentAdapter {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AguiAgentAdapter.class);
 
     public static final String RUNTIME_CONTEXT_THREAD_ID_KEY = "agui.threadId";
     public static final String RUNTIME_CONTEXT_RUN_ID_KEY = "agui.runId";
@@ -301,7 +309,101 @@ public class AguiAgentAdapter {
                 .put(RUNTIME_CONTEXT_STATE_KEY, input.getState())
                 .put(RUNTIME_CONTEXT_FORWARDED_PROPS_KEY, input.getForwardedProps())
                 .put(RUNTIME_CONTEXT_RESUME_KEY, input.getResume())
+                .onAgentStateBound(createMessageMergeHandler())
                 .build();
+    }
+
+    /**
+     * Creates the {@code onAgentStateBound} callback that deduplicates incoming messages against
+     * the already-persisted AgentState context.
+     *
+     * <p>The last message in {@code state.getContext()} is used as the anchor: if it is found in
+     * the incoming {@code msgs} list, the anchor and everything before it is removed in place (the
+     * input was a full transcript); otherwise the incoming list is treated as purely incremental
+     * and left untouched. The anchor is matched by message id first; when ids are absent or were
+     * rewritten by the client, a role+content fallback performs the same strip so a miss does not
+     * silently duplicate the persisted history.
+     *
+     * <p>When the anchor is the last incoming element (a regenerate/continue request), the strip
+     * empties the list. In that case the last persisted user message is restored as the prompt so
+     * the call re-answers the last question — unless tool calls are pending, where empty input is
+     * the correct resume path. When the context is empty or the state is null the callback is a
+     * no-op.
+     */
+    private BiConsumer<RuntimeContext, List<Msg>> createMessageMergeHandler() {
+        return (ctx, msgs) -> {
+            AgentState state = ctx.getAgentState();
+            if (state == null) {
+                return;
+            }
+            List<Msg> context = state.getContext();
+            if (context.isEmpty()) {
+                return;
+            }
+            int anchorIndex = indexOfAnchor(msgs, context.get(context.size() - 1));
+            if (anchorIndex < 0) {
+                return;
+            }
+            msgs.subList(0, anchorIndex + 1).clear();
+            // Regenerate/continue: the anchor was the last incoming element, so the strip emptied
+            // the list. Restore the last persisted user turn as the prompt so the call re-answers
+            // the last question; with pending tool uses, empty input resumes the interrupted run.
+            if (msgs.isEmpty() && MessageUtils.pendingToolUseIds(context).isEmpty()) {
+                for (int i = context.size() - 1; i >= 0; i--) {
+                    if (context.get(i).getRole() == MsgRole.USER) {
+                        msgs.add(context.get(i));
+                        break;
+                    }
+                }
+            }
+        };
+    }
+
+    /**
+     * Finds the last position in {@code msgs} corresponding to the persisted anchor message,
+     * matching by id first and falling back to role+textual-content equality when the id lookup
+     * misses (client omitted ids, or a proxy / older client rewrote them). Returns {@code -1}
+     * when no anchor match exists (purely incremental input).
+     */
+    private static int indexOfAnchor(List<Msg> msgs, Msg anchor) {
+        String anchorId = anchor.getId();
+        if (anchorId != null) {
+            for (int i = msgs.size() - 1; i >= 0; i--) {
+                if (anchorId.equals(msgs.get(i).getId())) {
+                    return i;
+                }
+            }
+            LOGGER.debug(
+                    "agui message merge: anchor id {} not found in incoming messages;"
+                            + " trying content fallback",
+                    anchorId);
+        } else {
+            LOGGER.debug(
+                    "agui message merge: persisted context tail has no message id;"
+                            + " using content fallback");
+        }
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            if (contentMatchesAnchor(msgs.get(i), anchor)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Conservative content-based anchor match: same role and identical textual content. Messages
+     * without text (e.g. pure tool-call messages) never match, to avoid stripping on empty-text
+     * collisions.
+     */
+    private static boolean contentMatchesAnchor(Msg candidate, Msg anchor) {
+        if (candidate.getRole() != anchor.getRole()) {
+            return false;
+        }
+        String anchorText = anchor.getTextContent();
+        if (anchorText.isEmpty()) {
+            return false;
+        }
+        return anchorText.equals(candidate.getTextContent());
     }
 
     @SuppressWarnings("unchecked")

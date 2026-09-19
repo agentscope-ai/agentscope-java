@@ -57,8 +57,10 @@ public interface AgentResolver {
     /**
      * Check if a thread has existing memory/conversation history.
      *
-     * <p>This is used to determine whether to use frontend-provided history
-     * or rely on server-side memory.
+     * <p>The built-in AG-UI pipeline no longer invokes this method: incoming messages are always
+     * forwarded in full and deduplicated against the persisted AgentState context by the {@code
+     * onAgentStateBound} callback registered in {@code AguiAgentAdapter#buildRuntimeContext}. It
+     * is retained for custom resolvers that still want an existence probe.
      *
      * @param runtimeContext The runtime context identifying the thread and user
      * @return true if the thread has existing memory

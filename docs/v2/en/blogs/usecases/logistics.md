@@ -729,11 +729,11 @@ FinanceAguiRuntimeContextBuilder is the first SPI we customized for the runtime 
 public ProcessResult process(RunAgentInput input, String headerAgentId, String pathAgentId) {
         String threadId = input.getThreadId();
         String agentId = this.resolveAgentId(input, headerAgentId, pathAgentId);
+        // Full input is forwarded as-is: AguiAgentAdapter registers a RuntimeContext
+        // .onAgentStateBound callback that strips messages already persisted in the
+        // server-side AgentState (auto-merge), so the reuse layer no longer needs to
+        // extract the latest user message itself.
         RunAgentInput effectiveInput = input;
-        if (this.agentResolver.hasMemory(threadId) && !input.hasResume()) {
-            logger.debug("Using server-side memory for thread {}, extracting latest user message", threadId);
-            effectiveInput = this.extractLatestUserMessage(input);
-        }
         // Context built before execution
         RuntimeContext runtimeContext = this.buildRuntimeContext(effectiveInput);
         Agent agent = this.agentResolver.resolveAgent(agentId, threadId);
@@ -910,7 +910,7 @@ This guarantees cross-field consistency — in the same `createAgent()` call, pr
 
 Beyond the lightweight-level creation design of `createAgent()`, the customization of `saveAgent`, `removeSession`, and `hasMemory` also contributes significantly to the overall lightness of financeAgent.
 
-- `hasMemory()` — double-check existence probe: first queries `ac_agent_session`, then `ac_agent_block.maxSeq`, determining "whether there is history" without fully loading conversation history. This is the key hook by which the reuse layer decides whether to go through `extractLatestUserMessage`.
+- `hasMemory()` — double-check existence probe: first queries `ac_agent_session`, then `ac_agent_block.maxSeq`, determining "whether there is history" without fully loading conversation history. Formerly the key hook deciding whether the reuse layer ran `extractLatestUserMessage`; the built-in pipeline now auto-merges incoming messages against the persisted AgentState context via the `RuntimeContext.onAgentStateBound` callback registered by `AguiAgentAdapter`, so the probe is only needed by custom resolvers that still want it.
 - `saveAgent()` — incremental persistence: skips full writes of `memory_messages` through JdbcSession blacklist, only incrementally appending new blocks (`seq > dbMaxSeq`), reducing write amplification from O(N) to O(Δ).
 - `removeSession()` — cascading cleanup: completes batch deletion of `ac_agent_session` + `ac_agent_block` within a single lock acquisition, and synchronously cleans up the `tailSnapshot` cache.
 
