@@ -41,6 +41,20 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private int readTimeoutSeconds = 120;
     private int maxRetries = 3;
 
+    /**
+     * Max AgentScope-native snapshots (aliases starting with {@code agentscope-}) kept per sandbox
+     * after each persist; {@code <= 0} disables pruning. Defaults to {@code 0} (disabled), matching
+     * the historical no-pruning behaviour. At least {@code snapshotRetention} native snapshots are
+     * kept (the newest by their embedded timestamp); the retained count may exceed the configured
+     * value while snapshots newer than the just-created one exist. Legacy/foreign snapshots are
+     * never pruned.
+     *
+     * <p>Like {@link #setMaxRetries(int)} and the timeout fields, this value is overridden by the
+     * per-call options passed to {@link E2bSandboxClient#create}; it only takes effect when the
+     * call options leave it at its default.
+     */
+    private int snapshotRetention = 0;
+
     @Override
     public String getType() {
         return "e2b";
@@ -153,5 +167,13 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setMaxRetries(int maxRetries) {
         this.maxRetries = maxRetries;
+    }
+
+    public int getSnapshotRetention() {
+        return snapshotRetention;
+    }
+
+    public void setSnapshotRetention(int snapshotRetention) {
+        this.snapshotRetention = snapshotRetention;
     }
 }

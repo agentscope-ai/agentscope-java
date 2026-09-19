@@ -26,6 +26,8 @@ import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Base64;
+import java.util.List;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,6 +78,9 @@ public class E2bSandbox extends AbstractBaseSandbox {
         if (id != null && !id.isBlank()) {
             platform.killSandbox(id);
         }
+        // Only after killSandbox are the snapshot templates unlocked by E2B (deleting them while a
+        // sandbox restored from one runs returns 400), so clean up here to converge to retention.
+        cleanupSnapshots();
     }
 
     @Override
@@ -87,13 +92,14 @@ public class E2bSandbox extends AbstractBaseSandbox {
     @Override
     protected InputStream doPersistWorkspace() throws Exception {
         if (e2bState.getPersistenceMode() == E2bPersistenceMode.NATIVE_SNAPSHOT) {
-            JsonNode snap = platform.createSandboxSnapshot(e2bState.getSandboxId());
+            JsonNode snap = platform.createSandboxSnapshot(e2bState.getSandboxId(), snapshotName());
             String id = snap.path("snapshotID").asText("");
             if (id.isBlank()) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
                         "E2B snapshot response missing snapshotID: " + snap);
             }
+            e2bState.getSnapshotIds().add(id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }
         String root = e2bState.getWorkspaceRoot();
@@ -220,6 +226,33 @@ public class E2bSandbox extends AbstractBaseSandbox {
             }
         }
         envd = null;
+    }
+
+    private void cleanupSnapshots() {
+        int retention = opt.getSnapshotRetention();
+        if (retention <= 0) {
+            return;
+        }
+        // One-shot correction regardless of any earlier residue: keep the newest retention by
+        // embedded timestamp and delete the rest. E2B only unlocks the templates after
+        // killSandbox, so this runs on shutdown.
+        try {
+            List<String> kept = platform.cleanupSnapshots(e2bState.getSnapshotIds(), retention);
+            e2bState.setSnapshotIds(kept);
+        } catch (Exception e) {
+            log.warn("[sandbox-e2b] snapshot cleanup best-effort skipped: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * AgentScope-native snapshot alias: {@code agentscope-<shortId>-<epochMillis>}, where the
+     * middle segment is an 8-hex-char short UUID generated locally. The trailing 13-digit epoch
+     * millis timestamp makes ordering deterministic; anything not matching this format is treated as
+     * a legacy/foreign snapshot and never pruned.
+     */
+    private static String snapshotName() {
+        String shortId = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        return "agentscope-" + shortId + "-" + System.currentTimeMillis();
     }
 
     private E2bEnvdProcessClient envd() throws Exception {
