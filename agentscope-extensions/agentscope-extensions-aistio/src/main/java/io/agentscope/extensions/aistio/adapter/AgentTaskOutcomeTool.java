@@ -29,7 +29,7 @@ import java.util.List;
 /** Captures intent. Only the adapter is allowed to commit the physical AgentTask lifecycle. */
 public final class AgentTaskOutcomeTool {
     @Tool(
-            name = "task.submit_result",
+            name = "task_submit_result",
             description =
                     "Submit the actual outcome of this AgentTask, then end your turn. succeeded"
                         + " requires the full deliverable in result, not a plan or promise. waiting"
