@@ -21,6 +21,7 @@
 package io.agentscope.extensions.aistio.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,12 +61,21 @@ class AgentTaskCollaborationToolTest {
                 HarnessAgentTaskStarter.roleInstructions(worker, List.of())
                         .contains("Team worker, not its coordinator"));
         assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(worker, List.of())
+                        .contains("task_submit_result"));
+        assertTrue(
                 HarnessAgentTaskStarter.roleInstructions(leader, List.of())
-                        .contains("return immediately after issue.child.create succeeds"));
+                        .contains("return immediately after issue_child_create succeeds"));
+        assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(leader, List.of())
+                        .contains("task_submit_result with waiting"));
         String followUp = HarnessAgentTaskStarter.roleInstructions(leader, List.of("input-1"));
         assertTrue(followUp.contains("leader follow-up"));
         assertTrue(followUp.contains("Never send those mutations in parallel"));
-        assertTrue(followUp.contains("run.node.complete also completes this leader AgentTask"));
+        assertTrue(followUp.contains("run_node_complete also completes this leader AgentTask"));
+        assertTrue(followUp.contains("issue_accept"));
+        assertFalse(followUp.contains("run.node.complete"));
+        assertFalse(followUp.contains("issue.accept"));
     }
 
     @Test
@@ -140,7 +150,7 @@ class AgentTaskCollaborationToolTest {
                         respond(
                                 exchange,
                                 "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"tools\":[{\"name\":\"issue.comment.add\",\"description\":\"Add"
-                                    + " a comment\","
+                                    + " a comment","
                                     + "\"inputSchema\":{\"type\":\"object\",\"properties\":{"
                                     + "\"content\":{\"type\":\"string\"}},\"required\":[\"content\"]}}]}}");
                         return;
@@ -174,7 +184,7 @@ class AgentTaskCollaborationToolTest {
                                             .toolUseBlock(
                                                     new ToolUseBlock(
                                                             "call-1",
-                                                            "issue.comment.add",
+                                                            "issue_comment_add",
                                                             Map.of("content", "working")))
                                             .input(Map.of("content", "working"))
                                             .runtimeContext(context)
@@ -182,9 +192,13 @@ class AgentTaskCollaborationToolTest {
                             .block();
 
             assertNotNull(result);
-            assertEquals("issue.comment.add", tool.getName());
+            // Model-facing name is OpenAI-safe; wire name stays dotted for MCP dispatch.
+            assertEquals("issue_comment_add", tool.getName());
+            assertEquals("issue.comment.add", tool.getWireName());
+            assertFalse(tool.isReadOnly());
             assertEquals("task-token", taskToken.get());
             assertEquals("tools/call", call.get().path("method").asText());
+            assertEquals("issue.comment.add", call.get().path("params").path("name").asText());
             assertEquals(
                     "task-1", call.get().path("params").path("arguments").path("taskId").asText());
             assertEquals(
@@ -194,6 +208,85 @@ class AgentTaskCollaborationToolTest {
                     "call-1",
                     call.get().path("params").path("arguments").path("_toolCallId").asText());
             assertTrue(((TextBlock) result.getOutput().get(0)).getText().contains("comment-1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void modelNameUsesUnderscoresWhileWireNameKeepsDots() throws Exception {
+        JsonNode definition =
+                ControlPlaneHttpClient.mapper()
+                        .readTree(
+                                "{\"name\":\"task.get\",\"description\":\"Get task\","
+                                    + "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}");
+        AgentTaskCollaborationTool tool = new AgentTaskCollaborationTool(null, definition);
+
+        assertEquals("task_get", tool.getName());
+        assertEquals("task.get", tool.getWireName());
+        assertEquals("task_get", AgentTaskCollaborationTool.toModelName("task.get"));
+        assertEquals(
+                "task_submit_result",
+                AgentTaskCollaborationTool.toModelName(
+                        AgentTaskCollaborationTool.WIRE_TASK_SUBMIT_RESULT));
+        assertTrue(tool.isReadOnly());
+    }
+
+    @Test
+    void terminalWireNamesStillTriggerMarkTerminalCommitted() throws Exception {
+        AtomicReference<JsonNode> call = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/mcp/collaboration",
+                exchange -> {
+                    JsonNode request = readJson(exchange);
+                    if ("tools/list".equals(request.path("method").asText())) {
+                        respond(
+                                exchange,
+                                "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"tools\":[{"
+                                    + "\"name\":\"run.node.complete\",\"description\":\"Complete"
+                                    + " node\",\"inputSchema\":{\"type\":\"object\"}}]}}");
+                        return;
+                    }
+                    call.set(request);
+                    respond(
+                            exchange,
+                            "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{"
+                                    + "\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}");
+                });
+        server.start();
+        try {
+            String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
+            CollaborationClient client =
+                    new CollaborationClient(new ControlPlaneHttpClient(endpoint, "internal-token"));
+            JsonNode definitions = client.tools("task-1", "task-token");
+            AgentTaskCollaborationTool tool =
+                    new AgentTaskCollaborationTool(client, definitions.get(0));
+            AgentTaskOutcome.State outcomeState = new AgentTaskOutcome.State();
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .sessionId("session-1")
+                            .put(
+                                    AgentTaskToolContext.class,
+                                    new AgentTaskToolContext("task-1", "task-token"))
+                            .put(AgentTaskOutcome.State.class, outcomeState)
+                            .build();
+
+            assertEquals("run_node_complete", tool.getName());
+            assertEquals("run.node.complete", tool.getWireName());
+
+            tool.callAsync(
+                            ToolCallParam.builder()
+                                    .toolUseBlock(
+                                            new ToolUseBlock(
+                                                    "call-1", "run_node_complete", Map.of()))
+                                    .input(Map.of())
+                                    .runtimeContext(context)
+                                    .build())
+                    .block();
+
+            assertEquals("run.node.complete", call.get().path("params").path("name").asText());
+            assertTrue(outcomeState.isTerminalCommitted());
         } finally {
             server.stop(0);
         }
