@@ -461,13 +461,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public void close() {
         try {
-            // Drain fire-and-forget session/transcript mirrors so async workspace writes do not
-            // race with resource cleanup (e.g., temp workspace deletion in tests).
-            io.agentscope.harness.agent.memory.session.SessionTree.awaitMirrorQuiescence(
-                    5, java.util.concurrent.TimeUnit.SECONDS);
             // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
+                    5, java.util.concurrent.TimeUnit.SECONDS);
+            // Drain session/transcript mirrors after background tasks have finished submitting
+            // them, so async workspace writes do not race with resource cleanup.
+            io.agentscope.harness.agent.memory.session.SessionTree.awaitMirrorQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
             shutdownTaskRepository();
         } finally {
