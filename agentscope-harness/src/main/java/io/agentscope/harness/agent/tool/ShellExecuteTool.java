@@ -31,6 +31,11 @@ public class ShellExecuteTool {
      */
     public static final String NAME = "execute";
 
+    /** Requirement shared by the tool schema, runtime error, and skill execution prompt. */
+    public static final String WORKING_DIRECTORY_REQUIREMENT =
+            "The working_directory parameter accepts only paths relative to the workspace root;"
+                    + " absolute paths, '~', and '..' are not allowed";
+
     private final AbstractSandboxFilesystem sandbox;
 
     public ShellExecuteTool(AbstractSandboxFilesystem sandbox) {
@@ -53,7 +58,10 @@ public class ShellExecuteTool {
             @ToolParam(
                             name = "working_directory",
                             description =
-                                    "Working directory (relative to workspace root, optional)",
+                                    "Optional. "
+                                            + WORKING_DIRECTORY_REQUIREMENT
+                                            + ". Omit it when invoking an absolute path, such as a"
+                                            + " skill script.",
                             required = false)
                     String workingDirectory,
             @ToolParam(
@@ -64,9 +72,11 @@ public class ShellExecuteTool {
         String effectiveCommand = command;
         if (workingDirectory != null && !workingDirectory.isBlank()) {
             String wd = workingDirectory.strip();
-            if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
-                return "Error: working_directory must be a relative path within the workspace"
-                        + " (absolute paths, '~', and '..' are not allowed).";
+            if (isInvalidWorkingDirectory(wd)) {
+                return "Error: "
+                        + WORKING_DIRECTORY_REQUIREMENT
+                        + ". Put absolute paths in"
+                        + " the command instead, or omit working_directory.";
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
@@ -87,6 +97,18 @@ public class ShellExecuteTool {
             sb.append("\n(output was truncated)");
         }
         return sb.toString();
+    }
+
+    static boolean isInvalidWorkingDirectory(String workingDirectory) {
+        if (workingDirectory.startsWith("/")
+                || workingDirectory.startsWith("\\")
+                || workingDirectory.startsWith("~")
+                || workingDirectory.contains("..")) {
+            return true;
+        }
+        return workingDirectory.length() >= 2
+                && Character.isLetter(workingDirectory.charAt(0))
+                && workingDirectory.charAt(1) == ':';
     }
 
     static String commandWithWorkingDirectory(

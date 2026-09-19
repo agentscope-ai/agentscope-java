@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.skill.runtime;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import java.util.Collection;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -86,10 +87,13 @@ public final class SkillPromptBuilder {
             1. After loading a skill, look at its <files-root> in <available_skills>
             2. List its files:    ls <files-root>/
             3. Run scripts:       python3 <files-root>/scripts/<script-name>
-            4. Always use absolute paths derived from <files-root>; never invent paths
-            5. If a script exists for the task, run it directly — do not rewrite its logic inline
+            4. In the command, always use absolute paths derived from <files-root>; never invent paths
+            5. %s; never pass <files-root> to it
+            6. Omit working_directory unless the command needs a workspace-relative directory
+            7. If a script exists for the task, run it directly — do not rewrite its logic inline
             </code_execution>
-            """;
+            """
+                    .formatted(ShellExecuteTool.WORKING_DIRECTORY_REQUIREMENT);
 
     private final String header;
     private final String codeExecutionInstruction;
