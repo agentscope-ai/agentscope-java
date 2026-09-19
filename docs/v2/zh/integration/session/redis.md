@@ -23,7 +23,7 @@ title: Redis 状态存储
 </dependency>
 ```
 
-模块本身不强制依赖某一客户端，按你项目里实际用的引入即可（Jedis / Lettuce / Redisson）。
+按项目需要选择 Jedis、Lettuce 或 Redisson。Redisson 4.x 兼容性说明见 [分布式存储 — Redis](/v2/zh/integration/distributed/redis)。
 
 ## 快速上手（Lettuce 单机）
 
