@@ -41,6 +41,76 @@ jobs:
           chmod +x .github/scripts/check-shade-and-bom-sync.sh
           ./.github/scripts/check-shade-and-bom-sync.sh
 
+  redis-integration:
+    name: "AG-UI Redis Integration"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      redis:
+        image: redis:7.4.11
+        ports:
+          - 16389:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+      - name: Check Redis connection from runner
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import socket
+          with socket.create_connection(("127.0.0.1", 16389), timeout=5) as connection:
+              connection.sendall(b"*1\r\n$4\r\nPING\r\n")
+              with connection.makefile("rb") as response:
+                  if response.readline(64) != b"+PONG\r\n":
+                      raise SystemExit("Redis did not return PONG")
+          PY
+      - name: Run real Redis lifecycle tests
+        run: >-
+          mvn -B -T1
+          -pl agentscope-extensions/agentscope-extensions-redis -am
+          -Dtest=RedisAguiResumeLifecycleTest
+          -Dagui.redis.integration=true -Dagui.redis.port=16389
+          clean verify
+      - name: Verify Redis tests executed without skips
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          name = "io.agentscope.extensions.redis.agui.RedisAguiResumeLifecycleTest"
+          report = Path("agentscope-extensions/agentscope-extensions-redis/target/surefire-reports") / f"TEST-{name}.xml"
+          if not report.is_file():
+              raise SystemExit(f"Missing Redis test report: {report}")
+          suite = ET.parse(report).getroot()
+          counts = {key: int(suite.attrib[key]) for key in ("tests", "failures", "errors", "skipped")}
+          cases = suite.findall("testcase")
+          if (suite.get("name") != name or counts["tests"] <= 0
+                  or any(counts[key] != 0 for key in ("failures", "errors", "skipped"))
+                  or len(cases) != counts["tests"]
+                  or any(case.get("classname") != name for case in cases)
+                  or any(case.find(tag) is not None for case in cases for tag in ("failure", "error", "skipped"))):
+              raise SystemExit(f"Redis lifecycle tests did not all execute successfully: {counts}")
+          print(f"{name}: {counts}, executed={len(cases)}")
+          PY
+      - name: Upload Redis integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agui-redis-integration-reports
+          path: agentscope-extensions/agentscope-extensions-redis/target/surefire-reports/
+          if-no-files-found: warn
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
