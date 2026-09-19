@@ -422,7 +422,7 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）作为无分组、始终可见的工具注册。
 - 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
 运行时阶段，agent 用两个必填参数调用查看器：
