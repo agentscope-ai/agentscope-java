@@ -328,6 +328,29 @@ public class WriteFileTool {
                                 logger.debug(
                                         "Replacing lines {}-{} in file: {}", start, end, filePath);
 
+                                if (start < 1) {
+                                    logger.warn(
+                                            "Invalid start line {} for file: {}", start, filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is invalid. Line"
+                                                            + " numbers start from 1.",
+                                                    start));
+                                }
+
+                                if (start > end) {
+                                    logger.warn(
+                                            "Invalid range: start {} > end {} for file: {}",
+                                            start,
+                                            end,
+                                            filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is greater than"
+                                                            + " end line %d.",
+                                                    start, end));
+                                }
+
                                 if (start > originalLines.size()) {
                                     logger.warn(
                                             "Start line {} exceeds file length {} for file: {}",
