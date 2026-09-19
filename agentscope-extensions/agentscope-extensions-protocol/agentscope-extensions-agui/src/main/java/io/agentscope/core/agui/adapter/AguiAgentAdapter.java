@@ -40,6 +40,9 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.subagent.SubAgentTool;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -546,6 +549,18 @@ public class AguiAgentAdapter {
                             events.add(
                                     new AguiEvent.ToolCallArgs(
                                             state.threadId, state.runId, toolCallId, args));
+                        }
+                    }
+                }
+            }
+        } else if (type == EventType.TOOL_RESULT && !event.isLast()) {
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock toolResult) {
+                    Map<String, Object> metadata = toolResult.getMetadata();
+                    if (metadata != null) {
+                        Object inner = metadata.get(SubAgentTool.METADATA_KEY_SUBAGENT_EVENT);
+                        if (inner instanceof Event innerEvent) {
+                            events.addAll(convertEvent(innerEvent, state));
                         }
                     }
                 }

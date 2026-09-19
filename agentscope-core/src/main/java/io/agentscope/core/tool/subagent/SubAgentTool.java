@@ -69,6 +69,22 @@ public class SubAgentTool implements AgentTool {
     /** Parameter name for message. */
     private static final String PARAM_MESSAGE = "message";
 
+    /**
+     * Metadata key under which the forwarded sub-agent {@link Event} is stored on the
+     * {@link ToolResultBlock} emitted by {@link #forwardEvent}. Consumers (e.g. the AG-UI
+     * adapter) read this key to surface sub-agent intermediate events on the supervisor stream.
+     */
+    public static final String METADATA_KEY_SUBAGENT_EVENT = "subagent_event";
+
+    /** Metadata key for the sub-agent name on a forwarded event. */
+    public static final String METADATA_KEY_SUBAGENT_NAME = "subagent_name";
+
+    /** Metadata key for the sub-agent id on a forwarded event. */
+    public static final String METADATA_KEY_SUBAGENT_ID = "subagent_id";
+
+    /** Metadata key for the sub-agent session id on a forwarded event. */
+    public static final String METADATA_KEY_SUBAGENT_SESSION_ID = "subagent_session_id";
+
     private final String name;
     private final String description;
     private final SubAgentProvider<?> agentProvider;
@@ -400,10 +416,12 @@ public class SubAgentTool implements AgentTool {
         try {
             String json = JsonUtils.getJsonCodec().toJson(event);
             Map<String, Object> metadata = new HashMap<>();
-            metadata.put("subagent_event", event == null ? "" : event);
-            metadata.put("subagent_name", agent.getName() == null ? "" : agent.getName());
-            metadata.put("subagent_id", agent.getAgentId() == null ? "" : agent.getAgentId());
-            metadata.put("subagent_session_id", sessionId == null ? "" : sessionId);
+            metadata.put(METADATA_KEY_SUBAGENT_EVENT, event == null ? "" : event);
+            metadata.put(
+                    METADATA_KEY_SUBAGENT_NAME, agent.getName() == null ? "" : agent.getName());
+            metadata.put(
+                    METADATA_KEY_SUBAGENT_ID, agent.getAgentId() == null ? "" : agent.getAgentId());
+            metadata.put(METADATA_KEY_SUBAGENT_SESSION_ID, sessionId == null ? "" : sessionId);
             emitter.emit(
                     new ToolResultBlock(
                             null, null, List.of(TextBlock.builder().text(json).build()), metadata));
