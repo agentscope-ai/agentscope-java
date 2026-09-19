@@ -1,1 +1,0 @@
-{{file:/workspace/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/main/java/io/agentscope/extensions/aistio/adapter/HarnessAgentTaskStarter.java}}
