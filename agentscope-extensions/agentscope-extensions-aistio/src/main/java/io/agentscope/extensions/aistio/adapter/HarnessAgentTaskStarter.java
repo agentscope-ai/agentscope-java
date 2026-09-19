@@ -1,1 +1,1 @@
-@file:///workspace/pr-3153/files/agentscope-extensions/agentscope-extensions-aistio/src/main/java/io/agentscope/extensions/aistio/adapter/HarnessAgentTaskStarter.java
+{{file:/workspace/agentscope-java/agentscope-extensions/agentscope-extensions-aistio/src/main/java/io/agentscope/extensions/aistio/adapter/HarnessAgentTaskStarter.java}}
