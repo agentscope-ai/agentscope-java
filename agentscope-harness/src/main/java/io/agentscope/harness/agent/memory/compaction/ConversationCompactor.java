@@ -43,6 +43,8 @@ import reactor.core.publisher.Mono;
 /**
  * <h2>Algorithm</h2>
  * <ol>
+ *   <li><b>Lightweight reduction</b> — truncate configured tool arguments and prune tool
+ *       results; retain these changes even when summarization is skipped</li>
  *   <li><b>Check trigger</b> — token count or message count exceeds threshold</li>
  *   <li><b>Determine cutoff</b> — find the earliest index that keeps the tail within the
  *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
@@ -86,8 +88,9 @@ public class ConversationCompactor {
      * @param config               compaction configuration
      * @param agentId              agent identifier used for the memory offload path
      * @param sessionId            session identifier used for the memory offload path
-     * @return {@code Optional.empty()} when no compaction was needed; otherwise the replacement
-     *         message list consisting of {@code [summaryUserMsg] + preservedTail}
+     * @return {@code Optional.empty()} when the conversation is unchanged; otherwise the
+     *         replacement message list, containing lightweight reductions only when summarization
+     *         is skipped, or {@code [summaryUserMsg] + preservedTail} when it runs
      */
     public Mono<Optional<List<Msg>>> compactIfNeeded(
             RuntimeContext rc,
@@ -106,16 +109,19 @@ public class ConversationCompactor {
                 pruneToolResults(
                         truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
                         config.getPruneConfig());
+        // Both lightweight passes return the original list when they make no changes.
+        Optional<List<Msg>> lightweightResult =
+                messages == conversationMessages ? Optional.empty() : Optional.of(messages);
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(Optional.empty());
+            return Mono.just(lightweightResult);
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
-            log.debug("Compaction triggered but safe cutoff is 0 — skipping");
-            return Mono.just(Optional.empty());
+            log.debug("Compaction triggered but safe cutoff is 0 — skipping summarization");
+            return Mono.just(lightweightResult);
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
