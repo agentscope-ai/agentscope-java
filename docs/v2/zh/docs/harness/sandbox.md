@@ -183,9 +183,32 @@ SandboxContext callCtx = SandboxContext.builder()
 | **Kubernetes** | 自建 K8s 集群；完全基于 [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)（SandboxClaim / WarmPool），工作区持久化靠 PVC（见下文） |
 | **Daytona** | 通用托管沙箱 HTTP API |
 | **E2B** | 通用托管沙箱 + 平台原生快照 |
+| **OpenSandbox** | 自建或托管的 OpenSandbox 服务；支持生命周期、命令执行、原生文件传输和 Harness 快照 |
 | **AgentRun** | 阿里云托管沙箱（函数计算 FC 3.0），实例级 NAS / OSS 动态挂载，中国大陆区域低延迟。在 Harness 里和 Docker / K8s / Daytona / E2B 等后端等价对待，模板配置 / RAM 权限 / NAS-first 等接入细节归在 integration 文档下 |
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
+
+### OpenSandbox
+
+引入独立扩展模块：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-sandbox-opensandbox</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```java
+new OpenSandboxFilesystemSpec()
+        .endpoint("http://localhost:8080")
+        .apiKey(System.getenv("OPEN_SANDBOX_API_KEY"))
+        .image("ubuntu:22.04")
+        .workspaceRoot("/workspace");
+```
+
+API Key 应从环境变量或外部配置注入，不会写入可序列化的沙箱状态。OpenSandbox 适配器只接管沙箱生命周期、Shell 和文件传输；MCP 进程与连接仍运行在宿主侧。
 
 ## 运行时镜像约束
 
