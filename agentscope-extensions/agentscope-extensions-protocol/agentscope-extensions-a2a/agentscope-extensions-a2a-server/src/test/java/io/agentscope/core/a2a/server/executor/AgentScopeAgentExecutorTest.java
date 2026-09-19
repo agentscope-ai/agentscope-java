@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,8 @@ import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -155,6 +158,42 @@ class AgentScopeAgentExecutorTest {
                     List.of("streaming result 1 2"),
                     mockContext.getTaskId(),
                     mockContext.getContextId());
+        }
+
+        @Test
+        @DisplayName("Should execute blocking request through the fine-grained event stream")
+        void testExecuteBlockingAgentWithFineGrainedEvents() throws JSONRPCError {
+            doMockForContext(false, false, true);
+            Msg resultMessage = Msg.builder().textContent("fine-grained blocking result").build();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new TextBlockDeltaEvent(
+                                            UUID.randomUUID().toString(),
+                                            "text",
+                                            "fine-grained blocking result"),
+                                    new AgentResultEvent(resultMessage)));
+
+            AtomicReference<Message> messageRef = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        Object arg = invocationOnMock.getArgument(0);
+                                        messageRef.set((Message) arg);
+                                        return null;
+                                    })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any(Message.class));
+            executor.execute(mockContext, mockEventQueue);
+
+            assertNotNull(messageRef.get());
+            assertBlockResultMessage(
+                    messageRef.get(),
+                    List.of("fine-grained blocking result"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId());
+            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
         }
 
         @Test
@@ -351,6 +390,57 @@ class AgentScopeAgentExecutorTest {
                     mockContext.getContextId(),
                     false,
                     false);
+        }
+
+        @Test
+        @DisplayName("Should execute agent through the fine-grained event stream")
+        void testExecuteAgentWithFineGrainedEvents() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            String replyId = UUID.randomUUID().toString();
+            Msg resultMessage = Msg.builder().textContent("fine-grained result").build();
+            Flux<AgentEvent> agentEvents =
+                    Flux.just(
+                            new TextBlockDeltaEvent(replyId, "text", "fine-grained result"),
+                            new AgentResultEvent(resultMessage));
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(agentEvents);
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            assertStreamingEventKind(
+                    messageRef.get(),
+                    List.of("fine-grained result"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId(),
+                    false,
+                    false);
+            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName(
+                "Should fall back to the legacy stream when fine-grained events are unsupported")
+        void testExecuteAgentFallsBackToLegacyStream() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.error(new UnsupportedOperationException("not supported")));
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockLegacyFlux());
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            assertStreamingEventKind(
+                    messageRef.get(),
+                    List.of("streaming result 1", " 2"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId(),
+                    false,
+                    false);
+            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
+            verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
         }
 
         @Test
@@ -711,5 +801,15 @@ class AgentScopeAgentExecutorTest {
                             Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
+    }
+
+    private Flux<Event> mockLegacyFlux() {
+        String resultMsgId = UUID.randomUUID().toString();
+        Msg firstChunk = Msg.builder().id(resultMsgId).textContent("streaming result 1").build();
+        Msg secondChunk = Msg.builder().id(resultMsgId).textContent(" 2").build();
+        return Flux.just(
+                        new Event(EventType.REASONING, firstChunk, false),
+                        new Event(EventType.REASONING, secondChunk, false))
+                .delayElements(Duration.ofMillis(10));
     }
 }
