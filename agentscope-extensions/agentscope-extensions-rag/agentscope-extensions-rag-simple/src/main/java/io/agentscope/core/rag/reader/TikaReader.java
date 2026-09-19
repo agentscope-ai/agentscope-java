@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.Metadata;
@@ -61,12 +62,21 @@ public class TikaReader extends AbstractChunkingReader {
     private static final Logger log = LoggerFactory.getLogger(TikaReader.class);
 
     /**
-     * Handler to manage content extraction.
+     * Supplies the content handler for a single {@link #read(ReaderInput)} call.
+     *
+     * <p>Content handlers are stateful: {@link BodyContentHandler} keeps everything written to it,
+     * so a handler instance must not be shared between reads. Reusing one makes every later
+     * document start with the text of the earlier ones. The factory is consulted once per read.
      */
-    private final ContentHandler handler;
+    private final Supplier<ContentHandler> handlerFactory;
 
     /**
      * Creates a new TikaReader with the specified configuration.
+     *
+     * <p>The supplied handler is reused as-is by every read. Because content handlers accumulate
+     * the characters written to them, a single instance shared across reads carries text over from
+     * one document to the next; use {@link #perReadHandler(int, SplitStrategy, int, Supplier)} when
+     * a fresh handler per read is required.
      *
      * @param chunkSize     the target size for each chunk (interpreted based on strategy)
      * @param splitStrategy the strategy for splitting text
@@ -77,19 +87,61 @@ public class TikaReader extends AbstractChunkingReader {
     public TikaReader(
             int chunkSize, SplitStrategy splitStrategy, int overlapSize, ContentHandler handler) {
         super(chunkSize, splitStrategy, overlapSize);
-        if (handler == null) {
+        this.handlerFactory = singletonHandler(handler);
+    }
+
+    /**
+     * Creates a new TikaReader that asks {@code handlerFactory} for a handler on every read.
+     *
+     * <p>Unlike {@link #TikaReader(int, SplitStrategy, int, ContentHandler)}, this factory-based
+     * variant gives every read its own content handler, so consecutive and concurrent reads never
+     * share accumulated handler state.
+     *
+     * @param chunkSize      the target size for each chunk (interpreted based on strategy)
+     * @param splitStrategy  the strategy for splitting text
+     * @param overlapSize    the number of characters/tokens to overlap between chunks
+     * @param handlerFactory supplies the content handler for each read; must not return null
+     * @return a new TikaReader
+     * @throws IllegalArgumentException if parameters are invalid or the factory is null
+     * @throws IllegalStateException if the factory returns null during a read
+     */
+    public static TikaReader perReadHandler(
+            int chunkSize,
+            SplitStrategy splitStrategy,
+            int overlapSize,
+            Supplier<ContentHandler> handlerFactory) {
+        return new TikaReader(chunkSize, splitStrategy, overlapSize, handlerFactory);
+    }
+
+    /** Shared by the default constructor and {@link #perReadHandler}. */
+    private TikaReader(
+            int chunkSize,
+            SplitStrategy splitStrategy,
+            int overlapSize,
+            Supplier<ContentHandler> handlerFactory) {
+        super(chunkSize, splitStrategy, overlapSize);
+        if (handlerFactory == null) {
             throw new IllegalArgumentException("content handler cannot be null");
         }
-        this.handler = handler;
+        this.handlerFactory = handlerFactory;
     }
 
     /**
      * Creates a new TikaReader with default settings.
      *
-     * <p>Defaults: chunkSize=512, strategy=PARAGRAPH, overlapSize=50, handler=BodyContentHandler(-1)
+     * <p>Defaults: chunkSize=512, strategy=PARAGRAPH, overlapSize=50, handler=BodyContentHandler(-1).
+     * The default handler is created per read, so consecutive reads stay independent.
      */
     public TikaReader() {
-        this(512, SplitStrategy.PARAGRAPH, 50, new BodyContentHandler(-1));
+        this(512, SplitStrategy.PARAGRAPH, 50, () -> new BodyContentHandler(-1));
+    }
+
+    /** Wraps a single handler instance so it is returned for every read. */
+    private static Supplier<ContentHandler> singletonHandler(ContentHandler handler) {
+        if (handler == null) {
+            throw new IllegalArgumentException("content handler cannot be null");
+        }
+        return () -> handler;
     }
 
     @Override
@@ -100,9 +152,16 @@ public class TikaReader extends AbstractChunkingReader {
 
         return Mono.fromCallable(
                         () -> {
+                            String path = input.asString();
+                            // A handler accumulates everything written to it, so each read gets
+                            // its own instance.
+                            ContentHandler handler = handlerFactory.get();
+                            if (handler == null) {
+                                throw new IllegalStateException(
+                                        "content handler factory returned null");
+                            }
                             try {
-                                String path = input.asString();
-                                String text = extractTextFromTika(path);
+                                String text = extractTextFromTika(path, handler);
                                 List<String> chunks =
                                         TextChunker.chunkText(
                                                 text, chunkSize, splitStrategy, overlapSize);
@@ -139,14 +198,14 @@ public class TikaReader extends AbstractChunkingReader {
         return List.copyOf(formats);
     }
 
-    private String extractTextFromTika(String path)
+    private String extractTextFromTika(String path, ContentHandler handler)
             throws IOException, SAXException, TikaException {
         try (InputStream is = Files.newInputStream(Path.of(path))) {
             AutoDetectParser parser = new AutoDetectParser();
             Metadata metadata = new Metadata();
             ParseContext context = new ParseContext();
-            parser.parse(is, this.handler, metadata, context);
-            return this.handler.toString();
+            parser.parse(is, handler, metadata, context);
+            return handler.toString();
         }
     }
 
