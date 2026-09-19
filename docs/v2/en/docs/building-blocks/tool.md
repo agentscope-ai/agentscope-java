@@ -612,7 +612,9 @@ agent.updateToolGroups(RuntimeContext.builder()
     .build(), List.of("database"), true);
 ```
 
-The change is persisted immediately when the agent has an `AgentStateStore`, so the next `call()` on that session (on any node) sees it. Other sessions are not affected. Group names are validated against the toolkit; an unknown name throws `IllegalArgumentException`. Call it between requests — an in-flight call keeps the tool surface it started with.
+The change is persisted immediately when the agent has an `AgentStateStore`, so the next `call()` on that session (on any node) sees it. Other sessions are not affected. Group names are validated against the toolkit; an unknown name throws `IllegalArgumentException`. A request that leaves the session's list unchanged is a no-op. Deactivation honours `ToolkitConfig.allowToolDeletion(false)` in the same way as `Toolkit.updateToolGroups`: it is ignored with a warning.
+
+Call it between requests. A call in flight on the same session would write its own activation list back when it completes and silently revert the update, so while such a call is running on this agent instance both methods throw `IllegalStateException` and leave the session untouched — retry after the call has completed.
 
 <Warning>
 

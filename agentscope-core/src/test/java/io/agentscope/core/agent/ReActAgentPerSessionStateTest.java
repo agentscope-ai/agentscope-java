@@ -42,12 +42,15 @@ import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.State;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
@@ -63,6 +66,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -417,11 +421,15 @@ class ReActAgentPerSessionStateTest {
 
     /**
      * Records the tool names offered to the model on every reasoning round. Replies with the
-     * scripted responses first (in order), then with a plain "ok" text.
+     * scripted responses first (in order), then with a plain "ok" text. Optionally holds one
+     * reasoning round open (see {@link #gateRound(int)}) so a call can be kept in flight.
      */
     private static final class ToolCapturingModel extends ChatModelBase {
         private final List<List<String>> toolNamesPerCall = new CopyOnWriteArrayList<>();
         private final Deque<ChatResponse> scripted = new ConcurrentLinkedDeque<>();
+        private volatile int gatedRound = -1;
+        private final CountDownLatch gateEntered = new CountDownLatch(1);
+        private final CountDownLatch gateRelease = new CountDownLatch(1);
 
         @Override
         public String getModelName() {
@@ -432,14 +440,29 @@ class ReActAgentPerSessionStateTest {
         protected Flux<ChatResponse> doStream(
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             toolNamesPerCall.add(tools.stream().map(ToolSchema::getName).toList());
+            int round = toolNamesPerCall.size() - 1;
             ChatResponse next = scripted.poll();
-            if (next != null) {
-                return Flux.just(next);
+            ChatResponse reply =
+                    next != null
+                            ? next
+                            : ChatResponse.builder()
+                                    .content(
+                                            List.<ContentBlock>of(
+                                                    TextBlock.builder().text("ok").build()))
+                                    .build();
+            if (round != gatedRound) {
+                return Flux.just(reply);
             }
-            return Flux.just(
-                    ChatResponse.builder()
-                            .content(List.<ContentBlock>of(TextBlock.builder().text("ok").build()))
-                            .build());
+            gateEntered.countDown();
+            return Mono.fromCallable(
+                            () -> {
+                                if (!gateRelease.await(10, TimeUnit.SECONDS)) {
+                                    throw new IllegalStateException("gated round never released");
+                                }
+                                return reply;
+                            })
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flux();
         }
 
         private ToolCapturingModel thenCallTool(String name, Map<String, Object> input) {
@@ -455,6 +478,20 @@ class ReActAgentPerSessionStateTest {
                                                     .build()))
                             .build());
             return this;
+        }
+
+        /** Holds the reasoning round with the given global index open until {@link #release()}. */
+        private ToolCapturingModel gateRound(int round) {
+            this.gatedRound = round;
+            return this;
+        }
+
+        private void awaitGate() throws InterruptedException {
+            assertTrue(gateEntered.await(5, TimeUnit.SECONDS), "gated round should be reached");
+        }
+
+        private void release() {
+            gateRelease.countDown();
         }
 
         private List<String> lastToolNames() {
@@ -680,6 +717,262 @@ class ReActAgentPerSessionStateTest {
         Field field = ReActAgent.class.getDeclaredField("warnedToolkitGroupsChangedOutsideCall");
         field.setAccessible(true);
         return ((AtomicBoolean) field.get(agent)).get();
+    }
+
+    private static CompletableFuture<Msg> callSessionAsync(
+            ReActAgent agent, String userId, String sessionId) {
+        return agent.call(
+                        List.of(userMsg("hello")),
+                        RuntimeContext.builder().userId(userId).sessionId(sessionId).build())
+                .subscribeOn(Schedulers.parallel())
+                .toFuture();
+    }
+
+    @Test
+    @DisplayName("tool group updates are rejected while a call on the same session is in flight")
+    void toolGroupUpdateRejectedWhileSameSessionCallInFlight() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ToolCapturingModel model = new ToolCapturingModel().gateRound(0);
+        ReActAgent agent = groupedAgent(model, store);
+
+        CompletableFuture<Msg> inFlight = callSessionAsync(agent, "u1", "sessA");
+        model.awaitGate();
+
+        // The in-flight call will write its own activation list back when it completes, which
+        // would silently revert an update made now — so the update is refused instead.
+        assertThrows(
+                IllegalStateException.class,
+                () -> agent.updateToolGroups("u1", "sessA", List.of("admin"), true));
+        assertThrows(
+                IllegalStateException.class,
+                () -> agent.setActiveToolGroups("u1", "sessA", List.of("admin")));
+        // Other sessions are unaffected by sessA's in-flight call.
+        agent.updateToolGroups("u1", "sessB", List.of("admin"), true);
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessB"));
+
+        model.release();
+        inFlight.get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                List.of("basic"),
+                store.getVersioned("u1", "sessA", "agent_state", AgentState.class)
+                        .value()
+                        .getToolContext()
+                        .getActivatedGroups(),
+                "the rejected update must not have touched the persisted session");
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), true);
+        callSession(agent, "u1", "sessA");
+        assertTrue(model.lastToolNames().contains("delete_file"));
+    }
+
+    @Test
+    @DisplayName(
+            "a concurrent session with in-call activation is not flagged as an out-of-call"
+                    + " mutation")
+    void concurrentSessionsWithInCallActivationAreNotFlagged() throws Exception {
+        // sessA equips the admin group via the meta tool on round 0 and is then held open on
+        // round 1, so its in-call activation sits on the shared toolkit flags while sessB runs.
+        ToolCapturingModel model =
+                new ToolCapturingModel()
+                        .thenCallTool(
+                                "reset_equipped_tools",
+                                Map.of("to_activate", List.of("basic", "admin")))
+                        .gateRound(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .toolkit(groupedToolkit())
+                        .enableMetaTool(true)
+                        .build();
+
+        CompletableFuture<Msg> sessA = callSessionAsync(agent, "u1", "sessA");
+        model.awaitGate();
+        assertTrue(agent.getToolkit().getActiveGroups().contains("admin"));
+
+        callSession(agent, "u1", "sessB");
+        assertFalse(
+                warnedToolkitGroupsChangedOutsideCall(agent),
+                "sessB entering while sessA's in-call activation is on the toolkit flags must not"
+                        + " be reported as an out-of-call mutation");
+
+        model.release();
+        sessA.get(5, TimeUnit.SECONDS);
+        callSession(agent, "u1", "sessA");
+        assertFalse(warnedToolkitGroupsChangedOutsideCall(agent));
+        assertTrue(model.lastToolNames().contains("delete_file"));
+
+        // The one-shot diagnostic is still armed for a genuine out-of-call mutation.
+        agent.getToolkit().updateToolGroups(List.of("admin"), false);
+        callSession(agent, "u1", "sessA");
+        assertTrue(warnedToolkitGroupsChangedOutsideCall(agent));
+    }
+
+    @Test
+    @DisplayName("a same-session call cancelled at the gate does not unbalance in-flight tracking")
+    void cancelledQueuedCallDoesNotUnbalanceInFlightTracking() throws Exception {
+        ToolCapturingModel model =
+                new ToolCapturingModel()
+                        .thenCallTool(
+                                "reset_equipped_tools",
+                                Map.of("to_activate", List.of("basic", "admin")))
+                        .gateRound(1);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .toolkit(groupedToolkit())
+                        .enableMetaTool(true)
+                        .build();
+        RuntimeContext sessA = RuntimeContext.builder().userId("u1").sessionId("sessA").build();
+
+        CompletableFuture<Msg> inFlight = callSessionAsync(agent, "u1", "sessA");
+        model.awaitGate();
+
+        // Queue a second sessA call behind the in-flight one, then cancel it while it is still
+        // waiting on the gate: it never ran beforeAgentExecution, so it must not be counted as a
+        // completed call either.
+        agent.call(List.of(userMsg("queued")), sessA).subscribe().dispose();
+
+        // sessA is still in flight (with its in-call activation on the toolkit flags), so the
+        // update must still be refused and another session entering must not be flagged.
+        assertThrows(
+                IllegalStateException.class,
+                () -> agent.updateToolGroups("u1", "sessA", List.of("admin"), false));
+        callSession(agent, "u1", "sessB");
+        assertFalse(
+                warnedToolkitGroupsChangedOutsideCall(agent),
+                "a cancelled queued call must not make the agent believe it is idle");
+
+        model.release();
+        inFlight.get(5, TimeUnit.SECONDS);
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), false);
+        assertEquals(List.of("basic"), agent.getActiveToolGroups("u1", "sessA"));
+    }
+
+    /** In-memory store that counts {@code agent_state} writes. */
+    private static final class WriteCountingStore extends InMemoryAgentStateStore {
+        private final AtomicInteger agentStateWrites = new AtomicInteger();
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            if ("agent_state".equals(key)) {
+                agentStateWrites.incrementAndGet();
+            }
+            return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        }
+    }
+
+    @Test
+    @DisplayName("tool group setters are idempotent and skip the store when nothing changes")
+    void toolGroupSettersAreIdempotent() {
+        WriteCountingStore store = new WriteCountingStore();
+        ReActAgent agent = groupedAgent(new ToolCapturingModel(), store);
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), true);
+        int writes = store.agentStateWrites.get();
+        assertEquals(1, writes);
+
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), true);
+        agent.updateToolGroups("u1", "sessA", List.of(), false);
+        agent.setActiveToolGroups("u1", "sessA", List.of("basic", "admin"));
+        assertEquals(writes, store.agentStateWrites.get(), "no-op updates must not persist");
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessA"));
+
+        agent.setActiveToolGroups("u1", "sessA", List.of());
+        assertEquals(writes + 1, store.agentStateWrites.get());
+        assertEquals(List.of(), agent.getActiveToolGroups("u1", "sessA"));
+    }
+
+    @Test
+    @DisplayName("per-session deactivation honours ToolkitConfig.allowToolDeletion(false)")
+    void toolGroupDeactivationHonoursAllowToolDeletion() {
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        toolkit.createToolGroup("basic", "Basic tools", true);
+        toolkit.createToolGroup("admin", "Admin tools", false);
+        toolkit.registration().tool(new BasicTools()).group("basic").apply();
+        toolkit.registration().tool(new AdminTools()).group("admin").apply();
+        ToolCapturingModel model = new ToolCapturingModel();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .build();
+
+        // Activation still works; deactivation is ignored like Toolkit#updateToolGroups.
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), true);
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), false);
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessA"));
+
+        // Replacement keeps the groups it would otherwise drop, but still activates new ones.
+        agent.setActiveToolGroups("u1", "sessB", List.of("admin"));
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessB"));
+        agent.setActiveToolGroups("u1", "sessB", List.of());
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessB"));
+
+        callSession(agent, "u1", "sessA");
+        assertTrue(model.lastToolNames().containsAll(List.of("get_current_time", "delete_file")));
+    }
+
+    /**
+     * In-memory store that lets a competing writer land between the agent's reload and its
+     * first versioned {@code agent_state} save, forcing one CAS conflict.
+     */
+    private static final class ConflictInjectingStore extends InMemoryAgentStateStore {
+        private final AtomicBoolean injected = new AtomicBoolean();
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            if ("agent_state".equals(key)
+                    && expectedVersion != UNVERSIONED
+                    && injected.compareAndSet(false, true)) {
+                AgentState competing =
+                        AgentState.builder().userId(userId).sessionId(sessionId).build();
+                competing.contextMutable().add(userMsg("concurrent write"));
+                assertTrue(
+                        super.saveIfVersion(userId, sessionId, key, competing, expectedVersion)
+                                > 0);
+            }
+            return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        }
+    }
+
+    @Test
+    @DisplayName("updateToolGroups keeps its activation through an APPEND_MERGE conflict")
+    void updateToolGroupsSurvivesAppendMergeConflict() {
+        ConflictInjectingStore store = new ConflictInjectingStore();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("hi")
+                        .model(new ToolCapturingModel())
+                        .toolkit(groupedToolkit())
+                        .stateStore(store)
+                        .conflictPolicy(ConflictPolicy.APPEND_MERGE)
+                        .build();
+        agent.getAgentState("u1", "sessA");
+        agent.saveAgentState("u1", "sessA");
+
+        agent.updateToolGroups("u1", "sessA", List.of("admin"), true);
+
+        assertEquals(1, agent.getStateConflictCount());
+        AgentState persisted =
+                store.getVersioned("u1", "sessA", "agent_state", AgentState.class).value();
+        assertEquals(
+                List.of("basic", "admin"),
+                persisted.getToolContext().getActivatedGroups(),
+                "the merge must carry the requested activation, not the competing writer's list");
+        assertEquals(
+                List.of("concurrent write"),
+                allText(persisted),
+                "the competing writer's conversation must be preserved by the merge");
+        assertEquals(List.of("basic", "admin"), agent.getActiveToolGroups("u1", "sessA"));
     }
 
     @Test

@@ -612,7 +612,9 @@ agent.updateToolGroups(RuntimeContext.builder()
     .build(), List.of("database"), true);
 ```
 
-若配置了 `AgentStateStore`，修改会立即持久化，因此该会话的下一次 `call()`（无论在哪个节点）都会看到新的工具集；其他会话不受影响。group 名称会与 toolkit 校验，不存在的名称会抛出 `IllegalArgumentException`。请在两次请求之间调用；正在进行中的调用会沿用其开始时的工具集。
+若配置了 `AgentStateStore`，修改会立即持久化，因此该会话的下一次 `call()`（无论在哪个节点）都会看到新的工具集；其他会话不受影响。group 名称会与 toolkit 校验，不存在的名称会抛出 `IllegalArgumentException`。若请求不会改变该会话的激活列表，则为 no-op。停用 group 时同样遵循 `ToolkitConfig.allowToolDeletion(false)`，行为与 `Toolkit.updateToolGroups` 一致：忽略并输出 warning。
+
+请在两次请求之间调用。若同一会话的调用正在进行中，该调用结束时会把自己的激活列表写回会话，从而静默覆盖这次修改；因此当本 agent 实例上存在该会话的进行中调用时，这两个方法会抛出 `IllegalStateException` 且不改动会话状态 —— 请等调用结束后重试。
 
 <Warning>
 

@@ -149,6 +149,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -252,12 +253,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final List<String> initialActiveToolGroups;
 
     /**
-     * Calls currently between {@link #beforeAgentExecution} and {@link #afterAgentExecution}. Used
+     * Calls currently between {@link #beforeAgentExecution} and {@link #releaseCallScope}. Used
      * to decide whether a toolkit activation change observed at call entry can only have come
      * from outside a call (see {@link #warnIfToolkitGroupsChangedOutsideCall()}). Best-effort
-     * diagnostics only: it gates a one-shot log line and never affects behaviour.
+     * diagnostics only: it gates a one-shot log line and never affects behaviour. Incremented and
+     * decremented for admitted calls only, so a call cancelled while waiting on the same-session
+     * gate never unbalances it.
      */
     private final AtomicInteger inFlightCalls = new AtomicInteger();
+
+    /**
+     * The {@link CallExecution} currently admitted for each {@code (userId, sessionId)} slot (at
+     * most one, since same-slot calls are serialized). Out-of-call state mutators such as {@link
+     * #updateToolGroups(String, String, List, boolean)} consult this to reject an update that
+     * would otherwise be silently reverted by the in-flight call's own state write-back.
+     */
+    private final ConcurrentHashMap<String, CallExecution> inFlightBySlot =
+            new ConcurrentHashMap<>();
+
+    private static final int SLOT_MUTATION_LOCK_STRIPES = 64;
+
+    /**
+     * Striped locks serialising a slot's call admission ({@link #beforeAgentExecution}) against
+     * out-of-call state mutators on the same slot, so a mutator either completes before the call
+     * loads its state or observes the call as in flight. Striped (rather than per-slot) to stay
+     * bounded regardless of how many sessions this agent has served.
+     */
+    private final Object[] slotMutationLocks = new Object[SLOT_MUTATION_LOCK_STRIPES];
 
     /**
      * Toolkit active groups as last synchronised at a call boundary (call entry / call end). The
@@ -352,6 +374,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.toolkit = agentToolkit != null ? agentToolkit : new Toolkit();
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.toolkitGroupsAtLastCallBoundary = this.initialActiveToolGroups;
+        for (int i = 0; i < slotMutationLocks.length; i++) {
+            slotMutationLocks[i] = new Object();
+        }
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
@@ -419,6 +444,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private static String slotKey(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
         return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+    }
+
+    /** The stripe of {@link #slotMutationLocks} guarding the given slot. */
+    private Object slotMutationLock(String slot) {
+        return slotMutationLocks[Math.floorMod(slot.hashCode(), SLOT_MUTATION_LOCK_STRIPES)];
     }
 
     /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
@@ -632,6 +662,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     baseline.contextMutable().addAll(appended);
                 }
                 baseline.setPermissionContext(toSave.getPermissionContext());
+                // Tool group activation is, like the permission context, a whole-value setting
+                // owned by this writer (in-call meta-tool / skill activation, or the per-session
+                // updateToolGroups / setActiveToolGroups API); carry it over so the merge does not
+                // silently drop it.
+                baseline.getToolContext()
+                        .setActivatedGroups(toSave.getToolContext().getActivatedGroups());
                 long merged =
                         stateStore.saveIfVersion(
                                 userId, sessionId, "agent_state", baseline, latest.version());
@@ -779,6 +815,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // Serialize calls per (userId, sessionId) slot: same-session calls share cached AgentState
         // /
         // conversation history, so they must run one-at-a-time; distinct sessions run in parallel.
+        return slotKeyFor(rc);
+    }
+
+    /** The {@code (userId, sessionId)} slot key a call with the given RuntimeContext binds to. */
+    private String slotKeyFor(RuntimeContext rc) {
         String sid = rc != null ? rc.getSessionId() : null;
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
@@ -798,12 +839,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // that slot's cached state / permissionEngine. The returned reference is the authoritative
         // per-call scope (carried on the Reactor Context); the instance field is only a
         // side-channel default for out-of-call accessors.
-        if (inFlightCalls.getAndIncrement() == 0) {
-            // No other call is in flight, so any toolkit activation drift since the last call
-            // boundary must come from developer code mutating the toolkit between calls.
-            warnIfToolkitGroupsChangedOutsideCall();
+        String slot = slotKeyFor(ctx);
+        CallExecution scope;
+        // Admission (registering the call as in flight + loading its state) is atomic with respect
+        // to out-of-call mutators on the same slot, see slotMutationLocks.
+        synchronized (slotMutationLock(slot)) {
+            boolean first = inFlightCalls.getAndIncrement() == 0;
+            try {
+                if (first) {
+                    // No other call is in flight, so any toolkit activation drift since the last
+                    // call boundary must come from developer code mutating the toolkit between
+                    // calls.
+                    warnIfToolkitGroupsChangedOutsideCall();
+                }
+                scope = activateSlotForContext(ctx);
+            } catch (RuntimeException e) {
+                // Admission failed: the scope is never returned, so releaseCallScope never runs.
+                inFlightCalls.decrementAndGet();
+                throw e;
+            }
+            inFlightBySlot.put(scope.slotKey, scope);
         }
-        CallExecution scope = activateSlotForContext(ctx);
         // Expose the call-scoped AgentState on the RuntimeContext so middlewares / tools resolve
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
@@ -881,17 +937,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
-        unbindRuntimeContextFromHooks();
+    protected void releaseCallScope(Object callScope) {
+        if (!(callScope instanceof CallExecution ce)) {
+            return;
+        }
+        // Only reached by calls that ran beforeAgentExecution, so the in-flight bookkeeping stays
+        // balanced even when a queued same-session call is cancelled at the gate.
+        inFlightBySlot.remove(ce.slotKey, ce);
         // Snapshot the flags as left by this call (meta tool / skill activations included) so the
-        // next call entry only flags changes made outside of any call.
+        // next call entry only flags changes made outside of any call. Must precede the decrement:
+        // a call entering right after the decrement compares against this snapshot.
         if (toolkit != null) {
             toolkitGroupsAtLastCallBoundary = toolkit.getActiveGroups();
         }
-        // Floor at zero: a call cancelled while waiting on the same-session gate never ran
-        // beforeAgentExecution but still reaches this cleanup.
-        inFlightCalls.updateAndGet(n -> Math.max(0, n - 1));
+        inFlightCalls.decrementAndGet();
+    }
+
+    @Override
+    protected void afterAgentExecution() {
+        this.activeRc = null;
+        unbindRuntimeContextFromHooks();
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -4434,37 +4499,56 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * <p>This is the per-session counterpart of {@link Toolkit#updateToolGroups(List, boolean)}.
      * Mutating the agent's toolkit directly between calls has no effect on the model-visible
      * tools: each session's activation list lives in its {@link AgentState} and the toolkit's
-     * flags are reset from it at every call entry. Other sessions are not affected.
+     * flags are reset from it at every call entry. Other sessions are not affected. As with the
+     * toolkit method, a deactivation is ignored (with a warning) when the toolkit was configured
+     * with {@link io.agentscope.core.tool.ToolkitConfig.Builder#allowToolDeletion(boolean)
+     * allowToolDeletion(false)}.
      *
      * <p>When an {@link AgentStateStore} is configured and the session has already been
      * persisted, the latest persisted state is reloaded before the update so the change is
-     * applied on top of the newest state. Invoke it after the session's current call has
-     * completed; an in-flight call is not cancelled and may not observe the change.
+     * applied on top of the newest state. A request that leaves the session's activation list
+     * unchanged is a no-op and does not touch the store.
+     *
+     * <p>The update must not overlap with a call on the same session: an in-flight call writes its
+     * own activation list back to the session when it completes, which would silently revert the
+     * update. Calling this while such a call is in flight on this agent instance therefore throws
+     * {@link IllegalStateException} and leaves the session untouched; invoke it once the call has
+     * completed. Calls in flight on other instances sharing the store cannot be detected — there
+     * the configured {@link ConflictPolicy} decides.
      *
      * @param userId user identity for the slot (may be {@code null})
      * @param sessionId session identity (falls back to the default session id when {@code null})
      * @param groupNames tool group names to activate or deactivate; each must exist on the toolkit
      * @param active {@code true} to activate, {@code false} to deactivate
      * @throws IllegalArgumentException if any group is not registered on this agent's toolkit
+     * @throws IllegalStateException if a call on this session is currently in flight
      */
     public void updateToolGroups(
             String userId, String sessionId, List<String> groupNames, boolean active) {
         Objects.requireNonNull(groupNames, "groupNames must not be null");
         validateToolGroupsExist(groupNames);
-        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        AgentState state = loadLatestAgentState(userId, sid);
-        List<String> groups = new ArrayList<>(state.getToolContext().getActivatedGroups());
-        for (String groupName : groupNames) {
-            if (active) {
-                if (!groups.contains(groupName)) {
-                    groups.add(groupName);
-                }
-            } else {
-                groups.remove(groupName);
-            }
+        if (!active && !toolkit.getConfig().isAllowToolDeletion()) {
+            log.warn(
+                    "Tool deletion is disabled - ignoring deactivation of tool groups: {}",
+                    groupNames);
+            return;
         }
-        state.getToolContext().setActivatedGroups(groups);
-        saveAgentState(userId, sid);
+        applyToolGroupsToSession(
+                userId,
+                sessionId,
+                current -> {
+                    List<String> groups = new ArrayList<>(current);
+                    for (String groupName : groupNames) {
+                        if (active) {
+                            if (!groups.contains(groupName)) {
+                                groups.add(groupName);
+                            }
+                        } else {
+                            groups.remove(groupName);
+                        }
+                    }
+                    return groups;
+                });
     }
 
     /**
@@ -4480,23 +4564,44 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Replaces the activated tool groups for one {@code (userId, sessionId)} session with exactly
      * {@code groupNames} and persists the change. Groups not listed are deactivated for that
-     * session; ungrouped tools are unaffected. See
-     * {@link #updateToolGroups(String, String, List, boolean)} for the incremental variant and
-     * the persistence / in-flight-call caveats, which apply here as well.
+     * session — so an empty list deactivates every group — while ungrouped tools are unaffected.
+     * See {@link #updateToolGroups(String, String, List, boolean)} for the incremental variant
+     * and the persistence / in-flight-call caveats, which apply here as well.
+     *
+     * <p>When the toolkit was configured with {@code allowToolDeletion(false)}, groups that are
+     * currently active but absent from {@code groupNames} stay active (with a warning), mirroring
+     * {@link Toolkit#updateToolGroups(List, boolean)}; the listed groups are still activated.
      *
      * @param userId user identity for the slot (may be {@code null})
      * @param sessionId session identity (falls back to the default session id when {@code null})
      * @param groupNames the complete list of tool groups to keep active; each must exist on the
      *     toolkit
      * @throws IllegalArgumentException if any group is not registered on this agent's toolkit
+     * @throws IllegalStateException if a call on this session is currently in flight
      */
     public void setActiveToolGroups(String userId, String sessionId, List<String> groupNames) {
         Objects.requireNonNull(groupNames, "groupNames must not be null");
         validateToolGroupsExist(groupNames);
-        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
-        AgentState state = loadLatestAgentState(userId, sid);
-        state.getToolContext().setActivatedGroups(new ArrayList<>(new LinkedHashSet<>(groupNames)));
-        saveAgentState(userId, sid);
+        applyToolGroupsToSession(
+                userId,
+                sessionId,
+                current -> {
+                    List<String> groups = new ArrayList<>(new LinkedHashSet<>(groupNames));
+                    if (!toolkit.getConfig().isAllowToolDeletion()) {
+                        List<String> retained = new ArrayList<>(current);
+                        retained.removeAll(groups);
+                        if (!retained.isEmpty()) {
+                            log.warn(
+                                    "Tool deletion is disabled - keeping tool groups active that"
+                                            + " setActiveToolGroups would deactivate: {}",
+                                    retained);
+                            List<String> merged = new ArrayList<>(current);
+                            groups.stream().filter(g -> !merged.contains(g)).forEach(merged::add);
+                            return merged;
+                        }
+                    }
+                    return groups;
+                });
     }
 
     /**
@@ -4515,6 +4620,37 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 throw new IllegalArgumentException(
                         String.format("Tool group '%s' does not exist", groupName));
             }
+        }
+    }
+
+    /**
+     * Out-of-call "get → mutate → save" of one session's activated tool groups. Runs under the
+     * slot's mutation lock so it cannot interleave with a call being admitted on the same slot:
+     * either the call is already in flight (rejected here — its own state write-back would
+     * silently revert the update) or the update is fully persisted before the call loads its
+     * state. A mutation that yields the current list is a no-op.
+     */
+    private void applyToolGroupsToSession(
+            String userId, String sessionId, UnaryOperator<List<String>> mutation) {
+        String sid = (sessionId == null || sessionId.isBlank()) ? defaultSessionId : sessionId;
+        String slot = slotKey(userId, sid);
+        synchronized (slotMutationLock(slot)) {
+            if (inFlightBySlot.containsKey(slot)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "Cannot change tool groups of session (userId=%s, sessionId=%s)"
+                                        + " while a call on it is in flight; retry after the call"
+                                        + " completes",
+                                userId, sid));
+            }
+            AgentState state = loadLatestAgentState(userId, sid);
+            List<String> current = state.getToolContext().getActivatedGroups();
+            List<String> updated = mutation.apply(current);
+            if (updated.equals(current)) {
+                return;
+            }
+            state.getToolContext().setActivatedGroups(updated);
+            saveAgentState(userId, sid);
         }
     }
 
