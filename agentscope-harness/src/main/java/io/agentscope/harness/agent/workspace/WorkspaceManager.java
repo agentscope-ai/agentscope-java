@@ -257,9 +257,122 @@ public class WorkspaceManager implements AutoCloseable {
         return readWithOverride(rc, KNOWLEDGE_DIR + "/" + KNOWLEDGE_MD);
     }
 
-    /** Reads MEMORY.md content (two-layer: filesystem override, local fallback). */
+    /**
+     * Reads MEMORY.md content. Under a sandbox-backed filesystem this reads the host copy —
+     * memory files are cross-call metadata written by the fire-and-forget flush after the
+     * sandbox may be gone (#3110), so the host copy is the authoritative one; a stale sandbox
+     * copy must never shadow it.
+     */
     public String readMemoryMd(RuntimeContext rc) {
-        return readWithOverride(rc, MEMORY_MD);
+        return readMemoryFileUtf8(rc, MEMORY_MD);
+    }
+
+    /**
+     * Reads a memory-family UTF-8 file (e.g. {@code MEMORY.md}, {@code memory/&lt;date&gt;.md},
+     * memory state). Each family member follows the backend serving its own path — a routed
+     * persistent store when one is mounted for it (e.g. on the {@code memory/} prefix), the
+     * host runtime-data namespace when that backend is the per-call sandbox proxy (memory
+     * files are cross-call metadata written by the fire-and-forget flush after the sandbox
+     * may be gone, #3110), and the standard two-layer read otherwise.
+     *
+     * <p><b>Durability assumption:</b> host-side routing presumes the host workspace outlives
+     * the process or is shared across replicas. A stateless multi-replica deployment with
+     * pod-local workspaces needs the whole family on a shared persistent backend — either a
+     * non-sandbox persistent primary filesystem, or explicit routes covering both {@code
+     * memory/} and root-level {@code MEMORY.md} — otherwise a session whose next call is
+     * served by another replica sees no {@code MEMORY.md} and no ledgers.
+     */
+    public String readMemoryFileUtf8(RuntimeContext rc, String relativePath) {
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            Path hostPath = resolveRuntimeDataPath(rc, normalized);
+            if (!Files.isRegularFile(hostPath)) {
+                warnWhenSandboxLayerStillHolds(rc, normalized, hostPath);
+            }
+            return readFileQuietly(hostPath);
+        }
+        return readWithOverride(rc, normalized);
+    }
+
+    /**
+     * Best-effort upgrade visibility (#3110): on the first calls after upgrading a sandbox
+     * deployment the host copy does not exist yet while the pre-fix sandbox snapshot may
+     * still hold one. The sandbox copy is deliberately not adopted — it is stale by design,
+     * every post-stream write was already lost from it — so this only surfaces the situation
+     * for an operator who wants to copy the file host-side. When the sandbox layer itself is
+     * unreachable (post-lease) the probe is skipped silently: there is nothing left to adopt.
+     */
+    private void warnWhenSandboxLayerStillHolds(RuntimeContext rc, String relPath, Path hostPath) {
+        try {
+            if (filesystem.exists(rc, relPath)) {
+                log.warn(
+                        "Memory file {} exists in the sandbox layer but not host-side ({}); the"
+                                + " host copy is authoritative (#3110) and sandbox content is not"
+                                + " adopted — copy it host-side to keep it",
+                        relPath,
+                        hostPath);
+            }
+        } catch (Exception e) {
+            log.debug("Sandbox presence probe failed for {}: {}", relPath, e.getMessage());
+        }
+    }
+
+    /**
+     * Appends to a memory-family UTF-8 file. Host-side append when the filesystem serving the
+     * path is the per-call sandbox proxy (the fire-and-forget flush runs after the stream —
+     * and possibly the sandbox — is gone, #3110); otherwise the standard filesystem
+     * read-merge-write append.
+     */
+    public void appendMemoryFileUtf8(RuntimeContext rc, String relativePath, String content) {
+        if (relativePath == null || content == null) {
+            return;
+        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+            lock.lock();
+            try {
+                appendLocalPath(
+                        resolveRuntimeDataPath(rc, normalized).normalize(), normalized, content);
+            } finally {
+                lock.unlock();
+            }
+            return;
+        }
+        appendUtf8WorkspaceRelative(rc, relativePath, content);
+    }
+
+    /**
+     * Overwrites a memory-family UTF-8 file. Host-side atomic write when the filesystem
+     * serving the path is the per-call sandbox proxy (#3110); otherwise the standard
+     * filesystem write.
+     */
+    public void writeMemoryFileUtf8(RuntimeContext rc, String relativePath, String content) {
+        if (relativePath == null || content == null) {
+            return;
+        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (memoryFilesRouteToLiveSandbox(normalized)) {
+            ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+            lock.lock();
+            try {
+                writeLocalPath(
+                        resolveRuntimeDataPath(rc, normalized).normalize(), normalized, content);
+            } finally {
+                lock.unlock();
+            }
+            return;
+        }
+        writeUtf8WorkspaceRelative(rc, relativePath, content);
     }
 
     /**
@@ -281,6 +394,11 @@ public class WorkspaceManager implements AutoCloseable {
         return readWithOverride(rc, normalized);
     }
 
+    /**
+     * Returns the {@code memory/} directory for the given context's runtime-data namespace —
+     * the location memory files are stored when their IO is routed host-side (sandbox-backed
+     * filesystems, #3110), mirroring the namespaced layout remote filesystems use.
+     */
     public Path getMemoryDir(RuntimeContext rc) {
         return resolveRuntimeDataPath(rc, MEMORY_DIR);
     }
@@ -449,6 +567,28 @@ public class WorkspaceManager implements AutoCloseable {
      * persistent store mounted for {@code agents/}) are respected and still take over.
      */
     private boolean taskRecordsRouteToLiveSandbox(String relPath) {
+        return isLiveSandboxServingPath(relPath);
+    }
+
+    /**
+     * {@code true} when the filesystem layer serving memory-file paths is the per-call sandbox
+     * proxy. Memory files ({@code MEMORY.md}, {@code memory/*.md}, the memory state) are
+     * cross-call metadata: the fire-and-forget flush and the periodic consolidation run AFTER
+     * the agent event stream terminates — by then the sandbox lease may already be released,
+     * and every write through {@code SandboxBackedFilesystem} would fail with "No active
+     * sandbox" (#3110). When this holds, memory-file IO is routed to the host workspace
+     * directly — the same location used when no filesystem layer is configured — so reads and
+     * writes stay symmetric (a host-side write is never shadowed by a stale sandbox copy on
+     * read). Explicit prefix routes are respected and still take over; each family member is
+     * anchored on its own path, so a {@code memory/} prefix route moves the ledgers and the
+     * watermark to the routed store while root-level {@code MEMORY.md} keeps following the
+     * sandbox primary (host-side routing).
+     */
+    private boolean memoryFilesRouteToLiveSandbox(String relPath) {
+        return isLiveSandboxServingPath(relPath);
+    }
+
+    private boolean isLiveSandboxServingPath(String relPath) {
         AbstractFilesystem fs = this.filesystem;
         if (fs instanceof RoutedSandboxFilesystem routed) {
             fs = routed.backendFor(relPath);
@@ -848,7 +988,10 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private void appendLocalFile(String relativePath, String content) {
-        Path local = workspace.resolve(relativePath).normalize();
+        appendLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
+    }
+
+    private void appendLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
             return;
@@ -880,7 +1023,10 @@ public class WorkspaceManager implements AutoCloseable {
      * observing a partially-written file.
      */
     private void writeLocalFile(String relativePath, String content) {
-        Path local = workspace.resolve(relativePath).normalize();
+        writeLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
+    }
+
+    private void writeLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
             return;
@@ -932,25 +1078,87 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
+     * Lists memory ledger files as {@link FileInfo}s (path, size, mtime) for watermark-based
+     * eligibility filtering. Under a sandbox-backed filesystem the authoritative copies live
+     * host-side in the context's runtime-data namespaced memory directory — the same scope
+     * the memory-scoped IO reads and writes, mirroring the namespaced layout of remote
+     * filesystems — so the listing is host-side too (the sandbox glob would throw once the
+     * lease is released, and its copies are stale by design). Otherwise the filesystem
+     * layer is globbed. This is the single home for memory listing so callers (consolidator,
+     * tools) can never drift from the routing decision.
+     */
+    public List<FileInfo> listMemoryFileInfos(RuntimeContext rc) {
+        if (memoryFilesRouteToLiveSandbox(MEMORY_DIR)) {
+            List<FileInfo> out = new ArrayList<>();
+            Path memDir = resolveRuntimeDataPath(rc, MEMORY_DIR);
+            if (!Files.isDirectory(memDir)) {
+                return out;
+            }
+            try (Stream<Path> walk = Files.list(memDir)) {
+                walk.filter(Files::isRegularFile)
+                        .filter(pp -> pp.toString().endsWith(".md"))
+                        .forEach(
+                                pp -> {
+                                    try {
+                                        out.add(
+                                                FileInfo.ofFile(
+                                                        MEMORY_DIR + "/" + pp.getFileName(),
+                                                        Files.size(pp),
+                                                        Files.getLastModifiedTime(pp).toMillis()));
+                                    } catch (IOException e) {
+                                        log.warn("Failed to stat {}: {}", pp, e.getMessage());
+                                    }
+                                });
+            } catch (IOException e) {
+                log.warn("Failed to list host memory dir: {}", e.getMessage());
+            }
+            return out;
+        }
+        List<FileInfo> out = new ArrayList<>();
+        if (filesystem != null) {
+            GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
+            if (glob.isSuccess() && glob.matches() != null) {
+                out.addAll(glob.matches());
+            }
+        }
+        return out;
+    }
+
+    /**
      * Returns workspace-relative paths of all memory files ({@code MEMORY.md} and {@code
-     * memory/*.md}). Unions results from the {@link AbstractFilesystem} layer and the local disk,
-     * deduplicating by relative path.
+     * memory/*.md}), unioning the {@link AbstractFilesystem} layer and the local disk,
+     * deduplicating by relative path. Each family member is anchored on the backend serving
+     * its own path: {@code MEMORY.md} is root-level — a {@code memory/} prefix route never
+     * matches it, so under a sandbox-backed filesystem its authoritative copy lives
+     * host-side and its existence is never probed through the per-call sandbox proxy —
+     * while the ledgers follow the backend serving {@code memory/} (a routed store when one
+     * is mounted, the host side under a bare sandbox). The local part observes the context's
+     * runtime-data namespace — the same namespaced scope the memory-scoped IO writes when
+     * routed host-side (user isolation preserved) and the location {@code getMemoryDir}
+     * resolves.
      */
     public List<String> listMemoryFilePaths(RuntimeContext rc) {
         Set<String> paths = new LinkedHashSet<>();
 
         if (filesystem != null) {
-            ReadResult memMd = filesystem.read(rc, MEMORY_MD, 0, 1);
-            if (memMd.isSuccess()) {
-                paths.add(MEMORY_MD);
+            // Under a sandbox-backed filesystem MEMORY.md lives host-side (#3110): the
+            // sandbox copy is stale-by-design, and probing it after the lease is released
+            // would throw. The ledgers glob follows the memory/ directory's own backend.
+            if (!memoryFilesRouteToLiveSandbox(MEMORY_MD)) {
+                ReadResult memMd = filesystem.read(rc, MEMORY_MD, 0, 1);
+                if (memMd.isSuccess()) {
+                    paths.add(MEMORY_MD);
+                }
             }
-            GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
-            if (glob.isSuccess() && glob.matches() != null) {
-                for (FileInfo fi : glob.matches()) {
-                    if (fi.path() != null && !fi.path().isBlank()) {
-                        String rel = normalizeRelativePath(fi.path().trim());
-                        if (!rel.isEmpty()) {
-                            paths.add(rel);
+            if (!memoryFilesRouteToLiveSandbox(MEMORY_DIR)) {
+                GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
+                if (glob.isSuccess() && glob.matches() != null) {
+                    for (FileInfo fi : glob.matches()) {
+                        if (fi.path() != null && !fi.path().isBlank()) {
+                            String rel = normalizeRelativePath(fi.path().trim());
+                            if (!rel.isEmpty()) {
+                                paths.add(rel);
+                            }
                         }
                     }
                 }
