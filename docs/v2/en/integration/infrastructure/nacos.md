@@ -2,11 +2,12 @@
 title: Nacos
 ---
 
-`agentscope-extensions-nacos` uses [Nacos](https://nacos.io/) as AgentScope's unified control plane: register and discover A2A Agents, hot-load prompts, and host skills. It contains three sub-modules — pick the ones you need.
+`agentscope-extensions-nacos` uses [Nacos](https://nacos.io/) as AgentScope's unified control plane: register and discover A2A Agents, hot-load prompts, host skills, and discover MCP servers with load balancing. It contains four sub-modules — pick the ones you need.
 
 | Sub-module | Problem it solves |
 | --- | --- |
 | `agentscope-extensions-nacos-a2a` | A2A AgentCard / instance registry and discovery |
+| `agentscope-extensions-nacos-mcp` | Subscribe MCP servers from the Nacos MCP registry and load-balance across their instances |
 | `agentscope-extensions-nacos-prompt` | Manage prompt templates in Nacos with hot updates |
 | `agentscope-extensions-nacos-skill` | Load skill packages (ZIP) from the Nacos AI module |
 
@@ -103,7 +104,120 @@ AgentSkill skill = repo.getSkill("calculator");
 
 Version/label resolution order: `Properties` provided to the constructor → JVM `-D` system properties → environment variables. When both version and label resolve, **version wins** and the label is not used for download.
 
+## MCP server discovery
+
+`agentscope-extensions-nacos-mcp` subscribes to an MCP server in the Nacos MCP registry and aggregates its backend instances into a single load-balanced MCP client. Instances scaling in/out are picked up from Nacos push at runtime, and a tool call is only ever dispatched to a **connected** instance, so an instance that never connected is never selected.
+
+> Requires a Nacos 3.x server with the MCP registry capability enabled.
+
+### Add the dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-nacos-mcp</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### Manual wiring
+
+```java
+import io.agentscope.core.nacos.mcp.discovery.NacosMcpDiscoveryClient;
+import io.agentscope.core.nacos.mcp.loadbalance.NacosLoadBalancedMcpClientWrapper;
+
+Properties props = new Properties();
+props.setProperty("serverAddr", "127.0.0.1:8848");
+
+NacosLoadBalancedMcpClientWrapper client =
+    NacosLoadBalancedMcpClientWrapper.builder("weather")
+        .serverName("weather-mcp-server")
+        .version("1.0.0")             // omit to subscribe the default version
+        .discoveryClient(new NacosMcpDiscoveryClient(props))
+        .build();
+
+client.initialize().block();
+toolkit.registerMcpClient(client).block();
+```
+
+Tool calls are dispatched to one of the connected instances, decided by an `EndpointSelector`. Two are built in:
+
+| Strategy | When to use |
+| --- | --- |
+| `RoundRobinEndpointSelector` | Default. Rotates calls across instances; requires stateless instances |
+| `StickyEndpointSelector` | Pins one instance per logical MCP client; suits stateful servers |
+
+### A failing call is not replayed
+
+This module does **not** retry a failed call on another instance. When the selected instance fails, the error is propagated to the caller as-is, which guarantees that a tool is executed at most once and keeps a write-like tool from being submitted twice by retries inside the library. Whether to retry is the caller's decision, for example through `Toolkit`'s execution configuration:
+
+```java
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolkitConfig;
+
+ToolkitConfig.builder()
+    .executionConfig(
+        ExecutionConfig.builder()
+            .maxAttempts(2)                            // default is 1, i.e. no retry
+            .retryOn(e -> e instanceof IOException)    // retry connection-level errors only
+            .build())
+    .build();
+```
+
+A retry runs through `callTool` again and, under `RoundRobinEndpointSelector`, usually lands on a different instance: "an unhealthy instance does not break the call" is therefore still achievable, but the attempt count and the errors that qualify are owned by the caller.
+
+### Tool registration is a snapshot
+
+Endpoint changes are applied in the background, but `Toolkit.registerMcpClient(...)` publishes the tool list discovered at registration time. So pick the connection you need from `NacosMcpClients` and register it yourself:
+
+```java
+NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+weather.initialize().block();
+toolkit.registerMcpClient(weather).block();
+```
+
+It therefore pays to register once the MCP server is up: a server that appears after registration, or a server whose tool set changes later, needs a fresh `registerMcpClient` call, while endpoint scale in/out alone does not.
+
+### Spring Boot autoconfiguration
+
+Add `agentscope-nacos-spring-boot-starter`; everything is wired automatically when `agentscope.nacos.mcp.enabled=true`. Each `connections` entry becomes one load-balanced MCP client:
+
+```yaml
+agentscope:
+  nacos:
+    server-addr: 127.0.0.1:8848     # MCP may target a separate Nacos cluster
+    mcp:
+      enabled: true
+      load-balance: round-robin     # default, overridable per connection
+      connections:
+        weather:
+          service-name: weather-mcp-server
+          version: 1.0.0
+        amap:
+          service-name: amap-mcp-server
+          load-balance: sticky
+```
+
+Register the connection you need into the Agent's Toolkit:
+
+```java
+@Bean
+public HarnessAgent harnessAgent(NacosMcpClients nacosMcpClients) {
+    HarnessAgent agent = HarnessAgent.builder()
+        .name("Assistant")
+        .model("dashscope:qwen-max")
+        .build();
+    NacosLoadBalancedMcpClientWrapper weather = nacosMcpClients.get("weather");
+    weather.initialize().block();
+    agent.getToolkit().registerMcpClient(weather).block();
+    return agent;
+}
+```
+
+`agentscope.nacos.mcp.*` inherits the connection settings of `agentscope.nacos.*` (`server-addr`, `namespace`, `username`, `password`, and more); fields left unset fall back to the latter.
+
 ## Pairs well with
 
 - [A2A](/v2/en/integration/protocol/a2a): inject a Nacos-backed `AgentRegistry` into `AgentScopeA2aServer.builder().agentRegistry(...)` to publish AgentCards cluster-wide on startup.
 - [Skill repositories](/v2/en/integration/skill/index): coexist with Git/MySQL `AgentSkillRepository` to assemble a Toolkit from multiple sources.
+- Static MCP configuration: `mcpServers` in `tools.json` and MCP servers discovered from Nacos are independent sources and can be registered into the same Toolkit.
