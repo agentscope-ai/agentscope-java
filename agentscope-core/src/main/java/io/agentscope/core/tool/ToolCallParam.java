@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
 /**
  * Parameters for tool invocation.
@@ -50,6 +51,8 @@ public class ToolCallParam {
     private final Agent agent;
     private final RuntimeContext runtimeContext;
     private final ToolEmitter emitter;
+    private final BiConsumer<ToolUseBlock, io.agentscope.core.message.ToolResultBlock>
+            internalChunkCallback;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
@@ -57,6 +60,7 @@ public class ToolCallParam {
         this.agent = builder.agent;
         this.runtimeContext = builder.runtimeContext;
         this.emitter = builder.emitter;
+        this.internalChunkCallback = builder.internalChunkCallback;
     }
 
     /**
@@ -118,6 +122,11 @@ public class ToolCallParam {
         return emitter != null ? emitter : NoOpToolEmitter.INSTANCE;
     }
 
+    BiConsumer<ToolUseBlock, io.agentscope.core.message.ToolResultBlock>
+            getInternalChunkCallback() {
+        return internalChunkCallback;
+    }
+
     /**
      * Creates a new builder for constructing ToolCallParam instances.
      *
@@ -164,6 +173,8 @@ public class ToolCallParam {
         private Agent agent;
         private RuntimeContext runtimeContext;
         private ToolEmitter emitter;
+        private BiConsumer<ToolUseBlock, io.agentscope.core.message.ToolResultBlock>
+                internalChunkCallback;
 
         private Builder() {}
 
@@ -173,6 +184,7 @@ public class ToolCallParam {
             this.agent = source.agent;
             this.runtimeContext = source.runtimeContext;
             this.emitter = source.emitter;
+            this.internalChunkCallback = source.internalChunkCallback;
         }
 
         /**
@@ -244,6 +256,12 @@ public class ToolCallParam {
          */
         public Builder emitter(ToolEmitter emitter) {
             this.emitter = emitter;
+            return this;
+        }
+
+        Builder internalChunkCallback(
+                BiConsumer<ToolUseBlock, io.agentscope.core.message.ToolResultBlock> callback) {
+            this.internalChunkCallback = callback;
             return this;
         }
 
