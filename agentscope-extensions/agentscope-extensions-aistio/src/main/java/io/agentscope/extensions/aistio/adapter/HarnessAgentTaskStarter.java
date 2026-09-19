@@ -129,13 +129,13 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + " Issue, discussion inputs, Team role, and artifacts. Complete the"
                             + " requested work and return a concise result; use CollaborationClient"
                             + " for fresh reads, progress comments, artifacts, or child Issues. The"
-                            + " available CollaborationClient actions are registered as tools with"
-                            + " the exact names shown in availableActions. The adapter owns"
-                            + " task.complete and task.fail; do not call them. Before returning,"
-                            + " call task.submit_result with an explicit business outcome and the"
-                            + " actual deliverable. A promise to do work later is not completion."
-                            + " Check the tool capabilities before delegating: spawning a subagent"
-                            + " does not add missing web access."
+                            + " available CollaborationClient actions are registered as tools under"
+                            + " OpenAI-safe names (dots replaced with underscores). The adapter"
+                            + " owns task_complete and task_fail; do not call them. Before"
+                            + " returning, call task_submit_result with an explicit business"
+                            + " outcome and the actual deliverable. A promise to do work later is"
+                            + " not completion. Check the tool capabilities before delegating:"
+                            + " spawning a subagent does not add missing web access."
                             + roleInstructions(envelope, inputIds)
                             + "\ncontextUrl="
                             + nullToEmpty(assignment.contextUrl())
@@ -259,7 +259,7 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                 next =
                         message(
                                 "The turn ended without a business outcome. Do the remaining work,"
-                                    + " or call task.submit_result with blocked and the concrete"
+                                    + " or call task_submit_result with blocked and the concrete"
                                     + " missing capability. Do not submit a plan or waiting promise"
                                     + " as successful research.");
                 continue;
@@ -433,25 +433,39 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             Set<String> availableActions) {
         Object toolkit = runtimeAgent.getToolkit();
         synchronized (toolkit) {
-            if (!runtimeAgent.getToolkit().getToolNames().contains("task.submit_result")) {
+            String submitResultModelName =
+                    AgentTaskCollaborationTool.toModelName(
+                            AgentTaskCollaborationTool.WIRE_TASK_SUBMIT_RESULT);
+            if (!runtimeAgent.getToolkit().getToolNames().contains(submitResultModelName)) {
                 runtimeAgent.getToolkit().registerTool(new AgentTaskOutcomeTool());
             }
             for (JsonNode definition :
                     collaboration.tools(assignment.agentTaskId(), assignment.taskToken())) {
-                String name = definition.path("name").asText();
+                String wireName = definition.path("name").asText();
                 // The starter owns the physical task lifecycle. Exposing these two actions would
-                // race the adapter's fenced completion/failure reporting.
-                if ("task.complete".equals(name) || "task.fail".equals(name)) {
+                // race the adapter's fenced completion/failure reporting. Compare wire names via
+                // shared constants so underscore republishing cannot silently re-enable them.
+                if (AgentTaskCollaborationTool.WIRE_TASK_COMPLETE.equals(wireName)
+                        || AgentTaskCollaborationTool.WIRE_TASK_FAIL.equals(wireName)) {
                     continue;
                 }
-                if (!availableActions.contains(name)) {
+                if (!availableActions.contains(wireName)) {
                     continue;
                 }
-                if (!runtimeAgent.getToolkit().getToolNames().contains(name)) {
+                String modelName = AgentTaskCollaborationTool.toModelName(wireName);
+                if (!runtimeAgent.getToolkit().getToolNames().contains(modelName)) {
                     runtimeAgent
                             .getToolkit()
                             .registerAgentTool(
                                     new AgentTaskCollaborationTool(collaboration, definition));
+                } else {
+                    LOG.warning(
+                            "Skipping collaboration tool registration due to model-name collision:"
+                                    + " wireName="
+                                    + wireName
+                                    + ", modelName="
+                                    + modelName
+                                    + " (keeping the already-registered tool)");
                 }
             }
         }
@@ -459,30 +473,60 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
 
     static String roleInstructions(JsonNode envelope, List<String> inputIds) {
         JsonNode task = envelope.path("task");
+        // Model-facing names must use the same '.' → '_' mapping as registered tools.
+        String runNodeComplete = AgentTaskCollaborationTool.toModelName("run.node.complete");
+        String runNodeFail = AgentTaskCollaborationTool.toModelName("run.node.fail");
+        String runReplan = AgentTaskCollaborationTool.toModelName("run.replan");
+        String issueChildCreate = AgentTaskCollaborationTool.toModelName("issue.child.create");
+        String issueAccept = AgentTaskCollaborationTool.toModelName("issue.accept");
+        String taskSubmitResult =
+                AgentTaskCollaborationTool.toModelName(
+                        AgentTaskCollaborationTool.WIRE_TASK_SUBMIT_RESULT);
+        String taskComplete =
+                AgentTaskCollaborationTool.toModelName(
+                        AgentTaskCollaborationTool.WIRE_TASK_COMPLETE);
         if (task.path("teamId").asText().isBlank()) {
             return " Complete the requested work and return the result.";
         }
         if (!task.path("leaderTask").asBoolean(false)) {
             return " You are a Team worker, not its coordinator. Do not create or accept child"
-                    + " Issues and do not call run.node.complete, run.node.fail, or run.replan."
-                    + " Complete only the assigned work and submit its result using"
-                    + " task.submit_result; the adapter will complete this AgentTask.";
+                    + " Issues and do not call "
+                    + runNodeComplete
+                    + ", "
+                    + runNodeFail
+                    + ", or "
+                    + runReplan
+                    + ". Complete only the assigned work and submit its result using "
+                    + taskSubmitResult
+                    + "; the adapter will complete this AgentTask.";
         }
         if (inputIds.isEmpty()) {
             return " You are the Team leader's initial task. If you delegate child work, return"
-                    + " immediately after issue.child.create succeeds by calling"
-                    + " task.submit_result with waiting, a reason and the returned AgentTask"
-                    + " IDs; do not wait through local session/task tools and do not call"
-                    + " run.node.complete yet. The control plane will deliver a fresh leader"
-                    + " follow-up when a worker result arrives. If no work is delegated, call"
-                    + " run.node.complete after your own work converges. Returning text alone"
+                    + " immediately after "
+                    + issueChildCreate
+                    + " succeeds by calling "
+                    + taskSubmitResult
+                    + " with waiting, a reason and the returned AgentTask"
+                    + " IDs; do not wait through local session/task tools and do not call "
+                    + runNodeComplete
+                    + " yet. The control plane will deliver a fresh leader"
+                    + " follow-up when a worker result arrives. If no work is delegated, call "
+                    + runNodeComplete
+                    + " after your own work converges. Returning text alone"
                     + " never completes a Team coordinator.";
         }
         return " You are a Team leader follow-up with new worker inputs. Validate the supplied"
-                + " result, call issue.accept and wait for its result, then make a separate"
-                + " run.node.complete call only when every child Issue and worker node has"
-                + " converged. Never send those mutations in parallel. run.node.complete also"
-                + " completes this leader AgentTask; do not call task.complete afterwards."
+                + " result, call "
+                + issueAccept
+                + " and wait for its result, then make a separate "
+                + runNodeComplete
+                + " call only when every child Issue and worker node has"
+                + " converged. Never send those mutations in parallel. "
+                + runNodeComplete
+                + " also"
+                + " completes this leader AgentTask; do not call "
+                + taskComplete
+                + " afterwards."
                 + " Returning text alone never completes a Team coordinator.";
     }
 

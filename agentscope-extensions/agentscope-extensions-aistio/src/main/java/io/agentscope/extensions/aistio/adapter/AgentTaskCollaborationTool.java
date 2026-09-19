@@ -33,8 +33,25 @@ import java.util.Set;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-/** Runtime-context-bound proxy for one canonical control-plane collaboration MCP tool. */
+/**
+ * Runtime-context-bound proxy for one canonical control-plane collaboration MCP tool.
+ *
+ * <p>OpenAI-compatible APIs require {@code function.name =~ ^[a-zA-Z0-9_-]+$}, but the control
+ * plane publishes dotted wire names ({@code task.get}, {@code issue.comment.add}, …) and
+ * dispatches {@code tools/call} on that exact spelling. This tool therefore keeps two names: the
+ * dotted {@linkplain #getWireName() wire name} for MCP dispatch / read-only / terminal checks, and
+ * an underscore {@linkplain #getName() model name} exposed to the LLM.
+ */
 final class AgentTaskCollaborationTool implements AgentTool {
+
+    /** Control-plane wire name for the adapter-owned physical completion action (not registered). */
+    static final String WIRE_TASK_COMPLETE = "task.complete";
+
+    /** Control-plane wire name for the adapter-owned physical failure action (not registered). */
+    static final String WIRE_TASK_FAIL = "task.fail";
+
+    /** Adapter-owned outcome tool wire spelling before model-safe normalization. */
+    static final String WIRE_TASK_SUBMIT_RESULT = "task.submit_result";
 
     private static final Set<String> READ_ONLY =
             Set.of(
@@ -47,14 +64,19 @@ final class AgentTaskCollaborationTool implements AgentTool {
                     "run.graph",
                     "run.artifacts");
 
+    private static final Set<String> TERMINAL_WIRE_NAMES =
+            Set.of("run.node.complete", "run.node.fail");
+
     private final CollaborationClient collaboration;
-    private final String name;
+    private final String wireName;
+    private final String modelName;
     private final String description;
     private final Map<String, Object> parameters;
 
     AgentTaskCollaborationTool(CollaborationClient collaboration, JsonNode definition) {
         this.collaboration = collaboration;
-        this.name = definition.path("name").asText();
+        this.wireName = definition.path("name").asText();
+        this.modelName = toModelName(wireName);
         this.description = definition.path("description").asText();
         this.parameters =
                 ControlPlaneHttpClient.mapper()
@@ -63,9 +85,26 @@ final class AgentTaskCollaborationTool implements AgentTool {
                                 new TypeReference<Map<String, Object>>() {});
     }
 
+    /**
+     * Maps a control-plane wire name to the OpenAI-safe model-facing name by replacing {@code '.'}
+     * with {@code '_'}. Keep this as the single mapping so registration, prompts, and tests cannot
+     * drift apart.
+     */
+    static String toModelName(String wireName) {
+        if (wireName == null) {
+            return null;
+        }
+        return wireName.replace('.', '_');
+    }
+
+    /** Control-plane / MCP wire name (dotted). Used for {@code tools/call} and classification. */
+    String getWireName() {
+        return wireName;
+    }
+
     @Override
     public String getName() {
-        return name;
+        return modelName;
     }
 
     @Override
@@ -80,7 +119,7 @@ final class AgentTaskCollaborationTool implements AgentTool {
 
     @Override
     public boolean isReadOnly() {
-        return READ_ONLY.contains(name);
+        return READ_ONLY.contains(wireName);
     }
 
     @Override
@@ -95,19 +134,19 @@ final class AgentTaskCollaborationTool implements AgentTool {
                             if (taskContext == null) {
                                 return ToolResultBlock.text(
                                         "Error: "
-                                                + name
+                                                + modelName
                                                 + " requires an active aistio AgentTask context.");
                             }
                             JsonNode result =
                                     collaboration.callTool(
                                             taskContext.taskId(),
                                             taskContext.taskToken(),
-                                            name,
+                                            wireName,
                                             param.getInput(),
                                             param.getToolUseBlock() == null
                                                     ? null
                                                     : param.getToolUseBlock().getId());
-                            if (Set.of("run.node.complete", "run.node.fail").contains(name)) {
+                            if (TERMINAL_WIRE_NAMES.contains(wireName)) {
                                 AgentTaskOutcome.State state =
                                         runtimeContext.get(AgentTaskOutcome.State.class);
                                 if (state != null) state.markTerminalCommitted();
