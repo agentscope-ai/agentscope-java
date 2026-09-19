@@ -34,11 +34,16 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -245,6 +250,59 @@ class GeminiMessageConverterTest {
         Part part = result.get(0).parts().get().get(0);
         String output = (String) part.functionResponse().get().response().get().get("output");
         assertEquals("Single output", output);
+    }
+
+    @Test
+    @DisplayName("Should format Base64 tool result media deterministically")
+    void testBase64ToolResultFormattingIsDeterministic() throws IOException {
+        byte[] expected =
+                ("gemini-stable-image-" + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
+        String data = Base64.getEncoder().encodeToString(expected);
+        ImageBlock image =
+                ImageBlock.builder()
+                        .source(Base64Source.builder().mediaType("image/png").data(data).build())
+                        .build();
+        ToolResultBlock toolResultBlock =
+                ToolResultBlock.builder().id("call_image").name("read_image").output(image).build();
+        Msg msg =
+                Msg.builder()
+                        .name("tool")
+                        .content(List.of(toolResultBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        String first = toolResultOutput(converter.convertMessages(List.of(msg)));
+        String second = toolResultOutput(converter.convertMessages(List.of(msg)));
+        String prefix = "The returned image can be found at: ";
+        assertEquals(first, second);
+        assertTrue(first.startsWith(prefix));
+        Path path = Path.of(first.substring(prefix.length()));
+        assertArrayEquals(expected, Files.readAllBytes(path));
+    }
+
+    @Test
+    @DisplayName("Should degrade malformed Base64 tool output without aborting conversion")
+    void testMalformedBase64ToolResultDegradesToText() {
+        ImageBlock image =
+                ImageBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("image/png")
+                                        .data("not-base64!")
+                                        .build())
+                        .build();
+        ToolResultBlock result =
+                ToolResultBlock.builder().id("call_image").name("read_image").output(image).build();
+        Msg msg = Msg.builder().name("tool").content(List.of(result)).role(MsgRole.TOOL).build();
+
+        String output = toolResultOutput(converter.convertMessages(List.of(msg)));
+
+        assertTrue(output.contains("failed to save file: Invalid Base64 media payload"));
+    }
+
+    private String toolResultOutput(List<Content> contents) {
+        Part part = contents.get(0).parts().get().get(0);
+        return (String) part.functionResponse().get().response().get().get("output");
     }
 
     @Test

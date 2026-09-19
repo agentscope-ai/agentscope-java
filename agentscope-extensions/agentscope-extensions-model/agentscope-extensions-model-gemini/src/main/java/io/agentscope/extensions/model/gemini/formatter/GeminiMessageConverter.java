@@ -19,6 +19,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -36,8 +37,6 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -328,33 +327,18 @@ public class GeminiMessageConverter {
     }
 
     /**
-     * Save base64 data to a temporary file.
+     * Materialize Base64 media to a shared, content-addressed temporary file.
      *
-     * <p>The file extension is extracted from the MIME type (e.g., "audio/wav" → ".wav").
-     * The file is created with prefix "agentscope_" and will not be automatically deleted.
+     * <p>Identical media reuses the same path within the process; callers must not modify or
+     * delete the returned file. The file is not automatically removed.
      *
      * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
      * @param base64Data The base64-encoded data (without prefix)
      * @return Absolute path to the temporary file
-     * @throws IOException If file creation or writing fails
+     * @throws IOException If the payload is invalid or materialization fails
      */
     private String saveBase64DataToTempFile(String mediaType, String base64Data)
             throws IOException {
-        // Extract extension from MIME type (e.g., "audio/wav" → ".wav")
-        String extension = "." + (mediaType.contains("/") ? mediaType.split("/")[1] : mediaType);
-
-        // Create temp file with extension
-        Path tempFile = Files.createTempFile("agentscope_", extension);
-
-        // Decode base64 data
-        byte[] decodedData = Base64.getDecoder().decode(base64Data);
-
-        // Write to file
-        Files.write(tempFile, decodedData);
-
-        log.debug("Saved base64 data to temp file: {}", tempFile);
-
-        // Return absolute path
-        return tempFile.toAbsolutePath().toString();
+        return MediaUtils.materializeBase64ToTempFile(mediaType, base64Data);
     }
 }
