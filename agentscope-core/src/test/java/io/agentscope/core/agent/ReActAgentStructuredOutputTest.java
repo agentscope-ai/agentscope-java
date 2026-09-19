@@ -24,6 +24,7 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
@@ -31,6 +32,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -39,6 +41,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -155,6 +158,129 @@ class ReActAgentStructuredOutputTest {
         assertEquals("San Francisco", result.location);
         assertEquals("72°F", result.temperature);
         assertEquals("Sunny", result.condition);
+    }
+
+    @Test
+    @DisplayName("generate_response extraction preserves the tool-built message identity")
+    void testToolBasedExtractionPreservesMessageIdentity() {
+        // extractResponseData promotes the generate_response payload into STRUCTURED_OUTPUT
+        // metadata by rebuilding the response message. The rebuild must preserve the source
+        // message's id/timestamp/usage instead of synthesizing fresh ones.
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location",
+                                "San Francisco",
+                                "temperature",
+                                "72°F",
+                                "condition",
+                                "Sunny"));
+
+        AtomicReference<Msg> originalRef = new AtomicReference<>();
+        @SuppressWarnings("deprecation")
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent post
+                                && post.getToolResultMsg() != null) {
+                            for (ToolResultBlock block :
+                                    post.getToolResultMsg()
+                                            .getContentBlocks(ToolResultBlock.class)) {
+                                if (block.getMetadata() != null
+                                        && block.getMetadata().get("response_msg")
+                                                instanceof Msg builtResponseMsg) {
+                                    originalRef.set(builtResponseMsg);
+                                }
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+                            if (!hasToolResults) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_123")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_2")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Response generated")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 15))
+                                            .build());
+                        });
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .hook(captureHook)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("What's the weather in San Francisco?")
+                                        .build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+
+        Msg original = originalRef.get();
+        assertNotNull(original, "POST_ACTING hook must observe the tool-built response message");
+        assertEquals(
+                original.getId(),
+                responseMsg.getId(),
+                "extracted result must preserve the tool-built message id");
+        assertEquals(
+                original.getTimestamp(),
+                responseMsg.getTimestamp(),
+                "extracted result must preserve the tool-built message timestamp");
+        // Note: the final message's usage field is owned by mergeCollectedMetadata
+        // (aggregated across model calls), so it is intentionally not asserted here.
+        // Pin the id-propagation contract: the source response_msg only ever lived inside
+        // the tool result's metadata (never as a standalone context message), so the
+        // preserved id must appear exactly once in the final conversation state.
+        List<Msg> contextMsgs = agent.getAgentState().getContext();
+        assertEquals(
+                1,
+                contextMsgs.stream().filter(m -> original.getId().equals(m.getId())).count(),
+                "preserved id must appear exactly once in the conversation context");
+        assertEquals(
+                contextMsgs.size(),
+                contextMsgs.stream().map(Msg::getId).distinct().count(),
+                "conversation context must not contain duplicate message ids");
     }
 
     @Test
