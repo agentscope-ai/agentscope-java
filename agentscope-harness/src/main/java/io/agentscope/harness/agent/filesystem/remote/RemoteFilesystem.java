@@ -27,12 +27,15 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -44,6 +47,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -517,6 +521,57 @@ public class RemoteFilesystem implements AbstractFilesystem {
             // CAS-create-if-absent for the tool-surface write path.
             store.put(ns, filePath, fileDataToStoreValue(fileData));
             responses.add(FileUploadResponse.success(filePath));
+        }
+        return responses;
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files, UploadMode mode) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        if (mode == UploadMode.OVERWRITE) {
+            return uploadFiles(runtimeContext, files);
+        }
+        List<String> ns = getNamespace(runtimeContext);
+        List<FileUploadResponse> responses = new ArrayList<>();
+        for (Map.Entry<String, byte[]> entry : files) {
+            String filePath = entry.getKey();
+            byte[] content = entry.getValue();
+            if (content == null) {
+                responses.add(FileUploadResponse.fail(filePath, "content must not be null"));
+                continue;
+            }
+            try {
+                String contentStr;
+                String encoding;
+                try {
+                    contentStr =
+                            StandardCharsets.UTF_8
+                                    .newDecoder()
+                                    .decode(ByteBuffer.wrap(content))
+                                    .toString();
+                    encoding = "utf-8";
+                } catch (CharacterCodingException e) {
+                    contentStr = Base64.getEncoder().encodeToString(content);
+                    encoding = "base64";
+                }
+                FileData fileData = FileData.create(contentStr, encoding);
+                boolean written =
+                        store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
+                if (written) {
+                    responses.add(FileUploadResponse.success(filePath));
+                } else {
+                    responses.add(
+                            FileUploadResponse.fail(
+                                    filePath,
+                                    "Cannot create file because it already exists or the store does"
+                                            + " not support conditional writes"));
+                }
+            } catch (RuntimeException e) {
+                responses.add(
+                        FileUploadResponse.fail(
+                                filePath, "Error creating file: " + e.getMessage()));
+            }
         }
         return responses;
     }
