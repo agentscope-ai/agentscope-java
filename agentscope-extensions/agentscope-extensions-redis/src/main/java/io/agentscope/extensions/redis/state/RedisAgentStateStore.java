@@ -47,14 +47,26 @@ import redis.clients.jedis.UnifiedJedis;
  *   <li>Redisson - Standalone, Cluster, Sentinel, Master/Slave</li>
  * </ul>
  *
- * <p>The session state is stored in Redis with following key structure:
+ * <p>The session state is stored in Redis with following key structure. The session segment is
+ * {@code {userId}/{sessionId}} (or {@code __anon__/{sessionId}} when user id is absent). Sessions
+ * with an existing v0 marker keep their non-hash-tagged session segment. New sessions use a Redis
+ * Cluster-safe hash-tagged session segment, where {@code {userId}/{sessionId}} is wrapped in braces.
+ * Scalar and list state use the same resolved layout for a session.
  *
  * <ul>
- *   <li>Single state: {@code {prefix}{sessionId}:{stateKey}} - Redis String containing JSON
- *   <li>List state: {@code {prefix}{sessionId}:{stateKey}:list} - Redis List containing JSON items
- *   <li>List hash: {@code {prefix}{sessionId}:{stateKey}:list:_hash} - Hash for change detection
- *   <li>AgentStateStore marker: {@code {prefix}{sessionId}:_keys} - Redis Set tracking all state keys
+ *   <li>Single state: {@code {prefix}{sessionSegment}:{stateKey}} - Redis String containing JSON
+ *   <li>Version: {@code {prefix}{sessionSegment}:{stateKey}:ver} - Redis String containing the
+ *       optimistic version
+ *   <li>List state: {@code {prefix}{sessionSegment}:{stateKey}:list} - Redis List containing JSON
+ *       items
+ *   <li>List hash: {@code {prefix}{sessionSegment}:{stateKey}:list:_hash} - Hash for change detection
+ *   <li>AgentStateStore marker: {@code {prefix}{sessionSegment}:_keys} - Redis Set tracking all
+ *       state keys
  * </ul>
+ *
+ * <p>For all state, {@code {sessionSegment}} is either v0 {@code {userId}/{sessionId}} or hash-tagged
+ * {@code {{userId}/{sessionId}}}. Public builder usage is unchanged; the layout is selected
+ * internally from session metadata.
  *
  * <p><strong>Jedis Usage Examples:</strong></p>
  *
@@ -179,10 +191,6 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
 
-    private static final String KEYS_SUFFIX = ":_keys";
-
-    private static final String LIST_SUFFIX = ":list";
-
     private static final String HASH_SUFFIX = ":_hash";
 
     private final RedisClientAdapter client;
@@ -223,10 +231,10 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     private long saveVersioned(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        String slotId = slotId(userId, sessionId);
-        String redisKey = getStateKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String redisKey = keyLayout.getStateKey(key);
         String versionKey = RedisStateVersionSupport.versionKey(redisKey);
-        String keysKey = getKeysKey(slotId);
+        String keysKey = keyLayout.getKeysKey();
         try {
             String json = JsonUtils.getJsonCodec().toJson(value);
             long result =
@@ -251,8 +259,8 @@ public class RedisAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> VersionedState<T> getVersioned(
             String userId, String sessionId, String key, Class<T> type) {
-        String slotId = slotId(userId, sessionId);
-        String redisKey = getStateKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String redisKey = keyLayout.getStateKey(key);
         String versionKey = RedisStateVersionSupport.versionKey(redisKey);
         try {
             String json = client.get(redisKey);
@@ -275,10 +283,10 @@ public class RedisAgentStateStore implements AgentStateStore {
             // cannot instantiate).
             return saveVersioned(userId, sessionId, key, value, UNCONDITIONAL_EXPECTED);
         }
-        String slotId = slotId(userId, sessionId);
-        String redisKey = getStateKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String redisKey = keyLayout.getStateKey(key);
         String versionKey = RedisStateVersionSupport.versionKey(redisKey);
-        String keysKey = getKeysKey(slotId);
+        String keysKey = keyLayout.getKeysKey();
         try {
             String json = JsonUtils.getJsonCodec().toJson(value);
             long result =
@@ -294,10 +302,10 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
-        String slotId = slotId(userId, sessionId);
-        String listKey = getListKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String listKey = keyLayout.getListKey(key);
         String hashKey = listKey + HASH_SUFFIX;
-        String keysKey = getKeysKey(slotId);
+        String keysKey = keyLayout.getKeysKey();
         try {
             // Compute current hash
             String currentHash = ListHashUtil.computeHash(values);
@@ -327,7 +335,7 @@ public class RedisAgentStateStore implements AgentStateStore {
             // Update hash
             client.set(hashKey, currentHash);
             // Track this key in the session's key set
-            client.addToSet(keysKey, key + LIST_SUFFIX);
+            client.addToSet(keysKey, keyLayout.getListTrackKey(key));
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
         }
@@ -336,8 +344,8 @@ public class RedisAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        String slotId = slotId(userId, sessionId);
-        String redisKey = getStateKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String redisKey = keyLayout.getStateKey(key);
         try {
             String json = client.get(redisKey);
             if (json == null) {
@@ -352,8 +360,8 @@ public class RedisAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        String slotId = slotId(userId, sessionId);
-        String redisKey = getListKey(slotId, key);
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+        String redisKey = keyLayout.getListKey(key);
         try {
             List<String> jsonList = client.rangeList(redisKey, 0, -1);
             if (jsonList == null || jsonList.isEmpty()) {
@@ -372,62 +380,73 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        String slotId = slotId(userId, sessionId);
-        String keysKey = getKeysKey(slotId);
         try {
-            return client.keyExists(keysKey) && client.getSetSize(keysKey) > 0;
+            RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
+            return client.getSetSize(keyLayout.getKeysKey()) > 0;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to check session existence: " + slotId, e);
+            throw new RuntimeException(
+                    "Failed to check session existence: "
+                            + RedisAgentStateKeyLayout.normalizeUser(userId)
+                            + "/"
+                            + sessionId,
+                    e);
         }
     }
 
     @Override
     public void delete(String userId, String sessionId) {
-        String slotId = slotId(userId, sessionId);
-        String keysKey = getKeysKey(slotId);
-
         try {
-            Set<String> trackedKeys = client.getSetMembers(keysKey);
-
-            if (trackedKeys != null && !trackedKeys.isEmpty()) {
-                Set<String> keysToDelete = new HashSet<>();
-                keysToDelete.add(keysKey);
-
-                for (String trackedKey : trackedKeys) {
-                    if (trackedKey.endsWith(LIST_SUFFIX)) {
-                        String baseKey =
-                                trackedKey.substring(0, trackedKey.length() - LIST_SUFFIX.length());
-                        keysToDelete.add(getListKey(slotId, baseKey));
-                        keysToDelete.add(getListKey(slotId, baseKey) + HASH_SUFFIX);
-                    } else {
-                        keysToDelete.add(getStateKey(slotId, trackedKey));
-                        keysToDelete.add(
-                                RedisStateVersionSupport.versionKey(
-                                        getStateKey(slotId, trackedKey)));
-                    }
-                }
-
-                client.deleteKeys(keysToDelete.toArray(new String[0]));
-            }
+            deleteUserSession(v0KeyLayout(userId, sessionId));
+            deleteUserSession(v1KeyLayout(userId, sessionId));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete session: " + slotId, e);
+            throw new RuntimeException(
+                    "Failed to delete session: "
+                            + RedisAgentStateKeyLayout.normalizeUser(userId)
+                            + "/"
+                            + sessionId,
+                    e);
+        }
+    }
+
+    private void deleteUserSession(RedisAgentStateKeyLayout keyLayout) {
+        String keysKey = keyLayout.getKeysKey();
+        Set<String> trackedKeys = client.getSetMembers(keysKey);
+
+        if (trackedKeys != null && !trackedKeys.isEmpty()) {
+            Set<String> keysToDelete = new HashSet<>();
+            keysToDelete.add(keysKey);
+
+            for (String trackedKey : trackedKeys) {
+                if (RedisAgentStateKeyLayout.isListTrackKey(trackedKey)) {
+                    String baseKey = RedisAgentStateKeyLayout.baseKeyFromListTrackKey(trackedKey);
+                    keysToDelete.add(keyLayout.getListKey(baseKey));
+                    keysToDelete.add(keyLayout.getListKey(baseKey) + HASH_SUFFIX);
+                } else {
+                    keysToDelete.add(keyLayout.getStateKey(trackedKey));
+                    keysToDelete.add(
+                            RedisStateVersionSupport.versionKey(keyLayout.getStateKey(trackedKey)));
+                }
+            }
+
+            client.deleteKeys(keysToDelete.toArray(new String[0]));
         }
     }
 
     @Override
     public Set<String> listSessionIds(String userId) {
-        String userSegment = normalizeUser(userId);
+        String userSegment = RedisAgentStateKeyLayout.normalizeUser(userId);
         try {
-            // Pattern: {prefix}{userSegment}/{sessionId}:_keys
-            String pattern = keyPrefix + userSegment + "/*" + KEYS_SUFFIX;
-            Set<String> keysKeys = client.findKeysByPattern(pattern);
             Set<String> sessionIds = new HashSet<>();
-            String userPrefix = keyPrefix + userSegment + "/";
-            for (String keysKey : keysKeys) {
-                String withoutPrefix = keysKey.substring(userPrefix.length());
-                String sessionId =
-                        withoutPrefix.substring(0, withoutPrefix.length() - KEYS_SUFFIX.length());
-                sessionIds.add(sessionId);
+            String v1KeysPattern = RedisAgentStateKeyLayout.v1KeysPattern(keyPrefix, userSegment);
+            for (String keysKey : client.findKeysByPattern(v1KeysPattern)) {
+                RedisAgentStateKeyLayout.parseV1SessionIdFromKeysKey(
+                                keysKey, keyPrefix, userSegment)
+                        .ifPresent(sessionIds::add);
+            }
+            String v0Pattern = RedisAgentStateKeyLayout.v0KeysPattern(keyPrefix, userSegment);
+            for (String keysKey : client.findKeysByPattern(v0Pattern)) {
+                RedisAgentStateKeyLayout.parseV0SessionIdKeysKey(keysKey, keyPrefix, userSegment)
+                        .ifPresent(sessionIds::add);
             }
             return sessionIds;
         } catch (Exception e) {
@@ -435,19 +454,16 @@ public class RedisAgentStateStore implements AgentStateStore {
         }
     }
 
-    /** Sentinel for {@code userId == null} (anonymous sessions). */
-    private static final String ANON_USER = "__anon__";
-
-    private static String normalizeUser(String userId) {
-        return userId == null || userId.isBlank() ? ANON_USER : userId;
+    private RedisAgentStateKeyLayout resolveKeyLayout(String userId, String sessionId) {
+        return RedisAgentStateKeyLayout.resolve(client, keyPrefix, userId, sessionId);
     }
 
-    /** Combine {@code (userId, sessionId)} into a single Redis slot identifier. */
-    private static String slotId(String userId, String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            throw new IllegalArgumentException("sessionId must not be blank");
-        }
-        return normalizeUser(userId) + "/" + sessionId;
+    private RedisAgentStateKeyLayout v1KeyLayout(String userId, String sessionId) {
+        return RedisAgentStateKeyLayout.v1(keyPrefix, userId, sessionId);
+    }
+
+    private RedisAgentStateKeyLayout v0KeyLayout(String userId, String sessionId) {
+        return RedisAgentStateKeyLayout.v0(keyPrefix, userId, sessionId);
     }
 
     @Override
@@ -474,38 +490,6 @@ public class RedisAgentStateStore implements AgentStateStore {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Get the Redis key for a single state value.
-     *
-     * @param sessionId the session ID
-     * @param key the state key
-     * @return Redis key in format {prefix}{sessionId}:{key}
-     */
-    private String getStateKey(String sessionId, String key) {
-        return keyPrefix + sessionId + ":" + key;
-    }
-
-    /**
-     * Get the Redis key for a list state value.
-     *
-     * @param sessionId the session ID
-     * @param key the state key
-     * @return Redis key in format {prefix}{sessionId}:{key}:list
-     */
-    private String getListKey(String sessionId, String key) {
-        return keyPrefix + sessionId + ":" + key + LIST_SUFFIX;
-    }
-
-    /**
-     * Get the Redis key for tracking session keys.
-     *
-     * @param sessionId the session ID
-     * @return Redis key in format {prefix}{sessionId}:_keys
-     */
-    private String getKeysKey(String sessionId) {
-        return keyPrefix + sessionId + KEYS_SUFFIX;
     }
 
     /**
