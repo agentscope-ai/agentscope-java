@@ -270,6 +270,9 @@ func (s *Server) canAccessSession(ctx context.Context, a *namespaceAccess, sessi
 	if !write && controlmodel.NamespaceAllows(a.Roles, "work.audit") {
 		return true
 	}
+	if owner := store.ChannelSessionOwnerRef(session); owner != "" {
+		return owner == a.User
+	}
 	// Chat deletion keeps execution history. Its owner may still read that
 	// history, but a deleted Chat must not grant Session mutation access.
 	filters := []store.ChatFilter{{}, {Archived: true}}

@@ -28,6 +28,7 @@ type Config struct {
 	BootstrapPassword     string // AISTIO_BOOTSTRAP_PASSWORD: used only on an empty database
 	AllowLocalEnvironment bool   // BUILDER_ALLOW_LOCAL_ENVIRONMENT
 	DataURL               string // BUILDER_DATA_URL
+	SchedulerURL          string // BUILDER_SCHEDULER_URL: internal login protocol adapter
 	VaultMasterKey        string // BUILDER_VAULT_MASTER_KEY (optional)
 }
 

@@ -155,6 +155,11 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 		if bindingErr != nil || binding.AgentID != agent.ID || !binding.Enabled || binding.ArchivedAt != nil || binding.Kind != candidate.Binding.Kind {
 			continue
 		}
+		// Scheduler's managed bridge posts to the Java data plane. It cannot
+		// execute a Hosted or External runtime selected as a policy fallback.
+		if originType == "channel" && binding.Kind != controlmodel.DataPlaneManaged {
+			continue
+		}
 		now := time.Now().UTC()
 		sessionID, instanceRef := requestedSessionID, ""
 		var instanceID uuid.UUID
@@ -168,8 +173,16 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			if json.Unmarshal(binding.Configuration, &cfg) != nil {
 				continue
 			}
-			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, "",
-				originType+"|"+originRef+"|"+requestedSessionID)
+			if originType == "channel" && (cfg.OwnerRef != agent.OwnerRef || cfg.ManagedDefinitionRef != agent.ID.String()) {
+				continue
+			}
+			externalKey := originType + "|" + originRef + "|" + requestedSessionID
+			if originType == "channel" {
+				// The product channel handler already authenticated and constructed
+				// this stable address key. Preserve it so cp.sessions is reused.
+				externalKey = originRef
+			}
+			sessionID, err = s.product.FindOrCreateSessionID(ctx, cfg.OwnerRef, cfg.ManagedDefinitionRef, "", externalKey)
 			if err != nil {
 				return nil, err
 			}
@@ -198,6 +211,36 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			continue
 		}
 		phase := store.SessionPhaseActive
+		if originType == "channel" {
+			existing, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: agent.Tenant,
+				Namespace: agent.Namespace, AgentID: agent.ID, SessionID: sessionID, Limit: 2})
+			if listErr != nil {
+				return nil, listErr
+			}
+			if len(existing) > 0 {
+				current := existing[0]
+				if len(existing) != 1 || current.BindingID != binding.ID || current.OriginType != originType || current.OriginRef != originRef {
+					return nil, store.ErrConflict
+				}
+				ownerRef := store.ChannelSessionOwnerRef(current)
+				if ownerRef == "" {
+					// A row written before channelOwnerRef existed - an earlier head of this
+					// branch, or a replica still running the old code during a rolling deploy -
+					// carries no owner. The binding, origin type and origin ref already matched, so
+					// it is this conversation: adopt it for this agent instead of failing the turn
+					// with a conflict it could never recover from. Writing through the upsert keeps
+					// phase, busy and timestamps as stored.
+					return s.store.Sessions().Upsert(ctx, withChannelOwner(current, agent.OwnerRef))
+				}
+				if ownerRef != agent.OwnerRef {
+					return nil, store.ErrConflict
+				}
+				// Resolving a conversation is not a new runtime observation. Keep
+				// phase, busy, timestamps, and any concurrent event state intact.
+				return current, nil
+			}
+			phase = store.SessionPhaseIdle
+		}
 		if binding.Kind == controlmodel.DataPlaneHostedRuntime {
 			phase = store.SessionPhaseIdle
 			if existing, listErr := s.store.Sessions().List(ctx, store.SessionFilter{Tenant: agent.Tenant,
@@ -205,7 +248,11 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 				phase = existing[0].Phase
 			}
 		}
-		payload, _ := json.Marshal(gin.H{"originType": originType, "originRef": originRef})
+		metadata := gin.H{"originType": originType, "originRef": originRef}
+		if originType == "channel" {
+			metadata["channelOwnerRef"] = agent.OwnerRef
+		}
+		payload, _ := json.Marshal(metadata)
 		return s.store.Sessions().Upsert(ctx, &store.Session{Tenant: agent.Tenant, Namespace: agent.Namespace,
 			AgentID: agent.ID, BindingID: binding.ID, AgentInstanceID: instanceID, InstanceGeneration: generation,
 			AgentName: agent.AgentKey, SessionID: sessionID, InstanceRef: instanceRef, OriginType: originType,
@@ -213,6 +260,30 @@ func (s *Server) resolveAgentConversation(ctx context.Context, agent *controlmod
 			TaskContext: payload, StartedAt: &now, LastActiveAt: &now})
 	}
 	return nil, fmt.Errorf("no conversation-capable runtime candidate is available")
+}
+
+// withChannelOwner returns a copy of the session that records the verified channel owner, leaving
+// every other column - and every other key already in task_context - as stored. The upsert replaces
+// the whole column, so rebuilding the payload from the keys this branch happens to know about would
+// delete whatever an older writer left there.
+func withChannelOwner(session *store.Session, ownerRef string) *store.Session {
+	adopted := *session
+	metadata := map[string]any{}
+	if len(session.TaskContext) > 0 {
+		// An unreadable payload is not worth failing the turn over; the owner is the key that has
+		// to be right, so fall back to a payload carrying just it.
+		_ = json.Unmarshal(session.TaskContext, &metadata)
+		if metadata == nil {
+			// A literal `null` decodes without an error and leaves the map nil, which the
+			// assignment below would turn into a panic. Every other malformed shape returns an
+			// error and leaves the initialised map alone.
+			metadata = map[string]any{}
+		}
+	}
+	metadata["channelOwnerRef"] = ownerRef
+	payload, _ := json.Marshal(metadata)
+	adopted.TaskContext = payload
+	return &adopted
 }
 
 func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.Session, message,

@@ -54,6 +54,9 @@ func (ch channelRow) toPresenceJSON(maskSecrets bool) gin.H {
 	props := parseJSONRaw(deref(ch.PropertiesJSON))
 	if maskSecrets {
 		props = maskChannelProperties(props)
+		if ch.Type == "weixin" {
+			props = gin.H{}
+		}
 	}
 	return gin.H{
 		"channelId":   ch.ChannelID,
@@ -120,6 +123,10 @@ func (s *Server) createAgentPresence(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "Unknown platform: "+platform)
 		return
 	}
+	if platform == "weixin" {
+		writeErr(c, 400, "Use the Channels Weixin authorization flow to manage this connection")
+		return
+	}
 	if missing, err := validateChannelProperties(platform, req.Credentials, nil, false); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
 		return
@@ -179,6 +186,10 @@ func (s *Server) updateAgentPresence(c *gin.Context) {
 			return
 		}
 	}
+	if ch.Type == "weixin" || platform == "weixin" {
+		writeErr(c, 400, "Use the Channels Weixin authorization flow to manage this connection")
+		return
+	}
 	existingProps := propsAsMap(parseJSONRaw(deref(ch.PropertiesJSON)))
 	incoming := req.Credentials
 	if incoming == nil {
@@ -229,6 +240,10 @@ func (s *Server) deleteAgentPresence(c *gin.Context) {
 	}
 	if ch.DefaultAgentID == nil || *ch.DefaultAgentID != agentID {
 		writeErr(c, http.StatusNotFound, "presence not found for this agent")
+		return
+	}
+	if ch.Type == "weixin" {
+		writeErr(c, 400, "Use the Channels Weixin authorization flow to manage this connection")
 		return
 	}
 	_, _ = s.db.Pool.Exec(c.Request.Context(),
