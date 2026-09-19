@@ -150,7 +150,7 @@ class AgentTaskCollaborationToolTest {
                         respond(
                                 exchange,
                                 "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"tools\":[{\"name\":\"issue.comment.add\",\"description\":\"Add"
-                                    + " a comment","
+                                    + " a comment\","
                                     + "\"inputSchema\":{\"type\":\"object\",\"properties\":{"
                                     + "\"content\":{\"type\":\"string\"}},\"required\":[\"content\"]}}]}}");
                         return;

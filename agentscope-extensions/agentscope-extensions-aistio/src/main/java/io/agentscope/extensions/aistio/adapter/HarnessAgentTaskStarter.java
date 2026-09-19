@@ -458,6 +458,14 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             .getToolkit()
                             .registerAgentTool(
                                     new AgentTaskCollaborationTool(collaboration, definition));
+                } else {
+                    LOG.warning(
+                            "Skipping collaboration tool registration due to model-name collision:"
+                                    + " wireName="
+                                    + wireName
+                                    + ", modelName="
+                                    + modelName
+                                    + " (keeping the already-registered tool)");
                 }
             }
         }
