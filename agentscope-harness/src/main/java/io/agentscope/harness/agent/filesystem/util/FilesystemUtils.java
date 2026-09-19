@@ -15,6 +15,10 @@
  */
 package io.agentscope.harness.agent.filesystem.util;
 
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.BaseSandboxFilesystem;
 import java.util.Set;
 
 /**
@@ -23,6 +27,19 @@ import java.util.Set;
 public final class FilesystemUtils {
 
     private FilesystemUtils() {}
+
+    /** Returns whether the filesystem ultimately stores files in a live sandbox. */
+    public static boolean isSandboxBacked(AbstractFilesystem filesystem) {
+        while (true) {
+            if (filesystem instanceof RoutedSandboxFilesystem routed) {
+                filesystem = routed.primary();
+            } else if (filesystem instanceof OverlayFilesystem overlay) {
+                filesystem = overlay.getUpper();
+            } else {
+                return filesystem instanceof BaseSandboxFilesystem;
+            }
+        }
+    }
 
     private static final Set<String> BINARY_EXTENSIONS =
             Set.of(
