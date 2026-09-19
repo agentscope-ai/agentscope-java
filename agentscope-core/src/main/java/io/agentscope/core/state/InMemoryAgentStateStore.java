@@ -51,6 +51,13 @@ public class InMemoryAgentStateStore implements AgentStateStore {
     /** users → (sessionId → SessionData) */
     private final Map<String, Map<String, SessionData>> users = new ConcurrentHashMap<>();
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link #saveIfVersion} writes directly through the internal atomic versioning operation,
+     * including unconditional writes; it does not invoke this method. Subclasses that intercept
+     * single-state writes should override both entry points.
+     */
     @Override
     public void save(String userId, String sessionId, String key, State value) {
         SessionData data = lookupOrCreate(userId, sessionId);
@@ -86,15 +93,16 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         return new VersionedState<>(type.cast(state), entry.version());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The state write and its returned version are determined in the same critical section. This
+     * method does not delegate to {@link #save(String, String, String, State)}, even when {@code
+     * expectedVersion == UNVERSIONED}.
+     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            SessionData data = lookup(userId, sessionId);
-            VersionedEntry entry = data != null ? data.getVersionedSingleState(key) : null;
-            return entry != null ? entry.version() : UNVERSIONED;
-        }
         SessionData data = lookupOrCreate(userId, sessionId);
         return data.casSingleState(key, value, expectedVersion);
     }
@@ -215,19 +223,17 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         private final Map<String, VersionedEntry> singleStates = new ConcurrentHashMap<>();
         private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
 
-        synchronized void setSingleState(String key, State value) {
-            VersionedEntry prev = singleStates.get(key);
-            long next = prev == null ? 1L : prev.version() + 1L;
-            singleStates.put(key, new VersionedEntry(value, next));
+        void setSingleState(String key, State value) {
+            casSingleState(key, value, UNVERSIONED);
         }
 
         synchronized long casSingleState(String key, State value, long expectedVersion) {
             VersionedEntry prev = singleStates.get(key);
             long current = prev == null ? 0L : prev.version();
-            if (current != expectedVersion) {
+            if (expectedVersion != UNVERSIONED && current != expectedVersion) {
                 return UNVERSIONED;
             }
-            long next = expectedVersion + 1L;
+            long next = current + 1L;
             singleStates.put(key, new VersionedEntry(value, next));
             return next;
         }
