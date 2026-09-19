@@ -530,3 +530,50 @@ ReActAgent agent =
                 .middlewares(List.of(new StopOnAllDeniedMiddleware()))
                 .build();
 ```
+
+## 工具熔断
+
+单次调用的重试不能阻止模型在下一轮再次选择故障工具。用 `CircuitBreakerTool` 包装需要保护的
+`AgentTool`，再注册 `CircuitBreakerMiddleware`，可以在冷却期过滤本轮工具 Schema，同时在实际执行前拦截调用。
+Toolkit 注册和其他工具不受影响。
+
+```java
+import io.agentscope.core.middleware.CircuitBreakerMiddleware;
+import io.agentscope.core.tool.CircuitBreakerTool;
+import java.time.Duration;
+import java.util.List;
+
+// weatherTool is an AgentTool; register the decorator, not the original tool.
+CircuitBreakerTool protectedWeather = CircuitBreakerTool.builder(weatherTool)
+        .failureThreshold(3)
+        .initialCooldown(Duration.ofSeconds(60))
+        .backoffMultiplier(2.0)
+        .maxCooldown(Duration.ofMinutes(10))
+        .build();
+toolkit.registerAgentTool(protectedWeather);
+
+ReActAgent agent = ReActAgent.builder()
+        .model(model)
+        .toolkit(toolkit)
+        .middleware(new CircuitBreakerMiddleware(List.of(protectedWeather)))
+        .build();
+```
+
+连续失败达到阈值后熔断；成功会清空连续失败计数。上述配置的冷却时长为 60、120、240、480、600 秒，
+到达上限后不再增长。冷却结束后重新提供工具，但只允许一个实际订阅执行探测。探测成功恢复并重置退避，
+失败则重新熔断。并发的其他调用直接返回错误结果。已在执行的调用不会被取消，其迟到结果不能覆盖新的熔断代次。
+
+状态属于包装器实例，不自动按用户或会话隔离，也不跨进程持久化或共享。只有使用相同依赖和凭据的调用者
+才应共享实例。注册到 Toolkit 和中间件的应为同一个包装器实例。没有后台定时器，恢复在后续推理或订阅时判断。
+
+对包装器的重试订阅算作独立尝试，熔断后不会继续调用底层依赖。包装器之外的超时表现为取消，不累计失败；
+需要计入失败的超时应在被包装工具内部实现。取消和空结果会释放探测名额，但不会声明恢复。可用工具执行器
+超时来限制挂起的探测；本实现不另外创建探测租约。
+
+默认统计异常及 `ERROR` 结果，可用 `failurePredicate(...)` 判定普通返回值中的业务错误。
+拒绝、打断和挂起（包括 `ToolSuspendException`）不算依赖失败。普通 `ToolResultBlock.text(...)` 在
+Mono 返回时算成功，即使运行时归一化之前状态仍是 `RUNNING`。挂起结果会释放探测名额，后续外部完成不在
+包装器追踪范围内，因此适用于直接返回结果的工具，不适用于长期外部作业。
+
+包装器保留工具名、描述、输入/输出 Schema、strict 和只读属性。半开时多个模型请求可能看到同一个工具，
+单探测保证作用于实际执行，而非 Schema 展示。
