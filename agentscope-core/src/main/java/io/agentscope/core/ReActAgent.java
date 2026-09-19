@@ -33,6 +33,7 @@ import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
@@ -54,8 +55,16 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
+import io.agentscope.core.formatter.FailedAttempt;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
+import io.agentscope.core.formatter.StructuredOutputConfigurationException;
+import io.agentscope.core.formatter.StructuredOutputParseException;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputUnknownFailureException;
+import io.agentscope.core.formatter.StructuredOutputUtils;
+import io.agentscope.core.formatter.StructuredOutputValidationException;
+import io.agentscope.core.formatter.StructuredOutputValidator;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.LegacyHookDispatcher;
 import io.agentscope.core.hook.PostActingEvent;
@@ -241,6 +250,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final GenerateOptions generateOptions;
 
     /**
+     * Retry policy for response-side structured output validation (native path).
+     * An agent-level concern — model adapters never consume it — so it lives here
+     * rather than on the model-layer {@link GenerateOptions}.
+     */
+    private final StructuredOutputRetryPolicy structuredOutputPolicy;
+
+    /**
      * Agent-owned toolkit (a deep copy made at {@code build()} time, isolated per agent instance).
      * Shared across this agent's concurrent calls; per-call structured-output tools are NOT
      * registered here — they live on the per-call {@link CallExecution} scope.
@@ -337,6 +353,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
+        this.structuredOutputPolicy = builder.structuredOutputPolicy;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
         List<MiddlewareBase> mws = new ArrayList<>();
@@ -1265,6 +1282,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return doNativeStructuredCall(msgs, jsonSchema)
                     .onErrorResume(
                             e -> {
+                                if (e instanceof StructuredOutputValidationException) {
+                                    // Exhausted retries (maxAttempts / token budget) is a
+                                    // deliberate fail-closed decision; degrading to the
+                                    // synthetic tool path would spend more tokens and
+                                    // defeat the documented contract.
+                                    return Mono.error(e);
+                                }
+                                if (isNonDegradableFailure(e)) {
+                                    // Configuration errors (missing/uncompilable schema)
+                                    // and exhausted unknown-domain faults are already fatal
+                                    // on the synthetic tool path — it reuses the same
+                                    // schema/situation and would fail the same way;
+                                    // degrading would burn a round trip and could mask the
+                                    // fault. Matched through the cause chain so an
+                                    // intermediate operator wrapping cannot silently
+                                    // reopen the degrade path.
+                                    return Mono.error(e);
+                                }
                                 log.warn(
                                         "Native structured output failed ({}) — falling back to"
                                                 + " synthetic tool path",
@@ -1275,6 +1310,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             });
         }
         return doFallbackStructuredCall(msgs, jsonSchema);
+    }
+
+    /**
+     * Walks the cause chain (cycle-safe, via {@link ExceptionUtils}) for failure types that
+     * must never degrade to the synthetic-tool fallback: configuration errors and exhausted
+     * unknown-domain faults.
+     */
+    private static boolean isNonDegradableFailure(Throwable error) {
+        return ExceptionUtils.containsCause(
+                error,
+                t ->
+                        t instanceof StructuredOutputConfigurationException
+                                || t instanceof StructuredOutputUnknownFailureException);
     }
 
     /**
@@ -1314,7 +1362,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return scope.doCallInner(msgs)
                             .flatMap(
                                     result -> {
-                                        Msg out = wrapNativeStructuredResult(result);
+                                        // A conforming output was produced: drop the retry
+                                        // scaffolding before persisting, mirroring the
+                                        // fallback path's context compression.
+                                        removeRetryResidue(scope.state);
+                                        Msg out =
+                                                wrapNativeStructuredResult(
+                                                        result, scope.soValidatedPayload);
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
                             .switchIfEmpty(
@@ -1391,7 +1445,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 });
     }
 
-    private Msg wrapNativeStructuredResult(Msg result) {
+    private Msg wrapNativeStructuredResult(Msg result, JsonNode parsedPayload) {
         if (result == null) {
             return null;
         }
@@ -1400,8 +1454,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return result;
         }
         try {
+            // Reuse the payload parsed during validation (single source of truth);
+            // fall back to re-parsing only when validation did not run.
             Object parsed =
-                    io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(text, Object.class);
+                    parsedPayload != null
+                            ? StructuredOutputUtils.toPlainObject(parsedPayload)
+                            : io.agentscope.core.util.JsonUtils.getJsonCodec()
+                                    .fromJson(text, Object.class);
             Map<String, Object> metadata =
                     new HashMap<>(result.getMetadata() != null ? result.getMetadata() : Map.of());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, parsed);
@@ -1432,6 +1491,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 contextMutable.add(msg);
             }
         }
+    }
+
+    /**
+     * Removes structured-output retry residue (failed attempt messages and correction
+     * turns tagged during the native-path validation retry loop) from the conversation
+     * once a conforming output has been produced — the native counterpart of {@link
+     * #compressStructuredOutputContext}. Keeps the final conforming message and the
+     * caller's original turns; only the retry scaffolding is dropped, so subsequent
+     * calls do not keep paying tokens for it.
+     */
+    private static void removeRetryResidue(AgentState agentState) {
+        agentState
+                .contextMutable()
+                .removeIf(
+                        msg -> {
+                            Map<String, Object> metadata = msg.getMetadata();
+                            return metadata != null
+                                    && Boolean.TRUE.equals(
+                                            metadata.get(
+                                                    MessageMetadataKeys
+                                                            .STRUCTURED_OUTPUT_RETRY_RESIDUE));
+                        });
     }
 
     private boolean isStructuredOutputRelated(Msg msg) {
@@ -1741,6 +1822,35 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
+
+        /**
+         * Attempt bookkeeping for response-side structured output validation on this call. Lives
+         * on this scope rather than on the validation wrapper's parameters so nested iteration
+         * boundaries share one budget: the same final message bubbles up through every wrapper,
+         * and the counters must neither reset (defeating maxAttempts/tokenBudget) nor
+         * double-count (via the {@code soValidatedFinalMsgId} guard).
+         */
+        int soValidationAttempts = 0;
+
+        /**
+         * Id of the final message already validated during this call (dedupe guard). Recorded
+         * only after validation succeeds, so a message reusing the id of a failed attempt is
+         * re-validated rather than skipped.
+         */
+        String soValidatedFinalMsgId;
+
+        /**
+         * Payload parsed from the final conforming output during validation. Reused by the
+         * result wrapping stage so the metadata carries exactly what was validated (single
+         * source of truth) instead of re-parsing the raw text.
+         */
+        JsonNode soValidatedPayload;
+
+        /** Token usage accumulated across failed structured-output attempts on this call. */
+        ChatUsage soCarriedUsage;
+
+        /** Recorded failed attempts of structured-output validation on this call. */
+        final List<FailedAttempt> soFailedAttempts = new ArrayList<>();
 
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
             this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
@@ -2254,7 +2364,359 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> executeIteration(int iter) {
-            return reasoning(iter, false);
+            return reasoningWithOutputValidation(iter, false);
+        }
+
+        /**
+         * Reasoning wrapped with response-side structured output validation
+         * (native path only: json_schema response format, no fallback tool).
+         *
+         * <p>When the final reasoning message does not conform to the schema,
+         * an error-feedback correction message is appended to the conversation
+         * and reasoning restarts with a fresh per-turn context. The failed
+         * attempt's message stays in the conversation (the correction refers
+         * to it, so the model can see what to fix), but its thinking/tool
+         * state never reaches the final returned message: every retry builds
+         * from a new {@code ReasoningContext}, so only the conforming
+         * attempt's state is returned. Token usage from failed attempts is
+         * carried forward and aggregated into the final message so retried
+         * tokens are still accounted for.
+         *
+         * <p>Each failure is observed via the {@code structured_output.failed_attempt}
+         * event and the policy's {@code onFailedAttempt} listener, and is
+         * accumulated on the terminal {@link StructuredOutputValidationException}.
+         * When attempts are exhausted — or the retry policy's cumulative token
+         * budget is reached — the call fails with that exception and the
+         * conversation is rolled back to its pre-call state, so failed
+         * attempts leave nothing in the persisted session.
+         *
+         * <p>Note: streaming hooks have already observed the failed turn's
+         * events by the time validation runs (process-level visibility);
+         * only the final conforming message is persisted.
+         */
+        private Mono<Msg> reasoningWithOutputValidation(int iter, boolean ignoreMaxIters) {
+            Mono<Msg> base = reasoning(iter, ignoreMaxIters);
+            if (nativeResponseFormat == null
+                    || soTool != null
+                    || nativeResponseFormat.getJsonSchema() == null) {
+                // Fallback path is guarded by ToolValidator on the
+                // generate_response tool arguments; non-structured calls pass through.
+                return base;
+            }
+            JsonSchema schema = nativeResponseFormat.getJsonSchema();
+            StructuredOutputRetryPolicy policy = effectiveStructuredOutputRetryPolicy();
+            return base.flatMap(
+                    msg -> {
+                        // Nested iteration boundaries: the innermost wrapper already
+                        // validated (and counted) this final message on its way up;
+                        // re-validating here would double-charge the shared budget.
+                        if (msg.getId() != null && msg.getId().equals(soValidatedFinalMsgId)) {
+                            return Mono.just(msg);
+                        }
+                        String text = msg.getTextContent() == null ? "" : msg.getTextContent();
+                        // Original exception for unknown/transient failures, carried to the
+                        // exhaustion rethrow (see soFailedAttempts handling below).
+                        Exception unknownDomainFailure = null;
+                        JsonNode payload;
+                        List<StructuredOutputValidator.ValidationError> errors;
+                        String parseErrorMessage = null;
+                        try {
+                            payload = StructuredOutputUtils.extractJsonObject(text);
+                            errors = StructuredOutputValidator.validate(payload, schema);
+                        } catch (StructuredOutputParseException parseFailure) {
+                            parseErrorMessage = parseFailure.getMessage();
+                            errors =
+                                    List.of(
+                                            new StructuredOutputValidator.ValidationError(
+                                                    "$",
+                                                    "output is not a valid JSON object: "
+                                                            + parseFailure.getMessage()));
+                            payload = null;
+                        } catch (StructuredOutputConfigurationException configurationFailure) {
+                            // Configuration domain: fail fast — retrying cannot fix a
+                            // misconfigured schema, and asking the model to "fix its
+                            // answer" would bill calls and blame the wrong party.
+                            log.error(
+                                    "Structured output configuration error"
+                                            + " (agent={}, schema={})",
+                                    getName(),
+                                    schema.getName(),
+                                    configurationFailure);
+                            return Mono.error(configurationFailure);
+                        } catch (Exception extractionFailure) {
+                            // Unknown/transient domain: preserve the limited recovery the
+                            // retry loop provides (a registry race, a validator hiccup) —
+                            // bounded by maxAttempts/tokenBudget, with a warn for
+                            // observability. Configuration errors never reach this branch.
+                            log.warn(
+                                    "Unexpected failure during structured output"
+                                            + " extraction/validation; treating as retryable"
+                                            + " (agent={}, schema={})",
+                                    getName(),
+                                    schema.getName(),
+                                    extractionFailure);
+                            // Neutral feedback: the model's output may have been valid,
+                            // so the correction turn must not blame the output. The raw
+                            // library detail goes into the FailedAttempt record (for
+                            // onFailedAttempt listeners and the exhaustion exception),
+                            // not into the model-visible message.
+                            unknownDomainFailure = extractionFailure;
+                            parseErrorMessage = StructuredOutputValidator.UNKNOWN_FAILURE_MARKER;
+                            errors =
+                                    List.of(
+                                            new StructuredOutputValidator.ValidationError(
+                                                    "$",
+                                                    StructuredOutputValidator
+                                                            .UNKNOWN_FAILURE_MARKER));
+                            payload = null;
+                        }
+                        if (errors.isEmpty()) {
+                            // Record the guard id only after validation succeeds: a message
+                            // reusing the id of a failed attempt must be re-validated instead
+                            // of being skipped (fail-closed).
+                            soValidatedFinalMsgId = msg.getId();
+                            soValidatedPayload = payload;
+                            if (soCarriedUsage == null) {
+                                return Mono.just(msg);
+                            }
+                            return Mono.just(
+                                    mergeCollectedMetadata(
+                                            msg,
+                                            sumUsage(soCarriedUsage, msg.getChatUsage()),
+                                            null));
+                        }
+                        soValidationAttempts++;
+                        FailedAttempt failed =
+                                new FailedAttempt(
+                                        soValidationAttempts,
+                                        unknownDomainFailure != null
+                                                ? FailedAttempt.Kind.UNKNOWN_FAILURE
+                                                : parseErrorMessage == null
+                                                        ? FailedAttempt.Kind.VALIDATION_ERROR
+                                                        : FailedAttempt.Kind.PARSE_ERROR,
+                                        parseErrorMessage == null ? errors : List.of(),
+                                        parseErrorMessage,
+                                        text,
+                                        msg.getChatUsage() == null
+                                                ? null
+                                                : (long) msg.getChatUsage().getInputTokens(),
+                                        msg.getChatUsage() == null
+                                                ? null
+                                                : (long) msg.getChatUsage().getOutputTokens(),
+                                        unknownDomainFailure);
+                        soFailedAttempts.add(failed);
+                        invokeFailedAttemptListener(policy, failed);
+                        if (policy.emitAttemptEvents()) {
+                            publishEvent(
+                                    new CustomEvent(
+                                            "structured_output.failed_attempt",
+                                            Map.of(
+                                                    "attempt",
+                                                    soValidationAttempts,
+                                                    "agent",
+                                                    getName(),
+                                                    "errors",
+                                                    errors.stream()
+                                                            .map(
+                                                                    e ->
+                                                                            e.instanceLocation()
+                                                                                    + ": "
+                                                                                    + e.message())
+                                                            .limit(5)
+                                                            .toList())));
+                        }
+                        soCarriedUsage = sumUsage(soCarriedUsage, msg.getChatUsage());
+                        boolean budgetReached =
+                                policy.tokenBudget() != null
+                                        && soCarriedUsage != null
+                                        && soCarriedUsage.getTotalTokens() >= policy.tokenBudget();
+                        if (soValidationAttempts >= policy.maxAttempts() || budgetReached) {
+                            if (budgetReached) {
+                                log.warn(
+                                        "Structured output retry stopped by token budget after"
+                                                + " {} attempt(s): {} / {} tokens (agent={},"
+                                                + " schema={})",
+                                        soValidationAttempts,
+                                        soCarriedUsage.getTotalTokens(),
+                                        policy.tokenBudget(),
+                                        getName(),
+                                        schema.getName());
+                            }
+                            boolean allUnknownDomain =
+                                    !soFailedAttempts.isEmpty()
+                                            && soFailedAttempts.stream()
+                                                    .allMatch(
+                                                            a ->
+                                                                    a.kind()
+                                                                            == FailedAttempt.Kind
+                                                                                    .UNKNOWN_FAILURE);
+                            if (allUnknownDomain) {
+                                // The loop never actually touched a model-output problem:
+                                // surface the internal fault as its own failure domain
+                                // (typed wrapper, original cause preserved) instead of a
+                                // validation verdict that points at the model. The wrapper
+                                // is also short-circuited by the fallback router.
+                                Throwable last = null;
+                                for (FailedAttempt attempt : soFailedAttempts) {
+                                    if (attempt.rawException() != null) {
+                                        last = attempt.rawException();
+                                    }
+                                }
+                                if (last == null) {
+                                    // Defensive: the backward-compatible FailedAttempt
+                                    // constructor allows a null rawException — never build
+                                    // the wrapper without a cause. Log with attempt context
+                                    // so the null-raw case is investigable.
+                                    String kinds =
+                                            soFailedAttempts.stream()
+                                                    .map(a -> String.valueOf(a.kind()))
+                                                    .collect(Collectors.joining(","));
+                                    log.error(
+                                            "Unknown-domain failure exhausted retries without"
+                                                    + " a recorded cause: after {} attempt(s),"
+                                                    + " kinds=[{}] (agent={}, schema={})",
+                                            soValidationAttempts,
+                                            kinds,
+                                            getName(),
+                                            schema.getName());
+                                    last =
+                                            new IllegalStateException(
+                                                    "unknown-domain failure after "
+                                                            + soValidationAttempts
+                                                            + " attempt(s), kinds=["
+                                                            + kinds
+                                                            + "]"
+                                                            + " — no cause recorded");
+                                }
+                                log.error(
+                                        "Structured output validation failed on a"
+                                                + " non-model (unknown/transient) fault after"
+                                                + " {} attempt(s); rethrowing as"
+                                                + " StructuredOutputUnknownFailureException"
+                                                + " (agent={}, schema={})",
+                                        soValidationAttempts,
+                                        getName(),
+                                        schema.getName(),
+                                        last);
+                                return Mono.error(
+                                        new StructuredOutputUnknownFailureException(
+                                                "structured_output_unknown_failure: internal"
+                                                        + " failure during structured-output"
+                                                        + " validation after "
+                                                        + soValidationAttempts
+                                                        + " attempt(s)",
+                                                last));
+                            }
+                            return Mono.error(
+                                    new StructuredOutputValidationException(
+                                            schema.getName(),
+                                            errors,
+                                            parseErrorMessage,
+                                            List.copyOf(soFailedAttempts)));
+                        }
+                        // Error feedback: tag the failed attempt in the conversation as
+                        // retry residue, append a synthetic correction turn, then restart
+                        // reasoning with a fresh context (failed attempt's state stays
+                        // out of the returned message). Residue is removed once a
+                        // conforming output is produced (see removeRetryResidue).
+                        markRetryResidue(msg);
+                        Msg correction =
+                                Msg.builderForRole(MsgRole.USER)
+                                        .name("structured_output_correction")
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                unknownDomainFailure != null
+                                                                        ? StructuredOutputUtils
+                                                                                .unknownFailurePrompt()
+                                                                        : StructuredOutputUtils
+                                                                                .retryPrompt(
+                                                                                        errors))
+                                                        .build())
+                                        .metadata(
+                                                Map.of(
+                                                        MessageMetadataKeys
+                                                                .STRUCTURED_OUTPUT_RETRY_RESIDUE,
+                                                        true))
+                                        .build();
+                        state.contextMutable().add(correction);
+                        return reasoningWithOutputValidation(iter, true);
+                    });
+        }
+
+        /**
+         * Invokes the user-supplied failure listener defensively: listener code must never
+         * take down the agent call (same protection style as tool chunk callbacks).
+         */
+        private void invokeFailedAttemptListener(
+                StructuredOutputRetryPolicy policy, FailedAttempt failed) {
+            if (policy.onFailedAttempt() == null) {
+                return;
+            }
+            try {
+                policy.onFailedAttempt().accept(failed);
+            } catch (Exception e) {
+                log.warn(
+                        "Structured output onFailedAttempt listener failed for attempt {}: {}",
+                        failed.attemptNumber(),
+                        e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                        e);
+            }
+        }
+
+        /**
+         * Tags the failed attempt's message in the conversation as retry residue (matched by
+         * message id) so {@code removeRetryResidue} can drop it once the call succeeds.
+         */
+        private void markRetryResidue(Msg msg) {
+            if (msg.getId() == null) {
+                return;
+            }
+            List<Msg> context = state.contextMutable();
+            for (int i = context.size() - 1; i >= 0; i--) {
+                Msg original = context.get(i);
+                if (!msg.getId().equals(original.getId())) {
+                    continue;
+                }
+                Map<String, Object> metadata =
+                        new HashMap<>(
+                                original.getMetadata() != null ? original.getMetadata() : Map.of());
+                metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT_RETRY_RESIDUE, true);
+                context.set(
+                        i,
+                        Msg.builderForRole(original.getRole())
+                                .id(original.getId())
+                                .name(original.getName())
+                                .content(original.getContent())
+                                .metadata(metadata)
+                                .timestamp(original.getTimestamp())
+                                .usage(original.getUsage())
+                                .generateReason(original.getGenerateReason())
+                                .build());
+                return;
+            }
+        }
+
+        /** Null-safe aggregation of two {@link ChatUsage} values. */
+        private static ChatUsage sumUsage(ChatUsage a, ChatUsage b) {
+            if (a == null) {
+                return b;
+            }
+            if (b == null) {
+                return a;
+            }
+            return ChatUsage.builder()
+                    .inputTokens(a.getInputTokens() + b.getInputTokens())
+                    .outputTokens(a.getOutputTokens() + b.getOutputTokens())
+                    .cachedTokens(a.getCachedTokens() + b.getCachedTokens())
+                    .time(a.getTime() + b.getTime())
+                    .build();
+        }
+
+        private StructuredOutputRetryPolicy effectiveStructuredOutputRetryPolicy() {
+            return structuredOutputPolicy != null
+                    ? structuredOutputPolicy
+                    : StructuredOutputRetryPolicy.defaults();
         }
 
         /**
@@ -2425,7 +2887,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
-                                    return reasoning(iter + 1, true);
+                                    return reasoningWithOutputValidation(iter + 1, true);
                                 }
 
                                 // Check finish conditions
@@ -4466,6 +4928,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
+        StructuredOutputRetryPolicy structuredOutputPolicy;
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
@@ -4797,6 +5260,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder generateOptions(GenerateOptions generateOptions) {
             this.generateOptions = generateOptions;
+            return this;
+        }
+
+        /**
+         * Sets the retry policy applied by the agent's response-side structured
+         * output validation loop (native path); {@code null} (the default) lets
+         * {@link StructuredOutputRetryPolicy#defaults()} apply.
+         *
+         * @param structuredOutputPolicy the structured-output retry policy
+         * @return This builder instance for method chaining
+         * @see StructuredOutputRetryPolicy
+         */
+        public Builder structuredOutputPolicy(StructuredOutputRetryPolicy structuredOutputPolicy) {
+            this.structuredOutputPolicy = structuredOutputPolicy;
             return this;
         }
 

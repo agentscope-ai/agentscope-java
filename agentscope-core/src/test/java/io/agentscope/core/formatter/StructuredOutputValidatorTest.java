@@ -1,0 +1,191 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.formatter;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class StructuredOutputValidatorTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static JsonSchema schema() {
+        return JsonSchema.builder()
+                .name("MathResponse")
+                .schema(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of(
+                                        "answer", Map.of("type", "number"),
+                                        "steps",
+                                                Map.of(
+                                                        "type",
+                                                        "array",
+                                                        "items",
+                                                        Map.of("type", "string"))),
+                                "required",
+                                List.of("answer", "steps"),
+                                "additionalProperties",
+                                false))
+                .strict(true)
+                .build();
+    }
+
+    @Test
+    void validatesConformingOutput() throws Exception {
+        JsonNode output =
+                MAPPER.readTree(
+                        """
+                        {"answer": 42, "steps": ["parse", "compute"]}\
+                        """);
+        List<StructuredOutputValidator.ValidationError> errors =
+                StructuredOutputValidator.validate(output, schema());
+        assertTrue(errors.isEmpty());
+    }
+
+    @Test
+    void reportsMissingRequiredFieldWithInstancePath() throws Exception {
+        JsonNode output =
+                MAPPER.readTree(
+                        """
+                        {"answer": 42}\
+                        """);
+        List<StructuredOutputValidator.ValidationError> errors =
+                StructuredOutputValidator.validate(output, schema());
+        assertFalse(errors.isEmpty());
+        assertTrue(
+                errors.stream()
+                        .anyMatch(
+                                e ->
+                                        e.message().contains("steps")
+                                                && e.instanceLocation() != null));
+    }
+
+    @Test
+    void rejectsWrongTypeWithPath() throws Exception {
+        JsonNode output =
+                MAPPER.readTree(
+                        """
+                        {"answer": "not-a-number", "steps": []}\
+                        """);
+        List<StructuredOutputValidator.ValidationError> errors =
+                StructuredOutputValidator.validate(output, schema());
+        assertFalse(errors.isEmpty());
+        assertTrue(errors.stream().anyMatch(e -> e.instanceLocation().contains("answer")));
+    }
+
+    @Test
+    void jsonSchemaConvenienceMethodMatchesValidator() throws Exception {
+        JsonNode good =
+                MAPPER.readTree(
+                        """
+                        {"answer": 1, "steps": ["a"]}\
+                        """);
+        JsonNode bad =
+                MAPPER.readTree(
+                        """
+                        {"steps": ["a"]}\
+                        """);
+        assertTrue(schema().validate(good).isEmpty());
+        assertFalse(schema().validate(bad).isEmpty());
+    }
+
+    @Test
+    void exceptionCarriesSchemaNameAndErrors() throws Exception {
+        JsonNode bad =
+                MAPPER.readTree(
+                        """
+                        {"answer": 1}\
+                        """);
+        List<StructuredOutputValidator.ValidationError> errors =
+                StructuredOutputValidator.validate(bad, schema());
+        StructuredOutputValidationException ex =
+                new StructuredOutputValidationException("MathResponse", errors);
+        assertEquals("MathResponse", ex.getSchemaName());
+        assertEquals(errors.size(), ex.getErrors().size());
+        assertTrue(ex.getMessage().contains("MathResponse"));
+        assertTrue(ex.getMessage().contains("steps"));
+    }
+
+    @Test
+    void missingSchemaFailsClosedWithConfigurationException() {
+        // Configuration errors throw a dedicated type so callers can route by failure
+        // domain (never retry, never degrade) — see ReActAgent.reasoningWithOutputValidation.
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () -> StructuredOutputValidator.validate(null, null));
+        assertTrue(ex.getMessage().contains("structured_output_schema_required"));
+    }
+
+    @Test
+    void uncompilableSchemaSurfacesAsConfigurationException() throws Exception {
+        JsonSchema broken =
+                JsonSchema.builder()
+                        .name("broken")
+                        .schema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("answer", Map.of("pattern", "["))))
+                        .build();
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () ->
+                                StructuredOutputValidator.validate(
+                                        MAPPER.readTree("{\"answer\":\"x\"}"), broken));
+        assertTrue(ex.getMessage().contains("structured_output_schema_invalid"));
+        assertNotNull(ex.getCause(), "compilation failure must be preserved as the cause");
+    }
+
+    @Test
+    void danglingRefSurfacesAsConfigurationException() throws Exception {
+        // networknt resolves $ref lazily: an unresolvable reference fails during
+        // validation rather than compilation — still a configuration fault, and it must
+        // be classified as one instead of leaking the raw library exception.
+        JsonSchema danglingRef =
+                JsonSchema.builder()
+                        .name("dangling-ref")
+                        .schema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("answer", Map.of("$ref", "#/definitions/missing"))))
+                        .build();
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () ->
+                                StructuredOutputValidator.validate(
+                                        MAPPER.readTree("{\"answer\":\"x\"}"), danglingRef));
+        assertTrue(ex.getMessage().contains("failed during validation"));
+        assertNotNull(ex.getCause(), "the library failure must be preserved as the cause");
+    }
+}

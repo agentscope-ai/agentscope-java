@@ -17,11 +17,23 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.formatter.FailedAttempt;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.StructuredOutputConfigurationException;
+import io.agentscope.core.formatter.StructuredOutputParseException;
+import io.agentscope.core.formatter.StructuredOutputRetryPolicy;
+import io.agentscope.core.formatter.StructuredOutputUnknownFailureException;
+import io.agentscope.core.formatter.StructuredOutputUtils;
+import io.agentscope.core.formatter.StructuredOutputValidator;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -39,11 +51,16 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -742,5 +759,651 @@ class ReActAgentStructuredOutputTest {
 
         // The agent should handle null eventMsg gracefully — either by returning
         // empty or by continuing the loop. No NPE should be thrown.
+    }
+
+    @Test
+    @DisplayName(
+            "prose-wrapped conforming output: validation passes and structured metadata is"
+                    + " populated")
+    void testProseWrappedOutputYieldsStructuredData() {
+        // The validation loop tolerates leading prose when extracting the payload;
+        // the result wrapping must reuse that payload instead of re-parsing the raw
+        // text (which would fail on prose and silently drop the structured metadata).
+        MockModel nativeModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_prose")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "好的，答案是：{\"answer\":"
+                                                                                    + " 7}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result, "structured metadata must survive prose-wrapped output");
+        assertEquals(7, result.answer);
+    }
+
+    @Test
+    @DisplayName("dedupe guard: message reusing a failed attempt's id is re-validated, not skipped")
+    void testSameIdMessageRevalidatedAfterFailedAttempt() {
+        // Attempt 1: id "msg_x", schema-violating payload (answer is a string).
+        // Attempt 2: SAME id "msg_x", still violating. The dedupe guard records validated
+        // ids only, so this attempt must be re-validated (and fail) instead of skipped.
+        // Attempt 3: fresh id, conforming JSON. Total model calls must be 3; a guard that
+        // skips the same-id second attempt would finish the call after 2 calls with an
+        // unvalidated result.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            int call = calls.incrementAndGet();
+                            if (call == 1) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            if (call == 2) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_x")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"still-bad\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 0))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_ok")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder().maxAttempts(3).build())
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        assertEquals(3, calls.get(), "same-id failed attempt must be re-validated, not skipped");
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
+    }
+
+    @Test
+    @DisplayName("configuration error (uncompilable schema) propagates without retries or fallback")
+    void testUncompilableSchemaPropagatesAsConfigurationError() {
+        // A schema that fails to compile is a configuration error, not a model-output
+        // problem: it must reach the caller as-is without burning the retry budget on
+        // model calls (previously: maxAttempts calls, then a misleading
+        // StructuredOutputValidationException) and without degrading to the synthetic
+        // tool path (which reuses the same broken schema and would fail the same way).
+        AtomicInteger calls = new AtomicInteger();
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            calls.incrementAndGet();
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_1")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        JsonNode brokenSchema =
+                JsonUtils.getJsonCodec()
+                        .fromJson(
+                                "{\"type\":\"object\",\"properties\":{\"answer\":"
+                                        + "{\"pattern\":\"[\"}}}",
+                                JsonNode.class);
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        StructuredOutputConfigurationException ex =
+                assertThrows(
+                        StructuredOutputConfigurationException.class,
+                        () -> agent.call(List.of(inputMsg), brokenSchema).block());
+        assertNotNull(ex.getCause(), "compilation failure must be preserved as the cause");
+        assertEquals(
+                1,
+                calls.get(),
+                "configuration error must not be retried and must not degrade to the tool"
+                        + " path");
+    }
+
+    @Test
+    @DisplayName("unknown transient failure keeps limited recovery: retried, then succeeds")
+    void testUnknownTransientFailureIsRetriedAndRecovers() {
+        // Attempt 1: extraction throws an unexpected NON-parse exception (simulated by
+        // stubbing StructuredOutputUtils.extractJsonObject — the unknown branch). The
+        // unknown branch must keep limited recovery instead of failing the whole call.
+        // Attempt 2: the real extraction runs and succeeds.
+        AtomicInteger calls = new AtomicInteger();
+        MockModel flakyModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_" + calls.incrementAndGet())
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("{\"answer\": 42}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(flakyModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
+        try (MockedStatic<StructuredOutputUtils> utils =
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            // CALLS_REAL_METHODS as the default answer: only the first
+                            // extractJsonObject call is intercepted, everything else runs
+                            // for real — unstubbed methods can never silently become
+                            // null-returning mocks as production code evolves.
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
+            responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+            assertNotNull(responseMsg);
+        }
+        assertEquals(2, calls.get(), "transient failure must be retried, not fatal");
+        assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
+    }
+
+    @Test
+    @DisplayName("persistent unknown failure exhausts retries and rethrows the original fault")
+    void testPersistentUnknownFailureRethrowsOriginalException() {
+        // A persistent internal fault must not masquerade as a model-output verdict:
+        // extraction fails on every attempt (unknown domain), the default retry budget
+        // (3 attempts) is consumed, and the caller gets the typed unknown-failure
+        // wrapper — not a StructuredOutputValidationException, and with no extra
+        // synthetic-tool round trip (the fallback router short-circuits the wrapper).
+        AtomicInteger calls = new AtomicInteger();
+        MockModel brokenModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_" + calls.incrementAndGet())
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("{\"answer\": 42}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(brokenModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        try (MockedStatic<StructuredOutputUtils> utils =
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")) {
+                                throw new IllegalStateException("persistent internal fault");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
+            StructuredOutputUnknownFailureException ex =
+                    assertThrows(
+                            StructuredOutputUnknownFailureException.class,
+                            () -> agent.call(inputMsg, MathAnswer.class).block());
+            assertEquals("persistent internal fault", ex.getCause().getMessage());
+            assertEquals(
+                    3,
+                    calls.get(),
+                    "the fault consumes the default retry budget (3 attempts) and is"
+                            + " rethrown without a synthetic-tool round trip");
+        }
+    }
+
+    @Test
+    @DisplayName("unknown-domain correction turn sends the neutral marker instruction")
+    void testUnknownDomainRetryUsesNeutralFeedback() {
+        // Attempt 1 hits the unknown branch (extractJsonObject stubbed to throw a
+        // non-parse exception); its correction turn must carry the NEUTRAL marker
+        // instruction — not an assertion that the model's output was invalid JSON.
+        // Attempt 2 recovers.
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<String> correctionText = new AtomicReference<>();
+        MockModel neutralCheckModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.incrementAndGet();
+                            if (n == 1) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("{\"answer\": 42}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 0))
+                                                .build());
+                            }
+                            msgs.stream()
+                                    .flatMap(m -> m.getContent().stream())
+                                    .filter(b -> b instanceof TextBlock)
+                                    .map(b -> ((TextBlock) b).getText())
+                                    .filter(
+                                            t ->
+                                                    t.contains("JSON object")
+                                                            || t.contains("JSON Schema validation"))
+                                    .findFirst()
+                                    .ifPresent(correctionText::set);
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_2")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 0))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(neutralCheckModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
+        try (MockedStatic<StructuredOutputUtils> utils =
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
+            responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+            assertNotNull(responseMsg);
+        }
+        assertEquals(2, calls.get());
+        assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
+        assertNotNull(
+                correctionText.get(),
+                "a structured-output correction turn must have been appended");
+        // The unknown-domain correction must carry the neutral instruction — never the
+        // "failed JSON Schema validation" wording that blames the model's output.
+        assertTrue(
+                correctionText.get().contains("internal validation error"),
+                () -> "correction turn must be neutral, got: " + correctionText.get());
+        assertFalse(correctionText.get().contains("failed JSON Schema validation"));
+    }
+
+    @Test
+    @DisplayName("unknown-domain failure attaches the original exception to the attempt")
+    void testUnknownDomainFailureCarriesRawExceptionOnAttempt() {
+        // The unknown branch records the raw exception on the FailedAttempt (for
+        // onFailedAttempt listeners) — not a synthesized parse complaint.
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<FailedAttempt> observed = new AtomicReference<>();
+        MockModel rawCheckModel =
+                new MockModel(
+                        msgs ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_" + calls.incrementAndGet())
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("{\"answer\": 42}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 0))
+                                                .build())) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(rawCheckModel)
+                        .toolkit(toolkit)
+                        .structuredOutputPolicy(
+                                StructuredOutputRetryPolicy.builder()
+                                        .maxAttempts(3)
+                                        .onFailedAttempt(observed::set)
+                                        .build())
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 3 + 4?").build())
+                        .build();
+
+        Msg responseMsg;
+        AtomicBoolean firstExtractionFails = new AtomicBoolean(true);
+        try (MockedStatic<StructuredOutputUtils> utils =
+                Mockito.mockStatic(
+                        StructuredOutputUtils.class,
+                        invocation -> {
+                            if (invocation.getMethod().getName().equals("extractJsonObject")
+                                    && firstExtractionFails.getAndSet(false)) {
+                                throw new IllegalStateException("transient registry hiccup");
+                            }
+                            return invocation.callRealMethod();
+                        })) {
+            responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+            assertNotNull(responseMsg);
+        }
+        assertEquals(42, responseMsg.getStructuredData(MathAnswer.class).answer);
+
+        FailedAttempt failed = observed.get();
+        assertNotNull(failed, "onFailedAttempt must observe the unknown-domain attempt");
+        assertEquals(FailedAttempt.Kind.UNKNOWN_FAILURE, failed.kind());
+        assertEquals(StructuredOutputValidator.UNKNOWN_FAILURE_MARKER, failed.parseErrorMessage());
+        assertTrue(
+                failed.rawException() instanceof IllegalStateException,
+                () -> "raw exception must be preserved, got: " + failed.rawException());
+    }
+
+    @Test
+    @DisplayName("retryPrompt: neutral instruction vs schema-complaint vs >5-error truncation")
+    void testRetryPromptBranches() {
+        // Unknown-domain failures use the dedicated neutral prompt.
+        String neutral = StructuredOutputUtils.unknownFailurePrompt();
+        assertTrue(neutral.contains("internal validation error"));
+        assertTrue(neutral.contains("respond again with a JSON object"));
+        assertFalse(neutral.contains("failed JSON Schema validation"));
+
+        // Normal schema complaint path stays unchanged.
+        String complaint =
+                StructuredOutputUtils.retryPrompt(
+                        List.of(
+                                new StructuredOutputValidator.ValidationError(
+                                        "#/answer", "string found, integer required")));
+        assertTrue(complaint.contains("failed JSON Schema validation"));
+        assertFalse(complaint.contains("internal validation error"));
+
+        // More than five errors are truncated with a total count.
+        List<StructuredOutputValidator.ValidationError> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            many.add(
+                    new StructuredOutputValidator.ValidationError(
+                            "#/p" + i, "missing required property p" + i));
+        }
+        String truncated = StructuredOutputUtils.retryPrompt(many);
+        assertTrue(truncated.contains("and 8 errors in total"));
+        assertFalse(truncated.contains("p7:"));
+    }
+
+    @Test
+    @DisplayName("retryPrompt/code-fence edge branches: empty input, null, malformed fence")
+    void testRetryPromptAndFenceEdgeBranches() {
+        assertEquals("", StructuredOutputUtils.retryPrompt(List.of()));
+        assertEquals("", StructuredOutputUtils.retryPrompt(null));
+        // Malformed fence (opening ``` without a newline) falls through to readTree and
+        // reports a parse error — covers the malformed-fence branch of stripCodeFence.
+        assertThrows(
+                StructuredOutputParseException.class,
+                () -> StructuredOutputUtils.extractJsonObject("```not json at all"));
+        // Null output is reported as a validation error, not thrown.
+        JsonSchema nullOutputSchema =
+                JsonSchema.builder().name("null-check").schema(Map.of("type", "object")).build();
+        List<StructuredOutputValidator.ValidationError> errors =
+                StructuredOutputValidator.validate(null, nullOutputSchema);
+        assertEquals(1, errors.size());
+        assertEquals("$", errors.get(0).instanceLocation());
+        assertTrue(errors.get(0).message().contains("output is null"));
+    }
+
+    @Test
+    @DisplayName(
+            "error-feedback retry: invalid first attempt corrected, failed-turn thinking does not"
+                    + " leak")
+    void testStructuredOutputErrorFeedbackRetry() {
+        // Attempt 1: thinking + invalid JSON (answer is string, schema requires number)
+        // Attempt 2 (after error feedback): conforming JSON
+        MockModel nativeModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasFeedback =
+                                    msgs.stream()
+                                            .filter(m -> m.getRole() == MsgRole.USER)
+                                            .flatMap(m -> m.getContent().stream())
+                                            .filter(b -> b instanceof TextBlock)
+                                            .map(b -> ((TextBlock) b).getText())
+                                            .anyMatch(
+                                                    t ->
+                                                            t.contains(
+                                                                            "failed JSON Schema"
+                                                                                    + " validation")
+                                                                    || t.contains(
+                                                                            "JSON Schema 校验"));
+                            if (!hasFeedback) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_bad")
+                                                .content(
+                                                        List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking(
+                                                                                "bad attempt"
+                                                                                    + " thinking")
+                                                                        .build(),
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "{\"answer\":"
+                                                                                    + " \"not-a-number\"}")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("msg_good")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("{\"answer\": 42}")
+                                                                    .build()))
+                                            .usage(new ChatUsage(5, 10, 15))
+                                            .build());
+                        }) {
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("math-agent")
+                        .sysPrompt("You are a math assistant")
+                        .model(nativeModel)
+                        .toolkit(toolkit)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What is 6 * 7?").build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, MathAnswer.class).block();
+        assertNotNull(responseMsg);
+
+        MathAnswer result = responseMsg.getStructuredData(MathAnswer.class);
+        assertNotNull(result);
+        assertEquals(42, result.answer);
+
+        boolean leakedThinking =
+                responseMsg.getContent().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof ThinkingBlock
+                                                && ((ThinkingBlock) b).getThinking() != null
+                                                && ((ThinkingBlock) b)
+                                                        .getThinking()
+                                                        .contains("bad attempt"));
+        assertTrue(!leakedThinking, "failed-turn thinking leaked into final message");
+    }
+
+    /** Schema target for the error-feedback retry test. */
+    static class MathAnswer {
+        public int answer;
     }
 }
