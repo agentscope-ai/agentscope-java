@@ -19,9 +19,13 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import reactor.core.publisher.Mono;
 
@@ -144,6 +148,9 @@ final class ReflectiveFunctionTool extends ToolBase {
         if (annotation.dangerousDirectories().length > 0) {
             builder.dangerousDirectories(List.of(annotation.dangerousDirectories()));
         }
+        if (annotation.filePathParams().length > 0) {
+            builder.filePathParams(new LinkedHashSet<>(Arrays.asList(annotation.filePathParams())));
+        }
 
         Boolean strict = annotation.strict() ? Boolean.TRUE : null;
 
@@ -154,6 +161,14 @@ final class ReflectiveFunctionTool extends ToolBase {
     @Override
     public Boolean getStrict() {
         return strict;
+    }
+
+    @Override
+    protected Optional<Path> resolveExecutionPath(String rawPath) {
+        if (toolObject instanceof ToolFilePathResolver resolver) {
+            return resolver.resolveToolFilePath(rawPath);
+        }
+        return super.resolveExecutionPath(rawPath);
     }
 
     @Override
