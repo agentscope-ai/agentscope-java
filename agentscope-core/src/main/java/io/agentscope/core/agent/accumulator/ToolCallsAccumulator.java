@@ -149,6 +149,27 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         private String generateId() {
             return "tool_call_" + System.currentTimeMillis();
         }
+
+        /**
+         * Whether the accumulated argument payload is complete: either no usable argument
+         * content was streamed (an argument-less call — blank whitespace or a literal
+         * JSON {@code null} both count, since some providers stream those for zero-arg
+         * calls) or the accumulated raw JSON parses as a JSON object. Arguments truncated
+         * mid-stream fail this check — note that {@link #build()} normalizes such payloads
+         * to an empty object, so this raw-state flag is the only reliable truncation
+         * signal.
+         */
+        boolean hasCompleteArguments() {
+            // Trim whitespace: a blank payload is a complete argument-less call,
+            // not a truncated one
+            String raw = rawContent.toString().trim();
+            if (raw.isEmpty() || "null".equals(raw)) {
+                // No payload at all, or a literal JSON null (which
+                // JsonUtils.isValidJsonObject rejects): the call has no arguments
+                return true;
+            }
+            return JsonUtils.isValidJsonObject(raw);
+        }
     }
 
     /**
@@ -287,6 +308,19 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      */
     public List<ToolUseBlock> getAllAccumulatedToolCalls() {
         return buildAllToolCalls();
+    }
+
+    /**
+     * Whether any accumulated tool call has an incomplete argument payload (the provider
+     * errored while the argument JSON was still streaming). Such calls must not be handed
+     * to the acting phase for execution — the aggregated blocks normalize truncated
+     * payloads to an empty argument object, so this raw-state flag is the only reliable
+     * truncation signal.
+     *
+     * @return true when at least one accumulated call has truncated arguments
+     */
+    public boolean hasIncompleteArguments() {
+        return builders.values().stream().anyMatch(builder -> !builder.hasCompleteArguments());
     }
 
     /**

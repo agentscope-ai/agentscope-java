@@ -93,6 +93,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
@@ -145,9 +146,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -236,6 +239,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final String sysPrompt;
     private final Model model;
     private final int maxIters;
+
+    /**
+     * Cap on consecutive provider-level tool-error streaming recoveries within a single reply
+     * (issue #3102). Each recovery lets the acting phase return "Tool not found" so the model
+     * can self-correct; exceeding the cap propagates the provider error and fails the turn.
+     */
+    private final int maxToolErrorRecoveries;
+
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
@@ -334,6 +345,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
+        this.maxToolErrorRecoveries = builder.maxToolErrorRecoveries;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
@@ -711,7 +723,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 b.flatStopOnReject != null
                         ? b.flatStopOnReject
                         : ReactConfig.DEFAULT_STOP_ON_REJECT;
-        return new ReactConfig(b.maxIters, stop);
+        return new ReactConfig(b.maxIters, stop, b.maxToolErrorRecoveries);
     }
 
     // ==================== RuntimeContext ====================
@@ -1742,6 +1754,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
 
+        /**
+         * Consecutive provider-level tool-error streaming recoveries already used in this call
+         * (issue #3102). Incremented each time {@code modelCallStream} swallows a recoverable
+         * tool error; reset whenever a model stream completes without recovery. Capped by
+         * {@code maxToolErrorRecoveries} so a hallucinating model cannot loop forever.
+         */
+        final AtomicInteger streamToolErrorRecoveries = new AtomicInteger(0);
+
         CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
             this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
         }
@@ -2512,6 +2532,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String replyId = UUID.randomUUID().toString().replace("-", "");
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
+            // Whether THIS model call recovered from a recoverable streaming error. Used by the
+            // completion callback below to keep the consecutive-recovery budget from resetting
+            // on a recovered call.
+            AtomicBoolean recoveredThisCall = new AtomicBoolean(false);
+
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
                             .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
@@ -2546,7 +2571,53 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     events);
                                                         }
                                                         return Flux.fromIterable(events);
-                                                    }));
+                                                    }))
+                            // Recover from provider-level tool errors during streaming (e.g.
+                            // hallucinated tool names). Recovery fires only when the error
+                            // classifies as an explicit unknown-tool error AND every
+                            // accumulated tool call is complete (no call truncated
+                            // mid-arguments), so the stream can complete normally and the
+                            // acting phase returns "Tool not found" results for the model
+                            // to self-correct. Consecutive recoveries are capped by
+                            // maxToolErrorRecoveries (0 disables recovery) so a confused
+                            // model cannot loop forever.
+                            .onErrorResume(
+                                    error -> {
+                                        if (isRecoverableStreamError(error)
+                                                // Cheap raw-state scan first: it short-circuits
+                                                // truncated-argument calls without allocating
+                                                // the aggregated blocks (build() parses JSON)
+                                                && !context.hasIncompleteToolCallArguments()
+                                                && !context.getAllAccumulatedToolCalls()
+                                                        .isEmpty()) {
+                                            if (streamToolErrorRecoveries.get()
+                                                    >= maxToolErrorRecoveries) {
+                                                log.warn(
+                                                        "Tool-error streaming recovery budget"
+                                                                + " exhausted after {} consecutive"
+                                                                + " recoveries, propagating: {}",
+                                                        streamToolErrorRecoveries.get(),
+                                                        sanitizeForLog(error.getMessage()));
+                                                return Mono.error(error);
+                                            }
+                                            streamToolErrorRecoveries.incrementAndGet();
+                                            recoveredThisCall.set(true);
+                                            // Info (not debug): a recovery silently burns an
+                                            // extra reasoning iteration, so it must stay
+                                            // diagnosable in production where debug is off;
+                                            // info keeps it visible without the warn-level
+                                            // noise a mis-classified error stream would cause.
+                                            log.info(
+                                                    "Recovered streaming tool error {}/{}"
+                                                            + " (consecutive), letting acting"
+                                                            + " phase handle: {}",
+                                                    streamToolErrorRecoveries.get(),
+                                                    maxToolErrorRecoveries,
+                                                    sanitizeForLog(error.getMessage()));
+                                            return Flux.empty();
+                                        }
+                                        return Mono.error(error);
+                                    });
 
             Flux<AgentEvent> endEvents =
                     Flux.defer(
@@ -2557,7 +2628,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 return Flux.fromIterable(events);
                             });
 
-            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents);
+            return Flux.concat(Flux.just(new ModelCallStartEvent(replyId)), modelEvents, endEvents)
+                    .doOnComplete(
+                            () -> {
+                                // A model stream that completes WITHOUT recovery resets the
+                                // consecutive-recovery budget ("consecutive" semantics). A
+                                // recovered call leaves the budget untouched so repeated
+                                // tool errors eventually exhaust it and fail the turn.
+                                // Cancellation intentionally keeps the counter: a cancelled
+                                // stream ends this per-call execution anyway, and keeping
+                                // the credit across a middleware re-subscription matches
+                                // the per-call budget semantics.
+                                if (!recoveredThisCall.get()) {
+                                    streamToolErrorRecoveries.set(0);
+                                }
+                            });
         }
 
         private void emitBlockEvents(
@@ -2696,6 +2781,93 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             ToolUseBlock accumulated = context.getAccumulatedToolCall(null);
             return accumulated != null ? accumulated.getId() : null;
+        }
+
+        /**
+         * Compiled heuristic matching provider errors that explicitly indicate an unknown
+         * tool/function name: a negation phrase ("non-existent", "not found", "does not
+         * exist", "no such", "unknown", "unavailable", "invalid") appearing next to "tool"
+         * or "function", in either order, with at most 24 separator characters (including
+         * quoting/backticks/punctuation — providers commonly emit
+         * {@code The tool `my_tool` does not exist}). A bare keyword match is deliberately
+         * not enough — an auth error whose text happens to contain "function" must still
+         * fail fast.
+         */
+        private static final Pattern UNKNOWN_TOOL_NAME_ERROR =
+                Pattern.compile(
+                        "(non-?exist|not\\s+found|does\\s+not\\s+exist|no\\s+such|unknown"
+                                + "|unavailable|invalid)[\\w\\s.,:;\"'()\\[\\]`-]{0,24}"
+                                + "(tool|function)"
+                                + "|(tool|function)[\\w\\s.,:;\"'()\\[\\]`-]{0,24}"
+                                + "(non-?exist|not\\s+found|does\\s+not\\s+exist|no\\s+such"
+                                + "|unknown|unavailable)",
+                        Pattern.CASE_INSENSITIVE);
+
+        /** Tokens that look like API keys and must not leak into logs. */
+        private static final Pattern CREDENTIAL_TOKEN = Pattern.compile("sk-[A-Za-z0-9_-]{8,}");
+
+        /**
+         * Classify whether a streaming error is recoverable by letting the acting phase
+         * execute accumulated tool calls and feed "Tool not found" results back to the model.
+         *
+         * <p>All of the following must hold:
+         *
+         * <ul>
+         *   <li>the exception implements {@link ModelHttpException} — any provider benefits;
+         *   <li>the HTTP status is an explicit, non-retryable 4xx: a missing status code
+         *       cannot prove that fail-fast is unsafe, so it is never recovered; 401/403
+         *       (auth/permission) and 422 (schema validation) are excluded; 429/5xx stay
+         *       with the transport-level retry mechanism;
+         *   <li>the message matches an explicit "unknown tool/function name" phrase — a
+         *       bare keyword match could swallow unrelated 4xx errors whose text happens
+         *       to contain "function".
+         * </ul>
+         *
+         * @param error the streaming error
+         * @return true if the error is likely a tool-name issue and can be recovered
+         */
+        private boolean isRecoverableStreamError(Throwable error) {
+            // Non-model-HTTP errors are not recoverable
+            if (!(error instanceof ModelHttpException)) {
+                return false;
+            }
+            ModelHttpException httpException = (ModelHttpException) error;
+            // Retryable HTTP statuses (429 rate limit, 5xx server error) should fail
+            // fast and be handled by the transport-level retry mechanism
+            if (httpException.isRetryableHttpStatus()) {
+                return false;
+            }
+            // A missing status code cannot prove that fail-fast is unsafe, so stay
+            // conservative: only explicit non-retryable 4xx statuses are recoverable,
+            // excluding 401/403 (auth/permission) and 422 (schema validation)
+            Integer statusCode = httpException.getStatusCode();
+            if (statusCode == null
+                    || statusCode < 400
+                    || statusCode > 499
+                    || statusCode == 401
+                    || statusCode == 403
+                    || statusCode == 422) {
+                return false;
+            }
+            // Require an explicit "unknown tool/function name" phrase next to the keyword
+            String message = error.getMessage();
+            return message != null && UNKNOWN_TOOL_NAME_ERROR.matcher(message).find();
+        }
+
+        /**
+         * Sanitize a provider error message for logging: truncate to 200 characters and
+         * redact credential-like tokens (e.g. "sk-..." API keys) that some providers echo
+         * back in error payloads.
+         *
+         * @param message the raw provider error message
+         * @return the truncated and redacted message
+         */
+        private static String sanitizeForLog(String message) {
+            if (message == null) {
+                return "";
+            }
+            String sanitized = CREDENTIAL_TOKEN.matcher(message).replaceAll("***");
+            return sanitized.length() <= 200 ? sanitized : sanitized.substring(0, 200) + "...";
         }
 
         /**
@@ -4463,6 +4635,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         Toolkit toolkit = new Toolkit();
 
         int maxIters = 10;
+        int maxToolErrorRecoveries = ReactConfig.DEFAULT_MAX_TOOL_ERROR_RECOVERIES;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
@@ -4617,6 +4790,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder maxIters(int maxIters) {
             this.maxIters = maxIters;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of consecutive recoveries from provider-level "unknown
+         * tool" streaming errors within a single reply. Each recovery feeds a "Tool not
+         * found" result back to the model so it can self-correct; once the budget is
+         * exhausted, further tool errors propagate and fail the turn. {@code 0} disables
+         * recovery entirely.
+         *
+         * @param maxToolErrorRecoveries Maximum consecutive recoveries, must not be negative
+         * @return This builder instance for method chaining
+         * @throws IllegalArgumentException if the value is negative
+         */
+        public Builder maxToolErrorRecoveries(int maxToolErrorRecoveries) {
+            // Fail fast at the call site with the caller's context instead of
+            // deferring to the record validation during build()
+            if (maxToolErrorRecoveries < 0) {
+                throw new IllegalArgumentException(
+                        "maxToolErrorRecoveries must be >= 0 (0 disables recovery): "
+                                + maxToolErrorRecoveries);
+            }
+            this.maxToolErrorRecoveries = maxToolErrorRecoveries;
+            return this;
+        }
+
+        /**
+         * Initializes the reasoning-loop settings from an existing {@link ReactConfig}
+         * (e.g. a configuration-driven agent or a migrated one), so a config carrying
+         * {@code max_iters} / {@code stop_on_reject} / {@code max_tool_error_recoveries}
+         * feeds back into the loop instead of being a read-only snapshot. Values set
+         * explicitly afterwards via {@link #maxIters(int)}, {@link #stopOnReject(boolean)}
+         * or {@link #maxToolErrorRecoveries(int)} take precedence.
+         *
+         * @param reactConfig the configuration to initialize from, {@code null} is ignored
+         * @return This builder instance for method chaining
+         */
+        public Builder reactConfig(ReactConfig reactConfig) {
+            if (reactConfig != null) {
+                this.maxIters = reactConfig.maxIters();
+                this.flatStopOnReject = reactConfig.stopOnReject();
+                this.maxToolErrorRecoveries = reactConfig.maxToolErrorRecoveries();
+            }
             return this;
         }
 
