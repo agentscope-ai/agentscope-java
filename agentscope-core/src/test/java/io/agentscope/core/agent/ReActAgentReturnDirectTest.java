@@ -506,13 +506,16 @@ class ReActAgentReturnDirectTest {
                         new TestTool("weather", true, ToolResultBlock.text("sunny")),
                         new TestTool("forecast", true, ToolResultBlock.text("cloudy")));
 
+        AtomicInteger postActingCount = new AtomicInteger();
         Hook stopFirstToolHook =
                 new Hook() {
                     @Override
                     public <T extends HookEvent> Mono<T> onEvent(T event) {
-                        if (event instanceof PostActingEvent pa
-                                && "tc1".equals(pa.getToolUse().getId())) {
-                            pa.stopAgent();
+                        if (event instanceof PostActingEvent pa) {
+                            postActingCount.incrementAndGet();
+                            if ("tc1".equals(pa.getToolUse().getId())) {
+                                pa.stopAgent();
+                            }
                         }
                         return Mono.just(event);
                     }
@@ -555,6 +558,22 @@ class ReActAgentReturnDirectTest {
                                         .get(0))
                         .getText(),
                 "a stopping tool's result is persisted verbatim, never placeholder-shaped");
+        Msg tailMsg = findToolResultMsg(agent, "tc2");
+        assertNotNull(tailMsg, "the non-stopping tool of the batch must still be recorded");
+        assertEquals(
+                "cloudy",
+                ((TextBlock)
+                                tailMsg.getContentBlocks(ToolResultBlock.class)
+                                        .get(0)
+                                        .getOutput()
+                                        .get(0))
+                        .getText(),
+                "an executed tool keeps its real result in context even when an earlier tool"
+                        + " stops the batch — no placeholder, no dangling tool_use");
+        assertEquals(
+                2,
+                postActingCount.get(),
+                "PostActing fires for every executed tool of the batch, even after a stop");
     }
 
     @Test

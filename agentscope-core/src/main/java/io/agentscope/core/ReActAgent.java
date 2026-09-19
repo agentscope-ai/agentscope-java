@@ -2890,14 +2890,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 && successPairs.stream()
                                                         .allMatch(this::isReturnDirectToolCall);
 
-                                // takeUntil: a stopAgent() raised on an earlier tool of the
-                                // batch must win over .last()'s final element, otherwise the
-                                // stop request is swallowed and the loop keeps running (or
-                                // finalizes a returnDirect answer despite the stop).
+                                // Fire the hook and persist every executed tool's result, then
+                                // let the earliest stopAgent() win: takeUntil would cancel the
+                                // tail's hooks and tool_result writes, leaving dangling
+                                // tool_use for tools that already ran (cf.
+                                // synthesizeErrorResultsForPendingToolCalls on the interrupt
+                                // path). Past a stop, results persist verbatim — the turn ends
+                                // via ACTING_STOP_REQUESTED, not the returnDirect short-circuit.
+                                AtomicBoolean stopSeen = new AtomicBoolean();
                                 return Flux.fromIterable(successPairs)
-                                        .concatMap(e -> notifyPostActingHook(e, returnDirect))
-                                        .takeUntil(PostActingEvent::isStopRequested)
-                                        .last()
+                                        .concatMap(
+                                                e ->
+                                                        notifyPostActingHook(
+                                                                e, returnDirect && !stopSeen.get()))
+                                        .doOnNext(
+                                                e -> {
+                                                    if (e.isStopRequested()) {
+                                                        stopSeen.set(true);
+                                                    }
+                                                })
+                                        .collectList()
+                                        .map(this::earliestStopOrLast)
                                         .flatMap(
                                                 event -> {
                                                     if (event.isStopRequested()) {
@@ -3630,6 +3643,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
                                 state.contextMutable().add(resultMsg);
                             });
+        }
+
+        /** The earliest stop-requesting event of the batch, or the last event if none stopped. */
+        private PostActingEvent earliestStopOrLast(List<PostActingEvent> events) {
+            return events.stream()
+                    .filter(PostActingEvent::isStopRequested)
+                    .findFirst()
+                    .orElseGet(() -> events.get(events.size() - 1));
         }
 
         /**
