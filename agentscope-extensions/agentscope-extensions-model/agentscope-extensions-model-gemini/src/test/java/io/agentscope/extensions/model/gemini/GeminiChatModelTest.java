@@ -17,10 +17,16 @@ package io.agentscope.extensions.model.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.genai.errors.ApiException;
+import com.google.genai.errors.ClientException;
+import com.google.genai.errors.GenAiIOException;
+import com.google.genai.errors.ServerException;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
@@ -32,6 +38,7 @@ import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
@@ -706,5 +713,104 @@ class GeminiChatModelTest {
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             return response;
         }
+    }
+
+    // ==========================================================================
+    // genai SDK exception adaptation (provider-neutral retry contract)
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Gemini SDK ApiException 429 is adapted to the retryable contract")
+    void sdk429AdaptedToRetryableContract() {
+        Throwable sdk429 = new ApiException(429, "RESOURCE_EXHAUSTED", "quota exceeded");
+
+        Throwable adapted = GeminiChatModel.adaptSdkException(sdk429);
+
+        assertInstanceOf(HttpTransportException.class, adapted);
+        HttpTransportException transport = (HttpTransportException) adapted;
+        assertEquals(Integer.valueOf(429), transport.getStatusCode());
+        assertEquals(null, transport.getResponseBody(), "provider error body must not leak");
+        assertEquals(true, ExecutionConfig.RETRYABLE_ERRORS.test(adapted));
+    }
+
+    @Test
+    @DisplayName("Gemini SDK ServerException 5xx is adapted to the retryable contract")
+    void sdk5xxAdaptedToRetryableContract() {
+        Throwable sdk503 = new ServerException(503, "UNAVAILABLE", "overloaded");
+
+        Throwable adapted = GeminiChatModel.adaptSdkException(sdk503);
+
+        assertInstanceOf(HttpTransportException.class, adapted);
+        assertEquals(Integer.valueOf(503), ((HttpTransportException) adapted).getStatusCode());
+        assertEquals(true, ExecutionConfig.RETRYABLE_ERRORS.test(adapted));
+    }
+
+    @Test
+    @DisplayName("Gemini SDK 4xx (400) keeps the original exception type")
+    void sdk4xxKeepsOriginalExceptionType() {
+        Throwable sdk400 = new ClientException(400, "INVALID_ARGUMENT", "bad request");
+
+        Throwable adapted = GeminiChatModel.adaptSdkException(sdk400);
+
+        assertSame(sdk400, adapted, "non-retryable SDK statuses must flow through unchanged");
+        assertEquals(false, ExecutionConfig.RETRYABLE_ERRORS.test(adapted));
+    }
+
+    @Test
+    @DisplayName("Wrapped Gemini SDK 429 is adapted through the cause chain")
+    void wrappedSdk429AdaptedThroughCauseChain() {
+        Throwable sdk429 = new ApiException(429, "RESOURCE_EXHAUSTED", "quota");
+        Throwable wrapped =
+                new ModelException(
+                        "Gemini API call failed: " + sdk429.getMessage(),
+                        sdk429,
+                        "gemini-test",
+                        "gemini");
+
+        Throwable adapted = GeminiChatModel.adaptSdkException(wrapped);
+
+        assertInstanceOf(HttpTransportException.class, adapted);
+        assertEquals(true, ExecutionConfig.RETRYABLE_ERRORS.test(adapted));
+    }
+
+    @Test
+    @DisplayName("GenAiIOException adapts to a status-less retryable transport error")
+    void genAiIoExceptionAdaptedToRetryableTransportError() {
+        Throwable io = new GenAiIOException(new java.io.IOException("connection reset"));
+
+        Throwable adapted = GeminiChatModel.adaptSdkException(io);
+
+        assertInstanceOf(HttpTransportException.class, adapted);
+        assertEquals(null, ((HttpTransportException) adapted).getStatusCode());
+        assertEquals(true, ExecutionConfig.RETRYABLE_ERRORS.test(adapted));
+    }
+
+    @Test
+    @DisplayName("doStream retries a real SDK 429 via the default retry predicate")
+    void doStreamRetriesSdk429() {
+        java.util.concurrent.atomic.AtomicInteger attempts =
+                new java.util.concurrent.atomic.AtomicInteger();
+        Flux<ChatResponse> flaky =
+                Flux.defer(
+                        () -> {
+                            attempts.incrementAndGet();
+                            return Flux.error(new ApiException(429, "RESOURCE_EXHAUSTED", "quota"));
+                        });
+        TestGeminiChatModel testModel = new TestGeminiChatModel(flaky);
+
+        // maxAttempts=3 with the DEFAULT retry predicate (retryOn unset in ModelUtils).
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(ExecutionConfig.builder().maxAttempts(3).build())
+                        .build();
+
+        // reactor wraps retry exhaustion; the important contract is the attempt count.
+        try {
+            testModel.doStream(List.of(), List.of(), options).blockLast();
+            org.junit.jupiter.api.Assertions.fail("expected retry exhaustion error");
+        } catch (RuntimeException expected) {
+            // a real 429 must be retried (this is the regression this test guards)
+        }
+        assertEquals(3, attempts.get(), "a real 429 must be retried up to maxAttempts");
     }
 }
