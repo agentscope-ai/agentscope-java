@@ -232,7 +232,7 @@ agent.interrupt("alice", "session-001", Msg.userMsg("Please stop and summarise."
 
 The reasoning loop checks `state.interruptControl().isInterrupted()` before each iteration. When triggered, the loop enters the `handleInterrupt` path, which saves state and returns the partial result.
 
-The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`.
+The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`. `HarnessAgent` behaves the same way: its context-free `interrupt()` / `interrupt(Msg)` prefer the active call's `RuntimeContext` (so streams started via `streamEvents(msgs, ctx)` with a custom `sessionId` can be cancelled), and it additionally exposes `interrupt(RuntimeContext[, Msg])` overloads for targeting an explicit session (see [Agent — Interrupt](./agent.md)).
 
 
 <Note>

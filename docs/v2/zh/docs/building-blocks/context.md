@@ -229,7 +229,7 @@ agent.interrupt("alice", "session-001", Msg.userMsg("请停下来做个总结。
 
 推理循环在每次迭代前检查 `state.interruptControl().isInterrupted()`。被触发后,循环进入 `handleInterrupt` 路径,保存状态并返回部分结果。
 
-旧的无参 `interrupt()` 在单 session 场景下仍然有效——它会路由到当前活跃会话的 `InterruptControl`。
+旧的无参 `interrupt()` 在单 session 场景下仍然有效——它会路由到当前活跃会话的 `InterruptControl`。`HarnessAgent` 的行为一致：其无上下文的 `interrupt()` / `interrupt(Msg)` 会优先活跃调用的 `RuntimeContext`（因此通过 `streamEvents(msgs, ctx)` 以自定义 `sessionId` 启动的流可以被取消），并且额外提供了 `interrupt(RuntimeContext[, Msg])` 重载用于精确命中目标会话（参见 [Agent — 中断执行](./agent.md)）。
 
 
 <Note>
