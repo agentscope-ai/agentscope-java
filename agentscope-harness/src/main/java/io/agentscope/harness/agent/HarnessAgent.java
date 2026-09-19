@@ -885,6 +885,36 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(Msg, Class, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msg input message
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, Class<?> structuredModel, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), structuredModel, ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(Msg, JsonNode, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msg input message
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, JsonNode schema, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), schema, ctx);
+    }
+
+    /**
      * @deprecated Use {@link #streamEvents(String, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
@@ -902,6 +932,37 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext ctx) {
         return streamEvents(new UserMessage(text), ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(String, Class, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, Class<?> structuredModel, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), structuredModel, ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(String, JsonNode, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text, JsonNode schema, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), schema, ctx);
     }
 
     /**
@@ -923,6 +984,48 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (class-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, Class,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
+     * overload: its context-less plain {@code streamEvents} entries are
+     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
+     *
+     * @param msgs input messages
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(
+                effective, () -> delegate.streamEvents(msgs, structuredModel, effective));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (JSON-schema-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, JsonNode,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
+     * overload: its context-less plain {@code streamEvents} entries are
+     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
+     *
+     * @param msgs input messages
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, schema, effective));
     }
 
     @Override
