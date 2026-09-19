@@ -59,6 +59,17 @@ import org.yaml.snakeyaml.Yaml;
  * filesystem call passes the current {@link RuntimeContext}. The supplier pattern from the
  * legacy class is retained so each invocation observes whatever context the caller has merged.
  *
+ * <p><b>Context resolution contract.</b> This class has two context sources and the {@code null}
+ * convention differs between them on purpose. The {@code RuntimeContext}-parameterised
+ * overloads added for the write path (and the {@link #getSkill(String, RuntimeContext)}
+ * override) treat {@code null} as "caller did not supply one" and fall back to the legacy
+ * shared-context supplier, so pre-existing no-arg / programmatic callers keep their behavior.
+ * The overridden {@link #getAllSkills(RuntimeContext)} preserves the interface contract of
+ * normalising {@code null} to {@link RuntimeContext#empty()} — it does not consult the
+ * supplier. In-call callers should always pass the call-scoped context from {@code
+ * ToolCallParam#getRuntimeContext()}; the supplier-backed path is a legacy side-channel that is
+ * not concurrency-safe on a shared agent instance.
+ *
  * <p>Deletes are non-destructive: skill directories are moved under
  * {@code .archive/<name>-<ts>/} rather than removed, matching the curator's never-delete
  * invariant.
@@ -135,10 +146,20 @@ public class WorkspaceSkillRepository
 
     @Override
     public AgentSkill getSkill(String name) {
-        if (name == null || name.isEmpty()) {
+        return getSkill(name, null);
+    }
+
+    /**
+     * Returns the named skill visible to the supplied context. A {@code null} context falls back
+     * to the legacy shared-context supplier, so out-of-call callers keep their current behavior;
+     * in-call callers must pass the call-scoped context to stay correct under concurrency.
+     */
+    @Override
+    public AgentSkill getSkill(String name, RuntimeContext context) {
+        if (name == null || name.isBlank()) {
             return null;
         }
-        for (AgentSkill skill : getAllSkills()) {
+        for (AgentSkill skill : getAllSkills(contextOrSupplier(context))) {
             if (name.equals(skill.getName())) {
                 return skill;
             }
@@ -163,7 +184,7 @@ public class WorkspaceSkillRepository
 
     /**
      * Lists skills using the caller's request-scoped context rather than the legacy shared context
-     * supplier.
+     * supplier. A {@code null} context is normalised to {@link RuntimeContext#empty()}.
      */
     @Override
     public List<AgentSkill> getAllSkills(RuntimeContext context) {
@@ -206,7 +227,15 @@ public class WorkspaceSkillRepository
 
     @Override
     public boolean skillExists(String skillName) {
-        return getSkill(skillName) != null;
+        return skillExists(skillName, null);
+    }
+
+    /**
+     * Same as {@link #skillExists(String)} but resolved against the supplied call-scoped context;
+     * {@code null} falls back to the legacy shared-context supplier.
+     */
+    public boolean skillExists(String skillName, RuntimeContext context) {
+        return getSkill(skillName, context) != null;
     }
 
     @Override
@@ -248,6 +277,14 @@ public class WorkspaceSkillRepository
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {
+        return save(skills, force, null);
+    }
+
+    /**
+     * Same as {@link #save(List, boolean)} but every read and write is resolved against the
+     * supplied call-scoped context; {@code null} falls back to the legacy shared-context supplier.
+     */
+    public boolean save(List<AgentSkill> skills, boolean force, RuntimeContext context) {
         if (!writable) {
             log.warn("WorkspaceSkillRepository is currently read-only; save() ignored");
             return false;
@@ -261,13 +298,13 @@ public class WorkspaceSkillRepository
                 allOk = false;
                 continue;
             }
-            if (!force && skillExists(skill.getName())) {
+            if (!force && skillExists(skill.getName(), context)) {
                 log.debug("Skill '{}' already exists; skipping (force=false)", skill.getName());
                 allOk = false;
                 continue;
             }
             try {
-                writeSkill(skill);
+                writeSkill(skill, context);
             } catch (Exception e) {
                 log.warn("Failed to save skill '{}': {}", skill.getName(), e.getMessage());
                 allOk = false;
@@ -278,6 +315,16 @@ public class WorkspaceSkillRepository
 
     @Override
     public boolean delete(String skillName) {
+        return delete(skillName, null);
+    }
+
+    /**
+     * Same as {@link #delete(String)} but resolved against the supplied call-scoped context, so a
+     * concurrent call archives the caller's own skill rather than a same-named skill in whatever
+     * namespace the shared supplier happens to point at; {@code null} falls back to the legacy
+     * shared-context supplier.
+     */
+    public boolean delete(String skillName, RuntimeContext context) {
         if (!writable) {
             log.warn("WorkspaceSkillRepository is currently read-only; delete() ignored");
             return false;
@@ -285,11 +332,11 @@ public class WorkspaceSkillRepository
         if (skillName == null || skillName.isBlank()) {
             return false;
         }
-        AgentSkill existing = getSkill(skillName);
+        AgentSkill existing = getSkill(skillName, context);
         if (existing == null) {
             return false;
         }
-        RuntimeContext ctx = currentContext();
+        RuntimeContext ctx = contextOrSupplier(context);
         String src = skillDirRelative(skillName);
         String archiveDest = archiveDestRelative(skillName);
         try {
@@ -319,12 +366,20 @@ public class WorkspaceSkillRepository
      * Returns {@code null} when the file does not exist or read fails.
      */
     public String readSkillFile(String skillName, String relPath) {
+        return readSkillFile(skillName, relPath, null);
+    }
+
+    /**
+     * Same as {@link #readSkillFile(String, String)} but resolved against the supplied call-scoped
+     * context; {@code null} falls back to the legacy shared-context supplier.
+     */
+    public String readSkillFile(String skillName, String relPath, RuntimeContext context) {
         if (skillName == null || skillName.isBlank() || relPath == null || relPath.isBlank()) {
             return null;
         }
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
-            ReadResult rr = filesystem.read(currentContext(), path, 0, 0);
+            ReadResult rr = filesystem.read(contextOrSupplier(context), path, 0, 0);
             if (rr.isSuccess() && rr.fileData() != null) {
                 return rr.fileData().content();
             }
@@ -340,6 +395,15 @@ public class WorkspaceSkillRepository
      * size limits). Returns {@code true} on success.
      */
     public boolean writeSkillFile(String skillName, String relPath, String content) {
+        return writeSkillFile(skillName, relPath, content, null);
+    }
+
+    /**
+     * Same as {@link #writeSkillFile(String, String, String)} but resolved against the supplied
+     * call-scoped context; {@code null} falls back to the legacy shared-context supplier.
+     */
+    public boolean writeSkillFile(
+            String skillName, String relPath, String content, RuntimeContext context) {
         if (!writable) {
             return false;
         }
@@ -353,7 +417,7 @@ public class WorkspaceSkillRepository
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
             filesystem.uploadFiles(
-                    currentContext(),
+                    contextOrSupplier(context),
                     List.of(
                             new AbstractMap.SimpleImmutableEntry<>(
                                     path, content.getBytes(StandardCharsets.UTF_8))));
@@ -369,6 +433,14 @@ public class WorkspaceSkillRepository
      * Idempotent: missing files are treated as success.
      */
     public boolean deleteSkillFile(String skillName, String relPath) {
+        return deleteSkillFile(skillName, relPath, null);
+    }
+
+    /**
+     * Same as {@link #deleteSkillFile(String, String)} but resolved against the supplied
+     * call-scoped context; {@code null} falls back to the legacy shared-context supplier.
+     */
+    public boolean deleteSkillFile(String skillName, String relPath, RuntimeContext context) {
         if (!writable) {
             return false;
         }
@@ -377,7 +449,7 @@ public class WorkspaceSkillRepository
         }
         String path = skillDirRelative(skillName) + "/" + relPath;
         try {
-            WriteResult r = filesystem.delete(currentContext(), path);
+            WriteResult r = filesystem.delete(contextOrSupplier(context), path);
             return r.isSuccess();
         } catch (Exception e) {
             log.warn("deleteSkillFile({}, {}) failed: {}", skillName, relPath, e.getMessage());
@@ -410,8 +482,8 @@ public class WorkspaceSkillRepository
     //  Internals
     // =========================================================================
 
-    private void writeSkill(AgentSkill skill) {
-        RuntimeContext ctx = currentContext();
+    private void writeSkill(AgentSkill skill, RuntimeContext context) {
+        RuntimeContext ctx = contextOrSupplier(context);
         String skillMd = toMarkdown(skill);
         String skillDir = skillDirRelative(skill.getName());
         String skillMdPath = skillDir + "/" + SKILL_FILE;
@@ -461,6 +533,15 @@ public class WorkspaceSkillRepository
     private RuntimeContext currentContext() {
         RuntimeContext ctx = contextSupplier.get();
         return ctx != null ? ctx : RuntimeContext.empty();
+    }
+
+    /**
+     * Resolves the effective context for a context-aware overload: an explicit context (typically
+     * the call-scoped one carried by a tool call) wins; {@code null} keeps the legacy behavior of
+     * consulting the shared-context supplier.
+     */
+    private RuntimeContext contextOrSupplier(RuntimeContext context) {
+        return context != null ? context : currentContext();
     }
 
     /**
