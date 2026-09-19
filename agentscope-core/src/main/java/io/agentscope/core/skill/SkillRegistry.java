@@ -59,6 +59,17 @@ class SkillRegistry {
     // ==================== Activation Management ====================
 
     /**
+     * Returns whether a skill is currently active.
+     *
+     * @param skillId The skill ID (must not be null)
+     * @return true if the skill is registered and active
+     */
+    boolean isSkillActive(String skillId) {
+        RegisteredSkill registered = registeredSkills.get(skillId);
+        return registered != null && registered.isActive();
+    }
+
+    /**
      * Sets the activation state of a skill.
      *
      * @param skillId The skill ID (must not be null)

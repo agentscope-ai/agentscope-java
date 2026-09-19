@@ -206,11 +206,7 @@ public class SkillBox {
      * @return true if the skill is active
      */
     public boolean isSkillActive(String skillId) {
-        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
-        if (registeredSkill == null) {
-            return false;
-        }
-        return registeredSkill.isActive();
+        return skillRegistry.isSkillActive(skillId);
     }
 
     // ==================== Skill Management ====================
