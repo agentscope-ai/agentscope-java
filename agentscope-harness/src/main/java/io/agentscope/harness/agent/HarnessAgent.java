@@ -199,6 +199,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private final WorkspacePathNormalizer pathNormalizer;
 
+    /**
+     * Identity token shared with this agent's memory middlewares. {@code close()} passes it to
+     * {@code MemoryBackgroundTasks.cancelAll(Object)} so closing one agent cancels only that
+     * agent's background memory tasks. It cannot be {@code this}: the middlewares are
+     * constructed inside {@code Builder.build()}, where {@code this} is the builder rather than
+     * the agent being built.
+     */
+    private final Object memoryTaskOwner;
+
     /** Lazily created internal gateway for {@link #channel}. */
     private volatile HarnessGateway internalGateway;
 
@@ -220,7 +229,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer,
-            Toolkit ownedMcpToolkit) {
+            Toolkit ownedMcpToolkit,
+            Object memoryTaskOwner) {
         this.delegate = delegate;
         this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
@@ -240,6 +250,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
+        this.memoryTaskOwner = memoryTaskOwner != null ? memoryTaskOwner : new Object();
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -465,6 +476,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.session.SessionTree.awaitMirrorQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
+            // Mark this agent's memory pipeline as shut down so background tasks dispatched
+            // concurrently with close are dropped instead of starting model calls that would
+            // outlive the agent, then cancel this agent's in-flight fire-and-forget memory
+            // tasks so their underlying model calls (and HTTP connections) are released
+            // promptly. Other agents' tasks are left untouched.
+            io.agentscope.harness.agent.memory.MemoryBackgroundTasks.shutdown(memoryTaskOwner);
+            io.agentscope.harness.agent.memory.MemoryBackgroundTasks.cancelAll(memoryTaskOwner);
             // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
@@ -2561,6 +2579,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new TranscriptMiddleware(
                                 wsManager, effectiveTranscriptStore, transcriptTenant));
             }
+            // Shared identity token for this agent's memory background tasks. The memory
+            // middlewares are created below, before the HarnessAgent itself exists, so the token
+            // - not `this` - is what ties them to close()'s agent-scoped cancellation.
+            final Object memoryTaskOwner = new Object();
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
@@ -2576,7 +2598,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
-                                periodicGate));
+                                periodicGate,
+                                memoryTaskOwner));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -2597,7 +2620,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 memoryConfig.sessionRetentionDays(),
                                 memoryConfig.consolidationMinGap(),
                                 effectiveIsolationScope,
-                                periodicGate));
+                                periodicGate,
+                                memoryTaskOwner));
             }
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
@@ -2984,7 +3008,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer,
-                    agentToolkit);
+                    agentToolkit,
+                    memoryTaskOwner);
         }
     }
 }
