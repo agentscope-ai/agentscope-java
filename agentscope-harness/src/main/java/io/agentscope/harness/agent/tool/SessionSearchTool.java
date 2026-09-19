@@ -68,7 +68,12 @@ public class SessionSearchTool {
                             name = "maxResults",
                             description = "Maximum number of results to return (default: 10)",
                             required = false)
-                    Integer maxResults) {
+                    Integer maxResults,
+            @ToolParam(
+                            name = "matchMode",
+                            description = "Matching mode: phrase (default), all, or any",
+                            required = false)
+                    String matchMode) {
         if (query == null || query.isBlank()) {
             return "Error: query is required";
         }
@@ -76,7 +81,7 @@ public class SessionSearchTool {
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
-        String lowerQuery = query.toLowerCase();
+        SearchMatchMode searchMatchMode = SearchMatchMode.parse(matchMode);
 
         List<String> results = new ArrayList<>();
 
@@ -85,7 +90,7 @@ public class SessionSearchTool {
             if (results.size() >= limit) {
                 break;
             }
-            searchInSessionFile(file, lowerQuery, results, limit);
+            searchInSessionFile(file, query, searchMatchMode, results, limit);
         }
 
         if (results.isEmpty()) {
@@ -98,6 +103,12 @@ public class SessionSearchTool {
             sb.append(result).append("\n");
         }
         return sb.toString();
+    }
+
+    /** Preserves the pre-matchMode Java entry point for direct callers. */
+    public String sessionSearch(
+            RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
+        return sessionSearch(runtimeContext, query, agentId, maxResults, null);
     }
 
     @Tool(
@@ -267,7 +278,11 @@ public class SessionSearchTool {
     }
 
     private void searchInSessionFile(
-            Path logFile, String lowerQuery, List<String> results, int limit) {
+            Path logFile,
+            String query,
+            SearchMatchMode matchMode,
+            List<String> results,
+            int limit) {
         try {
             Path contextFile =
                     logFile.resolveSibling(
@@ -285,7 +300,7 @@ public class SessionSearchTool {
                     break;
                 }
                 String content = searchableText(entry);
-                if (content != null && content.toLowerCase().contains(lowerQuery)) {
+                if (matchMode.matches(content, query)) {
                     String preview =
                             content.length() > 200 ? content.substring(0, 200) + "..." : content;
                     String roleLabel =
