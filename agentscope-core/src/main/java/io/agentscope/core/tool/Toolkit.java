@@ -117,6 +117,15 @@ public class Toolkit {
     }
 
     /**
+     * Returns the configuration this toolkit was created with.
+     *
+     * @return the toolkit configuration (never null)
+     */
+    public ToolkitConfig getConfig() {
+        return config;
+    }
+
+    /**
      * Create a fluent builder for registering tools with optional configuration.
      *
      * <p>Example usage:

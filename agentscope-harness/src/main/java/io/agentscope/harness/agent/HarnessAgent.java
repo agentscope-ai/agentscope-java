@@ -458,6 +458,57 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getPermissionMode(userId, sessionId);
     }
 
+    /**
+     * Returns the tool groups activated for the given {@code (userId, sessionId)} session. See
+     * {@link ReActAgent#getActiveToolGroups(String, String)}.
+     */
+    public List<String> getActiveToolGroups(String userId, String sessionId) {
+        return delegate.getActiveToolGroups(userId, sessionId);
+    }
+
+    /**
+     * Returns the tool groups activated for the session identified by the given
+     * {@link RuntimeContext}. See {@link ReActAgent#getActiveToolGroups(RuntimeContext)}.
+     */
+    public List<String> getActiveToolGroups(RuntimeContext ctx) {
+        return delegate.getActiveToolGroups(ctx);
+    }
+
+    /**
+     * Activates or deactivates tool groups for the given {@code (userId, sessionId)} session and
+     * persists the change so the next {@code call} on that session sees it. Mutating
+     * {@link #getToolkit()} directly between calls has no effect on the model-visible tools. See
+     * {@link ReActAgent#updateToolGroups(String, String, List, boolean)}.
+     */
+    public void updateToolGroups(
+            String userId, String sessionId, List<String> groupNames, boolean active) {
+        delegate.updateToolGroups(userId, sessionId, groupNames, active);
+    }
+
+    /**
+     * Activates or deactivates tool groups for the session identified by the given
+     * {@link RuntimeContext}. See {@link ReActAgent#updateToolGroups(RuntimeContext, List, boolean)}.
+     */
+    public void updateToolGroups(RuntimeContext ctx, List<String> groupNames, boolean active) {
+        delegate.updateToolGroups(ctx, groupNames, active);
+    }
+
+    /**
+     * Replaces the activated tool groups for the given {@code (userId, sessionId)} session and
+     * persists the change. See {@link ReActAgent#setActiveToolGroups(String, String, List)}.
+     */
+    public void setActiveToolGroups(String userId, String sessionId, List<String> groupNames) {
+        delegate.setActiveToolGroups(userId, sessionId, groupNames);
+    }
+
+    /**
+     * Replaces the activated tool groups for the session identified by the given
+     * {@link RuntimeContext}. See {@link ReActAgent#setActiveToolGroups(RuntimeContext, List)}.
+     */
+    public void setActiveToolGroups(RuntimeContext ctx, List<String> groupNames) {
+        delegate.setActiveToolGroups(ctx, groupNames);
+    }
+
     @Override
     public void close() {
         try {
@@ -935,6 +986,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.observe(msgs);
     }
 
+    /**
+     * Returns the underlying agent's toolkit. Tool group activation is per session: mutating the
+     * returned toolkit's groups between calls does not change the tools exposed to the model — use
+     * {@link #updateToolGroups(String, String, List, boolean)} or {@link
+     * #setActiveToolGroups(String, String, List)} instead.
+     */
     public Toolkit getToolkit() {
         return delegate.getToolkit();
     }

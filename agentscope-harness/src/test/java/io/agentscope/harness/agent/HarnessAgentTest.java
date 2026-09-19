@@ -48,6 +48,8 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
@@ -1664,6 +1666,55 @@ class HarnessAgentTest {
                         .interruptControl()
                         .isInterrupted(),
                 "session identified by RuntimeContext should be interrupted");
+    }
+
+    // =========================================================================
+    // tool groups — per-session delegation
+    // =========================================================================
+
+    /** Tools registered into the initially inactive "admin" group. */
+    public static class AdminTools {
+        @Tool(name = "delete_file", description = "Delete a file")
+        public String deleteFile(@ToolParam(name = "filename") String filename) {
+            return "deleted " + filename;
+        }
+    }
+
+    @Test
+    void updateToolGroupsWithUserIdAndSessionIdTargetsOnlyThatSession() throws Exception {
+        Files.createDirectories(workspace);
+        Toolkit toolkit = new Toolkit();
+        toolkit.createToolGroup("admin", "Admin tools", false);
+        toolkit.registration().tool(new AdminTools()).group("admin").apply();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .toolkit(toolkit)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        agent.updateToolGroups("alice", "session-abc", List.of("admin"), true);
+
+        assertTrue(
+                agent.getActiveToolGroups("alice", "session-abc").contains("admin"),
+                "target session should have the group activated");
+        assertFalse(
+                agent.getActiveToolGroups("alice", "other-session").contains("admin"),
+                "other session should remain unaffected");
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState("alice", "session-abc")
+                        .getToolContext()
+                        .getActivatedGroups()
+                        .contains("admin"),
+                "activation must be stored on the session's AgentState");
+
+        agent.setActiveToolGroups(
+                RuntimeContext.builder().userId("alice").sessionId("session-abc").build(),
+                List.of("admin"));
+        assertEquals(List.of("admin"), agent.getActiveToolGroups("alice", "session-abc"));
     }
 
     // =========================================================================

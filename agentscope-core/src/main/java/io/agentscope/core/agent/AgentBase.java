@@ -319,7 +319,14 @@ public abstract class AgentBase implements Agent {
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 msgs.toArray(new Msg[0]))));
-        return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+        if (scope == null) {
+            return body;
+        }
+        // Release the scope exactly once on any terminal signal of the admitted call (complete,
+        // error or cancel), before the signal propagates to the caller. Calls cancelled while still
+        // waiting on the serialization gate never reach this point, so they never see this hook.
+        return Mono.using(() -> scope, s -> body, this::releaseCallScope, true)
+                .contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
     }
 
     /**
@@ -592,8 +599,26 @@ public abstract class AgentBase implements Agent {
     /**
      * Invoked in {@code Mono.using} cleanup, before clearing the running state. Pairs with {@link
      * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
+     *
+     * <p>Note that this runs for every {@code call()} subscription, including one cancelled while
+     * still waiting on the per-session serialization gate — for which {@link
+     * #beforeAgentExecution(List, RuntimeContext)} never ran. Per-call bookkeeping that must be
+     * balanced against {@code beforeAgentExecution} belongs in {@link #releaseCallScope(Object)}.
      */
     protected void afterAgentExecution() {}
+
+    /**
+     * Invoked exactly once for each call that was admitted past the serialization gate, with the
+     * scope returned by {@link #beforeAgentExecution(List, RuntimeContext)}, when that call
+     * terminates (complete, error or cancel) and before the terminal signal reaches the caller.
+     * Not invoked when {@code beforeAgentExecution} returned {@code null} or threw, nor for calls
+     * cancelled while still waiting on the gate. Runs before {@link #afterAgentExecution()}. The
+     * default is a no-op.
+     *
+     * @param callScope the per-call scope returned by {@code beforeAgentExecution} (never {@code
+     *     null})
+     */
+    protected void releaseCallScope(Object callScope) {}
 
     /**
      * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
