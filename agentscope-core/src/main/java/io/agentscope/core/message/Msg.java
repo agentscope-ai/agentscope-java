@@ -623,6 +623,7 @@ public class Msg implements State {
      *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
      *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>
      *   <li>{@link GenerateReason#MAX_ITERATIONS} - Maximum iterations reached</li>
+     *   <li>{@link GenerateReason#TOOL_RETURN_DIRECT} - Tool result returned directly to the caller</li>
      * </ul>
      *
      * @return The generate reason, defaults to {@link GenerateReason#MODEL_STOP} if not set

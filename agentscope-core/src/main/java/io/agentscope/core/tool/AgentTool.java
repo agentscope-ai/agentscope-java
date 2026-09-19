@@ -113,6 +113,23 @@ public interface AgentTool {
     }
 
     /**
+     * Whether this tool's result should be returned directly to the caller,
+     * skipping the next reasoning iteration. Defaults to {@code false}.
+     *
+     * <p>The flag applies wherever the tool's successful result is produced: framework-executed
+     * tools and results supplied by the caller when resuming after {@code TOOL_SUSPENDED}
+     * (e.g. {@code externalTool = true} tools). A batch resolved across multiple resumes, or
+     * mixing externally supplied and framework-executed results, is always fed back to the
+     * model.
+     *
+     * <p>Since the successful result becomes the turn's final answer, ensure it always
+     * produces presentable content blocks — never an empty output list.
+     */
+    default boolean isReturnDirect() {
+        return false;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for

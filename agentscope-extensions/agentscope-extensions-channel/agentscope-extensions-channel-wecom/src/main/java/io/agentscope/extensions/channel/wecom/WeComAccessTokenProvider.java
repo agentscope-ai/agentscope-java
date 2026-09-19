@@ -17,8 +17,11 @@ package io.agentscope.extensions.channel.wecom;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
+import io.agentscope.extensions.channel.common.CachedAccessToken;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import java.time.Duration;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Objects;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -26,6 +29,9 @@ import reactor.core.publisher.Mono;
  * Fetches and caches a WeCom {@code access_token} for one {@code corpid + corpsecret} pair.
  * Tokens are valid for ~7200 s; this provider proactively refreshes at ~80% of TTL so a single
  * worker hot path never sees a forced refresh.
+ *
+ * <p>The cache defaults to a process-local {@link InMemoryAccessTokenStore}; pass a
+ * shared-storage {@link AccessTokenStore} to share tokens across instances.
  */
 public final class WeComAccessTokenProvider {
 
@@ -34,12 +40,25 @@ public final class WeComAccessTokenProvider {
     private final WebClient client;
     private final String corpId;
     private final String secret;
-    private final AtomicReference<TokenSlot> slot = new AtomicReference<>(TokenSlot.EMPTY);
+    private final AccessTokenStore store;
 
     public WeComAccessTokenProvider(String apiBase, String corpId, String secret) {
+        this(apiBase, corpId, secret, new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Constructor variant that lets the application choose where the token is cached — for
+     * example a shared-storage {@link AccessTokenStore} so one refresh or invalidation serves
+     * all instances.
+     *
+     * @param store cache for the fetched token; must be thread-safe
+     */
+    public WeComAccessTokenProvider(
+            String apiBase, String corpId, String secret, AccessTokenStore store) {
         this.client = WebClient.builder().baseUrl(apiBase).build();
         this.corpId = corpId;
         this.secret = secret;
+        this.store = Objects.requireNonNull(store, "store");
     }
 
     /**
@@ -47,10 +66,9 @@ public final class WeComAccessTokenProvider {
      * expiring.
      */
     public Mono<String> token() {
-        TokenSlot s = slot.get();
-        long now = System.currentTimeMillis();
-        if (s.value != null && s.refreshAtMs > now) {
-            return Mono.just(s.value);
+        CachedAccessToken cached = store.get();
+        if (cached != null && cached.refreshAtMs() > System.currentTimeMillis()) {
+            return Mono.just(cached.value());
         }
         return refresh();
     }
@@ -83,7 +101,7 @@ public final class WeComAccessTokenProvider {
             String token = node.path("access_token").asText();
             int expiresIn = node.path("expires_in").asInt(7200);
             long refreshAt = System.currentTimeMillis() + (long) (expiresIn * 800L);
-            slot.set(new TokenSlot(token, refreshAt));
+            store.putIfNewer(new CachedAccessToken(token, refreshAt));
             return token;
         } catch (RuntimeException re) {
             throw re;
@@ -95,10 +113,6 @@ public final class WeComAccessTokenProvider {
 
     /** Forces the next {@link #token()} call to refresh. Useful for tests / error recovery. */
     public void invalidate() {
-        slot.set(TokenSlot.EMPTY);
-    }
-
-    private record TokenSlot(String value, long refreshAtMs) {
-        static final TokenSlot EMPTY = new TokenSlot(null, 0L);
+        store.clear();
     }
 }
