@@ -1290,4 +1290,45 @@ class ToolkitTest {
                 (Map<String, Object>) schema.getOutputSchema().get("properties");
         assertTrue(properties.containsKey("answer"));
     }
+
+    @Test
+    @DisplayName(
+            "callTool single should populate id and name on ToolResultBlock (was null before fix)")
+    void testCallToolSinglePopulatesIdAndName() {
+        toolkit.registerTool(sampleTools);
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-001")
+                        .name("add")
+                        .input(Map.of("a", 2, "b", 3))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-001", result.getId());
+        assertEquals("add", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool single should propagate id and name on error results too")
+    void testCallToolSingleErrorResultAlsoHasIdAndName() {
+        toolkit.registerTool(sampleTools);
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-err")
+                        .name("error_tool")
+                        .input(Map.of("message", "boom"))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-err", result.getId());
+        assertEquals("error_tool", result.getName());
+    }
 }
