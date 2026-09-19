@@ -25,7 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.harness.agent.filesystem.sandbox.BaseSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -171,7 +171,7 @@ public class SessionTranscriptWriter {
     public String resolveContextPath(RuntimeContext rc, String agentId, String sessionId) {
         // Session archives are persisted in the host-side workspace. A sandboxed agent cannot
         // resolve that path, so do not advertise it as agent-readable in the summary prompt.
-        if (workspaceManager.getFilesystem() instanceof BaseSandboxFilesystem) {
+        if (FilesystemUtils.isSandboxBacked(workspaceManager.getFilesystem())) {
             return "";
         }
         try {

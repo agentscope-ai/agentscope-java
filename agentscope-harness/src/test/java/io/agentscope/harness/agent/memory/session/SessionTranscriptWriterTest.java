@@ -185,7 +185,9 @@ class SessionTranscriptWriterTest {
 
     @Test
     void resolveContextPath_omitsHostPathForSandboxFilesystem() {
-        SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
+        var filesystem =
+                OverlayFilesystem.of(
+                        mock(SandboxBackedFilesystem.class), new LocalFilesystem(workspace));
         try (WorkspaceManager wm = new WorkspaceManager(workspace, filesystem)) {
             SessionTranscriptWriter writer = new SessionTranscriptWriter(wm);
 
