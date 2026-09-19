@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ThinkingAccumulator;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -120,6 +121,70 @@ class OllamaResponseParserTest {
         assertTrue(content.get(0) instanceof ThinkingBlock);
         assertEquals("Okay, the user wants 2+2...", ((ThinkingBlock) content.get(0)).getThinking());
         assertEquals("2 + 2 = 4", ((TextBlock) content.get(1)).getText());
+    }
+
+    @Test
+    @DisplayName(
+            "Should surface reasoning from JSON payload when provided under reasoning or"
+                    + " reasoning_content alias")
+    void testReasoningAliasesSurviveJsonDeserialization() {
+        String jsonReasoning =
+                "{\"model\":\"deepseek-r1:8b\",\"message\":{\"role\":\"assistant\",\"reasoning\":\"Reasoning"
+                    + " via reasoning field...\",\"content\":\"answer\"},\"done\":true}";
+        OllamaResponse response1 =
+                JsonUtils.getJsonCodec().fromJson(jsonReasoning, OllamaResponse.class);
+        ChatResponse chatResponse1 = parser.parseResponse(response1);
+
+        List<ContentBlock> content1 = chatResponse1.getContent();
+        assertEquals(2, content1.size());
+        assertTrue(content1.get(0) instanceof ThinkingBlock);
+        assertEquals(
+                "Reasoning via reasoning field...",
+                ((ThinkingBlock) content1.get(0)).getThinking());
+        assertEquals("answer", ((TextBlock) content1.get(1)).getText());
+
+        String jsonReasoningContent =
+                "{\"model\":\"deepseek-r1:8b\",\"message\":{\"role\":\"assistant\",\"reasoning_content\":\"Reasoning"
+                    + " via reasoning_content field...\",\"content\":\"answer\"},\"done\":true}";
+        OllamaResponse response2 =
+                JsonUtils.getJsonCodec().fromJson(jsonReasoningContent, OllamaResponse.class);
+        ChatResponse chatResponse2 = parser.parseResponse(response2);
+
+        List<ContentBlock> content2 = chatResponse2.getContent();
+        assertEquals(2, content2.size());
+        assertTrue(content2.get(0) instanceof ThinkingBlock);
+        assertEquals(
+                "Reasoning via reasoning_content field...",
+                ((ThinkingBlock) content2.get(0)).getThinking());
+        assertEquals("answer", ((TextBlock) content2.get(1)).getText());
+    }
+
+    @Test
+    @DisplayName(
+            "Should accumulate multi-chunk streaming thinking deltas into complete thinking"
+                    + " content")
+    void testStreamingThinkingAccumulation() {
+        String[] thinkingChunks = {"Let ", "me ", "think ", "about ", "it."};
+        ThinkingAccumulator accumulator = new ThinkingAccumulator();
+
+        for (String delta : thinkingChunks) {
+            OllamaResponse chunk = new OllamaResponse();
+            OllamaMessage msg = new OllamaMessage("assistant", "");
+            msg.setThinking(delta);
+            chunk.setMessage(msg);
+
+            ChatResponse response = parser.parseResponse(chunk);
+            assertEquals(1, response.getContent().size());
+            assertTrue(response.getContent().get(0) instanceof ThinkingBlock);
+            ThinkingBlock block = (ThinkingBlock) response.getContent().get(0);
+            assertEquals(delta, block.getThinking());
+            accumulator.add(block);
+        }
+
+        assertEquals("Let me think about it.", accumulator.getAccumulated());
+        ThinkingBlock aggregated = (ThinkingBlock) accumulator.buildAggregated();
+        assertNotNull(aggregated);
+        assertEquals("Let me think about it.", aggregated.getThinking());
     }
 
     @Test

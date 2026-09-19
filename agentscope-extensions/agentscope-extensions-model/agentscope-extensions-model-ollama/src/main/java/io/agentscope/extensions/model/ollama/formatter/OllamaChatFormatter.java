@@ -447,6 +447,16 @@ public class OllamaChatFormatter
             List<ToolSchema> tools,
             ToolChoice toolChoice) {
 
+        // Ensure response-only fields like 'thinking' are not sent outbound to /api/chat,
+        // even if an OllamaMessage was copied or reused from a prior response.
+        if (messages != null) {
+            for (OllamaMessage msg : messages) {
+                if (msg != null && msg.getThinking() != null) {
+                    msg.setThinking(null);
+                }
+            }
+        }
+
         OllamaRequest.Builder builder =
                 OllamaRequest.builder().model(model).messages(messages).stream(stream);
 

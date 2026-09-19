@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.model.ollama.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
@@ -37,9 +38,12 @@ public class OllamaMessage {
 
     /**
      * The model's reasoning content, returned by thinking models when the request enables the
-     * {@code think} option. Response-only: Ollama's request message schema does not accept it.
+     * {@code think} option. In native Ollama {@code /api/chat} this is returned in {@code thinking};
+     * some reasoning models or proxies expose it under {@code reasoning} or {@code reasoning_content}.
+     * Response-only: Ollama's request message schema does not accept it.
      */
     @JsonProperty("thinking")
+    @JsonAlias({"reasoning", "reasoning_content"})
     private String thinking;
 
     /** List of base64-encoded images (optional). */
