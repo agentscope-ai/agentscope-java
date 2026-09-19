@@ -248,8 +248,11 @@ public class WriteFileTool {
                             name = "ranges",
                             description =
                                     "The range of lines to be replaced as [start, end], e.g.,"
-                                            + " '[1,5]' or '1,5'. If null or empty, the entire file"
-                                            + " will be overwritten.",
+                                            + " '[1,5]' or '1,5'. Lines are 1-based and"
+                                            + " inclusive; negative indices are NOT supported"
+                                            + " for writes (view_text_file accepts them, this"
+                                            + " tool does not). If null or empty, the entire"
+                                            + " file will be overwritten.",
                             required = false)
                     String ranges) {
 
@@ -328,6 +331,29 @@ public class WriteFileTool {
                                 logger.debug(
                                         "Replacing lines {}-{} in file: {}", start, end, filePath);
 
+                                if (start < 1) {
+                                    logger.warn(
+                                            "Invalid start line {} for file: {}", start, filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is invalid. Line"
+                                                            + " numbers start from 1.",
+                                                    start));
+                                }
+
+                                if (start > end) {
+                                    logger.warn(
+                                            "Invalid range: start {} > end {} for file: {}",
+                                            start,
+                                            end,
+                                            filePath);
+                                    return ToolResultBlock.error(
+                                            String.format(
+                                                    "Invalid range: start line %d is greater than"
+                                                            + " end line %d.",
+                                                    start, end));
+                                }
+
                                 if (start > originalLines.size()) {
                                     logger.warn(
                                             "Start line {} exceeds file length {} for file: {}",
@@ -352,8 +378,12 @@ public class WriteFileTool {
                                             originalLines.subList(end, originalLines.size()));
                                 }
 
-                                // Write the new content
+                                // Write the new content, preserving the original file's
+                                // trailing line terminator so line counts stay stable.
                                 String joinedContent = String.join("\n", newContent);
+                                if (Files.readString(path, StandardCharsets.UTF_8).endsWith("\n")) {
+                                    joinedContent += "\n";
+                                }
                                 Files.writeString(path, joinedContent, StandardCharsets.UTF_8);
                                 logger.info(
                                         "Successfully replaced lines {}-{} in file: {}",
