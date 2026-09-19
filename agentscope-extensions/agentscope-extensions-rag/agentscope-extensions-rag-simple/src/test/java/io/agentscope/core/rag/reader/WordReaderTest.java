@@ -206,6 +206,51 @@ class WordReaderTest {
         assertEquals(expected, readSingleChunk(reader, docx));
     }
 
+    @Test
+    @DisplayName("Should pad irregular Markdown table rows to header column count")
+    void testMarkdownTablePadsIrregularRows(@TempDir Path tempDir) throws Exception {
+        Path docx =
+                writeDocx(
+                        tempDir.resolve("irregular-table.docx"),
+                        doc -> {
+                            XWPFTable table = doc.createTable(3, 3);
+                            table.getRow(0).getCell(0).setText("A");
+                            table.getRow(0).getCell(1).setText("B");
+                            table.getRow(0).getCell(2).setText("C");
+                            table.getRow(1).getCell(0).setText("d");
+                            table.getRow(1).getCell(1).setText("e");
+                            // Simulate a merged/irregular row with fewer cells than the header.
+                            table.getRow(1).removeCell(2);
+                            table.getRow(2).getCell(0).setText("f");
+                            table.getRow(2).getCell(1).setText("g");
+                            table.getRow(2).getCell(2).setText("h");
+                        });
+        WordReader reader =
+                new WordReader(4096, SplitStrategy.CHARACTER, 0, false, true, TableFormat.MARKDOWN);
+
+        String markdown = readSingleChunk(reader, docx);
+        String expected =
+                "| A | B | C |\n" + "| --- | --- | --- |\n" + "| d | e |  |\n" + "| f | g | h |\n";
+        assertEquals(expected, markdown);
+
+        String[] lines = markdown.split("\n", -1);
+        // Trailing newline yields an empty final segment; ignore it.
+        assertTrue(lines.length >= 4);
+        int expectedCols = markdownTableColumnCount(lines[0]);
+        assertEquals(3, expectedCols);
+        assertEquals(expectedCols, markdownTableColumnCount(lines[1]), "delimiter columns");
+        assertEquals(expectedCols, markdownTableColumnCount(lines[2]), "padded data row columns");
+        assertEquals(expectedCols, markdownTableColumnCount(lines[3]), "full data row columns");
+    }
+
+    /** Counts GFM table columns from a Markdown row (pipe-delimited). */
+    private static int markdownTableColumnCount(String row) {
+        // "| A | B | C |" -> ["", " A ", " B ", " C ", ""]
+        String[] parts = row.split("\\|", -1);
+        assertTrue(parts.length >= 2, "row should be pipe-wrapped: " + row);
+        return parts.length - 2;
+    }
+
     /** Authors a .docx fixture in memory, so that no binary test resource is required. */
     private static Path writeDocx(Path target, Consumer<XWPFDocument> author) throws IOException {
         try (XWPFDocument doc = new XWPFDocument()) {
