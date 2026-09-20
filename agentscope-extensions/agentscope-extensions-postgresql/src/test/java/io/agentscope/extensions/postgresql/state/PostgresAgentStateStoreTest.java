@@ -489,6 +489,23 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
+    void saveIfVersionZeroFallsBackToCasUpdateForBackfilledRow() throws SQLException {
+        // Regression for issue #3162: rows backfilled at version 0 by the ALTER TABLE migration
+        // collide with the "row absent" sentinel. The insertIfAbsent INSERT affects 0 rows
+        // (ON CONFLICT DO NOTHING); the store must fall back to UPDATE ... WHERE version = 0
+        // instead of reporting a phantom CAS conflict.
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(connection.getAutoCommit()).thenReturn(true, false);
+        when(preparedStatement.executeUpdate()).thenReturn(0).thenReturn(1);
+
+        long newVersion =
+                store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
+
+        assertEquals(1L, newVersion);
+    }
+
+    @Test
     void executeInWriteTransactionRollsBackOnException() throws SQLException {
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
