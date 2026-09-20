@@ -17,6 +17,8 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,12 +35,15 @@ import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KubernetesSandboxTest {
@@ -75,7 +80,41 @@ class KubernetesSandboxTest {
         assertEquals("out", result.stdout());
         ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
         verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
-        assertEquals("cd '/workspace' && (echo hi)", cmd.getValue());
+        assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"cat <<'EOF'\nhello\nEOF", "echo hi\n# comment", "echo hi \\", "echo hi"})
+    void doExecKeepsClosingParenOnItsOwnLine(String command) throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("done", "", 0));
+
+        ExecResult result = sandbox.doExec(null, command, 30);
+
+        assertEquals(0, result.exitCode());
+        ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
+        verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
+        String wrapped = cmd.getValue();
+        assertEquals("cd '/workspace' && (\n" + command + "\n)", wrapped);
+        // Closing ')' must be on its own line, not glued to the last payload line.
+        assertTrue(wrapped.endsWith("\n)"));
+        String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
+        assertFalse(wrapped.contains(lastPayloadLine + ")"));
+    }
+
+    @Test
+    void doExecRejectsNullOrBlankCommand() {
+        SandboxException.ExecException nullEx =
+                assertThrows(
+                        SandboxException.ExecException.class, () -> sandbox.doExec(null, null, 30));
+        assertEquals("empty command rejected by KubernetesSandbox", nullEx.getStderr());
+
+        SandboxException.ExecException blankEx =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "  \t", 30));
+        assertEquals("empty command rejected by KubernetesSandbox", blankEx.getStderr());
     }
 
     @Test
