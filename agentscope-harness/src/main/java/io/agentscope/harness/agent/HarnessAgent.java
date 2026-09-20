@@ -613,6 +613,7 @@ public class HarnessAgent implements Agent, EventStreamingAgent, SessionStateAge
      *
      * @param ctx runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         delegate.interrupt(ctx);
     }

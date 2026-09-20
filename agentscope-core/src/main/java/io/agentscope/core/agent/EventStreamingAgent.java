@@ -26,6 +26,8 @@ import reactor.core.publisher.Flux;
  * <p>This is the v2 streaming surface that replaces the deprecated v1 {@code StreamableAgent}.
  * Protocol adapters such as AG-UI detect this interface instead of concrete agent types, so
  * custom agents can plug in without extending {@code ReActAgent} or {@code HarnessAgent}.
+ * Agents that do not implement this interface stay on the v1 {@code stream()} path; adapters
+ * convert those coarse events instead of fine-grained {@link AgentEvent}s.
  *
  * <p>Implementations should emit the full lifecycle that callers already expect from
  * {@code ReActAgent#streamEvents}, including {@link io.agentscope.core.event.AgentResultEvent}
@@ -38,7 +40,8 @@ public interface EventStreamingAgent {
      * Stream fine-grained {@link AgentEvent}s with a caller-supplied {@link RuntimeContext}.
      *
      * @param msgs input messages
-     * @param context runtime context to propagate into the call, may be {@code null}
+     * @param context runtime context to propagate into the call; {@code null} should be treated as
+     *     {@link RuntimeContext#empty()} so middlewares never see a null context
      * @return event stream covering the full agent invocation lifecycle
      */
     Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context);
@@ -50,7 +53,7 @@ public interface EventStreamingAgent {
      * @return event stream covering the full agent invocation lifecycle
      */
     default Flux<AgentEvent> streamEvents(List<Msg> msgs) {
-        return streamEvents(msgs, null);
+        return streamEvents(msgs, RuntimeContext.empty());
     }
 
     /**
@@ -68,7 +71,8 @@ public interface EventStreamingAgent {
      * {@link RuntimeContext}.
      *
      * @param msg input message
-     * @param context runtime context to propagate into the call, may be {@code null}
+     * @param context runtime context to propagate into the call; {@code null} should be treated as
+     *     {@link RuntimeContext#empty()}
      * @return event stream covering the full agent invocation lifecycle
      */
     default Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {

@@ -57,12 +57,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/** Integration tests asserting the onion middleware ordering around the core ReAct phases. */
+/**
+ * Integration tests asserting the onion middleware ordering around the core ReAct phases.
+ */
 class ReActAgentMiddlewareIntegrationTest {
 
     private static AgentState newState() {
@@ -176,7 +179,9 @@ class ReActAgentMiddlewareIntegrationTest {
         }
     }
 
-    /** Records entry/exit at every middleware hook to a shared trace list. */
+    /**
+     * Records entry/exit at every middleware hook to a shared trace list.
+     */
     private static final class RecordingMiddleware implements MiddlewareBase {
         private final String tag;
         private final List<String> trace;
@@ -270,6 +275,55 @@ class ReActAgentMiddlewareIntegrationTest {
                         .toList());
         assertEquals(2L, events.stream().filter(ModelCallEndEvent.class::isInstance).count());
         assertTrue(events.stream().anyMatch(ToolCallStartEvent.class::isInstance));
+    }
+
+    @Test
+    void streamEventsTreatsNullContextAsEmptyForMiddlewareAndReactorKey() {
+        AtomicReference<RuntimeContext> onAgentCtx = new AtomicReference<>();
+        AtomicReference<RuntimeContext> reactorCtx = new AtomicReference<>();
+        MiddlewareBase capturing =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onAgent(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            AgentInput input,
+                            Function<AgentInput, Flux<AgentEvent>> next) {
+                        onAgentCtx.set(ctx);
+                        return next.apply(input);
+                    }
+
+                    @Override
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String currentPrompt) {
+                        return Mono.deferContextual(
+                                cv -> {
+                                    Object value =
+                                            cv.getOrDefault(AgentBase.RUNTIME_CONTEXT_KEY, null);
+                                    if (value instanceof RuntimeContext runtimeContext) {
+                                        reactorCtx.set(runtimeContext);
+                                    }
+                                    return Mono.just(currentPrompt);
+                                });
+                    }
+                };
+        ReActAgent agent = buildAgent(new FixedTextModel("ok"), List.of(capturing));
+
+        agent.streamEvents(List.of(), null).collectList().block();
+        assertEmptyRuntimeContext(onAgentCtx.get());
+        assertEmptyRuntimeContext(reactorCtx.get());
+
+        onAgentCtx.set(null);
+        reactorCtx.set(null);
+        agent.streamEvents(List.of()).collectList().block();
+        assertEmptyRuntimeContext(onAgentCtx.get());
+        assertEmptyRuntimeContext(reactorCtx.get());
+    }
+
+    private static void assertEmptyRuntimeContext(RuntimeContext context) {
+        assertNotNull(context);
+        assertNull(context.getUserId());
+        assertNull(context.getSessionId());
     }
 
     @Test

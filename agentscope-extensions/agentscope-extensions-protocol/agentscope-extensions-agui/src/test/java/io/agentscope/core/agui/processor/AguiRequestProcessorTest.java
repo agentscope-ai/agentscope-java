@@ -54,7 +54,9 @@ import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
-/** Unit tests for AguiRequestProcessor. */
+/**
+ * Unit tests for AguiRequestProcessor.
+ */
 class AguiRequestProcessorTest {
 
     @Test
@@ -721,21 +723,24 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void processResultInterruptTargetsReActSessionWithoutClosingTheAgent() {
+    void processResultInterruptTargetsSessionWithoutClosingTheAgent() {
         AgentResolver resolver = mock(AgentResolver.class);
-        ReActAgent agent = mock(ReActAgent.class);
+        Agent agent = mock(Agent.class);
         when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
                 .thenReturn(agent);
         RuntimeContext callerContext =
                 RuntimeContext.builder().userId("user-1").sessionId("caller-session").build();
-        AguiRequestProcessor.ProcessResult result =
+        AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(resolver)
                         .runtimeContextResolver(request -> callerContext)
-                        .build()
-                        .process(request(input("run-1")));
+                        .build();
+        AguiRuntimeContextRequest<?> contextRequest = request(input("run-1"));
+        RuntimeContext runtimeContext = processor.resolveRuntimeContext(contextRequest);
+        AguiRequestProcessor.ProcessResult result =
+                processor.process(contextRequest, runtimeContext);
 
-        result.interrupt("thread-1");
+        result.interrupt();
 
         ArgumentCaptor<RuntimeContext> contextCaptor =
                 ArgumentCaptor.forClass(RuntimeContext.class);
@@ -746,20 +751,38 @@ class AguiRequestProcessorTest {
     }
 
     @Test
-    void processResultInterruptFallsBackForNonReActAgent() {
+    void processNullRuntimeContextFallsBackToResolver() {
         AgentResolver resolver = mock(AgentResolver.class);
-        Agent agent = mock(Agent.class);
-        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
-                .thenReturn(agent);
-        AguiRequestProcessor.ProcessResult result =
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), eq("user-1"))).thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        RuntimeContext callerContext = RuntimeContext.builder().userId("user-1").build();
+        AguiRequestProcessor processor =
                 AguiRequestProcessor.builder()
                         .agentResolver(resolver)
-                        .build()
-                        .process(request(input("run-1")));
+                        .runtimeContextResolver(request -> callerContext)
+                        .build();
 
-        result.interrupt("thread-1");
+        processor.process(request(input("run-1")), null).events().collectList().block();
 
-        verify(agent).interrupt();
+        assertEquals("thread-1", contextCaptor.getValue().getSessionId());
+        assertEquals("user-1", contextCaptor.getValue().getUserId());
+    }
+
+    @Test
+    void processResultInterruptUsesEmptyContextWhenRuntimeContextIsNull() {
+        Agent agent = mock(Agent.class);
+
+        new AguiRequestProcessor.ProcessResult(agent, Flux.empty(), null).interrupt();
+
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(agent).interrupt(contextCaptor.capture());
+        verify(agent, never()).interrupt();
+        assertEquals(null, contextCaptor.getValue().getUserId());
+        assertEquals(null, contextCaptor.getValue().getSessionId());
     }
 
     private static final class RecordingAdapter extends AguiAgentAdapter {

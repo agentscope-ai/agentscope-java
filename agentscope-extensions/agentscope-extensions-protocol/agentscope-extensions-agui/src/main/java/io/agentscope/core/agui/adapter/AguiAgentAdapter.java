@@ -208,7 +208,7 @@ public class AguiAgentAdapter {
                     convertAgentEvents(events, context), () -> finishPendingEvents(context));
         }
 
-        // fallback 1.x
+        // Agents without EventStreamingAgent stay on the v1 StreamableAgent path.
         EventConversionState state = new EventConversionState(threadId, runId);
         Flux<Event> events = agent.stream(msgs, options, runtimeContext);
         if (events == null) {

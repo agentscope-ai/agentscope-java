@@ -15,6 +15,7 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -106,7 +107,7 @@ public class AguiMvcController {
     /**
      * Handle an AG-UI run request.
      *
-     * @param input The run agent input
+     * @param input         The run agent input
      * @param headerAgentId The agent ID from HTTP header (may be null)
      * @return An SseEmitter for streaming AG-UI events
      */
@@ -117,9 +118,9 @@ public class AguiMvcController {
     /**
      * Handle an AG-UI run request.
      *
-     * @param input The run agent input
+     * @param input         The run agent input
      * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param request The native servlet request (may be null)
+     * @param request       The native servlet request (may be null)
      * @return An SseEmitter for streaming AG-UI events
      */
     public SseEmitter handle(
@@ -130,9 +131,9 @@ public class AguiMvcController {
     /**
      * Handle an AG-UI run request with agent ID in the URL path.
      *
-     * @param input The run agent input
+     * @param input         The run agent input
      * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable
+     * @param pathAgentId   The agent ID from URL path variable
      * @return An SseEmitter for streaming AG-UI events
      */
     public SseEmitter handleWithAgentId(
@@ -143,10 +144,10 @@ public class AguiMvcController {
     /**
      * Handle an AG-UI run request with agent ID in the URL path.
      *
-     * @param input The run agent input
+     * @param input         The run agent input
      * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable
-     * @param request The native servlet request (may be null)
+     * @param pathAgentId   The agent ID from URL path variable
+     * @param request       The native servlet request (may be null)
      * @return An SseEmitter for streaming AG-UI events
      */
     public SseEmitter handleWithAgentId(
@@ -169,11 +170,14 @@ public class AguiMvcController {
         executorService.submit(
                 () -> {
                     try {
+                        AguiRuntimeContextRequest<HttpServletRequest> contextRequest =
+                                runtimeContextRequest(input, headerAgentId, pathAgentId, request);
+                        RuntimeContext runtimeContext =
+                                processor.resolveRuntimeContext(contextRequest);
+
                         // Process request - returns both agent and event stream
                         AguiRequestProcessor.ProcessResult result =
-                                processor.process(
-                                        runtimeContextRequest(
-                                                input, headerAgentId, pathAgentId, request));
+                                processor.process(contextRequest, runtimeContext);
                         BaseSubscriber<AguiEvent> subscription =
                                 new BaseSubscriber<>() {
                                     @Override
@@ -211,7 +215,7 @@ public class AguiMvcController {
                                                 "SSE connection timed out for run {}, interrupting"
                                                         + " agent",
                                                 runId);
-                                        interruptAndCancel(result, threadId, subscription);
+                                        interruptAndCancel(result, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection timed out for run {}, agent"
@@ -227,7 +231,7 @@ public class AguiMvcController {
                                                         + " agent",
                                                 runId,
                                                 ex.getMessage());
-                                        interruptAndCancel(result, threadId, subscription);
+                                        interruptAndCancel(result, subscription);
                                     } else {
                                         logger.info(
                                                 "SSE connection error for run {}: {}, agent"
@@ -255,9 +259,9 @@ public class AguiMvcController {
     }
 
     private static void interruptAndCancel(
-            AguiRequestProcessor.ProcessResult result, String threadId, Disposable subscription) {
+            AguiRequestProcessor.ProcessResult result, Disposable subscription) {
         try {
-            result.interrupt(threadId);
+            result.interrupt();
         } finally {
             subscription.dispose();
         }
@@ -348,7 +352,9 @@ public class AguiMvcController {
         return new Builder();
     }
 
-    /** Builder for AguiMvcController. */
+    /**
+     * Builder for AguiMvcController.
+     */
     public static class Builder {
 
         private AguiAgentRegistry registry;

@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -45,12 +46,18 @@ class EventStreamingAgentTest {
         Flux<AgentEvent> listWithoutContext = agent.streamEvents(List.of(message));
         assertSame(agent.events, listWithoutContext);
         assertEquals(List.of(message), agent.lastMessages);
-        assertNull(agent.lastContext);
+        assertEmptyContext(agent.lastContext);
 
         Flux<AgentEvent> singleWithoutContext = agent.streamEvents(message);
         assertSame(agent.events, singleWithoutContext);
         assertEquals(List.of(message), agent.lastMessages);
-        assertNull(agent.lastContext);
+        assertEmptyContext(agent.lastContext);
+    }
+
+    private static void assertEmptyContext(RuntimeContext context) {
+        assertNotNull(context);
+        assertNull(context.getSessionId());
+        assertNull(context.getUserId());
     }
 
     @Test

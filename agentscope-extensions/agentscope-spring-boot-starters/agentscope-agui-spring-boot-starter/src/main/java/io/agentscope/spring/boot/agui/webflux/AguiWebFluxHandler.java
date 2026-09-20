@@ -15,6 +15,7 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -150,10 +151,13 @@ public class AguiWebFluxHandler {
             // Get header agent ID
             String headerAgentId = request.headers().firstHeader(agentIdHeader);
 
+            AguiRuntimeContextRequest<ServerRequest> contextRequest =
+                    runtimeContextRequest(input, headerAgentId, pathAgentId, request);
+            RuntimeContext runtimeContext = processor.resolveRuntimeContext(contextRequest);
+
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
-                    processor.process(
-                            runtimeContextRequest(input, headerAgentId, pathAgentId, request));
+                    processor.process(contextRequest, runtimeContext);
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
             Flux<AguiEvent> events =
@@ -174,7 +178,7 @@ public class AguiWebFluxHandler {
                                                     "SSE stream cancelled for run {}, interrupting"
                                                             + " agent",
                                                     runId);
-                                            result.interrupt(threadId);
+                                            result.interrupt();
                                         } else {
                                             logger.info(
                                                     "SSE stream cancelled for run {}, agent"
@@ -253,8 +257,8 @@ public class AguiWebFluxHandler {
     /**
      * Create an SSE stream containing error and finish events.
      *
-     * @param threadId The thread ID
-     * @param runId The run ID
+     * @param threadId     The thread ID
+     * @param runId        The run ID
      * @param errorMessage The error message
      * @return A Flux of ServerSentEvents
      */
@@ -280,7 +284,9 @@ public class AguiWebFluxHandler {
         return new Builder();
     }
 
-    /** Builder for AguiWebFluxHandler. */
+    /**
+     * Builder for AguiWebFluxHandler.
+     */
     public static class Builder {
 
         private AguiAgentRegistry registry;

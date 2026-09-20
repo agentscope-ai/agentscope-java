@@ -930,6 +930,7 @@ public class ReActAgent extends AgentBase
      *
      * @param ctx the runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         interrupt(ctx, null);
     }
@@ -1041,6 +1042,7 @@ public class ReActAgent extends AgentBase
      */
     private Flux<AgentEvent> buildAgentStream(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
@@ -1052,12 +1054,13 @@ public class ReActAgent extends AgentBase
 
                                     // Call runLifecycle directly — NOT call() — to avoid the
                                     // onAgent chain being applied a second time.
-                                    Mono<Msg> lifecycle = runLifecycle(input.msgs(), doCallFn);
-                                    if (context != null) {
-                                        lifecycle =
-                                                lifecycle.contextWrite(
-                                                        c -> c.put(RUNTIME_CONTEXT_KEY, context));
-                                    }
+                                    Mono<Msg> lifecycle =
+                                            runLifecycle(input.msgs(), doCallFn)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    c.put(
+                                                                            RUNTIME_CONTEXT_KEY,
+                                                                            effective));
                                     // Do not install AgentEventEmitter.CONTEXT_KEY when the
                                     // deprecated stream() → SubagentEventBus path is driving
                                     // this invocation. On that path AgentSpawnTool reads
@@ -1097,7 +1100,7 @@ public class ReActAgent extends AgentBase
                                     sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(middlewares, this, effective, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
@@ -1116,7 +1119,7 @@ public class ReActAgent extends AgentBase
      */
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
-        return streamEvents(msgs, (RuntimeContext) null);
+        return streamEvents(msgs, RuntimeContext.empty());
     }
 
     /**
@@ -1143,7 +1146,8 @@ public class ReActAgent extends AgentBase
      */
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
-        return buildAgentStream(msgs, context, this::doCall);
+        return buildAgentStream(
+                msgs, context != null ? context : RuntimeContext.empty(), this::doCall);
     }
 
     /**
