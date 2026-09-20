@@ -221,6 +221,7 @@ public enum GenerateReason {
             long globallySuppressedCount = rotateUnknownValueWarningWindowIfNeeded(nowNanos);
 
             if (unknownValueWarningsInWindow >= MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL) {
+                // Report global suppressions when a later call rotates this warning window.
                 globallySuppressedUnknownValueWarnings++;
                 return UnknownValueWarningDecision.suppressed();
             }
