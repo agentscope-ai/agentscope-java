@@ -18,7 +18,9 @@ package io.agentscope.core.agui.adapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.Agent;
@@ -28,6 +30,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.List;
@@ -156,12 +159,10 @@ class AguiAgentAdapterMessageMergeTest {
     @Test
     @DisplayName("regenerate: anchor is the last incoming element, last user message restored")
     void merge_regenerate_restoresLastUserMessage() {
+        Msg persistedUser = userMsg("u1", "what is the weather?");
         AgentState state =
                 AgentState.builder()
-                        .context(
-                                List.of(
-                                        userMsg("u1", "what is the weather?"),
-                                        assistantMsg("a1", "it is sunny")))
+                        .context(List.of(persistedUser, assistantMsg("a1", "it is sunny")))
                         .build();
         RuntimeContext ctx = newContextWithState(state);
         List<Msg> incoming =
@@ -179,12 +180,17 @@ class AguiAgentAdapterMessageMergeTest {
         assertEquals(MsgRole.USER, incoming.get(0).getRole());
         assertEquals("what is the weather?", incoming.get(0).getTextContent());
         assertNotEquals("u1", incoming.get(0).getId());
+        // The fix's contract: a rebuilt copy, not the persisted instance itself, and the copy
+        // keeps the USER subtype rather than degrading to a plain Msg.
+        assertNotSame(persistedUser, incoming.get(0));
+        assertTrue(incoming.get(0) instanceof UserMessage);
     }
 
     @Test
     @DisplayName("regenerate with user-tail context: last user message restored")
     void merge_anchorIsLastIncomingWithUserTail_restoresLastUser() {
-        AgentState state = AgentState.builder().context(List.of(msg("m1"), msg("m2"))).build();
+        Msg persistedUser = msg("m2");
+        AgentState state = AgentState.builder().context(List.of(msg("m1"), persistedUser)).build();
         RuntimeContext ctx = newContextWithState(state);
         List<Msg> incoming = new ArrayList<>(List.of(msg("m1"), msg("m2")));
 
@@ -193,6 +199,8 @@ class AguiAgentAdapterMessageMergeTest {
         assertEquals(1, incoming.size());
         assertEquals("m2", incoming.get(0).getTextContent());
         assertNotEquals("m2", incoming.get(0).getId());
+        assertNotSame(persistedUser, incoming.get(0));
+        assertTrue(incoming.get(0) instanceof UserMessage);
     }
 
     @Test

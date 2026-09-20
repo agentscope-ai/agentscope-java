@@ -352,16 +352,18 @@ public class AguiAgentAdapter {
             // the last question; with pending tool uses, empty input resumes the interrupted run.
             // The restored turn is rebuilt with a fresh id: the prompt is appended to the persisted
             // context later, so re-adding the original instance would duplicate its id there.
+            // builderForRole keeps the source's concrete subtype, and the timestamp is carried
+            // over, so only the id differs from the persisted turn.
             if (msgs.isEmpty() && MessageUtils.pendingToolUseIds(context).isEmpty()) {
                 for (int i = context.size() - 1; i >= 0; i--) {
                     Msg src = context.get(i);
                     if (src.getRole() == MsgRole.USER) {
                         msgs.add(
-                                Msg.builder()
-                                        .role(MsgRole.USER)
+                                Msg.builderForRole(MsgRole.USER)
                                         .name(src.getName())
                                         .content(new ArrayList<>(src.getContent()))
                                         .metadata(src.getMetadata())
+                                        .timestamp(src.getTimestamp())
                                         .build());
                         break;
                     }
