@@ -16,6 +16,10 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -124,7 +128,8 @@ public enum GenerateReason {
     private static final int MAX_UNKNOWN_VALUE_LENGTH = 256;
     private static final long UNKNOWN_VALUE_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
-    // Access-ordered: all reads and writes must hold the map monitor.
+    // Access-ordered and keyed by a fixed-size digest: all reads and writes must hold the map
+    // monitor.
     private static final Map<String, UnknownValueWarningState> unknownValueWarningStates =
             new LinkedHashMap<>(16, 0.75f, true);
     private static long unknownValueWarningWindowStartNanos = Long.MIN_VALUE;
@@ -162,16 +167,18 @@ public enum GenerateReason {
         if (decision.globallySuppressedCount() > 0) {
             if (decision.valueSuppressedCount() == 0) {
                 logger.warn(
-                        "Unknown GenerateReason '{}' received; suppressed {} additional unknown "
-                                + "GenerateReason warnings during the previous interval; "
+                        "Unknown GenerateReason '{}' received; suppressed {} unknown "
+                                + "GenerateReason warnings due to the global rate limit during "
+                                + "the previous interval; "
                                 + "falling back to MODEL_STOP",
                         reportedValue,
                         decision.globallySuppressedCount());
             } else {
                 logger.warn(
                         "Unknown GenerateReason '{}' received again after suppressing {} repeats; "
-                                + "also suppressed {} additional unknown GenerateReason warnings "
-                                + "during the previous interval; falling back to MODEL_STOP",
+                                + "also suppressed {} unknown GenerateReason warnings due to the "
+                                + "global rate limit during the previous interval; falling back "
+                                + "to MODEL_STOP",
                         reportedValue,
                         decision.valueSuppressedCount(),
                         decision.globallySuppressedCount());
@@ -191,8 +198,9 @@ public enum GenerateReason {
 
     /**
      * Tracks an unknown value and returns its suppressed repeat count when a warning is due.
-     * Returns {@code -1} while the value is still within the warning interval. The timestamp is
-     * supplied by the caller so the state transition can be tested without waiting.
+     * Returns {@code -1} when no warning is emitted because either the value-level interval or the
+     * global warning cap is suppressing it. The timestamp is supplied by the caller so the state
+     * transition can be tested without waiting.
      */
     static long getUnknownValueSuppressedCount(String value, long nowNanos) {
         UnknownValueWarningDecision decision = getUnknownValueWarningDecision(value, nowNanos);
@@ -202,7 +210,8 @@ public enum GenerateReason {
     private static UnknownValueWarningDecision getUnknownValueWarningDecision(
             String value, long nowNanos) {
         synchronized (unknownValueWarningStates) {
-            UnknownValueWarningState state = unknownValueWarningStates.get(value);
+            String key = unknownValueKey(value);
+            UnknownValueWarningState state = unknownValueWarningStates.get(key);
             if (state != null
                     && nowNanos - state.lastReportedAtNanos < UNKNOWN_VALUE_LOG_INTERVAL_NANOS) {
                 state.suppressedCount++;
@@ -210,6 +219,12 @@ public enum GenerateReason {
             }
 
             long globallySuppressedCount = rotateUnknownValueWarningWindowIfNeeded(nowNanos);
+
+            if (unknownValueWarningsInWindow >= MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL) {
+                globallySuppressedUnknownValueWarnings++;
+                return UnknownValueWarningDecision.suppressed();
+            }
+
             if (state == null) {
                 if (unknownValueWarningStates.size() >= MAX_REPORTED_UNKNOWN_VALUES) {
                     Iterator<String> iterator = unknownValueWarningStates.keySet().iterator();
@@ -217,14 +232,7 @@ public enum GenerateReason {
                     iterator.remove();
                 }
                 state = new UnknownValueWarningState();
-                unknownValueWarningStates.put(value, state);
-            }
-
-            if (unknownValueWarningsInWindow >= MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL) {
-                state.lastReportedAtNanos = nowNanos;
-                state.suppressedCount++;
-                globallySuppressedUnknownValueWarnings++;
-                return UnknownValueWarningDecision.suppressed();
+                unknownValueWarningStates.put(key, state);
             }
 
             long suppressedCount = state.suppressedCount;
@@ -232,6 +240,17 @@ public enum GenerateReason {
             state.suppressedCount = 0;
             unknownValueWarningsInWindow++;
             return new UnknownValueWarningDecision(true, suppressedCount, globallySuppressedCount);
+        }
+    }
+
+    private static String unknownValueKey(String value) {
+        try {
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the Java runtime", e);
         }
     }
 

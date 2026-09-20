@@ -197,6 +197,31 @@ class GenerateReasonTest {
     }
 
     @Test
+    @DisplayName("Should not retain or double-count values suppressed by the global warning cap")
+    void testUnknownGenerateReasonGlobalSuppressionDoesNotCreateValueState() {
+        long firstReportNanos = 4_000_000_000L;
+        for (int i = 0; i < GenerateReason.MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL; i++) {
+            assertEquals(
+                    0L,
+                    GenerateReason.getUnknownValueSuppressedCount(
+                            "GLOBAL_CAP_UNKNOWN_GENERATE_REASON_" + i, firstReportNanos));
+        }
+
+        String overflowValue = "GLOBAL_CAP_UNKNOWN_GENERATE_REASON_OVERFLOW";
+        assertEquals(
+                -1L,
+                GenerateReason.getUnknownValueSuppressedCount(overflowValue, firstReportNanos + 1));
+        assertEquals(
+                -1L,
+                GenerateReason.getUnknownValueSuppressedCount(overflowValue, firstReportNanos + 2));
+
+        assertEquals(
+                0L,
+                GenerateReason.getUnknownValueSuppressedCount(
+                        overflowValue, firstReportNanos + TimeUnit.MINUTES.toNanos(5)));
+    }
+
+    @Test
     @DisplayName("Should retain recently accessed values during warning state eviction")
     void testUnknownGenerateReasonWarningStateUsesLruEviction() {
         long firstReportNanos = 2_000_000_000L;
