@@ -51,6 +51,12 @@ builder:
   coord:
     turn-lease-ttl-seconds: ${BUILDER_TURN_LEASE_TTL_SECONDS:90}
 
+  # Durable Session SSE is notification-driven. The recovery interval is only
+  # a safety net for lost notifications or databases without LISTEN/NOTIFY.
+  session-event:
+    recovery-interval-ms: ${BUILDER_SESSION_EVENT_RECOVERY_INTERVAL_MS:30000}
+    notification-reconnect-ms: ${BUILDER_SESSION_EVENT_NOTIFICATION_RECONNECT_MS:1000}
+
   # ---- Cross-plane wiring ----
   # Shared secret authenticating plane-to-plane calls (X-Builder-Internal-Token).
   # MUST be set identically on control, data and scheduler in production.

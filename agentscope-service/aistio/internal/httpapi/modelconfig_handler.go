@@ -82,6 +82,15 @@ func (s *Server) listModelConfigs(c *gin.Context) {
 		return
 	}
 
+	if a := accessFrom(c); a != nil {
+		visible := make([]v1alpha1.ModelConfig, 0, len(list.Items))
+		for _, item := range list.Items {
+			if a.Namespace.Decide(a.User, "model:"+item.Name, "inspect").Allowed {
+				visible = append(visible, item)
+			}
+		}
+		list.Items = visible
+	}
 	resp := gin.H{"items": list.Items}
 	if list.Continue != "" {
 		resp["metadata"] = ListMetadata{Continue: list.Continue}

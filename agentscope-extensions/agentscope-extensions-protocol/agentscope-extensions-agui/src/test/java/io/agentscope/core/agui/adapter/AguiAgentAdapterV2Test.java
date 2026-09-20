@@ -330,6 +330,122 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testTextSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new TextBlockStartEvent("reply-mixed", "text"),
+                            new TextBlockDeltaEvent("reply-mixed", "text", "before"),
+                            new TextBlockEndEvent("reply-mixed", "text"),
+                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
+                            new TextBlockStartEvent("reply-mixed", "text-2"),
+                            new TextBlockDeltaEvent("reply-mixed", "text-2", "after"),
+                            new TextBlockEndEvent("reply-mixed", "text-2"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.TEXT_MESSAGE_START,
+                            AguiEventType.TEXT_MESSAGE_CONTENT,
+                            AguiEventType.TEXT_MESSAGE_END),
+                    types(events));
+
+            List<String> messageIds =
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.TextMessageStart
+                                                    || event instanceof AguiEvent.TextMessageContent
+                                                    || event instanceof AguiEvent.TextMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event instanceof AguiEvent.TextMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event instanceof AguiEvent.TextMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.TextMessageEnd) event).messageId();
+                                    })
+                            .toList();
+            assertEquals(
+                    List.of(
+                            "reply-mixed-text",
+                            "reply-mixed-text",
+                            "reply-mixed-text",
+                            "reply-mixed-text-2",
+                            "reply-mixed-text-2",
+                            "reply-mixed-text-2"),
+                    messageIds);
+        }
+
+        @Test
+        void testReasoningSegmentsSeparatedByToolCallUseDistinctMessageIds() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().enableReasoning(true).build(),
+                            new ThinkingBlockStartEvent("reply-mixed", "thinking"),
+                            new ThinkingBlockDeltaEvent("reply-mixed", "thinking", "before"),
+                            new ThinkingBlockEndEvent("reply-mixed", "thinking"),
+                            new ToolCallStartEvent("reply-mixed", "tool-1", "lookup"),
+                            new ToolCallEndEvent("reply-mixed", "tool-1", "lookup"),
+                            new ThinkingBlockStartEvent("reply-mixed", "thinking-2"),
+                            new ThinkingBlockDeltaEvent("reply-mixed", "thinking-2", "after"),
+                            new ThinkingBlockEndEvent("reply-mixed", "thinking-2"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.REASONING_MESSAGE_START,
+                            AguiEventType.REASONING_MESSAGE_CONTENT,
+                            AguiEventType.REASONING_MESSAGE_END,
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_END,
+                            AguiEventType.REASONING_MESSAGE_START,
+                            AguiEventType.REASONING_MESSAGE_CONTENT,
+                            AguiEventType.REASONING_MESSAGE_END),
+                    types(events));
+
+            List<String> messageIds =
+                    events.stream()
+                            .filter(
+                                    event ->
+                                            event instanceof AguiEvent.ReasoningMessageStart
+                                                    || event
+                                                            instanceof
+                                                            AguiEvent.ReasoningMessageContent
+                                                    || event
+                                                            instanceof
+                                                            AguiEvent.ReasoningMessageEnd)
+                            .map(
+                                    event -> {
+                                        if (event
+                                                instanceof AguiEvent.ReasoningMessageStart start) {
+                                            return start.messageId();
+                                        }
+                                        if (event
+                                                instanceof
+                                                AguiEvent.ReasoningMessageContent content) {
+                                            return content.messageId();
+                                        }
+                                        return ((AguiEvent.ReasoningMessageEnd) event).messageId();
+                                    })
+                            .toList();
+            assertEquals(
+                    List.of(
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking",
+                            "reply-mixed-thinking-2",
+                            "reply-mixed-thinking-2",
+                            "reply-mixed-thinking-2"),
+                    messageIds);
+        }
+
+        @Test
         void testThinkingEventsAreIgnoredWhenReasoningDisabled() {
             List<AguiEvent> events =
                     runReActEvents(
@@ -347,9 +463,9 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             AguiAdapterConfig.builder().enableReasoning(true).build(),
-                            new ThinkingBlockStartEvent("reply-thinking", "block-1"),
-                            new ThinkingBlockDeltaEvent("reply-thinking", "block-1", "visible"),
-                            new ThinkingBlockEndEvent("reply-thinking", "block-1"));
+                            new ThinkingBlockStartEvent("reply-thinking", "thinking"),
+                            new ThinkingBlockDeltaEvent("reply-thinking", "thinking", "visible"),
+                            new ThinkingBlockEndEvent("reply-thinking", "thinking"));
 
             assertEquals(
                     List.of(
@@ -363,8 +479,7 @@ class AguiAgentAdapterV2Test {
                     assertInstanceOf(AguiEvent.ReasoningMessageContent.class, events.get(1));
             AguiEvent.ReasoningMessageEnd end =
                     assertInstanceOf(AguiEvent.ReasoningMessageEnd.class, events.get(2));
-            String expectedMessageId =
-                    "reply-thinking" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX;
+            String expectedMessageId = "reply-thinking-thinking";
             assertEquals(expectedMessageId, start.messageId());
             assertEquals(expectedMessageId, content.messageId());
             assertEquals(expectedMessageId, end.messageId());
@@ -375,10 +490,10 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             AguiAdapterConfig.builder().enableReasoning(true).build(),
-                            new ThinkingBlockDeltaEvent("reply-shared", "thinking-1", "think"),
-                            new ThinkingBlockEndEvent("reply-shared", "thinking-1"),
-                            new TextBlockDeltaEvent("reply-shared", "text-1", "answer"),
-                            new TextBlockEndEvent("reply-shared", "text-1"));
+                            new ThinkingBlockDeltaEvent("reply-shared", "thinking", "think"),
+                            new ThinkingBlockEndEvent("reply-shared", "thinking"),
+                            new TextBlockDeltaEvent("reply-shared", "text", "answer"),
+                            new TextBlockEndEvent("reply-shared", "text"));
 
             AguiEvent.ReasoningMessageContent reasoningContent =
                     events.stream()
@@ -393,10 +508,8 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
 
-            assertEquals("reply-shared", textContent.messageId());
-            assertEquals(
-                    "reply-shared" + AguiStreamContext.REASONING_MESSAGE_ID_SUFFIX,
-                    reasoningContent.messageId());
+            assertEquals("reply-shared-text", textContent.messageId());
+            assertEquals("reply-shared-thinking", reasoningContent.messageId());
         }
 
         @Test
@@ -522,6 +635,104 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testFrontendToolFragmentDeltaEmitsArgsWhenEmitToolCallArgsDisabled() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", ":\"agent\"}"),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_END),
+                    types(events));
+            AguiEvent.ToolCallArgs firstArgs =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(1));
+            AguiEvent.ToolCallArgs secondArgs =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(2));
+            assertEquals("{\"q\"", firstArgs.delta());
+            assertEquals(":\"agent\"}", secondArgs.delta());
+        }
+
+        @Test
+        void testBackendToolFragmentDeltaDoesNotEmitArgsWhenEmitToolCallArgsDisabled() {
+            List<AguiEvent> events =
+                    runReActEvents(
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "search"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "search"));
+
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
+                    types(events));
+        }
+
+        @Test
+        void testAgentExternalToolEmitsArgsWhenEmitToolCallArgsDisabled() {
+            // Agent-level schema-only tool registered in the toolkit (not in RunAgentInput.tools).
+            // External tools execute outside the framework, so args must reach the client even
+            // when emitToolCallArgs is disabled. The name-set heuristic would miss this.
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(schemaOnlyTool("agent_external"));
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.builder().emitToolCallArgs(false).build(),
+                            input(),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "agent_external"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "agent_external"));
+
+            assertEquals(
+                    List.of(
+                            AguiEventType.TOOL_CALL_START,
+                            AguiEventType.TOOL_CALL_ARGS,
+                            AguiEventType.TOOL_CALL_END),
+                    types(events));
+            AguiEvent.ToolCallArgs args =
+                    assertInstanceOf(AguiEvent.ToolCallArgs.class, events.get(1));
+            assertEquals("{\"q\"", args.delta());
+        }
+
+        @Test
+        void testAgentOnlyModeHidesArgsForFrontendRegisteredName() {
+            // "lookup" is registered in RunAgentInput.tools, but AGENT_ONLY skips injection, so
+            // the live toolkit never sees it. The authoritative toolkit predicate must return
+            // false and suppress args; the name-set heuristic would wrongly emit them.
+            Toolkit toolkit = new Toolkit();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            toolkit,
+                            AguiAdapterConfig.builder()
+                                    .emitToolCallArgs(false)
+                                    .toolMergeMode(ToolMergeMode.AGENT_ONLY)
+                                    .build(),
+                            inputWithTools(frontendTool("lookup")),
+                            new ToolCallStartEvent("reply-tool", "tool-1", "lookup"),
+                            new ToolCallDeltaEvent(
+                                    "reply-tool", "tool-1", "__fragment__", "{\"q\""),
+                            new ToolCallEndEvent("reply-tool", "tool-1", "lookup"));
+
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_START, AguiEventType.TOOL_CALL_END),
+                    types(events));
+        }
+
+        @Test
         void testToolResultDeltasAreAggregatedIntoToolCallResult() {
             List<AguiEvent> events =
                     runReActEvents(
@@ -539,7 +750,28 @@ class AguiAgentAdapterV2Test {
                             .findFirst()
                             .orElseThrow();
             assertEquals("hello", result.content());
-            assertEquals("reply-tool", result.messageId());
+            assertEquals("reply-tool:tool-1", result.messageId());
+        }
+
+        @Test
+        void testParallelToolResultsUsePerToolMessageIds() {
+            List<String> messageIds =
+                    runReActEvents(
+                                    new ToolCallStartEvent("reply-parallel", "tool-1", "lookup"),
+                                    new ToolCallStartEvent("reply-parallel", "tool-2", "search"),
+                                    new ToolResultStartEvent("reply-parallel", "tool-1", "lookup"),
+                                    new ToolResultEndEvent(
+                                            "reply-parallel", "tool-1", "lookup", null),
+                                    new ToolResultStartEvent("reply-parallel", "tool-2", "search"),
+                                    new ToolResultEndEvent(
+                                            "reply-parallel", "tool-2", "search", null))
+                            .stream()
+                            .filter(AguiEvent.ToolCallResult.class::isInstance)
+                            .map(AguiEvent.ToolCallResult.class::cast)
+                            .map(AguiEvent.ToolCallResult::messageId)
+                            .toList();
+
+            assertEquals(List.of("reply-parallel:tool-1", "reply-parallel:tool-2"), messageIds);
         }
 
         @Test
@@ -765,6 +997,110 @@ class AguiAgentAdapterV2Test {
             assertEquals("lookup", interrupt.metadata().get("toolName"));
             assertEquals(Map.of("city", "Paris"), interrupt.metadata().get("toolInput"));
             assertEquals("reply-suspended", interrupt.metadata().get("replyId"));
+        }
+
+        @Test
+        void testSuspendedFrontendToolDoesNotEmitInterrupt() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            Msg suspendedResult =
+                    suspendedToolResult(
+                            "reply-frontend",
+                            toolUse,
+                            ToolResultBlock.builder()
+                                    .id("tool-1")
+                                    .name("lookup")
+                                    .output(
+                                            TextBlock.builder()
+                                                    .text("Execute lookup on the client")
+                                                    .build())
+                                    .metadata(Map.of(ToolResultBlock.METADATA_SUSPENDED, true))
+                                    .build());
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            inputWithTools(frontendTool("lookup")),
+                            new AgentStartEvent("thread-v2", "reply-frontend", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-frontend"));
+
+            assertEquals(
+                    List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_FINISHED), types(events));
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            assertNull(finished.outcome());
+        }
+
+        @Test
+        void testSuspendedBackendToolStillInterruptsWhenFrontendToolsArePresent() {
+            ToolUseBlock frontendToolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-1")
+                            .name("lookup")
+                            .input(Map.of("city", "Paris"))
+                            .build();
+            ToolUseBlock backendToolUse =
+                    ToolUseBlock.builder()
+                            .id("tool-2")
+                            .name("requestHumanApproval")
+                            .input(Map.of("summary", "refund"))
+                            .build();
+            Msg suspendedResult =
+                    AssistantMessage.builder()
+                            .id("reply-mixed")
+                            .content(
+                                    List.of(
+                                            frontendToolUse,
+                                            backendToolUse,
+                                            ToolResultBlock.builder()
+                                                    .id("tool-1")
+                                                    .name("lookup")
+                                                    .output(
+                                                            TextBlock.builder()
+                                                                    .text("client lookup")
+                                                                    .build())
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ToolResultBlock
+                                                                            .METADATA_SUSPENDED,
+                                                                    true))
+                                                    .build(),
+                                            ToolResultBlock.builder()
+                                                    .id("tool-2")
+                                                    .name("requestHumanApproval")
+                                                    .output(
+                                                            TextBlock.builder()
+                                                                    .text("Approve refund?")
+                                                                    .build())
+                                                    .metadata(
+                                                            Map.of(
+                                                                    ToolResultBlock
+                                                                            .METADATA_SUSPENDED,
+                                                                    true))
+                                                    .build()))
+                            .generateReason(GenerateReason.TOOL_SUSPENDED)
+                            .build();
+
+            List<AguiEvent> events =
+                    runReActEvents(
+                            inputWithTools(frontendTool("lookup")),
+                            new AgentStartEvent("thread-v2", "reply-mixed", "react"),
+                            new AgentResultEvent(suspendedResult),
+                            new AgentEndEvent("reply-mixed"));
+
+            AguiEvent.RunFinished finished =
+                    assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
+            AguiEvent.RunFinishedInterruptOutcome outcome =
+                    assertInstanceOf(
+                            AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+            assertEquals(1, outcome.interrupts().size());
+            assertEquals("tool-2", outcome.interrupts().get(0).toolCallId());
+            assertEquals(
+                    "requestHumanApproval", outcome.interrupts().get(0).metadata().get("toolName"));
         }
 
         @Test
@@ -1067,6 +1403,86 @@ class AguiAgentAdapterV2Test {
                             new ToolResultEndEvent("reply-tool", null, "lookup", null));
 
             assertTrue(events.isEmpty());
+        }
+
+        @Test
+        void testConfirmedToolResultsFromPreviousRunAreEmittedWithoutToolCallEvents() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            UserConfirmResultEvent confirmation =
+                    new UserConfirmResultEvent(
+                            "previous-reply", List.of(new ConfirmResult(true, toolUse)));
+            List<AguiEvent> events =
+                    runReActEvents(
+                            confirmation,
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "text"),
+                            confirmation,
+                            new ToolResultDataDeltaEvent(
+                                    "resumed-reply",
+                                    "tool-1",
+                                    "lookup",
+                                    TextBlock.builder().text("data").build()),
+                            new ToolCallDeltaEvent("previous-reply", "tool-1", "lookup", "{}"),
+                            new ToolCallEndEvent("previous-reply", "tool-1", "lookup"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "text\ndata");
+            assertEquals(
+                    "resumed-reply:tool-1", ((AguiEvent.ToolCallResult) events.get(0)).messageId());
+        }
+
+        @Test
+        void testConfirmedToolSuspensionDiscardsPartialResultWithoutEmittingToolCallEnd() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "previous-reply", List.of(new ConfirmResult(true, toolUse))),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent(
+                                    "resumed-reply", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "final"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "final");
+        }
+
+        @Test
+        void testAdoptionIsSilentAndLocalToTheStreamContext() {
+            AguiStreamContext context =
+                    new AguiStreamContext(
+                            "thread", "resumed-run", AguiAdapterConfig.defaultConfig());
+            context.adoptToolCall(null);
+            context.adoptToolCall(" ");
+            context.adoptToolCall("resumed-tool");
+            context.adoptToolCall("resumed-tool");
+            assertTrue(context.drainEvents().isEmpty());
+            assertTrue(context.finishPendingEvents().isEmpty());
+            context.endToolResult("reply", null);
+            context.endToolResult("reply", " ");
+            assertTrue(context.drainEvents().isEmpty());
+
+            context.startToolCall("current-tool", "lookup");
+            context.adoptToolCall("current-tool");
+            context.drainEvents();
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_END), types(context.finishPendingEvents()));
+            context.endToolResult("reply", "resumed-tool");
+            List<AguiEvent> result = context.drainEvents();
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(result));
+            assertToolCallResult(result.get(0), "resumed-tool", null);
+
+            AguiStreamContext nextRun =
+                    new AguiStreamContext("thread", "next-run", AguiAdapterConfig.defaultConfig());
+            nextRun.endToolResult("reply", "resumed-tool");
+            assertTrue(nextRun.drainEvents().isEmpty());
         }
 
         @Test
@@ -1834,15 +2250,36 @@ class AguiAgentAdapterV2Test {
     }
 
     private static List<AguiEvent> runReActEvents(AgentEvent... agentEvents) {
-        return runReActEvents(AguiAdapterConfig.defaultConfig(), agentEvents);
+        return runReActEvents(AguiAdapterConfig.defaultConfig(), input(), agentEvents);
     }
 
     private static List<AguiEvent> runReActEvents(
             AguiAdapterConfig config, AgentEvent... agentEvents) {
+        return runReActEvents(config, input(), agentEvents);
+    }
+
+    private static List<AguiEvent> runReActEvents(RunAgentInput input, AgentEvent... agentEvents) {
+        return runReActEvents(AguiAdapterConfig.defaultConfig(), input, agentEvents);
+    }
+
+    private static List<AguiEvent> runReActEvents(
+            AguiAdapterConfig config, RunAgentInput input, AgentEvent... agentEvents) {
         ReActAgent agent = mock(ReActAgent.class);
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                 .thenReturn(Flux.fromArray(agentEvents));
-        return new AguiAgentAdapter(agent, config).run(input()).collectList().block();
+        return new AguiAgentAdapter(agent, config).run(input).collectList().block();
+    }
+
+    private static List<AguiEvent> runReActEvents(
+            Toolkit toolkit,
+            AguiAdapterConfig config,
+            RunAgentInput input,
+            AgentEvent... agentEvents) {
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.fromArray(agentEvents));
+        return new AguiAgentAdapter(agent, config).run(input).collectList().block();
     }
 
     private static List<AguiEvent> runReActFlux(Flux<AgentEvent> agentEvents) {

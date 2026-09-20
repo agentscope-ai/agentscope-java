@@ -1,4 +1,8 @@
-# Handoffs
+---
+title: Handoffs
+---
+
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
 In the **handoffs** pattern, behavior changes dynamically based on state. Tools update a state variable (e.g. `active_agent`) that persists across turns; the graph reads this variable to route to different agents. This pattern is well-suited to customer support and sales flows where control transfers between specialized agents (e.g. sales vs. support) via tool calls.
 
@@ -240,25 +244,19 @@ Any key you update via `getStateForUpdate` must be declared in the graph’s key
 
 ## Example project
 
-The full handoffs example (sales + support with handoff tools) is in the repository:
+The handoffs pattern (sales + support with handoff tools) is illustrated by the snippets below:
 
-- **Location**: `agentscope-examples/multiagent-patterns/handoffs/`
 - **Highlights**: `AgentScopeHandoffsConfig` (graph, agents, routing), `TransferToSalesTool`, `TransferToSupportTool`, `RouteInitialAction`, `RouteAfterSalesAction`, `RouteAfterSupportAction`, and `AgentScopeHandoffsService` to invoke the graph.
 
 Build and run (from repo root):
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs spring-boot:run
-```
 
 Set `agentscope.runner.enabled=true` in `application.yml` to run the demo on startup. Default port is 8089.
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [Supervisor](./supervisor.md) - Central supervisor with specialized agents as tools
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool for another agent
-- [Tool System](../task/tool.md) - AgentScope tools and Toolkit
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [Supervisor](/v1/en/docs/multi-agent/supervisor) - Central supervisor with specialized agents as tools
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Registering an agent as a tool for another agent
+- [Tool System](/v1/en/docs/task/tool) - AgentScope tools and Toolkit

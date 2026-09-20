@@ -1,4 +1,6 @@
-# Multimodal
+---
+title: Multimodal
+---
 
 Multimodal capabilities enable Agents to understand and generate images, audio, video, and other media content.
 
@@ -230,5 +232,5 @@ DashScopeChatModel.builder()
 ## More Resources
 
 - **Complete Example Code**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
-- **Message Mechanism**: [message.md](../quickstart/message.md) - Learn about message structure
-- **Model Configuration**: [model.md](./model.md) - Learn about model configuration options
+- **Message Mechanism**: [message.md](/v1/en/docs/quickstart/key-concepts) - Learn about message structure
+- **Model Configuration**: [model.md](/v1/en/docs/task/model) - Learn about model configuration options

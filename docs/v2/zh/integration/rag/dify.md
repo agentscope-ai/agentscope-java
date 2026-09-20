@@ -1,4 +1,6 @@
-# Dify Knowledge
+---
+title: Dify
+---
 
 `agentscope-extensions-rag-dify` 接入 [Dify](https://dify.ai/) 的数据集（Dataset）API，复用 Dify 上已经维护的知识库。
 

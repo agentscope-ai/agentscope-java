@@ -17,9 +17,12 @@ package io.agentscope.extensions.channel.dingtalk;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
+import io.agentscope.extensions.channel.common.CachedAccessToken;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Objects;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -30,6 +33,9 @@ import reactor.core.publisher.Mono;
  *
  * <p>Uses the new OpenAPI endpoint {@code POST /v1.0/oauth2/accessToken}. The legacy
  * {@code /gettoken} endpoint at {@code oapi.dingtalk.com} is not used.
+ *
+ * <p>The cache defaults to a process-local {@link InMemoryAccessTokenStore}; pass a
+ * shared-storage {@link AccessTokenStore} to share tokens across instances.
  */
 public final class DingTalkAccessTokenProvider {
 
@@ -38,12 +44,25 @@ public final class DingTalkAccessTokenProvider {
     private final WebClient client;
     private final String appKey;
     private final String appSecret;
-    private final AtomicReference<TokenSlot> slot = new AtomicReference<>(TokenSlot.EMPTY);
+    private final AccessTokenStore store;
 
     public DingTalkAccessTokenProvider(String apiBase, String appKey, String appSecret) {
+        this(apiBase, appKey, appSecret, new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Constructor variant that lets the application choose where the token is cached — for
+     * example a shared-storage {@link AccessTokenStore} so one refresh or invalidation serves
+     * all instances.
+     *
+     * @param store cache for the fetched token; must be thread-safe
+     */
+    public DingTalkAccessTokenProvider(
+            String apiBase, String appKey, String appSecret, AccessTokenStore store) {
         this.client = WebClient.builder().baseUrl(apiBase).build();
         this.appKey = appKey;
         this.appSecret = appSecret;
+        this.store = Objects.requireNonNull(store, "store");
     }
 
     /**
@@ -51,10 +70,9 @@ public final class DingTalkAccessTokenProvider {
      * expiring.
      */
     public Mono<String> token() {
-        TokenSlot s = slot.get();
-        long now = System.currentTimeMillis();
-        if (s.value != null && s.refreshAtMs > now) {
-            return Mono.just(s.value);
+        CachedAccessToken cached = store.get();
+        if (cached != null && cached.refreshAtMs() > System.currentTimeMillis()) {
+            return Mono.just(cached.value());
         }
         return refresh();
     }
@@ -81,7 +99,7 @@ public final class DingTalkAccessTokenProvider {
             }
             int expiresIn = node.path("expireIn").asInt(7200);
             long refreshAt = System.currentTimeMillis() + (long) (expiresIn * 800L);
-            slot.set(new TokenSlot(token, refreshAt));
+            store.putIfNewer(new CachedAccessToken(token, refreshAt));
             return token;
         } catch (RuntimeException re) {
             throw re;
@@ -93,10 +111,6 @@ public final class DingTalkAccessTokenProvider {
 
     /** Forces the next {@link #token()} call to refresh. */
     public void invalidate() {
-        slot.set(TokenSlot.EMPTY);
-    }
-
-    private record TokenSlot(String value, long refreshAtMs) {
-        static final TokenSlot EMPTY = new TokenSlot(null, 0L);
+        store.clear();
     }
 }

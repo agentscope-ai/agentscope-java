@@ -29,6 +29,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -419,6 +420,89 @@ class PostgresAgentStateStoreTest {
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
         store.close();
+    }
+
+    @Test
+    void saveIfVersionUnconditionalReadsVersionWithoutDeserializingState() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(connection.getAutoCommit()).thenReturn(true, false);
+        when(preparedStatement.executeUpdate()).thenReturn(1);
+        // reset the shared resultSet.next() stub so the version-only SELECT returns one row
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getLong("version")).thenReturn(42L);
+
+        long version =
+                store.saveIfVersion(
+                        "user",
+                        "session",
+                        "agent_state",
+                        new TestState("v"),
+                        AgentStateStore.UNVERSIONED);
+
+        assertEquals(42L, version);
+        // Regression: the UNVERSIONED path must not deserialize the payload. Reading it back as
+        // `State` (a marker interface Jackson cannot instantiate) raised
+        // InvalidDefinitionException.
+        verify(resultSet, never()).getString("state_data");
+    }
+
+    @Test
+    void saveIfVersionUnconditionalAbsentKeyReturnsZero() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(connection.getAutoCommit()).thenReturn(true, false);
+        when(preparedStatement.executeUpdate()).thenReturn(1);
+        // readVersion: rs.next() returns false (no row)
+        when(resultSet.next()).thenReturn(false);
+
+        long version =
+                store.saveIfVersion(
+                        "user",
+                        "session",
+                        "absent_key",
+                        new TestState("v"),
+                        AgentStateStore.UNVERSIONED);
+
+        assertEquals(0L, version);
+        verify(resultSet, never()).getString("state_data");
+    }
+
+    @Test
+    void saveIfVersionUnconditionalReadVersionSqlException() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(connection.getAutoCommit()).thenReturn(true, false);
+        when(preparedStatement.executeUpdate()).thenReturn(1);
+        // readVersion: preparedStatement.executeQuery() throws SQLException
+        when(preparedStatement.executeQuery()).thenThrow(new SQLException("read failed"));
+
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        store.saveIfVersion(
+                                "user",
+                                "session",
+                                "agent_state",
+                                new TestState("v"),
+                                AgentStateStore.UNVERSIONED));
+    }
+
+    @Test
+    void saveIfVersionZeroFallsBackToCasUpdateForBackfilledRow() throws SQLException {
+        // Regression for issue #3162: rows backfilled at version 0 by the ALTER TABLE migration
+        // collide with the "row absent" sentinel. The insertIfAbsent INSERT affects 0 rows
+        // (ON CONFLICT DO NOTHING); the store must fall back to UPDATE ... WHERE version = 0
+        // instead of reporting a phantom CAS conflict.
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(connection.getAutoCommit()).thenReturn(true, false);
+        when(preparedStatement.executeUpdate()).thenReturn(0).thenReturn(1);
+
+        long newVersion =
+                store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
+
+        assertEquals(1L, newVersion);
     }
 
     @Test

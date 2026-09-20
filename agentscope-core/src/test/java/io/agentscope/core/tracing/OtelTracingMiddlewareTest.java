@@ -137,6 +137,31 @@ class OtelTracingMiddlewareTest {
     }
 
     @Test
+    void onAgent_keepsTopLevelReplyIdWhenSubagentStarts() {
+        Agent agent = stubAgent("parent", "agent-parent");
+        AgentStartEvent parentStart = new AgentStartEvent("sess-1", "parent-reply", "parent");
+        AgentStartEvent childStart = new AgentStartEvent("sess-1", "child-reply", "child");
+        childStart.withSource("parent/child");
+
+        middleware
+                .onAgent(
+                        agent,
+                        null,
+                        new AgentInput(List.of()),
+                        in -> Flux.just(parentStart, childStart))
+                .collectList()
+                .block();
+
+        SpanData span = spanExporter.getFinishedSpanItems().get(0);
+        assertEquals(
+                "parent-reply",
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.stringKey(
+                                        "agentscope.agent.reply_id")));
+    }
+
+    @Test
     void onModelCall_createsChatSpanWithUsage() {
         Agent agent = stubAgent("model-agent", "agent-003");
         ChatUsage usage = new ChatUsage(100, 50, 1.5);

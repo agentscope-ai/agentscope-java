@@ -34,6 +34,7 @@ public class AguiAdapterConfig {
 
     private final ToolMergeMode toolMergeMode;
     private final boolean emitStateEvents;
+    // frontend/external tools always emit args
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;

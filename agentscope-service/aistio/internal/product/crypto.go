@@ -15,13 +15,11 @@
 package product
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"io"
+
+	"github.com/spring-ai-alibaba/aistio/internal/secretcrypto"
 )
 
 // vaultKey derives a 32-byte AES key from VAULT_MASTER_KEY or jwt-secret.
@@ -30,40 +28,15 @@ func vaultKey(master, jwtSecret string) []byte {
 	if src == "" {
 		src = jwtSecret
 	}
-	sum := sha256.Sum256([]byte(src))
-	return sum[:]
+	return secretcrypto.DeriveKey(src)
 }
 
 func encryptAESGCM(key []byte, plaintext string) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-	return gcm.Seal(nonce, nonce, []byte(plaintext), nil), nil
+	return secretcrypto.Encrypt(key, []byte(plaintext), nil)
 }
 
 func decryptAESGCM(key []byte, ciphertext []byte) (string, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	if len(ciphertext) < gcm.NonceSize() {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-	nonce := ciphertext[:gcm.NonceSize()]
-	plain, err := gcm.Open(nil, nonce, ciphertext[gcm.NonceSize():], nil)
+	plain, err := secretcrypto.Decrypt(key, ciphertext, nil)
 	if err != nil {
 		return "", err
 	}

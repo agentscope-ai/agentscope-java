@@ -15,23 +15,175 @@
  */
 package io.agentscope.core;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link Version} class.
  *
- * <p>Verifies User-Agent string generation for identifying AgentScope Java clients.
+ * <p>Verifies the build-resolved version and User-Agent string generation for identifying
+ * AgentScope Java clients.
  */
 class VersionTest {
 
+    private static final String MAIN_VERSION_RESOURCE = "/META-INF/agentscope/version.properties";
+    private static final String TEST_VERSION_RESOURCE = "/agentscope-test-version.properties";
+    private static final String SEMVER = "\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?";
+
+    private static Properties loadProps(String resourcePath) throws IOException {
+        try (InputStream in = VersionTest.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                return null;
+            }
+            Properties props = new Properties();
+            props.load(in);
+            return props;
+        }
+    }
+
     @Test
-    void testVersionConstant() {
-        // Verify version constant is set
-        Assertions.assertNotNull(Version.VERSION, "VERSION constant should not be null");
-        Assertions.assertFalse(Version.VERSION.isEmpty(), "VERSION constant should not be empty");
+    void testVersionConstant() throws IOException {
+        Properties props = loadProps(MAIN_VERSION_RESOURCE);
+        // The resource is absent only when the build did not run Maven resource processing at
+        // all (e.g. an IDE run against raw target/classes without resources), so there is no
+        // expected value to cross-check - skip, not fail.
+        if (props == null) {
+            Assumptions.abort(
+                    MAIN_VERSION_RESOURCE
+                            + " is missing from the classpath (non-Maven/IDE run);"
+                            + " skipping strict version cross-check");
+        }
+        String expectedVersion = props.getProperty("version");
+        Assertions.assertNotNull(expectedVersion, "version property should be present");
+
+        // If the resource IS present but still contains the unfiltered ${project.version}
+        // placeholder, Maven resource filtering genuinely did not apply. That is a loud
+        // failure, not an assumption violation - a packaged jar would silently carry the
+        // placeholder while Version.resolveVersionFrom masks it as "unknown".
+        Assertions.assertFalse(
+                expectedVersion.contains("${"),
+                MAIN_VERSION_RESOURCE
+                        + " is unfiltered (still contains '${'): Maven resource filtering"
+                        + " did not apply");
+
+        // Strict cross-check: the runtime version must match the Maven project version exactly.
         Assertions.assertEquals(
-                "1.0.13-SNAPSHOT", Version.VERSION, "VERSION should match current version");
+                expectedVersion, Version.VERSION, "VERSION must match the Maven project version");
+
+        // Semantic version format check.
+        Assertions.assertTrue(
+                Version.VERSION.matches(SEMVER),
+                "VERSION should be a valid semver: " + Version.VERSION);
+    }
+
+    @Test
+    void testVersionConstant_CrossCheckTestResource() throws IOException {
+        Properties props = loadProps(TEST_VERSION_RESOURCE);
+        if (props == null) {
+            Assumptions.abort(
+                    TEST_VERSION_RESOURCE
+                            + " is missing from the classpath (non-Maven/IDE run);"
+                            + " skipping cross-check");
+        }
+        String expectedVersion = props.getProperty("version");
+        Assertions.assertNotNull(expectedVersion, "version property should be present");
+        Assertions.assertFalse(
+                expectedVersion.contains("${"), "test version.properties is unfiltered");
+        Assertions.assertEquals(
+                expectedVersion,
+                Version.VERSION,
+                "test-resource version must match the runtime VERSION");
+    }
+
+    @Test
+    void testResolveVersionFromResource_Normal() throws IOException {
+        String content = "version=2.0.3-SNAPSHOT";
+        Assertions.assertEquals(
+                "2.0.3-SNAPSHOT",
+                Version.resolveVersionFromResource(
+                        new java.io.ByteArrayInputStream(
+                                content.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+    }
+
+    @Test
+    void testResolveVersionFromResource_NullStream() {
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFromResource(null));
+    }
+
+    @Test
+    void testResolveVersionFromResource_UnreadableStream() {
+        InputStream broken =
+                new InputStream() {
+                    @Override
+                    public int read() throws IOException {
+                        throw new IOException("boom");
+                    }
+                };
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFromResource(broken));
+    }
+
+    @Test
+    void testResolveVersionFrom_Normal() {
+        Properties props = new Properties();
+        props.setProperty("version", "  2.0.3-SNAPSHOT  ");
+        Assertions.assertEquals("2.0.3-SNAPSHOT", Version.resolveVersionFrom(props));
+    }
+
+    @Test
+    void testResolveVersionFrom_UnfilteredPlaceholder() {
+        Properties props = new Properties();
+        props.setProperty("version", "${project.version}");
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFrom(props));
+    }
+
+    @Test
+    void testResolveVersionFrom_NullValue() {
+        Properties props = new Properties();
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFrom(props));
+    }
+
+    @Test
+    void testResolveVersionFrom_BlankValue() {
+        Properties props = new Properties();
+        props.setProperty("version", "   ");
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFrom(props));
+    }
+
+    @Test
+    void testResolveVersionFrom_NullProps() {
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFrom(null));
+    }
+
+    @Test
+    void testResolveVersionFromManifest_Normal() {
+        Assertions.assertEquals(
+                "2.0.3-SNAPSHOT", Version.resolveVersionFromManifest("2.0.3-SNAPSHOT"));
+    }
+
+    @Test
+    void testResolveVersionFromManifest_Trimmed() {
+        Assertions.assertEquals(
+                "2.0.3-SNAPSHOT", Version.resolveVersionFromManifest("  2.0.3-SNAPSHOT  "));
+    }
+
+    @Test
+    void testResolveVersionFromManifest_Null() {
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFromManifest(null));
+    }
+
+    @Test
+    void testResolveVersionFromManifest_Blank() {
+        Assertions.assertEquals(Version.UNKNOWN, Version.resolveVersionFromManifest("   "));
+    }
+
+    @Test
+    void testResolveVersionFromManifest_UnfilteredPlaceholder() {
+        Assertions.assertEquals(
+                Version.UNKNOWN, Version.resolveVersionFromManifest("${project.version}"));
     }
 
     @Test

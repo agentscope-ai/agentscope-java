@@ -1,4 +1,8 @@
-# Subagents
+---
+title: Subagents
+---
+
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
 Subagents are **specialized agents** that a main **orchestrator** delegates work to. The orchestrator does not execute the work itself; it calls a **Task** tool with a sub-agent type and a task description. The system runs the chosen sub-agent in an **isolated context** (its own system prompt and tools), then returns the result to the orchestrator. This keeps the main conversation focused and avoids context bloat, while still allowing multiple domains (e.g. codebase exploration, web research, dependency analysis) to be handled by dedicated agents.
 
@@ -123,13 +127,6 @@ The AgentScope example implements a **Tech Due Diligence Assistant**: one orches
 - **Markdown specs** live in `src/main/resources/agents/*.md` and are loaded with `TaskToolsBuilder.addAgentResource(res)`.
 - **dependency-analyzer** is built as a ReActAgent and registered with `TaskToolsBuilder.subAgent("dependency-analyzer", dependencyAnalyzerReAct)`.
 
-**Run interactively**:
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/subagent spring-boot:run \
-  -Dspring-boot.run.arguments="--subagent.run-interactive=true"
-```
-
 **Use in code**: Inject **OrchestratorService** and call `run(userMessage)`; the service invokes the graph that runs the orchestrator with the given input.
 
 ```java
@@ -157,6 +154,6 @@ String answer = orchestratorService.run(
 
 ## Related Documentation
 
-- [Supervisor](./supervisor.md) - One supervisor, one tool per specialist
-- [Agent as Tool](../task/agent-as-tool.md) - Register a single agent as a tool
-- [Pipeline](./pipeline.md) - Sequential and parallel composition
+- [Supervisor](/v1/en/docs/multi-agent/supervisor) - One supervisor, one tool per specialist
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Register a single agent as a tool
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel composition
