@@ -48,6 +48,8 @@ import reactor.core.publisher.Flux;
 
 class HarnessAgentCompactionMemoryHooksTest {
 
+    private static final String CUSTOM_SUMMARY_PROMPT = "CUSTOM_EMERGENCY_SUMMARY:\n{messages}";
+
     @TempDir Path workspace;
 
     @Test
@@ -65,6 +67,45 @@ class HarnessAgentCompactionMemoryHooksTest {
         assertEquals(1, model.summaryCalls.get());
         assertFalse(hasDailyMemoryFile());
         assertTrue(hasFileNamed("normal-session" + WorkspaceConstants.SESSION_CONTEXT_EXT));
+    }
+
+    @Test
+    void emergencyCompactionUsesConfiguredModelPromptAndOffloadSetting() throws Exception {
+        RoutingModel reasoningModel = new RoutingModel();
+        RoutingModel compactionModel = new RoutingModel();
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerMessages(0)
+                        .triggerTokens(Integer.MAX_VALUE)
+                        .keepMessages(1)
+                        .keepTokens(0)
+                        .summaryPrompt(CUSTOM_SUMMARY_PROMPT)
+                        .flushBeforeCompact(false)
+                        .offloadBeforeCompact(false)
+                        .truncateArgs(
+                                CompactionConfig.TruncateArgsConfig.builder()
+                                        .triggerMessages(Integer.MAX_VALUE)
+                                        .build())
+                        .prune(null)
+                        .model(compactionModel)
+                        .build();
+
+        try (HarnessAgent agent = buildAgent(reasoningModel, config, false)) {
+            RuntimeContext context = context("configured-overflow-session");
+            for (int i = 0; i < 11; i++) {
+                assertNotNull(agent.call(userMessage("request " + i), context).block());
+            }
+
+            reasoningModel.overflowNextReasoning.set(true);
+            assertNotNull(agent.call(userMessage("trigger overflow"), context).block());
+        }
+
+        assertEquals(0, reasoningModel.summaryCalls.get());
+        assertEquals(1, compactionModel.summaryCalls.get());
+        assertTrue(compactionModel.customSummaryPromptSeen.get());
+        assertFalse(
+                hasFileNamed(
+                        "configured-overflow-session" + WorkspaceConstants.SESSION_CONTEXT_EXT));
     }
 
     @Test
@@ -125,6 +166,7 @@ class HarnessAgentCompactionMemoryHooksTest {
         assertEquals(0, model.flushCalls.get());
         assertEquals(1, model.summaryCalls.get());
         assertFalse(hasDailyMemoryFile());
+        assertFalse(hasFileNamed("overflow-session" + WorkspaceConstants.SESSION_CONTEXT_EXT));
     }
 
     private HarnessAgent buildAgent(
@@ -203,6 +245,7 @@ class HarnessAgentCompactionMemoryHooksTest {
         private final AtomicInteger flushCalls = new AtomicInteger();
         private final AtomicInteger summaryCalls = new AtomicInteger();
         private final AtomicBoolean overflowNextReasoning = new AtomicBoolean();
+        private final AtomicBoolean customSummaryPromptSeen = new AtomicBoolean();
 
         @Override
         public String getModelName() {
@@ -218,8 +261,10 @@ class HarnessAgentCompactionMemoryHooksTest {
                 flushCalls.incrementAndGet();
                 return response("- extracted memory");
             }
-            if (rendered.contains("Context Extraction Assistant")) {
+            if (rendered.contains("Context Extraction Assistant")
+                    || rendered.contains("CUSTOM_EMERGENCY_SUMMARY")) {
                 summaryCalls.incrementAndGet();
+                customSummaryPromptSeen.set(rendered.contains("CUSTOM_EMERGENCY_SUMMARY"));
                 return response("compacted summary");
             }
             if (overflowNextReasoning.compareAndSet(true, false)) {

@@ -45,6 +45,40 @@ import reactor.test.StepVerifier;
 /** Tests message routing between summarization, memory flushing, and the preserved tail. */
 class ConversationCompactorTest {
 
+    /** Verifies direct compactor calls resolve dynamic keep-token settings via the model. */
+    @Test
+    void compactIfNeeded_resolvesDynamicConfiguration() {
+        RecordingModel model = new RecordingModel(100);
+        MemoryFlushManager flushManager = mock(MemoryFlushManager.class);
+        ConversationCompactor compactor = new ConversationCompactor(model, flushManager);
+        CompactionConfig dynamicConfig =
+                CompactionConfig.builder()
+                        .triggerMessages(1)
+                        .triggerTokens(0)
+                        .reserved(10)
+                        .keepMessages(3)
+                        .keepTokens(-1)
+                        .keepTokensMin(1)
+                        .keepTokensMax(1)
+                        .flushBeforeCompact(false)
+                        .offloadBeforeCompact(false)
+                        .prune(null)
+                        .build();
+
+        Optional<List<Msg>> result =
+                compactor
+                        .compactIfNeeded(
+                                mock(RuntimeContext.class),
+                                compactableMessages(),
+                                dynamicConfig,
+                                "agent-id",
+                                "session-id")
+                        .block();
+
+        assertTrue(result.isPresent());
+        assertEquals(2, result.orElseThrow().size());
+    }
+
     /** Verifies that a prior summary is summarized again but is neither flushed nor retained. */
     @Test
     void compactIfNeeded_routesPriorSummaryToSummaryInputButNotFlushOrTail() {
@@ -285,6 +319,15 @@ class ConversationCompactorTest {
     private static final class RecordingModel implements Model {
 
         private final List<List<Msg>> inputs = new ArrayList<>();
+        private final int contextWindowSize;
+
+        private RecordingModel() {
+            this(0);
+        }
+
+        private RecordingModel(int contextWindowSize) {
+            this.contextWindowSize = contextWindowSize;
+        }
 
         /** Records the model input and emits a fixed text response for the current invocation. */
         @Override
@@ -303,6 +346,11 @@ class ConversationCompactorTest {
         @Override
         public String getModelName() {
             return "recording-model";
+        }
+
+        @Override
+        public int getContextWindowSize() {
+            return contextWindowSize;
         }
 
         /** Returns the summarization prompt for the specified invocation. */

@@ -22,13 +22,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.model.Model;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class CompactionConfigTest {
 
+    private static final Set<String> CONFIG_FIELDS =
+            Set.of(
+                    "triggerMessages",
+                    "triggerTokens",
+                    "reserved",
+                    "keepMessages",
+                    "keepTokens",
+                    "keepTokensMin",
+                    "keepTokensMax",
+                    "keepTokensRatio",
+                    "summaryPrompt",
+                    "flushBeforeCompact",
+                    "offloadBeforeCompact",
+                    "truncateArgsConfig",
+                    "pruneConfig",
+                    "model");
+
     @Test
-    void withFlushBeforeCompactCopiesAllFieldsWithoutMutatingOriginal() {
+    void withFlushBeforeCompactCopiesAllFieldsWithoutMutatingOriginal() throws Exception {
         Model model = mock(Model.class);
         CompactionConfig.TruncateArgsConfig truncateArgs =
                 CompactionConfig.TruncateArgsConfig.builder()
@@ -46,41 +67,40 @@ class CompactionConfigTest {
                         .maxOutputChars(18)
                         .excludedTools(Set.of("custom_tool"))
                         .build();
-        CompactionConfig original =
-                CompactionConfig.builder()
-                        .triggerMessages(1)
-                        .triggerTokens(2)
-                        .reserved(3)
-                        .keepMessages(4)
-                        .keepTokens(5)
-                        .keepTokensMin(6)
-                        .keepTokensMax(7)
-                        .keepTokensRatio(0.5)
-                        .summaryPrompt("summary {messages}")
-                        .flushBeforeCompact(true)
-                        .offloadBeforeCompact(false)
-                        .truncateArgs(truncateArgs)
-                        .prune(prune)
-                        .model(model)
-                        .build();
+        CompactionConfig original = fullConfig(model, truncateArgs, prune);
 
         CompactionConfig copy = original.withFlushBeforeCompact(false);
 
         assertTrue(original.isFlushBeforeCompact());
         assertFalse(copy.isFlushBeforeCompact());
-        assertEquals(original.getTriggerMessages(), copy.getTriggerMessages());
-        assertEquals(original.getTriggerTokens(), copy.getTriggerTokens());
-        assertEquals(original.getReserved(), copy.getReserved());
-        assertEquals(original.getKeepMessages(), copy.getKeepMessages());
-        assertEquals(original.getKeepTokens(), copy.getKeepTokens());
-        assertEquals(original.getKeepTokensMin(), copy.getKeepTokensMin());
-        assertEquals(original.getKeepTokensMax(), copy.getKeepTokensMax());
-        assertEquals(original.getKeepTokensRatio(), copy.getKeepTokensRatio());
-        assertEquals(original.getSummaryPrompt(), copy.getSummaryPrompt());
-        assertEquals(original.isOffloadBeforeCompact(), copy.isOffloadBeforeCompact());
-        assertSame(truncateArgs, copy.getTruncateArgsConfig());
-        assertSame(prune, copy.getPruneConfig());
-        assertSame(model, copy.getModel());
+        assertConfigFieldsEqualExcept(original, copy, Set.of("flushBeforeCompact"));
+    }
+
+    @Test
+    void withTriggerMessagesCopiesAllFieldsWithoutMutatingOriginal() throws Exception {
+        Model model = mock(Model.class);
+        CompactionConfig.TruncateArgsConfig truncateArgs =
+                CompactionConfig.TruncateArgsConfig.builder().maxArgLength(15).build();
+        CompactionConfig.PruneConfig prune =
+                CompactionConfig.PruneConfig.builder().maxOutputChars(18).build();
+        CompactionConfig original = fullConfig(model, truncateArgs, prune);
+
+        CompactionConfig copy = original.withTriggerMessages(99);
+
+        assertEquals(1, original.getTriggerMessages());
+        assertEquals(99, copy.getTriggerMessages());
+        assertConfigFieldsEqualExcept(original, copy, Set.of("triggerMessages"));
+    }
+
+    @Test
+    void copyContractTracksEveryConfigurationField() {
+        Set<String> actualFields =
+                Arrays.stream(CompactionConfig.class.getDeclaredFields())
+                        .filter(field -> !Modifier.isStatic(field.getModifiers()))
+                        .map(Field::getName)
+                        .collect(Collectors.toSet());
+
+        assertEquals(CONFIG_FIELDS, actualFields);
     }
 
     @Test
@@ -98,5 +118,44 @@ class CompactionConfigTest {
         assertTrue(effective.isOffloadBeforeCompact());
         assertEquals(123, effective.getTriggerTokens());
         assertEquals(456, effective.getKeepTokens());
+    }
+
+    private static CompactionConfig fullConfig(
+            Model model,
+            CompactionConfig.TruncateArgsConfig truncateArgs,
+            CompactionConfig.PruneConfig prune) {
+        return CompactionConfig.builder()
+                .triggerMessages(1)
+                .triggerTokens(2)
+                .reserved(3)
+                .keepMessages(4)
+                .keepTokens(5)
+                .keepTokensMin(6)
+                .keepTokensMax(7)
+                .keepTokensRatio(0.5)
+                .summaryPrompt("summary {messages}")
+                .flushBeforeCompact(true)
+                .offloadBeforeCompact(false)
+                .truncateArgs(truncateArgs)
+                .prune(prune)
+                .model(model)
+                .build();
+    }
+
+    private static void assertConfigFieldsEqualExcept(
+            CompactionConfig expected, CompactionConfig actual, Set<String> excludedFields)
+            throws IllegalAccessException {
+        for (Field field : CompactionConfig.class.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())
+                    || excludedFields.contains(field.getName())) {
+                continue;
+            }
+            field.setAccessible(true);
+            if (field.getType().isPrimitive()) {
+                assertEquals(field.get(expected), field.get(actual), field.getName());
+            } else {
+                assertSame(field.get(expected), field.get(actual), field.getName());
+            }
+        }
     }
 }

@@ -249,7 +249,9 @@ public class CompactionConfig {
 
     /**
      * Creates a resolved copy with effective trigger and keep values computed from a model's
-     * context window. Used by {@code CompactionMiddleware} to resolve dynamic defaults.
+     * context window. Used by {@link ConversationCompactor} to resolve dynamic defaults.
+     * This is a shallow copy: nested immutable configuration objects and the model reference are
+     * retained.
      */
     public CompactionConfig withEffective(int effectiveTriggerTokens, int effectiveKeepTokens) {
         Builder b = copyBuilder();
@@ -259,7 +261,22 @@ public class CompactionConfig {
     }
 
     /**
+     * Creates a copy with the message-count compaction trigger replaced. This is a shallow copy:
+     * nested immutable configuration objects and the model reference are retained.
+     *
+     * @param triggerMessages message count that triggers compaction
+     * @return a new configuration with the requested message trigger
+     */
+    public CompactionConfig withTriggerMessages(int triggerMessages) {
+        Builder b = copyBuilder();
+        b.triggerMessages = triggerMessages;
+        return new CompactionConfig(b);
+    }
+
+    /**
      * Creates a copy with the pre-compaction long-term memory flush enabled or disabled.
+     * This is a shallow copy: nested immutable configuration objects and the model reference are
+     * retained.
      *
      * @param flushBeforeCompact whether to flush long-term memories before compaction
      * @return a new configuration with the requested flush setting

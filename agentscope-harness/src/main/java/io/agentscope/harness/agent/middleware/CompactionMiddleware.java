@@ -101,8 +101,6 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     String sessionId =
                             rc != null && rc.getSessionId() != null ? rc.getSessionId() : "default";
 
-                    CompactionConfig effectiveConfig = resolveEffectiveConfig();
-
                     MemoryFlushManager flushManager =
                             new MemoryFlushManager(workspaceManager, model);
                     ConversationCompactor compactor =
@@ -111,7 +109,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
 
                     // Only compaction may degrade; downstream reasoning errors must propagate.
                     return compactor
-                            .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                            .compactIfNeeded(rc, conversation, config, agentId, sessionId)
                             .onErrorResume(
                                     error -> {
                                         if (ExceptionUtils.containsInterruptedException(error)) {
@@ -147,74 +145,6 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                         input.options()));
                                     });
                 });
-    }
-
-    /**
-     * Resolves dynamic defaults in the config using the model's context window.
-     */
-    private CompactionConfig resolveEffectiveConfig() {
-        int configTrigger = config.getTriggerTokens();
-        int configKeep = config.getKeepTokens();
-
-        boolean needsDynamic = (configTrigger == 0) || (configKeep == -1);
-        if (!needsDynamic) {
-            return config;
-        }
-
-        int contextWindow = model.getContextWindowSize();
-
-        int effectiveTrigger;
-        if (configTrigger == 0) {
-            if (contextWindow > 0) {
-                effectiveTrigger = contextWindow - config.getReserved();
-                if (effectiveTrigger <= 0) {
-                    // reserved exceeds the model's context window; a negative or zero trigger
-                    // would fire compaction on every call. Clamp to half the context window so
-                    // compaction still activates at a sensible point without thrashing.
-                    effectiveTrigger = Math.max(1, contextWindow / 2);
-                    log.warn(
-                            "Dynamic compaction trigger clamped: contextWindow={} <= reserved={}"
-                                    + "; using proportional trigger={}. Consider reducing"
-                                    + " reserved() for this model.",
-                            contextWindow,
-                            config.getReserved(),
-                            effectiveTrigger);
-                } else {
-                    log.debug(
-                            "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
-                            contextWindow,
-                            config.getReserved(),
-                            effectiveTrigger);
-                }
-            } else {
-                effectiveTrigger = CompactionConfig.FALLBACK_TRIGGER_TOKENS;
-                log.debug(
-                        "Model does not report context window, using fallback trigger: {}",
-                        effectiveTrigger);
-            }
-        } else {
-            effectiveTrigger = configTrigger;
-        }
-
-        int effectiveKeep;
-        if (configKeep == -1) {
-            if (contextWindow > 0) {
-                int usable = contextWindow - config.getReserved();
-                effectiveKeep =
-                        Math.min(
-                                config.getKeepTokensMax(),
-                                Math.max(
-                                        config.getKeepTokensMin(),
-                                        (int) (usable * config.getKeepTokensRatio())));
-                log.debug("Dynamic keep tokens: {}", effectiveKeep);
-            } else {
-                effectiveKeep = 0;
-            }
-        } else {
-            effectiveKeep = configKeep;
-        }
-
-        return config.withEffective(effectiveTrigger, effectiveKeep);
     }
 
     private static void applyToContext(AgentState state, List<Msg> compacted) {
