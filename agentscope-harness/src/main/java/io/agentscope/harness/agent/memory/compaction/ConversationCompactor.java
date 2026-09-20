@@ -270,6 +270,10 @@ public class ConversationCompactor {
                 log.debug("Dynamic keep tokens: {}", effectiveKeep);
             } else {
                 effectiveKeep = 0;
+                log.debug(
+                        "Model does not report context window; dynamic keepTokens falls back to"
+                                + " keepMessages={}",
+                        config.getKeepMessages());
             }
         } else {
             effectiveKeep = configKeep;

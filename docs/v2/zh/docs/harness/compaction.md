@@ -82,7 +82,7 @@ CompactionConfig.builder()
 
 `HarnessAgent.Builder.disableMemoryHooks()` 会把普通压缩和紧急压缩的 `flushBeforeCompact` 都覆盖为 `false`,但压缩摘要仍会执行。
 
-紧急压缩会复用已配置的压缩模型、保留范围、摘要 prompt、截断/裁剪设置和 offload 行为;只有消息数触发条件会被强制覆盖,以便立即执行恢复。
+紧急压缩会复用已配置的压缩模型来生成摘要,并复用保留范围、摘要 prompt、截断/裁剪设置和 offload 行为;只有消息数触发条件会被强制覆盖,以便立即执行恢复。记忆提取仍使用 agent 主模型,与原有 flush 行为一致。
 
 类似地,`offloadBeforeCompact`(默认 `true`)在摘要前把**原始消息**整段写到永不压缩的 `*.log.jsonl`,供 `session_search` 检索。Offload 不受 memory hooks 控制;如需禁用(包括紧急压缩),请显式设置 `offloadBeforeCompact(false)`。
 

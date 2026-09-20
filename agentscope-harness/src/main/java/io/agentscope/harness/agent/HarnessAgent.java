@@ -131,6 +131,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -1073,17 +1074,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? effective.getSessionId()
                         : "default";
 
-        CompactionConfig forceConfig = effectiveCompactionConfig.withTriggerMessages(1);
-        Model compactionModel =
-                effectiveCompactionConfig.getModel() != null
-                        ? effectiveCompactionConfig.getModel()
-                        : getModel();
+        // recoverFromOverflow() only delegates here when compactionHook is present; both values
+        // are created together by Builder.build(). Keep that invariant explicit at the boundary.
+        CompactionConfig baseConfig =
+                Objects.requireNonNull(
+                        effectiveCompactionConfig,
+                        "compactionHook requires an effective compaction config");
+        CompactionConfig forceConfig = baseConfig.withTriggerMessages(1);
+        Model compactionModel = baseConfig.getModel() != null ? baseConfig.getModel() : getModel();
         String effectiveFlushPrompt =
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
         MemoryFlushManager fm =
-                new MemoryFlushManager(workspaceManager, compactionModel, effectiveFlushPrompt);
+                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
         ConversationCompactor compactor = new ConversationCompactor(compactionModel, fm);
 
         return compactor

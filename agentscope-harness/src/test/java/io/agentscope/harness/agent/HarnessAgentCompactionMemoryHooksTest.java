@@ -80,7 +80,7 @@ class HarnessAgentCompactionMemoryHooksTest {
                         .keepMessages(1)
                         .keepTokens(0)
                         .summaryPrompt(CUSTOM_SUMMARY_PROMPT)
-                        .flushBeforeCompact(false)
+                        .flushBeforeCompact(true)
                         .offloadBeforeCompact(false)
                         .truncateArgs(
                                 CompactionConfig.TruncateArgsConfig.builder()
@@ -101,8 +101,11 @@ class HarnessAgentCompactionMemoryHooksTest {
         }
 
         assertEquals(0, reasoningModel.summaryCalls.get());
+        assertEquals(1, reasoningModel.flushCalls.get());
         assertEquals(1, compactionModel.summaryCalls.get());
+        assertEquals(0, compactionModel.flushCalls.get());
         assertTrue(compactionModel.customSummaryPromptSeen.get());
+        assertTrue(hasDailyMemoryFile());
         assertFalse(
                 hasFileNamed(
                         "configured-overflow-session" + WorkspaceConstants.SESSION_CONTEXT_EXT));

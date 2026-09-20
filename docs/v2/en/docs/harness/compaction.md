@@ -83,7 +83,7 @@ In many workloads this single step delays the summarization trigger considerably
 
 `HarnessAgent.Builder.disableMemoryHooks()` overrides `flushBeforeCompact` to `false` for both normal and emergency compaction. Compaction summarization still runs.
 
-Emergency compaction reuses the configured compaction model, retention settings, summary prompt, truncation/pruning settings, and offload behavior; only the message-count trigger is forced so recovery runs immediately.
+Emergency compaction reuses the configured compaction model for summarization, retention settings, summary prompt, truncation/pruning settings, and offload behavior; only the message-count trigger is forced so recovery runs immediately. Memory extraction keeps using the agent model, matching the existing flush behavior.
 
 Similarly, `offloadBeforeCompact` (default `true`) writes the **raw messages** to the uncompressed `*.log.jsonl` before summarization, so `session_search` can still reach them. Offload is independent of memory hooks; set `offloadBeforeCompact(false)` explicitly to disable it, including during emergency compaction.
 

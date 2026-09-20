@@ -7,6 +7,14 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Changed
+
+- `ConversationCompactor` now resolves dynamic trigger and retention settings for direct callers as well as middleware-managed compaction, keeping emergency recovery consistent with normal compaction ([#2699](https://github.com/agentscope-ai/agentscope-java/pull/2699))
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
