@@ -60,6 +60,12 @@
             <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
 
+        <!-- DeepSeek's OpenAI-compatible API (model ids use deepseek:<model>). -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+        </dependency>
+
         <!-- JdbcStore-backed BaseStore for remote filesystem routes -->
         <dependency>
             <groupId>io.agentscope</groupId>
