@@ -135,10 +135,15 @@ public class PostgresAgentStateStore implements AgentStateStore {
     }
 
     private void ensureVersionColumn() {
+        // DEFAULT 1 (not 0): the ALTER backfills pre-existing rows with the default, and 0 is
+        // the sentinel getVersioned() reports for "row absent". Backfilling 0 would make every
+        // pre-existing row look absent to saveIfVersion(..., 0), which takes the INSERT branch
+        // and reports a phantom CAS conflict. Both write paths start at version 1, so 1 is the
+        // correct resting value for migrated rows.
         String sql =
                 "ALTER TABLE "
                         + getFullTableName()
-                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0";
+                        + " ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1";
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.execute();
@@ -369,6 +374,14 @@ public class PostgresAgentStateStore implements AgentStateStore {
                     () -> {
                         if (expectedVersion == 0L) {
                             result[0] = insertIfAbsent(conn, slotId, key, value);
+                            if (result[0] == UNVERSIONED) {
+                                // The row already exists. If its stored version is still 0
+                                // (e.g. backfilled by an older ALTER TABLE migration), that
+                                // satisfies the CAS — bump 0 -> 1. If a concurrent writer
+                                // already moved it past 0 this matches nothing and correctly
+                                // reports UNVERSIONED.
+                                result[0] = updateIfVersion(conn, slotId, key, value, 0L);
+                            }
                         } else {
                             result[0] = updateIfVersion(conn, slotId, key, value, expectedVersion);
                         }
