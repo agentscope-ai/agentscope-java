@@ -2,7 +2,9 @@
 title: Troubleshooting
 ---
 
-[简体中文](/v2/zh/service/troubleshooting)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Start with the affected work record. Record the version, time and Session, Task, Attempt or Run IDs, then inspect the relevant component. Remove tokens, passwords and sensitive business data before sharing logs.
 

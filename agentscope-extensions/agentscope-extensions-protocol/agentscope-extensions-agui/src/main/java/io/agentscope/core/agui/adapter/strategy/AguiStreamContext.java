@@ -53,6 +53,7 @@ public class AguiStreamContext {
     private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
     private final Set<String> startedToolCalls = new LinkedHashSet<>();
     private final Set<String> endedToolCalls = new LinkedHashSet<>();
+    private final Set<String> adoptedToolCalls = new LinkedHashSet<>();
     private String currentTextMessageId;
     private String currentReasoningMessageId;
     private final Map<String, StringBuilder> toolResultContent = new LinkedHashMap<>();
@@ -232,15 +233,33 @@ public class AguiStreamContext {
         }
     }
 
+    /**
+     * Accept results for a tool call whose invocation was emitted in a previous run.
+     *
+     * <p>Callers must obtain the id from a known pending tool call, such as a validated user
+     * confirmation. Adoption is idempotent and emits no events. It does not start a tool call in
+     * this run, enable argument events, or clear an existing result buffer. Null or blank ids are
+     * ignored, just as they are for tool-call events.
+     *
+     * @param toolCallId stable id of the previously emitted tool call
+     */
+    public void adoptToolCall(String toolCallId) {
+        if (isBlank(toolCallId)) {
+            warnMissingToolCallId("adoptToolCall");
+            return;
+        }
+        adoptedToolCalls.add(toolCallId);
+    }
+
     public void beginToolResult(String toolCallId) {
-        if (!hasStartedToolCall(toolCallId, "ToolResultStartEvent")) {
+        if (!hasKnownToolCall(toolCallId, "ToolResultStartEvent")) {
             return;
         }
         toolResultContent.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
     }
 
     public void appendToolResultText(String toolCallId, String delta) {
-        if (!hasStartedToolCall(toolCallId, "ToolResultTextDeltaEvent")) {
+        if (!hasKnownToolCall(toolCallId, "ToolResultTextDeltaEvent")) {
             return;
         }
         if (delta != null && !delta.isEmpty()) {
@@ -249,7 +268,7 @@ public class AguiStreamContext {
     }
 
     public void appendToolResultData(String toolCallId, ContentBlock data) {
-        if (!hasStartedToolCall(toolCallId, "ToolResultDataDeltaEvent")) {
+        if (!hasKnownToolCall(toolCallId, "ToolResultDataDeltaEvent")) {
             return;
         }
         if (data == null) {
@@ -263,10 +282,10 @@ public class AguiStreamContext {
     }
 
     public void endToolResult(String replyId, String toolCallId) {
-        if (!hasStartedToolCall(toolCallId, "ToolResultEndEvent")) {
+        if (!hasKnownToolCall(toolCallId, "ToolResultEndEvent")) {
             return;
         }
-        if (endedToolCalls.add(toolCallId)) {
+        if (startedToolCalls.contains(toolCallId) && endedToolCalls.add(toolCallId)) {
             emit(new AguiEvent.ToolCallEnd(threadId, runId, toolCallId));
         }
         StringBuilder content = toolResultContent.remove(toolCallId);
@@ -281,7 +300,7 @@ public class AguiStreamContext {
     }
 
     public void markToolCallSuspended(String toolCallId) {
-        if (!hasStartedToolCall(toolCallId, "ToolResultEndEvent")) {
+        if (!hasKnownToolCall(toolCallId, "ToolResultEndEvent")) {
             return;
         }
         toolResultContent.remove(toolCallId);
@@ -314,6 +333,10 @@ public class AguiStreamContext {
             return false;
         }
         return startedToolCalls.contains(toolCallId);
+    }
+
+    private boolean hasKnownToolCall(String toolCallId, String eventName) {
+        return hasStartedToolCall(toolCallId, eventName) || adoptedToolCalls.contains(toolCallId);
     }
 
     private StringBuilder toolResultBuffer(String toolCallId) {

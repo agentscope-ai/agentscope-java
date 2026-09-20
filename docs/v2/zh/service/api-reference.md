@@ -2,7 +2,9 @@
 title: "API 参考：认证、资源与调用"
 ---
 
-[English](/v2/en/service/api-reference)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 使用 Gateway 作为 API base URL。产品管理调用使用用户身份；业务系统调用已发布能力优先使用 [Endpoint](/v2/zh/service/endpoints)。
 

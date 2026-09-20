@@ -19,10 +19,22 @@ title: Channel 适配器
 1. **入站** — 从平台接收消息（通过 webhook、WebSocket 等），解析为统一的 `InboundMessage`，去重、防循环，然后通过 Gateway 分发。
 2. **出站** — 通过平台的发送 API 把 Agent 回复投递回去。
 
-所有适配器共享 `agentscope-extensions-channel-common` 中的两个通用组件：
+所有适配器共享 `agentscope-extensions-channel-common` 中的三个通用组件：
 
 - **IdempotencyStore** — 按消息 id 去重，防止 webhook 重试导致重复处理。
 - **BotLoopGuard** — 按 peer 限速，防止 bot 之间的消息死循环。
+- **AccessTokenStore** — 缓存出站调用平台 API 所用的 access token。
+
+## 多实例部署
+
+上述通用组件默认将状态保存在 JVM 内（`IdempotencyStore`、`InMemoryAccessTokenStore`），只在单进程内可见。当 channel 适配器运行在多个副本上（负载均衡后多实例，或每个 bot 一个进程）时，请通过接受共享存储实现的 `fromProperties` 重载构造适配器：
+
+```java
+FeishuChannel.fromProperties(channelId, routing, rawProperties, deduplicator, tokenStore);
+```
+
+- 共享的 `InboundEventDeduplicator` 使平台重试投递在所有实例间都能被识别。
+- 共享的 `AccessTokenStore`（飞书、企业微信、钉钉）让任一副本的 token 刷新或失效服务于整个部署，而不是每个副本为同一凭据各自获取、各自缓存。
 
 ## 共享依赖
 
