@@ -2,7 +2,11 @@
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS console
 WORKDIR /src/frontend
 COPY agentscope-service/frontend/package*.json ./
-RUN npm ci
+# The checked-in lockfile may contain developer-only Alibaba registry tarball URLs.
+# Normalize those URLs in the image layer so builds also work outside that network.
+RUN sed -i 's#https://registry.anpm.alibaba-inc.com/#https://registry.npmjs.org/#g' package-lock.json \
+    && npm config set registry https://registry.npmjs.org/ \
+    && npm ci --no-audit --no-fund
 COPY agentscope-service/frontend/ ./
 RUN npm run build
 

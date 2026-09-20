@@ -86,10 +86,12 @@ services:
       dockerfile: agentscope-service/docker/Dockerfile.service
       args:
         MODULE: service-dataplane
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     environment:
       << : *builder-env
       SERVER_PORT: 8082
       BUILDER_DATAPLANE_PUBLIC_URL: http://data:8082
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     healthcheck:
       << : *plane-health
     depends_on:
@@ -104,6 +106,7 @@ services:
       dockerfile: agentscope-service/docker/Dockerfile.service
       args:
         MODULE: service-scheduler
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     environment:
       << : *builder-env
       SERVER_PORT: 8083
@@ -122,6 +125,7 @@ services:
       dockerfile: agentscope-service/docker/Dockerfile.service
       args:
         MODULE: service-gateway
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     environment:
       SERVER_PORT: 8080
       BUILDER_CONTROL_URL: http://control:8081
