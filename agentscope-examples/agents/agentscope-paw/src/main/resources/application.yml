@@ -41,6 +41,7 @@ claw:
     control-http: ${AISTIO_CONTROL_HTTP:http://localhost:8081}
     internal-token: ${BUILDER_INTERNAL_TOKEN:local-dev-internal-token-at-least-32chars}
     agent-name: ${CLAW_AISTIO_AGENT_NAME:default}
+    tenant: ${CLAW_AISTIO_TENANT:default}
     namespace: ${CLAW_AISTIO_NAMESPACE:default}
     contract-port: ${CLAW_AISTIO_CONTRACT_PORT:18090}
     enable-events: true
@@ -53,8 +54,8 @@ claw:
     enabled: ${CLAW_TRANSCRIPT_ENABLED:true}
     # Empty → ${claw.home}/transcripts
     root: ${CLAW_TRANSCRIPT_ROOT:}
-    # Must match claw.aistio.namespace (tenant segment in object keys).
-    tenant: ${CLAW_TRANSCRIPT_TENANT:${claw.aistio.namespace:default}}
+    # Must match claw.aistio.tenant (tenant segment in object keys).
+    tenant: ${CLAW_TRANSCRIPT_TENANT:${claw.aistio.tenant:default}}
 
   # ---- DashScope model (used when no Model Spring bean is present) ----
   # Set DASHSCOPE_API_KEY env var or override api-key below.

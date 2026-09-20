@@ -23,11 +23,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
 
 class JsonSchemaUtilsTest {
+
+    private static final int CONCURRENT_THREAD_COUNT = 12;
+
+    private static final int CONCURRENT_CALL_COUNT = 240;
 
     static class SimpleModel {
         public String name;
@@ -155,5 +166,93 @@ class JsonSchemaUtilsTest {
         Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
         assertNotNull(mapSchema);
         assertEquals("object", mapSchema.get("type"));
+    }
+
+    static class ConcurrentClassA {
+        public String name;
+        public int age;
+    }
+
+    static class ConcurrentClassB {
+        public String title;
+        public List<String> tags;
+    }
+
+    static class ConcurrentClassC {
+        public String id;
+        public boolean active;
+    }
+
+    static class ConcurrentClassD {
+        public double score;
+    }
+
+    @Test
+    void testGenerateSchemaFromClassConcurrently() throws Exception {
+        List<Class<?>> targetClasses = List.of(ConcurrentClassA.class, ConcurrentClassB.class);
+
+        List<Map<String, Object>> schemas =
+                generateConcurrently(
+                        index ->
+                                JsonSchemaUtils.generateSchemaFromClass(
+                                        targetClasses.get(index % targetClasses.size())));
+
+        assertEquals(CONCURRENT_CALL_COUNT, schemas.size());
+        for (Map<String, Object> schema : schemas) {
+            assertNotNull(schema);
+            assertEquals("object", schema.get("type"));
+            assertNotNull(schema.get("properties"));
+        }
+    }
+
+    @Test
+    void testGenerateSchemaFromTypeConcurrently() throws Exception {
+        List<Type> targetTypes =
+                List.of(
+                        new TypeReference<ConcurrentClassC>() {}.getType(),
+                        new TypeReference<List<ConcurrentClassD>>() {}.getType());
+
+        List<Map<String, Object>> schemas =
+                generateConcurrently(
+                        index ->
+                                JsonSchemaUtils.generateSchemaFromType(
+                                        targetTypes.get(index % targetTypes.size())));
+
+        assertEquals(CONCURRENT_CALL_COUNT, schemas.size());
+        for (Map<String, Object> schema : schemas) {
+            assertNotNull(schema);
+            assertNotNull(schema.get("type"));
+        }
+    }
+
+    /**
+     * Runs the given generator on a fixed thread pool, with all tasks released at the same
+     * time to maximize the chance of overlapping schema generation. Any exception thrown
+     * inside a task propagates through {@code Future#get} and fails the test.
+     */
+    private static List<Map<String, Object>> generateConcurrently(
+            IntFunction<Map<String, Object>> generator) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(CONCURRENT_THREAD_COUNT);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Map<String, Object>>> futures = new ArrayList<>();
+            for (int i = 0; i < CONCURRENT_CALL_COUNT; i++) {
+                final int index = i;
+                futures.add(
+                        executor.submit(
+                                () -> {
+                                    start.await();
+                                    return generator.apply(index);
+                                }));
+            }
+            start.countDown();
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (Future<Map<String, Object>> future : futures) {
+                results.add(future.get(30, TimeUnit.SECONDS));
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }

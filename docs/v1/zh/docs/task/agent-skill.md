@@ -1,4 +1,6 @@
-# 智能体技能包 (Agent Skill)
+---
+title: Agent Skill
+---
 
 ## 概述
 
@@ -10,7 +12,7 @@ Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含�
 
 ### 渐进式披露机制
 
-采用**三阶段按需加载**优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(<5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。
+采用**三阶段按需加载**优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(&lt;5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。
 
 **工作流程:** 用户提问 → AI 识别相关 Skill → 调用 `load_skill_through_path` 工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务
 
@@ -397,5 +399,5 @@ skillBox.codeExecution()
 ## 相关文档
 
 - [Claude Agent Skills 官方文档](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview) - 完整的概念和架构介绍
-- [Tool 使用指南](./tool.md) - 工具系统的使用方法
-- [Agent 配置](./agent.md) - 智能体配置和使用
+- [Tool 使用指南](/v1/zh/docs/task/tool) - 工具系统的使用方法
+- [Agent 配置](/v1/zh/docs/quickstart/agent) - 智能体配置和使用

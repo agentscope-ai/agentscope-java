@@ -70,7 +70,7 @@ metadata:
     app.kubernetes.io/name: aistio
     app.kubernetes.io/instance: {{ .Release.Name }}
 webhooks:
-{{- range $w := list (dict "name" "vagent.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-agent" "resource" "agents") (dict "name" "vagentteam.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-agentteam" "resource" "agentteams") (dict "name" "vmodelconfig.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-modelconfig" "resource" "modelconfigs") (dict "name" "vmcpserver.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-mcpserver" "resource" "mcpservers") }}
+{{- range $w := list (dict "name" "vagent.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-agent" "resource" "agents") (dict "name" "vmodelconfig.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-modelconfig" "resource" "modelconfigs") (dict "name" "vmcpserver.agentscope.io" "path" "/validate-agentscope-io-v1alpha1-mcpserver" "resource" "mcpservers") }}
   - name: {{ $w.name }}
     admissionReviewVersions: ["v1"]
     sideEffects: None

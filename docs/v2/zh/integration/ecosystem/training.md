@@ -1,4 +1,6 @@
-# 在线训练（Training）
+---
+title: 在线训练
+---
 
 `agentscope-extensions-training` 在 AgentScope 之上接入 Trinity 训练后端：把生产流量按策略采样、收集 trace、计算奖励，再周期性提交训练，形成闭环。
 

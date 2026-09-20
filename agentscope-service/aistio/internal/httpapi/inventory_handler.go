@@ -51,10 +51,11 @@ type workspaceInstance struct {
 // probing the data plane over the HTTP contract.
 func (s *Server) listAgentSubagents(c *gin.Context) {
 	name := c.Param("name")
+	tenant := c.DefaultQuery("tenant", "default")
 	namespace := c.DefaultQuery("namespace", defaultNamespace)
 
 	if s.asdpInventory != nil {
-		if invs := s.asdpInventory.GetInventoriesForAgent(namespace, name); len(invs) > 0 {
+		if invs := s.asdpInventory.GetInventoriesForAgent(tenant, namespace, name); len(invs) > 0 {
 			instances := make([]subagentInstance, 0, len(invs))
 			for _, inv := range invs {
 				instances = append(instances, subagentInstance{
@@ -65,12 +66,12 @@ func (s *Server) listAgentSubagents(c *gin.Context) {
 					Subagents:  asdpSubagentsToProber(inv.Report.GetSubagents()),
 				})
 			}
-			c.JSON(http.StatusOK, gin.H{"agent": name, "namespace": namespace, "source": "asdp", "instances": instances})
+			c.JSON(http.StatusOK, gin.H{"tenant": tenant, "agent": name, "namespace": namespace, "source": "asdp", "instances": instances})
 			return
 		}
 	}
 
-	if endpoint, caps, ok := s.registryInventoryEndpoint(name, namespace, v1alpha1.CapabilitySubagentInventory); ok {
+	if endpoint, caps, ok := s.registryInventoryEndpoint(tenant, name, namespace, v1alpha1.CapabilitySubagentInventory); ok {
 		subs, err := s.prober.FetchSubagents(c.Request.Context(), endpoint)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch subagents from data plane: " + err.Error()})
@@ -78,11 +79,16 @@ func (s *Server) listAgentSubagents(c *gin.Context) {
 		}
 		_ = caps
 		c.JSON(http.StatusOK, gin.H{
+			"tenant":    tenant,
 			"agent":     name,
 			"namespace": namespace,
 			"source":    "registry",
 			"instances": []subagentInstance{{InstanceID: endpoint, Source: "http", Subagents: subs}},
 		})
+		return
+	}
+	if tenant != "default" {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "agent not found or inventory unavailable"})
 		return
 	}
 
@@ -106,6 +112,7 @@ func (s *Server) listAgentSubagents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"tenant":    tenant,
 		"agent":     name,
 		"namespace": namespace,
 		"source":    "http",
@@ -117,10 +124,11 @@ func (s *Server) listAgentSubagents(c *gin.Context) {
 // the ASDP inventory registry and falls back to the HTTP contract.
 func (s *Server) listAgentWorkspaces(c *gin.Context) {
 	name := c.Param("name")
+	tenant := c.DefaultQuery("tenant", "default")
 	namespace := c.DefaultQuery("namespace", defaultNamespace)
 
 	if s.asdpInventory != nil {
-		if invs := s.asdpInventory.GetInventoriesForAgent(namespace, name); len(invs) > 0 {
+		if invs := s.asdpInventory.GetInventoriesForAgent(tenant, namespace, name); len(invs) > 0 {
 			instances := make([]workspaceInstance, 0, len(invs))
 			for _, inv := range invs {
 				instances = append(instances, workspaceInstance{
@@ -131,12 +139,12 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 					Workspaces: asdpWorkspacesToProber(inv.Report.GetWorkspaces()),
 				})
 			}
-			c.JSON(http.StatusOK, gin.H{"agent": name, "namespace": namespace, "source": "asdp", "instances": instances})
+			c.JSON(http.StatusOK, gin.H{"tenant": tenant, "agent": name, "namespace": namespace, "source": "asdp", "instances": instances})
 			return
 		}
 	}
 
-	if endpoint, caps, ok := s.registryInventoryEndpoint(name, namespace, v1alpha1.CapabilityWorkspaceInventory); ok {
+	if endpoint, caps, ok := s.registryInventoryEndpoint(tenant, name, namespace, v1alpha1.CapabilityWorkspaceInventory); ok {
 		workspaces, err := s.prober.FetchWorkspaces(c.Request.Context(), endpoint)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, ErrorResponse{Error: "failed to fetch workspaces from data plane: " + err.Error()})
@@ -144,11 +152,16 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 		}
 		_ = caps
 		c.JSON(http.StatusOK, gin.H{
+			"tenant":    tenant,
 			"agent":     name,
 			"namespace": namespace,
 			"source":    "registry",
 			"instances": []workspaceInstance{{InstanceID: endpoint, Source: "http", Workspaces: workspaces}},
 		})
+		return
+	}
+	if tenant != "default" {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "agent not found or inventory unavailable"})
 		return
 	}
 
@@ -172,6 +185,7 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"tenant":    tenant,
 		"agent":     name,
 		"namespace": namespace,
 		"source":    "http",
@@ -180,11 +194,11 @@ func (s *Server) listAgentWorkspaces(c *gin.Context) {
 }
 
 // registryInventoryEndpoint finds a healthy self-registered instance advertising capability.
-func (s *Server) registryInventoryEndpoint(name, namespace, capability string) (endpoint string, caps []string, ok bool) {
+func (s *Server) registryInventoryEndpoint(tenant, name, namespace, capability string) (endpoint string, caps []string, ok bool) {
 	if s.registry == nil || s.prober == nil {
 		return "", nil, false
 	}
-	for _, dp := range s.registry.ListByAgent(name, namespace) {
+	for _, dp := range s.registry.ListByAgent(tenant, name, namespace) {
 		if !dp.Healthy || dp.BaseURL == "" {
 			continue
 		}

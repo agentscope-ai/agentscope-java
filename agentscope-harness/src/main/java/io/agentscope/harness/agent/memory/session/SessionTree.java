@@ -19,6 +19,10 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAware;
+import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
@@ -216,8 +220,9 @@ public class SessionTree {
      * Binds a {@link TranscriptStore} for segmented remote persistence. When set, {@link #flush()}
      * writes immutable segments instead of full-file mirrors, and {@link #syncFromRemote()} merges
      * from listed segments.
+     * history UI paths stay aligned with the local workspace. {@code null} disables segments
      *
-     * @param store segment store; {@code null} reverts to legacy full-file mirror
+     * @param store segment store; {@code null} disables segmented persistence
      * @param ref   transcript identity; required when {@code store} is non-null
      * @return this tree, for fluent chaining
      */
@@ -312,11 +317,11 @@ public class SessionTree {
     }
 
     /**
-     * Flushes pending entries to the local context and log files, then schedules an asynchronous
-     * remote mirror (segmented {@link TranscriptStore} when bound, else legacy full-file upload).
-     *
-     * <p>The remote mirror is fire-and-forget: failures are logged as warnings and do not affect
-     * the return of this method. The local write is always the primary guarantee.
+     * Flushes pending entries to the local context and log files, then schedules asynchronous
+     * remote mirrors. When a {@link TranscriptStore} is bound, both immutable segments and the
+     * canonical context/log files are mirrored. The remote mirror is fire-and-forget: failures are
+     * logged as warnings and do not affect the return of this method. The local write is always the
+     * primary guarantee.
      */
     public void flush() {
         if (pendingWrites.isEmpty()) {
@@ -335,9 +340,10 @@ public class SessionTree {
 
         if (transcriptStore != null && transcriptRef != null) {
             scheduleSegmentMirror(toWrite, seqStart, seqEnd);
-        } else {
-            scheduleMirror();
         }
+        // Align with the local session write logic and provide read access
+        // to the historical UI / sandbox
+        scheduleMirror();
     }
 
     /**
@@ -541,11 +547,13 @@ public class SessionTree {
     }
 
     private void scheduleSegmentMirror(List<SessionEntry> entries, long seqStart, long seqEnd) {
-        final TranscriptStore store = transcriptStore.withRuntimeContext(fsRc);
-        final TranscriptRef ref = transcriptRef;
-        if (store == null || ref == null || entries.isEmpty()) {
+        if (transcriptStore == null || transcriptRef == null || entries.isEmpty()) {
             return;
         }
+        // Same pin as scheduleMirror: async segment upload must survive call unbind.
+        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
+        final TranscriptStore store = transcriptStoreForMirror(mirrorFs);
+        final TranscriptRef ref = transcriptRef;
         StringBuilder sb = new StringBuilder();
         for (SessionEntry entry : entries) {
             sb.append(JsonUtils.getJsonCodec().toJson(entry)).append('\n');
@@ -569,16 +577,42 @@ public class SessionTree {
      * Schedules an asynchronous, best-effort mirror of both session files to the remote
      * filesystem. Uses a daemon single-thread executor to serialise uploads and avoid
      * blocking the caller on remote I/O.
+     * Avoid the situation where the asynchronous write sandbox pre-agent call has been completed,
+     * resulting in the unbinding of the sandbox and the error message "No active sandbox".
      */
     private void scheduleMirror() {
         if (filesystem == null || workspaceRoot == null) {
             return;
         }
+        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
+        final String contextRel = resolveRelativePath(contextFile);
+        final String logRel = resolveRelativePath(logFile);
         MIRROR_EXECUTOR.execute(
                 () -> {
-                    mirrorToFilesystem(contextFile, resolveRelativePath(contextFile));
-                    mirrorToFilesystem(logFile, resolveRelativePath(logFile));
+                    mirrorToFilesystem(mirrorFs, contextFile, contextRel);
+                    mirrorToFilesystem(mirrorFs, logFile, logRel);
                 });
+    }
+
+    /**
+     * When {@code fs} is a call-scoped sandbox proxy with an active binding, return a pinned
+     * filesystem that keeps that sandbox for async uploads. Otherwise return {@code fs} as-is.
+     */
+    private static AbstractFilesystem pinIfSandbox(AbstractFilesystem fs) {
+        if (fs instanceof SandboxAware aware) {
+            Sandbox sb = aware.getSandbox();
+            if (sb != null) {
+                return new PinnedSandboxFilesystem(sb);
+            }
+        }
+        return fs;
+    }
+
+    private TranscriptStore transcriptStoreForMirror(AbstractFilesystem mirrorFs) {
+        if (transcriptStore instanceof ObjectStoreTranscriptStore ost) {
+            return ost.withFilesystem(mirrorFs).withRuntimeContext(fsRc);
+        }
+        return transcriptStore.withRuntimeContext(fsRc);
     }
 
     /**
@@ -687,8 +721,8 @@ public class SessionTree {
      * Uploads {@code file} to the remote filesystem (full-file upload). Only called from the
      * mirror executor thread; failures are logged as warnings.
      */
-    private void mirrorToFilesystem(Path file, String relativePath) {
-        if (filesystem == null || workspaceRoot == null || !Files.isRegularFile(file)) {
+    private void mirrorToFilesystem(AbstractFilesystem fs, Path file, String relativePath) {
+        if (fs == null || workspaceRoot == null || !Files.isRegularFile(file)) {
             return;
         }
         if (relativePath == null || relativePath.isBlank()) {
@@ -696,12 +730,14 @@ public class SessionTree {
         }
         try {
             byte[] bytes = Files.readAllBytes(file);
-            filesystem.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
+            fs.uploadFiles(fsRc, List.of(Map.entry(relativePath, bytes)));
             // Best-effort: the local file already exists — update index with its current stats
             if (index != null) {
                 index.upsertFromLocalFile(relativePath, file);
             }
         } catch (IOException e) {
+            log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
+        } catch (RuntimeException e) {
             log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
         }
     }

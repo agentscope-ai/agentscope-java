@@ -420,12 +420,37 @@ public class MysqlAgentStateStore implements AgentStateStore {
         }
     }
 
+    private long readVersion(String userId, String sessionId, String key) {
+        String slotId = slotId(userId, sessionId);
+        validateSessionId(slotId);
+        validateStateKey(key);
+
+        // Read only the version column — never deserialize state_data. Deserializing into the
+        // `State` marker interface is impossible (no concrete type to construct), so reading the
+        // version must not touch the payload.
+        String selectSql =
+                "SELECT version FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(selectSql)) {
+            stmt.setString(1, slotId);
+            stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getLong("version") : 0L;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read version: " + key, e);
+        }
+    }
+
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
         if (expectedVersion == UNVERSIONED) {
             save(userId, sessionId, key, value);
-            return getVersioned(userId, sessionId, key, State.class).version();
+            return readVersion(userId, sessionId, key);
         }
 
         String slotId = slotId(userId, sessionId);

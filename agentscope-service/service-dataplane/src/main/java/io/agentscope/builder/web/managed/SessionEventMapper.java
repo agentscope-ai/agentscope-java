@@ -63,7 +63,13 @@ public class SessionEventMapper {
 
     /** Outcome of mapping one harness event. */
     public record MappingResult(
-            Optional<PersistedEvent> persisted, Optional<PreviewFrame> preview) {
+            Optional<PersistedEvent> persisted,
+            Optional<PreviewFrame> preview,
+            List<PersistedEvent> preceding) {
+
+        public MappingResult(Optional<PersistedEvent> persisted, Optional<PreviewFrame> preview) {
+            this(persisted, preview, List.of());
+        }
 
         public static MappingResult empty() {
             return new MappingResult(Optional.empty(), Optional.empty());
@@ -114,6 +120,17 @@ public class SessionEventMapper {
      * messages and tool End boundaries produce persisted events with full payloads.
      */
     public MappingResult map(AgentEvent event, PreviewIds previewIds) {
+        // Persist one bounded reasoning segment at a content boundary, never a row per token.
+        // Keep the preview identity so the live UI replaces, rather than duplicates, that segment.
+        Optional<PersistedEvent> thinking =
+                event instanceof ThinkingBlockDeltaEvent
+                        ? Optional.empty()
+                        : previewIds.consumeThinking();
+        MappingResult mapped = mapEvent(event, previewIds);
+        return new MappingResult(mapped.persisted(), mapped.preview(), thinking.stream().toList());
+    }
+
+    private MappingResult mapEvent(AgentEvent event, PreviewIds previewIds) {
         if (event instanceof TextBlockDeltaEvent delta) {
             if (delta.getDelta() == null || delta.getDelta().isEmpty()) {
                 return MappingResult.empty();
@@ -131,6 +148,7 @@ public class SessionEventMapper {
                 return MappingResult.empty();
             }
             String eventId = previewIds.thinkingEventId();
+            previewIds.appendThinking(thinking.getDelta());
             return MappingResult.previewOnly(
                     new PreviewFrame(
                             SessionEventTypes.EVENT_DELTA,
@@ -279,6 +297,8 @@ public class SessionEventMapper {
     public static final class PreviewIds {
         private String messageId;
         private String thinkingId;
+        private final StringBuilder thinkingText = new StringBuilder();
+        private int thinkingSize;
         private final Map<String, ToolBuffers.ToolUseBuffer> toolUses = new LinkedHashMap<>();
         private final Map<String, ToolBuffers.ToolResultBuffer> toolResults = new LinkedHashMap<>();
 
@@ -359,6 +379,28 @@ public class SessionEventMapper {
 
         public void resetThinking() {
             thinkingId = null;
+            thinkingText.setLength(0);
+            thinkingSize = 0;
+        }
+
+        public void appendThinking(String delta) {
+            thinkingSize += delta.length();
+            int remaining = Math.max(0, MAX_TOOL_PAYLOAD_CHARS - thinkingText.length());
+            thinkingText.append(delta, 0, Math.min(remaining, delta.length()));
+        }
+
+        public Optional<PersistedEvent> consumeThinking() {
+            if (thinkingSize == 0) return Optional.empty();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("text", thinkingText.toString());
+            if (thinkingSize > thinkingText.length()) {
+                payload.put("truncated", true);
+                payload.put("originalSize", thinkingSize);
+            }
+            PersistedEvent event =
+                    new PersistedEvent(SessionEventTypes.AGENT_THINKING, payload, thinkingId);
+            resetThinking();
+            return Optional.of(event);
         }
 
         private static String key(String toolCallId) {

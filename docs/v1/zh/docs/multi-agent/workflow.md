@@ -1,4 +1,8 @@
-# 自定义工作流（Custom Workflow）
+---
+title: 自定义工作流
+---
+
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
 在**自定义工作流**模式中，你使用 **Spring AI Alibaba StateGraph** 定义自己的执行流程。你可以完全控制图结构——顺序步骤、条件分支、循环与并行执行。节点可以是**确定性**的（如向量检索、数据库查询）、**基于 LLM** 的（如改写、分类）或**智能体**（带工具的 Agent）。节点之间通过共享状态 Map 传递数据，并可为每个 key 配置策略（覆盖或追加）。
 
@@ -54,32 +58,10 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 ## 示例项目
 
-**路径**：`agentscope-examples/multiagent-patterns/workflow/`
-
 | 包名       | 流程 | 说明 |
 |------------|------|------|
 | **ragagent** | Query → Rewrite → Retrieve → Prepare → Agent → Response | RAG：改写查询、向量检索，再由 ReActAgent 结合上下文与 `get_latest_news` 工具回答。使用 AgentScope Model、Knowledge（embedding + store）与 AgentScopeAgent。 |
 | **sqlagent** | START → list_tables → get_schema → generate_query → END | SQL：列出表、获取相关表 schema，再由 ReActAgent 使用 SQL 工具（list_tables、schema、query）生成并执行查询。使用 H2 内存库与 AgentScopeAgent。 |
-
-**构建与运行**（在仓库根目录）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow -am -B package -DskipTests
-```
-
-**运行 RAG 工作流**（可选启动时跑一次演示）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
-  -Dspring-boot.run.arguments="--workflow.rag.enabled=true --workflow.runner.enabled=true"
-```
-
-**运行 SQL 工作流**（可选启动时跑一次演示）：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
-  -Dspring-boot.run.arguments="--workflow.sql.enabled=true --workflow.runner.enabled=true"
-```
 
 **配置**：
 
@@ -94,10 +76,10 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 - **Routing**：Routing 为“分类 → 专家 → 合并”。在自定义工作流中可用自己的图实现（如 router 节点 → 分支 → 专家 → 合并节点）。
 - **Handoffs**：Handoffs 通过状态（如 `active_agent`）在智能体节点间路由。自定义工作流也可用条件边与状态实现；Handoffs 是专门表达“谁负责当前对话”的交接模式。
 
-实现细节与代码见示例目录 `agentscope-examples/multiagent-patterns/workflow/` 及 RAG/SQL 配置类（`RagAgentConfig`、`SqlAgentConfig`）。
+实现细节见本文代码片段及 RAG/SQL 配置类说明（`RagAgentConfig`、`SqlAgentConfig`）。
 
 ## 相关文档
 
-- [Pipeline](pipeline.md) - 预定义流程（顺序、并行、循环）
-- [Routing](routing.md) - 分类 → 专家 → 综合
-- [概览](overview.md) - 多智能体模式总览
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 预定义流程（顺序、并行、循环）
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类 → 专家 → 综合
+- [概览](/v1/zh/docs/multi-agent/overview) - 多智能体模式总览

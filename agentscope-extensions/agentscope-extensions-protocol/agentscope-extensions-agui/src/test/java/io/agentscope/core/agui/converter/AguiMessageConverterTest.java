@@ -987,6 +987,84 @@ class AguiMessageConverterTest {
         assertNotNull(msgs.get(0).getFirstContentBlock(ToolResultBlock.class));
     }
 
+    @Test
+    void testCopilotKitDualPathSkipsDuplicateToolResultFromResume() {
+        AguiEvent.Interrupt interrupt =
+                new AguiEvent.Interrupt(
+                        "reply-1:call_x",
+                        "tool_call",
+                        "Need approval",
+                        "call_x",
+                        null,
+                        null,
+                        Map.of("toolName", "requestHumanApproval"));
+        String payload = "{\"approved\":true,\"reason\":\"ok\"}";
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(List.of(AguiMessage.toolMessage("msg-tool", "call_x", payload)))
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:call_x",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true, "reason", "ok"))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("reply-1:call_x", interrupt));
+
+        List<String> toolResultIds =
+                msgs.stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .map(m -> m.getFirstContentBlock(ToolResultBlock.class))
+                        .filter(r -> r != null)
+                        .map(ToolResultBlock::getId)
+                        .toList();
+        assertEquals(List.of("call_x"), toolResultIds);
+        assertEquals(1, msgs.size());
+        assertEquals(payload, resultText(msgs.get(0).getFirstContentBlock(ToolResultBlock.class)));
+    }
+
+    @Test
+    void testPermissionConfirmResumeKeptWhenToolMessageAlreadyPresent() {
+        AguiEvent.Interrupt interrupt =
+                new AguiEvent.Interrupt(
+                        "reply-1:tool-call-1",
+                        "tool_call",
+                        "Confirm?",
+                        "tool-call-1",
+                        null,
+                        null,
+                        Map.of(
+                                "toolName", "deploy_release",
+                                "toolInput", Map.of("env", "prod"),
+                                "toolContent", "{\"env\":\"prod\"}",
+                                "agentscope.interruptKind", "permission_confirm"));
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-2")
+                        .messages(
+                                List.of(
+                                        AguiMessage.toolMessage(
+                                                "msg-tool", "tool-call-1", "{\"approved\":true}")))
+                        .resume(
+                                List.of(
+                                        new AguiResume(
+                                                "reply-1:tool-call-1",
+                                                AguiResume.STATUS_RESOLVED,
+                                                Map.of("approved", true))))
+                        .build();
+
+        List<Msg> msgs = converter.toMsgList(input, Map.of("reply-1:tool-call-1", interrupt));
+
+        assertEquals(2, msgs.size());
+        assertEquals(MsgRole.TOOL, msgs.get(0).getRole());
+        assertEquals(MsgRole.USER, msgs.get(1).getRole());
+        assertNotNull(msgs.get(1).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS));
+    }
+
     private static String resultText(ToolResultBlock result) {
         return result.getOutput().stream()
                 .filter(TextBlock.class::isInstance)

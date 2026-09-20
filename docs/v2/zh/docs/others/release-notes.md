@@ -1,9 +1,9 @@
 ---
-title: "Release Notes"
-description: "AgentScope Java 各版本变更记录"
+title: Release Notes
+description: AgentScope Java 各版本变更记录
 ---
 
-本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 [V1 迁移指南](../change-log.md)。
+本页记录 AgentScope Java 2.0 各版本的具体变更。从 1.x 升级的整体迁移指南请见 [V1 迁移指南](/v2/zh/docs/change-log)。
 
 ---
 
@@ -13,7 +13,7 @@ description: "AgentScope Java 各版本变更记录"
 
 AgentScope Java 2.0.1 是 2.0.0 GA 之后的首个维护版本，重点补齐模型提供商生态、完善 Harness 子 agent / HITL / 权限与稳定性，并修复一批生产场景中的关键问题。
 
-**快速链接：** [快速开始](../quickstart.md) | [V1 迁移指南](../change-log.md) | [上线指南](going-to-production.md)
+**快速链接：** [快速开始](/v2/zh/docs/quickstart) | [V1 迁移指南](/v2/zh/docs/change-log) | [上线指南](/v2/zh/docs/others/going-to-production)
 
 ### 新增
 
@@ -135,7 +135,7 @@ AgentScope Java 2.0.1 是 2.0.0 GA 之后的首个维护版本，重点补齐模
 
 AgentScope Java 2.0.0 正式发布（General Availability）。这是从 1.x 到 2.0 的首个正式版本，标志着 AgentScope Java 从"透明开发"迈向"系统工程"的里程碑。
 
-**快速链接：** [快速开始](../quickstart.md) | [V1 迁移指南](../change-log.md) | [上线指南](going-to-production.md)
+**快速链接：** [快速开始](/v2/zh/docs/quickstart) | [V1 迁移指南](/v2/zh/docs/change-log) | [上线指南](/v2/zh/docs/others/going-to-production)
 
 ### 2.0 版本核心设计概要
 
@@ -396,7 +396,7 @@ AgentScope Java 2.0 围绕"让智能体稳定完成任务"这一目标进行了�
 
 ### 新增
 
-- **`projectWritable` 模式**（`LocalFilesystemSpec`）—— 开启后，agent 的文件写入按路径自动路由：工作区元数据（`MEMORY.md`、`agents/`、`skills/` 等）写到 workspace，其余文件（代码、配置等）直接落到项目目录。适合代码生成类 agent。详见 [文件系统 · 项目可写模式](../harness/filesystem.md#项目可写模式projectwritable)
+- **`projectWritable` 模式**（`LocalFilesystemSpec`）—— 开启后，agent 的文件写入按路径自动路由：工作区元数据（`MEMORY.md`、`agents/`、`skills/` 等）写到 workspace，其余文件（代码、配置等）直接落到项目目录。适合代码生成类 agent。详见 [文件系统 · 项目可写模式](/v2/zh/docs/harness/filesystem#项目可写模式projectwritable)
 - **Permission 系统运行时切换** —— 新增 `HarnessAgent.setPermissionMode()` / `getPermissionMode()`，支持在运行时按 session 动态调整权限模式
 - **子 agent 事件流转发** —— `streamEvents()` 现在实时转发子 agent 的中间事件（`TextBlockDelta`、`ToolCallStart` 等），每个事件携带 `source` 路径标识来源
 - **`AgentEvent.source` 来源标识** —— 所有 `AgentEvent` 新增 `source` 字段，在同一事件流中区分 main agent 事件（`source = null`）和 sub agent 事件（`source = "main/researcher"` 等路径格式），消费端无需额外状态即可分流处理
@@ -436,4 +436,4 @@ AgentScope Java 2.0 围绕"让智能体稳定完成任务"这一目标进行了�
 - 企业级分布式部署（多租户隔离、沙箱执行、权限管控、会话恢复）
 - 底层框架重构（事件流、消息模型、Middleware、HITL）
 
-完整的 1.x → 2.0 变更列表请见 [V1 迁移指南](../change-log.md)。
+完整的 1.x → 2.0 变更列表请见 [V1 迁移指南](/v2/zh/docs/change-log)。

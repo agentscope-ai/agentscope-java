@@ -27,7 +27,6 @@ import { Environment, listEnvironments } from '../api/environments';
 import { MemoryStore, listMemoryStores } from '../api/memoryStores';
 import { Vault, listVaults } from '../api/vaults';
 import { Link, useNavigate } from 'react-router-dom';
-import SessionEventTimeline from './SessionEventTimeline';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '28px 32px', minWidth: 0, maxWidth: 1100 },
@@ -83,7 +82,7 @@ function parseOverrides(raw: string | null | undefined): Record<string, unknown>
 }
 
 /**
- * Managed session details: mounts, overrides, event timeline, archive/restore/delete.
+ * Managed session settings: mounts, overrides, archive/restore/delete.
  */
 export default function SessionTranscript({
   agentId,
@@ -168,7 +167,7 @@ export default function SessionTranscript({
     try {
       await deleteManagedSession(sessionId);
       if (onDeleted) onDeleted();
-      else navigate(`/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
+      else navigate(`/managed/sessions?agentId=${encodeURIComponent(agentId)}`, { replace: true });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -221,12 +220,12 @@ export default function SessionTranscript({
     <div style={S.root}>
       {!embedded && (
         <div style={S.bar}>
-          <Link to={`/sessions?agentId=${encodeURIComponent(agentId)}`} style={S.back}>← Back</Link>
+          <button type="button" aria-label="Back to previous page" title="Back to previous page" onClick={() => navigate(-1)} style={S.back}>← Back</button>
           <h2 style={S.title}>Details</h2>
           <span style={{ flex: 1 }} />
           {!archived && (
             <Link
-              to={`/sessions/${encodeURIComponent(sessionId)}`}
+              to={`/managed/sessions/${encodeURIComponent(sessionId)}`}
               style={{ ...S.btn, ...S.primary }}
               title="Open Chat for this session"
             >
@@ -363,7 +362,6 @@ export default function SessionTranscript({
         </form>
       </div>
 
-      <SessionEventTimeline managedSessionId={sessionId} />
     </div>
   );
 }

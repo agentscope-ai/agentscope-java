@@ -35,6 +35,7 @@ interface Props {
   onRequestBrowse: () => void;
   /** When true, show snapshot only — edits belong on the linked Workspace. */
   readOnly?: boolean;
+  mcpReadOnly?: boolean;
 }
 
 const S: Record<string, React.CSSProperties> = {
@@ -112,6 +113,7 @@ export default function ToolsActivePanel({
   onChange,
   onRequestBrowse,
   readOnly = false,
+  mcpReadOnly = readOnly,
 }: Props) {
   const [data, setData] = useState<ActiveToolsResponse | null>(null);
   const [catalog, setCatalog] = useState<BuiltinToolInfo[]>([]);
@@ -186,7 +188,7 @@ export default function ToolsActivePanel({
           <div style={S.sub}>
             {readOnly
               ? 'Snapshot materialized from the linked Workspace. Edit tools there to refresh linked agents.'
-              : <>From Agent body (<code>tools</code> / <code>mcpServers</code>). Saves create a new agent version.</>}
+              : 'Choose which tools this Agent can use and when approval is required.'}
           </div>
         </div>
         <button style={S.refreshBtn} onClick={() => onChange()} disabled={loading}>
@@ -209,7 +211,7 @@ export default function ToolsActivePanel({
 
       <div style={S.list}>
         {!err && !loading && (data?.tools ?? []).length === 0 && (
-          <div style={S.empty}>No tools configured. Click <b>Add / configure</b> to enable some.</div>
+          <div style={S.empty}>{readOnly ? 'No tools are configured in this definition.' : <>No tools configured. Click <b>Add / configure</b> to enable some.</>}</div>
         )}
         {Array.from(grouped.entries()).map(([source, tools]) => (
           <div key={source}>
@@ -239,7 +241,7 @@ export default function ToolsActivePanel({
                       <option value="always_ask">Ask</option>
                     </select>
                   )}
-                  {!readOnly && (
+                  {!(t.source === 'built-in' ? readOnly : mcpReadOnly) && (
                     <button
                       style={S.disableBtn}
                       onClick={() => disableTool(t)}
