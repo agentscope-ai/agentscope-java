@@ -81,9 +81,10 @@ public final class MessageMetadataKeys {
     /**
      * Metadata key for chat usage statistics.
      *
-     * <p>Contains token usage information (input tokens, output tokens, and time)
-     * accumulated during model generation. This allows users to track token consumption
-     * for cost estimation and usage monitoring.
+     * <p>Contains token usage information (input tokens, output tokens, cached tokens, cache
+     * creation tokens, reasoning tokens, tool-use prompt tokens, and time) accumulated during
+     * model generation. This allows users to track token consumption for cost estimation and usage
+     * monitoring.
      *
      * <p><b>Type:</b> {@link io.agentscope.core.model.ChatUsage}
      * <p><b>Example:</b>
@@ -93,6 +94,10 @@ public final class MessageMetadataKeys {
      * if (usage != null) {
      *     System.out.println("Input tokens: " + usage.getInputTokens());
      *     System.out.println("Output tokens: " + usage.getOutputTokens());
+     *     System.out.println("Cached tokens: " + usage.getCachedTokens());
+     *     System.out.println("Cache creation tokens: " + usage.getCacheCreationTokens());
+     *     System.out.println("Reasoning tokens: " + usage.getReasoningTokens());
+     *     System.out.println("Tool-use prompt tokens: " + usage.getToolUsePromptTokens());
      *     System.out.println("Total tokens: " + usage.getTotalTokens());
      * }
      * }</pre>

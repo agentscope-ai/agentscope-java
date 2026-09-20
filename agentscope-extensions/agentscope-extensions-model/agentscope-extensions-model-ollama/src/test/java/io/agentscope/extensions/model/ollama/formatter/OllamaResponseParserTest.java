@@ -185,6 +185,7 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setPromptEvalCount(10);
+        response.setPromptEvalCachedCount(6);
         response.setEvalCount(20);
         response.setTotalDuration(5000000000L); // 5 seconds in nanoseconds
 
@@ -198,6 +199,9 @@ class OllamaResponseParserTest {
         ChatUsage usage = chatResponse.getUsage();
         assertNotNull(usage);
         assertEquals(10, usage.getInputTokens());
+        assertEquals(6, usage.getCachedTokens());
+        assertEquals(0, usage.getCacheCreationTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
         assertEquals(20, usage.getOutputTokens());
         assertEquals(5.0, usage.getTime(), 0.01); // 5 seconds
     }
