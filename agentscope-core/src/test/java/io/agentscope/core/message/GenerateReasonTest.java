@@ -172,6 +172,10 @@ class GenerateReasonTest {
                 0L,
                 GenerateReason.getUnknownValueSuppressedCount(
                         longValuePrefix + "second", firstReportNanos + 1));
+
+        String veryLongValue = "Y".repeat(10_000);
+        assertEquals(
+                0L, GenerateReason.getUnknownValueSuppressedCount(veryLongValue, firstReportNanos));
     }
 
     @Test
