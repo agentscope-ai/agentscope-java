@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -70,7 +72,7 @@ class HarnessAgentCompactionMemoryHooksTest {
     }
 
     @Test
-    void emergencyCompactionUsesConfiguredModelPromptAndOffloadSetting() throws Exception {
+    void emergencyCompactionUsesAgentModelForFlushAndConfiguredModelForSummary() throws Exception {
         RoutingModel reasoningModel = new RoutingModel();
         RoutingModel compactionModel = new RoutingModel();
         CompactionConfig config =
@@ -102,8 +104,15 @@ class HarnessAgentCompactionMemoryHooksTest {
 
         assertEquals(0, reasoningModel.summaryCalls.get());
         assertEquals(1, reasoningModel.flushCalls.get());
+        assertNotNull(reasoningModel.flushPromptSeen.get());
+        assertTrue(
+                reasoningModel
+                        .flushPromptSeen
+                        .get()
+                        .contains("You are a memory extraction assistant"));
         assertEquals(1, compactionModel.summaryCalls.get());
         assertEquals(0, compactionModel.flushCalls.get());
+        assertNull(compactionModel.flushPromptSeen.get());
         assertTrue(compactionModel.customSummaryPromptSeen.get());
         assertTrue(hasDailyMemoryFile());
         assertFalse(
@@ -249,6 +258,7 @@ class HarnessAgentCompactionMemoryHooksTest {
         private final AtomicInteger summaryCalls = new AtomicInteger();
         private final AtomicBoolean overflowNextReasoning = new AtomicBoolean();
         private final AtomicBoolean customSummaryPromptSeen = new AtomicBoolean();
+        private final AtomicReference<String> flushPromptSeen = new AtomicReference<>();
 
         @Override
         public String getModelName() {
@@ -262,6 +272,7 @@ class HarnessAgentCompactionMemoryHooksTest {
                     messages.stream().map(Msg::getTextContent).collect(Collectors.joining("\n"));
             if (rendered.contains("You are a memory extraction assistant")) {
                 flushCalls.incrementAndGet();
+                flushPromptSeen.set(rendered);
                 return response("- extracted memory");
             }
             if (rendered.contains("Context Extraction Assistant")

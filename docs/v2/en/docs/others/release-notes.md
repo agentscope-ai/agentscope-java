@@ -12,6 +12,7 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 ### Changed
 
 - `ConversationCompactor` now resolves dynamic trigger and retention settings for direct callers as well as middleware-managed compaction, keeping emergency recovery consistent with normal compaction ([#2699](https://github.com/agentscope-ai/agentscope-java/pull/2699))
+- Emergency overflow compaction in `HarnessAgent` now reuses the effective `CompactionConfig` instead of default settings; only the message-count trigger is forced ([#2699](https://github.com/agentscope-ai/agentscope-java/pull/2699))
 
 ---
 
