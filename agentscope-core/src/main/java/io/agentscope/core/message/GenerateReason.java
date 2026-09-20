@@ -115,13 +115,21 @@ public enum GenerateReason {
     /** Tool result returned directly to the caller without a follow-up model call. */
     TOOL_RETURN_DIRECT;
 
+    /** Maximum number of unknown-value warning states retained; package-private for tests. */
     static final int MAX_REPORTED_UNKNOWN_VALUES = 256;
+
+    /** Maximum number of unknown-value WARN records emitted in one interval; package-private for tests. */
+    static final int MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL = 512;
+
     private static final int MAX_UNKNOWN_VALUE_LENGTH = 256;
     private static final long UNKNOWN_VALUE_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5);
     private static final Logger logger = LoggerFactory.getLogger(GenerateReason.class);
     // Access-ordered: all reads and writes must hold the map monitor.
     private static final Map<String, UnknownValueWarningState> unknownValueWarningStates =
             new LinkedHashMap<>(16, 0.75f, true);
+    private static long unknownValueWarningWindowStartNanos = Long.MIN_VALUE;
+    private static int unknownValueWarningsInWindow;
+    private static long globallySuppressedUnknownValueWarnings;
 
     /**
      * Decodes a wire value without making newer reason values fatal to older readers.
@@ -144,13 +152,31 @@ public enum GenerateReason {
     }
 
     private static void reportUnknownValue(String value) {
-        long suppressedCount = getUnknownValueSuppressedCount(value, System.nanoTime());
-        if (suppressedCount < 0) {
+        UnknownValueWarningDecision decision =
+                getUnknownValueWarningDecision(value, System.nanoTime());
+        if (!decision.shouldWarn()) {
             return;
         }
 
         String reportedValue = truncateUnknownValue(value);
-        if (suppressedCount == 0) {
+        if (decision.globallySuppressedCount() > 0) {
+            if (decision.valueSuppressedCount() == 0) {
+                logger.warn(
+                        "Unknown GenerateReason '{}' received; suppressed {} additional unknown "
+                                + "GenerateReason warnings during the previous interval; "
+                                + "falling back to MODEL_STOP",
+                        reportedValue,
+                        decision.globallySuppressedCount());
+            } else {
+                logger.warn(
+                        "Unknown GenerateReason '{}' received again after suppressing {} repeats; "
+                                + "also suppressed {} additional unknown GenerateReason warnings "
+                                + "during the previous interval; falling back to MODEL_STOP",
+                        reportedValue,
+                        decision.valueSuppressedCount(),
+                        decision.globallySuppressedCount());
+            }
+        } else if (decision.valueSuppressedCount() == 0) {
             logger.warn(
                     "Unknown GenerateReason '{}' received; falling back to MODEL_STOP",
                     reportedValue);
@@ -159,7 +185,7 @@ public enum GenerateReason {
                     "Unknown GenerateReason '{}' received again after suppressing {} repeats; "
                             + "falling back to MODEL_STOP",
                     reportedValue,
-                    suppressedCount);
+                    decision.valueSuppressedCount());
         }
     }
 
@@ -169,15 +195,21 @@ public enum GenerateReason {
      * supplied by the caller so the state transition can be tested without waiting.
      */
     static long getUnknownValueSuppressedCount(String value, long nowNanos) {
-        String key = truncateUnknownValue(value);
+        UnknownValueWarningDecision decision = getUnknownValueWarningDecision(value, nowNanos);
+        return decision.shouldWarn() ? decision.valueSuppressedCount() : -1;
+    }
+
+    private static UnknownValueWarningDecision getUnknownValueWarningDecision(
+            String value, long nowNanos) {
         synchronized (unknownValueWarningStates) {
-            UnknownValueWarningState state = unknownValueWarningStates.get(key);
+            UnknownValueWarningState state = unknownValueWarningStates.get(value);
             if (state != null
                     && nowNanos - state.lastReportedAtNanos < UNKNOWN_VALUE_LOG_INTERVAL_NANOS) {
                 state.suppressedCount++;
-                return -1;
+                return UnknownValueWarningDecision.suppressed();
             }
 
+            long globallySuppressedCount = rotateUnknownValueWarningWindowIfNeeded(nowNanos);
             if (state == null) {
                 if (unknownValueWarningStates.size() >= MAX_REPORTED_UNKNOWN_VALUES) {
                     Iterator<String> iterator = unknownValueWarningStates.keySet().iterator();
@@ -185,19 +217,46 @@ public enum GenerateReason {
                     iterator.remove();
                 }
                 state = new UnknownValueWarningState();
-                unknownValueWarningStates.put(key, state);
+                unknownValueWarningStates.put(value, state);
+            }
+
+            if (unknownValueWarningsInWindow >= MAX_UNKNOWN_VALUE_WARNINGS_PER_INTERVAL) {
+                state.lastReportedAtNanos = nowNanos;
+                state.suppressedCount++;
+                globallySuppressedUnknownValueWarnings++;
+                return UnknownValueWarningDecision.suppressed();
             }
 
             long suppressedCount = state.suppressedCount;
             state.lastReportedAtNanos = nowNanos;
             state.suppressedCount = 0;
-            return suppressedCount;
+            unknownValueWarningsInWindow++;
+            return new UnknownValueWarningDecision(true, suppressedCount, globallySuppressedCount);
         }
+    }
+
+    private static long rotateUnknownValueWarningWindowIfNeeded(long nowNanos) {
+        if (unknownValueWarningWindowStartNanos == Long.MIN_VALUE) {
+            unknownValueWarningWindowStartNanos = nowNanos;
+            return 0;
+        }
+        if (nowNanos - unknownValueWarningWindowStartNanos < UNKNOWN_VALUE_LOG_INTERVAL_NANOS) {
+            return 0;
+        }
+
+        long suppressedCount = globallySuppressedUnknownValueWarnings;
+        unknownValueWarningWindowStartNanos = nowNanos;
+        unknownValueWarningsInWindow = 0;
+        globallySuppressedUnknownValueWarnings = 0;
+        return suppressedCount;
     }
 
     static void clearUnknownValueWarningStatesForTest() {
         synchronized (unknownValueWarningStates) {
             unknownValueWarningStates.clear();
+            unknownValueWarningWindowStartNanos = Long.MIN_VALUE;
+            unknownValueWarningsInWindow = 0;
+            globallySuppressedUnknownValueWarnings = 0;
         }
     }
 
@@ -211,5 +270,13 @@ public enum GenerateReason {
     private static final class UnknownValueWarningState {
         private long lastReportedAtNanos;
         private long suppressedCount;
+    }
+
+    private record UnknownValueWarningDecision(
+            boolean shouldWarn, long valueSuppressedCount, long globallySuppressedCount) {
+
+        private static UnknownValueWarningDecision suppressed() {
+            return new UnknownValueWarningDecision(false, 0, 0);
+        }
     }
 }
