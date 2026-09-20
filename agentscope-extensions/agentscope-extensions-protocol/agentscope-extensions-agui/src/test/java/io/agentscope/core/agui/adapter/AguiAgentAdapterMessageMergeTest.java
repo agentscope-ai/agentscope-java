@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
@@ -172,8 +173,12 @@ class AguiAgentAdapterMessageMergeTest {
         fireCallback(ctx, incoming);
 
         // The full-transcript strip emptied the list; the last persisted user turn is restored
-        // as the prompt so the call re-answers the last question (regenerate semantics).
-        assertEquals(List.of("u1"), idsOf(incoming));
+        // as the prompt so the call re-answers the last question (regenerate semantics), rebuilt
+        // with a fresh id so the persisted context keeps ids unique.
+        assertEquals(1, incoming.size());
+        assertEquals(MsgRole.USER, incoming.get(0).getRole());
+        assertEquals("what is the weather?", incoming.get(0).getTextContent());
+        assertNotEquals("u1", incoming.get(0).getId());
     }
 
     @Test
@@ -185,7 +190,9 @@ class AguiAgentAdapterMessageMergeTest {
 
         fireCallback(ctx, incoming);
 
-        assertEquals(List.of("m2"), idsOf(incoming));
+        assertEquals(1, incoming.size());
+        assertEquals("m2", incoming.get(0).getTextContent());
+        assertNotEquals("m2", incoming.get(0).getId());
     }
 
     @Test

@@ -327,7 +327,9 @@ public class AguiAgentAdapter {
      * <p>When the anchor is the last incoming element (a regenerate/continue request), the strip
      * empties the list. In that case the last persisted user message is restored as the prompt so
      * the call re-answers the last question — unless tool calls are pending, where empty input is
-     * the correct resume path. When the context is empty or the state is null the callback is a
+     * the correct resume path. AG-UI defines no continue/regenerate signal, so an emptied
+     * remainder keeps the re-answer default; clients wanting continuation should append an
+     * explicit user message. When the context is empty or the state is null the callback is a
      * no-op.
      */
     private BiConsumer<RuntimeContext, List<Msg>> createMessageMergeHandler() {
@@ -348,10 +350,19 @@ public class AguiAgentAdapter {
             // Regenerate/continue: the anchor was the last incoming element, so the strip emptied
             // the list. Restore the last persisted user turn as the prompt so the call re-answers
             // the last question; with pending tool uses, empty input resumes the interrupted run.
+            // The restored turn is rebuilt with a fresh id: the prompt is appended to the persisted
+            // context later, so re-adding the original instance would duplicate its id there.
             if (msgs.isEmpty() && MessageUtils.pendingToolUseIds(context).isEmpty()) {
                 for (int i = context.size() - 1; i >= 0; i--) {
-                    if (context.get(i).getRole() == MsgRole.USER) {
-                        msgs.add(context.get(i));
+                    Msg src = context.get(i);
+                    if (src.getRole() == MsgRole.USER) {
+                        msgs.add(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .name(src.getName())
+                                        .content(new ArrayList<>(src.getContent()))
+                                        .metadata(src.getMetadata())
+                                        .build());
                         break;
                     }
                 }
