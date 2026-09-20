@@ -1159,6 +1159,44 @@ class JdkHttpTransportTest {
     }
 
     @Test
+    void testCleartextRequestAvoidsH2cUpgradeOnTheWire() throws Exception {
+        // #1121 regression: the default must not attempt an h2c upgrade on cleartext URLs
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+
+        transport.execute(
+                HttpRequest.builder()
+                        .url(mockServer.url("/v1/chat/completions").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body("{\"input\": \"test\"}")
+                        .build());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNull(recorded.getHeader("Upgrade"));
+        String connection = recorded.getHeader("Connection");
+        assertTrue(connection == null || !connection.contains("HTTP2-Settings"));
+        assertEquals("{\"input\": \"test\"}", recorded.getBody().readUtf8());
+
+        // contrast: explicit HTTP_2 does put the h2c upgrade on the wire
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"ok\":true}"));
+        JdkHttpTransport h2cTransport =
+                new JdkHttpTransport(
+                        HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_2).build());
+        try {
+            h2cTransport.execute(
+                    HttpRequest.builder()
+                            .url(mockServer.url("/v1/chat/completions").toString())
+                            .method("POST")
+                            .header("Content-Type", "application/json")
+                            .body("{}")
+                            .build());
+        } finally {
+            h2cTransport.close();
+        }
+        assertEquals("h2c", mockServer.takeRequest().getHeader("Upgrade"));
+    }
+
+    @Test
     void testStreamColdStartSurvivesGlobalTimeout() throws Exception {
         // Reproduces the bug reported in the issue 1302
 

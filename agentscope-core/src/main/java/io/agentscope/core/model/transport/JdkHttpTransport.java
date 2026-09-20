@@ -113,6 +113,9 @@ public class JdkHttpTransport implements HttpTransport {
     private static HttpClient buildClient(HttpTransportConfig config) {
         HttpClient.Builder builder =
                 HttpClient.newBuilder()
+                        // Client-level HTTP/2 serves https via ALPN; cleartext requests are
+                        // downgraded per request in buildJdkRequest, so one connection per
+                        // version per origin — intentional.
                         .version(
                                 config.getHttpVersion() != null
                                         ? config.getHttpVersion().toJdkHttpVersion()
