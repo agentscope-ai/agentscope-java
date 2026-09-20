@@ -364,6 +364,7 @@ public class AguiAgentAdapter {
                                         .content(new ArrayList<>(src.getContent()))
                                         .metadata(src.getMetadata())
                                         .timestamp(src.getTimestamp())
+                                        .usage(src.getUsage())
                                         .build());
                         break;
                     }

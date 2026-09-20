@@ -31,6 +31,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
 import java.util.List;
@@ -159,7 +160,14 @@ class AguiAgentAdapterMessageMergeTest {
     @Test
     @DisplayName("regenerate: anchor is the last incoming element, last user message restored")
     void merge_regenerate_restoresLastUserMessage() {
-        Msg persistedUser = userMsg("u1", "what is the weather?");
+        ChatUsage usage = ChatUsage.builder().inputTokens(11).outputTokens(7).build();
+        Msg persistedUser =
+                Msg.builder()
+                        .id("u1")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("what is the weather?").build())
+                        .usage(usage)
+                        .build();
         AgentState state =
                 AgentState.builder()
                         .context(List.of(persistedUser, assistantMsg("a1", "it is sunny")))
@@ -181,9 +189,11 @@ class AguiAgentAdapterMessageMergeTest {
         assertEquals("what is the weather?", incoming.get(0).getTextContent());
         assertNotEquals("u1", incoming.get(0).getId());
         // The fix's contract: a rebuilt copy, not the persisted instance itself, and the copy
-        // keeps the USER subtype rather than degrading to a plain Msg.
+        // keeps the USER subtype and every field (incl. usage) rather than degrading to a plain
+        // Msg.
         assertNotSame(persistedUser, incoming.get(0));
         assertTrue(incoming.get(0) instanceof UserMessage);
+        assertSame(usage, incoming.get(0).getUsage());
     }
 
     @Test
