@@ -20,9 +20,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.WireFormat;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -121,7 +123,12 @@ final class E2bEnvdProcessClient {
             throws Exception {
         if (timeoutSeconds <= 0) {
             throw new IllegalArgumentException(
-                    "timeoutSeconds must be positive: " + timeoutSeconds);
+                    "[e2b] timeoutSeconds must be positive, got "
+                            + timeoutSeconds
+                            + " for command \""
+                            + truncateCommand(shellCommand)
+                            + "\". This is a caller bug, not a sandbox failure;"
+                            + " check the timeout argument.");
         }
         OkHttpClient callClient =
                 http.newBuilder()
@@ -155,30 +162,159 @@ final class E2bEnvdProcessClient {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit;
+        // Snapshot the interrupt bit: a stale bit set before this call must not turn a
+        // genuine exec timeout into a fake cancellation below.
+        boolean preInterrupted = Thread.interrupted();
+        long startNanos = System.nanoTime();
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
-                String err = res.body().string();
+                String err = Objects.requireNonNull(res.body(), "envd response body").string();
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
                         "envd Start failed HTTP " + res.code() + ": " + err);
             }
-            try (InputStream in = res.body().byteStream()) {
+            try (InputStream in =
+                    Objects.requireNonNull(res.body(), "envd response body").byteStream()) {
                 exit = drainStartStream(in, stdout, stderr);
             }
         } catch (InterruptedIOException e) {
             // External cancellation surfaces here too; don't misreport it as a timeout
-            // and don't swallow the interrupt bit.
+            // and don't swallow the interrupt bit. Only a bit set during this call
+            // counts (pre-existing stale bits were cleared above).
             if (Thread.currentThread().isInterrupted()) {
-                Thread.currentThread().interrupt();
                 throw e;
             }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        } catch (ConnectStreamException e) {
+            if (CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
+                throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+            }
+            throw new IOException(
+                    "envd process stream error [" + e.code() + "]: " + e.getMessage(), e);
+        } catch (MissingExitCodeException e) {
+            throw mapPrematureEnd(e, shellCommand, timeoutSeconds, startNanos);
+        } finally {
+            if (preInterrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
         return new ShellCapture(exit, stdout, stderr);
     }
 
     private record ShellCapture(
             int exitCode, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr) {}
+
+    /** Connect envelope flag marking the terminal end-stream frame. */
+    private static final int END_STREAM_FLAG = 0x02;
+
+    /** Connect error code envd returns when the server-side exec deadline fires. */
+    private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
+
+    private record ConnectError(String code, String message) {}
+
+    /** End-stream frame carrying a Connect error (e.g. server-side timeout kill). */
+    static final class ConnectStreamException extends IOException {
+        private final String code;
+
+        ConnectStreamException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        String code() {
+            return code;
+        }
+    }
+
+    /** Stream ended without a process exit code (#2828). */
+    static final class MissingExitCodeException extends IOException {
+        MissingExitCodeException() {
+            super("envd process stream ended before receiving a process exit code");
+        }
+    }
+
+    private ConnectError parseEndStreamError(byte[] data) {
+        if (codec() == E2bCodec.JSON) {
+            return parseJsonEndStreamError(data);
+        }
+        return parseProtoEndStreamError(data);
+    }
+
+    private static ConnectError parseJsonEndStreamError(byte[] data) {
+        try {
+            JsonNode root = JSON.readTree(data);
+            JsonNode error = root.path("error");
+            if (error.isMissingNode() || error.isNull()) {
+                return null;
+            }
+            String code = error.path("code").asText(null);
+            if (code == null || code.isBlank()) {
+                return null;
+            }
+            return new ConnectError(code, error.path("message").asText(""));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static ConnectError parseProtoEndStreamError(byte[] data) {
+        try {
+            CodedInputStream in = CodedInputStream.newInstance(data);
+            int tag;
+            while ((tag = in.readTag()) != 0) {
+                if (WireFormat.getTagFieldNumber(tag) != 1
+                        || WireFormat.getTagWireType(tag) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                    in.skipField(tag);
+                    continue;
+                }
+                int oldLimit = in.pushLimit(in.readRawVarint32());
+                String code = null;
+                String message = "";
+                int inner;
+                while ((inner = in.readTag()) != 0) {
+                    int field = WireFormat.getTagFieldNumber(inner);
+                    if (WireFormat.getTagWireType(inner) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                        in.skipField(inner);
+                        continue;
+                    }
+                    if (field == 1) {
+                        code = in.readString();
+                    } else if (field == 2) {
+                        message = in.readString();
+                    } else {
+                        in.skipField(inner);
+                    }
+                }
+                in.popLimit(oldLimit);
+                if (code != null && !code.isBlank()) {
+                    return new ConnectError(code, message);
+                }
+                return null;
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static long elapsedSeconds(long startNanos) {
+        return TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startNanos);
+    }
+
+    static Exception mapPrematureEnd(
+            MissingExitCodeException e, String shellCommand, int timeoutSeconds, long startNanos) {
+        if (elapsedSeconds(startNanos) >= timeoutSeconds) {
+            return new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+        }
+        return e;
+    }
+
+    private static String truncateCommand(String command) {
+        if (command == null) {
+            return "";
+        }
+        return command.length() <= 200 ? command : command.substring(0, 200) + "...";
+    }
 
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
@@ -205,6 +341,12 @@ final class E2bEnvdProcessClient {
                 break;
             }
             if (flags != 0x00) {
+                if ((flags & END_STREAM_FLAG) != 0) {
+                    ConnectError endError = parseEndStreamError(data);
+                    if (endError != null) {
+                        throw new ConnectStreamException(endError.code(), endError.message());
+                    }
+                }
                 continue;
             }
             try {
@@ -231,7 +373,7 @@ final class E2bEnvdProcessClient {
             }
         }
         if (exit == null) {
-            throw new IOException("envd process stream ended before receiving a process exit code");
+            throw new MissingExitCodeException();
         }
         return exit;
     }
