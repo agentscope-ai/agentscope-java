@@ -28,6 +28,18 @@ public interface WeixinRuntimeListener {
 
     default void onTransientFailure(String accountId, String reason) {}
 
+    /**
+     * A reply the provider refused. The Agent has already run, so a delivery failure never replays
+     * the inbound message; the host reports it and its own delivery queue decides what happens next.
+     */
+    default void onDeliveryFailed(String accountId, String reason) {}
+
+    /**
+     * An accepted inbound message whose dispatch kept failing, so it was abandoned instead of
+     * retried forever. Distinct from {@link #onDeliveryFailed}: the Agent may never have finished.
+     */
+    default void onDispatchFailed(String accountId, String reason) {}
+
     default void onRecovered(String accountId) {}
 
     static WeixinRuntimeListener noOp() {

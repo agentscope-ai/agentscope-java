@@ -76,6 +76,8 @@ class WeixinChannelRuntimeTest {
     private final List<String> transientFailures = Collections.synchronizedList(new ArrayList<>());
     private volatile Supplier<String> updates = () -> EMPTY_BATCH;
     private volatile String sendResponse = "{\"ret\":0}";
+    private volatile Supplier<Mono<Msg>> agentReply = () -> Mono.just(assistant("reply"));
+    private volatile String fixedAccountId;
 
     @BeforeEach
     void startServer() throws Exception {
@@ -308,6 +310,140 @@ class WeixinChannelRuntimeTest {
         assertFalse(transientFailures.isEmpty(), "the failed startup must be reported");
     }
 
+    /**
+     * A provider that refuses the reply must not make the consumer replay the inbound message: the
+     * agent has already run, so replaying it duplicates the reply and every side effect. The reply
+     * is retried a bounded number of times, the failure is reported, and the message completes.
+     */
+    @Test
+    void providerRejectionDoesNotReplayTheMessage() throws Exception {
+        updates = () -> polls.get() <= 2 ? batch(1, "peer-sendfail") : EMPTY_BATCH;
+        sendResponse = "{\"ret\":-2,\"errcode\":0,\"errmsg\":\"prepare failed\"}";
+        List<String> deliveryFailures = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger completed = new AtomicInteger();
+        WeixinStateStore store = spy(WeixinStateStore.inMemory());
+        doAnswer(
+                        invocation -> {
+                            Object result = invocation.callRealMethod();
+                            if (Boolean.TRUE.equals(result)) completed.incrementAndGet();
+                            return result;
+                        })
+                .when(store)
+                .completeMessage(anyString(), any(WeixinLease.class), any(WeixinInboxClaim.class));
+
+        startChannel(
+                store,
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onDeliveryFailed(String accountId, String reason) {
+                        deliveryFailures.add(reason);
+                    }
+                });
+
+        assertTrue(
+                waitFor(() -> !deliveryFailures.isEmpty()),
+                "a refused reply was never reported as a delivery failure");
+        assertTrue(
+                waitFor(() -> polls.get() >= 4), "the provider was not polled after the refusal");
+        assertEquals(
+                1, dispatches.get(), "the accepted message was replayed after a refused reply");
+        assertEquals(1, completed.get(), "the accepted message never completed");
+        // Retry belongs to the host delivery queue: the channel attempts the inline send once.
+        assertEquals(1, sends.get(), "the inline path must not retry");
+        assertTrue(
+                deliveryFailures.stream().anyMatch(reason -> reason.contains("ret=-2")),
+                "the structured provider outcome must reach the host: " + deliveryFailures);
+    }
+
+    /**
+     * A provider that echoes a credential in its error text must not get that text into a host
+     * report. The client keeps only the structured outcome; a leaked token cannot be replayed.
+     */
+    @Test
+    void providerErrorTextNeverReachesTheHost() throws Exception {
+        updates = () -> polls.get() <= 2 ? batch(1, "peer-leak") : EMPTY_BATCH;
+        sendResponse =
+                "{\"ret\":-2,\"errcode\":0,\"errmsg\":\"rejected token sk-live-SECRET-1234\"}";
+        List<String> deliveryFailures = Collections.synchronizedList(new ArrayList<>());
+        startChannel(
+                WeixinStateStore.inMemory(),
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onDeliveryFailed(String accountId, String reason) {
+                        deliveryFailures.add(reason);
+                    }
+                });
+
+        assertTrue(waitFor(() -> !deliveryFailures.isEmpty()), "the refusal was never reported");
+        assertTrue(
+                deliveryFailures.stream().anyMatch(reason -> reason.contains("ret=-2")),
+                "the structured outcome must still be reported: " + deliveryFailures);
+        assertTrue(
+                deliveryFailures.stream().noneMatch(reason -> reason.contains("SECRET")),
+                "provider text must not be reported: " + deliveryFailures);
+    }
+
+    /**
+     * A provider outage must not freeze messages this consumer already accepted: the poll and the
+     * consume phases fail independently, so a dead long poll still lets the backlog drain.
+     */
+    @Test
+    void pollFailuresDoNotStarveAcceptedMessages() throws Exception {
+        String account = "account-pending";
+        fixedAccountId = account;
+        WeixinStateStore store = WeixinStateStore.inMemory();
+        WeixinLease seeded = store.acquireLease(account, "previous-owner", 60_000).orElseThrow();
+        store.acceptBatch(
+                account,
+                seeded,
+                "cursor",
+                List.of(new WeixinInboxMessage("m-1", pendingPayload())));
+        store.releaseLease(account, seeded);
+        updates = () -> "{\"ret\":1,\"errcode\":1}";
+
+        startChannel(store, WeixinRuntimeListener.noOp());
+
+        assertTrue(
+                waitFor(() -> dispatches.get() == 1),
+                "an already accepted message was starved by a failing poll");
+    }
+
+    /** A dispatch that keeps failing is abandoned instead of retried forever. */
+    @Test
+    void dispatchFailuresAreAbandonedAndReported() throws Exception {
+        updates = () -> batch(1, "peer-down");
+        agentReply = () -> Mono.error(new IllegalStateException("data plane down"));
+        List<String> dispatchFailures = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger abandoned = new AtomicInteger();
+        WeixinStateStore store = spy(WeixinStateStore.inMemory());
+        doAnswer(
+                        invocation -> {
+                            Object result = invocation.callRealMethod();
+                            if (Boolean.TRUE.equals(result)) abandoned.incrementAndGet();
+                            return result;
+                        })
+                .when(store)
+                .abandonMessage(anyString(), any(WeixinLease.class), any(WeixinInboxClaim.class));
+
+        startChannel(
+                store,
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onDispatchFailed(String accountId, String reason) {
+                        dispatchFailures.add(reason);
+                    }
+                });
+
+        assertTrue(
+                waitFor(() -> !dispatchFailures.isEmpty()),
+                "an abandoned message was never reported as a dispatch failure");
+        assertEquals(3, dispatches.get(), "the dispatch retry budget changed");
+        assertEquals(1, abandoned.get(), "the message was not abandoned");
+        assertTrue(
+                dispatchFailures.stream().anyMatch(reason -> reason.contains("data plane down")),
+                "the dispatch reason must reach the host: " + dispatchFailures);
+    }
+
     @Test
     void byteIdenticalMessagesWithoutIdsAreBothDispatched() throws Exception {
         updates = () -> polls.get() <= 1 ? idlessDuplicateBatch() : EMPTY_BATCH;
@@ -354,7 +490,9 @@ class WeixinChannelRuntimeTest {
                                 "channel",
                                 Map.of(
                                         "accountId",
-                                        "account-" + UUID.randomUUID(),
+                                        fixedAccountId == null
+                                                ? "account-" + UUID.randomUUID()
+                                                : fixedAccountId,
                                         "baseUrl",
                                         "http://127.0.0.1:" + server.getAddress().getPort(),
                                         "ilinkUserId",
@@ -374,7 +512,7 @@ class WeixinChannelRuntimeTest {
                     @Override
                     public Mono<Msg> run(MsgContext context, List<Msg> messages) {
                         dispatches.incrementAndGet();
-                        return Mono.just(assistant("reply"));
+                        return agentReply.get();
                     }
                 });
         channel.start();
@@ -406,6 +544,13 @@ class WeixinChannelRuntimeTest {
 
     private static Msg assistant(String text) {
         return Msg.builder().role(MsgRole.ASSISTANT).textContent(text).build();
+    }
+
+    /** The payload of one inbound text message, as the consumer stores it. */
+    private static String pendingPayload() {
+        return "{\"message_type\":1,\"message_id\":\"m-1\",\"from_user_id\":\"peer-pending\","
+                + "\"context_token\":\"ctx-pending\",\"item_list\":[{\"type\":1,"
+                + "\"text_item\":{\"text\":\"hello pending\"}}]}";
     }
 
     private static String batch(int count, String peer) {

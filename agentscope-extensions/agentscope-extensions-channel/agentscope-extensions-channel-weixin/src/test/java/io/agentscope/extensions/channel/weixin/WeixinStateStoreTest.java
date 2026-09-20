@@ -132,6 +132,22 @@ class WeixinStateStoreTest {
     }
 
     @Test
+    void abandonedMessagesAreTombstonedAndNeverClaimedAgain() {
+        var store = WeixinStateStore.inMemory();
+        var lease = store.acquireLease("account", "holder", 60_000).orElseThrow();
+        store.acceptBatch(
+                "account", lease, "cursor", List.of(new WeixinInboxMessage("gone", "payload")));
+        var claim = store.claimMessages("account", lease, 1, 60_000).get(0);
+
+        assertTrue(store.abandonMessage("account", lease, claim));
+        // Not claimable again, and a provider re-delivery of the same batch cannot resurrect it.
+        assertTrue(store.claimMessages("account", lease, 1, 60_000).isEmpty());
+        store.acceptBatch(
+                "account", lease, "cursor-2", List.of(new WeixinInboxMessage("gone", "payload")));
+        assertTrue(store.claimMessages("account", lease, 1, 60_000).isEmpty());
+    }
+
+    @Test
     void removeAccountDropsTheCursor() {
         InMemoryWeixinStateStore store = new InMemoryWeixinStateStore();
         WeixinLease lease = store.acquireLease("retired", "holder", 60_000).orElseThrow();

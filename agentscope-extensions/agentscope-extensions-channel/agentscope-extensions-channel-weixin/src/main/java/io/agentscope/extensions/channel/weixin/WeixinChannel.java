@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
@@ -65,6 +66,16 @@ public final class WeixinChannel implements Channel {
                         t.setDaemon(true);
                         return t;
                     });
+
+    /**
+     * Dispatch attempts per inbox message in this process. The durable claim already bounds how
+     * often a message can be replayed after a crash; this bound stops a message whose dispatch
+     * keeps failing — a data plane that is down, a rate limit — from re-running the agent forever.
+     */
+    private static final int MAX_DISPATCH_ATTEMPTS = 3;
+
+    private final Map<String, Integer> dispatchFailures = new ConcurrentHashMap<>();
+
     private volatile LeaseSession active;
     private volatile Gateway gateway;
     private volatile boolean running;
@@ -187,15 +198,56 @@ public final class WeixinChannel implements Channel {
                                     route.outboundAddress(),
                                     in.runtimeContext(),
                                     in)
-                            .flatMap(
-                                    reply ->
-                                            outbound.sendWithContext(
-                                                            route.outboundAddress(),
-                                                            List.of(reply),
-                                                            context(in),
-                                                            () -> requireLease(session))
-                                                    .thenReturn(reply))
+                            .flatMap(reply -> deliverReply(route, in, reply, session))
                             .takeUntilOther(session.cancelled.asMono());
+                });
+    }
+
+    /**
+     * Sends the Agent's reply on the inline path. A host that owns durable reply delivery returns
+     * no reply from its gateway, so this runs for standalone deployments and host-initiated pushes.
+     * The attempt is single on purpose: retry belongs to the host's delivery queue, and a backoff
+     * inside the dispatch budget is what used to time the whole dispatch out and replay the Agent.
+     */
+    private Mono<Msg> deliverReply(
+            RouteResult route, InboundMessage in, Msg reply, LeaseSession session) {
+        return outbound.sendWithContext(
+                        route.outboundAddress(),
+                        List.of(reply),
+                        context(in),
+                        () -> requireLease(session))
+                .onErrorResume(
+                        error -> {
+                            if (error instanceof WeixinCredentialRejectedException rejected) {
+                                return Mono.error(rejected);
+                            }
+                            notifyListener(
+                                    "delivery failed",
+                                    listener ->
+                                            listener.onDeliveryFailed(
+                                                    p.accountId(), safeMessage(error)));
+                            return Mono.empty();
+                        })
+                .thenReturn(reply);
+    }
+
+    /**
+     * Sends one host-persisted reply and returns the provider's receipt. The host's delivery worker
+     * calls this, and a failure must stay visible: the worker keeps the notification pending and
+     * feeds the error back, so nothing is swallowed here except the provider's own reply text.
+     */
+    @Override
+    public Mono<String> deliverWithReceipt(
+            OutboundAddress address, Msg message, String deliveryId) {
+        return Mono.defer(
+                () -> {
+                    LeaseSession session = active;
+                    requireLease(session);
+                    return outbound.sendWithReceipt(
+                            address,
+                            message,
+                            stateStore.loadContextToken(p.accountId(), peerId(address)),
+                            () -> requireLease(session));
                 });
     }
 
@@ -291,38 +343,35 @@ public final class WeixinChannel implements Channel {
                 throw new IllegalStateException("Weixin provider session did not start");
             }
             while (running && session.valid && !Thread.currentThread().isInterrupted()) {
+                // Poll and consume fail independently. A provider that stops answering must not
+                // freeze messages this consumer already accepted, and a message that cannot be
+                // dispatched must not stop the cursor from advancing.
+                boolean polled = false;
                 try {
                     requireLease(session);
-                    // Recover accepted work before contacting the provider again.
-                    drainInbox(session);
-                    requireLease(session);
-                    var response = outbound.updates(stateStore.loadCursor(p.accountId()));
-                    requireLease(session);
-                    if (response.ret() == -14
-                            || (response.errcode() != null && response.errcode() == -14))
-                        throw new WeixinCredentialRejectedException("getupdates", -14);
-                    if (response.ret() != 0
-                            || (response.errcode() != null && response.errcode() != 0))
-                        throw new IllegalStateException("iLink polling failed");
-                    if (!stateStore.acceptBatch(
-                            p.accountId(),
-                            session.lease,
-                            response.get_updates_buf(),
-                            inboxMessages(response.msgs()))) {
-                        loseLease(session);
-                        break;
-                    }
-                    drainInbox(session);
-                    notifyListener("recovered", listener -> listener.onRecovered(p.accountId()));
-                    backoff = 1000;
+                    pollOnce(session);
+                    polled = true;
                 } catch (WeixinCredentialRejectedException error) {
                     throw error;
                 } catch (Exception error) {
                     if (!running || !session.valid) break;
-                    notifyListener(
-                            "transient failure",
-                            listener ->
-                                    listener.onTransientFailure(p.accountId(), safeMessage(error)));
+                    notifyTransientFailure(error);
+                    sleep(backoff);
+                    backoff = Math.min(p.maxBackoffMs(), backoff * 2);
+                }
+                try {
+                    requireLease(session);
+                    drainInbox(session);
+                    if (polled) {
+                        backoff = 1000;
+                        notifyListener(
+                                "recovered", listener -> listener.onRecovered(p.accountId()));
+                    }
+                } catch (WeixinCredentialRejectedException error) {
+                    throw error;
+                } catch (Exception error) {
+                    if (!running || !session.valid) break;
+                    notifyTransientFailure(error);
                     sleep(backoff);
                     backoff = Math.min(p.maxBackoffMs(), backoff * 2);
                 }
@@ -369,6 +418,12 @@ public final class WeixinChannel implements Channel {
         }
     }
 
+    private void notifyTransientFailure(Exception error) {
+        notifyListener(
+                "transient failure",
+                listener -> listener.onTransientFailure(p.accountId(), safeMessage(error)));
+    }
+
     private void requireLease(LeaseSession session) {
         if (session == null || !running || !session.valid || active != session)
             throw new IllegalStateException("Weixin consumer is not active");
@@ -385,6 +440,27 @@ public final class WeixinChannel implements Channel {
     private void loseLease(LeaseSession session) {
         session.valid = false;
         session.cancelled.tryEmitEmpty();
+    }
+
+    /** One long poll and the batch it accepted. */
+    private void pollOnce(LeaseSession session) throws Exception {
+        requireLease(session);
+        var response = outbound.updates(stateStore.loadCursor(p.accountId()));
+        requireLease(session);
+        if (response.ret() == -14 || (response.errcode() != null && response.errcode() == -14)) {
+            throw new WeixinCredentialRejectedException("getupdates", -14);
+        }
+        if (response.ret() != 0 || (response.errcode() != null && response.errcode() != 0)) {
+            throw new IllegalStateException("iLink polling failed");
+        }
+        if (!stateStore.acceptBatch(
+                p.accountId(),
+                session.lease,
+                response.get_updates_buf(),
+                inboxMessages(response.msgs()))) {
+            loseLease(session);
+            throw new IllegalStateException("Weixin lease lost");
+        }
     }
 
     private void processMessage(JsonNode message, LeaseSession session) {
@@ -427,8 +503,25 @@ public final class WeixinChannel implements Channel {
                     loseLease(session);
                     throw new IllegalStateException("Weixin inbox completion fenced");
                 }
+                dispatchFailures.remove(claim.messageId());
             } catch (Exception error) {
-                stateStore.failMessage(p.accountId(), session.lease, claim);
+                if (dispatchFailures.merge(claim.messageId(), 1, Integer::sum)
+                        >= MAX_DISPATCH_ATTEMPTS) {
+                    dispatchFailures.remove(claim.messageId());
+                    if (stateStore.abandonMessage(p.accountId(), session.lease, claim)) {
+                        log.warn(
+                                "Weixin message abandoned after {} attempts: {}",
+                                MAX_DISPATCH_ATTEMPTS,
+                                safeMessage(rootCause(error)));
+                        notifyListener(
+                                "dispatch failed",
+                                listener ->
+                                        listener.onDispatchFailed(
+                                                p.accountId(), safeMessage(error)));
+                    }
+                } else {
+                    stateStore.failMessage(p.accountId(), session.lease, claim);
+                }
                 throw error;
             }
         }
@@ -497,8 +590,43 @@ public final class WeixinChannel implements Channel {
                 listener -> listener.onCredentialRejected(p.accountId(), error.getMessage()));
     }
 
-    private static String safeMessage(Exception error) {
-        return error.getClass().getSimpleName();
+    /**
+     * Unwraps the operator wrappers Reactor adds, so a reported failure names the cause instead of
+     * {@code RetryExhaustedException}.
+     */
+    private static Throwable rootCause(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+        return cause;
+    }
+
+    /** Longest diagnostic handed to a host; keeps a pathological message bounded. */
+    private static final int MAX_SAFE_MESSAGE_LENGTH = 160;
+
+    /**
+     * Reports a failure without letting arbitrary text reach a host. Only this module's own
+     * failures carry a message that is safe to report — their text is built from constants and
+     * numeric provider codes, and the provider's {@code errmsg} is never copied into one. Every
+     * other failure (SQL, HTTP, reactor) is reported by type alone, because its message may embed a
+     * credential, a request URI or a payload.
+     */
+    private static String safeMessage(Throwable error) {
+        Throwable cause = rootCause(error);
+        String type = cause.getClass().getSimpleName();
+        if (!(cause instanceof WeixinCredentialRejectedException
+                || cause instanceof IllegalStateException
+                || cause instanceof IllegalArgumentException)) {
+            return type;
+        }
+        String message = cause.getMessage();
+        if (message == null || message.isBlank()) return type;
+        StringBuilder cleaned =
+                new StringBuilder(Math.min(message.length(), MAX_SAFE_MESSAGE_LENGTH));
+        for (int i = 0; i < message.length() && cleaned.length() < MAX_SAFE_MESSAGE_LENGTH; i++) {
+            char c = message.charAt(i);
+            if (!Character.isISOControl(c)) cleaned.append(c);
+        }
+        return cleaned.length() == 0 ? type : type + ": " + cleaned;
     }
 
     private static void sleep(long ms) {

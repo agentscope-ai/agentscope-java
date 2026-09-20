@@ -17,6 +17,7 @@ package io.agentscope.extensions.channel.weixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,7 +41,7 @@ class WeixinOutboundClientTest {
                 exchange -> {
                     exchange.getRequestBody().readAllBytes();
                     byte[] bytes =
-                            ("{\"ret\":0,\"msgs\":[],\"get_updates_buf\":\"next\","
+                            ("{\"msgs\":[],\"get_updates_buf\":\"next\","
                                             + "\"longpolling_timeout_ms\":35000,"
                                             + "\"server_extension\":{\"enabled\":true}}")
                                     .getBytes(StandardCharsets.UTF_8);
@@ -122,7 +123,7 @@ class WeixinOutboundClientTest {
                         Thread.currentThread().interrupt();
                     }
                     byte[] bytes =
-                            "{\"ret\":0,\"msgs\":[],\"get_updates_buf\":\"next\"}"
+                            "{\"msgs\":[],\"sync_buf\":\"s\",\"get_updates_buf\":\"next\"}"
                                     .getBytes(StandardCharsets.UTF_8);
                     exchange.sendResponseHeaders(200, bytes.length);
                     exchange.getResponseBody().write(bytes);
@@ -141,6 +142,45 @@ class WeixinOutboundClientTest {
                             WeixinCredentialProvider.fixed("test-token"));
 
             assertEquals("next", client.updates("").get_updates_buf());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * The live provider answers an idle long poll with its batch fields only — no {@code ret} and no
+     * {@code errcode}. Reading that as "no provider outcome" put every channel into a permanent
+     * transient-failure backoff, so the poll path has to accept the shape while still rejecting a
+     * body that says nothing at all.
+     */
+    @org.junit.jupiter.api.Test
+    void idlePollWithoutAProviderOutcomeIsAccepted() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/getupdates",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] bytes =
+                            ("{\"msgs\":[],\"sync_buf\":\"CAEYw9XN6os0\","
+                                 + "\"get_updates_buf\":\"CgkIARjD1c3qizQSOmM3YTdiNTUzNGRmZkBpbS5ib3Q6MDYw\"}")
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            WeixinOutboundClient client =
+                    new WeixinOutboundClient(
+                            WeixinChannelProperties.from("test", Map.of("baseUrl", urlOf(server))),
+                            WeixinCredentialProvider.fixed("test-token"));
+
+            WeixinOutboundClient.JsonNodeResponse response = client.updates("");
+            assertEquals(0, response.ret());
+            assertNull(response.errcode());
+            assertTrue(response.msgs().isEmpty());
+            assertEquals(
+                    "CgkIARjD1c3qizQSOmM3YTdiNTUzNGRmZkBpbS5ib3Q6MDYw", response.get_updates_buf());
         } finally {
             server.stop(0);
         }
@@ -223,6 +263,46 @@ class WeixinOutboundClientTest {
 
             assertTrue(error.getMessage().contains("unparseable"), error.getMessage());
             assertFalse(error.getMessage().contains("secret-payload"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * The live provider reports an accepted send by returning the message id alone: there is no
+     * {@code ret}/{@code errcode} in a success body. Reading that as "no provider outcome" made
+     * every delivered reply look failed, so the message was retried and the user received it again
+     * on each attempt.
+     */
+    @org.junit.jupiter.api.Test
+    void sendAcceptsAProviderReceiptWithoutAResultCode() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/ilink/bot/sendmessage",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] bytes =
+                            "{\"message_id\":7507333310956748680}".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            WeixinOutboundClient client =
+                    new WeixinOutboundClient(
+                            WeixinChannelProperties.from("test", Map.of("baseUrl", urlOf(server))),
+                            WeixinCredentialProvider.fixed("test-token"));
+
+            client.sendWithContext(
+                            OutboundAddress.direct("test", "test:DIRECT:user-1"),
+                            List.of(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("hi")
+                                            .build()),
+                            "ctx-1")
+                    .block();
         } finally {
             server.stop(0);
         }
