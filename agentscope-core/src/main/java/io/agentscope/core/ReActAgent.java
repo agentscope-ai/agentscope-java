@@ -2234,7 +2234,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         answerBlock, target, getName()));
                 replacements.put(target.getId(), target.withState(ToolCallState.FINISHED));
             }
-            applyToolUseBlockReplacements(replacements);
+            MessageUtils.replaceToolUseBlocks(state.contextMutable(), replacements);
 
             String replyId = resolvePendingRequestReplyId(Msg.METADATA_ASK_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
