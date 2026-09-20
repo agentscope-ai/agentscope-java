@@ -50,6 +50,7 @@ import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.executor.runner.UnsupportedAgentEventStreamException;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEndEvent;
@@ -425,7 +426,7 @@ class AgentScopeAgentExecutorTest {
         void testExecuteAgentFallsBackToLegacyStream() throws JSONRPCError {
             doMockForContext(true, false, false);
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(Flux.error(new UnsupportedOperationException("not supported")));
+                    .thenReturn(Flux.error(new UnsupportedAgentEventStreamException()));
             when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(mockLegacyFlux());
 
@@ -441,6 +442,93 @@ class AgentScopeAgentExecutorTest {
                     false);
             verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
             verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName("Should not fall back for a real unsupported operation from the agent")
+        void testDoesNotFallBackForAgentUnsupportedOperation() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.error(new UnsupportedOperationException("agent failure")));
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockLegacyFlux());
+
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName("Should not fall back after a fine-grained stream has emitted output")
+        void testDoesNotFallBackAfterFineGrainedOutput() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.concat(
+                                    Flux.just(
+                                            new TextBlockDeltaEvent(
+                                                    "reply-id", "block-id", "partial")),
+                                    Flux.error(new UnsupportedAgentEventStreamException())));
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockLegacyFlux());
+
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName("Should fall back when the capability marker is thrown synchronously")
+        void testFallsBackForSynchronousCapabilityMarker() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenThrow(new UnsupportedAgentEventStreamException());
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(mockLegacyFlux());
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            assertStreamingEventKind(
+                    messageRef.get(),
+                    List.of("streaming result 1", " 2"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId(),
+                    false,
+                    false);
+            verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName("Should deduplicate interleaved legacy chunks by event type and message ID")
+        void testDeduplicatesInterleavedLegacyChunks() throws JSONRPCError {
+            doMockForContext(true, false, false);
+            Msg xChunk = Msg.builder().id("x").textContent("x chunk").build();
+            Msg yChunk = Msg.builder().id("y").textContent("y chunk").build();
+            Msg xResult = Msg.builder().id("x").textContent("x result").build();
+            Msg sharedReasoning = Msg.builder().id("shared").textContent("reasoning").build();
+            Msg sharedSummary = Msg.builder().id("shared").textContent("summary").build();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(Flux.error(new UnsupportedAgentEventStreamException()));
+            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(
+                                    new Event(EventType.REASONING, xChunk, false),
+                                    new Event(EventType.REASONING, yChunk, false),
+                                    new Event(EventType.REASONING, xResult, true),
+                                    new Event(EventType.REASONING, sharedReasoning, false),
+                                    new Event(EventType.SUMMARY, sharedSummary, true)));
+
+            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
+            executor.execute(mockContext, mockEventQueue);
+
+            assertStreamingEventKind(
+                    messageRef.get(),
+                    List.of("x chunk", "y chunk", "reasoning", "summary"),
+                    mockContext.getTaskId(),
+                    mockContext.getContextId(),
+                    false,
+                    false);
         }
 
         @Test

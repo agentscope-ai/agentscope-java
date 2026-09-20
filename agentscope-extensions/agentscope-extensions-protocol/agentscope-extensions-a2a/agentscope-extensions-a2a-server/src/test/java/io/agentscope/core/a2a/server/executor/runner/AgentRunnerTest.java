@@ -158,12 +158,11 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
 
         // When
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
+        result.blockLast();
 
         // Then
         assertNotNull(result);
@@ -180,17 +179,29 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
 
         // When
         AgentRunner agentRunner = runner;
         Flux<AgentEvent> result = agentRunner.streamEvents(messages, requestOptions);
+        result.blockLast();
 
         // Then
         assertNotNull(result);
         verify(mockBuilder, times(1)).build();
+        verify(mockAgent, times(1)).streamEvents(messages);
+    }
+
+    @Test
+    @DisplayName("Should not reserve a task ID before the stream is subscribed")
+    void testUnsubscribedStreamDoesNotReserveTaskId() {
+        String taskId = UUID.randomUUID().toString();
+        requestOptions.setTaskId(taskId);
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
+
+        runner.streamEvents(messages, requestOptions);
+        assertDoesNotThrow(() -> runner.streamEvents(messages, requestOptions).blockLast());
         verify(mockAgent, times(1)).streamEvents(messages);
     }
 
@@ -221,9 +232,9 @@ class AgentRunnerTest {
                 };
 
         // When & Then
-        UnsupportedOperationException exception =
+        UnsupportedAgentEventStreamException exception =
                 assertThrows(
-                        UnsupportedOperationException.class,
+                        UnsupportedAgentEventStreamException.class,
                         () -> legacyRunner.streamEvents(List.of(), requestOptions).blockLast());
         assertEquals(
                 "This AgentRunner does not support fine-grained AgentEvent streaming",
@@ -239,15 +250,16 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
         // First call to populate the cache
-        runner.streamEvents(messages, requestOptions);
+        var subscription = runner.streamEvents(messages, requestOptions).subscribe();
 
         // When & Then
         assertThrows(
-                IllegalStateException.class, () -> runner.streamEvents(messages, requestOptions));
+                IllegalStateException.class,
+                () -> runner.streamEvents(messages, requestOptions).blockLast());
+        subscription.dispose();
     }
 
     @Test
@@ -261,11 +273,13 @@ class AgentRunnerTest {
         when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
         // First call to populate the cache
-        runner.streamEvents(messages, requestOptions);
+        var subscription = runner.streamEvents(messages, requestOptions).subscribe();
 
         // When & Then
         assertThrows(
-                IllegalStateException.class, () -> runner.streamEvents(messages, requestOptions));
+                IllegalStateException.class,
+                () -> runner.streamEvents(messages, requestOptions).blockLast());
+        subscription.dispose();
     }
 
     @Test
@@ -296,6 +310,7 @@ class AgentRunnerTest {
 
         // Try to stream again with the same taskId - should succeed since agent was removed
         Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
+        secondResult.blockLast();
         assertNotNull(secondResult);
     }
 
@@ -314,6 +329,7 @@ class AgentRunnerTest {
 
         // Then: completion releases the task ID for a new request.
         Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
+        secondResult.blockLast();
         assertNotNull(secondResult);
         verify(mockAgent, times(2)).streamEvents(messages);
     }
@@ -335,6 +351,7 @@ class AgentRunnerTest {
         // Then: an error also releases the task ID for a new request.
         assertThrows(RuntimeException.class, failedResult::blockLast);
         Flux<AgentEvent> recoveredResult = runner.streamEvents(messages, requestOptions);
+        recoveredResult.blockLast();
         assertNotNull(recoveredResult);
         verify(mockAgent, times(2)).streamEvents(messages);
     }
@@ -351,7 +368,7 @@ class AgentRunnerTest {
         Flux<AgentEvent> mockFlux = mock(Flux.class);
         when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
         when(mockFlux.doFinally(any())).thenReturn(mockFlux);
-        runner.streamEvents(messages, requestOptions);
+        runner.streamEvents(messages, requestOptions).subscribe();
 
         runner.stop(taskId);
         verify(mockAgent, times(1)).interrupt();

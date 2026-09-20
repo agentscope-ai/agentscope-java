@@ -23,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -62,12 +63,34 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     private <T> Flux<T> streamWithAgent(
             String taskId, Function<ReActAgent, Flux<T>> streamFunction) {
-        if (agentCache.containsKey(taskId)) {
-            throw new IllegalStateException("Agent already exists for taskId: " + taskId);
-        }
-        ReActAgent agent = buildReActAgent();
-        agentCache.put(taskId, agent);
-        return streamFunction.apply(agent).doFinally(signal -> agentCache.remove(taskId));
+        return Flux.defer(
+                () -> {
+                    AtomicReference<ReActAgent> createdAgent = new AtomicReference<>();
+                    ReActAgent agent =
+                            agentCache.compute(
+                                    taskId,
+                                    (id, cachedAgent) -> {
+                                        if (cachedAgent != null) {
+                                            return cachedAgent;
+                                        }
+                                        ReActAgent newAgent = buildReActAgent();
+                                        createdAgent.set(newAgent);
+                                        return newAgent;
+                                    });
+                    if (createdAgent.get() == null) {
+                        return Flux.error(
+                                new IllegalStateException(
+                                        "Agent already exists for taskId: " + taskId));
+                    }
+                    try {
+                        return streamFunction
+                                .apply(agent)
+                                .doFinally(signal -> agentCache.remove(taskId, agent));
+                    } catch (Throwable error) {
+                        agentCache.remove(taskId, agent);
+                        return Flux.error(error);
+                    }
+                });
     }
 
     @Override

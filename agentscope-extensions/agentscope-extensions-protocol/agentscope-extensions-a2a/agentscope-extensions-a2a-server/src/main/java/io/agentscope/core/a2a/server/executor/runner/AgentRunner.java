@@ -57,24 +57,28 @@ public interface AgentRunner {
      * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
      * @return Flux of events emitted during execution
      */
-    Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options);
+    @Deprecated(since = "2.0.0")
+    default Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
+        return Flux.error(
+                new UnsupportedOperationException(
+                        "This AgentRunner does not support legacy Event streaming"));
+    }
 
     /**
      * Start to handle an agent request with fine-grained lifecycle events.
      *
      * <p>Implementations that support the v2 event model should override this method. Existing
-     * custom runners remain source-compatible and can continue serving the legacy
-     * {@link #stream(List, AgentRequestOptions)} contract.
+     * custom runners remain source-compatible whether they implement this method or only the
+     * legacy {@link #stream(List, AgentRequestOptions)} contract.
      *
      * @param requestMessages the messages from a2a client
      * @param options the options for agent request, such as {@code taskId}, {@code sessionId} or {@code userId} of this request
      * @return Flux of fine-grained events emitted during execution, or a Flux that terminates with
-     *     {@link UnsupportedOperationException} when the runner does not support fine-grained events
+     *     {@link UnsupportedAgentEventStreamException} when the runner does not support
+     *     fine-grained events
      */
     default Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        return Flux.error(
-                new UnsupportedOperationException(
-                        "This AgentRunner does not support fine-grained AgentEvent streaming"));
+        return Flux.error(new UnsupportedAgentEventStreamException());
     }
 
     /**

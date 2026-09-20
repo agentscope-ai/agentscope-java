@@ -33,8 +33,10 @@ import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.executor.runner.UnsupportedAgentEventStreamException;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
@@ -50,10 +52,10 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -162,22 +164,18 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      */
     private Flux<AgentEvent> streamAgentEvents(
             List<Msg> inputMessages, AgentRequestOptions requestOptions) {
-        // Catch only a synchronous UnsupportedOperationException from the compatibility default.
-        // An exception emitted by the returned Flux must propagate; falling back then could execute
-        // the agent twice.
+        // Catch only the explicit compatibility marker. A real UnsupportedOperationException from
+        // the agent pipeline must propagate; falling back then could execute the agent twice.
         return Flux.defer(
                 () -> {
                     try {
                         Flux<AgentEvent> fineGrainedStream =
                                 agentRunner.streamEvents(inputMessages, requestOptions);
-                        if (fineGrainedStream == null) {
-                            return streamLegacyEvents(inputMessages, requestOptions);
-                        }
                         AtomicBoolean emitted = new AtomicBoolean();
                         return fineGrainedStream
                                 .doOnNext(event -> emitted.set(true))
                                 .onErrorResume(
-                                        UnsupportedOperationException.class,
+                                        UnsupportedAgentEventStreamException.class,
                                         error -> {
                                             if (emitted.get()) {
                                                 return Flux.error(error);
@@ -189,7 +187,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                             return streamLegacyEvents(
                                                     inputMessages, requestOptions);
                                         });
-                    } catch (UnsupportedOperationException error) {
+                    } catch (UnsupportedAgentEventStreamException error) {
                         log.debug(
                                 "Falling back to legacy AgentRunner.stream() for task {}",
                                 requestOptions.getTaskId());
@@ -331,7 +329,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final Set<AgentEventType> requiredEventTypes;
 
-        private String lastLegacyEventMsgId;
+        private final Set<LegacyEventKey> streamedLegacyEvents;
 
         private BaseFluxEventHandler(
                 RequestContext context, AgentExecuteProperties executeProperties) {
@@ -339,6 +337,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             this.executeProperties = executeProperties;
             this.accumulatedOutput = new LinkedList<>();
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
+            this.streamedLegacyEvents = new HashSet<>();
         }
 
         private Set<AgentEventType> generateRequiredEventTypes(
@@ -370,8 +369,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);
-            if (output instanceof LegacyAgentEvent legacyEvent) {
-                lastLegacyEventMsgId = legacyEvent.legacyEvent.getMessageId();
+            if (output instanceof LegacyAgentEvent legacyEvent
+                    && responseMessage != null
+                    && !legacyEvent.legacyEvent.isLast()) {
+                streamedLegacyEvents.add(
+                        new LegacyEventKey(
+                                legacyEvent.legacyEvent.getType(),
+                                legacyEvent.legacyEvent.getMessageId()));
             }
         }
 
@@ -408,7 +412,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     || !legacyEvent.legacyEvent.isLast()) {
                 return false;
             }
-            return Objects.equals(lastLegacyEventMsgId, legacyEvent.legacyEvent.getMessageId());
+            return streamedLegacyEvents.contains(
+                    new LegacyEventKey(
+                            legacyEvent.legacyEvent.getType(),
+                            legacyEvent.legacyEvent.getMessageId()));
         }
 
         private Msg convertToResponseMessage(AgentEvent output) {
@@ -689,6 +696,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private static Msg messageWithContent(String id, MsgRole role, ContentBlock content) {
         return Msg.builder().id(id).role(role).content(content).build();
     }
+
+    private record LegacyEventKey(EventType type, String messageId) {}
 
     /** Adapter that lets legacy custom runners use the AgentEvent-only handler path. */
     private static final class LegacyAgentEvent extends AgentEvent {
