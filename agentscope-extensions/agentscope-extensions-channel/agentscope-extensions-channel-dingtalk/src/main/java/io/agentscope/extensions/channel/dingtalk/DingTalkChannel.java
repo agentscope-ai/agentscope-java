@@ -17,8 +17,11 @@ package io.agentscope.extensions.channel.dingtalk;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
+import io.agentscope.extensions.channel.common.AccessTokenStore;
 import io.agentscope.extensions.channel.common.BotLoopGuard;
 import io.agentscope.extensions.channel.common.IdempotencyStore;
+import io.agentscope.extensions.channel.common.InMemoryAccessTokenStore;
+import io.agentscope.extensions.channel.common.InboundEventDeduplicator;
 import io.agentscope.harness.agent.gateway.Gateway;
 import io.agentscope.harness.agent.gateway.channel.Channel;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -60,7 +63,7 @@ public final class DingTalkChannel implements Channel {
     private final DingTalkAccessTokenProvider tokenProvider;
     private final DingTalkOutboundClient outboundClient;
     private final DingTalkInboundMapper mapper;
-    private final IdempotencyStore idempotency;
+    private final InboundEventDeduplicator idempotency;
     private final BotLoopGuard botLoopGuard;
     private final ChannelRouter router;
 
@@ -81,7 +84,7 @@ public final class DingTalkChannel implements Channel {
             DingTalkAccessTokenProvider tokenProvider,
             DingTalkOutboundClient outboundClient,
             DingTalkInboundMapper mapper,
-            IdempotencyStore idempotency,
+            InboundEventDeduplicator idempotency,
             BotLoopGuard botLoopGuard,
             ChannelRouter router,
             DingTalkChannelRegistry registry) {
@@ -104,12 +107,63 @@ public final class DingTalkChannel implements Channel {
         }
     }
 
-    /** Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. */
+    /**
+     * Factory used by {@link io.agentscope.harness.agent.gateway.channel.ChannelFactory}. Uses a
+     * process-local {@link IdempotencyStore} and {@link InMemoryAccessTokenStore}; use the
+     * overloads taking {@link InboundEventDeduplicator} and {@link AccessTokenStore} to supply
+     * shared-storage implementations.
+     */
     public static DingTalkChannel fromProperties(
             String channelId, ChannelConfig routing, Map<String, Object> rawProperties) {
+        return fromProperties(
+                channelId,
+                routing,
+                rawProperties,
+                new IdempotencyStore(),
+                new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Factory variant that lets the application supply the {@link InboundEventDeduplicator} used
+     * to drop platform redeliveries — for example a shared-storage implementation so duplicates
+     * are recognized across instances. The process-local {@link IdempotencyStore} is used
+     * otherwise.
+     *
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     */
+    public static DingTalkChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency) {
+        return fromProperties(
+                channelId, routing, rawProperties, idempotency, new InMemoryAccessTokenStore());
+    }
+
+    /**
+     * Factory variant that additionally lets the application supply the {@link AccessTokenStore}
+     * caching the outbound access token — for example a shared-storage implementation so one
+     * instance's refresh or invalidation serves the whole deployment. The process-local {@link
+     * InMemoryAccessTokenStore} is used otherwise.
+     *
+     * @param channelId the channel id (key in {@code agentscope.json#channels})
+     * @param routing the {@link ChannelConfig} parsed from the file entry's routing block
+     * @param rawProperties provider-specific properties (appKey, appSecret, robotCode, mode,
+     *     aesKey, ...)
+     * @param idempotency deduplicator for inbound events; must be thread-safe
+     * @param tokenStore cache for this channel's access token — one instance per credential, not
+     *     to be shared across channels with different credentials; must be thread-safe
+     */
+    public static DingTalkChannel fromProperties(
+            String channelId,
+            ChannelConfig routing,
+            Map<String, Object> rawProperties,
+            InboundEventDeduplicator idempotency,
+            AccessTokenStore tokenStore) {
         DingTalkChannelProperties props = DingTalkChannelProperties.from(channelId, rawProperties);
         DingTalkAccessTokenProvider tokenProvider =
-                new DingTalkAccessTokenProvider(props.apiBase(), props.appKey(), props.appSecret());
+                new DingTalkAccessTokenProvider(
+                        props.apiBase(), props.appKey(), props.appSecret(), tokenStore);
         DingTalkOutboundClient outbound =
                 new DingTalkOutboundClient(props.apiBase(), tokenProvider, props.robotCode());
         DingTalkInboundMapper mapper = new DingTalkInboundMapper(channelId, props.appKey());
@@ -120,7 +174,7 @@ public final class DingTalkChannel implements Channel {
                 tokenProvider,
                 outbound,
                 mapper,
-                new IdempotencyStore(),
+                idempotency,
                 new BotLoopGuard(),
                 new ChannelRouter(routing.defaultAgentId()),
                 DingTalkChannelRegistry.instance());
@@ -260,7 +314,7 @@ public final class DingTalkChannel implements Channel {
         return crypto;
     }
 
-    IdempotencyStore idempotency() {
+    InboundEventDeduplicator idempotency() {
         return idempotency;
     }
 
