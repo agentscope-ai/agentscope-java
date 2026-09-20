@@ -77,6 +77,17 @@ so this module does not promise exactly-once replies. Completed payloads are cle
 message-ID tombstones are retained for seven days and removed during later batch acceptance.
 Pending messages remain until successfully processed. Context tokens are retained per peer.
 
+Reply delivery belongs to the host. On the inbound path the channel does not send the reply itself:
+a host that owns durable delivery persists it and returns no reply to the channel, so a provider
+outage delays the reply instead of failing the message and replaying the Agent. `deliverWithReceipt`
+sends one host-persisted reply and returns the provider's receipt; a failure propagates so the host
+keeps the notification pending. Standalone deployments keep the inline path, where a single attempt
+is made and a refusal is reported through `WeixinRuntimeListener.onDeliveryFailed`.
+
+An inbound message whose dispatch keeps failing is abandoned after a small number of attempts and
+tombstoned, reported through `WeixinRuntimeListener.onDispatchFailed`: one poison message can neither
+run the Agent forever nor block the account's other messages.
+
 Custom stores must implement the entire state contract; cursor-only adapters and default
 successful no-op implementations are no longer supported. Runtime listeners can use
 `onLeaseAcquired` to attach the lease generation to host-specific status reports.
@@ -89,7 +100,7 @@ The QR-login flow follows the provider protocol: `get_bot_qrcode` is a POST, whi
 do not enable URI-level request logging (provider access logs, reverse proxies, or
 `jdk.httpclient` debug logging) for this client. The module itself never logs a request URI or a
 response body: provider failures are reported by status code, parse failures by line and column,
-and every warning goes through `safeMessage(...)`, which reduces a failure to its exception type.
+and every warning goes through `safeMessage(...)`, which reports the exception type plus a control-character-stripped, length-capped message — those messages are built from constants and numeric provider codes, never from a request URI, credential or payload.
 
 `WeixinLoginClient` is stateless. `start(...)` returns a one-time `WeixinLoginChallenge` containing
 the QR image and a portable `WeixinLoginSession`; every `poll(...)` or `verify(...)` call returns a

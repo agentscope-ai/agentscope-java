@@ -56,6 +56,13 @@ public interface WeixinStateStore {
     boolean failMessage(String accountId, WeixinLease lease, WeixinInboxClaim claim);
 
     /**
+     * Drops a claimed message the consumer will not retry again — the dispatch kept failing, or the
+     * provider kept refusing the reply. The message is tombstoned so a re-delivered batch cannot
+     * resurrect it, but it is not reported as completed.
+     */
+    boolean abandonMessage(String accountId, WeixinLease lease, WeixinInboxClaim claim);
+
+    /**
      * Forgets everything held for {@code accountId}: cursor, peer context tokens and inbox.
      *
      * <p>Hosts call this when an account is retired so a long-lived process does not accumulate

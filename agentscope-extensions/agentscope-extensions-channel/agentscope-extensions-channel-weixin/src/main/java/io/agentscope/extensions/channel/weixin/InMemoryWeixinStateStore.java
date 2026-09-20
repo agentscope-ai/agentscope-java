@@ -160,7 +160,7 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         List<WeixinInboxClaim> claims = new ArrayList<>();
         for (var entry : account(accountId).inbox.entrySet()) {
             Message m = entry.getValue();
-            if (m.completed) continue;
+            if (m.completed || m.abandoned) continue;
             if (lease.equals(m.lease) && m.claimUntil > clock.millis()) break;
             m.lease = lease;
             m.claimId = UUID.randomUUID().toString();
@@ -193,6 +193,18 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         return true;
     }
 
+    @Override
+    public synchronized boolean abandonMessage(
+            String accountId, WeixinLease lease, WeixinInboxClaim claim) {
+        Message m = validClaim(accountId, lease, claim);
+        if (m == null) return false;
+        m.abandoned = true;
+        m.completedAt = clock.millis();
+        m.payload = null;
+        m.claimId = null;
+        return true;
+    }
+
     /**
      * Expires tombstones in every account and forgets accounts that hold no state at all. Called on
      * each accepted batch, so the cost is proportional to the accounts seen while this process runs.
@@ -203,7 +215,12 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
     private void prune(String activeAccountId) {
         long now = clock.millis();
         for (Account account : accounts.values()) {
-            account.inbox.values().removeIf(m -> m.completed && m.completedAt < now - RETENTION_MS);
+            account.inbox
+                    .values()
+                    .removeIf(
+                            m ->
+                                    (m.completed || m.abandoned)
+                                            && m.completedAt < now - RETENTION_MS);
         }
         accounts.entrySet()
                 .removeIf(
@@ -243,6 +260,7 @@ final class InMemoryWeixinStateStore implements WeixinStateStore {
         String claimId;
         long claimUntil;
         boolean completed;
+        boolean abandoned;
         long completedAt;
 
         Message(String payload) {

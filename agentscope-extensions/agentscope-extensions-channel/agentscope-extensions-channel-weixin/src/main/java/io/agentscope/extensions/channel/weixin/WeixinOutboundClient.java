@@ -60,44 +60,71 @@ public final class WeixinOutboundClient {
         return Mono.<Void>fromRunnable(
                         () -> {
                             for (Msg msg : messages) {
-                                String text = msg.getTextContent();
-                                if (text == null || text.isBlank()) continue;
-                                String token =
-                                        context != null
-                                                ? context
-                                                : (msg.getMetadata() == null
-                                                        ? null
-                                                        : (String)
-                                                                msg.getMetadata()
-                                                                        .get("weixinContextToken"));
-                                try {
-                                    Map<String, Object> item =
-                                            Map.of("type", 1, "text_item", Map.of("text", text));
-                                    Map<String, Object> m = new LinkedHashMap<>();
-                                    m.put("from_user_id", "");
-                                    m.put("to_user_id", peer(address));
-                                    m.put("client_id", UUID.randomUUID().toString());
-                                    m.put("message_type", 2);
-                                    m.put("message_state", 2);
-                                    m.put("item_list", List.of(item));
-                                    if (token != null) m.put("context_token", token);
-                                    assertSuccess(
-                                            "sendmessage",
-                                            post(
-                                                    "/ilink/bot/sendmessage",
-                                                    Map.of("msg", m, "base_info", baseInfo()),
-                                                    beforeSend));
-                                } catch (WeixinCredentialRejectedException
-                                        | IllegalStateException e) {
-                                    // Provider outcome and credential failures keep their type:
-                                    // wrapping them hides the reason from the caller's onError.
-                                    throw e;
-                                } catch (Exception e) {
-                                    throw new RuntimeException("Weixin send failed", e);
+                                if (msg.getTextContent() == null
+                                        || msg.getTextContent().isBlank()) {
+                                    continue;
                                 }
+                                sendOne(address, msg, context, beforeSend);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Sends one message and returns the provider's receipt for it. A host that persists replies
+     * needs the receipt, not a local acknowledgement: only the provider's message id proves iLink
+     * accepted the reply.
+     */
+    Mono<String> sendWithReceipt(
+            OutboundAddress address, Msg message, String context, Runnable beforeSend) {
+        return Mono.fromCallable(() -> sendOne(address, message, context, beforeSend))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private String sendOne(
+            OutboundAddress address, Msg message, String context, Runnable beforeSend) {
+        String text = message.getTextContent();
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("Weixin reply is empty");
+        }
+        String token =
+                context != null
+                        ? context
+                        : (message.getMetadata() == null
+                                ? null
+                                : (String) message.getMetadata().get("weixinContextToken"));
+        try {
+            Map<String, Object> item = Map.of("type", 1, "text_item", Map.of("text", text));
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("from_user_id", "");
+            m.put("to_user_id", peer(address));
+            m.put("client_id", UUID.randomUUID().toString());
+            m.put("message_type", 2);
+            m.put("message_state", 2);
+            m.put("item_list", List.of(item));
+            if (token != null) m.put("context_token", token);
+            // iLink reports an accepted send by returning the message id alone: there is no
+            // ret/errcode in a success body.
+            com.fasterxml.jackson.databind.JsonNode response =
+                    assertSuccess(
+                            "sendmessage",
+                            post(
+                                    "/ilink/bot/sendmessage",
+                                    Map.of("msg", m, "base_info", baseInfo()),
+                                    beforeSend),
+                            "message_id");
+            String receipt = response.path("message_id").asText("");
+            if (receipt.isBlank()) {
+                throw new IllegalStateException("iLink sendmessage returned no receipt");
+            }
+            return receipt;
+        } catch (WeixinCredentialRejectedException | IllegalStateException e) {
+            // Provider outcome and credential failures keep their type: wrapping them hides the
+            // reason from the caller's onError.
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Weixin send failed", e);
+        }
     }
 
     /** Grace on top of the long-poll window before the request is abandoned. */
@@ -113,7 +140,7 @@ public final class WeixinOutboundClient {
                                 "base_info",
                                 baseInfo()));
         com.fasterxml.jackson.databind.JsonNode response = parse(body);
-        requireProviderResult("getupdates", response);
+        requireProviderResult("getupdates", response, "msgs", "get_updates_buf");
         List<com.fasterxml.jackson.databind.JsonNode> messages = new ArrayList<>();
         response.path("msgs").forEach(messages::add);
         return new JsonNodeResponse(
@@ -186,9 +213,15 @@ public final class WeixinOutboundClient {
         return Map.of("channel_version", p.channelVersion(), "bot_agent", p.botAgent());
     }
 
-    private static void assertSuccess(String operation, String body) throws Exception {
+    /**
+     * Validates a provider outcome and returns the parsed body. The failure text carries only the
+     * numeric provider codes: the provider's own {@code errmsg} is never copied into an exception,
+     * because that text reaches host logs and may embed anything the provider chose to echo.
+     */
+    private static com.fasterxml.jackson.databind.JsonNode assertSuccess(
+            String operation, String body, String... outcomeFields) throws Exception {
         com.fasterxml.jackson.databind.JsonNode response = parse(body);
-        requireProviderResult(operation, response);
+        requireProviderResult(operation, response, outcomeFields);
         int ret = response.path("ret").asInt(0);
         int errcode = response.path("errcode").asInt(0);
         if (ret != 0 || errcode != 0) {
@@ -196,13 +229,9 @@ public final class WeixinOutboundClient {
                 throw new WeixinCredentialRejectedException(operation, -14);
             }
             throw new IllegalStateException(
-                    "iLink send failed ret="
-                            + ret
-                            + " errcode="
-                            + errcode
-                            + " "
-                            + response.path("errmsg").asText(""));
+                    "iLink " + operation + " failed ret=" + ret + " errcode=" + errcode);
         }
+        return response;
     }
 
     /**
@@ -229,13 +258,26 @@ public final class WeixinOutboundClient {
      * A provider response has to state its outcome. Defaulting a missing {@code ret} to zero would
      * accept any 2xx body — an empty object, a proxy error page rendered as JSON — as a delivered
      * message, and the channel would then complete the inbox claim and drop the reply.
+     *
+     * <p>{@code getupdates} is the one call that reports success without {@code ret}/{@code
+     * errcode}: an idle long poll answers with its batch fields only ({@code msgs}, {@code
+     * get_updates_buf}) and stays silent about a result code. Those fields are its outcome, so a
+     * poll body carrying neither the status fields nor one of {@code outcomeFields} is still
+     * rejected — the relaxation must not turn an unrelated 2xx body into an empty batch.
      */
     private static void requireProviderResult(
-            String operation, com.fasterxml.jackson.databind.JsonNode response) {
-        if (!response.has("ret") && !response.has("errcode")) {
-            throw new IllegalStateException(
-                    "iLink " + operation + " response carries no ret/errcode");
+            String operation,
+            com.fasterxml.jackson.databind.JsonNode response,
+            String... outcomeFields) {
+        if (response.has("ret") || response.has("errcode")) {
+            return;
         }
+        for (String field : outcomeFields) {
+            if (response.has(field)) {
+                return;
+            }
+        }
+        throw new IllegalStateException("iLink " + operation + " response carries no ret/errcode");
     }
 
     private static String peer(OutboundAddress a) {
