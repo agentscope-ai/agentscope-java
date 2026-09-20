@@ -1,6 +1,6 @@
 ---
-title: "上下文与 AgentState"
-description: "无状态 Agent 引擎、AgentState 生命周期、状态持久化与 RuntimeContext"
+title: 上下文与 AgentState
+description: 无状态 Agent 引擎、AgentState 生命周期、状态持久化与 RuntimeContext
 ---
 
 ## 无状态 Agent 引擎
@@ -32,7 +32,7 @@ description: "无状态 Agent 引擎、AgentState 生命周期、状态持久化
 
 ## AgentState
 
-[`AgentStateStore`](../../integration/session/index.md) 持久化的是一份 **`AgentState`**(`io.agentscope.core.state.AgentState`),它是 agent 当前"瞬时"运行状态的完整快照:
+[`AgentStateStore`](/v2/zh/integration/session/index) 持久化的是一份 **`AgentState`**(`io.agentscope.core.state.AgentState`),它是 agent 当前"瞬时"运行状态的完整快照:
 
 | `AgentState` 字段 | 内容 |
 |---|---|
@@ -40,7 +40,7 @@ description: "无状态 Agent 引擎、AgentState 生命周期、状态持久化
 | `getUserId()` | 所属用户标识(匿名会话为 null) |
 | `getContext()` / `contextMutable()` | 当前对话历史(用户输入、assistant 回复、工具调用、工具结果) |
 | `getSummary()` | 压缩后的摘要(如果开了压缩) |
-| `getPermissionContext()` | 工具权限规则,见[权限系统](./permission-system.md) |
+| `getPermissionContext()` | 工具权限规则,见[权限系统](/v2/zh/docs/building-blocks/permission-system) |
 | `getPlanModeContext()` | Plan Mode 当前是否激活、计划文件路径 |
 | `getTasksContext()` | `todo_write` 维护的任务清单 |
 | `getToolContext()` | 工具组激活状态(`activatedGroups`) |
@@ -109,9 +109,13 @@ HarnessAgent agent = HarnessAgent.builder()
         .build();
 ```
 
-:::{warning}
+
+<Warning>
+
 内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
-:::
+
+</Warning>
+
 
 ### 同 (userId, sessionId) 跨进程、跨机器实时恢复
 
@@ -152,7 +156,7 @@ agentB.call(nextMsg, RuntimeContext.builder()
 `sessionId` 和 `userId` 解决的不是同一件事:
 
 - **`sessionId`** —— 决定哪段对话是哪段,独立的 `AgentState` 快照。
-- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](../harness/filesystem.md)。
+- **`userId`** —— 决定这段对话归谁,也决定文件落到谁的命名空间下,详见[文件系统](/v2/zh/docs/harness/filesystem)。
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -203,9 +207,13 @@ agent.clearContext(RuntimeContext.builder()
 
 请在该会话当前请求完成后调用。它不会取消正在执行的调用；下一次调用会使用已清空的对话上下文。
 
-:::{note}
+
+<Note>
+
 1.0 中的 `Memory` 接口(`InMemoryMemory` / `LongTermMemory` 等)在 2.0 已 `@Deprecated(forRemoval = true)`。新代码请使用 `AgentState.getContext()` + `AgentStateStore` —— `Memory` 仅作为源代码兼容层保留。
-:::
+
+</Note>
+
 
 ### Per-session 中断
 
@@ -223,9 +231,13 @@ agent.interrupt("alice", "session-001", Msg.userMsg("请停下来做个总结。
 
 旧的无参 `interrupt()` 在单 session 场景下仍然有效——它会路由到当前活跃会话的 `InterruptControl`。
 
-:::{note}
+
+<Note>
+
 `InterruptControl` 是纯运行时信号,不会被持久化。如果某个 session 在故障转移后恢复到另一台机器,中断标志从清零状态开始。另一个 `AgentState.shutdownInterrupted` 标志(是**会被持久化**的)记录了该 session 是否被优雅停机中断——agent 可以在下次加载时检测并恢复。
-:::
+
+</Note>
+
 
 ### 并发使用
 
@@ -262,9 +274,13 @@ Flux.merge(call1, call2).collectList().block();
 - **相同 `(userId, sessionId)`** → per-session 异步门按 FIFO 顺序串行化——无需外部锁即保证状态一致性。
 - **`interrupt(userId, sessionId)`** → 精确命中单个 session,其他在飞 call 不受影响。
 
-:::{tip}
+
+<Tip>
+
 内存中的状态缓存会随单个 agent 实例服务过的不同 session 数量增长。大多数部署场景(几百个 session)的开销可以忽略。对于超大规模场景(单进程百万级 session),可以考虑 agent factory + 有界实例池——但由于 `AgentState` 对象本身很轻量,这种情况很少出现。
-:::
+
+</Tip>
+
 
 ---
 
@@ -297,19 +313,27 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
 
-:::{tip}
-**`AgentStateStore` 后端在 builder 时绑定,不能通过 RuntimeContext per-call 切换**。per-call 变化的是它寻址的 `(userId, sessionId)` 槽位——按用户隔离时设置 `userId`(或在存储上自定义 `keyPrefix`),不要试图给每次 call 传不同的存储实例。
-:::
 
-:::{tip}
+<Tip>
+
+**`AgentStateStore` 后端在 builder 时绑定,不能通过 RuntimeContext per-call 切换**。per-call 变化的是它寻址的 `(userId, sessionId)` 槽位——按用户隔离时设置 `userId`(或在存储上自定义 `keyPrefix`),不要试图给每次 call 传不同的存储实例。
+
+</Tip>
+
+
+
+<Tip>
+
 **在中间件和工具中访问 `AgentState`:** 在 call 执行期间,始终使用 `RuntimeContext.resolveAgentState(ctx, agent)` 而非 `agent.getAgentState()`。并发场景下,`agent.getAgentState()` 返回的是最后一次活跃 session 的状态(多个 call 同时在飞时结果不确定),而 `ctx.getAgentState()` 返回的是**本次 call 的** session 状态——这才是你需要的。
-:::
+
+</Tip>
+
 
 ---
 
 ## 相关文档
 
-- [智能体（Agent）](./agent.md) —— `ReActAgent` 完整接口与 Builder 参数
-- [上下文压缩](../harness/compaction.md) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
-- [记忆](../harness/memory.md) —— 长期记忆与后台维护
-- [权限系统](./permission-system.md) —— 权限规则的持久化
+- [智能体（Agent）](/v2/zh/docs/building-blocks/agent) —— `ReActAgent` 完整接口与 Builder 参数
+- [上下文压缩](/v2/zh/docs/harness/compaction) —— 对话摘要、工具结果卸载、溢出恢复(建立在本页描述的 AgentState 基础之上)
+- [记忆](/v2/zh/docs/harness/memory) —— 长期记忆与后台维护
+- [权限系统](/v2/zh/docs/building-blocks/permission-system) —— 权限规则的持久化

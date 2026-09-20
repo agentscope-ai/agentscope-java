@@ -1,4 +1,6 @@
-# AgentScope Training Extension
+---
+title: Online Training
+---
 
 ## Overview
 
@@ -46,7 +48,7 @@ Github: https://github.com/agentscope-ai/Trinity-RFT
 Version requirement: v0.4.0 and above
 
 The online training mode decouples three components: Agent Runner, inference service (Explorer), and training service (Trainer):
-![Online-Training Architecture](../../imgs/training.svg)
+![Online-Training Architecture](/imgs/training.svg)
 - Agent Runner is responsible for running user Agent applications, processing user requests, and interacting with Explorer through RESTful APIs. This component is implemented, deployed, and managed by users themselves, with no constraints from Trinity-RFT.
 - Explorer serves as the inference service, processing requests from Agent Runner, recording trainable data (Experience), and storing data in the database. Explorer provides the following RESTful interfaces for Agent Runner to call:
   - chat: Compatible with standard OpenAI chat completions interface, handling user dialogue requests.
@@ -263,5 +265,3 @@ Msg response = agent.call(Msg.builder().textContent("Search for Python tutorials
 // 3. Stop when training is complete
 runner.stop();
 ```
-
----

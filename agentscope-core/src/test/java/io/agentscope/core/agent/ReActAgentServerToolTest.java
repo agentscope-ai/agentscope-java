@@ -24,6 +24,7 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -33,10 +34,13 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Tests for handling provider server tools (e.g. Anthropic web_search) in the ReAct loop.
@@ -171,5 +175,74 @@ class ReActAgentServerToolTest {
         // instead of being executed locally.
         assertEquals(2, mockModel.getCallCount(), "Model should be called twice");
         assertEquals("Final answer", TestUtils.extractTextContent(response));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("Should execute only local tools in a mixed server and local tool round")
+    void testMixedToolsOnlyExecuteLocalTools(boolean hasServerResult) {
+        MockToolkit toolkit =
+                new MockToolkit().withTool("web_search", args -> "Must not execute locally");
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            if (callCount[0]++ == 0) {
+                                List<ContentBlock> content = new ArrayList<>();
+                                content.add(serverToolUse("srvtoolu_mixed"));
+                                if (hasServerResult) {
+                                    content.add(serverToolResult("srvtoolu_mixed"));
+                                }
+                                content.add(
+                                        ToolUseBlock.builder()
+                                                .id("local_tool")
+                                                .name(TestConstants.TEST_TOOL_NAME)
+                                                .input(Map.of())
+                                                .build());
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("mixed")
+                                                .content(content)
+                                                .build());
+                            }
+                            List<ToolResultBlock> localResults =
+                                    messages.stream()
+                                            .filter(msg -> msg.getRole() == MsgRole.TOOL)
+                                            .flatMap(
+                                                    msg ->
+                                                            msg
+                                                                    .getContentBlocks(
+                                                                            ToolResultBlock.class)
+                                                                    .stream())
+                                            .toList();
+                            assertEquals(
+                                    List.of("local_tool"),
+                                    localResults.stream().map(ToolResultBlock::getId).toList());
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("final")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Done")
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build();
+
+        Msg response =
+                agent.call(TestUtils.createUserMessage("User", "Use both tools"))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response);
+        assertEquals("Done", TestUtils.extractTextContent(response));
+        assertEquals(2, model.getCallCount());
+        assertEquals(List.of(TestConstants.TEST_TOOL_NAME), toolkit.getToolCallHistory());
     }
 }

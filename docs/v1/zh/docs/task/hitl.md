@@ -1,4 +1,6 @@
-# Human-in-the-Loop
+---
+title: Human-in-the-Loop
+---
 
 Human-in-the-Loop 让你可以在智能体执行过程中插入人工审核环节。当智能体准备调用工具时，你可以先暂停让用户确认，再决定是否继续。
 

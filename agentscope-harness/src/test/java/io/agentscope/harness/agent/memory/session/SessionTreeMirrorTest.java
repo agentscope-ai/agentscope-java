@@ -23,6 +23,9 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
+import io.agentscope.harness.agent.transcript.TranscriptRef;
+import io.agentscope.harness.agent.transcript.TranscriptStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -198,6 +201,40 @@ class SessionTreeMirrorTest {
         assertTrue(
                 Files.isRegularFile(tree.getLogFile()),
                 "local log file must exist immediately after flush()");
+    }
+
+    @Test
+    void flush_withTranscriptStore_stillMirrorsCanonicalFiles() throws Exception {
+        InMemoryStore store = new InMemoryStore();
+        AbstractFilesystem fs = buildFs(store);
+        Path context = workspace.resolve("agents/agent-a/sessions/s-canon.jsonl");
+
+        TranscriptStore segments = new ObjectStoreTranscriptStore(fs);
+        SessionTree tree = new SessionTree(context, workspace, fs);
+        tree.setRuntimeContext(RuntimeContext.builder().userId("user-1").build());
+        tree.setTranscriptStore(segments, new TranscriptRef("tenant", "agent-a", "s-canon"));
+        tree.append(new SessionEntry.MessageEntry(null, null, null, "USER", "hello", null));
+        tree.flush();
+        awaitMirror();
+
+        assertTrue(
+                Files.isRegularFile(tree.getLogFile()),
+                "local canonical log must exist after flush");
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+        var logRead = fs.read(rc, "agents/agent-a/sessions/s-canon.log.jsonl", 0, 0);
+        assertTrue(
+                logRead.isSuccess()
+                        && logRead.fileData() != null
+                        && logRead.fileData().content() != null
+                        && logRead.fileData().content().contains("hello"),
+                "canonical .log.jsonl must be mirrored even when TranscriptStore is bound");
+        var ctxRead = fs.read(rc, "agents/agent-a/sessions/s-canon.jsonl", 0, 0);
+        assertTrue(
+                ctxRead.isSuccess()
+                        && ctxRead.fileData() != null
+                        && ctxRead.fileData().content() != null
+                        && ctxRead.fileData().content().contains("hello"),
+                "canonical .jsonl must be mirrored even when TranscriptStore is bound");
     }
 
     // -----------------------------------------------------------------------

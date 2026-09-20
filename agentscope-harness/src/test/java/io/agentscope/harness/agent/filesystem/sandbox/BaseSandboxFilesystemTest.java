@@ -25,7 +25,9 @@ import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -42,6 +44,15 @@ import org.junit.jupiter.api.io.TempDir;
 class BaseSandboxFilesystemTest {
 
     private static final RuntimeContext RT = RuntimeContext.empty();
+
+    /**
+     * The response {@code SandboxBackedFilesystem.execute} produces when the sandbox backend
+     * call itself fails (e.g. HTTP 504): the command never ran.
+     */
+    private static ExecuteResponse sandboxRequestFailed() {
+        return new ExecuteResponse(
+                "Internal sandbox error: Execute failed (status=504)", -1, false);
+    }
 
     // ================================================================
     // Unit tests — canned responses, run on all platforms
@@ -129,6 +140,129 @@ class BaseSandboxFilesystemTest {
                             .orElseThrow();
             assertTrue(dir.isDirectory());
             assertFalse(dir.modifiedAt().isEmpty(), "dir modifiedAt should be populated");
+        }
+
+        // ==================== Bug reproduction: execute failures masked as results (#2961)
+        // ====================
+
+        @Test
+        void ls_executeFailure_negativeExit_shouldFailWithCause() {
+            LsResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed()).ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the command never ran");
+            assertTrue(result.error().contains("/workspace"), "error should locate the target");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void ls_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+            LsResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "a null-output failure must not collapse into success");
+            assertTrue(
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
+        }
+
+        @Test
+        void ls_executeFailure_unknownExitCode_shouldFail() {
+            LsResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the exit code is unknown");
+        }
+
+        @Test
+        void ls_executeFailure_timeout_shouldFailWithMessage() {
+            LsResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("Command timed out after 30s", 124, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when execution times out");
+            assertTrue(result.error().contains("timed out"), "error should carry the cause");
+        }
+
+        @Test
+        void ls_commandFailure_positiveExit_shouldFailWithOutput() {
+            LsResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("sh: stat: not found", 127, false))
+                            .ls(RT, "/workspace");
+
+            assertFalse(result.isSuccess(), "ls should fail when the command itself fails");
+            assertTrue(result.error().contains("stat"), "error should carry the command output");
+        }
+
+        @Test
+        void read_text_executeFailure_shouldFailInsteadOfErrorAsContent() {
+            ReadResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .read(RT, "/workspace/notes.txt", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void read_binary_executeFailure_shouldFailInsteadOfFileNotFound() {
+            ReadResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when the command never ran");
+            assertTrue(
+                    result.error().contains("status=504"),
+                    "execution failure must not be mislabeled as file_not_found");
+        }
+
+        @Test
+        void read_binary_commandFailure_shouldKeepFileNotFoundSignal() {
+            ReadResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse("", 1, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "a missing file is still a failure");
+            assertTrue(
+                    result.error().contains("file_not_found"),
+                    "a real command failure keeps the designed signal");
+        }
+
+        @Test
+        void read_binary_timeout_shouldFailWithMessageInsteadOfFileNotFound() {
+            ReadResult result =
+                    new FixedResponseFilesystem(
+                                    new ExecuteResponse("Command timed out after 30s", 124, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertFalse(result.isSuccess(), "read should fail when execution times out");
+            assertTrue(
+                    result.error().contains("timed out"),
+                    "a timeout must not be mislabeled as file_not_found");
+        }
+
+        @Test
+        void grep_executeFailure_shouldFailInsteadOfEmptySuccess() {
+            GrepResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .grep(RT, "pattern", "/workspace", null);
+
+            assertFalse(result.isSuccess(), "grep should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void glob_executeFailure_shouldFailInsteadOfErrorAsPaths() {
+            GlobResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .glob(RT, "*.md", "/workspace");
+
+            assertFalse(result.isSuccess(), "glob should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
     }
 
@@ -258,6 +392,42 @@ class BaseSandboxFilesystemTest {
                         false);
             }
             return new ExecuteResponse("", 0, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of();
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    /**
+     * execute() always returns the fixed response, standing in for any execution-layer outcome
+     * (successful or failing) without a live sandbox.
+     */
+    private static final class FixedResponseFilesystem extends BaseSandboxFilesystem {
+
+        private final ExecuteResponse response;
+
+        FixedResponseFilesystem(ExecuteResponse response) {
+            this.response = response;
+        }
+
+        @Override
+        public String id() {
+            return "fixed-response";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return response;
         }
 
         @Override

@@ -1,4 +1,6 @@
-# 结构化输出（Structured Output）
+---
+title: 结构化输出
+---
 
 结构化输出让 Agent 生成符合预定义 Schema 的类型化数据，实现从自然语言到结构化数据的可靠转换。
 
@@ -121,4 +123,4 @@ try {
 ## 更多资源
 
 - **完整示例**: [StructuredOutputExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
-- **Agent 配置**: [agent-config.md](./agent-config.md)
+- **Agent 配置**: [agent-config.md](/v1/zh/docs/task/agent-config)

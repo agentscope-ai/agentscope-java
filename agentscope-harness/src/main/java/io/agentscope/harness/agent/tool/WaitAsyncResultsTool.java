@@ -189,6 +189,13 @@ public class WaitAsyncResultsTool {
                             "wait_async_results: all tasks terminal and inbox empty,"
                                     + " returning immediately, session={}",
                             sessionId);
+                    if (taskRepository.listTasks(runtimeContext, sessionId, null).isEmpty()) {
+                        return "status: no_tasks\n"
+                                + "No background tasks exist in this session. An empty"
+                                + " completion inbox is not evidence of running work. Continue"
+                                + " the assigned work or report the missing capability; do not"
+                                + " keep waiting.";
+                    }
                     return "All background tasks have completed and no pending results in inbox."
                             + " Use task_list to review results, or task_output(task_id) to read"
                             + " a specific result.";
@@ -267,9 +274,11 @@ public class WaitAsyncResultsTool {
                                                     == null)
                             .toList();
             if (!missingTaskIds.isEmpty()) {
-                return "Cannot wait: unknown task_ids "
-                        + missingTaskIds
-                        + ". Use task_list to find valid task IDs.";
+                throw new IllegalArgumentException(
+                        "status: not_found\nCannot wait: unknown task_ids "
+                                + missingTaskIds
+                                + ". No running work is implied. Use task_list to find valid task"
+                                + " IDs.");
             }
         }
 

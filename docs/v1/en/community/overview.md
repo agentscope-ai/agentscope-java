@@ -1,9 +1,14 @@
-# Community
+---
+title: Community
+---
 
 Links and guidance for getting help, contributing, and connecting with other AgentScope Java users.
 
-- [Contributors](./contributors.md) — active contributors and GitHub profiles
+- [Contributors](/v1/en/community/contributors) — active contributors and GitHub profiles
 
-```{note}
+
+<Note>
+
 Planned content. Discord, GitHub Discussions, and contribution guides will be curated here.
-```
+
+</Note>

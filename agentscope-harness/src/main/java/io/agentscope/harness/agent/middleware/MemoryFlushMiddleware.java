@@ -303,12 +303,12 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Builds a composite key from {@link IsolationScope} name and the per-call identity returned
-     * by {@link #timerKeyFor(RuntimeContext)}. The scope prefix ensures that throttle windows
-     * from different isolation dimensions are never conflated — e.g. a {@code userId} that
-     * happens to equal a {@code sessionId} must not share a slot.
+     * by {@link #timerKeyFor(RuntimeContext)}. The operation prefix keeps flush independent
+     * of maintenance when both use the same {@link PeriodicGate}. The scope prefix keeps
+     * different isolation dimensions from sharing a slot.
      */
     private String compositeTimerKey(RuntimeContext rc) {
-        return isolationScope.name() + ":" + timerKeyFor(rc);
+        return "memory-flush:" + isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
     /** The conversation a queued flush reads when it executes: agent instance, user, session. */

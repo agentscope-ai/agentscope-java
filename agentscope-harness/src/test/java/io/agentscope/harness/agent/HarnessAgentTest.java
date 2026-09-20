@@ -68,6 +68,7 @@ import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -227,6 +228,51 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("read_file"));
         assertFalse(toolNames.contains("list_files"));
+    }
+
+    @Test
+    void disableWebTools_omitsOptionalWebTools() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableWebTools()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("web_search"));
+        assertFalse(toolNames.contains("web_fetch"));
+    }
+
+    @Test
+    void webHttpClient_injectsCustomClient() throws Exception {
+        Files.createDirectories(workspace);
+        HttpClient custom =
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(custom)
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("web_search"));
+        assertTrue(toolNames.contains("web_fetch"));
     }
 
     @Test
@@ -1465,7 +1511,7 @@ class HarnessAgentTest {
     // =========================================================================
 
     @Test
-    void toolsAllowlist_filtersInheritedParentTools_only() throws Exception {
+    void toolsAllowlist_filtersInheritedAndChildLocalTools() throws Exception {
         Files.createDirectories(workspace);
 
         Toolkit parentToolkit = new Toolkit();
@@ -1503,12 +1549,12 @@ class HarnessAgentTest {
         assertFalse(
                 toolNames.contains("parent_denied"),
                 "non-allowlisted inherited tool should be removed");
-        assertTrue(
+        assertFalse(
                 toolNames.contains("read_file"),
-                "child-local filesystem tools should not be filtered by inherited allowlist");
-        assertTrue(
+                "child-local filesystem tools must respect the declared allowlist");
+        assertFalse(
                 toolNames.contains("memory_search"),
-                "child-local memory tools should not be filtered by inherited allowlist");
+                "child-local memory tools must respect the declared allowlist");
     }
 
     // =========================================================================
@@ -1557,6 +1603,67 @@ class HarnessAgentTest {
                         .build();
 
         assertTrue(decl.getSkills().isEmpty(), "null skills should yield empty list");
+    }
+
+    // =========================================================================
+    // interrupt — per-session delegation
+    // =========================================================================
+
+    @Test
+    void interruptWithUserIdAndSessionIdTargetsOnlyThatSession() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        String userId = "alice";
+        String sessionId = "session-abc";
+        agent.getDelegate().getAgentState(userId, sessionId);
+        agent.getDelegate().getAgentState(userId, "other-session");
+
+        agent.interrupt(userId, sessionId);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(userId, sessionId)
+                        .interruptControl()
+                        .isInterrupted(),
+                "target session should be interrupted");
+        assertFalse(
+                agent.getDelegate()
+                        .getAgentState(userId, "other-session")
+                        .interruptControl()
+                        .isInterrupted(),
+                "other session should remain unaffected");
+    }
+
+    @Test
+    void interruptWithRuntimeContextDelegatesToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx =
+                RuntimeContext.builder().userId("bob").sessionId("session-ctx").build();
+        agent.getDelegate().getAgentState(ctx.getUserId(), ctx.getSessionId());
+
+        agent.interrupt(ctx);
+
+        assertTrue(
+                agent.getDelegate()
+                        .getAgentState(ctx.getUserId(), ctx.getSessionId())
+                        .interruptControl()
+                        .isInterrupted(),
+                "session identified by RuntimeContext should be interrupted");
     }
 
     // =========================================================================

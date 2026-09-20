@@ -1,6 +1,6 @@
 ---
-title: "Model"
-description: "在 AgentScope Java 中配置并连接 LLM 模型提供商"
+title: Model
+description: 在 AgentScope Java 中配置并连接 LLM 模型提供商
 ---
 
 ## 概述
@@ -222,8 +222,12 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 每个 Chat Model 通过 builder 构造，最常见的字段是 `apiKey`、`modelName`、`stream`、`formatter`、`defaultOptions`。下面三个 tab 分别展示流式、工具调用与推理三种典型初始化场景：
 
-::::{tab-set}
-:::{tab-item} Streaming
+
+<Tabs>
+
+
+<Tab title="Streaming">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -236,8 +240,12 @@ DashScopeChatModel model =
                 .formatter(new DashScopeChatFormatter())
                 .build();
 ```
-:::
-:::{tab-item} Tools
+
+</Tab>
+
+
+<Tab title="Tools">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -255,8 +263,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-:::{tab-item} Reasoning
+
+</Tab>
+
+
+<Tab title="Reasoning">
+
 ```java
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -275,8 +287,12 @@ DashScopeChatModel model =
                                 .build())
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 各 Chat Model 的 builder 共享的字段大致相同：
 
@@ -537,9 +553,13 @@ ModelRegistry.registerFactory(
 | `displayName()` | `String` | 用于展示的可读名称（例如 `"Claude Sonnet 4.6"`） |
 | `contextSize()` | `Integer` | 最大上下文窗口（token 数） |
 
-:::{note}
+
+<Note>
+
 ModelCard 字段当前最小化；能力标记（输入/输出 MIME 类型）与参数 schema 将随模型发现基础设施完善而扩展。
-:::
+
+</Note>
+
 
 ### 获取 ModelCard
 

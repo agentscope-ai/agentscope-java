@@ -1,4 +1,6 @@
-# Pipeline
+---
+title: Pipeline
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
@@ -329,7 +331,7 @@ public class PipelineCommandRunner implements ApplicationRunner {
 
 ## Related Documentation
 
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
-- [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Handoffs](/v1/en/docs/multi-agent/handoffs) - State-driven routing and transfer between agents
+- [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate) - Debate workflow pattern
