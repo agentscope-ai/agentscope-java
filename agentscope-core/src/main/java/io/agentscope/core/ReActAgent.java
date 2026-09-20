@@ -1455,6 +1455,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         int totalInput = 0;
         int totalOutput = 0;
         int totalCached = 0;
+        int totalCacheCreation = 0;
+        int totalReasoning = 0;
+        int totalToolUsePrompt = 0;
         double totalTime = 0;
         boolean hasUsage = false;
         for (Msg msg : agentState.getContext()) {
@@ -1465,6 +1468,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
                     totalCached += usage.getCachedTokens();
+                    totalCacheCreation += usage.getCacheCreationTokens();
+                    totalReasoning += usage.getReasoningTokens();
+                    totalToolUsePrompt += usage.getToolUsePromptTokens();
                     totalTime += usage.getTime();
                 }
             }
@@ -1474,6 +1480,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         .inputTokens(totalInput)
                         .outputTokens(totalOutput)
                         .cachedTokens(totalCached)
+                        .cacheCreationTokens(totalCacheCreation)
+                        .reasoningTokens(totalReasoning)
+                        .toolUsePromptTokens(totalToolUsePrompt)
                         .time(totalTime)
                         .build()
                 : null;
