@@ -127,15 +127,20 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 RuntimeContext ctx = RuntimeContext.builder()
     .sessionId("s-1")
     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
-    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 120) // optional; overrides LLM timeout_seconds
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+    .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800) // optional; overrides LLM timeout_seconds
     .build();
 ```
 
 When enabled:
 
-1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s; max 600s).
-2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved.
+1. If `CTX_FORCE_SYNC_TIMEOUT_SECONDS` is set, it **fully replaces** the LLM's `timeout_seconds` (`<= 0` falls back to 30s, clamped by the application ceiling, default 600s). Applications can explicitly raise or tighten this ceiling via `CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS` (e.g. set 3600s to allow an 1800s wait).
+2. Without that override, an LLM-supplied `timeout_seconds=0` is coerced to the default sync timeout (30s) — **no** background task is submitted — while a positive LLM timeout is preserved (always clamped to at most 600s, and can be further tightened downward by the application ceiling).
 3. If the sync wait expires, the tool returns `status: timeout` and interrupts the subagent — it is **not** promoted to a background `task_id`.
+
+The ceiling defaults to 600 seconds when missing, invalid, or non-positive. Both settings accept a `Number` or an integer string; values above `Integer.MAX_VALUE` saturate to that limit. The ceiling alone never raises the model's 600-second limit: waits above 600 seconds require both an application timeout override and a raised ceiling. Both settings are ignored when force sync is disabled.
+
+`AgentSpawnTool` logs the effective force-sync timeout, application ceiling, and session at DEBUG level, and logs timeout clamping at INFO level. A timeout response also reports the effective wait budget.
 
 `agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
 

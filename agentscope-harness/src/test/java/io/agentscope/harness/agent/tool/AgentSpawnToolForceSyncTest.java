@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,6 +125,132 @@ class AgentSpawnToolForceSyncTest {
                         .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 9999)
                         .build();
         assertTrue(AgentSpawnTool.resolveEffectiveTimeoutMs(5, forceHuge) == 600_000L);
+    }
+
+    @Test
+    @DisplayName("force_sync configurable ceiling and overflow hardening")
+    void configurableCeilingAndOverflow() {
+        // 1. Without max configured, override > 600 clamps to default 600s.
+        RuntimeContext override1800NoMax =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .build();
+        assertEquals(600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, override1800NoMax));
+
+        // 2. With max=3600 configured, override=1800 is honored.
+        RuntimeContext override1800WithMax3600 =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(
+                1_800_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, override1800WithMax3600));
+
+        // 3. Override > max clamps to configured max.
+        RuntimeContext override7200WithMax3600 =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 7200)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(
+                3_600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, override7200WithMax3600));
+
+        // 4. Without override, LLM timeout is tightened by app max.
+        RuntimeContext tightMax =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 300)
+                        .build();
+        assertEquals(300_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(500, tightMax));
+
+        // 5. Without override, LLM timeout can NEVER exceed 600s, even if app max is huge.
+        RuntimeContext hugeMaxNoOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 7200)
+                        .build();
+        assertEquals(600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(1000, hugeMaxNoOverride));
+
+        // 6. Override tightened by lower app max.
+        RuntimeContext override1800TightMax =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 300)
+                        .build();
+        assertEquals(300_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, override1800TightMax));
+
+        // 7. Non-positive overrides fallback to default sync timeout (30s).
+        RuntimeContext zeroOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 0)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(30_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(5, zeroOverride));
+
+        RuntimeContext negOverride =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, -1)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(30_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(5, negOverride));
+
+        // 8. Overflow hardening: 2^32 + 100 must not wrap into 100s.
+        RuntimeContext wrapAroundNumber =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(
+                                AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS,
+                                (double) (1L << 32) + 100)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(3_600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, wrapAroundNumber));
+
+        RuntimeContext maxLongNumber =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, Long.MAX_VALUE)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(3_600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, maxLongNumber));
+
+        RuntimeContext largeStringNumber =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, "10000000000")
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+                        .build();
+        assertEquals(3_600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, largeStringNumber));
+
+        // 9. Bad / non-positive max timeout defaults to 600s.
+        RuntimeContext badMaxZero =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 0)
+                        .build();
+        assertEquals(600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, badMaxZero));
+
+        RuntimeContext badMaxNeg =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, -100)
+                        .build();
+        assertEquals(600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, badMaxNeg));
+
+        RuntimeContext badMaxInvalidString =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, "invalid")
+                        .build();
+        assertEquals(600_000L, AgentSpawnTool.resolveEffectiveTimeoutMs(0, badMaxInvalidString));
     }
 
     @Test

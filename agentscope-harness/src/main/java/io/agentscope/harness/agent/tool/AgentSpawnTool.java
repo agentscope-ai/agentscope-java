@@ -56,6 +56,8 @@ import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.io.Closeable;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -108,6 +110,7 @@ public class AgentSpawnTool {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
     private static final int MAX_TIMEOUT_SECONDS = 600;
+    private static final int DEFAULT_FORCE_SYNC_MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_SECONDS;
     private static final int MAX_SPAWN_DEPTH = 3;
 
     /**
@@ -190,7 +193,8 @@ public class AgentSpawnTool {
      *
      * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
      * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
-     * (30s); values above 600 are clamped.
+     * (30s); values above the effective ceiling (default 600s, or {@link
+     * #CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS}) are clamped.
      *
      * <p>Ignored when force-sync is off.
      *
@@ -203,6 +207,27 @@ public class AgentSpawnTool {
      */
     public static final String CTX_FORCE_SYNC_TIMEOUT_SECONDS =
             "agentscope.subagent.force_sync_timeout_seconds";
+
+    /**
+     * Optional {@link RuntimeContext} ceiling for the maximum allowed sync wait (seconds) under
+     * {@link #CTX_FORCE_SYNC}. Accepts an {@link Integer}/{@link Number} or its string form.
+     *
+     * <p>When present, bounds {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} and tightens LLM timeouts.
+     * Defaults to {@link #DEFAULT_FORCE_SYNC_MAX_TIMEOUT_SECONDS} (600s) when unset, invalid, or
+     * non-positive. Values above {@link Integer#MAX_VALUE} saturate to that limit.
+     *
+     * <p>Ignored when force-sync is off.
+     *
+     * <pre>{@code
+     * RuntimeContext ctx = RuntimeContext.builder()
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 1800)
+     *     .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, 3600)
+     *     .build();
+     * }</pre>
+     */
+    public static final String CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS =
+            "agentscope.subagent.force_sync_max_timeout_seconds";
 
     private static final String BG_RESULT_TEMPLATE =
             """
@@ -1521,8 +1546,11 @@ public class AgentSpawnTool {
      * <p>Precedence under force-sync (highest first):
      *
      * <ol>
-     *   <li>{@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} when present — absolute app override
-     *   <li>LLM {@code timeout_seconds}, with {@code 0} coerced to the default sync timeout
+     *   <li>{@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} when present — absolute app override bounded
+     *       by {@link #CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS} (default 600s)
+     *   <li>LLM {@code timeout_seconds}, with {@code 0} coerced to the default sync timeout,
+     *       bounded by {@link #MAX_TIMEOUT_SECONDS} (600s) and tightened by {@link
+     *       #CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS} if smaller
      * </ol>
      *
      * <p>Without force-sync, behavior matches {@link #resolveTimeoutMs} (including async {@code
@@ -1530,18 +1558,63 @@ public class AgentSpawnTool {
      */
     static long resolveEffectiveTimeoutMs(Integer timeoutSeconds, RuntimeContext ctx) {
         boolean forceSync = isForceSync(ctx);
-        if (forceSync) {
-            Integer override = forceSyncTimeoutSeconds(ctx);
-            if (override != null) {
-                int seconds = override <= 0 ? DEFAULT_TIMEOUT_SECONDS : override;
-                return (long) Math.min(seconds, MAX_TIMEOUT_SECONDS) * 1_000;
+        if (!forceSync) {
+            return resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        }
+
+        int appMaxSeconds = forceSyncMaxTimeoutSeconds(ctx);
+        Integer override = forceSyncTimeoutSeconds(ctx);
+        if (override != null) {
+            int requestedSeconds = override <= 0 ? DEFAULT_TIMEOUT_SECONDS : override;
+            int effectiveSeconds = Math.min(requestedSeconds, appMaxSeconds);
+            if (requestedSeconds > effectiveSeconds) {
+                log.info(
+                        "agent_spawn: clamped force-sync timeout from {}s to {}s, session={}",
+                        requestedSeconds,
+                        effectiveSeconds,
+                        ctx != null ? ctx.getSessionId() : null);
             }
+            log.debug(
+                    "Subagent force-sync timeout: effective={}s, ceiling={}s, source=application,"
+                            + " session={}",
+                    effectiveSeconds,
+                    appMaxSeconds,
+                    ctx.getSessionId());
+            return (long) effectiveSeconds * 1_000L;
         }
-        long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
-        if (forceSync && timeoutMs == 0L) {
-            return (long) DEFAULT_TIMEOUT_SECONDS * 1_000;
+
+        long llmTimeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
+        if (llmTimeoutMs == 0L) {
+            llmTimeoutMs = (long) DEFAULT_TIMEOUT_SECONDS * 1_000L;
         }
-        return timeoutMs;
+        long appMaxMs = (long) appMaxSeconds * 1_000L;
+        if (llmTimeoutMs > appMaxMs) {
+            log.info(
+                    "agent_spawn: clamped force-sync timeout from {}s to {}s, session={}",
+                    llmTimeoutMs / 1_000L,
+                    appMaxSeconds,
+                    ctx != null ? ctx.getSessionId() : null);
+        }
+        long effectiveMs = Math.min(llmTimeoutMs, appMaxMs);
+        log.debug(
+                "Subagent force-sync timeout: effective={}s, ceiling={}s, source=model/default,"
+                        + " session={}",
+                effectiveMs / 1_000L,
+                appMaxSeconds,
+                ctx.getSessionId());
+        return effectiveMs;
+    }
+
+    /** Reads {@link #CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS}; {@code <= 0}/unset/invalid → default (600s). */
+    static int forceSyncMaxTimeoutSeconds(RuntimeContext ctx) {
+        if (ctx == null) {
+            return DEFAULT_FORCE_SYNC_MAX_TIMEOUT_SECONDS;
+        }
+        Integer value = asPositiveOrZeroInt(ctx.get(CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS));
+        if (value == null || value <= 0) {
+            return DEFAULT_FORCE_SYNC_MAX_TIMEOUT_SECONDS;
+        }
+        return value;
     }
 
     /** Reads {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS}; {@code null} means "no override". */
@@ -1552,19 +1625,32 @@ public class AgentSpawnTool {
         return asPositiveOrZeroInt(ctx.get(CTX_FORCE_SYNC_TIMEOUT_SECONDS));
     }
 
-    /** Coerces a context value ({@link Number} or numeric string) to Integer; blank/invalid → null. */
-    private static Integer asPositiveOrZeroInt(Object v) {
-        if (v instanceof Number n) {
-            return n.intValue();
-        }
-        if (v instanceof String s && !s.isBlank()) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
+    /**
+     * Coerces a context value ({@link Number} or numeric string) to Integer with saturating
+     * normalization; non-positive/negative values become 0; values exceeding Integer.MAX_VALUE
+     * saturate to Integer.MAX_VALUE; fractional Numbers truncate toward zero; blank/invalid or
+     * non-finite values → null.
+     */
+    private static Integer asPositiveOrZeroInt(Object value) {
+        try {
+            BigDecimal normalized;
+            if (value instanceof Number number) {
+                normalized = new BigDecimal(number.toString());
+            } else if (value instanceof String text && !text.isBlank()) {
+                normalized = new BigDecimal(new BigInteger(text.trim()));
+            } else {
                 return null;
             }
+            if (normalized.signum() <= 0) {
+                return 0;
+            }
+            if (normalized.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+                return Integer.MAX_VALUE;
+            }
+            return normalized.intValue();
+        } catch (NumberFormatException ignored) {
+            return null;
         }
-        return null;
     }
 
     /**
