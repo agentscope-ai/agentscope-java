@@ -21,6 +21,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.SessionStateAgent;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
@@ -214,7 +215,8 @@ import reactor.util.context.Context;
  * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCloseable {
+public class ReActAgent extends AgentBase
+        implements EventStreamingAgent, SessionStateAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
@@ -4376,6 +4378,7 @@ public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCl
      * @param ctx the runtime context (uses {@code getUserId()} and {@code getSessionId()})
      * @return the agent state for the identified session
      */
+    @Override
     public AgentState getAgentState(RuntimeContext ctx) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;
@@ -4394,6 +4397,7 @@ public class ReActAgent extends AgentBase implements EventStreamingAgent, AutoCl
      * {@code activateSlotForContext}. This method returns the locally cached instance (suitable
      * for the "get → mutate → save" pattern used by admin APIs and tests).
      */
+    @Override
     public AgentState getAgentState(String userId, String sessionId) {
         String slot = slotKey(userId, sessionId);
         return stateCache.computeIfAbsent(

@@ -30,6 +30,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.SessionStateAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager.ThreadSession;
@@ -183,6 +184,26 @@ class ThreadSessionManagerTest {
         assertEquals("user-1", contextCaptor.getValue().getUserId());
         verify(filledAgent, never()).close();
     }
+
+    @Test
+    void hasMemoryUsesCustomSessionStateAgent() {
+        ThreadSessionManager manager = new ThreadSessionManager(10, 30);
+        CustomStatefulAgent custom = mock(CustomStatefulAgent.class);
+        AgentState filledState = mock(AgentState.class);
+        when(custom.getAgentState(any(RuntimeContext.class))).thenReturn(filledState);
+        when(filledState.getContext()).thenReturn(List.of(mock(Msg.class)));
+
+        manager.getOrCreateAgent("user-1", "thread-custom", "agent-a", () -> custom);
+        assertTrue(
+                manager.hasMemory(
+                        RuntimeContext.builder()
+                                .userId("user-1")
+                                .sessionId("thread-custom")
+                                .build()));
+        assertFalse(manager.hasMemory(ctx("thread-custom")));
+    }
+
+    private interface CustomStatefulAgent extends Agent, SessionStateAgent {}
 
     @Test
     void sessionsAndHasMemoryAreIsolatedByUserId() {

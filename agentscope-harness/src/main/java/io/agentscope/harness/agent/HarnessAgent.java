@@ -21,6 +21,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.SessionStateAgent;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.agent.config.ModelConfig;
@@ -167,7 +168,7 @@ import reactor.core.publisher.Mono;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
-public class HarnessAgent implements Agent, EventStreamingAgent, AutoCloseable {
+public class HarnessAgent implements Agent, EventStreamingAgent, SessionStateAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
@@ -563,13 +564,23 @@ public class HarnessAgent implements Agent, EventStreamingAgent, AutoCloseable {
     }
 
     /**
-     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
-     *     {@code .getAgentState(String, String)} with explicit session identity.
+     * @deprecated Use {@link #getAgentState(RuntimeContext)} or {@link #getAgentState(String,
+     *     String)} with explicit session identity.
      */
     @Deprecated
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
+    }
+
+    @Override
+    public AgentState getAgentState(RuntimeContext ctx) {
+        return delegate.getAgentState(ctx);
+    }
+
+    @Override
+    public AgentState getAgentState(String userId, String sessionId) {
+        return delegate.getAgentState(userId, sessionId);
     }
 
     @Override

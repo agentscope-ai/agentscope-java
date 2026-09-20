@@ -18,13 +18,19 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.EventStreamingAgent;
+import io.agentscope.core.agent.SessionStateAgent;
 import org.junit.jupiter.api.Test;
 
-/** Tests that {@link HarnessAgent} exposes the v2 event-streaming contract. */
+/** Tests that {@link HarnessAgent} exposes optional AG-UI capability contracts. */
 class HarnessAgentEventStreamingContractTest {
 
     @Test
     void implementsEventStreamingAgent() {
         assertTrue(EventStreamingAgent.class.isAssignableFrom(HarnessAgent.class));
+    }
+
+    @Test
+    void implementsSessionStateAgent() {
+        assertTrue(SessionStateAgent.class.isAssignableFrom(HarnessAgent.class));
     }
 }
