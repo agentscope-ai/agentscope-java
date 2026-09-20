@@ -23,10 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
-import com.google.genai.types.Schema;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
-import com.google.genai.types.Type;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.HashMap;
@@ -68,13 +66,9 @@ class GeminiToolsHelperTest {
         assertEquals("search", funcDecl.name().get());
         assertEquals("Search for information", funcDecl.description().get());
 
-        // Verify parameters schema
-        assertTrue(funcDecl.parameters().isPresent());
-        Schema schema = funcDecl.parameters().get();
-        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
-        assertTrue(schema.properties().isPresent());
-        assertTrue(schema.required().isPresent());
-        assertEquals(List.of("query"), schema.required().get());
+        // Verify parameters schema is passed through as JSON Schema
+        assertTrue(funcDecl.parametersJsonSchema().isPresent());
+        assertEquals(parameters, funcDecl.parametersJsonSchema().get());
     }
 
     @Test
@@ -99,18 +93,52 @@ class GeminiToolsHelperTest {
         parameters.put("type", "object");
         parameters.put("properties", properties);
 
-        Schema schema = helper.convertParametersToSchema(parameters);
+        Tool tool = helper.convertToGeminiTool(List.of(toolSchema("various", parameters)));
+        FunctionDeclaration funcDecl = tool.functionDeclarations().get().get(0);
+        assertEquals(parameters, funcDecl.parametersJsonSchema().get());
+    }
 
-        assertNotNull(schema);
-        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
-        assertTrue(schema.properties().isPresent());
+    @Test
+    void testConvertNullableStringTypeArray() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("name", Map.of("type", List.of("string", "null"))));
 
-        Map<String, Schema> props = schema.properties().get();
-        assertEquals(Type.Known.STRING, props.get("name").type().get().knownEnum());
-        assertEquals(Type.Known.INTEGER, props.get("age").type().get().knownEnum());
-        assertEquals(Type.Known.NUMBER, props.get("score").type().get().knownEnum());
-        assertEquals(Type.Known.BOOLEAN, props.get("active").type().get().knownEnum());
-        assertEquals(Type.Known.ARRAY, props.get("tags").type().get().knownEnum());
+        ToolSchema toolSchema =
+                ToolSchema.builder()
+                        .name("lookup")
+                        .description("Lookup a name")
+                        .parameters(parameters)
+                        .build();
+
+        Tool tool = helper.convertToGeminiTool(List.of(toolSchema));
+
+        assertNotNull(tool);
+        FunctionDeclaration funcDecl = tool.functionDeclarations().get().get(0);
+        assertEquals(parameters, funcDecl.parametersJsonSchema().get());
+    }
+
+    @Test
+    void testPreservesNullableAnyOf() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "value",
+                                Map.of(
+                                        "anyOf",
+                                        List.of(
+                                                Map.of("type", "string"),
+                                                Map.of("type", "null")))));
+
+        Tool tool = helper.convertToGeminiTool(List.of(toolSchema("nullable", parameters)));
+        FunctionDeclaration funcDecl = tool.functionDeclarations().get().get(0);
+        assertEquals(parameters, funcDecl.parametersJsonSchema().get());
     }
 
     @Test
@@ -195,19 +223,16 @@ class GeminiToolsHelperTest {
         parameters.put("type", "object");
         parameters.put("properties", properties);
 
-        Schema schema = helper.convertParametersToSchema(parameters);
+        Tool tool = helper.convertToGeminiTool(List.of(toolSchema("nested", parameters)));
+        FunctionDeclaration funcDecl = tool.functionDeclarations().get().get(0);
+        assertEquals(parameters, funcDecl.parametersJsonSchema().get());
+    }
 
-        assertNotNull(schema);
-        assertTrue(schema.properties().isPresent());
-
-        Map<String, Schema> props = schema.properties().get();
-        Schema addressSchema = props.get("address");
-        assertNotNull(addressSchema);
-        assertEquals(Type.Known.OBJECT, addressSchema.type().get().knownEnum());
-
-        assertTrue(addressSchema.properties().isPresent());
-        Map<String, Schema> addressNestedProps = addressSchema.properties().get();
-        assertEquals(Type.Known.STRING, addressNestedProps.get("street").type().get().knownEnum());
-        assertEquals(Type.Known.STRING, addressNestedProps.get("city").type().get().knownEnum());
+    private ToolSchema toolSchema(String name, Map<String, Object> parameters) {
+        return ToolSchema.builder()
+                .name(name)
+                .description("Test tool")
+                .parameters(parameters)
+                .build();
     }
 }
