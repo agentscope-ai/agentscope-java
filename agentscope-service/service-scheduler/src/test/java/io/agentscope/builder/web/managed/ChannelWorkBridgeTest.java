@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,9 +40,13 @@ import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 class ChannelWorkBridgeTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -81,6 +87,64 @@ class ChannelWorkBridgeTest {
             assertEquals("om-root", received.get().path("threadId").asText());
             assertFalse(received.get().has("ownerId"));
             verifyNoInteractions(chat);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * The Agent's reply is persisted for the host's delivery queue instead of being returned to the
+     * channel: sending inline would make a provider outage fail the inbound message and replay the
+     * Agent that produced the reply.
+     */
+    @Test
+    void agentReplyIsPersistedForDeliveryInsteadOfReturnedInline() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<JsonNode> replies = Collections.synchronizedList(new ArrayList<>());
+        server.createContext(
+                "/",
+                exchange -> {
+                    String path = exchange.getRequestURI().getPath();
+                    JsonNode body = JSON.readTree(exchange.getRequestBody());
+                    if (path.endsWith("/api/internal/channels/replies")) {
+                        replies.add(body);
+                        exchange.sendResponseHeaders(204, -1);
+                    } else {
+                        byte[] payload =
+                                ("{\"chat\":true,\"ownerId\":\"owner-1\",\"agentId\":\"agent-1\","
+                                                + "\"externalKey\":\"key-1\"}")
+                                        .getBytes(StandardCharsets.UTF_8);
+                        exchange.getResponseHeaders().add("Content-Type", "application/json");
+                        exchange.sendResponseHeaders(200, payload.length);
+                        exchange.getResponseBody().write(payload);
+                    }
+                    exchange.close();
+                });
+        server.start();
+        try {
+            var chat = mock(ManagedSessionChannelBridge.class);
+            when(chat.dispatchAndAwaitReply(anyString(), anyString(), anyString(), anyString()))
+                    .thenReturn(Mono.just("结果"));
+            var bridge =
+                    new ChannelWorkBridge(
+                            WebClient.create(url(server)), chat, new ChannelManager());
+            var in = new FeishuInboundMapper("channel").map(JSON.readTree(EVENT)).orElseThrow();
+
+            assertNull(
+                    bridge.receive(in).block(Duration.ofSeconds(5)),
+                    "the reply must not travel back to the channel for an inline send");
+            assertEquals(1, replies.size());
+            JsonNode queued = replies.get(0);
+            assertEquals("结果", queued.path("text").asText());
+            assertEquals("channel", queued.path("channelId").asText());
+            assertEquals("om-inbound", queued.path("messageId").asText());
+            assertEquals("human", queued.path("senderId").asText());
+            String key = queued.path("eventKey").asText();
+
+            // A replayed inbound message queues the same reply under the same key.
+            assertNull(bridge.receive(in).block(Duration.ofSeconds(5)));
+            assertEquals(2, replies.size());
+            assertEquals(key, replies.get(1).path("eventKey").asText());
         } finally {
             server.stop(0);
         }
@@ -176,6 +240,41 @@ class ChannelWorkBridgeTest {
         var result = controller.send(request, internal).block();
         assertEquals(202, result.getStatusCode().value());
         assertEquals("submitted", result.getBody().get("status"));
+    }
+
+    /** A courtesy reply answers an unbound peer, which the delivery queue refuses to claim. */
+    @Test
+    void courtesyReplyStaysInlineBecauseTheQueueWouldRejectIt() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<String> paths = Collections.synchronizedList(new ArrayList<>());
+        server.createContext(
+                "/",
+                exchange -> {
+                    paths.add(exchange.getRequestURI().getPath());
+                    JSON.readTree(exchange.getRequestBody());
+                    byte[] payload =
+                            ("{\"chat\":false,\"reply\":\"请先在控制台 Channel 页面生成绑定码。\"}")
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, payload.length);
+                    exchange.getResponseBody().write(payload);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            var chat = mock(ManagedSessionChannelBridge.class);
+            var bridge =
+                    new ChannelWorkBridge(
+                            WebClient.create(url(server)), chat, new ChannelManager());
+            var in = new FeishuInboundMapper("channel").map(JSON.readTree(EVENT)).orElseThrow();
+
+            Msg reply = bridge.receive(in).block(Duration.ofSeconds(5));
+            assertEquals("请先在控制台 Channel 页面生成绑定码。", reply.getTextContent());
+            assertEquals(List.of("/api/internal/channels/inbound"), paths);
+            verifyNoInteractions(chat);
+        } finally {
+            server.stop(0);
+        }
     }
 
     private static String url(HttpServer server) {

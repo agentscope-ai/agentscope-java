@@ -197,7 +197,8 @@ public final class JdbcWeixinStateStore implements WeixinStateStore {
                 timestamp -> {
                     jdbc.update(
                             "delete from builder_weixin_inbox where account_id = ?"
-                                    + " and status = 'COMPLETED' and completed_at < ?",
+                                    + " and status in ('COMPLETED', 'ABANDONED')"
+                                    + " and completed_at < ?",
                             accountId,
                             timestamp - RETENTION_MS);
                     for (WeixinInboxMessage message : batch) {
@@ -241,8 +242,8 @@ public final class JdbcWeixinStateStore implements WeixinStateStore {
                     List<PendingMessage> pending =
                             jdbc.query(
                                     "select message_id, payload, claim_generation, claim_until from"
-                                        + " builder_weixin_inbox where account_id = ? and status <>"
-                                        + " 'COMPLETED' order by inbox_order limit ?",
+                                        + " builder_weixin_inbox where account_id = ? and status in"
+                                        + " ('PENDING', 'PROCESSING') order by inbox_order limit ?",
                                     (rs, row) ->
                                             new PendingMessage(
                                                     rs.getString(1),
@@ -306,6 +307,28 @@ public final class JdbcWeixinStateStore implements WeixinStateStore {
                                             + " ? and message_id = ? and status = 'PROCESSING' and"
                                             + " claim_generation = ? and claim_id = ? and"
                                             + " claim_until > ?",
+                                        accountId,
+                                        claim.messageId(),
+                                        lease.generation(),
+                                        claim.claimId(),
+                                        timestamp)
+                                == 1);
+    }
+
+    @Override
+    public boolean abandonMessage(String accountId, WeixinLease lease, WeixinInboxClaim claim) {
+        return withLease(
+                accountId,
+                lease,
+                false,
+                timestamp ->
+                        jdbc.update(
+                                        "update builder_weixin_inbox set status = 'ABANDONED',"
+                                            + " payload = null, completed_at = ?, claim_id = null,"
+                                            + " claim_until = 0 where account_id = ? and message_id"
+                                            + " = ? and status = 'PROCESSING' and claim_generation"
+                                            + " = ? and claim_id = ? and claim_until > ?",
+                                        timestamp,
                                         accountId,
                                         claim.messageId(),
                                         lease.generation(),

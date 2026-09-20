@@ -531,7 +531,7 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
 
             @Override
             public void onRunning(String accountId) {
-                recordRuntimeObservation(channelId, listenerToken, true, null);
+                recordRuntimeObservation(channelId, listenerToken, true, null, null);
             }
 
             @Override
@@ -541,23 +541,64 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
 
             @Override
             public void onCredentialRejected(String accountId, String reason) {
-                recordRuntimeObservation(channelId, listenerToken, false, "CREDENTIAL_REJECTED");
+                recordRuntimeObservation(
+                        channelId, listenerToken, false, "CREDENTIAL_REJECTED", reason);
             }
 
             @Override
             public void onTransientFailure(String accountId, String reason) {
-                recordRuntimeObservation(channelId, listenerToken, false, "TRANSIENT_FAILURE");
+                recordRuntimeObservation(
+                        channelId, listenerToken, false, "TRANSIENT_FAILURE", reason);
             }
 
             @Override
             public void onRecovered(String accountId) {
-                recordRuntimeObservation(channelId, listenerToken, true, null);
+                recordRuntimeObservation(channelId, listenerToken, true, null, null);
+            }
+
+            /**
+             * A refused reply is a message-level failure, not a channel-level one: the transport is
+             * healthy and the agent already ran, so this must not flip the channel to a failed
+             * runtime state. It still has to be visible, or a user simply never gets an answer.
+             */
+            @Override
+            public void onDeliveryFailed(String accountId, String reason) {
+                log.warn(
+                        "Weixin channel '{}' could not deliver a reply: {}",
+                        channelId,
+                        describe(reason));
+            }
+
+            /**
+             * A message the consumer gave up on. The Agent may never have finished, so unlike a
+             * delivery failure this does say something about the channel's health.
+             */
+            @Override
+            public void onDispatchFailed(String accountId, String reason) {
+                log.warn(
+                        "Weixin channel '{}' abandoned an inbound message: {}",
+                        channelId,
+                        describe(reason));
+            }
+
+            private static String describe(String reason) {
+                return reason == null || reason.isBlank() ? "no reason reported" : reason;
             }
         };
     }
 
+    /**
+     * Records a runtime observation and, when the {@code (started, errorCode)} pair changes, logs
+     * the transition. The control plane stores the error code alone, so the sanitized reason the
+     * extension reported would otherwise be dropped on the floor and an operator would see a
+     * failing channel with no way to learn why.
+     */
     private void recordRuntimeObservation(
-            String channelId, Object listenerToken, boolean started, String errorCode) {
+            String channelId,
+            Object listenerToken,
+            boolean started,
+            String errorCode,
+            String reason) {
         synchronized (this) {
             if (runtimeListenerTokens.get(channelId) != listenerToken) {
                 return;
@@ -569,6 +610,15 @@ public class SchedulerChannelRuntime implements SmartLifecycle {
                     channelId,
                     new RuntimeObservation(
                             started, errorCode, prior.lease(), prior.sequence() + 1));
+        }
+        if (errorCode == null) {
+            log.info("Weixin channel '{}' is running", channelId);
+        } else {
+            log.warn(
+                    "Weixin channel '{}' reported {}: {}",
+                    channelId,
+                    errorCode,
+                    reason == null || reason.isBlank() ? "no reason reported" : reason);
         }
         try {
             refreshExecutor.execute(this::reportRuntimeStatus);
