@@ -18,15 +18,19 @@ package io.agentscope.extensions.jdbc.state;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.H2TestSupport;
+import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -37,18 +41,23 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
-import org.junit.jupiter.api.Test;
+import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class JdbcUnconditionalVersionTest {
     record Value(String text) implements State {}
 
-    @Test
+    @ParameterizedTest(name = "contention: MySQL compatibility mode = {0}")
+    @ValueSource(booleans = {false, true})
     @Timeout(30)
-    void concurrentStoreInstancesReturnUniqueContiguousVersions() throws Exception {
-        DataSource ds = H2TestSupport.createDataSource("unconditional_contention");
-        JdbcAgentStateStore reader = new JdbcAgentStateStore(ds, new H2Dialect(), true);
+    void concurrentStoreInstancesReturnUniqueContiguousVersions(boolean mysql) throws Exception {
+        DataSource ds = dataSource("unconditional_contention", mysql);
+        SessionStateDialect dialect = mysql ? new MysqlDialect() : new H2Dialect();
+        JdbcAgentStateStore reader = new JdbcAgentStateStore(ds, dialect, true);
         reader.save("u", "s", "k", new Value("initial"));
         int workers = 4;
         int rounds = 25;
@@ -58,7 +67,7 @@ class JdbcUnconditionalVersionTest {
         try {
             for (int worker = 0; worker < workers; worker++) {
                 int id = worker;
-                JdbcAgentStateStore writer = new JdbcAgentStateStore(ds, new H2Dialect(), true);
+                JdbcAgentStateStore writer = new JdbcAgentStateStore(ds, dialect, true);
                 futures.add(
                         executor.submit(
                                 () -> {
@@ -88,7 +97,7 @@ class JdbcUnconditionalVersionTest {
             }
             assertEquals(workers * rounds, writesByVersion.size());
             for (long version = 2; version <= workers * rounds + 1; version++) {
-                org.junit.jupiter.api.Assertions.assertTrue(writesByVersion.containsKey(version));
+                assertTrue(writesByVersion.containsKey(version));
             }
             var latest = reader.getVersioned("u", "s", "k", Value.class);
             assertEquals(workers * rounds + 1, latest.version());
@@ -102,13 +111,17 @@ class JdbcUnconditionalVersionTest {
         }
     }
 
-    @Test
+    @ParameterizedTest(name = "coordinated writes: MySQL compatibility mode = {0}")
+    @ValueSource(booleans = {false, true})
     @Timeout(30)
-    void returnsOwnVersionEvenWhenAnotherWriterCommitsBeforeConnectionCloses() throws Exception {
-        DataSource delegate = H2TestSupport.createDataSource("unconditional_versions");
-        new JdbcAgentStateStore(delegate, new H2Dialect(), true)
-                .save("u", "s", "k", new Value("initial"));
+    void returnsOwnVersionEvenWhenAnotherWriterCommitsBeforeConnectionCloses(boolean mysql)
+            throws Exception {
+        DataSource delegate = dataSource("unconditional_versions", mysql);
+        SessionStateDialect dialect = mysql ? new MysqlDialect() : new H2Dialect();
+        new JdbcAgentStateStore(delegate, dialect, true).save("u", "s", "k", new Value("initial"));
         CyclicBarrier committed = new CyclicBarrier(2);
+        AtomicInteger coordinatedCloses = new AtomicInteger();
+        AtomicBoolean coordinateWrites = new AtomicBoolean(true);
         DataSource coordinated =
                 (DataSource)
                         Proxy.newProxyInstance(
@@ -124,24 +137,39 @@ class JdbcUnconditionalVersionTest {
                                             Connection.class.getClassLoader(),
                                             new Class<?>[] {Connection.class},
                                             (p, m, a) -> {
-                                                if (m.getName().equals("prepareStatement")
-                                                        && ((String) a[0])
-                                                                .startsWith("MERGE INTO")) {
-                                                    wrote.set(true);
-                                                }
                                                 Object value = invoke(connection, m, a);
+                                                if (value instanceof PreparedStatement statement) {
+                                                    return Proxy.newProxyInstance(
+                                                            PreparedStatement.class
+                                                                    .getClassLoader(),
+                                                            new Class<?>[] {
+                                                                PreparedStatement.class
+                                                            },
+                                                            (sp, sm, sa) -> {
+                                                                Object resultValue =
+                                                                        invoke(statement, sm, sa);
+                                                                if (sm.getName()
+                                                                        .equals("executeUpdate")) {
+                                                                    wrote.set(true);
+                                                                }
+                                                                return resultValue;
+                                                            });
+                                                }
                                                 // The database connection is closed and locks are
                                                 // released first.
                                                 // Both real writes finish before either
                                                 // saveIfVersion can return.
-                                                if (m.getName().equals("close") && wrote.get()) {
+                                                if (m.getName().equals("close")
+                                                        && wrote.get()
+                                                        && coordinateWrites.get()) {
+                                                    coordinatedCloses.incrementAndGet();
                                                     committed.await(10, TimeUnit.SECONDS);
                                                 }
                                                 return value;
                                             });
                                 });
-        JdbcAgentStateStore first = new JdbcAgentStateStore(coordinated, new H2Dialect(), true);
-        JdbcAgentStateStore second = new JdbcAgentStateStore(coordinated, new H2Dialect(), true);
+        JdbcAgentStateStore first = new JdbcAgentStateStore(coordinated, dialect, true);
+        JdbcAgentStateStore second = new JdbcAgentStateStore(coordinated, dialect, true);
         var executor = Executors.newFixedThreadPool(2);
         try {
             var a =
@@ -164,6 +192,9 @@ class JdbcUnconditionalVersionTest {
                                             AgentStateStore.UNVERSIONED));
             long av = a.get(15, TimeUnit.SECONDS);
             long bv = b.get(15, TimeUnit.SECONDS);
+            coordinateWrites.set(false);
+            assertEquals(
+                    2, coordinatedCloses.get(), "both writes must reach the coordination barrier");
             assertNotEquals(av, bv, "each successful write must return its own version");
             assertEquals(Set.of(2L, 3L), Set.of(av, bv));
             var latest = first.getVersioned("u", "s", "k", Value.class);
@@ -176,6 +207,14 @@ class JdbcUnconditionalVersionTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private static DataSource dataSource(String name, boolean mysql) {
+        JdbcDataSource ds = (JdbcDataSource) H2TestSupport.createDataSource(name);
+        if (mysql) {
+            ds.setURL(ds.getURL() + ";MODE=MySQL");
+        }
+        return ds;
     }
 
     private static Object invoke(Object target, Method method, Object[] args) throws Throwable {
