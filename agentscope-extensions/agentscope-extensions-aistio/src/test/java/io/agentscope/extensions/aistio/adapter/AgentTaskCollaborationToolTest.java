@@ -60,8 +60,14 @@ class AgentTaskCollaborationToolTest {
                 HarnessAgentTaskStarter.roleInstructions(worker, List.of())
                         .contains("Team worker, not its coordinator"));
         assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(worker, List.of())
+                        .contains("task_submit_result"));
+        assertTrue(
                 HarnessAgentTaskStarter.roleInstructions(leader, List.of())
                         .contains("return immediately after issue.child.create succeeds"));
+        assertTrue(
+                HarnessAgentTaskStarter.roleInstructions(leader, List.of())
+                        .contains("task_submit_result with waiting"));
         String followUp = HarnessAgentTaskStarter.roleInstructions(leader, List.of("input-1"));
         assertTrue(followUp.contains("leader follow-up"));
         assertTrue(followUp.contains("Never send those mutations in parallel"));

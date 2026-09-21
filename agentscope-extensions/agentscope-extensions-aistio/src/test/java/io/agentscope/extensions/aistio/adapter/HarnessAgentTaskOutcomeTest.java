@@ -79,6 +79,54 @@ class HarnessAgentTaskOutcomeTest {
     }
 
     @Test
+    void sameToolkitRegistersOutcomeToolOnlyOnce() throws Exception {
+        var starter = starter();
+        when(agent.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            RuntimeContext ctx = invocation.getArgument(1);
+                            ctx.get(AgentTaskOutcome.State.class)
+                                    .submit(
+                                            new AgentTaskOutcome(
+                                                    "succeeded", "delivered", "", List.of()));
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("done")
+                                            .build());
+                        });
+        starter.start(assignment).block();
+        // A second dispatch on the same toolkit must hit the "already registered" branch of
+        // registerCollaborationTools and still complete normally.
+        AgentTaskAssignment second =
+                new AgentTaskAssignment(
+                        "attempt-2",
+                        "task",
+                        "run",
+                        "node",
+                        1,
+                        "dispatch",
+                        "",
+                        "secret-token",
+                        "attempt-secret",
+                        "assigned-session",
+                        new byte[0],
+                        1);
+        starter.start(second).block();
+        verify(agent, times(2)).call(any(Msg.class), any(RuntimeContext.class));
+        verify(client, times(2))
+                .finish(
+                        eq("task"),
+                        eq("secret-token"),
+                        eq(4L),
+                        eq("succeeded"),
+                        eq(""),
+                        eq("delivered"),
+                        eq(List.of()),
+                        eq(List.of()));
+    }
+
+    @Test
     void plainWaitingPromiseCannotBecomeSuccessfulBusinessCompletion() throws Exception {
         var starter = starter();
         when(agent.call(any(Msg.class), any(RuntimeContext.class)))
