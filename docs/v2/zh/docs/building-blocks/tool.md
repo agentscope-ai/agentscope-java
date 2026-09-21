@@ -589,6 +589,39 @@ Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何�
 
 </Warning>
 
+### 以编程方式激活 Tool Group（按会话）
+
+Tool group 的激活状态是**按会话**维护的：每个 `(userId, sessionId)` 槽位的 `AgentState`（`getToolContext().getActivatedGroups()`）保存着该会话的激活列表，`call()` 正是依据这份列表生成暴露给模型的工具 schema。新会话的初始激活列表来自 `build()` 时 toolkit 上处于激活状态的 group。
+
+如需在应用代码中（REST 接口、管理后台、功能开关等）修改某个已有会话的激活 group，请使用 `ReActAgent` / `HarnessAgent` 上的会话级 API：
+
+```java
+// 增量：为某个会话激活（传 false 则停用）指定 group
+agent.updateToolGroups("alice", "session-001", List.of("database"), true);
+
+// 整体替换：该会话仅保留这些 group 处于激活状态
+agent.setActiveToolGroups("alice", "session-001", List.of("database", "deployment"));
+
+// 查询
+List<String> active = agent.getActiveToolGroups("alice", "session-001");
+
+// 也可以直接传调用时使用的 RuntimeContext
+agent.updateToolGroups(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build(), List.of("database"), true);
+```
+
+若配置了 `AgentStateStore`，修改会立即持久化，因此该会话的下一次 `call()`（无论在哪个节点）都会看到新的工具集；其他会话不受影响。group 名称会与 toolkit 校验，不存在的名称会抛出 `IllegalArgumentException`。若请求不会改变该会话的激活列表，则为 no-op。停用 group 时同样遵循 `ToolkitConfig.allowToolDeletion(false)`，行为与 `Toolkit.updateToolGroups` 一致：忽略并输出 warning。
+
+请在两次请求之间调用。若同一会话的调用正在进行中，该调用结束时会把自己的激活列表写回会话，从而静默覆盖这次修改；因此当本 agent 实例上存在该会话的进行中调用时，这两个方法会抛出 `IllegalStateException` 且不改动会话状态 —— 请等调用结束后重试。
+
+<Warning>
+
+**不要**在两次调用之间通过 `agent.getToolkit().updateToolGroups(...)` 来改变模型可见的工具。toolkit 上的激活标志只是每次调用内部的临时状态：每次调用入口都会用该会话的 `AgentState` 重新覆盖它，所以这类修改会被静默丢弃 —— 即便 `toolkit.getActiveGroups()` 看起来已经生效。agent 检测到这种用法时会输出一条 warning 日志。
+
+</Warning>
+
 
 ## 延伸阅读
 

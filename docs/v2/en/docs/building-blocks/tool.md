@@ -589,6 +589,39 @@ The meta tool's input represents the **final state** of all groups, not a delta.
 
 </Warning>
 
+### Activating groups programmatically (per session)
+
+Tool group activation is **per session**: the list of active groups lives in each `(userId, sessionId)` slot's `AgentState` (`getToolContext().getActivatedGroups()`), and that list is what `call()` uses to build the tool schemas shown to the model. A new session starts from the groups that were active on the toolkit when `build()` ran.
+
+To change the active groups of an existing session from application code (a REST endpoint, an admin console, a feature flag), use the session-scoped API on `ReActAgent` / `HarnessAgent`:
+
+```java
+// Incremental: activate (or deactivate with `false`) groups for one session
+agent.updateToolGroups("alice", "session-001", List.of("database"), true);
+
+// Replacement: exactly these groups stay active for the session
+agent.setActiveToolGroups("alice", "session-001", List.of("database", "deployment"));
+
+// Inspect
+List<String> active = agent.getActiveToolGroups("alice", "session-001");
+
+// The same RuntimeContext used by calls works too
+agent.updateToolGroups(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build(), List.of("database"), true);
+```
+
+The change is persisted immediately when the agent has an `AgentStateStore`, so the next `call()` on that session (on any node) sees it. Other sessions are not affected. Group names are validated against the toolkit; an unknown name throws `IllegalArgumentException`. A request that leaves the session's list unchanged is a no-op. Deactivation honours `ToolkitConfig.allowToolDeletion(false)` in the same way as `Toolkit.updateToolGroups`: it is ignored with a warning.
+
+Call it between requests. A call in flight on the same session would write its own activation list back when it completes and silently revert the update, so while such a call is running on this agent instance both methods throw `IllegalStateException` and leave the session untouched — retry after the call has completed.
+
+<Warning>
+
+Do **not** call `agent.getToolkit().updateToolGroups(...)` between calls to change what the model sees. The toolkit's activation flags are per-call scratch state: they are re-seeded from the session's `AgentState` at every call entry, so such a change is silently discarded even though `toolkit.getActiveGroups()` appears to reflect it. The agent logs a warning when it detects this pattern.
+
+</Warning>
+
 
 ## Further reading
 
