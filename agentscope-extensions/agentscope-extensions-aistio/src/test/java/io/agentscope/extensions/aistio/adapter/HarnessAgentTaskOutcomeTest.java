@@ -35,6 +35,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
@@ -42,6 +43,7 @@ import io.agentscope.extensions.aistio.transport.ControlPlaneHttpClient;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -136,6 +138,56 @@ class HarnessAgentTaskOutcomeTest {
         ConfirmResult result = (ConfirmResult) results.get(0);
         assertFalse(result.isConfirmed());
         assertEquals("production command is not allowed", result.getReason());
+    }
+
+    @Test
+    void sameToolkitRegistersOutcomeToolOnlyOnce() throws Exception {
+        var starter = starter();
+        when(agent.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            RuntimeContext ctx = invocation.getArgument(1);
+                            ctx.get(AgentTaskOutcome.State.class)
+                                    .submit(
+                                            new AgentTaskOutcome(
+                                                    "succeeded", "delivered", "", List.of()));
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("done")
+                                            .build());
+                        });
+        starter.start(assignment).block();
+        // A second dispatch on the same toolkit must hit the "already registered" branch of
+        // registerCollaborationTools (model name task_submit_result) and still complete normally.
+        AgentTaskAssignment second =
+                new AgentTaskAssignment(
+                        "attempt-2",
+                        "task",
+                        "run",
+                        "node",
+                        1,
+                        "dispatch",
+                        "",
+                        "secret-token",
+                        "attempt-secret",
+                        "assigned-session",
+                        new byte[0],
+                        1);
+        starter.start(second).block();
+        verify(agent, times(2)).call(any(Msg.class), any(RuntimeContext.class));
+        verify(client, times(2))
+                .finish(
+                        eq("task"),
+                        eq("secret-token"),
+                        eq(4L),
+                        eq("succeeded"),
+                        eq(""),
+                        eq("delivered"),
+                        eq(List.of()),
+                        eq(List.of()));
+        assertTrue(agent.getToolkit().getToolNames().contains("task_submit_result"));
+        assertFalse(agent.getToolkit().getToolNames().contains("task.submit_result"));
     }
 
     @Test
@@ -321,5 +373,48 @@ class HarnessAgentTaskOutcomeTest {
                         eq("partial report"),
                         any(),
                         any());
+    }
+
+    @Test
+    void collidingModelNameKeepsFirstRegisteredTool() throws Exception {
+        // Pre-register a local tool whose model name matches task.get after '.' -> '_'.
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool preexisting =
+                new SchemaOnlyTool("task_get", "local collision", Collections.emptyMap());
+        toolkit.registerAgentTool(preexisting);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        when(client.taskContext("task", "secret-token"))
+                .thenReturn(
+                        ControlPlaneHttpClient.mapper()
+                                .readTree(
+                                        "{\"task\":{\"status\":\"running\",\"version\":4},"
+                                                + "\"taskToken\":\"secret-token\","
+                                                + "\"availableActions\":[\"task.get\"]}"));
+        when(client.tools(anyString(), anyString()))
+                .thenReturn(
+                        ControlPlaneHttpClient.mapper()
+                                .readTree(
+                                        "[{\"name\":\"task.get\",\"description\":\"Get task\","
+                                            + "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]"));
+        when(agent.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            RuntimeContext ctx = invocation.getArgument(1);
+                            ctx.get(AgentTaskOutcome.State.class)
+                                    .submit(
+                                            new AgentTaskOutcome(
+                                                    "succeeded", "delivered", "", List.of()));
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("done")
+                                            .build());
+                        });
+
+        new HarnessAgentTaskStarter(() -> agent, client).start(assignment).block();
+
+        assertTrue(toolkit.getToolNames().contains("task_get"));
+        assertTrue(toolkit.getTool("task_get") instanceof SchemaOnlyTool);
+        assertEquals("local collision", toolkit.getTool("task_get").getDescription());
     }
 }
