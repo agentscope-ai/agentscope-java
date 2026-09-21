@@ -481,6 +481,7 @@ public final class WeixinChannel implements Channel {
                         });
     }
 
+    /** Called only by the consumer thread, which owns the session's dispatch retry counters. */
     private void drainInbox(LeaseSession session) throws Exception {
         while (running && session.valid && !Thread.currentThread().isInterrupted()) {
             requireLease(session);
@@ -502,6 +503,8 @@ public final class WeixinChannel implements Channel {
             } catch (WeixinCredentialRejectedException error) {
                 // Reauthorization can recover this message. A rejected account credential is
                 // not a poison message and must not consume its dispatch budget.
+                // A false result means the claim is fenced; propagate the credential rejection
+                // either way so consume() stops this consumer and releases its lease.
                 stateStore.failMessage(p.accountId(), session.lease, claim);
                 throw error;
             } catch (Exception error) {
