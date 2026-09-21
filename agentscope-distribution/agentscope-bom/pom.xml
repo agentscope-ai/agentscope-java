@@ -349,6 +349,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope OpenAI Model Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
