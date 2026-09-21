@@ -157,6 +157,27 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
+    void ensureVersionColumnFailureThrows() throws SQLException {
+        // createSchema/createTable succeed, the version-column ALTER fails
+        when(preparedStatement.execute())
+                .thenReturn(true)
+                .thenReturn(true)
+                .thenThrow(new SQLException("boom"));
+
+        RuntimeException exception =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                PostgresAgentStateStore.builder(dataSource)
+                                        .createIfNotExist(true)
+                                        .build());
+
+        assertTrue(
+                exception.getMessage().contains("ensure version column"),
+                "the failure must come from the version-column migration, not an earlier DDL");
+    }
+
+    @Test
     void verifyVersionColumnMissingThrowsWithMigrationDdl() throws SQLException {
         // schema exists, table exists, version column missing
         when(resultSet.next()).thenReturn(true, true, false);
@@ -175,6 +196,27 @@ class PostgresAgentStateStoreTest {
                         .getMessage()
                         .contains("ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1"),
                 "the failure must quote the exact migration DDL to run");
+    }
+
+    @Test
+    void verifyVersionColumnSqlExceptionThrows() throws SQLException {
+        // schema and table checks succeed, the version-column check query itself fails
+        when(preparedStatement.executeQuery())
+                .thenReturn(resultSet)
+                .thenReturn(resultSet)
+                .thenThrow(new SQLException("boom"));
+
+        RuntimeException exception =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                PostgresAgentStateStore.builder(dataSource)
+                                        .createIfNotExist(false)
+                                        .build());
+
+        assertTrue(
+                exception.getMessage().contains("version column"),
+                "the failure must come from the version-column check, not an earlier one");
     }
 
     @Test
