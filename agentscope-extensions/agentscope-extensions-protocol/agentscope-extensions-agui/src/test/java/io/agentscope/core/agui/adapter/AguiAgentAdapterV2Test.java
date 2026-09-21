@@ -1233,6 +1233,7 @@ class AguiAgentAdapterV2Test {
                     (Map<String, Object>) interrupt.responseSchema().get("properties");
             assertTrue(properties.containsKey("approved"));
             assertTrue(properties.containsKey("editedArgs"));
+            assertTrue(properties.containsKey("reason"));
             assertNull(interrupt.expiresAt());
             assertTrue(interrupt.message().contains("echo"));
             assertEquals("echo", interrupt.metadata().get("toolName"));
