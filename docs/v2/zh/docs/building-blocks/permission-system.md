@@ -204,7 +204,8 @@ PermissionContextState permCtx =
 import io.agentscope.core.event.ConfirmResult;
 
 // ASK 决策中包含基于本次调用生成的 suggestedRules（位于 ToolUseBlock 上）。
-// 接受建议时，把它放入结果即可：
+// 接受建议时，把它放入结果即可。
+// `tool` 是接收到 ASK 的 ToolBase 实例（即待确认调用中命名的 tool）：
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,

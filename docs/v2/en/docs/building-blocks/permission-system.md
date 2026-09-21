@@ -204,7 +204,8 @@ PermissionContextState permCtx =
 import io.agentscope.core.event.ConfirmResult;
 
 // ASK decisions carry suggestedRules on the ToolUseBlock.
-// Accept them by attaching to the result:
+// Accept them by attaching to the result.
+// `tool` is the ToolBase instance that received the ASK (the tool named in the pending call):
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
