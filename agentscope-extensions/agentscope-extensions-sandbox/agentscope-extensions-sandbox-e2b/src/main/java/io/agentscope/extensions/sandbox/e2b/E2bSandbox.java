@@ -233,9 +233,9 @@ public class E2bSandbox extends AbstractBaseSandbox {
         if (retention <= 0) {
             return;
         }
-        // One-shot correction regardless of any earlier residue: keep the newest retention by
-        // embedded timestamp and delete the rest. E2B only unlocks the templates after
-        // killSandbox, so this runs on shutdown.
+        // One-shot correction regardless of any earlier residue: keep the last retention ids by
+        // insertion order (most recent last) and delete the rest. E2B only unlocks the
+        // templates after killSandbox, so this runs on shutdown.
         try {
             List<String> kept = platform.cleanupSnapshots(e2bState.getSnapshotIds(), retention);
             e2bState.setSnapshotIds(kept);
@@ -246,9 +246,11 @@ public class E2bSandbox extends AbstractBaseSandbox {
 
     /**
      * AgentScope-native snapshot alias: {@code agentscope-<shortId>-<epochMillis>}, where the
-     * middle segment is an 8-hex-char short UUID generated locally. The trailing 13-digit epoch
-     * millis timestamp makes ordering deterministic; anything not matching this format is treated as
-     * a legacy/foreign snapshot and never pruned.
+     * middle segment is an 8-hex-char short UUID generated locally and the trailing segment is the
+     * creation epoch millis (kept human-readable; retention does not parse it). Retention keeps the
+     * last {@code snapshotRetention} ids in {@link E2bSandboxState#getSnapshotIds()} by insertion
+     * order (most recent last) and deletes the rest via {@link E2bPlatformHttp#cleanupSnapshots},
+     * regardless of id format.
      */
     private static String snapshotName() {
         String shortId = UUID.randomUUID().toString().replace("-", "").substring(0, 8);

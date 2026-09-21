@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -110,53 +111,13 @@ final class E2bPlatformHttp {
                 });
     }
 
-    /** Retention keeps the last N snapshots by insertion order (most recent last). */
-    List<String> pruneSnapshots(
-            String keepSnapshotId, List<String> olderSnapshotIds, int retention) {
-        if (retention <= 0) {
-            return append(keepSnapshotId, olderSnapshotIds);
-        }
-        List<String> all = new ArrayList<>();
-        for (String id : olderSnapshotIds) {
-            if (id == null || id.isBlank() || id.equals(keepSnapshotId)) {
-                continue;
-            }
-            all.add(id);
-        }
-        all.add(keepSnapshotId);
-        if (all.size() <= retention) {
-            return all;
-        }
-        int deleteCount = all.size() - retention;
-        List<String> toDelete = new ArrayList<>(all.subList(0, deleteCount));
-        List<String> kept = new ArrayList<>(all.subList(deleteCount, all.size()));
-        // toDelete are oldest; failures are kept
-        List<String> actuallyKeptPrefix = new ArrayList<>();
-        for (String old : toDelete) {
-            try {
-                deleteSnapshot(old);
-            } catch (Exception e) {
-                log.warn("[sandbox-e2b] failed to prune snapshot {}: {}", old, e.getMessage());
-                actuallyKeptPrefix.add(old);
-            }
-        }
-        if (!actuallyKeptPrefix.isEmpty()) {
-            List<String> result = new ArrayList<>(actuallyKeptPrefix);
-            result.addAll(kept);
-            return result;
-        }
-        return kept;
-    }
-
-    private static List<String> append(String keepSnapshotId, List<String> olderSnapshotIds) {
-        List<String> all = new ArrayList<>(olderSnapshotIds);
-        all.add(keepSnapshotId);
-        return all;
-    }
-
-    /** One-shot cleanup keeps the last {@code retention} ids by insertion order. */
+    /**
+     * One-shot cleanup keeps the last {@code retention} ids by insertion order (most recent last).
+     * Duplicate ids are collapsed (first occurrence wins) so the "keep last N" contract counts
+     * distinct snapshots; blank ids are dropped.
+     */
     List<String> cleanupSnapshots(List<String> snapshotIds, int retention) {
-        List<String> ids = snapshotIds != null ? new ArrayList<>(snapshotIds) : new ArrayList<>();
+        List<String> ids = dedupe(snapshotIds);
         if (retention <= 0 || ids.isEmpty() || ids.size() <= retention) {
             return ids;
         }
@@ -172,6 +133,20 @@ final class E2bPlatformHttp {
             }
         }
         return kept;
+    }
+
+    private static List<String> dedupe(List<String> snapshotIds) {
+        if (snapshotIds == null) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String id : snapshotIds) {
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            seen.add(id);
+        }
+        return new ArrayList<>(seen);
     }
 
     void killSandbox(String sandboxId) throws IOException {
