@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.Version;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
@@ -111,6 +112,7 @@ import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
 import io.agentscope.harness.agent.tool.WebTools;
+import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
 import io.agentscope.harness.agent.tools.ToolFilter;
@@ -1246,6 +1248,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableFilesystemTools = false;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
+        boolean parallelWebSearch = false;
 
         /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
         HttpClient webHttpClient;
@@ -2072,15 +2075,34 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Skips registration of the optional Tavily-backed {@code web_search} and {@code web_fetch} tools. */
+        /** Skips registration of {@code web_search} and {@code web_fetch}, including Parallel search. */
         public Builder disableWebTools() {
             this.disableWebTools = true;
             return this;
         }
 
         /**
+         * Uses Parallel's free anonymous Search MCP for {@code web_search} instead of Tavily.
+         *
+         * <p>Connects to {@code https://search.parallel.ai/mcp} during {@link #build()}; a connection
+         * failure aborts the build. No Parallel account or API key is required, and access is rate
+         * limited. The discovered search schema requires {@code objective} and {@code search_queries},
+         * rather than Tavily's {@code query} and {@code max_results}. Supplied search inputs and
+         * metadata are sent to Parallel, with a project/version User-Agent for aggregate usage
+         * measurement. The built-in {@code web_fetch} is unchanged. {@link #disableWebTools()} still
+         * suppresses both tools and the connection.
+         *
+         * @return this builder
+         */
+        public Builder parallelWebSearch() {
+            this.parallelWebSearch = true;
+            return this;
+        }
+
+        /**
          * Supplies a custom {@link java.net.http.HttpClient} used by the built-in {@code web_fetch}
-         * and {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings). When
+         * and Tavily {@code web_search} tools (e.g. custom proxy, TLS or HTTP version settings).
+         * Parallel search uses the existing MCP transport's HTTP client instead. When
          * unset, the tools use a default client with JDK version negotiation (HTTP/2 preferred,
          * automatic HTTP/1.1 fallback); inject an HTTP/1.1-only client here if a target server
          * fails under HTTP/2 negotiation (see issue #3101).
@@ -2727,10 +2749,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableWebTools) {
                 if (webHttpClient != null) {
                     agentToolkit.registerTool(new WebTools.WebFetchTool(webHttpClient));
-                    agentToolkit.registerTool(new WebTools.WebSearchTool(webHttpClient));
                 } else {
                     agentToolkit.registerTool(new WebTools.WebFetchTool());
-                    agentToolkit.registerTool(new WebTools.WebSearchTool());
+                }
+                if (parallelWebSearch) {
+                    McpServerConfig parallel = new McpServerConfig();
+                    parallel.setTransport("http");
+                    parallel.setUrl("https://search.parallel.ai/mcp");
+                    parallel.setEnableTools(List.of("web_search"));
+                    parallel.setRequired(true);
+                    // Identify the project for aggregate MCP usage; never add user identifiers.
+                    parallel.setHeaders(Map.of("User-Agent", "agentscope-java/" + Version.VERSION));
+                    McpServerRegistrar.register(
+                            agentToolkit,
+                            Map.of("parallel-search", parallel),
+                            mcpServerRegistrationListener);
+                } else {
+                    agentToolkit.registerTool(
+                            webHttpClient != null
+                                    ? new WebTools.WebSearchTool(webHttpClient)
+                                    : new WebTools.WebSearchTool());
                 }
             }
 

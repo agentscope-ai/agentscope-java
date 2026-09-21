@@ -186,6 +186,28 @@ A bare ReAct loop solves one reasoning turn. **HarnessAgent** layers engineering
 - **Auto context management** — structured compaction preserves goals / state / findings / next steps; oversized tool results offload to disk
 - **Plan Mode** — read-only planning state for long tasks, plan files persist and drive execution
 
+Harness registers Tavily-backed `web_search` by default, using `TAVILY_API_KEY`.
+To select [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) instead,
+add `.parallelWebSearch()` to `HarnessAgent.builder()`. This connects to
+`https://search.parallel.ai/mcp` over Streamable HTTP during `build()`, without a Parallel
+account or API key. Anonymous access is free and rate limited; a connection failure aborts
+the build. The canonical `web_search` tool uses Parallel's discovered schema:
+
+```json
+{
+  "objective": "Find the official AgentScope Java documentation",
+  "search_queries": ["AgentScope Java documentation"]
+}
+```
+
+Both fields are required; Tavily's `query` and `max_results` do not apply to this provider.
+Search inputs and any supplied metadata go to Parallel. Requests identify this project as
+`agentscope-java/<version>` for aggregate usage measurement. See Parallel's
+[terms](https://parallel.ai/customer-terms) and [privacy policy](https://parallel.ai/privacy-policy).
+The built-in `web_fetch` stays unchanged, and `disableWebTools()` suppresses both tools and
+the Parallel connection. `webHttpClient(...)` customizes built-in fetch and Tavily search;
+Parallel search uses the existing MCP transport's client.
+
 ### 2 · Enterprise-grade distributed deployment
 
 Production agents must serve many tenants, run untrusted code safely, and survive rolling restarts. AgentScope 2.0 is built for stateless horizontal scaling:
