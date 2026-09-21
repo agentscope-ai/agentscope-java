@@ -94,8 +94,9 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     /**
      * Interrupt the in-flight call identified by {@code ctx}.
      *
-     * <p>The default implementation falls back to {@link #interrupt()}. Multi-session agents should
-     * override this to target the session in {@code ctx} instead of the default slot.
+     * <p>The default implementation falls back to {@link #interrupt()}. Multi-session agents and
+     * wrappers should override this to target the session in {@code ctx} instead of the default
+     * slot.
      *
      * @param ctx runtime context identifying the session, may be {@code null}
      */

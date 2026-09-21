@@ -29,6 +29,12 @@ import reactor.core.publisher.Flux;
  * Agents that do not implement this interface stay on the v1 {@code stream()} path; adapters
  * convert those coarse events instead of fine-grained {@link AgentEvent}s.
  *
+ * <p>Implementations of {@link #streamEvents(List, RuntimeContext)} must pass a non-null
+ * {@link RuntimeContext} into their execution pipeline (middleware, reactor context, and
+ * session lookup). Use {@link RuntimeContext#empty()} when the caller has none. The
+ * convenience overloads already do this, so custom agents should not re-introduce {@code
+ * null} as a second representation of "no caller context".
+ *
  * <p>Implementations should emit the full lifecycle that callers already expect from
  * {@code ReActAgent#streamEvents}, including {@link io.agentscope.core.event.AgentResultEvent}
  * immediately before {@link io.agentscope.core.event.AgentEndEvent} when a terminal message is

@@ -99,7 +99,9 @@ public class AguiRequestProcessor {
          * Interrupt this request's active session.
          *
          * <p>Uses the resolved {@link RuntimeContext} so multi-session agents receive both the
-         * caller user id and the AG-UI {@code threadId} (session id).
+         * caller user id and the AG-UI {@code threadId} (session id). Replaces the former {@code
+         * interrupt(String threadId)} overload; call {@link Agent#interrupt(RuntimeContext)}
+         * directly when you already have a context.
          */
         public void interrupt() {
             agent.interrupt(runtimeContext != null ? runtimeContext : RuntimeContext.empty());

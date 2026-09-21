@@ -1141,7 +1141,8 @@ public class ReActAgent extends AgentBase
      * lifecycle execution.
      *
      * @param msgs input messages
-     * @param context runtime context to propagate into the call
+     * @param context runtime context to propagate into the call; {@code null} is normalised to
+     *     {@link RuntimeContext#empty()} so middlewares always receive a non-null context
      * @return event stream covering the full agent invocation lifecycle
      */
     @Override
