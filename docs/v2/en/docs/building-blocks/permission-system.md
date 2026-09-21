@@ -209,7 +209,7 @@ ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
                 /* toolCall  = */ toolCall,
-                /* rules     = */ toolCall.generateSuggestions(toolInput));
+                /* rules     = */ tool.generateSuggestions(toolCall.getInput()));
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
