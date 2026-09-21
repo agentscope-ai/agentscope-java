@@ -2061,14 +2061,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
          *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume, and publish the complete
+         *       the tool will no longer be pending on resume, using the user-supplied
+         *       {@link ConfirmResult#getReason() reason} when present, and publish the complete
          *       tool-result event lifecycle.</li>
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
@@ -2085,21 +2086,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    String reason = r.getReason();
+                    deniedToolCalls.add(
+                            Map.entry(
+                                    target,
+                                    reason == null || reason.isBlank()
+                                            ? PERMISSION_DENIED_BY_USER
+                                            : reason));
                 }
             }
             MessageUtils.replaceToolUseBlocks(state.contextMutable(), replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
+            for (Map.Entry<ToolUseBlock, String> entry : deniedToolCalls) {
+                ToolUseBlock denied = entry.getKey();
+                String reasonText = entry.getValue();
                 ToolResultBlock deniedResult =
-                        ToolResultBlock.text(PERMISSION_DENIED_BY_USER)
+                        ToolResultBlock.text(reasonText)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
-                deniedToolResultEvents(denied, replyId, PERMISSION_DENIED_BY_USER)
-                        .forEach(this::publishEvent);
+                deniedToolResultEvents(denied, replyId, reasonText).forEach(this::publishEvent);
             }
         }
 

@@ -384,7 +384,7 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 
 远程 agent 因工具确认而暂停（`awaiting_confirm`）时：
 
-- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](/v2/zh/integration/protocol/agent-protocol) 恢复，请求体为 `decisions[{toolCallId, approved}]`。
+- **父代理流式 + `remoteAskPolicy=PROPAGATE`**：向父的 `streamEvents()` 转发带非空 `source` 标记的 `RequireUserConfirmEvent`。通过 Agent Protocol [`POST /tasks/{id}/resume`](/v2/zh/integration/protocol/agent-protocol) 恢复，请求体为 `decisions[{toolCallId, approved, reason}]`。
 - **父代理非流式（`call`）或 `remoteAskPolicy=DENY`（默认）**：自动拒绝待确认项。工具结果中会附注：`remote tool confirmation(s) were auto-denied`。
 
 等待确认期间任务状态保持 `RUNNING`（`awaitingConfirm=true`）。因此 `wait_async_results` 等 barrier 会继续等待，直到任务被 resume 并进入终态。
