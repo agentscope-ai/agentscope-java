@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -74,10 +75,11 @@ class CompactionMiddlewareTest {
         assertEquals(1, nextCalls.get());
     }
 
-    /** A normal summary failure is still best-effort and continues with a failed-summary message. */
+    /** A normal summary failure must preserve the original history for downstream reasoning. */
     @Test
-    void ordinarySummaryFailureContinuesWithCompactedInput() {
+    void ordinarySummaryFailureContinuesWithOriginalInput() {
         AtomicInteger nextCalls = new AtomicInteger();
+        ReasoningInput original = input();
         CompactionMiddleware middleware =
                 new CompactionMiddleware(
                         null,
@@ -89,15 +91,10 @@ class CompactionMiddlewareTest {
                         middleware.onReasoning(
                                 agent(),
                                 context("user", "session"),
-                                input(),
+                                original,
                                 next -> {
                                     nextCalls.incrementAndGet();
-                                    assertEquals(2, next.messages().size());
-                                    assertTrue(
-                                            next.messages()
-                                                    .get(0)
-                                                    .getTextContent()
-                                                    .contains("Summarization failed"));
+                                    assertSame(original, next);
                                     return Flux.empty();
                                 }))
                 .verifyComplete();
