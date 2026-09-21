@@ -63,6 +63,21 @@ public interface Formatter<TReq, TResp, TParams> {
     List<TReq> format(List<Msg> msgs);
 
     /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>Providers that derive request fields from both message metadata and generation options
+     * should override this method. The default implementation preserves the legacy behavior and
+     * ignores the options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    default List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return format(msgs);
+    }
+
+    /**
      * Parse provider-specific response to AgentScope ChatResponse.
      *
      * @param response Provider-specific response object
