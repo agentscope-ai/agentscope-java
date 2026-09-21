@@ -23,7 +23,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
-import java.util.Map;
 
 /**
  * DashScope message DTO.
@@ -82,17 +81,6 @@ public class DashScopeMessage {
     @JsonProperty("reasoning_content")
     @JsonAlias("reasoning")
     private String reasoningContent;
-
-    /**
-     * Legacy message-level cache control state.
-     *
-     * <p>Non-empty legacy values are migrated to a content part by the formatter. {@code null}
-     * means "not specified"; an empty map is the explicit "no marker" sentinel and is serialized
-     * away by {@link JsonInclude.Include#NON_EMPTY} while still blocking the automatic strategy.
-     */
-    @JsonProperty("cache_control")
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    private Map<String, String> cacheControl;
 
     public DashScopeMessage() {}
 
@@ -191,14 +179,6 @@ public class DashScopeMessage {
         this.reasoningContent = reasoningContent;
     }
 
-    public Map<String, String> getCacheControl() {
-        return cacheControl;
-    }
-
-    public void setCacheControl(Map<String, String> cacheControl) {
-        this.cacheControl = cacheControl;
-    }
-
     public static Builder builder() {
         return new Builder();
     }
@@ -238,11 +218,6 @@ public class DashScopeMessage {
 
         public Builder reasoningContent(String reasoningContent) {
             message.setReasoningContent(reasoningContent);
-            return this;
-        }
-
-        public Builder cacheControl(Map<String, String> cacheControl) {
-            message.setCacheControl(cacheControl);
             return this;
         }
 

@@ -79,7 +79,13 @@ public class DashScopeMultiAgentFormatter
 
     @Override
     protected List<DashScopeMessage> doFormat(List<Msg> msgs) {
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<DashScopeMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
         List<DashScopeMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
         int startIndex = 0;
 
         // Process system message first (if any) - output separately
@@ -92,6 +98,7 @@ public class DashScopeMultiAgentFormatter
                             .build();
             messageConverter.applyCacheControlFromMetadata(systemMsg, formattedSystemMessage);
             result.add(formattedSystemMessage);
+            cacheDirectives.add(DashScopeChatFormatter.cacheControlDirective(systemMsg));
             startIndex = 1;
         }
 
@@ -110,15 +117,26 @@ public class DashScopeMultiAgentFormatter
                                 msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
                                 historyPrompt);
-                applyMergedCacheControlMetadata(group.messages, mergedMessage);
+                cacheDirectives.add(applyMergedCacheControlMetadata(group.messages, mergedMessage));
                 result.add(mergedMessage);
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
-                result.addAll(formatToolSeq(group.messages));
+                for (Msg msg : group.messages) {
+                    if (msg.getRole() == MsgRole.ASSISTANT) {
+                        result.add(formatAssistantToolCall(msg));
+                        cacheDirectives.add(DashScopeChatFormatter.cacheControlDirective(msg));
+                    } else if (msg.getRole() == MsgRole.TOOL
+                            || (msg.getRole() == MsgRole.SYSTEM
+                                    && msg.hasContentBlocks(ToolResultBlock.class))) {
+                        result.add(formatToolResult(msg));
+                        cacheDirectives.add(DashScopeChatFormatter.cacheControlDirective(msg));
+                    }
+                }
             }
         }
 
+        DashScopeChatFormatter.applyAutomaticCacheControl(result, cacheDirectives, options);
         return result;
     }
 
@@ -171,7 +189,20 @@ public class DashScopeMultiAgentFormatter
      * @return List of DashScopeMessage objects with multimodal content
      */
     public List<DashScopeMessage> formatMultiModal(List<Msg> msgs) {
+        return formatMultiModal(msgs, null);
+    }
+
+    /**
+     * Format AgentScope Msg objects to DashScope MultiModal message format using request-scoped
+     * generation options.
+     *
+     * @param msgs The AgentScope messages to convert
+     * @param options request-scoped generation options; may be {@code null}
+     * @return List of DashScopeMessage objects with multimodal content
+     */
+    public List<DashScopeMessage> formatMultiModal(List<Msg> msgs, GenerateOptions options) {
         List<DashScopeMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
         int startIndex = 0;
 
         // Process system message first (if any)
@@ -187,6 +218,7 @@ public class DashScopeMultiAgentFormatter
                             .build();
             messageConverter.applyCacheControlFromMetadata(systemMsg, formattedSystemMessage);
             result.add(formattedSystemMessage);
+            cacheDirectives.add(DashScopeChatFormatter.cacheControlDirective(systemMsg));
             startIndex = 1;
         }
 
@@ -204,15 +236,20 @@ public class DashScopeMultiAgentFormatter
                                 msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
                                 isFirstAgentMessage);
-                applyMergedCacheControlMetadata(group.messages, mergedMessage);
+                cacheDirectives.add(applyMergedCacheControlMetadata(group.messages, mergedMessage));
                 result.add(mergedMessage);
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly
-                result.addAll(formatMultiModalToolSeq(group.messages));
+                for (Msg msg : group.messages) {
+                    DashScopeMessage message = messageConverter.convertToMessage(msg, true);
+                    result.add(message);
+                    cacheDirectives.add(DashScopeChatFormatter.cacheControlDirective(msg));
+                }
             }
         }
 
+        DashScopeChatFormatter.applyAutomaticCacheControl(result, cacheDirectives, options);
         return result;
     }
 
@@ -286,23 +323,6 @@ public class DashScopeMultiAgentFormatter
     }
 
     /**
-     * Format tool sequence messages to DashScopeMessage format.
-     */
-    private List<DashScopeMessage> formatToolSeq(List<Msg> msgs) {
-        List<DashScopeMessage> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            if (msg.getRole() == MsgRole.ASSISTANT) {
-                result.add(formatAssistantToolCall(msg));
-            } else if (msg.getRole() == MsgRole.TOOL
-                    || (msg.getRole() == MsgRole.SYSTEM
-                            && msg.hasContentBlocks(ToolResultBlock.class))) {
-                result.add(formatToolResult(msg));
-            }
-        }
-        return result;
-    }
-
-    /**
      * Format assistant message with tool calls.
      */
     private DashScopeMessage formatAssistantToolCall(Msg msg) {
@@ -348,7 +368,7 @@ public class DashScopeMultiAgentFormatter
         return message;
     }
 
-    private void applyMergedCacheControlMetadata(
+    private Boolean applyMergedCacheControlMetadata(
             List<Msg> messages, DashScopeMessage mergedMessage) {
         // A merged output has one content boundary, so the last explicit directive wins.
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -357,20 +377,10 @@ public class DashScopeMultiAgentFormatter
                     && message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL)
                             instanceof Boolean) {
                 messageConverter.applyCacheControlFromMetadata(message, mergedMessage);
-                return;
+                return (Boolean) message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
             }
         }
-    }
-
-    /**
-     * Format tool sequence messages to MultiModal format.
-     */
-    private List<DashScopeMessage> formatMultiModalToolSeq(List<Msg> msgs) {
-        List<DashScopeMessage> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            result.add(messageConverter.convertToMessage(msg, true));
-        }
-        return result;
+        return null;
     }
 
     /**
@@ -392,18 +402,5 @@ public class DashScopeMultiAgentFormatter
             this.type = type;
             this.messages = messages;
         }
-    }
-
-    /**
-     * Apply cache control to DashScope messages.
-     *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to the last content part of all
-     * system messages and the last message in the list. Legacy message-level values are migrated to
-     * the last content part. Messages explicitly excluded from caching are left untouched.
-     *
-     * @param messages the list of formatted DashScope messages
-     */
-    public void applyCacheControl(List<DashScopeMessage> messages) {
-        DashScopeChatFormatter.applyCacheControlToMessages(messages);
     }
 }
