@@ -207,6 +207,7 @@ Search inputs and any supplied metadata go to Parallel. Requests identify this p
 The built-in `web_fetch` stays unchanged, and `disableWebTools()` suppresses both tools and
 the Parallel connection. `webHttpClient(...)` customizes built-in fetch and Tavily search;
 Parallel search uses the existing MCP transport's client.
+Local subagents inherit the selected search provider.
 
 ### 2 · Enterprise-grade distributed deployment
 

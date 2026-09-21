@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.Version;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -45,6 +46,8 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
@@ -86,6 +89,17 @@ class HarnessAgentParallelWebSearchTest {
                             agent.getDelegate().getToolkit().getToolNames().contains("web_search"));
                     assertFalse(
                             agent.getDelegate().getToolkit().getToolNames().contains("web_fetch"));
+                }
+                for (var entry : selected.buildSubagentEntries(workspace)) {
+                    try (HarnessAgent child =
+                            (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+                        assertTrue(
+                                child.getDelegate()
+                                        .getToolkit()
+                                        .getTool("web_search")
+                                        .getDescription()
+                                        .contains("TAVILY_API_KEY"));
+                    }
                 }
             }
             builders.verifyNoInteractions();
@@ -267,10 +281,43 @@ class HarnessAgentParallelWebSearchTest {
                     assertEquals(ToolResultState.ERROR, error.getState());
                     assertTrue(error.getOutput().toString().contains("Rate limit exceeded"));
                 }
+                SubagentDeclaration worker =
+                        SubagentDeclaration.builder()
+                                .name("search-worker")
+                                .description("Searches the web")
+                                .inlineAgentsBody("Find useful sources.")
+                                .workspaceMode(WorkspaceMode.SHARED)
+                                .build();
+                var children =
+                        builder()
+                                .parallelWebSearch()
+                                .subagent(worker)
+                                .buildSubagentEntries(workspace);
+                for (var entry : children) {
+                    try (HarnessAgent child =
+                            (HarnessAgent) entry.factory().create(RuntimeContext.empty())) {
+                        Toolkit toolkit = child.getDelegate().getToolkit();
+                        assertEquals(
+                                List.of("objective", "search_queries"),
+                                toolkit.getTool("web_search").getParameters().get("required"),
+                                entry.name() + " must preserve the selected search provider");
+                        ToolResultBlock result =
+                                search(
+                                        toolkit,
+                                        Map.of(
+                                                "objective",
+                                                "Find AgentScope documentation",
+                                                "search_queries",
+                                                List.of("AgentScope Java docs")));
+                        assertNotNull(result);
+                        assertFalse(result.getState() == ToolResultState.ERROR);
+                        assertEquals(payload, ((TextBlock) result.getOutput().get(0)).getText());
+                    }
+                }
             }
             assertTrue(methods.contains("initialize"));
             assertTrue(methods.contains("tools/list"));
-            assertEquals(2, searchInputs.size());
+            assertEquals(4, searchInputs.size());
             assertFalse(userAgents.isEmpty());
             assertTrue(
                     userAgents.stream()
