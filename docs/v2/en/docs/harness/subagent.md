@@ -386,7 +386,7 @@ Parent DENY permission rules are forwarded in the remote submit `context.deny_ru
 
 When the remote agent pauses for tool confirmation (`awaiting_confirm`):
 
-- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](/v2/en/integration/protocol/agent-protocol) with `decisions[{toolCallId, approved}]`.
+- **Streaming parent + `remoteAskPolicy=PROPAGATE`**: a `RequireUserConfirmEvent` is forwarded into the parent's `streamEvents()` stream with a non-null `source` tag. Resume the remote task via Agent Protocol [`POST /tasks/{id}/resume`](/v2/en/integration/protocol/agent-protocol) with `decisions[{toolCallId, approved, reason}]`.
 - **Non-streaming parent (`call`) or `remoteAskPolicy=DENY` (default)**: pending confirmations are auto-denied. The tool result includes a note: `remote tool confirmation(s) were auto-denied`.
 
 While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`). Barriers such as `wait_async_results` therefore keep waiting until the task is resumed and reaches a terminal status.
