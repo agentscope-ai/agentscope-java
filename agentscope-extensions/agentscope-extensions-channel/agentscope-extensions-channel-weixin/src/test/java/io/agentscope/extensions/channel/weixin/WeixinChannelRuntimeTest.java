@@ -75,9 +75,10 @@ class WeixinChannelRuntimeTest {
     private final AtomicReference<JsonNode> lastSend = new AtomicReference<>();
     private final List<String> transientFailures = Collections.synchronizedList(new ArrayList<>());
     private volatile Supplier<String> updates = () -> EMPTY_BATCH;
-    private volatile String sendResponse = "{\"ret\":0}";
+    private volatile String sendResponse = "{\"message_id\":\"receipt-1\"}";
     private volatile Supplier<Mono<Msg>> agentReply = () -> Mono.just(assistant("reply"));
     private volatile String fixedAccountId;
+    private int maxBackoffMs = 30000;
 
     @BeforeEach
     void startServer() throws Exception {
@@ -310,13 +311,9 @@ class WeixinChannelRuntimeTest {
         assertFalse(transientFailures.isEmpty(), "the failed startup must be reported");
     }
 
-    /**
-     * A provider that refuses the reply must not make the consumer replay the inbound message: the
-     * agent has already run, so replaying it duplicates the reply and every side effect. The reply
-     * is retried a bounded number of times, the failure is reported, and the message completes.
-     */
+    /** Inline delivery has no host queue: a refused reply must leave the message retryable. */
     @Test
-    void providerRejectionDoesNotReplayTheMessage() throws Exception {
+    void inlineReplyFailureIsRetriedBeforeCompletingTheMessage() throws Exception {
         updates = () -> polls.get() <= 2 ? batch(1, "peer-sendfail") : EMPTY_BATCH;
         sendResponse = "{\"ret\":-2,\"errcode\":0,\"errmsg\":\"prepare failed\"}";
         List<String> deliveryFailures = Collections.synchronizedList(new ArrayList<>());
@@ -337,19 +334,16 @@ class WeixinChannelRuntimeTest {
                     @Override
                     public void onDeliveryFailed(String accountId, String reason) {
                         deliveryFailures.add(reason);
+                        sendResponse = "{\"message_id\":\"receipt-recovered\"}";
                     }
                 });
 
         assertTrue(
                 waitFor(() -> !deliveryFailures.isEmpty()),
                 "a refused reply was never reported as a delivery failure");
-        assertTrue(
-                waitFor(() -> polls.get() >= 4), "the provider was not polled after the refusal");
-        assertEquals(
-                1, dispatches.get(), "the accepted message was replayed after a refused reply");
-        assertEquals(1, completed.get(), "the accepted message never completed");
-        // Retry belongs to the host delivery queue: the channel attempts the inline send once.
-        assertEquals(1, sends.get(), "the inline path must not retry");
+        assertTrue(waitFor(() -> completed.get() == 1), "the recovered message never completed");
+        assertEquals(2, sends.get(), "a refused reply was completed without a successful retry");
+        assertEquals(2, dispatches.get(), "standalone dispatch uses at-least-once processing");
         assertTrue(
                 deliveryFailures.stream().anyMatch(reason -> reason.contains("ret=-2")),
                 "the structured provider outcome must reach the host: " + deliveryFailures);
@@ -412,7 +406,7 @@ class WeixinChannelRuntimeTest {
     @Test
     void dispatchFailuresAreAbandonedAndReported() throws Exception {
         updates = () -> batch(1, "peer-down");
-        agentReply = () -> Mono.error(new IllegalStateException("data plane down"));
+        agentReply = () -> Mono.error(new IllegalStateException("data plane token=TEST-SECRET"));
         List<String> dispatchFailures = Collections.synchronizedList(new ArrayList<>());
         AtomicInteger abandoned = new AtomicInteger();
         WeixinStateStore store = spy(WeixinStateStore.inMemory());
@@ -439,9 +433,136 @@ class WeixinChannelRuntimeTest {
                 "an abandoned message was never reported as a dispatch failure");
         assertEquals(3, dispatches.get(), "the dispatch retry budget changed");
         assertEquals(1, abandoned.get(), "the message was not abandoned");
-        assertTrue(
-                dispatchFailures.stream().anyMatch(reason -> reason.contains("data plane down")),
-                "the dispatch reason must reach the host: " + dispatchFailures);
+        assertEquals(
+                List.of("IllegalStateException"),
+                dispatchFailures,
+                "a host exception may contain credentials and must be reported by type only");
+    }
+
+    @Test
+    void credentialRejectionDoesNotExhaustTheDispatchBudget() throws Exception {
+        fixedAccountId = "credential-recovery";
+        updates = () -> batch(1, "peer-credential");
+        agentReply =
+                () ->
+                        dispatches.get() <= 2
+                                ? Mono.error(new IllegalStateException("temporary agent failure"))
+                                : Mono.just(assistant("reply"));
+        sendResponse = "{\"ret\":-14}";
+        AtomicInteger abandoned = new AtomicInteger();
+        AtomicInteger stopped = new AtomicInteger();
+        WeixinStateStore store = spy(WeixinStateStore.inMemory());
+        doAnswer(
+                        invocation -> {
+                            abandoned.incrementAndGet();
+                            return invocation.callRealMethod();
+                        })
+                .when(store)
+                .abandonMessage(anyString(), any(WeixinLease.class), any(WeixinInboxClaim.class));
+        startChannel(
+                store,
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onCredentialRejected(String accountId, String reason) {
+                        rejections.incrementAndGet();
+                    }
+
+                    @Override
+                    public void onStopped(String accountId) {
+                        stopped.incrementAndGet();
+                    }
+                });
+
+        assertTrue(waitFor(() -> stopped.get() == 1), "credential rejection did not stop polling");
+        assertEquals(1, rejections.get());
+        assertEquals(
+                0, abandoned.get(), "reauthorization must still be able to recover the message");
+        WeixinLease replacement =
+                store.acquireLease(fixedAccountId, "reauthorized", 20000).orElseThrow();
+        assertEquals(
+                1,
+                store.claimMessages(fixedAccountId, replacement, 1, 1000).size(),
+                "credential rejection must return the claim to pending");
+    }
+
+    @Test
+    void dispatchBudgetRestartsWhenTheLeaseChanges() throws Exception {
+        updates = () -> batch(1, "peer-lease");
+        agentReply = () -> Mono.error(new IllegalStateException("agent unavailable"));
+        maxBackoffMs = 100;
+        AtomicReference<WeixinLease> lease = new AtomicReference<>();
+        AtomicInteger failures = new AtomicInteger();
+        AtomicInteger abandoned = new AtomicInteger();
+        WeixinStateStore store = WeixinStateStore.inMemory();
+        startChannel(
+                store,
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onLeaseAcquired(String accountId, WeixinLease acquired) {
+                        lease.set(acquired);
+                    }
+
+                    @Override
+                    public void onTransientFailure(String accountId, String reason) {
+                        if (failures.incrementAndGet() == 2) {
+                            store.releaseLease(accountId, lease.get());
+                        }
+                    }
+
+                    @Override
+                    public void onDispatchFailed(String accountId, String reason) {
+                        abandoned.incrementAndGet();
+                    }
+                });
+
+        assertTrue(waitFor(() -> abandoned.get() == 1), "the poison message was never abandoned");
+        assertEquals(5, dispatches.get(), "the old lease's two attempts leaked into its successor");
+    }
+
+    @Test
+    void thirdPartyIllegalArgumentMessagesNeverReachTheHost() throws Exception {
+        WeixinStateStore store = spy(WeixinStateStore.inMemory());
+        doAnswer(
+                        invocation -> {
+                            throw new RuntimeException(
+                                    new IllegalArgumentException(
+                                            "https://provider.invalid/?token=TEST-SECRET"));
+                        })
+                .when(store)
+                .loadCursor(anyString());
+        startChannel(
+                store,
+                new WeixinRuntimeListener() {
+                    @Override
+                    public void onTransientFailure(String accountId, String reason) {
+                        transientFailures.add(reason);
+                    }
+                });
+
+        assertTrue(waitFor(() -> !transientFailures.isEmpty()), "store failure was never reported");
+        assertEquals("IllegalArgumentException", transientFailures.get(0));
+    }
+
+    @Test
+    void hostOwnedDeliveryCompletesWithoutAnInlineSend() throws Exception {
+        updates = () -> batch(1, "peer-managed");
+        agentReply = Mono::empty;
+        AtomicInteger completed = new AtomicInteger();
+        WeixinStateStore store = spy(WeixinStateStore.inMemory());
+        doAnswer(
+                        invocation -> {
+                            Object result = invocation.callRealMethod();
+                            if (Boolean.TRUE.equals(result)) completed.incrementAndGet();
+                            return result;
+                        })
+                .when(store)
+                .completeMessage(anyString(), any(WeixinLease.class), any(WeixinInboxClaim.class));
+        startChannel(store, WeixinRuntimeListener.noOp());
+
+        assertTrue(waitFor(() -> completed.get() == 1));
+        assertTrue(waitFor(() -> polls.get() >= 3));
+        assertEquals(1, dispatches.get());
+        assertEquals(0, sends.get(), "the host already owns delivery of its persisted reply");
     }
 
     @Test
@@ -500,7 +621,9 @@ class WeixinChannelRuntimeTest {
                                         "leaseMs",
                                         20000,
                                         "dispatchTimeoutMs",
-                                        5000)),
+                                        5000,
+                                        "maxBackoffMs",
+                                        maxBackoffMs)),
                         WeixinCredentialProvider.fixed("test-token"),
                         store,
                         listener);

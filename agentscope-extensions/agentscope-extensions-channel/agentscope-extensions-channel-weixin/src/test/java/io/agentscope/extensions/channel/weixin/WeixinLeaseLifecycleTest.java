@@ -74,6 +74,7 @@ class WeixinLeaseLifecycleTest {
                     } else if (exchange.getRequestURI().getPath().endsWith("sendmessage")) {
                         sends.incrementAndGet();
                         sent.countDown();
+                        body = "{\"message_id\":\"receipt-1\"}";
                     }
                     byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                     exchange.sendResponseHeaders(200, bytes.length);

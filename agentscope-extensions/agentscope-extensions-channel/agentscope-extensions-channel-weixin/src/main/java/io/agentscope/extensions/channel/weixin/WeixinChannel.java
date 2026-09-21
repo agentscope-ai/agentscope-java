@@ -30,12 +30,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
@@ -68,13 +68,11 @@ public final class WeixinChannel implements Channel {
                     });
 
     /**
-     * Dispatch attempts per inbox message in this process. The durable claim already bounds how
-     * often a message can be replayed after a crash; this bound stops a message whose dispatch
-     * keeps failing — a data plane that is down, a rate limit — from re-running the agent forever.
+     * Dispatch attempts per inbox message during one lease tenure. A new owner starts a fresh
+     * budget; within a tenure this stops a message whose dispatch keeps failing from re-running
+     * the agent forever.
      */
     private static final int MAX_DISPATCH_ATTEMPTS = 3;
-
-    private final Map<String, Integer> dispatchFailures = new ConcurrentHashMap<>();
 
     private volatile LeaseSession active;
     private volatile Gateway gateway;
@@ -164,7 +162,7 @@ public final class WeixinChannel implements Channel {
     public synchronized void start() {
         if (running) return;
         if (executor.isShutdown())
-            throw new IllegalStateException("Stopped channel cannot restart");
+            throw new WeixinOperationException("Stopped channel cannot restart");
         running = true;
         executor.execute(this::poll);
         log.info("Weixin channel '{}' started: accountId={}", id, p.accountId());
@@ -190,7 +188,7 @@ public final class WeixinChannel implements Channel {
                     Gateway g = gateway;
                     if (g == null)
                         return Mono.error(
-                                new IllegalStateException("Weixin channel has no gateway"));
+                                new WeixinOperationException("Weixin channel has no gateway"));
                     RouteResult route = router.resolveRoute(config, in);
                     return g.run(
                                     route.context(),
@@ -205,9 +203,9 @@ public final class WeixinChannel implements Channel {
 
     /**
      * Sends the Agent's reply on the inline path. A host that owns durable reply delivery returns
-     * no reply from its gateway, so this runs for standalone deployments and host-initiated pushes.
-     * The attempt is single on purpose: retry belongs to the host's delivery queue, and a backoff
-     * inside the dispatch budget is what used to time the whole dispatch out and replay the Agent.
+     * no reply from its gateway. When a gateway does return a reply, the channel owns delivery and
+     * must propagate failures so the inbox stays retryable. Retrying this standalone path may run
+     * the Agent again, as with any at-least-once dispatch.
      */
     private Mono<Msg> deliverReply(
             RouteResult route, InboundMessage in, Msg reply, LeaseSession session) {
@@ -216,17 +214,14 @@ public final class WeixinChannel implements Channel {
                         List.of(reply),
                         context(in),
                         () -> requireLease(session))
-                .onErrorResume(
+                .doOnError(
                         error -> {
-                            if (error instanceof WeixinCredentialRejectedException rejected) {
-                                return Mono.error(rejected);
-                            }
+                            if (error instanceof WeixinCredentialRejectedException) return;
                             notifyListener(
                                     "delivery failed",
                                     listener ->
                                             listener.onDeliveryFailed(
                                                     p.accountId(), safeMessage(error)));
-                            return Mono.empty();
                         })
                 .thenReturn(reply);
     }
@@ -340,7 +335,7 @@ public final class WeixinChannel implements Channel {
                         listener -> listener.onTransientFailure(p.accountId(), safeMessage(error)));
                 // The provider session never started: there is nothing to poll and nothing to stop.
                 // Leave the lease so the outer loop backs off, reacquires and retries startup.
-                throw new IllegalStateException("Weixin provider session did not start");
+                throw new WeixinOperationException("Weixin provider session did not start");
             }
             while (running && session.valid && !Thread.currentThread().isInterrupted()) {
                 // Poll and consume fail independently. A provider that stops answering must not
@@ -388,7 +383,7 @@ public final class WeixinChannel implements Channel {
                     outbound.notifyStop(
                             () -> {
                                 if (!stateStore.isLeaseCurrent(p.accountId(), session.lease))
-                                    throw new IllegalStateException("Weixin lease lost");
+                                    throw new WeixinOperationException("Weixin lease lost");
                             });
             } catch (Exception error) {
                 log.debug("Weixin notifyStop failed: {}", safeMessage(error));
@@ -426,7 +421,7 @@ public final class WeixinChannel implements Channel {
 
     private void requireLease(LeaseSession session) {
         if (session == null || !running || !session.valid || active != session)
-            throw new IllegalStateException("Weixin consumer is not active");
+            throw new WeixinOperationException("Weixin consumer is not active");
         try {
             if (stateStore.isLeaseCurrent(p.accountId(), session.lease)) return;
         } catch (RuntimeException error) {
@@ -434,7 +429,7 @@ public final class WeixinChannel implements Channel {
             throw error;
         }
         loseLease(session);
-        throw new IllegalStateException("Weixin lease lost");
+        throw new WeixinOperationException("Weixin lease lost");
     }
 
     private void loseLease(LeaseSession session) {
@@ -451,7 +446,7 @@ public final class WeixinChannel implements Channel {
             throw new WeixinCredentialRejectedException("getupdates", -14);
         }
         if (response.ret() != 0 || (response.errcode() != null && response.errcode() != 0)) {
-            throw new IllegalStateException("iLink polling failed");
+            throw new WeixinOperationException("iLink polling failed");
         }
         if (!stateStore.acceptBatch(
                 p.accountId(),
@@ -459,7 +454,7 @@ public final class WeixinChannel implements Channel {
                 response.get_updates_buf(),
                 inboxMessages(response.msgs()))) {
             loseLease(session);
-            throw new IllegalStateException("Weixin lease lost");
+            throw new WeixinOperationException("Weixin lease lost");
         }
     }
 
@@ -469,7 +464,7 @@ public final class WeixinChannel implements Channel {
                         inbound -> {
                             requireLease(session);
                             if (!guard.allow(inbound.peer().key()))
-                                throw new IllegalStateException("Weixin peer rate limited");
+                                throw new WeixinOperationException("Weixin peer rate limited");
                             String token = context(inbound);
                             if (token != null
                                     && !stateStore.saveContextToken(
@@ -478,7 +473,7 @@ public final class WeixinChannel implements Channel {
                                             inbound.peer().id(),
                                             token)) {
                                 loseLease(session);
-                                throw new IllegalStateException("Weixin context update fenced");
+                                throw new WeixinOperationException("Weixin context update fenced");
                             }
                             dispatch(inbound, session)
                                     .block(Duration.ofMillis(p.dispatchTimeoutMs()));
@@ -501,13 +496,18 @@ public final class WeixinChannel implements Channel {
                 processMessage(JSON.readTree(claim.payload()), session);
                 if (!stateStore.completeMessage(p.accountId(), session.lease, claim)) {
                     loseLease(session);
-                    throw new IllegalStateException("Weixin inbox completion fenced");
+                    throw new WeixinOperationException("Weixin inbox completion fenced");
                 }
-                dispatchFailures.remove(claim.messageId());
+                session.dispatchFailures.remove(claim.messageId());
+            } catch (WeixinCredentialRejectedException error) {
+                // Reauthorization can recover this message. A rejected account credential is
+                // not a poison message and must not consume its dispatch budget.
+                stateStore.failMessage(p.accountId(), session.lease, claim);
+                throw error;
             } catch (Exception error) {
-                if (dispatchFailures.merge(claim.messageId(), 1, Integer::sum)
+                if (session.dispatchFailures.merge(claim.messageId(), 1, Integer::sum)
                         >= MAX_DISPATCH_ATTEMPTS) {
-                    dispatchFailures.remove(claim.messageId());
+                    session.dispatchFailures.remove(claim.messageId());
                     if (stateStore.abandonMessage(p.accountId(), session.lease, claim)) {
                         log.warn(
                                 "Weixin message abandoned after {} attempts: {}",
@@ -529,6 +529,9 @@ public final class WeixinChannel implements Channel {
 
     private static final class LeaseSession {
         final WeixinLease lease;
+        // Only the consumer thread mutates this map. Releasing the session also releases counters
+        // for messages that another owner completes or retires.
+        final Map<String, Integer> dispatchFailures = new HashMap<>();
         final reactor.core.publisher.Sinks.Empty<Void> cancelled =
                 reactor.core.publisher.Sinks.empty();
         volatile boolean valid = true;
@@ -614,8 +617,7 @@ public final class WeixinChannel implements Channel {
         Throwable cause = rootCause(error);
         String type = cause.getClass().getSimpleName();
         if (!(cause instanceof WeixinCredentialRejectedException
-                || cause instanceof IllegalStateException
-                || cause instanceof IllegalArgumentException)) {
+                || cause instanceof WeixinOperationException)) {
             return type;
         }
         String message = cause.getMessage();

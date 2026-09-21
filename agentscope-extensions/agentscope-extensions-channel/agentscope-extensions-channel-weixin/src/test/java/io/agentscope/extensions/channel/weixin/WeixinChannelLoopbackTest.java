@@ -214,7 +214,7 @@ class WeixinChannelLoopbackTest {
     private void sendMessage(HttpExchange exchange) throws IOException {
         sendCalls.incrementAndGet();
         sendRequest.set(JSON.readTree(exchange.getRequestBody()));
-        write(exchange, "{\"ret\":0}");
+        write(exchange, "{\"message_id\":\"receipt-1\"}");
     }
 
     /** The consumer refuses to poll until the provider session starts, so this must answer. */
