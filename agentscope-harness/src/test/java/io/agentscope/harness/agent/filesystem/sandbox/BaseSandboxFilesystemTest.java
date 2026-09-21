@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -264,6 +265,50 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
+
+        // ==================== Bug reproduction: edit python program collapsed into one line
+        // (#2571) ====================
+
+        @Test
+        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
+            FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
+
+            filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            String cmd = filesystem.lastCommand;
+            assertTrue(
+                    cmd.startsWith("python3 -c \""),
+                    "edit should drive the replacement through a python3 -c program");
+            assertTrue(
+                    cmd.contains("import sys, os, base64, json\npayload"),
+                    "the python3 -c program must be separated by real line feeds");
+            assertFalse(
+                    cmd.contains("\\n"),
+                    "a literal backslash-n sequence survives POSIX double quoting unchanged"
+                            + " and collapses the program into one line");
+        }
+
+        @Test
+        void edit_executeFailure_shouldFailWithCause() {
+            EditResult result =
+                    new FixedResponseFilesystem(sandboxRequestFailed())
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        @Test
+        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
+            EditResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
+                            .edit(RT, "/workspace/file.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
+        }
     }
 
     // ================================================================
@@ -357,6 +402,54 @@ class BaseSandboxFilesystemTest {
             LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
             LsResult r = fs.ls(RT, file.toAbsolutePath().toString());
             assertFalse(r.isSuccess(), "ls on a file path should fail");
+        }
+
+        // ==================== Bug reproduction: edit always failed with a SyntaxError (#2571)
+        // ====================
+
+        @Test
+        void edit_singleOccurrence_replacesIt() throws IOException {
+            Path file = tmpDir.resolve("notes.txt");
+            Files.writeString(file, "alpha\nbeta\ngamma\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "beta", "BETA", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    () -> "edit should succeed on a single occurrence: " + result.error());
+            assertEquals("alpha\nBETA\ngamma\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll_failsAndKeepsFileUnchanged()
+                throws IOException {
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "x x x\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "x", "y", false);
+
+            assertFalse(result.isSuccess(), "edit must refuse ambiguous replacement");
+            assertTrue(
+                    result.error().contains("multiple times"),
+                    "error should point at replaceAll: " + result.error());
+            assertEquals("x x x\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_replaceAll_replacesEveryOccurrence() throws IOException {
+            Path file = tmpDir.resolve("all.txt");
+            Files.writeString(file, "x x x\n");
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+
+            EditResult result = fs.edit(RT, file.toString(), "x", "y", true);
+
+            assertTrue(
+                    result.isSuccess(),
+                    () -> "edit with replaceAll should succeed: " + result.error());
+            assertEquals(3, result.occurrences());
+            assertEquals("y y y\n", Files.readString(file));
         }
     }
 
