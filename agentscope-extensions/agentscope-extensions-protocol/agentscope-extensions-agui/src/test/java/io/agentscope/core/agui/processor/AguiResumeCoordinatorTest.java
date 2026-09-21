@@ -18,6 +18,7 @@ package io.agentscope.core.agui.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -76,12 +77,13 @@ class AguiResumeCoordinatorTest {
     }
 
     @Test
-    void addResumeToolCallIdsAddsKnownToolMappingsToRuntimeContext() {
+    void addResumeInterruptsAddsKnownInterruptsToRuntimeContext() {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
-        track(coordinator, "run-1", interruptedFinished("run-1", interrupt("interrupt-1")), false);
+        AguiEvent.Interrupt interrupt = interrupt("interrupt-1");
+        track(coordinator, "run-1", interruptedFinished("run-1", interrupt), false);
 
         RuntimeContext context =
-                coordinator.addResumeToolCallIds(
+                coordinator.addResumeInterrupts(
                         RunAgentInput.builder()
                                 .threadId("thread-1")
                                 .runId("run-2")
@@ -96,8 +98,66 @@ class AguiResumeCoordinatorTest {
 
         assertEquals("tenant-a", context.get("tenant"));
         assertEquals(
-                Map.of("interrupt-1", "tool-call-1"),
-                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_TOOL_CALL_IDS_KEY));
+                Map.of("interrupt-1", interrupt),
+                context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY));
+    }
+
+    @Test
+    void addResumeInterruptsAddsConfirmationInterruptToRuntimeContext() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        AguiEvent.Interrupt confirmation =
+                new AguiEvent.Interrupt(
+                        "interrupt-1",
+                        "tool_call",
+                        "confirm echo",
+                        "tool-call-1",
+                        null,
+                        null,
+                        Map.of("toolName", "echo"));
+        track(coordinator, "run-1", interruptedFinished("run-1", confirmation), false);
+
+        RuntimeContext context =
+                coordinator.addResumeInterrupts(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-1",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true))))
+                                .build(),
+                        null);
+
+        Object interrupts = context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY);
+        assertEquals(Map.of("interrupt-1", confirmation), interrupts);
+    }
+
+    @Test
+    void addResumeInterruptsIgnoresInterruptsWithoutToolCallId() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+        AguiEvent.Interrupt custom =
+                new AguiEvent.Interrupt(
+                        "interrupt-1", "custom_reason", "no tool", null, null, null, null);
+        track(coordinator, "run-1", interruptedFinished("run-1", custom), false);
+
+        RuntimeContext context =
+                coordinator.addResumeInterrupts(
+                        RunAgentInput.builder()
+                                .threadId("thread-1")
+                                .runId("run-2")
+                                .resume(
+                                        List.of(
+                                                new AguiResume(
+                                                        "interrupt-1",
+                                                        AguiResume.STATUS_RESOLVED,
+                                                        Map.of("approved", true))))
+                                .build(),
+                        RuntimeContext.builder().put("tenant", "tenant-a").build());
+
+        assertEquals("tenant-a", context.get("tenant"));
+        assertNull(context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RESUME_INTERRUPTS_KEY));
     }
 
     @Test
@@ -178,7 +238,23 @@ class AguiResumeCoordinatorTest {
         AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
 
         List<AguiEvent> events =
-                coordinator.contractErrorEvents(input("run-1"), "resume contract failed");
+                coordinator.contractErrorEvents(input("run-1"), "resume contract failed", false);
+
+        assertEquals(
+                List.of(AguiEventType.RUN_STARTED, AguiEventType.RUN_ERROR),
+                events.stream().map(AguiEvent::getType).toList());
+        AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
+        assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());
+        assertEquals("resume contract failed", error.message());
+        assertNotNull(error.timestamp());
+    }
+
+    @Test
+    void contractErrorEventsEmitRunFinishedWhenEnabled() {
+        AguiResumeCoordinator coordinator = new AguiResumeCoordinator();
+
+        List<AguiEvent> events =
+                coordinator.contractErrorEvents(input("run-1"), "resume contract failed", true);
 
         assertEquals(
                 List.of(
@@ -186,10 +262,6 @@ class AguiResumeCoordinatorTest {
                         AguiEventType.RUN_ERROR,
                         AguiEventType.RUN_FINISHED),
                 events.stream().map(AguiEvent::getType).toList());
-        AguiEvent.RunError error = (AguiEvent.RunError) events.get(1);
-        assertEquals(AguiResumeCoordinator.CONTRACT_ERROR_CODE, error.code());
-        assertEquals("resume contract failed", error.message());
-        assertNotNull(error.timestamp());
     }
 
     private static void track(

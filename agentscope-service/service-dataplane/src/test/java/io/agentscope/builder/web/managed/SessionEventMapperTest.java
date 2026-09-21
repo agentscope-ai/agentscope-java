@@ -28,6 +28,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultState;
@@ -63,6 +64,34 @@ class SessionEventMapperTest {
     }
 
     @Test
+    void thinkingPersistsAtContentBoundaryAndReusesPreviewIdentity() {
+        var first = mapper.map(new ThinkingBlockDeltaEvent("r", "b", "Plan "), previewIds);
+        mapper.map(new ThinkingBlockDeltaEvent("r", "b", "the work."), previewIds);
+        var boundary = mapper.map(new TextBlockDeltaEvent("r", "text", "Answer"), previewIds);
+        assertThat(boundary.preceding()).hasSize(1);
+        var thinking = boundary.preceding().get(0);
+        assertThat(thinking.type()).isEqualTo(SessionEventTypes.AGENT_THINKING);
+        assertThat(thinking.eventId()).isEqualTo(first.preview().orElseThrow().eventId());
+        assertThat(thinking.payload().get("text")).isEqualTo("Plan the work.");
+        assertThat(mapper.map(new ModelCallEndEvent("r", null), previewIds).preceding()).isEmpty();
+    }
+
+    @Test
+    void thinkingIsBoundedAndCanBeFlushedAfterInterruptedStream() {
+        mapper.map(new ThinkingBlockDeltaEvent("r", "b", "x".repeat(70_000)), previewIds);
+        var thinking = previewIds.consumeThinking().orElseThrow();
+        assertThat(((String) thinking.payload().get("text")).length()).isEqualTo(64 * 1024);
+        assertThat(thinking.payload())
+                .containsEntry("truncated", true)
+                .containsEntry("originalSize", 70_000);
+        assertThat(previewIds.consumeThinking()).isEmpty();
+        mapper.map(new ThinkingBlockDeltaEvent("r2", "b2", "Next"), previewIds);
+        var next = previewIds.consumeThinking().orElseThrow();
+        assertThat(next.eventId()).isNotEqualTo(thinking.eventId());
+        assertThat(next.payload().get("text")).isEqualTo("Next");
+    }
+
+    @Test
     void agentResultReusesPreviewMessageEventId() {
         SessionEventMapper.MappingResult delta =
                 mapper.map(new TextBlockDeltaEvent("r", "b", "Hel"), previewIds);
@@ -77,6 +106,21 @@ class SessionEventMapperTest {
         assertThat(persisted.type()).isEqualTo(SessionEventTypes.AGENT_MESSAGE);
         assertThat(persisted.payload().get("text")).isEqualTo("Hello");
         assertThat(persisted.eventId()).isEqualTo(previewId);
+    }
+
+    @Test
+    void corePermissionPromptIsRecognizedAsUnresumableForManagedTurn() {
+        Msg asking =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("approval required")
+                        .generateReason(GenerateReason.PERMISSION_ASKING)
+                        .build();
+        Msg completed = Msg.builder().role(MsgRole.ASSISTANT).textContent("done").build();
+
+        assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(asking))).isTrue();
+        assertThat(SessionTurnRunner.isCorePermissionAsking(new AgentResultEvent(completed)))
+                .isFalse();
     }
 
     /**

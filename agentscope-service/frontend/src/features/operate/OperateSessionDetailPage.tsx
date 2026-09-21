@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +31,12 @@ import {
 import { CapabilityGate, DisabledAction } from '@/components/CapabilityGate';
 import { EmptyState } from '@/components/EmptyState';
 import { Page, PageHeader } from '@/components/Page';
+import { useControlPlaneScope } from '@/app/ScopeContext';
+import { ConversationSurface } from '@/features/conversation/ConversationSurface';
+import {
+  runtimeEventsToConversation,
+  runtimeEventsToMessages,
+} from '@/features/conversation/adapters';
 import { canPlanMode, canQueryContext, canQuerySubagentTasks, canQueryTasks } from '@/lib/capabilities';
 import {
   abortSession,
@@ -43,33 +49,31 @@ import {
   fetchSessionTasks,
   fetchSessionTurns,
   restoreSession,
+  sendSessionUserMessage,
   setSessionPlanMode,
   terminateSession,
-  type SessionTurn,
 } from './api';
 import { CompressButton } from './components/CompressButton';
 import { ContextPanel, contextSummary } from './components/ContextPanel';
-import { ConversationHistoryPanel } from './components/ConversationHistoryPanel';
-import { SessionEventsPanel } from './components/SessionEventsPanel';
 import { StatusStrip } from './components/StatusStrip';
-import { useSessionMessages } from './lib/useSessionMessages';
+import { useSessionEvents } from './lib/useSessionEvents';
 
 export default function OperateSessionDetailPage() {
-  const { sessionId = '' } = useParams();
-  const [params, setParams] = useSearchParams();
+  const { sessionId = '', agentId } = useParams();
+  const scope = useControlPlaneScope();
+  const [params] = useSearchParams();
   const agent = params.get('agent') || undefined;
   const namespace = params.get('namespace') || undefined;
   const turnParam = params.get('turn');
   const qc = useQueryClient();
   const [contextOpen, setContextOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
+  const [draft, setDraft] = useState('');
 
   const session = useQuery({
-    queryKey: ['runtime-session', sessionId, agent, namespace],
-    queryFn: () => fetchRuntimeSession(sessionId, { agent, namespace }),
+    queryKey: ['runtime-session', sessionId, agentId, agent, namespace],
+    queryFn: () => fetchRuntimeSession(sessionId, { agent, agentId, namespace }),
     enabled: !!sessionId,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
   });
 
   const s = session.data;
@@ -80,47 +84,49 @@ export default function OperateSessionDetailPage() {
   const capabilities = s?.capabilities || [];
 
   const context = useQuery({
-    queryKey: ['runtime-context', sessionId],
-    queryFn: () => fetchSessionContext(sessionId),
+    queryKey: ['runtime-context', sessionId, agentId],
+    queryFn: () => fetchSessionContext(sessionId, agentId),
     enabled: sessionReady && canQueryContext(capabilities),
   });
 
-  // Messages: always try CP transcript first (no message-query pre-gate).
-  const messages = useSessionMessages(sessionId, {
-    agent,
-    namespace,
+  const eventTimeline = useSessionEvents(sessionId, {
+    agentId,
     enabled: !!sessionId && sessionReady,
-    pollMs: 5_000,
   });
 
   const tasks = useQuery({
-    queryKey: ['runtime-tasks', sessionId],
-    queryFn: () => fetchSessionTasks(sessionId),
+    queryKey: ['runtime-tasks', sessionId, agentId],
+    queryFn: () => fetchSessionTasks(sessionId, agentId),
     enabled: !!sessionId && canQueryTasks(capabilities),
     retry: false,
   });
 
   const subagentTasks = useQuery({
-    queryKey: ['runtime-subagent-tasks', sessionId],
-    queryFn: () => fetchSessionSubagentTasks(sessionId),
+    queryKey: ['runtime-subagent-tasks', sessionId, agentId],
+    queryFn: () => fetchSessionSubagentTasks(sessionId, agentId),
     enabled: !!sessionId && canQuerySubagentTasks(capabilities),
     retry: false,
   });
 
   const commands = useQuery({
-    queryKey: ['runtime-commands', sessionId],
-    queryFn: () => fetchSessionCommands(sessionId),
+    queryKey: ['runtime-commands', sessionId, agentId],
+    queryFn: () => fetchSessionCommands(sessionId, agentId),
     enabled: !!sessionId,
     retry: false,
   });
 
   const turns = useQuery({
-    queryKey: ['runtime-turns', sessionId],
-    queryFn: () => fetchSessionTurns(sessionId),
+    queryKey: ['runtime-turns', sessionId, agentId],
+    queryFn: () => fetchSessionTurns(sessionId, agentId),
     enabled: !!sessionId,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
   });
+
+  const latestEventSeq = eventTimeline.events[eventTimeline.events.length - 1]?.seq;
+  useEffect(() => {
+    if (latestEventSeq == null) return;
+    void qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
+    void qc.invalidateQueries({ queryKey: ['runtime-turns', sessionId] });
+  }, [latestEventSeq, qc, sessionId]);
 
   const turnList = turns.data?.turns || [];
   const selectedTurnIndex = (() => {
@@ -132,12 +138,6 @@ export default function OperateSessionDetailPage() {
     if (running) return running.turnIndex;
     return turnList[0]?.turnIndex ?? null;
   })();
-
-  function selectTurn(t: SessionTurn) {
-    const next = new URLSearchParams(params);
-    next.set('turn', String(t.turnIndex));
-    setParams(next, { replace: true });
-  }
 
   const compress = useMutation({
     mutationFn: (opts: { force?: boolean; queue?: boolean }) => compressSession(sessionId, opts),
@@ -185,6 +185,12 @@ export default function OperateSessionDetailPage() {
       qc.invalidateQueries({ queryKey: ['runtime-session', sessionId] });
     },
   });
+  const sendMessage = useMutation({
+    mutationFn: (content: string) => sendSessionUserMessage(sessionId, content),
+    onSuccess: () => {
+      setDraft('');
+    },
+  });
 
   if (session.isError) {
     return (
@@ -212,6 +218,7 @@ export default function OperateSessionDetailPage() {
   const phase = (s?.phase || '').toLowerCase();
   const isArchived = phase === 'archived';
   const readOnlyOps = phase === 'terminated' || isArchived;
+  const agentScopedReadOnly = !!agentId;
   const canArchive = phase === 'idle';
   const canRestore = isArchived;
   const compressDisabled = readOnlyOps || phase === 'compressing';
@@ -219,14 +226,14 @@ export default function OperateSessionDetailPage() {
   return (
     <Page>
       <div>
-        <Link to="/operate/sessions" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Sessions
+        <Link to={scope.scopedPath(agentId ? `/agent-center/agents/${encodeURIComponent(agentId)}?tab=activity&view=sessions` : '/work/sessions')} className="text-sm text-muted-foreground hover:text-foreground">
+          ← {agentId ? 'Agent activity' : 'Sessions'}
         </Link>
         <PageHeader
           className="mt-2"
           title={sessionId}
-          description={`${s?.agentName} · ${s?.namespace} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
-          actions={
+          description={`${s?.agentName}${scope.selectorVisible ? ` · ${s?.namespace}` : ''} · ${s?.framework || 'framework n/a'}${contractLevel ? ` · L${contractLevel}` : ''}${selectedTurnIndex != null ? ` · turn #${selectedTurnIndex}` : ''}`}
+          actions={agentScopedReadOnly ? <Badge tone="info">Agent-scoped · read only</Badge> : (
             <>
               <CapabilityGate contractLevel={contractLevel} capabilities={capabilities} action="compress">
                 {(enabled, tip) =>
@@ -318,19 +325,47 @@ export default function OperateSessionDetailPage() {
                 }
               </CapabilityGate>
             </>
-          }
+          )}
         />
       </div>
 
       <StatusStrip session={s} />
+
+      <ConversationSurface
+        className="min-h-[42rem] max-h-[78vh]"
+        messages={runtimeEventsToMessages(eventTimeline.events)}
+        events={runtimeEventsToConversation(eventTimeline.events)}
+        source="event stream"
+        loading={eventTimeline.loading}
+        error={eventTimeline.error || (sendMessage.error instanceof Error
+          ? sendMessage.error.message
+          : sendMessage.error
+            ? String(sendMessage.error)
+            : null)}
+        emptyMessage="No conversation messages have been recorded for this session."
+        hasEarlierMessages={eventTimeline.hasEarlier}
+        loadingEarlierMessages={eventTimeline.loadingEarlier}
+        onLoadEarlierMessages={() => void eventTimeline.loadEarlier()}
+        hasEarlierEvents={eventTimeline.hasEarlier}
+        loadingEarlierEvents={eventTimeline.loadingEarlier}
+        onLoadEarlierEvents={() => void eventTimeline.loadEarlier()}
+        composer={!readOnlyOps && !agentScopedReadOnly ? {
+          value: draft,
+          onChange: setDraft,
+          onSubmit: async (content) => {
+            await sendMessage.mutateAsync(content);
+          },
+          busy: sendMessage.isPending,
+          placeholder: 'Send a message to this session…',
+        } : undefined}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
             <CardTitle>Context</CardTitle>
             <CardDescription>
-              Effective AgentState for the next model call (sys prompt, tools, window occupancy) —
-              not lifetime API spend and not the full session transcript.
+              Inspect the instructions, tools and messages available to the next model call.
             </CardDescription>
           </div>
           <Button
@@ -346,7 +381,7 @@ export default function OperateSessionDetailPage() {
           {!sessionReady || session.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : !canQueryContext(capabilities) ? (
-            <p className="text-sm text-muted-foreground">context-query not advertised by data plane.</p>
+            <p className="text-sm text-muted-foreground">This runtime does not provide a context inspection capability.</p>
           ) : context.isError ? (
             <p className="text-sm text-red-600">Failed to load context.</p>
           ) : context.isLoading || (context.isFetching && !context.data) ? (
@@ -370,22 +405,19 @@ export default function OperateSessionDetailPage() {
         </CardContent>
       </Card>
 
-      <SessionEventsPanel sessionId={sessionId} enabled={!!sessionId} />
-
       <Dialog open={contextOpen} onOpenChange={setContextOpen}>
         <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>Context</DialogTitle>
             <DialogDescription>
-              Effective AgentState window (sys prompt, tools, effective messages). Window tokens are
-              latest-turn input size, not lifetime spend.
+              View the latest reported model context, including instructions, tools and messages.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <ContextPanel
               data={context.data}
               unavailableReason={
-                !canQueryContext(capabilities) ? 'context-query not advertised by data plane.' : undefined
+                !canQueryContext(capabilities) ? 'This runtime does not provide a context inspection capability.' : undefined
               }
               error={context.isError}
               loading={context.isLoading}
@@ -456,26 +488,6 @@ export default function OperateSessionDetailPage() {
           </CardContent>
         </Card>
       )}
-
-      <ConversationHistoryPanel
-        turns={turnList}
-        turnsLoading={turns.isLoading}
-        messagesData={messages.page}
-        messagesLoading={messages.loading}
-        messagesError={messages.error}
-        source={messages.source}
-        total={messages.total}
-        loadedCount={messages.messages.length}
-        hasEarlier={messages.hasEarlier}
-        loadingEarlier={messages.loadingEarlier}
-        onLoadEarlier={() => void messages.loadEarlier()}
-        sessionPending={!sessionReady && (session.isLoading || session.isFetching)}
-        selectedTurnIndex={selectedTurnIndex}
-        deepLinkTurnIndex={
-          turnParam && Number.isFinite(Number(turnParam)) ? Number(turnParam) : null
-        }
-        onSelectTurn={selectTurn}
-      />
 
       {(commands.data?.commands || []).length > 0 && (
         <Card>

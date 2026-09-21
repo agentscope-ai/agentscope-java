@@ -21,6 +21,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
 import io.agentscope.harness.agent.skill.RuntimeContextSkillRepository;
 import io.agentscope.harness.agent.skill.SkillResources;
@@ -81,6 +82,36 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     private final SkillRuntime runtime;
     private final Map<AgentSkillRepository, String> sourceNamespaces;
     private final Map<String, RepoBound> frozenSkills;
+    private IsolationScope isolationScope;
+
+    /**
+     * Per-call cache scope, mirroring the identity {@link IsolationScope} already applies to
+     * runtime data. Calls that share a scope share a {@code .skills-cache} subtree, and only
+     * those calls can sweep it — which is what makes one call's visible-skill white-list
+     * authoritative for everything the sweep can reach.
+     */
+    private String scopeKeyFor(RuntimeContext ctx) {
+        IsolationScope scope = isolationScope != null ? isolationScope : IsolationScope.USER;
+        return switch (scope) {
+            case USER -> {
+                String uid = ctx != null ? ctx.getUserId() : null;
+                if (uid != null && !uid.isBlank()) {
+                    yield uid;
+                }
+                // Mirrors IsolationScope.USER's documented fall back to the session identity.
+                // null means "no identity to key on" and is distinct from an identity that
+                // happens to be spelled like the stager's shared bucket.
+                String sid = ctx != null ? ctx.getSessionId() : null;
+                yield sid != null && !sid.isBlank() ? sid : null;
+            }
+            case SESSION -> {
+                String sid = ctx != null ? ctx.getSessionId() : null;
+                yield sid != null && !sid.isBlank() ? sid : null;
+            }
+            // The workspace is already per-agent, so these need no further separation.
+            case AGENT, GLOBAL -> null;
+        };
+    }
 
     public HarnessSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
         this(repositories, toolkit, null, null, null, ShellPathPolicy.noShell());
@@ -169,6 +200,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         this.stager = stager;
         this.shellPathPolicy =
                 shellPathPolicy != null ? shellPathPolicy : ShellPathPolicy.noShell();
+        this.isolationScope = IsolationScope.USER;
         this.runtime = new SkillRuntime();
         // Pre-resolve source namespaces once at build time. The compose order is fixed for
         // the lifetime of the middleware, so this is safe and avoids repeated work per call.
@@ -184,6 +216,15 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     /** Visible for tests / introspection. */
     public SkillRuntime runtime() {
         return runtime;
+    }
+
+    /**
+     * Overrides the isolation dimension used to separate {@code .skills-cache} subtrees.
+     * Defaults to {@link IsolationScope#USER}, matching the default for runtime data.
+     */
+    public HarnessSkillMiddleware isolationScope(IsolationScope scope) {
+        this.isolationScope = scope;
+        return this;
     }
 
     /** Whether repository enumeration is frozen to the construction-time snapshot. */
@@ -213,7 +254,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
         List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
         if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces);
+            stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
         }
     }
 
@@ -239,7 +280,9 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
 
         Map<String, StageResult> staged =
-                stager != null ? stager.stage(enabled, sourceNamespaces) : Map.of();
+                stager != null
+                        ? stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx))
+                        : Map.of();
 
         List<HarnessSkillEntry> entries = new ArrayList<>(enabled.size());
         for (RepoBound bound : enabled) {

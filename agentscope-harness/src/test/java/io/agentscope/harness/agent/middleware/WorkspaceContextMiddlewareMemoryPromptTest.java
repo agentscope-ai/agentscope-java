@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -25,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,6 +53,45 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @TempDir Path workspace;
+
+    @Test
+    void onSystemPromptBuildsWorkspaceContextOnBoundedElastic() {
+        Thread callerThread = Thread.currentThread();
+        AtomicReference<Thread> readThread = new AtomicReference<>();
+        WorkspaceManager wm =
+                track(
+                        new WorkspaceManager(workspace) {
+                            @Override
+                            public String readAgentsMd(RuntimeContext rc) {
+                                readThread.set(Thread.currentThread());
+                                return "agent persona";
+                            }
+                        });
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+
+        String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+
+        assertNotNull(prompt);
+        assertTrue(prompt.contains("agent persona"));
+        assertNotNull(readThread.get());
+        assertNotSame(
+                callerThread, readThread.get(), "workspace context read ran on caller thread");
+    }
+
+    @Test
+    void onSystemPromptHandlesNullAndNonNewlineBasePrompts() {
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+
+        String promptWithoutBase = mw.onSystemPrompt(null, null, null).block();
+        String promptWithBase = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE").block();
+
+        assertNotNull(promptWithoutBase);
+        assertFalse(promptWithoutBase.startsWith("null"));
+        assertTrue(promptWithoutBase.contains("## Domain Knowledge"));
+        assertNotNull(promptWithBase);
+        assertTrue(promptWithBase.startsWith("BASE\n"));
+    }
 
     @Test
     void defaultFlags_includeMemoryRecallPersistenceAndContext() throws Exception {

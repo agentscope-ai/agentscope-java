@@ -49,7 +49,9 @@ import org.slf4j.LoggerFactory;
  * <p>Storage layout: {@code agents/<parentAgentId>/tasks/<sessionId>.json} — a JSON map of
  * {@code taskId → TaskRecord}, consistent with how sessions are stored. In distributed deployments
  * using {@code RemoteFilesystemSpec}, this path is automatically routed to shared storage, making
- * task state visible to any node.
+ * task state visible to any node. In sandbox mode the injected filesystem is a per-call proxy with
+ * no live sandbox between calls, so task records are persisted on the host workspace instead of
+ * inside the sandbox — see the task-record routing in {@code WorkspaceManager}.
  *
  * <p>The in-memory {@code localTasks} map is keyed by {@code "<sessionId>:<taskId>"} to preserve
  * session isolation when multiple sessions coexist in the same process.
@@ -557,24 +559,18 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
         BackgroundTask local = localTasks.get(localKey(sessionId, taskId));
         if (local != null) {
-            local.cancel(true);
             found = true;
         }
 
         // Always write cancelRequested flag to workspace for cross-node coordination
-        Optional<TaskRecord> existing =
-                workspaceManager.readTaskRecord(effRc, parentAgentId, sessionId, taskId);
+        Optional<TaskRecord> existing = persistCancellation(effRc, sessionId, taskId);
         if (existing.isPresent()) {
             TaskRecord snapshot = existing.get();
             boolean agentProtocol =
                     snapshot.isAgentProtocolTransport() && snapshot.getRemoteBaseUrl() != null;
 
-            TaskRecord record = snapshot;
-            record.setCancelRequested(true);
-            if (!record.getStatus().isTerminal()) {
-                record.setStatus(TaskStatus.CANCELLED);
-            }
-            persistRecord(effRc, sessionId, record);
+            // Completion listeners must observe durable cancellation, never a still-running record.
+            if (local != null) local.cancel(true);
 
             if (agentProtocol) {
                 try {
@@ -589,6 +585,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
             return true;
         }
 
+        if (local != null) local.cancel(true);
         return found;
     }
 
@@ -754,6 +751,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
      *     {@link WorkspaceManager#listAllTaskRecords})
      */
     void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow) {
+        sweepOrphanedTasks(orphanTimeout, recentWindow, Instant.now());
+    }
+
+    /**
+     * Sweeps orphaned tasks using the supplied sweep time.
+     *
+     * <p>Package-private so tests can verify the timeout boundary without depending on the
+     * platform clock resolution.
+     */
+    void sweepOrphanedTasks(Duration orphanTimeout, Duration recentWindow, Instant sweepTime) {
         // Sweep runs without per-user RC. Tasks persisted under user-scoped namespaces are
         // visible to the sweep only via the captured per-task RC of any still-local entry; this
         // empty-RC path covers AGENT/GLOBAL-scoped persistence and the per-task local maps.
@@ -761,7 +768,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         try {
             Collection<TaskRecord> all =
                     workspaceManager.listAllTaskRecords(sweepRc, parentAgentId, recentWindow);
-            Instant threshold = Instant.now().minus(orphanTimeout);
+            Instant threshold = sweepTime.minus(orphanTimeout);
             for (TaskRecord record : all) {
                 if (record.getStatus() == null || record.getStatus().isTerminal()) {
                     continue;
@@ -771,7 +778,10 @@ public class WorkspaceTaskRepository implements TaskRepository {
                     continue;
                 }
                 Instant lastUpdated = record.getLastUpdatedAt();
-                if (lastUpdated == null || !lastUpdated.isBefore(threshold)) {
+                // A task is stale as soon as it reaches the timeout boundary. Besides matching
+                // the timeout contract, this avoids leaving a zero-timeout task RUNNING when the
+                // system clock returns the same instant for its last update and this sweep.
+                if (lastUpdated == null || lastUpdated.isAfter(threshold)) {
                     continue;
                 }
                 String sid = record.getParentSessionId();
@@ -819,7 +829,22 @@ public class WorkspaceTaskRepository implements TaskRepository {
         }
     }
 
-    private void updateStatus(
+    // Serialize local status changes with cancellation. Otherwise a worker starting between
+    // cancellation's read and write can restore RUNNING before completion listeners run.
+    private synchronized Optional<TaskRecord> persistCancellation(
+            RuntimeContext rc, String sessionId, String taskId) {
+        Optional<TaskRecord> existing =
+                workspaceManager.readTaskRecord(rc, parentAgentId, sessionId, taskId);
+        existing.ifPresent(
+                record -> {
+                    record.setCancelRequested(true);
+                    if (!record.getStatus().isTerminal()) record.setStatus(TaskStatus.CANCELLED);
+                    persistRecord(rc, sessionId, record);
+                });
+        return existing;
+    }
+
+    private synchronized void updateStatus(
             RuntimeContext rc,
             String sessionId,
             String taskId,
@@ -941,7 +966,8 @@ public class WorkspaceTaskRepository implements TaskRepository {
     private void fireCompletionCallback(
             RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
         TaskCompletionCallback cb = this.completionCallback;
-        if (cb == null) {
+        if (cb == null
+                || (rc != null && Boolean.TRUE.equals(rc.get(SUPPRESS_COMPLETION_CALLBACK)))) {
             return;
         }
         try {

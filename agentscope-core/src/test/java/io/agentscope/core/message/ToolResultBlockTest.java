@@ -30,4 +30,14 @@ class ToolResultBlockTest {
         TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
         assertEquals("Error: probe failed", output.getText());
     }
+
+    @Test
+    void toolCallErrorFactoryPreservesToolIdAndRuntimeErrorMarker() {
+        ToolResultBlock result = ToolResultBlock.error("tool-1", "probe failed");
+
+        assertEquals("tool-1", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("[ERROR] probe failed", output.getText());
+    }
 }

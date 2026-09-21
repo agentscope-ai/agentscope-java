@@ -1,4 +1,6 @@
-# Multi-Agent Debate
+---
+title: Multi-Agent Debate
+---
 
 Multi-Agent Debate is a workflow pattern that simulates a multi-turn discussion between different agents. This pattern is particularly useful for problem-solving tasks where multiple perspectives can lead to better solutions.
 
@@ -362,8 +364,8 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## Related Documentation
 
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
-- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [Structured Output](../task/structured-output.md) - Extracting structured data from agent responses
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel agent execution
+- [Handoffs](/v1/en/docs/multi-agent/handoffs) - State-driven routing and transfer between agents
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [Structured Output](/v1/en/docs/task/structured-output) - Extracting structured data from agent responses

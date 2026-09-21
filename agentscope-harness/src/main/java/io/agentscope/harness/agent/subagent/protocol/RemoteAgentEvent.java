@@ -23,6 +23,10 @@ import java.util.List;
  * Stable Protocol DTO for remote subagent event streaming.
  *
  * <p>Fields are optional per event type; unknown fields are ignored for forward compatibility.
+ *
+ * <p>Besides the flat per-type fields, an event may carry {@link #getPayload()} — the source {@link
+ * io.agentscope.core.event.AgentEvent} serialized in full. Clients that understand it restore the
+ * original event (ids, timestamps, metadata and all); older ones keep reading the flat fields.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -40,6 +44,8 @@ public class RemoteAgentEvent {
     private List<RemotePendingConfirm> pendingConfirms;
     private String status;
     private String error;
+    private String eventType;
+    private String payload;
 
     public RemoteAgentEvent() {}
 
@@ -137,5 +143,31 @@ public class RemoteAgentEvent {
 
     public void setError(String error) {
         this.error = error;
+    }
+
+    /**
+     * Name of the source {@link io.agentscope.core.event.AgentEventType}, e.g.
+     * {@code MODEL_CALL_END}. Lets a client filter or log events without deserializing {@link
+     * #getPayload()}.
+     */
+    public String getEventType() {
+        return eventType;
+    }
+
+    public void setEventType(String eventType) {
+        this.eventType = eventType;
+    }
+
+    /**
+     * The source {@link io.agentscope.core.event.AgentEvent} as JSON, or {@code null} for events
+     * the server synthesizes itself ({@code STATUS}, {@code RUN_ERROR}) and for events whose
+     * serialization failed.
+     */
+    public String getPayload() {
+        return payload;
+    }
+
+    public void setPayload(String payload) {
+        this.payload = payload;
     }
 }

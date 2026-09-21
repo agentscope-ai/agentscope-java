@@ -96,7 +96,7 @@ export default function LoginPage() {
     try {
       const res = await login(username, password);
       saveToken(res.token);
-      navigate('/agents', { replace: true });
+      navigate('/control/overview', { replace: true });
     } catch {
       setError('Invalid username or password');
     } finally {

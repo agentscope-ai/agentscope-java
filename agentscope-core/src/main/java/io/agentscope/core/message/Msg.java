@@ -84,6 +84,14 @@ public class Msg implements State {
             "agentscope_confirm_request_reply_id";
 
     /**
+     * Metadata key storing the {@code replyId} of the {@code RequireExternalExecutionEvent} that
+     * paused this assistant turn. Used to correlate the later
+     * {@code ExternalExecutionResultEvent}.
+     */
+    public static final String METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID =
+            "agentscope_external_execution_request_reply_id";
+
+    /**
      * Metadata key (boolean) marking a message as <em>synthetic</em>: framework-injected rather
      * than authored by the user, the model, or a tool. Synthetic messages (e.g. the per-turn todo
      * reminder produced by {@code TaskReminderMiddleware}) are appended transiently to the
@@ -555,6 +563,10 @@ public class Msg implements State {
      * if (usage != null) {
      *     System.out.println("Input tokens: " + usage.getInputTokens());
      *     System.out.println("Output tokens: " + usage.getOutputTokens());
+     *     System.out.println("Cached tokens: " + usage.getCachedTokens());
+     *     System.out.println("Cache creation tokens: " + usage.getCacheCreationTokens());
+     *     System.out.println("Reasoning tokens: " + usage.getReasoningTokens());
+     *     System.out.println("Tool-use prompt tokens: " + usage.getToolUsePromptTokens());
      *     System.out.println("Total tokens: " + usage.getTotalTokens());
      *     System.out.println("Time: " + usage.getTime() + "s");
      * }
@@ -582,6 +594,10 @@ public class Msg implements State {
                     ChatUsage.builder()
                             .inputTokens(toInt(map.get("inputTokens")))
                             .outputTokens(toInt(map.get("outputTokens")))
+                            .cachedTokens(toInt(map.get("cachedTokens")))
+                            .cacheCreationTokens(toInt(map.get("cacheCreationTokens")))
+                            .reasoningTokens(toInt(map.get("reasoningTokens")))
+                            .toolUsePromptTokens(toInt(map.get("toolUsePromptTokens")))
                             .time(toDouble(map.get("time")))
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -615,6 +631,7 @@ public class Msg implements State {
      *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
      *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>
      *   <li>{@link GenerateReason#MAX_ITERATIONS} - Maximum iterations reached</li>
+     *   <li>{@link GenerateReason#TOOL_RETURN_DIRECT} - Tool result returned directly to the caller</li>
      * </ul>
      *
      * @return The generate reason, defaults to {@link GenerateReason#MODEL_STOP} if not set

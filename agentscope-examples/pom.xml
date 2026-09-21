@@ -37,6 +37,7 @@
         <module>agents/agentscope-paw</module>
         <module>agents/agentscope-dataagent</module>
         <module>agents/agentscope-codingagent</module>
+        <module>agentscope-copilotkit</module>
     </modules>
 
     <properties>
