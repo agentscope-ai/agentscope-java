@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -68,7 +69,9 @@ class PostgresAgentStateStoreTest {
         when(preparedStatement.executeQuery()).thenReturn(resultSet);
         when(preparedStatement.execute()).thenReturn(true);
         when(preparedStatement.executeUpdate()).thenReturn(1);
-        when(resultSet.next()).thenReturn(true, true);
+        // Construction with createIfNotExist=false runs three read-only checks (schema, table,
+        // version column), each consuming one resultSet.next().
+        when(resultSet.next()).thenReturn(true, true, true);
     }
 
     @AfterEach
@@ -129,6 +132,49 @@ class PostgresAgentStateStoreTest {
         PostgresAgentStateStore store = new PostgresAgentStateStore(dataSource);
         assertNotNull(store);
         verify(connection, never()).createStatement();
+    }
+
+    // ==================== Bug reproduction: DDL on the createIfNotExist=false path (#3213)
+    // ====================
+
+    @Test
+    void constructorWithoutAutoCreateNeverIssuesAlter() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+
+        assertNotNull(store);
+        // Regression for #3213: ensureVersionColumn() used to run an unconditional
+        // ALTER TABLE ... ADD COLUMN even when createIfNotExist=false, which fails for DML-only
+        // accounts (PostgreSQL checks table ownership before honoring IF NOT EXISTS).
+        verify(connection, never()).prepareStatement(startsWith("ALTER"));
+    }
+
+    @Test
+    void autoCreateStillEnsuresVersionColumn() throws SQLException {
+        PostgresAgentStateStore.builder(dataSource).createIfNotExist(true).build();
+
+        verify(connection).prepareStatement(startsWith("ALTER TABLE"));
+    }
+
+    @Test
+    void verifyVersionColumnMissingThrowsWithMigrationDdl() throws SQLException {
+        // schema exists, table exists, version column missing
+        when(resultSet.next()).thenReturn(true, true, false);
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                PostgresAgentStateStore.builder(dataSource)
+                                        .createIfNotExist(false)
+                                        .build());
+
+        assertTrue(exception.getMessage().contains("version"));
+        assertTrue(
+                exception
+                        .getMessage()
+                        .contains("ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1"),
+                "the failure must quote the exact migration DDL to run");
     }
 
     @Test
