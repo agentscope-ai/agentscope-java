@@ -79,14 +79,8 @@ public class RedissonAgentStateStore implements AgentStateStore {
         try {
             this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
         } catch (IllegalArgumentException e) {
-            Package apiPackage = RScript.class.getPackage();
-            String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
-            if (version == null) {
-                // fall back to the code source so users can see which jar won
-                version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
-            }
             throw new IllegalStateException(
-                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + version, e);
+                    RedissonClientAdapter.incompatibleRedissonApiMessage(), e);
         }
         this.keyPrefix = builder.keyPrefix;
         this.redissonClient = builder.redissonClient;

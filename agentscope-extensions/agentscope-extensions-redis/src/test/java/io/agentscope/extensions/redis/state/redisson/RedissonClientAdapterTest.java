@@ -17,6 +17,7 @@ package io.agentscope.extensions.redis.state.redisson;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -83,8 +84,9 @@ class RedissonClientAdapterTest {
                             .contains("Align your Redisson dependencies, including any starter"));
             assertTrue(error.getMessage().contains("agentscope-dependencies-bom"));
             assertEquals(
-                    RedissonClientAdapter.INCOMPATIBLE_REDISSON_API + loadedRedissonApiVersion(),
-                    error.getMessage());
+                    RedissonClientAdapter.incompatibleRedissonApiMessage(), error.getMessage());
+            assertFalse(error.getMessage().contains("<no signers>"));
+            assertFalse(error.getMessage().contains("version: null"));
             verifyNoInteractions(redissonClient);
         }
     }
@@ -171,12 +173,44 @@ class RedissonClientAdapterTest {
                         .getMessage());
     }
 
-    private static String loadedRedissonApiVersion() {
-        Package apiPackage = RScript.class.getPackage();
-        String version = apiPackage == null ? null : apiPackage.getImplementationVersion();
+    @Test
+    void incompatibleMessageOmitsVersionClauseWhenUnknown() {
+        assertEquals(
+                RedissonClientAdapter.INCOMPATIBLE_REDISSON_API,
+                RedissonClientAdapter.incompatibleRedissonApiMessage(null));
+        assertEquals(
+                RedissonClientAdapter.INCOMPATIBLE_REDISSON_API,
+                RedissonClientAdapter.incompatibleRedissonApiMessage(""));
+        assertEquals(
+                RedissonClientAdapter.INCOMPATIBLE_REDISSON_API,
+                RedissonClientAdapter.incompatibleRedissonApiMessage(" \t"));
+    }
+
+    @Test
+    void incompatibleMessageAppendsImplementationVersionWhenKnown() {
+        assertEquals(
+                RedissonClientAdapter.INCOMPATIBLE_REDISSON_API
+                        + " Loaded Redisson API implementation version: 4.2.0",
+                RedissonClientAdapter.incompatibleRedissonApiMessage("4.2.0"));
+    }
+
+    @Test
+    void loadedApiVersionIsNeverACodeSourceLocation() {
+        String version = RedissonClientAdapter.loadedRedissonApiVersion();
+        String message = RedissonClientAdapter.incompatibleRedissonApiMessage();
+        assertFalse(message.contains("<no signers>"));
+        assertFalse(message.contains("version: null"));
         if (version == null) {
-            version = String.valueOf(RScript.class.getProtectionDomain().getCodeSource());
+            assertEquals(RedissonClientAdapter.INCOMPATIBLE_REDISSON_API, message);
+            return;
         }
-        return version;
+        assertFalse(version.contains("signers"));
+        assertFalse(version.contains("file:"));
+        assertFalse(version.equals("null"));
+        assertEquals(
+                RedissonClientAdapter.INCOMPATIBLE_REDISSON_API
+                        + " Loaded Redisson API implementation version: "
+                        + version,
+                message);
     }
 }
