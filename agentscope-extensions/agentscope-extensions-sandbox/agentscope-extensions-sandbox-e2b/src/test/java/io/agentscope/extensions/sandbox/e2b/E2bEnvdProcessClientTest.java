@@ -32,6 +32,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
@@ -39,6 +40,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -439,6 +441,79 @@ class E2bEnvdProcessClientTest {
         assertTrue(
                 e.getMessage().contains("before receiving a process exit code"),
                 "clean end without exit keeps #2828 semantics: " + e.getMessage());
+    }
+
+    @Test
+    void alreadyCancelledCallFailsFastWithoutBlocking() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("must not be called");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+        Thread.currentThread().interrupt();
+        try {
+            long start = System.nanoTime();
+            InterruptedIOException e =
+                    assertThrows(
+                            InterruptedIOException.class,
+                            () -> client.runShell(state(), "/workspace", "echo hi", 30));
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertTrue(elapsedMs < 5000, "must fail fast, took " + elapsedMs + "ms");
+            assertTrue(Thread.currentThread().isInterrupted(), "interrupt bit must be restored");
+            assertTrue(
+                    e.getMessage().contains("cancelled before start"),
+                    "must not look like a timeout: " + e.getMessage());
+        } finally {
+            Thread.interrupted();
+        }
+        assertNull(header.get(), "no HTTP request must be issued for a cancelled call");
+    }
+
+    @Test
+    void malformedEndFrameFallsThroughToStreamError() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(
+                        options(E2bCodec.JSON),
+                        endStreamFrame("%%%not-json%%%".getBytes(StandardCharsets.UTF_8)));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(
+                e.getMessage().contains("before receiving a process exit code"),
+                "unparsable end frame keeps #2828 semantics: " + e.getMessage());
+    }
+
+    @Test
+    void protoEndFrameWithUnknownFieldsStillMaps() throws Exception {
+        byte[] error = protoEndStreamError("deadline_exceeded", "context deadline exceeded");
+        ByteArrayOutputStream frame = new ByteArrayOutputStream();
+        frame.write(0x48);
+        writeVarint(frame, 123);
+        frame.writeBytes(error);
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.PROTO), endStreamFrame(frame.toByteArray()));
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+    }
+
+    @Test
+    void protoEmptyEndFrameStaysStreamError() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.PROTO), endStreamFrame(new byte[0]));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(
+                e.getMessage().contains("before receiving a process exit code"),
+                "clean proto end without exit keeps #2828 semantics: " + e.getMessage());
     }
 
     @Test

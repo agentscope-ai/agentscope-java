@@ -44,6 +44,8 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal Connect client for envd {@code process.Process/Start} (server streaming), sufficient
@@ -121,18 +123,33 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
+        // Deliberately fail fast instead of clamping like daytona/agentrun:
+        // 0/negative is never intentional; clamping to 1s would mask caller bugs.
+        // No command text here: model-generated commands may carry inline tokens.
         if (timeoutSeconds <= 0) {
             throw new IllegalArgumentException(
                     "[e2b] timeoutSeconds must be positive, got "
                             + timeoutSeconds
-                            + " for command \""
-                            + truncateCommand(shellCommand)
-                            + "\". This is a caller bug, not a sandbox failure;"
+                            + ". This is a caller bug, not a sandbox failure;"
                             + " check the timeout argument.");
+        }
+        // Snapshot the interrupt bit: a stale bit set before this call must neither
+        // turn a genuine exec timeout into a fake cancellation below, nor block an
+        // already-cancelled caller for the full timeout.
+        boolean preInterrupted = Thread.interrupted();
+        if (preInterrupted) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("exec cancelled before start");
         }
         OkHttpClient callClient =
                 http.newBuilder()
-                        .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
+                        // Server deadline stays exact so the kill lands on time and the
+                        // client observes it via deadline_exceeded; the client backup
+                        // runs slightly later to cover a misbehaving server without
+                        // ever winning the race itself.
+                        .callTimeout(
+                                timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS,
+                                TimeUnit.MILLISECONDS)
                         // Disable the idle read timeout: it fires on gaps between bytes and
                         // would preempt callTimeout (both surface as InterruptedIOException),
                         // misreporting a short idle stall as a full exec timeout (#2974).
@@ -162,9 +179,6 @@ final class E2bEnvdProcessClient {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exit;
-        // Snapshot the interrupt bit: a stale bit set before this call must not turn a
-        // genuine exec timeout into a fake cancellation below.
-        boolean preInterrupted = Thread.interrupted();
         long startNanos = System.nanoTime();
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
@@ -187,16 +201,20 @@ final class E2bEnvdProcessClient {
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
         } catch (ConnectStreamException e) {
             if (CONNECT_DEADLINE_EXCEEDED.equals(e.code())) {
+                logPartialStreams(
+                        "timed out (server deadline_exceeded)",
+                        timeoutSeconds,
+                        startNanos,
+                        stdout,
+                        stderr);
                 throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
             }
             throw new IOException(
                     "envd process stream error [" + e.code() + "]: " + e.getMessage(), e);
         } catch (MissingExitCodeException e) {
+            logPartialStreams(
+                    "ended without exit code", timeoutSeconds, startNanos, stdout, stderr);
             throw mapPrematureEnd(e, shellCommand, timeoutSeconds, startNanos);
-        } finally {
-            if (preInterrupted) {
-                Thread.currentThread().interrupt();
-            }
         }
         return new ShellCapture(exit, stdout, stderr);
     }
@@ -209,6 +227,15 @@ final class E2bEnvdProcessClient {
 
     /** Connect error code envd returns when the server-side exec deadline fires. */
     private static final String CONNECT_DEADLINE_EXCEEDED = "deadline_exceeded";
+
+    /**
+     * Head start of the server deadline over the client backup timeout, so the
+     * server-side kill (and its {@code deadline_exceeded} frame) deterministically
+     * wins the race and a retry never overlaps a still-running process.
+     */
+    private static final long CLIENT_TIMEOUT_SLACK_MILLIS = 500;
+
+    private static final Logger log = LoggerFactory.getLogger(E2bEnvdProcessClient.class);
 
     private record ConnectError(String code, String message) {}
 
@@ -293,6 +320,7 @@ final class E2bEnvdProcessClient {
             }
             return null;
         } catch (Exception e) {
+            log.debug("[e2b] unparsable proto end-stream frame, falling through: {}", e.toString());
             return null;
         }
     }
@@ -309,11 +337,29 @@ final class E2bEnvdProcessClient {
         return e;
     }
 
-    private static String truncateCommand(String command) {
-        if (command == null) {
-            return "";
+    private static void logPartialStreams(
+            String why,
+            int timeoutSeconds,
+            long startNanos,
+            ByteArrayOutputStream stdout,
+            ByteArrayOutputStream stderr) {
+        if (!log.isDebugEnabled()) {
+            return;
         }
-        return command.length() <= 200 ? command : command.substring(0, 200) + "...";
+        log.debug(
+                "[e2b] exec {} after {}s of {}s timeout;"
+                        + " partial stdout tail: {}; partial stderr tail: {}",
+                why,
+                elapsedSeconds(startNanos),
+                timeoutSeconds,
+                tailUtf8(stdout),
+                tailUtf8(stderr));
+    }
+
+    private static String tailUtf8(ByteArrayOutputStream out) {
+        byte[] b = out.toByteArray();
+        int n = Math.min(b.length, 512);
+        return new String(b, b.length - n, n, StandardCharsets.UTF_8);
     }
 
     private int drainStartStream(
