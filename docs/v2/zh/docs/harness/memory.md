@@ -264,7 +264,7 @@ HarnessAgent.builder()
 
 两者一起用时，还会跳过 `<memory_context>`（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
 
-`disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
+`disableMemoryHooks()` 是可选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
 
 ## 相关文档
 
