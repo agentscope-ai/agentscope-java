@@ -532,7 +532,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * CAS-aware persist of {@code agent_state}. Applies {@link #conflictPolicy} on conflict.
      *
      * @return the new store version, or {@link AgentStateStore#UNVERSIONED} when the backend does
-     *     not version / the write used unconditional overwrite without a version return
+     *     not version
      */
     private long persistAgentStateCas(
             String userId,
@@ -542,14 +542,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             long expectedVersion,
             int loadedContextSize) {
         if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
-            stateStore.save(userId, sessionId, "agent_state", toSave);
             if (stateStore.supportsVersioning()) {
-                VersionedState<AgentState> after =
-                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
-                if (after.version() != AgentStateStore.UNVERSIONED) {
-                    slotVersions.put(slot, after.version());
-                    return after.version();
+                // Unconditional write through the versioning API: the store returns the
+                // version assigned to THIS write (JDBC #3220, in-memory likewise), so
+                // slotVersions can no longer capture a concurrent writer's version between
+                // the write and a separate version read.
+                long written =
+                        stateStore.saveIfVersion(
+                                userId,
+                                sessionId,
+                                "agent_state",
+                                toSave,
+                                AgentStateStore.UNVERSIONED);
+                if (written != AgentStateStore.UNVERSIONED) {
+                    slotVersions.put(slot, written);
+                    return written;
                 }
+                // Defensive only: a versioning backend returning UNVERSIONED for an
+                // unconditional write violates the AgentStateStore contract.
+                stateStore.save(userId, sessionId, "agent_state", toSave);
+            } else {
+                stateStore.save(userId, sessionId, "agent_state", toSave);
             }
             return AgentStateStore.UNVERSIONED;
         }
