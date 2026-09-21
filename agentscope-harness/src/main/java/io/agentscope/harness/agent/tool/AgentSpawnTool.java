@@ -189,12 +189,18 @@ public class AgentSpawnTool {
 
     /**
      * Optional {@link RuntimeContext} override for the sync wait (seconds) when {@link
-     * #CTX_FORCE_SYNC} is enabled. Accepts an {@link Integer}/{@link Number} or its string form.
+     * #CTX_FORCE_SYNC} is enabled. Accepts a {@link Number} or an integer string;
+     * fractional numbers truncate toward zero.
      *
      * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
      * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
      * (30s); values above the effective ceiling (default 600s, or {@link
      * #CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS}) are clamped.
+     *
+     * <p>Supplied by the trusted embedding application, in seconds, not milliseconds. The
+     * application owns the ceiling policy; no additional framework duration cap is imposed
+     * beyond the {@link Integer#MAX_VALUE} representation limit. Model-provided {@code
+     * timeout_seconds} remains capped at 600s.
      *
      * <p>Ignored when force-sync is off.
      *
@@ -210,11 +216,17 @@ public class AgentSpawnTool {
 
     /**
      * Optional {@link RuntimeContext} ceiling for the maximum allowed sync wait (seconds) under
-     * {@link #CTX_FORCE_SYNC}. Accepts an {@link Integer}/{@link Number} or its string form.
+     * {@link #CTX_FORCE_SYNC}. Accepts a {@link Number} or an integer string;
+     * fractional numbers truncate toward zero.
      *
      * <p>When present, bounds {@link #CTX_FORCE_SYNC_TIMEOUT_SECONDS} and tightens LLM timeouts.
      * Defaults to {@link #DEFAULT_FORCE_SYNC_MAX_TIMEOUT_SECONDS} (600s) when unset, invalid, or
      * non-positive. Values above {@link Integer#MAX_VALUE} saturate to that limit.
+     *
+     * <p>Supplied by the trusted embedding application, in seconds, not milliseconds. The
+     * application owns the ceiling policy; no additional framework duration cap is imposed
+     * beyond the {@link Integer#MAX_VALUE} representation limit. Model-provided {@code
+     * timeout_seconds} remains capped at 600s.
      *
      * <p>Ignored when force-sync is off.
      *
@@ -1572,7 +1584,7 @@ public class AgentSpawnTool {
                         "agent_spawn: clamped force-sync timeout from {}s to {}s, session={}",
                         requestedSeconds,
                         effectiveSeconds,
-                        ctx != null ? ctx.getSessionId() : null);
+                        ctx.getSessionId());
             }
             log.debug(
                     "Subagent force-sync timeout: effective={}s, ceiling={}s, source=application,"
@@ -1593,7 +1605,7 @@ public class AgentSpawnTool {
                     "agent_spawn: clamped force-sync timeout from {}s to {}s, session={}",
                     llmTimeoutMs / 1_000L,
                     appMaxSeconds,
-                    ctx != null ? ctx.getSessionId() : null);
+                    ctx.getSessionId());
         }
         long effectiveMs = Math.min(llmTimeoutMs, appMaxMs);
         log.debug(
@@ -1626,7 +1638,7 @@ public class AgentSpawnTool {
     }
 
     /**
-     * Coerces a context value ({@link Number} or numeric string) to Integer with saturating
+     * Coerces a context value ({@link Number} or integer string) to Integer with saturating
      * normalization; non-positive/negative values become 0; values exceeding Integer.MAX_VALUE
      * saturate to Integer.MAX_VALUE; fractional Numbers truncate toward zero; blank/invalid or
      * non-finite values → null.

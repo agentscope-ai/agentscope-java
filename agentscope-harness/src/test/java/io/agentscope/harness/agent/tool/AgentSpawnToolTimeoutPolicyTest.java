@@ -81,6 +81,8 @@ class AgentSpawnToolTimeoutPolicyTest {
         return Stream.of(
                 Arguments.of(" 1800 ", 1800),
                 Arguments.of(1800L, 1800),
+                Arguments.of(1800.0, 1800),
+                Arguments.of((double) (1L << 32) + 100, Integer.MAX_VALUE),
                 Arguments.of(1800.9, 1800),
                 Arguments.of(new BigDecimal("1800.9"), 1800),
                 Arguments.of(
@@ -121,6 +123,7 @@ class AgentSpawnToolTimeoutPolicyTest {
                         " ",
                         "bad",
                         "1.5",
+                        "1800.0",
                         true,
                         Double.NaN,
                         Double.POSITIVE_INFINITY,
@@ -142,18 +145,43 @@ class AgentSpawnToolTimeoutPolicyTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"0,1", "-1,1", ",1", "600,1", "1800,600"})
-    void ceilingAlsoBoundsModelAndDefaultTimeouts(Integer modelTimeout, long expectedSeconds) {
+    @CsvSource({"0,1,1", "-1,1,1", ",1,1", "600,1,1", "1800,3600,600"})
+    void ceilingAlsoBoundsModelAndDefaultTimeouts(
+            Integer modelTimeout, int ceiling, long expectedSeconds) {
         RuntimeContext ctx =
                 RuntimeContext.builder()
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
-                        .put(
-                                AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS,
-                                modelTimeout != null && modelTimeout == 1800 ? 3600 : 1)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, ceiling)
                         .build();
         assertEquals(
                 expectedSeconds * 1000,
                 AgentSpawnTool.resolveEffectiveTimeoutMs(modelTimeout, ctx));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "1800,,600",
+        "1800,3600,1800",
+        "7200,3600,3600",
+        "1800,300,300",
+        "0,3600,30",
+        "-1,3600,30",
+        "1800,0,600",
+        "1800,-100,600",
+        "9223372036854775807,3600,3600"
+    })
+    void applicationOverrideIsBoundedByConfiguredCeiling(
+            long override, Integer ceiling, long expectedSeconds) {
+        RuntimeContext.Builder builder =
+                RuntimeContext.builder()
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
+                        .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, override);
+        if (ceiling != null) {
+            builder.put(AgentSpawnTool.CTX_FORCE_SYNC_MAX_TIMEOUT_SECONDS, ceiling);
+        }
+        assertEquals(
+                expectedSeconds * 1000,
+                AgentSpawnTool.resolveEffectiveTimeoutMs(0, builder.build()));
     }
 
     // Real execution paths use short deadlines; numeric tests above verify the >600s values

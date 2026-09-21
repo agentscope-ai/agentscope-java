@@ -140,6 +140,8 @@ When enabled:
 
 The ceiling defaults to 600 seconds when missing, invalid, or non-positive. Both settings accept a `Number` or an integer string; values above `Integer.MAX_VALUE` saturate to that limit. The ceiling alone never raises the model's 600-second limit: waits above 600 seconds require both an application timeout override and a raised ceiling. Both settings are ignored when force sync is disabled.
 
+These are trusted embedding-application settings, expressed in **seconds, not milliseconds**. The application owns the timeout ceiling policy; the framework imposes no additional duration cap beyond the `Integer.MAX_VALUE` representation limit. Validate units and choose a ceiling appropriate for your workload: for example, 24 hours is `86400` seconds, not `86400000`. Fractional `Number` values truncate toward zero, while strings must use integer syntax (`"1800"` is valid; `"1800.0"` is not).
+
 `AgentSpawnTool` logs the effective force-sync timeout, application ceiling, and session at DEBUG level, and logs timeout clamping at INFO level. A timeout response also reports the effective wait budget.
 
 `agent_send` honors the same switch. Multiple force-sync `agent_spawn` calls in one turn still run in parallel under the Toolkit default.
