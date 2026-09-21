@@ -33,6 +33,7 @@ import java.util.Objects;
  *   <li>assistant - Messages from the AI assistant</li>
  *   <li>system - System instructions</li>
  *   <li>tool - Tool execution results</li>
+ *   <li>reasoning - Assistant reasoning or thinking content</li>
  * </ul>
  *
  * <p>The {@code content} field uses {@link MessageContent}, a type-safe sealed union
@@ -51,7 +52,7 @@ public class AguiMessage {
      * Creates a new AguiMessage.
      *
      * @param id The unique message ID
-     * @param role The message role (user, assistant, system, tool)
+     * @param role The message role (user, assistant, system, tool, reasoning)
      * @param content The message content (plain text or structured blocks), may be null
      * @param toolCalls Tool calls for assistant messages (optional)
      * @param toolCallId Tool call ID for tool messages (optional)
@@ -130,6 +131,17 @@ public class AguiMessage {
     }
 
     /**
+     * Creates a reasoning message.
+     *
+     * @param id The message ID
+     * @param content The reasoning content as plain text
+     * @return A new reasoning message
+     */
+    public static AguiMessage reasoningMessage(String id, String content) {
+        return new AguiMessage(id, "reasoning", wrapText(content), null, null);
+    }
+
+    /**
      * Creates a message with plain text content, supporting a custom role, tool calls, and
      * tool call ID. This is the full-parameter convenience factory for text-based messages.
      *
@@ -187,7 +199,7 @@ public class AguiMessage {
     /**
      * Get the message role.
      *
-     * @return The role (user, assistant, system, tool)
+     * @return The role (user, assistant, system, tool, reasoning)
      */
     public String getRole() {
         return role;
@@ -278,6 +290,15 @@ public class AguiMessage {
      */
     public boolean isToolMessage() {
         return "tool".equalsIgnoreCase(role);
+    }
+
+    /**
+     * Check if this is a reasoning message.
+     *
+     * @return true if role is "reasoning"
+     */
+    public boolean isReasoningMessage() {
+        return "reasoning".equalsIgnoreCase(role);
     }
 
     /**
