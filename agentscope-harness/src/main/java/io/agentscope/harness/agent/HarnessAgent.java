@@ -131,6 +131,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -186,6 +187,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SkillAuditLog skillAuditLog;
     private final MemoryConfig memoryConfig;
     private final Toolkit ownedMcpToolkit;
+    private final CompactionConfig effectiveCompactionConfig;
 
     /** The subagent middleware (either SubagentsMiddleware or DynamicSubagentsMiddleware). */
     private final Object subagentMiddleware;
@@ -217,6 +219,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SkillCurator skillCurator,
             SkillAuditLog skillAuditLog,
             MemoryConfig memoryConfig,
+            CompactionConfig effectiveCompactionConfig,
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer,
@@ -237,6 +240,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.effectiveCompactionConfig = effectiveCompactionConfig;
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
@@ -1070,14 +1074,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? effective.getSessionId()
                         : "default";
 
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
+        // recoverFromOverflow() only delegates here when compactionHook is present; both values
+        // are created together by Builder.build(). Keep that invariant explicit at the boundary.
+        CompactionConfig baseConfig =
+                Objects.requireNonNull(
+                        effectiveCompactionConfig,
+                        "compactionHook requires an effective compaction config");
+        CompactionConfig forceConfig = baseConfig.withTriggerMessages(1);
+        Model compactionModel = baseConfig.getModel() != null ? baseConfig.getModel() : getModel();
         String effectiveFlushPrompt =
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
         MemoryFlushManager fm =
                 new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
+        ConversationCompactor compactor = new ConversationCompactor(compactionModel, fm);
 
         return compactor
                 .compactIfNeeded(
@@ -2237,8 +2248,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Disables memory flush + background consolidation, and removes the "automatically
-         * extracted" Persistence line from the workspace system prompt. Combined with {@link
+         * Disables memory flush (including normal and emergency compaction flush) + background
+         * consolidation, and removes the "automatically extracted" Persistence line from the
+         * workspace system prompt. Compaction summarization and session JSONL offload remain
+         * independently controlled by {@link #compaction(CompactionConfig)}. Combined with {@link
          * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
          * {@code <memory_context>}.
          */
@@ -2599,13 +2612,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveIsolationScope,
                                 periodicGate));
             }
+            CompactionConfig effectiveCompactionConfig = null;
             CompactionMiddleware compactionHook = null;
             if (!disableCompaction && compactionConfig != null) {
+                effectiveCompactionConfig =
+                        disableMemoryHooks
+                                ? compactionConfig.withFlushBeforeCompact(false)
+                                : compactionConfig;
                 Model compactionModel =
-                        compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
+                        effectiveCompactionConfig.getModel() != null
+                                ? effectiveCompactionConfig.getModel()
+                                : model;
                 if (compactionModel != null) {
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionModel, effectiveCompactionConfig);
                     inner.middleware(compactionHook);
                 }
             }
@@ -2981,6 +3002,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pendingSkillCurator,
                     pendingSkillAuditLog,
                     memoryConfig,
+                    effectiveCompactionConfig,
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer,

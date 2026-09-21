@@ -100,19 +100,21 @@ public class ConversationCompactor {
             return Mono.just(Optional.empty());
         }
 
+        CompactionConfig effectiveConfig = resolveEffectiveConfig(config);
+
         // Step 1a: Lightweight arg truncation (non-LLM).
         // Step 1b: Aggregate tool-result pruning (non-LLM).
         List<Msg> messages =
                 pruneToolResults(
-                        truncateArgs(conversationMessages, config.getTruncateArgsConfig()),
-                        config.getPruneConfig());
+                        truncateArgs(conversationMessages, effectiveConfig.getTruncateArgsConfig()),
+                        effectiveConfig.getPruneConfig());
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
-        if (!shouldCompact(messages, totalTokens, config)) {
+        if (!shouldCompact(messages, totalTokens, effectiveConfig)) {
             return Mono.just(Optional.empty());
         }
 
-        int cutoff = determineCutoffIndex(messages, totalTokens, config);
+        int cutoff = determineCutoffIndex(messages, totalTokens, effectiveConfig);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — skipping");
             return Mono.just(Optional.empty());
@@ -133,7 +135,7 @@ public class ConversationCompactor {
 
         // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
-                config.isFlushBeforeCompact()
+                effectiveConfig.isFlushBeforeCompact()
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
@@ -153,7 +155,7 @@ public class ConversationCompactor {
         // If offload fails, we continue with null — the summary message falls back to the
         // simple format without a file reference.
         Mono<String> offloadStep;
-        if (config.isOffloadBeforeCompact()) {
+        if (effectiveConfig.isOffloadBeforeCompact()) {
             offloadStep =
                     Mono.fromCallable(
                                     () -> {
@@ -187,7 +189,7 @@ public class ConversationCompactor {
                 .then(offloadStep)
                 .flatMap(
                         offloadPath ->
-                                summarizePrefix(summaryInput, config)
+                                summarizePrefix(summaryInput, effectiveConfig)
                                         .map(
                                                 summary -> {
                                                     String filePath =
@@ -213,6 +215,72 @@ public class ConversationCompactor {
     // -------------------------------------------------------------------------
     // Trigger logic
     // -------------------------------------------------------------------------
+
+    private CompactionConfig resolveEffectiveConfig(CompactionConfig config) {
+        int configTrigger = config.getTriggerTokens();
+        int configKeep = config.getKeepTokens();
+
+        boolean needsDynamic = (configTrigger == 0) || (configKeep == -1);
+        if (!needsDynamic) {
+            return config;
+        }
+
+        int contextWindow = model.getContextWindowSize();
+
+        int effectiveTrigger;
+        if (configTrigger == 0) {
+            if (contextWindow > 0) {
+                effectiveTrigger = contextWindow - config.getReserved();
+                if (effectiveTrigger <= 0) {
+                    effectiveTrigger = Math.max(1, contextWindow / 2);
+                    log.warn(
+                            "Dynamic compaction trigger clamped: contextWindow={} <= reserved={}"
+                                    + "; using proportional trigger={}. Consider reducing"
+                                    + " reserved() for this model.",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                } else {
+                    log.debug(
+                            "Dynamic compaction trigger: contextWindow={} - reserved={} = {}",
+                            contextWindow,
+                            config.getReserved(),
+                            effectiveTrigger);
+                }
+            } else {
+                effectiveTrigger = CompactionConfig.FALLBACK_TRIGGER_TOKENS;
+                log.debug(
+                        "Model does not report context window, using fallback trigger: {}",
+                        effectiveTrigger);
+            }
+        } else {
+            effectiveTrigger = configTrigger;
+        }
+
+        int effectiveKeep;
+        if (configKeep == -1) {
+            if (contextWindow > 0) {
+                int usable = contextWindow - config.getReserved();
+                effectiveKeep =
+                        Math.min(
+                                config.getKeepTokensMax(),
+                                Math.max(
+                                        config.getKeepTokensMin(),
+                                        (int) (usable * config.getKeepTokensRatio())));
+                log.debug("Dynamic keep tokens: {}", effectiveKeep);
+            } else {
+                effectiveKeep = 0;
+                log.debug(
+                        "Model does not report context window; dynamic keepTokens falls back to"
+                                + " keepMessages={}",
+                        config.getKeepMessages());
+            }
+        } else {
+            effectiveKeep = configKeep;
+        }
+
+        return config.withEffective(effectiveTrigger, effectiveKeep);
+    }
 
     private static boolean shouldCompact(
             List<Msg> messages, int totalTokens, CompactionConfig config) {

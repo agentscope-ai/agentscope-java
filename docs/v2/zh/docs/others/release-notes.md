@@ -7,6 +7,15 @@ description: AgentScope Java 各版本变更记录
 
 ---
 
+## 未发布
+
+### 变更
+
+- `ConversationCompactor` 现在会为直接调用方和中间件压缩统一解析动态触发与保留设置,使紧急恢复与普通压缩保持一致 ([#2699](https://github.com/agentscope-ai/agentscope-java/pull/2699))
+- `HarnessAgent` 的紧急溢出压缩现在会复用有效的 `CompactionConfig`,不再使用默认配置;仅强制覆盖消息数触发条件 ([#2699](https://github.com/agentscope-ai/agentscope-java/pull/2699))
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05
