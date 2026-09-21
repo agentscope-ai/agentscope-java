@@ -585,9 +585,12 @@ public class JdbcAgentStateStore implements AgentStateStore {
         if (slotId == null || slotId.trim().isEmpty()) {
             throw new IllegalArgumentException("Session ID cannot be null or empty");
         }
-        if (slotId.contains("/") || slotId.contains("\\")) {
-            throw new IllegalArgumentException("Session ID cannot contain path separators");
-        }
+        // Path separators are allowed: the slot id is an opaque prepared-statement bind value
+        // here, never a filesystem path, and SessionSandboxStateStore legitimately generates
+        // slash-separated slot IDs ("sandbox/session/<id>", "sandbox/user/<agentId>/<id>") —
+        // rejecting them silently dropped all sandbox resume state on JDBC backends (#3231).
+        // Path-based stores enforce their own segment safety (JsonFileAgentStateStore encodes
+        // each segment via safeSegment).
         if (slotId.length() > 255) {
             throw new IllegalArgumentException("Session ID cannot exceed 255 characters");
         }
