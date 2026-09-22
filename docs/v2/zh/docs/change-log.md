@@ -207,8 +207,6 @@ v1 中通过 `Hook` + 各种 `*ChunkEvent` 拼装文本 / 工具增量的代码�
 
 Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGenerator[AgentEvent, None]`），对应 Java 的细粒度 `io.agentscope.core.event.AgentEvent` 体系。为了与之对齐，Java 端的粗粒度 `Flux<Event> stream(...)` API 在 2.0.0 全部 `@Deprecated`：
 
-对于 A2A `AgentRunner` 实现，如果细粒度事件流不可用，请不要覆写 `streamEvents(...)`，或返回 `UnsupportedAgentEventStreamException`，这样才能选择 legacy `stream(...)` fallback。覆写后的 `streamEvents(...)` 如果返回普通的 `UnsupportedOperationException`，会被视为执行失败，不会再次通过 legacy stream 重试。
-
 - **方法（`forRemoval = true`，将在未来大版本如 2.1 中清理）**
   - `StreamableAgent.stream(...)` —— 接口上的全部 11 个 `stream(...)` 重载（默认方法 + 抽象方法）
   - `AgentBase.stream(...)` —— 3 个 `Flux<Event>` 实现
@@ -219,6 +217,8 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
   - `io.agentscope.core.agent.Event`、`EventType`、`EventSource`
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
   - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
+
+对于 A2A `AgentRunner` 实现，如果细粒度事件流不可用，请不要覆写 `streamEvents(...)`，或返回 `UnsupportedAgentEventStreamException`，这样才能选择 legacy `stream(...)` fallback。覆写后的 `streamEvents(...)` 如果返回普通的 `UnsupportedOperationException`，会被视为执行失败，不会再次通过 legacy stream 重试。
 
 新代码统一改用：
 

@@ -71,7 +71,8 @@ public interface AgentRunner {
      * custom runners remain source-compatible whether they implement this method or only the
      * legacy {@link #stream(List, AgentRequestOptions)} contract.
      * The A2A executor selects the legacy stream only when this default implementation is used or
-     * the returned Flux terminates with {@link UnsupportedAgentEventStreamException}; a plain
+     * the returned Flux terminates with {@link UnsupportedAgentEventStreamException} before any
+     * element is emitted; a plain
      * {@link UnsupportedOperationException} from an overridden implementation is treated as a
      * real execution failure.
      *
