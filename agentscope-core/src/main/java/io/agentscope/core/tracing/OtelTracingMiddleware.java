@@ -28,11 +28,13 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,6 +67,12 @@ import reactor.util.context.ContextView;
  * <p>When no OTel SDK is configured (only the default no-op provider is
  * active), every hook short-circuits with near-zero overhead.
  *
+ * <p>The no-argument constructor reads {@link GlobalOpenTelemetry} lazily when a hook runs.
+ * Pass an application-owned SDK to {@link #OtelTracingMiddleware(OpenTelemetry)} when spans must
+ * be recorded on that SDK instead. That constructor does not register or replace the global SDK;
+ * the caller owns its lifecycle. {@code ReActAgent.builder().middleware(...)} is the production
+ * attachment point for either constructor.
+ *
  * <p>Usage:
  * <pre>{@code
  * ReActAgent agent = ReActAgent.builder()
@@ -91,7 +99,77 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
     private static volatile boolean hookRegistered = false;
 
+    /**
+     * Application-owned SDK, or {@code null} when hooks should read {@link GlobalOpenTelemetry}
+     * at execution time.
+     */
+    private final OpenTelemetry openTelemetry;
+
+    /**
+     * Creates middleware that reads {@link GlobalOpenTelemetry} lazily when a hook runs.
+     *
+     * <p>The SDK may be registered after this middleware is constructed. Spans are created from
+     * the global {@code io.agentscope} tracer at execution time, so a middleware built before
+     * {@code buildAndRegisterGlobal()} still exports to the SDK that is current when the hook
+     * runs. When only the default no-op provider is active, the hooks still run the downstream
+     * chain.
+     */
     public OtelTracingMiddleware() {
+        this.openTelemetry = null;
+        registerReactorHook();
+    }
+
+    /**
+     * Creates middleware that records spans on an application-owned OpenTelemetry SDK.
+     *
+     * <p>This is an opt-in path. {@code onAgent}, {@code onModelCall}, and {@code onActing} all
+     * obtain the {@code io.agentscope} tracer from {@code openTelemetry}. The instance is not
+     * registered as {@link GlobalOpenTelemetry}, and this middleware does not shut it down. Build
+     * it with {@code OpenTelemetrySdk.builder().setTracerProvider(...).build()} (not {@code
+     * buildAndRegisterGlobal()}), point an OTLP HTTP exporter at the application endpoint, and
+     * close the tracer provider on shutdown. Attach it with the existing agent builder:
+     *
+     * <pre>{@code
+     * String endpoint =
+     *         System.getenv().getOrDefault(
+     *                 "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
+     * SdkTracerProvider tracerProvider =
+     *         SdkTracerProvider.builder()
+     *                 .addSpanProcessor(
+     *                         BatchSpanProcessor.builder(
+     *                                         OtlpHttpSpanExporter.builder()
+     *                                                 .setEndpoint(endpoint)
+     *                                                 .build())
+     *                                 .build())
+     *                 .build();
+     * OpenTelemetry appSdk =
+     *         OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
+     * Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
+     *
+     * ReActAgent agent =
+     *         ReActAgent.builder()
+     *                 .name("assistant")
+     *                 .model(model)
+     *                 .middleware(new OtelTracingMiddleware(appSdk))
+     *                 .build();
+     * }</pre>
+     *
+     * <p>{@code StudioManager} still installs deprecated {@code TracerRegistry} tracing on its own
+     * during initialization. Vendor instrumentation that rewrites tracer lookup, and a missing
+     * Studio call-tree expansion control, need separate verification against the deployment that
+     * produces them. Passing {@link OpenTelemetry#noop()} runs the downstream chain and records
+     * no spans.
+     *
+     * @param openTelemetry application-owned OpenTelemetry instance; must not be null
+     * @throws NullPointerException if {@code openTelemetry} is null
+     */
+    public OtelTracingMiddleware(OpenTelemetry openTelemetry) {
+        this.openTelemetry =
+                Objects.requireNonNull(openTelemetry, "openTelemetry must not be null");
+        registerReactorHook();
+    }
+
+    private static void registerReactorHook() {
         if (!hookRegistered) {
             synchronized (OtelTracingMiddleware.class) {
                 if (!hookRegistered) {
@@ -103,6 +181,9 @@ public class OtelTracingMiddleware implements MiddlewareBase {
     }
 
     private Tracer getTracer() {
+        if (openTelemetry != null) {
+            return openTelemetry.getTracer(INSTRUMENTATION_NAME);
+        }
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME);
     }
 
