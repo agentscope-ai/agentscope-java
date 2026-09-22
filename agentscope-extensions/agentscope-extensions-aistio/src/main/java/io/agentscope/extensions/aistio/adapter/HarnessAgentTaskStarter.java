@@ -537,45 +537,31 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
             return " Complete the requested work and return the result.";
         }
         if (!task.path("leaderTask").asBoolean(false)) {
-            return " You are a Team worker, not its coordinator. Do not create or accept child"
-                    + " Issues and do not call "
-                    + runNodeComplete
-                    + ", "
-                    + runNodeFail
-                    + ", or "
-                    + runReplan
-                    + ". Complete only the assigned work and submit its result using "
-                    + taskSubmitResult
-                    + "; the adapter will complete this AgentTask.";
+            return (" You are a Team worker, not its coordinator. "
+                            + "Do not create or accept child Issues and do not call %s, %s, or %s. "
+                            + "Complete only the assigned work and submit its result using %s; "
+                            + "the adapter will complete this AgentTask.")
+                    .formatted(runNodeComplete, runNodeFail, runReplan, taskSubmitResult);
         }
         if (inputIds.isEmpty()) {
-            return " You are the Team leader's initial task. If you delegate child work, return"
-                    + " immediately after "
-                    + issueChildCreate
-                    + " succeeds by calling "
-                    + taskSubmitResult
-                    + " with waiting, a reason and the returned AgentTask"
-                    + " IDs; do not wait through local session/task tools and do not call "
-                    + runNodeComplete
-                    + " yet. The control plane will deliver a fresh leader"
-                    + " follow-up when a worker result arrives. If no work is delegated, call "
-                    + runNodeComplete
-                    + " after your own work converges. Returning text alone"
-                    + " never completes a Team coordinator.";
+            return (" You are the Team leader's initial task. "
+                            + "If you delegate child work, return immediately after %s succeeds "
+                            + "by calling %s with waiting, a reason and the returned AgentTask "
+                            + "IDs; do not wait through local session/task tools and do not call "
+                            + "%s yet. The control plane will deliver a fresh leader follow-up "
+                            + "when a worker result arrives. If no work is delegated, call %s "
+                            + "after your own work converges. Returning text alone never "
+                            + "completes a Team coordinator.")
+                    .formatted(
+                            issueChildCreate, taskSubmitResult, runNodeComplete, runNodeComplete);
         }
-        return " You are a Team leader follow-up with new worker inputs. Validate the supplied"
-                + " result, call "
-                + issueAccept
-                + " and wait for its result, then make a separate "
-                + runNodeComplete
-                + " call only when every child Issue and worker node has"
-                + " converged. Never send those mutations in parallel. "
-                + runNodeComplete
-                + " also"
-                + " completes this leader AgentTask; do not call "
-                + taskComplete
-                + " afterwards."
-                + " Returning text alone never completes a Team coordinator.";
+        return (" You are a Team leader follow-up with new worker inputs. "
+                        + "Validate the supplied result, call %s and wait for its result, then "
+                        + "make a separate %s call only when every child Issue and worker node "
+                        + "has converged. Never send those mutations in parallel. "
+                        + "%s also completes this leader AgentTask; do not call %s afterwards. "
+                        + "Returning text alone never completes a Team coordinator.")
+                .formatted(issueAccept, runNodeComplete, runNodeComplete, taskComplete);
     }
 
     private static Set<String> availableActions(JsonNode envelope) {

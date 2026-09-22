@@ -27,14 +27,17 @@ import io.agentscope.core.tool.ToolCallParam;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import reactor.core.publisher.Mono;
 
 /**
  * Captures intent. Only the adapter is allowed to commit the physical AgentTask lifecycle.
  *
- * <p>Model-facing name is {@code task_submit_result} (OpenAI-safe form of the legacy dotted
- * {@code task.submit_result}). {@link io.agentscope.core.permission.PermissionEngine} accepts both
- * spellings during rule lookup so persisted allow/deny/ask keys keep matching after the rename.
+ * <p>Model-facing name is {@link #MODEL_NAME} ({@code task_submit_result}), the OpenAI-safe form of
+ * the legacy dotted {@link #LEGACY_DOTTED_NAME}. {@link #nameAliases()} exposes that legacy spelling
+ * so {@link io.agentscope.core.permission.PermissionEngine} can match persisted allow/deny/ask keys
+ * authored under {@code task.submit_result} — opt-in only; unrelated dotted/underscore tool pairs
+ * are not aliased by string shape.
  */
 public final class AgentTaskOutcomeTool extends ToolBase {
 
@@ -60,6 +63,12 @@ public final class AgentTaskOutcomeTool extends ToolBase {
                         .inputSchema(parameterSchema())
                         .readOnly(false)
                         .concurrencySafe(false));
+    }
+
+    /** Declares {@link #LEGACY_DOTTED_NAME} so persisted permission keys keep matching. */
+    @Override
+    public List<String> nameAliases() {
+        return List.of(LEGACY_DOTTED_NAME);
     }
 
     private static Map<String, Object> parameterSchema() {
@@ -127,7 +136,7 @@ public final class AgentTaskOutcomeTool extends ToolBase {
             return null;
         }
         if (value instanceof List<?> list) {
-            return list.stream().map(v -> v == null ? null : String.valueOf(v)).toList();
+            return list.stream().filter(Objects::nonNull).map(String::valueOf).toList();
         }
         return List.of(String.valueOf(value));
     }

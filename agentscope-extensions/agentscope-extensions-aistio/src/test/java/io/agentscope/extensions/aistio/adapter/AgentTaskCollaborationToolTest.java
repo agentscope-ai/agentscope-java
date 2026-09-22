@@ -49,6 +49,14 @@ import org.junit.jupiter.api.Test;
 class AgentTaskCollaborationToolTest {
 
     @Test
+    void outcomeToolDeclaresLegacyDottedNameAsPermissionAlias() {
+        AgentTaskOutcomeTool tool = new AgentTaskOutcomeTool();
+        assertEquals(AgentTaskOutcomeTool.MODEL_NAME, tool.getName());
+        assertEquals(List.of(AgentTaskOutcomeTool.LEGACY_DOTTED_NAME), tool.nameAliases());
+        assertEquals("task.submit_result", AgentTaskOutcomeTool.LEGACY_DOTTED_NAME);
+    }
+
+    @Test
     void roleInstructionsSeparateLeaderHandoffFromWorkerExecution() throws Exception {
         JsonNode worker =
                 ControlPlaneHttpClient.mapper()

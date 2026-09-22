@@ -56,6 +56,7 @@ class PermissionEngineTest {
     private static final class FakePermissionTool extends ToolBase {
 
         private PermissionDecision toolDecision;
+        private List<String> nameAliases = List.of();
 
         FakePermissionTool(String name, boolean readOnly) {
             super(
@@ -73,6 +74,16 @@ class PermissionEngineTest {
         FakePermissionTool withPermissionDecision(PermissionDecision decision) {
             this.toolDecision = decision;
             return this;
+        }
+
+        FakePermissionTool withNameAliases(String... aliases) {
+            this.nameAliases = List.of(aliases);
+            return this;
+        }
+
+        @Override
+        public List<String> nameAliases() {
+            return nameAliases;
         }
 
         @Override
@@ -346,13 +357,15 @@ class PermissionEngineTest {
     }
 
     @Nested
-    @DisplayName("OpenAI-safe tool-name dual spelling")
+    @DisplayName("Opt-in tool-name aliases for permission lookup")
     class DualSpellingLookup {
 
         @Test
-        @DisplayName("Allow rule stored under dotted legacy name matches underscore model name")
-        void dottedLegacyAllowMatchesUnderscoreToolName() {
-            FakePermissionTool tool = new FakePermissionTool("task_submit_result", false);
+        @DisplayName("Allow under declared legacy alias matches live underscore tool name")
+        void declaredAliasAllowMatchesLiveToolName() {
+            FakePermissionTool tool =
+                    new FakePermissionTool("task_submit_result", false)
+                            .withNameAliases("task.submit_result");
             PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
             engine.addRule(allowAll("task.submit_result"));
 
@@ -364,16 +377,31 @@ class PermissionEngineTest {
         }
 
         @Test
-        @DisplayName("Deny rule under dotted collaboration name matches underscore model name")
-        void dottedCollaborationDenyMatchesUnderscoreToolName() {
-            FakePermissionTool tool = new FakePermissionTool("issue_comment_add", false);
+        @DisplayName("Without aliases, dotted rule does not match unrelated underscore twin")
+        void unrelatedDottedAndUnderscoreDoNotCrossMatch() {
+            FakePermissionTool tool = new FakePermissionTool("a_b", false);
             PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
-            engine.addRule(denyAll("issue.comment.add"));
+            engine.addRule(allowAll("a.b"));
+
+            // No nameAliases() → exact-key miss falls through to default ASK (DEFAULT mode).
+            StepVerifier.create(engine.checkPermission(tool, Map.of()))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Without aliases, underscore ALLOW does not grant a dotted twin")
+        void underscoreAllowDoesNotGrantDottedTwin() {
+            FakePermissionTool tool = new FakePermissionTool("a.b", false);
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(allowAll("a_b"));
 
             StepVerifier.create(engine.checkPermission(tool, Map.of()))
                     .assertNext(
                             decision ->
-                                    assertEquals(PermissionBehavior.DENY, decision.getBehavior()))
+                                    assertEquals(PermissionBehavior.ASK, decision.getBehavior()))
                     .verifyComplete();
         }
     }
