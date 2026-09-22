@@ -70,6 +70,33 @@ if (answer.confidence() < 0.75) {
 | `ChoiceQuestion` | 选中的选项、每个选项的概率和置信度 |
 | `ScoreQuestion` | 概率加权分数、等级说明、每个等级的概率和置信度 |
 
+## Spring Boot starter
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```yaml
+agentscope:
+  jev:
+    api-key: ${TYPESAFE_API_KEY:}
+    base-url: https://api.typesafe.ai
+    model: jev-latest
+    timeout: 5s
+    retry:
+      max-retries: 2
+      initial-backoff: 500ms
+```
+
+`agentscope.jev.api-key` 可以不配置。未设置时，client 会依次读取
+`TYPESAFE_API_KEY` 和 `JEV_API_KEY` 环境变量。
+
+如果需要高级配置，可以定义 `JevClientBuilderCustomizer` bean。
+
 ## Client 行为
 
 - 调用 `POST /v1/systemone`。

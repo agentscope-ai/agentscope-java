@@ -70,6 +70,33 @@ if (answer.confidence() < 0.75) {
 | `ChoiceQuestion` | Selected option, every option's probability, and confidence |
 | `ScoreQuestion` | Probability-weighted score, level legend, every level's probability, and confidence |
 
+## Spring Boot starter
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```yaml
+agentscope:
+  jev:
+    api-key: ${TYPESAFE_API_KEY:}
+    base-url: https://api.typesafe.ai
+    model: jev-latest
+    timeout: 5s
+    retry:
+      max-retries: 2
+      initial-backoff: 500ms
+```
+
+`agentscope.jev.api-key` is optional. When it is not set, the client falls back to the
+`TYPESAFE_API_KEY` and `JEV_API_KEY` environment variables.
+
+For advanced configuration, define a `JevClientBuilderCustomizer` bean.
+
 ## Client behavior
 
 - Calls `POST /v1/systemone`.

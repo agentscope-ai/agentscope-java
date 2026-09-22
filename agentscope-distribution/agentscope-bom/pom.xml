@@ -462,6 +462,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope OpenAI Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
