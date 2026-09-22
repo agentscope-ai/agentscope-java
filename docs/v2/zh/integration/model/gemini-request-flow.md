@@ -1,8 +1,13 @@
+---
+title: "Gemini 完整请求流程"
+en_link: /v2/en/integration/model/gemini-request-flow
+---
+
 # Gemini 完整请求流程
 
 本文以一次启用流式输出的 Gemini 请求为例，展示从用户输入问题到最终回答返回的完整链路。图中的工具调用分支和历史消息回放分支属于同一个请求循环：如果模型请求工具，Agent 执行工具后会带着工具结果再次调用模型。
 
-```{mermaid}
+```mermaid
 flowchart TD
     U(["用户输入问题"]) --> APP["应用层接收输入"]
     APP --> AGENT["ReActAgent.call(...) / streamEvents(...)"]

@@ -1,8 +1,13 @@
+---
+title: "Gemini End-to-End Request Flow"
+zh_link: /v2/zh/integration/model/gemini-request-flow
+---
+
 # Gemini End-to-End Request Flow
 
 This diagram follows one streaming Gemini request from the user's question to the final answer. The tool-call and history-replay branches are part of the same request loop: when the model asks for a tool, the Agent executes it and calls the model again with the tool result.
 
-```{mermaid}
+```mermaid
 flowchart TD
     U(["User question"]) --> APP["Application receives input"]
     APP --> AGENT["ReActAgent.call(...) / streamEvents(...)"]
