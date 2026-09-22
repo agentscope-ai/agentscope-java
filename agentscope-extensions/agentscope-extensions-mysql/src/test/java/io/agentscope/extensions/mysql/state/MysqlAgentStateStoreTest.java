@@ -179,4 +179,41 @@ class MysqlAgentStateStoreTest {
                                 new TestState("v"),
                                 AgentStateStore.UNVERSIONED));
     }
+
+    // ------------------------------------------------------------------
+    //  saveIfVersion expectedVersion=0 — migration-backfilled rows (#3162)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("saveIfVersion(0) falls back to CAS update when INSERT hits a duplicate key")
+    void saveIfVersionZeroFallsBackToUpdateOnDuplicateKey() throws SQLException {
+        // Regression for issue #3162: rows backfilled at version 0 by the ALTER TABLE migration
+        // collide with the "row absent" sentinel. The INSERT hits a primary-key conflict; the
+        // store must fall back to UPDATE ... WHERE version = 0 instead of reporting a phantom
+        // CAS conflict.
+        MysqlAgentStateStore store = newStore();
+        when(preparedStatement.executeUpdate())
+                .thenThrow(new SQLException("Duplicate entry", "23000", 1062))
+                .thenReturn(1);
+
+        long newVersion =
+                store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
+
+        assertEquals(1L, newVersion);
+    }
+
+    @Test
+    @DisplayName("saveIfVersion(0) still reports conflict when the existing row is past version 0")
+    void saveIfVersionZeroConflictWhenRowAlreadyVersioned() throws SQLException {
+        // The fallback UPDATE matches only version = 0. A row already at version >= 1 means a
+        // real concurrent writer won the race — must stay UNVERSIONED.
+        MysqlAgentStateStore store = newStore();
+        when(preparedStatement.executeUpdate())
+                .thenThrow(new SQLException("Duplicate entry", "23000", 1062))
+                .thenReturn(0);
+
+        long result = store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
+
+        assertEquals(AgentStateStore.UNVERSIONED, result);
+    }
 }
