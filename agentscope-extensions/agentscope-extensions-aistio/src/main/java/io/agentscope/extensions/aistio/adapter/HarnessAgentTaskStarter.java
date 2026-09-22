@@ -119,7 +119,9 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                         definition.path("definitionDigest").asText());
             } else runtimeAgent = agent.get();
             executionAgent = runtimeAgent;
-            registerCollaborationTools(runtimeAgent, assignment, availableActions(envelope));
+            List<String> droppedCollaborationTools =
+                    registerCollaborationTools(
+                            runtimeAgent, assignment, availableActions(envelope));
 
             String payload = new String(assignment.payload(), StandardCharsets.UTF_8);
             String prompt =
@@ -130,7 +132,8 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + " requested work and return a concise result; use CollaborationClient"
                             + " for fresh reads, progress comments, artifacts, or child Issues. The"
                             + " available CollaborationClient actions are registered as tools under"
-                            + " OpenAI-safe names (dots replaced with underscores). The adapter"
+                            + " OpenAI-safe names (see toModelName: dots and other illegal"
+                            + " characters become underscores). The adapter"
                             + " owns task_complete and task_fail; do not call them. Before"
                             + " returning, call task_submit_result with an explicit business"
                             + " outcome and the actual deliverable. A promise to do work later is"
@@ -143,6 +146,11 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             + modelContext(envelope)
                             + "\nActual tool names available to this agent: "
                             + runtimeAgent.getToolkit().getToolNames()
+                            + (droppedCollaborationTools.isEmpty()
+                                    ? ""
+                                    : "\nDropped collaboration tools due to model-name collision"
+                                            + " (not callable): "
+                                            + droppedCollaborationTools)
                             + (payload.isBlank() ? "" : "\neventPayload=" + safePayload(payload));
             Msg kickoff = Msg.builder().role(MsgRole.USER).textContent(prompt).build();
             String sessionId =
@@ -428,18 +436,18 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
         if (node.isContainerNode()) node.forEach(HarnessAgentTaskStarter::stripCredentials);
     }
 
-    private void registerCollaborationTools(
+    /**
+     * Registers the outcome tool and collaboration proxies. Returns human-readable descriptions of
+     * collaboration tools skipped due to model-name collisions (for the kickoff prompt).
+     */
+    private List<String> registerCollaborationTools(
             HarnessAgent runtimeAgent,
             AgentTaskAssignment assignment,
             Set<String> availableActions) {
         Object toolkit = runtimeAgent.getToolkit();
+        List<String> dropped = new ArrayList<>();
         synchronized (toolkit) {
-            String submitResultModelName =
-                    AgentTaskCollaborationTool.toModelName(
-                            AgentTaskCollaborationTool.WIRE_TASK_SUBMIT_RESULT);
-            if (!runtimeAgent.getToolkit().getToolNames().contains(submitResultModelName)) {
-                runtimeAgent.getToolkit().registerTool(new AgentTaskOutcomeTool());
-            }
+            ensureOutcomeToolRegistered(runtimeAgent);
             for (JsonNode definition :
                     collaboration.tools(assignment.agentTaskId(), assignment.taskToken())) {
                 String wireName = definition.path("name").asText();
@@ -460,6 +468,12 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                             .registerAgentTool(
                                     new AgentTaskCollaborationTool(collaboration, definition));
                 } else {
+                    String drop =
+                            wireName
+                                    + " -> "
+                                    + modelName
+                                    + " (keeping the already-registered tool)";
+                    dropped.add(drop);
                     LOG.warning(
                             "Skipping collaboration tool registration due to model-name collision:"
                                     + " wireName="
@@ -467,14 +481,47 @@ public final class HarnessAgentTaskStarter implements AgentTaskStarter {
                                     + ", modelName="
                                     + modelName
                                     + " (keeping the already-registered tool)");
+                    if (AgentTaskCollaborationTool.isTerminalWireName(wireName)) {
+                        throw new IllegalStateException(
+                                "Terminal collaboration action '"
+                                        + wireName
+                                        + "' (model name '"
+                                        + modelName
+                                        + "') cannot be exposed because another tool already"
+                                        + " occupies that model name");
+                    }
                 }
             }
         }
+        return dropped;
+    }
+
+    /**
+     * Ensures {@link AgentTaskOutcomeTool} is registered under its model name. Identity-checked
+     * (not merely by name): a foreign tool occupying {@code task_submit_result} is replaced so a
+     * business outcome can still be submitted.
+     */
+    private static void ensureOutcomeToolRegistered(HarnessAgent runtimeAgent) {
+        String submitResultModelName = AgentTaskOutcomeTool.MODEL_NAME;
+        var existing = runtimeAgent.getToolkit().getTool(submitResultModelName);
+        if (existing instanceof AgentTaskOutcomeTool) {
+            return;
+        }
+        if (existing != null) {
+            LOG.warning(
+                    "Replacing foreign tool occupying outcome model name "
+                            + submitResultModelName
+                            + " (was "
+                            + existing.getClass().getName()
+                            + ") with AgentTaskOutcomeTool");
+            runtimeAgent.getToolkit().removeTool(submitResultModelName);
+        }
+        runtimeAgent.getToolkit().registerAgentTool(new AgentTaskOutcomeTool());
     }
 
     static String roleInstructions(JsonNode envelope, List<String> inputIds) {
         JsonNode task = envelope.path("task");
-        // Model-facing names must use the same '.' → '_' mapping as registered tools.
+        // Model-facing names must use the same toModelName() mapping as registered tools.
         String runNodeComplete = AgentTaskCollaborationTool.toModelName("run.node.complete");
         String runNodeFail = AgentTaskCollaborationTool.toModelName("run.node.fail");
         String runReplan = AgentTaskCollaborationTool.toModelName("run.replan");

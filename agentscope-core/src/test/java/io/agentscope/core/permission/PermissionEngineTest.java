@@ -346,6 +346,39 @@ class PermissionEngineTest {
     }
 
     @Nested
+    @DisplayName("OpenAI-safe tool-name dual spelling")
+    class DualSpellingLookup {
+
+        @Test
+        @DisplayName("Allow rule stored under dotted legacy name matches underscore model name")
+        void dottedLegacyAllowMatchesUnderscoreToolName() {
+            FakePermissionTool tool = new FakePermissionTool("task_submit_result", false);
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(allowAll("task.submit_result"));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of()))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.ALLOW, decision.getBehavior()))
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Deny rule under dotted collaboration name matches underscore model name")
+        void dottedCollaborationDenyMatchesUnderscoreToolName() {
+            FakePermissionTool tool = new FakePermissionTool("issue_comment_add", false);
+            PermissionEngine engine = new PermissionEngine(contextWithMode(PermissionMode.DEFAULT));
+            engine.addRule(denyAll("issue.comment.add"));
+
+            StepVerifier.create(engine.checkPermission(tool, Map.of()))
+                    .assertNext(
+                            decision ->
+                                    assertEquals(PermissionBehavior.DENY, decision.getBehavior()))
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
     @DisplayName("Engine snapshot semantics")
     class SnapshotSemantics {
 

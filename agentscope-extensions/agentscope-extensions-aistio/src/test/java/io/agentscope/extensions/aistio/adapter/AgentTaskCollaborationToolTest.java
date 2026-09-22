@@ -233,6 +233,19 @@ class AgentTaskCollaborationToolTest {
     }
 
     @Test
+    void toModelNameSanitizesWireNamesOutsideOpenAiCharset() {
+        String model = AgentTaskCollaborationTool.toModelName("mcp:server.tool");
+        assertTrue(
+                model.matches("^[a-zA-Z0-9_-]{1,64}$"), "model name must be OpenAI-safe: " + model);
+        assertTrue(
+                model.startsWith("mcp_server_tool_"),
+                "colon/dot must sanitize with hash suffix, got: " + model);
+        assertEquals(model, AgentTaskCollaborationTool.toModelName("mcp:server.tool"));
+        // Pure dotted names stay on the reversible fast path (no hash).
+        assertEquals("task_get", AgentTaskCollaborationTool.toModelName("task.get"));
+    }
+
+    @Test
     void terminalWireNamesStillTriggerMarkTerminalCommitted() throws Exception {
         AtomicReference<JsonNode> call = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

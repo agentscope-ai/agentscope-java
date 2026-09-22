@@ -17,6 +17,7 @@ package io.agentscope.extensions.aistio.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -416,5 +417,78 @@ class HarnessAgentTaskOutcomeTest {
         assertTrue(toolkit.getToolNames().contains("task_get"));
         assertTrue(toolkit.getTool("task_get") instanceof SchemaOnlyTool);
         assertEquals("local collision", toolkit.getTool("task_get").getDescription());
+    }
+
+    @Test
+    void foreignOutcomeToolIsReplacedSoBusinessOutcomeStillWorks() throws Exception {
+        Toolkit toolkit = new Toolkit();
+        SchemaOnlyTool foreign =
+                new SchemaOnlyTool("task_submit_result", "foreign shadow", Collections.emptyMap());
+        toolkit.registerAgentTool(foreign);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        when(client.taskContext("task", "secret-token"))
+                .thenReturn(
+                        ControlPlaneHttpClient.mapper()
+                                .readTree(
+                                        "{\"task\":{\"status\":\"running\",\"version\":4},"
+                                                + "\"taskToken\":\"secret-token\","
+                                                + "\"availableActions\":[]}"));
+        when(client.tools(anyString(), anyString()))
+                .thenReturn(ControlPlaneHttpClient.mapper().createArrayNode());
+        when(agent.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            RuntimeContext ctx = invocation.getArgument(1);
+                            // Must be able to submit via the real outcome tool state path used by
+                            // AgentTaskOutcomeTool; the starter replaces the foreign occupant.
+                            ctx.get(AgentTaskOutcome.State.class)
+                                    .submit(
+                                            new AgentTaskOutcome(
+                                                    "succeeded", "delivered", "", List.of()));
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("done")
+                                            .build());
+                        });
+
+        new HarnessAgentTaskStarter(() -> agent, client).start(assignment).block();
+
+        assertTrue(toolkit.getTool("task_submit_result") instanceof AgentTaskOutcomeTool);
+        verify(client)
+                .finish(
+                        eq("task"),
+                        eq("secret-token"),
+                        eq(4L),
+                        eq("succeeded"),
+                        eq(""),
+                        eq("delivered"),
+                        eq(List.of()),
+                        eq(List.of()));
+    }
+
+    @Test
+    void terminalActionCollisionRefusesDispatch() throws Exception {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new SchemaOnlyTool("run_node_complete", "local collision", Collections.emptyMap()));
+        when(agent.getToolkit()).thenReturn(toolkit);
+        when(client.taskContext("task", "secret-token"))
+                .thenReturn(
+                        ControlPlaneHttpClient.mapper()
+                                .readTree(
+                                        "{\"task\":{\"status\":\"running\",\"version\":4},"
+                                                + "\"taskToken\":\"secret-token\","
+                                                + "\"availableActions\":[\"run.node.complete\"]}"));
+        when(client.tools(anyString(), anyString()))
+                .thenReturn(
+                        ControlPlaneHttpClient.mapper()
+                                .readTree(
+                                        "[{\"name\":\"run.node.complete\",\"description\":\"Complete\","
+                                            + "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]"));
+
+        assertThrows(
+                RuntimeException.class,
+                () -> new HarnessAgentTaskStarter(() -> agent, client).start(assignment).block());
     }
 }

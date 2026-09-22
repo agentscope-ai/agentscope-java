@@ -301,10 +301,40 @@ public final class PermissionEngine {
         return null;
     }
 
+    /**
+     * Looks up rules for {@code toolName}, also accepting the legacy dotted spelling when the
+     * model-facing name used {@code '.' → '_'} OpenAI-safe renaming (e.g. persisted {@code
+     * task.submit_result} still matches live {@code task_submit_result}).
+     */
     private static List<PermissionRule> rulesFor(
             Map<String, List<PermissionRule>> table, String toolName) {
-        List<PermissionRule> rules = table.get(toolName);
-        return rules == null ? List.of() : rules;
+        List<PermissionRule> primary = table.get(toolName);
+        List<PermissionRule> merged =
+                primary == null ? new ArrayList<>() : new ArrayList<>(primary);
+        if (toolName == null || table.isEmpty()) {
+            return merged;
+        }
+        // Forward rename is '.' → '_'. Accept any table key that normalizes to toolName that way,
+        // and the unique reverse when the live name is still dotted but rules were stored
+        // underscored.
+        for (Map.Entry<String, List<PermissionRule>> e : table.entrySet()) {
+            String key = e.getKey();
+            if (key.equals(toolName)) {
+                continue;
+            }
+            boolean alias =
+                    toolName.equals(key.replace('.', '_'))
+                            || (toolName.contains(".") && key.equals(toolName.replace('.', '_')));
+            if (!alias) {
+                continue;
+            }
+            for (PermissionRule rule : e.getValue()) {
+                if (!merged.contains(rule)) {
+                    merged.add(rule);
+                }
+            }
+        }
+        return merged;
     }
 
     private boolean ruleMatches(ToolBase tool, PermissionRule rule, Map<String, Object> input) {
