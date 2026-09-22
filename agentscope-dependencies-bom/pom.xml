@@ -229,29 +229,6 @@
                 <version>${bailian.version}</version>
             </dependency>
 
-            <!--
-              Several Alibaba Cloud SDK transitive dependencies declare version RANGES:
-                - com.aliyun:tea                  [1.1.14, 2.0.0) via alibabacloud-gateway-spi:0.0.3
-                                                  [1.2.0, 2.0.0)  via openapiutil:0.2.2 / credentials-java:1.0.x
-                - com.aliyun:aliyun-java-sdk-core [4.3.2, 5.0.0)  via aliyun-java-sdk-ram:3.1.0
-              Range resolution requires a remote metadata lookup on every build and reports a
-              misleading "No versions available ... within specified range" failure whenever
-              that lookup hiccups, which makes CI non-deterministic (observed as an
-              intermittent failure on PR #2858, cleared by a plain re-run). Pinning the
-              versions that are already selected keeps resolution deterministic; both values
-              below equal what the unmanaged dependency tree resolves to today.
-            -->
-            <dependency>
-                <groupId>com.aliyun</groupId>
-                <artifactId>tea</artifactId>
-                <version>1.4.1</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aliyun</groupId>
-                <artifactId>aliyun-java-sdk-core</artifactId>
-                <version>4.7.8</version>
-            </dependency>
-
             <!-- OpenAI Java SDK -->
             <dependency>
                 <groupId>com.openai</groupId>
