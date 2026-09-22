@@ -613,8 +613,15 @@ ReActAgent.builder()
         .model("dashscope:qwen-plus")
         .maxRetries(3)                              // auto-retry on model call failure
         .fallbackModel("dashscope:qwen-max")        // switch to fallback after consecutive failures
+        .failoverListener((primary, error) ->       // observe the switch: which model failed, and why
+                metrics.recordFailover(primary.getModelName(), error))
         .build();
 ```
+
+The failover listener is invoked synchronously at the switch site with the original error — the
+only in-process signal of the switch, since the primary's error never reaches the event stream or
+the middlewares. Implementations must be non-blocking and thread-safe; exceptions they throw are
+logged and ignored without affecting the switch.
 
 ### Skills
 

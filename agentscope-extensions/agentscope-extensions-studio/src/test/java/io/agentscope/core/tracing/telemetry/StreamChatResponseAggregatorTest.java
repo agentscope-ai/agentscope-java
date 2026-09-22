@@ -78,4 +78,34 @@ class StreamChatResponseAggregatorTest {
         assertEquals(200, response.getUsage().getInputTokens());
         assertEquals(150, response.getUsage().getOutputTokens());
     }
+
+    @Test
+    @DisplayName("Reasoning and cached usage should take max, not sum")
+    void testDetailedUsageTakesMax() {
+        StreamChatResponseAggregator agg = StreamChatResponseAggregator.create();
+
+        for (int i = 1; i <= 3; i++) {
+            agg.append(
+                    ChatResponse.builder()
+                            .id("usage-id")
+                            .content(List.of(TextBlock.builder().text("chunk" + i).build()))
+                            .usage(
+                                    ChatUsage.builder()
+                                            .inputTokens(100)
+                                            .outputTokens(i * 20)
+                                            .cachedTokens(i * 10)
+                                            .cacheCreationTokens(i * 3)
+                                            .reasoningTokens(i * 5)
+                                            .toolUsePromptTokens(i * 7)
+                                            .time(i * 0.5)
+                                            .build())
+                            .build());
+        }
+
+        ChatResponse response = agg.getResponse();
+        assertEquals(30, response.getUsage().getCachedTokens());
+        assertEquals(9, response.getUsage().getCacheCreationTokens());
+        assertEquals(15, response.getUsage().getReasoningTokens());
+        assertEquals(21, response.getUsage().getToolUsePromptTokens());
+    }
 }

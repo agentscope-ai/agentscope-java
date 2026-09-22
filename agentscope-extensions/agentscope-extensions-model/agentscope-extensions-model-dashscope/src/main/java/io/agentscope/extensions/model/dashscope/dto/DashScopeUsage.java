@@ -47,6 +47,14 @@ public class DashScopeUsage {
     @JsonProperty("total_tokens")
     private Integer totalTokens;
 
+    /** Detailed breakdown of output tokens. */
+    @JsonProperty("output_tokens_details")
+    private OutputTokensDetails outputTokensDetails;
+
+    /** Detailed breakdown of prompt tokens. */
+    @JsonProperty("prompt_tokens_details")
+    private PromptTokensDetails promptTokensDetails;
+
     /** Image tokens (for multimodal). */
     @JsonProperty("image_tokens")
     private Integer imageTokens;
@@ -81,6 +89,22 @@ public class DashScopeUsage {
         return totalTokens;
     }
 
+    public OutputTokensDetails getOutputTokensDetails() {
+        return outputTokensDetails;
+    }
+
+    public void setOutputTokensDetails(OutputTokensDetails outputTokensDetails) {
+        this.outputTokensDetails = outputTokensDetails;
+    }
+
+    public PromptTokensDetails getPromptTokensDetails() {
+        return promptTokensDetails;
+    }
+
+    public void setPromptTokensDetails(PromptTokensDetails promptTokensDetails) {
+        this.promptTokensDetails = promptTokensDetails;
+    }
+
     public void setTotalTokens(Integer totalTokens) {
         this.totalTokens = totalTokens;
     }
@@ -107,5 +131,51 @@ public class DashScopeUsage {
 
     public void setAudioTokens(Integer audioTokens) {
         this.audioTokens = audioTokens;
+    }
+
+    /** Detailed breakdown of output tokens. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class OutputTokensDetails {
+
+        /** Reasoning tokens used by reasoning models (a subset of output tokens). */
+        @JsonProperty("reasoning_tokens")
+        private Integer reasoningTokens;
+
+        public Integer getReasoningTokens() {
+            return reasoningTokens;
+        }
+
+        public void setReasoningTokens(Integer reasoningTokens) {
+            this.reasoningTokens = reasoningTokens;
+        }
+    }
+
+    /** Detailed breakdown of prompt tokens. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class PromptTokensDetails {
+
+        /** Input tokens served from the prompt cache (a subset of input tokens). */
+        @JsonProperty("cached_tokens")
+        private Integer cachedTokens;
+
+        /** Input tokens used to create an explicit prompt cache entry. */
+        @JsonProperty("cache_creation_input_tokens")
+        private Integer cacheCreationInputTokens;
+
+        public Integer getCachedTokens() {
+            return cachedTokens;
+        }
+
+        public void setCachedTokens(Integer cachedTokens) {
+            this.cachedTokens = cachedTokens;
+        }
+
+        public Integer getCacheCreationInputTokens() {
+            return cacheCreationInputTokens;
+        }
+
+        public void setCacheCreationInputTokens(Integer cacheCreationInputTokens) {
+            this.cacheCreationInputTokens = cacheCreationInputTokens;
+        }
     }
 }

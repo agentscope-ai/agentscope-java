@@ -19,12 +19,18 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Configuration for a single DingTalk (钉钉) channel instance using the Stream protocol over a
- * persistent WebSocket connection.
+ * Configuration for a single DingTalk (钉钉) channel instance.
+ *
+ * <p>Reception mode: {@link #MODE_STREAM} (default) receives bot messages over a persistent
+ * WebSocket connection; {@link #MODE_HTTP} receives them via signed HTTP callbacks delivered to
+ * {@code /api/channels/dingtalk/{channelId}/callback}, requiring a Spring web application.
  *
  * @param appKey enterprise internal app key
  * @param appSecret enterprise internal app secret
  * @param robotCode robot code used as outbound sender id; required for replies
+ * @param mode reception mode: {@code stream} (default) or {@code http}
+ * @param aesKey 43-character base64 (no padding) AES key for callback body decryption; only used
+ *     in {@code http} mode, and only required when the robot is configured with encryption
  * @param apiBase override for the DingTalk OpenAPI base; default
  *     {@code https://api.dingtalk.com}
  * @param oapiBase override for the legacy OAPI base used by {@code gettoken}; default
@@ -36,9 +42,17 @@ public record DingTalkChannelProperties(
         String appKey,
         String appSecret,
         String robotCode,
+        String mode,
+        String aesKey,
         String apiBase,
         String oapiBase,
         String streamRegisterUrl) {
+
+    /** Reception mode value: bot messages arrive over a persistent Stream WebSocket. */
+    public static final String MODE_STREAM = "stream";
+
+    /** Reception mode value: bot messages arrive as signed HTTP callbacks. */
+    public static final String MODE_HTTP = "http";
 
     public static final String DEFAULT_API_BASE = "https://api.dingtalk.com";
     public static final String DEFAULT_OAPI_BASE = "https://oapi.dingtalk.com";
@@ -55,6 +69,22 @@ public record DingTalkChannelProperties(
         if (robotCode == null || robotCode.isBlank()) {
             throw new IllegalArgumentException("dingtalk.robotCode is required");
         }
+        if (mode == null || mode.isBlank()) {
+            mode = MODE_STREAM;
+        }
+        if (!MODE_STREAM.equals(mode) && !MODE_HTTP.equals(mode)) {
+            throw new IllegalArgumentException(
+                    "dingtalk.mode must be '"
+                            + MODE_STREAM
+                            + "' or '"
+                            + MODE_HTTP
+                            + "', got: "
+                            + mode);
+        }
+        if (aesKey != null && aesKey.length() != 43) {
+            throw new IllegalArgumentException(
+                    "dingtalk.aesKey must be 43 characters when set (got " + aesKey.length() + ")");
+        }
         if (apiBase == null || apiBase.isBlank()) {
             apiBase = DEFAULT_API_BASE;
         }
@@ -66,6 +96,24 @@ public record DingTalkChannelProperties(
         }
     }
 
+    /**
+     * Convenience constructor matching the pre-callback-mode signature; delegates with {@code
+     * mode=stream} and no {@code aesKey}.
+     *
+     * @deprecated use the canonical constructor (or {@link #from}) so the reception mode is
+     *     explicit
+     */
+    @Deprecated
+    public DingTalkChannelProperties(
+            String appKey,
+            String appSecret,
+            String robotCode,
+            String apiBase,
+            String oapiBase,
+            String streamRegisterUrl) {
+        this(appKey, appSecret, robotCode, null, null, apiBase, oapiBase, streamRegisterUrl);
+    }
+
     /** Reads a {@link DingTalkChannelProperties} out of an arbitrary properties map. */
     public static DingTalkChannelProperties from(String channelId, Map<String, Object> props) {
         Objects.requireNonNull(channelId, "channelId");
@@ -74,6 +122,8 @@ public record DingTalkChannelProperties(
                 asString(p, "appKey"),
                 asString(p, "appSecret"),
                 asString(p, "robotCode"),
+                asString(p, "mode"),
+                asString(p, "aesKey"),
                 asString(p, "apiBase"),
                 asString(p, "oapiBase"),
                 asString(p, "streamRegisterUrl"));
