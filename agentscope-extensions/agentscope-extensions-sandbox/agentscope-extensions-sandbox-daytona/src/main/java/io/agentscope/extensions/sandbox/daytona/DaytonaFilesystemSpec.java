@@ -80,7 +80,9 @@ public class DaytonaFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    @Override
     public DaytonaFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
+        super.snapshotSpec(snapshotSpec);
         this.snapshotSpec = snapshotSpec;
         return this;
     }
