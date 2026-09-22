@@ -90,11 +90,18 @@ public class AnthropicResponseParser {
         long baseInput = message.usage().inputTokens();
         long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
         long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
+        long reasoning =
+                message.usage()
+                        .outputTokensDetails()
+                        .map(details -> details.thinkingTokens())
+                        .orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
                         .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
                         .cachedTokens((int) cacheRead)
+                        .cacheCreationTokens((int) cacheCreate)
+                        .reasoningTokens((int) reasoning)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
@@ -108,6 +115,7 @@ public class AnthropicResponseParser {
     private static class StreamUsageState {
         int inputTokens;
         int cachedTokens;
+        int cacheCreationTokens;
     }
 
     /**
@@ -162,6 +170,7 @@ public class AnthropicResponseParser {
             usageState.inputTokens =
                     (int) (startUsage.inputTokens() + cacheReadTokens + cacheCreationTokens);
             usageState.cachedTokens = (int) cacheReadTokens;
+            usageState.cacheCreationTokens = (int) cacheCreationTokens;
         }
 
         // Content block delta - text
@@ -228,17 +237,26 @@ public class AnthropicResponseParser {
             var deltaUsage = event.asMessageDelta().usage();
             long cacheReadTokens =
                     deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
+            long cacheCreationTokens =
+                    deltaUsage
+                            .cacheCreationInputTokens()
+                            .orElse((long) usageState.cacheCreationTokens);
             long inputTokens =
                     deltaUsage.inputTokens().isPresent()
-                            ? deltaUsage.inputTokens().get()
-                                    + cacheReadTokens
-                                    + deltaUsage.cacheCreationInputTokens().orElse(0L)
+                            ? deltaUsage.inputTokens().get() + cacheReadTokens + cacheCreationTokens
                             : usageState.inputTokens;
+            long reasoningTokens =
+                    deltaUsage
+                            .outputTokensDetails()
+                            .map(details -> details.thinkingTokens())
+                            .orElse(0L);
             usage =
                     ChatUsage.builder()
                             .inputTokens((int) inputTokens)
                             .cachedTokens((int) cacheReadTokens)
+                            .cacheCreationTokens((int) cacheCreationTokens)
                             .outputTokens((int) deltaUsage.outputTokens())
+                            .reasoningTokens((int) reasoningTokens)
                             .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                             .build();
         }

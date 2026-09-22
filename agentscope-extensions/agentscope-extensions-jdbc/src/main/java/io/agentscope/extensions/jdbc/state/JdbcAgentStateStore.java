@@ -121,6 +121,11 @@ public class JdbcAgentStateStore implements AgentStateStore {
     //  AgentStateStore implementation
     // -------------------------------------------------------------------------
 
+    /**
+     * Saves a single value unconditionally. Versioned writes use the same SQL helper but
+     * do not invoke this public method; subclasses intercepting writes should override
+     * both this method and {@link #saveIfVersion}.
+     */
     @Override
     public void save(String userId, String sessionId, String key, State value) {
         String slotId = slotId(userId, sessionId);
@@ -131,16 +136,7 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        BoundSql boundSql =
-                                dialect.sessionStateUpsert(
-                                        slotId,
-                                        key,
-                                        SINGLE_STATE_INDEX,
-                                        JsonUtils.getJsonCodec().toJson(value));
-                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
-                            bindParams(stmt, boundSql.params());
-                            stmt.executeUpdate();
-                        }
+                        executeUpsert(conn, slotId, key, JsonUtils.getJsonCodec().toJson(value));
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
@@ -229,33 +225,27 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
-    private long readVersion(String userId, String sessionId, String key) {
-        String slotId = slotId(userId, sessionId);
-        validateSlotId(slotId);
-        validateStateKey(key);
-
+    private long readVersion(Connection conn, String slotId, String key) throws SQLException {
         // Read only the version column — never deserialize state_data. Deserializing into the
         // `State` marker interface is impossible (no concrete type to construct), so reading the
         // version must not touch the payload.
         BoundSql boundSql = dialect.sessionStateSelectVersioned(slotId, key, SINGLE_STATE_INDEX);
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
             bindParams(stmt, boundSql.params());
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() ? rs.getLong("version") : 0L;
             }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to read version: " + key, e);
         }
     }
 
+    /**
+     * Writes and obtains the assigned version in one database transaction. This method
+     * does not delegate to {@link #save(String, String, String, State)}, including for
+     * unconditional writes, so the version is captured before the write lock is released.
+     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            return readVersion(userId, sessionId, key);
-        }
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
         validateStateKey(key);
@@ -266,7 +256,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        if (expectedVersion == 0L) {
+                        if (expectedVersion == UNVERSIONED) {
+                            executeUpsert(conn, slotId, key, json);
+                            result[0] = readVersion(conn, slotId, key);
+                        } else if (expectedVersion == 0L) {
                             BoundSql insertSql =
                                     dialect.sessionStateInsertIfAbsent(
                                             slotId, key, SINGLE_STATE_INDEX, json);
@@ -300,6 +293,15 @@ public class JdbcAgentStateStore implements AgentStateStore {
             return result[0];
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state if version: " + key, e);
+        }
+    }
+
+    private void executeUpsert(Connection conn, String slotId, String key, String json)
+            throws SQLException {
+        BoundSql boundSql = dialect.sessionStateUpsert(slotId, key, SINGLE_STATE_INDEX, json);
+        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            stmt.executeUpdate();
         }
     }
 
@@ -583,9 +585,12 @@ public class JdbcAgentStateStore implements AgentStateStore {
         if (slotId == null || slotId.trim().isEmpty()) {
             throw new IllegalArgumentException("Session ID cannot be null or empty");
         }
-        if (slotId.contains("/") || slotId.contains("\\")) {
-            throw new IllegalArgumentException("Session ID cannot contain path separators");
-        }
+        // Path separators are allowed: the slot id is an opaque prepared-statement bind value
+        // here, never a filesystem path, and SessionSandboxStateStore legitimately generates
+        // slash-separated slot IDs ("sandbox/session/<id>", "sandbox/user/<agentId>/<id>") —
+        // rejecting them silently dropped all sandbox resume state on JDBC backends (#3231).
+        // Path-based stores enforce their own segment safety (JsonFileAgentStateStore encodes
+        // each segment via safeSegment).
         if (slotId.length() > 255) {
             throw new IllegalArgumentException("Session ID cannot exceed 255 characters");
         }
