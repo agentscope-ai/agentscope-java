@@ -2,7 +2,7 @@
 title: Jev
 ---
 
-`agentscope-extensions-jev` provides a Java HTTP client for [TypeSafe System One](https://docs.typesafe.ai/) and the Jev decision model. Jev is not a chat model and is not registered as an AgentScope `Model` provider; use it when application code needs a fast, typed, calibrated decision such as routing, scoring, or classification.
+The `agentscope-extensions-jev` module, grouped under the `agentscope-extensions-judge` parent, provides a Java HTTP client for [TypeSafe System One](https://docs.typesafe.ai/) and Jev. Jev is not a chat model and is not registered as an AgentScope `Model` provider; use it when application code needs a fast, typed, calibrated decision such as routing, scoring, or classification.
 
 ## When to use
 
@@ -23,12 +23,12 @@ title: Jev
 ## Quickstart
 
 ```java
-import io.agentscope.extensions.jev.ChoiceQuestion;
-import io.agentscope.extensions.jev.JevClient;
-import io.agentscope.extensions.jev.JevRetryPolicy;
-import io.agentscope.extensions.jev.SystemOneRequest;
-import io.agentscope.extensions.jev.SystemOneResult;
-import io.agentscope.extensions.jev.ChoiceAnswer;
+import io.agentscope.extensions.judge.jev.ChoiceQuestion;
+import io.agentscope.extensions.judge.jev.JevClient;
+import io.agentscope.extensions.judge.jev.JevRetryPolicy;
+import io.agentscope.extensions.judge.jev.SystemOneRequest;
+import io.agentscope.extensions.judge.jev.SystemOneResult;
+import io.agentscope.extensions.judge.jev.ChoiceAnswer;
 import java.time.Duration;
 import java.util.Map;
 

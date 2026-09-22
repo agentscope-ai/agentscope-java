@@ -2,7 +2,7 @@
 title: Jev
 ---
 
-`agentscope-extensions-jev` 为 [TypeSafe System One](https://docs.typesafe.ai/) 和 Jev 决策模型提供 Java HTTP client。Jev 不是聊天模型，也不会注册成 AgentScope 的 `Model` provider；它适合在应用代码里做路由、评分、分类这类需要快速、类型安全、带置信度判断的决策。
+`agentscope-extensions-jev` 模块位于 `agentscope-extensions-judge` 父模块下，为 [TypeSafe System One](https://docs.typesafe.ai/) 和 Jev 提供 Java HTTP client。Jev 不是聊天模型，也不会注册成 AgentScope 的 `Model` provider；它适合在应用代码里做路由、评分、分类这类需要快速、类型安全、带置信度判断的决策。
 
 ## 何时使用
 
@@ -23,12 +23,12 @@ title: Jev
 ## 快速上手
 
 ```java
-import io.agentscope.extensions.jev.ChoiceQuestion;
-import io.agentscope.extensions.jev.JevClient;
-import io.agentscope.extensions.jev.JevRetryPolicy;
-import io.agentscope.extensions.jev.SystemOneRequest;
-import io.agentscope.extensions.jev.SystemOneResult;
-import io.agentscope.extensions.jev.ChoiceAnswer;
+import io.agentscope.extensions.judge.jev.ChoiceQuestion;
+import io.agentscope.extensions.judge.jev.JevClient;
+import io.agentscope.extensions.judge.jev.JevRetryPolicy;
+import io.agentscope.extensions.judge.jev.SystemOneRequest;
+import io.agentscope.extensions.judge.jev.SystemOneResult;
+import io.agentscope.extensions.judge.jev.ChoiceAnswer;
 import java.time.Duration;
 import java.util.Map;
 
