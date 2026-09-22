@@ -25,6 +25,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -561,6 +562,41 @@ class OllamaChatFormatterTest {
         assertNotNull(request);
         String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
         assertTrue(json.contains("\"thinking\":\"Planning tool call\""));
+    }
+
+    @Test
+    @DisplayName("Should preserve assistant ThinkingBlock in the formatted request")
+    void testFormatPreservesAssistantThinkingBlock() {
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                Arrays.asList(
+                                        ThinkingBlock.builder()
+                                                .thinking("I should call the weather tool.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Let me check the weather.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call-123")
+                                                .name("get_weather")
+                                                .input(Collections.singletonMap("city", "Tokyo"))
+                                                .build()))
+                        .build();
+
+        List<OllamaMessage> formatted = formatter.format(Collections.singletonList(assistantMsg));
+        OllamaRequest request =
+                formatter.buildRequest("test-model", formatted, false, null, null, null, null);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+
+        assertEquals(1, formatted.size());
+        assertEquals("assistant", formatted.get(0).getRole());
+        assertEquals("I should call the weather tool.", formatted.get(0).getThinking());
+        assertEquals("Let me check the weather.", formatted.get(0).getContent());
+        assertNotNull(formatted.get(0).getToolCalls());
+        assertTrue(json.contains("\"thinking\":\"I should call the weather tool.\""));
     }
 
     // Helper method to concatenate lists
