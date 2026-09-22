@@ -57,8 +57,8 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
         Map<String, Object> blockMetadata = block.getMetadata();
         if (blockMetadata != null && !blockMetadata.isEmpty()) {
-            mergeMetadata(blockMetadata);
-            currentMetadata.putAll(blockMetadata);
+            mergeMetadata(metadata, blockMetadata);
+            mergeMetadata(currentMetadata, blockMetadata);
         }
 
         // A thought signature terminates its provider Part. Keep that boundary so distinct
@@ -123,27 +123,27 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     }
 
     /**
-     * Merges incoming metadata into the accumulator's metadata map.
+     * Merges incoming metadata into the given accumulator metadata map.
      *
      * <p>List values are accumulated in stream order (entries appended, not replaced). Scalar
      * values use last-write-wins. List values are always copied to prevent caller mutation.
      */
-    private void mergeMetadata(Map<String, Object> incoming) {
+    private void mergeMetadata(Map<String, Object> target, Map<String, Object> incoming) {
         for (Map.Entry<String, Object> entry : incoming.entrySet()) {
             String key = entry.getKey();
             Object newValue = entry.getValue();
-            Object existing = metadata.get(key);
+            Object existing = target.get(key);
             if (existing instanceof List<?> existingList && newValue instanceof List<?> newList) {
                 // Both are lists: concatenate in stream order
                 List<Object> combined = new ArrayList<>(existingList);
                 combined.addAll(newList);
-                metadata.put(key, combined);
+                target.put(key, combined);
             } else if (newValue instanceof List<?> newList) {
                 // First list for this key: copy to prevent caller mutation
-                metadata.put(key, new ArrayList<>(newList));
+                target.put(key, new ArrayList<>(newList));
             } else {
                 // Scalar value: last-write-wins
-                metadata.put(key, newValue);
+                target.put(key, newValue);
             }
         }
     }
