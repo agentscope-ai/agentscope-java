@@ -172,7 +172,7 @@ public class AgentProtocolController {
                     approved instanceof Boolean b
                             ? b
                             : approved != null && Boolean.parseBoolean(String.valueOf(approved));
-            out.add(new RemoteConfirmDecision(toolCallId, ok));
+            out.add(new RemoteConfirmDecision(toolCallId, ok, stringVal(m.get("reason"))));
         }
         return out;
     }

@@ -91,6 +91,10 @@ public class OllamaResponseParser {
         // 4. Map Usage
         int inputTokens = response.getPromptEvalCount() != null ? response.getPromptEvalCount() : 0;
         int outputTokens = response.getEvalCount() != null ? response.getEvalCount() : 0;
+        int cachedTokens =
+                response.getPromptEvalCachedCount() != null
+                        ? response.getPromptEvalCachedCount()
+                        : 0;
         // Ollama durations are in nanoseconds, convert to seconds
         double time = response.getTotalDuration() != null ? response.getTotalDuration() / 1e9 : 0.0;
 
@@ -98,6 +102,7 @@ public class OllamaResponseParser {
                 ChatUsage.builder()
                         .inputTokens(inputTokens)
                         .outputTokens(outputTokens)
+                        .cachedTokens(cachedTokens)
                         .time(time)
                         .build();
 
@@ -111,6 +116,8 @@ public class OllamaResponseParser {
             metadata.put("load_duration", response.getLoadDuration());
         if (response.getPromptEvalCount() != null)
             metadata.put("prompt_eval_count", response.getPromptEvalCount());
+        if (response.getPromptEvalCachedCount() != null)
+            metadata.put("prompt_eval_cached_count", response.getPromptEvalCachedCount());
         if (response.getPromptEvalDuration() != null)
             metadata.put("prompt_eval_duration", response.getPromptEvalDuration());
         if (response.getEvalCount() != null) metadata.put("eval_count", response.getEvalCount());
