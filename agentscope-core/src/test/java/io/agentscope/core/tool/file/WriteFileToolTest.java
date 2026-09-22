@@ -63,6 +63,14 @@ class WriteFileToolTest {
     }
 
     @Test
+    void stripsSingleTrailingNewlineFromReplacementContent() {
+        ToolResultBlock result = tool.writeTextFile(file.toString(), "NEW\n", "2,2").block();
+
+        assertEquals(ToolResultState.RUNNING, result.getState());
+        assertEquals("one\nNEW\nthree\nfour\nfive\n", readFile());
+    }
+
+    @Test
     void clampsEndBeyondFileLengthToEndOfFile() {
         ToolResultBlock result = tool.writeTextFile(file.toString(), "NEW", "3,999").block();
 

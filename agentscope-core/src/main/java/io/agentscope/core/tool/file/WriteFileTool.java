@@ -305,9 +305,11 @@ public class WriteFileTool {
                                                 "Create and write %s successfully.", filePath));
                             }
 
-                            // Read original lines
-                            List<String> originalLines =
-                                    Files.readAllLines(path, StandardCharsets.UTF_8);
+                            // Read the original text once and derive both the line
+                            // list and whether the file ends with a line terminator.
+                            String originalText = Files.readString(path, StandardCharsets.UTF_8);
+                            boolean originalEndsWithNewline = originalText.endsWith("\n");
+                            List<String> originalLines = originalText.lines().toList();
                             logger.debug(
                                     "Read {} lines from existing file: {}",
                                     originalLines.size(),
@@ -367,12 +369,22 @@ public class WriteFileTool {
                                                     start, originalLines.size()));
                                 }
 
-                                // Build new content
+                                // Build new content. Strip at most one trailing line
+                                // terminator from the replacement content so it cannot
+                                // survive the join as an unintended blank line; the
+                                // block below is the sole authority on the final
+                                // terminator.
+                                String strippedContent = content;
+                                if (strippedContent.endsWith("\n")) {
+                                    strippedContent =
+                                            strippedContent.substring(
+                                                    0, strippedContent.length() - 1);
+                                }
                                 List<String> newContent = new ArrayList<>();
                                 if (start > 1) {
                                     newContent.addAll(originalLines.subList(0, start - 1));
                                 }
-                                newContent.add(content);
+                                newContent.add(strippedContent);
                                 if (end < originalLines.size()) {
                                     newContent.addAll(
                                             originalLines.subList(end, originalLines.size()));
@@ -381,7 +393,7 @@ public class WriteFileTool {
                                 // Write the new content, preserving the original file's
                                 // trailing line terminator so line counts stay stable.
                                 String joinedContent = String.join("\n", newContent);
-                                if (Files.readString(path, StandardCharsets.UTF_8).endsWith("\n")) {
+                                if (originalEndsWithNewline) {
                                     joinedContent += "\n";
                                 }
                                 Files.writeString(path, joinedContent, StandardCharsets.UTF_8);
