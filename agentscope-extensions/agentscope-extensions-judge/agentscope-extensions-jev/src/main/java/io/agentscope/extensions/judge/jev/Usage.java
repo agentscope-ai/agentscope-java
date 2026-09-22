@@ -16,5 +16,9 @@
 
 package io.agentscope.extensions.judge.jev;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /** Token usage reported by the System One API. */
-public record Usage(long inputTokens, long outputTokens) {}
+public record Usage(
+        @JsonProperty("input_tokens") long inputTokens,
+        @JsonProperty("output_tokens") long outputTokens) {}

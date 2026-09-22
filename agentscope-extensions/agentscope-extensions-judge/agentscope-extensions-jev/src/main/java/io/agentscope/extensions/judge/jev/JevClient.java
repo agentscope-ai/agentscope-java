@@ -141,6 +141,7 @@ public final class JevClient {
         } catch (JsonProcessingException e) {
             throw new JevException(
                     "Failed to parse System One response",
+                    e,
                     response.getStatusCode(),
                     response.getBody(),
                     false);
