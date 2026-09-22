@@ -70,6 +70,10 @@ public interface AgentRunner {
      * <p>Implementations that support the v2 event model should override this method. Existing
      * custom runners remain source-compatible whether they implement this method or only the
      * legacy {@link #stream(List, AgentRequestOptions)} contract.
+     * The A2A executor selects the legacy stream only when this default implementation is used or
+     * the returned Flux terminates with {@link UnsupportedAgentEventStreamException}; a plain
+     * {@link UnsupportedOperationException} from an overridden implementation is treated as a
+     * real execution failure.
      *
      * @param requestMessages the messages from a2a client
      * @param options the options for agent request, such as {@code taskId}, {@code sessionId} or {@code userId} of this request

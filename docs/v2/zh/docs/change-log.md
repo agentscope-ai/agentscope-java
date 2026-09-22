@@ -207,6 +207,8 @@ v1 中通过 `Hook` + 各种 `*ChunkEvent` 拼装文本 / 工具增量的代码�
 
 Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGenerator[AgentEvent, None]`），对应 Java 的细粒度 `io.agentscope.core.event.AgentEvent` 体系。为了与之对齐，Java 端的粗粒度 `Flux<Event> stream(...)` API 在 2.0.0 全部 `@Deprecated`：
 
+对于 A2A `AgentRunner` 实现，如果细粒度事件流不可用，请不要覆写 `streamEvents(...)`，或返回 `UnsupportedAgentEventStreamException`，这样才能选择 legacy `stream(...)` fallback。覆写后的 `streamEvents(...)` 如果返回普通的 `UnsupportedOperationException`，会被视为执行失败，不会再次通过 legacy stream 重试。
+
 - **方法（`forRemoval = true`，将在未来大版本如 2.1 中清理）**
   - `StreamableAgent.stream(...)` —— 接口上的全部 11 个 `stream(...)` 重载（默认方法 + 抽象方法）
   - `AgentBase.stream(...)` —— 3 个 `Flux<Event>` 实现

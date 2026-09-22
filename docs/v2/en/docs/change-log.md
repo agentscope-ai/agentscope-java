@@ -207,6 +207,8 @@ Detail → [Message & Event](building-blocks/message-and-event.md)
 
 Python 2.0's `agent.reply_stream()` exposes a single streaming signature (`AsyncGenerator[AgentEvent, None]`) that maps directly to Java's fine-grained `io.agentscope.core.event.AgentEvent` hierarchy. To match it, the coarse-grained `Flux<Event> stream(...)` API on the Java side is `@Deprecated` as of 2.0.0:
 
+For A2A `AgentRunner` implementations, leave `streamEvents(...)` unoverridden or return `UnsupportedAgentEventStreamException` when the fine-grained stream is unavailable to select the legacy `stream(...)` fallback. A plain `UnsupportedOperationException` from an overridden `streamEvents(...)` is treated as an execution failure and is not retried through the legacy stream.
+
 - **Methods (`forRemoval = true`, going away next minor)**
   - `StreamableAgent.stream(...)` — all 11 `stream(...)` overloads on the interface (defaults + abstract)
   - `AgentBase.stream(...)` — 3 `Flux<Event>` implementations

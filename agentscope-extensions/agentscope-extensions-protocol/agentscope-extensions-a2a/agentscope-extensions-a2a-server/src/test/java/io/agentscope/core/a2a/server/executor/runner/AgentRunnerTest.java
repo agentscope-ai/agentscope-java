@@ -374,7 +374,9 @@ class AgentRunnerTest {
         verify(mockAgent, times(1)).interrupt();
 
         // Try to stream again with the same taskId - should succeed since agent was removed
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
+        result.blockLast();
         assertNotNull(result);
     }
 
