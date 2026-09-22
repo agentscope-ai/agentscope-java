@@ -17,8 +17,8 @@ package io.agentscope.extensions.model.ollama.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ImageBlock;
@@ -528,19 +528,39 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName("Should clear thinking from outbound messages when building request")
-    void testBuildRequestClearsThinkingFromOutboundMessages() {
+    @DisplayName("Should serialize request messages without thinking key when thinking is null")
+    void testRequestSerializationOmitsThinkingWhenNull() {
         OllamaMessage userMsg = new OllamaMessage("user", "Hello");
         OllamaMessage assistantMsg = new OllamaMessage("assistant", "Hi there");
-        assistantMsg.setThinking("Internal chain-of-thought");
 
         List<OllamaMessage> messages = Arrays.asList(userMsg, assistantMsg);
         OllamaRequest request =
                 formatter.buildRequest("test-model", messages, false, null, null, null, null);
 
         assertNotNull(request);
-        assertEquals(2, request.getMessages().size());
-        assertNull(request.getMessages().get(1).getThinking());
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertFalse(json.contains("\"thinking\""));
+    }
+
+    @Test
+    @DisplayName("Should serialize request message with thinking key when thinking is present")
+    void testRequestSerializationIncludesThinkingWhenPresent() {
+        OllamaMessage assistantMsg = new OllamaMessage("assistant", "I will run a tool");
+        assistantMsg.setThinking("Planning tool call");
+
+        OllamaRequest request =
+                formatter.buildRequest(
+                        "test-model",
+                        Collections.singletonList(assistantMsg),
+                        false,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(request);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(request);
+        assertTrue(json.contains("\"thinking\":\"Planning tool call\""));
     }
 
     // Helper method to concatenate lists

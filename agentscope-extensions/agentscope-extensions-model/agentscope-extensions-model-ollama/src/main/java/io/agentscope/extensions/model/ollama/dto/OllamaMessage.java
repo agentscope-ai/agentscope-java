@@ -40,7 +40,9 @@ public class OllamaMessage {
      * The model's reasoning content, returned by thinking models when the request enables the
      * {@code think} option. In native Ollama {@code /api/chat} this is returned in {@code thinking};
      * some reasoning models or proxies expose it under {@code reasoning} or {@code reasoning_content}.
-     * Response-only: Ollama's request message schema does not accept it.
+     *
+     * <p>In Ollama's schema, {@code thinking} is an optional message field; AgentScope's
+     * {@code OllamaResponseParser} extracts inbound reasoning into {@code ThinkingBlock}.
      */
     @JsonProperty("thinking")
     @JsonAlias({"reasoning", "reasoning_content"})
