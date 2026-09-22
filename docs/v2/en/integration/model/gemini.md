@@ -61,7 +61,7 @@ Use either `thinkingBudget` or `thinkingLevel` according to the selected model. 
 
 The chat formatter replays historical assistant `ThinkingBlock` content and preserves Gemini `thoughtSignature` values on thinking, text, and tool-call parts, including after message JSON serialization. Keep content-block metadata intact when storing or transforming conversation history.
 
-See [Gemini End-to-End Request Flow](gemini-request-flow.md) for the complete single-request path.
+See [Gemini End-to-End Request Flow](/v2/en/integration/model/gemini-request-flow) for the complete single-request path.
 
 ## Spring Boot
 

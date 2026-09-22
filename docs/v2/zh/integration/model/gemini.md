@@ -61,7 +61,7 @@ GenerateOptions thinkingOptions = GenerateOptions.builder()
 
 Chat formatter 会自动回放历史 assistant `ThinkingBlock`，并保留 thinking、text 和 tool-call Part 上的 Gemini `thoughtSignature`，即使消息经过 JSON 序列化也不会丢失。存储或转换对话历史时，请保留 content block metadata。
 
-完整的单次请求链路见[Gemini 完整请求流程](gemini-request-flow.md)。
+完整的单次请求链路见[Gemini 完整请求流程](/v2/zh/integration/model/gemini-request-flow)。
 
 ## Spring Boot
 
