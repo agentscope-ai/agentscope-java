@@ -79,8 +79,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
         this.dialect = requireNonNull(dialect, "dialect");
         if (createIfNotExist) {
             createTableIfNotExist();
+            ensureVersionColumn();
         } else {
             verifyTableExists();
+            verifyVersionColumnExists();
         }
     }
 
@@ -96,6 +98,66 @@ public class JdbcAgentStateStore implements AgentStateStore {
             }
         } catch (SQLException e) {
             throw new RuntimeException("Failed to create session table", e);
+        }
+    }
+
+    /**
+     * Migrates a legacy sessions table (created by the deprecated mysql/postgresql store,
+     * whose default table name this module reuses) by adding the missing {@code version}
+     * column. No-op for vendors without a migration DDL and for tables that already have the
+     * column.
+     */
+    private void ensureVersionColumn() {
+        String ddl = migrationDdlOrNull();
+        if (ddl == null || versionColumnExists()) {
+            return;
+        }
+        try (Connection conn = dataSource.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(ddl);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to add version column to session table", e);
+        }
+    }
+
+    /**
+     * Read-only counterpart of {@link #ensureVersionColumn()} for the {@code
+     * createIfNotExist=false} path: fails fast at startup with the exact migration DDL to run,
+     * instead of an opaque "Unknown column 'version'" on the first write (#3216).
+     */
+    private void verifyVersionColumnExists() {
+        String ddl = migrationDdlOrNull();
+        if (ddl == null || versionColumnExists()) {
+            return;
+        }
+        throw new IllegalStateException(
+                "Table "
+                        + dialect.sessionStateTableName()
+                        + " exists but is missing the 'version' column (legacy schema from the"
+                        + " deprecated mysql/postgresql store). Apply the migration DDL via your"
+                        + " database migration process: "
+                        + ddl
+                        + ", or use createIfNotExist=true to auto-migrate.");
+    }
+
+    private String migrationDdlOrNull() {
+        // DEFAULT 1 (not 0): the ALTER backfills pre-existing rows with the default, and 0 is
+        // the sentinel getVersioned() reports for "row absent". Backfilling 0 would make every
+        // pre-existing row look absent to saveIfVersion(..., 0) CAS writes.
+        return dialect.sessionStateEnsureVersionColumnDdl().orElse(null);
+    }
+
+    private boolean versionColumnExists() {
+        BoundSql boundSql =
+                dialect.sessionStateCheckVersionColumnExists(dialect.sessionStateTableName());
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+            bindParams(stmt, boundSql.params());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to check version column existence", e);
         }
     }
 

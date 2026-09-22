@@ -30,6 +30,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,6 +144,26 @@ public class PostgresDialect extends AbstractJdbcDialect {
         return new BoundSql(
                 "SELECT 1 FROM information_schema.tables"
                         + " WHERE table_schema = current_schema() AND table_name = ?",
+                tableName);
+    }
+
+    /**
+     * Legacy tables from the deprecated postgresql store lack {@code version}; the {@code IF
+     * NOT EXISTS} guard makes the DDL idempotent on its own.
+     */
+    @Override
+    public Optional<String> sessionStateEnsureVersionColumnDdl() {
+        return Optional.of(
+                "ALTER TABLE %s ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1"
+                        .formatted(sessionStateTableName()));
+    }
+
+    @Override
+    public BoundSql sessionStateCheckVersionColumnExists(String tableName) {
+        return new BoundSql(
+                "SELECT 1 FROM information_schema.columns"
+                        + " WHERE table_schema = current_schema() AND UPPER(table_name) ="
+                        + " UPPER(?) AND UPPER(column_name) = 'VERSION'",
                 tableName);
     }
 

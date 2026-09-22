@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.dialect.table;
 
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Table-domain dialect interface for the session-state table.
@@ -55,6 +56,35 @@ public interface SessionStateDialect {
 
     /** Table-existence probe SQL. One bind param: the table name. */
     BoundSql sessionStateCheckTableExists(String tableName);
+
+    /**
+     * DDL adding the {@code version} column to a legacy sessions table created by the
+     * deprecated {@code agentscope-extensions-mysql}/{@code -postgresql} modules, already
+     * formatted with {@link #sessionStateTableName()}, or {@link Optional#empty()} when the
+     * vendor's tables can only originate from {@link #sessionStateCreateTableDdls()} — which
+     * already includes {@code version} — so there is nothing to migrate (H2, SQLite).
+     *
+     * <p>The migration must backfill {@code DEFAULT 1}: 0 is the "row absent" sentinel that
+     * {@code getVersioned()} reports, so backfilling 0 would make every pre-existing row look
+     * absent to {@code saveIfVersion(..., 0)} CAS writes.
+     */
+    default Optional<String> sessionStateEnsureVersionColumnDdl() {
+        return Optional.empty();
+    }
+
+    /**
+     * Existence probe for the {@code version} column. One bind param: the table name. Only
+     * consulted when {@link #sessionStateEnsureVersionColumnDdl()} is present. Compares the
+     * table and column names case-insensitively: vendors such as H2 store unquoted identifiers
+     * uppercase while the resolved table name is usually lowercase.
+     */
+    default BoundSql sessionStateCheckVersionColumnExists(String tableName) {
+        return new BoundSql(
+                "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE UPPER(TABLE_NAME) = UPPER(?)"
+                        + " AND UPPER(COLUMN_NAME) = 'VERSION'",
+                tableName);
+    }
 
     // ------------------------------------------------------------------
     //  Default — ANSI baseline
