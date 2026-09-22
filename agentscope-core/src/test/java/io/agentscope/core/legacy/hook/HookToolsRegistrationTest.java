@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -202,7 +203,8 @@ class HookToolsRegistrationTest {
                         .toolkit(toolkit)
                         .hook(hook)
                         .hook(hook)
-                        .build(toolName -> !"hook_drop".equals(toolName))) {
+                        .hookToolFilter(toolName -> !"hook_drop".equals(toolName))
+                        .build()) {
             assertEquals(1, toolsCalls.get());
             assertEquals(1, agent.getHooks().size());
             assertSame(hook, agent.getHooks().get(0));
@@ -255,11 +257,12 @@ class HookToolsRegistrationTest {
                         .toolkit(toolkit)
                         .enableMetaTool(true)
                         .hook(hook)
-                        .build(
+                        .hookToolFilter(
                                 toolName -> {
                                     testedNames.add(toolName);
                                     return keep;
-                                })) {
+                                })
+                        .build()) {
             assertEquals(Set.of("shared", "hook_tool"), Set.copyOf(testedNames));
             assertEquals(2, testedNames.size());
             assertSame(existing, agent.getToolkit().getTool("existing"));
@@ -301,19 +304,20 @@ class HookToolsRegistrationTest {
                         .name("filtered")
                         .model(model)
                         .hook(hook)
-                        .build(
+                        .hookToolFilter(
                                 toolName -> {
                                     testedNames.add(toolName);
                                     return retainedNames.contains(toolName);
-                                })) {
+                                })
+                        .build()) {
             assertEquals(
-                    Set.of(
-                            "agent_keep",
+                    List.of(
                             "agent_drop",
-                            "annotated_keep",
+                            "agent_keep",
                             "annotated_drop",
+                            "annotated_keep",
                             "defaultName"),
-                    Set.copyOf(testedNames));
+                    testedNames);
             assertEquals(5, testedNames.size());
             assertSame(kept, agent.getToolkit().getTool("agent_keep"));
             assertEquals(retainedNames, agent.getToolkit().getToolNames());
@@ -357,12 +361,13 @@ class HookToolsRegistrationTest {
                         .name("filtered")
                         .model(model)
                         .hooks(List.of(first, second, third, first))
-                        .build(
+                        .hookToolFilter(
                                 toolName -> {
                                     assertEquals(List.of("first", "second"), registrationOrder);
                                     testedNames.add(toolName);
                                     return true;
-                                })) {
+                                })
+                        .build()) {
             assertEquals(List.of("shared"), testedNames);
             assertSame(lastTool, agent.getToolkit().getTool("shared"));
             assertEquals(List.of(second, first, third), agent.getHooks());
@@ -370,6 +375,11 @@ class HookToolsRegistrationTest {
             verify(second, times(1)).tools();
             verify(third, times(1)).tools();
         }
+    }
+
+    @Test
+    void hookToolFilterRejectsNull() {
+        assertThrows(NullPointerException.class, () -> ReActAgent.builder().hookToolFilter(null));
     }
 
     private static AgentTool namedTool(String name) {

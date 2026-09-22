@@ -541,6 +541,9 @@ final class HarnessAgentBuilderSupport {
             var childTools = childToolsConfig(capturedToolsConfig, decl.getTools());
             // Without an explicit parent config, apply the declaration after the child loads
             // its workspace policy; a synthetic override would hide workspace allow/deny rules.
+            // This also intentionally loads that workspace's MCP servers. A declaration selects
+            // exposed tool names, not server connections; an explicit config still takes
+            // precedence.
             if (capturedToolsConfig != null) sub.toolsConfig(childTools);
             capturedRoutes.forEach(sub::filesystemRoute);
             if (decl.getWorkspaceMode() == WorkspaceMode.SHARED && capturedSharedBackend != null) {

@@ -4568,6 +4568,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ExecutionConfig toolExecutionConfig;
         GenerateOptions generateOptions;
         final Set<Hook> hooks = new LinkedHashSet<>();
+        private Predicate<String> hookToolFilter;
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private boolean enableMetaTool = false;
         private boolean taskListEnabled = false;
@@ -5321,36 +5322,39 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Builds and returns a new ReActAgent instance with the configured settings.
-         *
-         * @return A new ReActAgent instance
-         * @throws IllegalArgumentException if required parameters are missing or invalid
-         */
-        public ReActAgent build() {
-            return build(null);
-        }
-
-        /**
-         * Builds an agent after filtering tools contributed by its hooks.
+         * Sets a construction-time filter for tools contributed by hooks.
          *
          * <p>The predicate receives each resolved {@link Hook#tools()} contribution's registered
          * tool name ({@link AgentTool#getName()}), also used as its tool schema name. For annotated
          * methods, this is the {@code @Tool} name, or the method name when no name is specified.
          * Returning {@code true} retains the tool; {@code false} excludes it before installation,
          * independently of the agent toolkit's runtime deletion policy.
+         * The name-only boundary is intentional: this selects tools by their public schema names,
+         * not by implementation type, metadata, arguments or execution context.
          *
          * <p>Only resolved hook contributions are tested, after normal registration has resolved
          * duplicate tool names. Existing toolkit tools and tools installed separately by the
          * builder are not tested. Retained contributions use normal tool registration semantics,
          * including replacement of existing tools with the same name. Toolkit execution
-         * configuration, callbacks, tool metadata and Hook instances are preserved. Passing
-         * {@code null} retains normal hook tool registration, as does {@link #build()}.
+         * configuration, callbacks, tool metadata and Hook instances are preserved. By default no
+         * filter is applied. To retain all contributions explicitly, use {@code name -> true}.
          *
-         * @param hookToolFilter optional construction-time filter for hook-contributed tools
-         * @return a new ReActAgent instance
+         * @param hookToolFilter non-null predicate selecting resolved hook-contributed tool names
+         * @return this builder
+         * @throws NullPointerException if the predicate is null
+         */
+        public Builder hookToolFilter(Predicate<String> hookToolFilter) {
+            this.hookToolFilter = Objects.requireNonNull(hookToolFilter, "hookToolFilter");
+            return this;
+        }
+
+        /**
+         * Builds and returns a new ReActAgent instance with the configured settings.
+         *
+         * @return A new ReActAgent instance
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
-        public ReActAgent build(Predicate<String> hookToolFilter) {
+        public ReActAgent build() {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
@@ -5365,9 +5369,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (hookToolFilter == null) {
                 registerToolsFromHooks(agentToolkit);
             } else {
+                // Hook tools are plain value objects with no registration-time resource ownership
+                // or one-shot toolkit binding (see Hook.tools()). Resolving them here acquires no
+                // MCP clients; registering retained values again needs no temporary-toolkit
+                // cleanup.
                 Toolkit hookTools = new Toolkit();
                 registerToolsFromHooks(hookTools);
-                for (String toolName : hookTools.getToolNames()) {
+                for (String toolName : hookTools.getToolNames().stream().sorted().toList()) {
                     if (hookToolFilter.test(toolName)) {
                         agentToolkit.registerAgentTool(hookTools.getTool(toolName));
                     }

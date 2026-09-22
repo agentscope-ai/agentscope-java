@@ -2962,23 +2962,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             // ---- Build inner ReActAgent ----
             inner.toolkit(agentToolkit);
-            ReActAgent delegate;
-            if (inheritedHookToolAllowlist == null) {
-                delegate = inner.build();
-            } else {
+            if (inheritedHookToolAllowlist != null) {
                 ToolsConfig childToolsConfig = resolvedToolsConfig;
-                delegate =
-                        inner.build(
-                                toolName -> {
-                                    // Filter before installation, even when the real toolkit
-                                    // forbids runtime deletion. Rejected contributions leave the
-                                    // child's own same-name Harness tools intact.
-                                    return (inheritedHookToolAllowlist.isEmpty()
-                                                    || inheritedHookToolAllowlist.contains(
-                                                            toolName))
-                                            && ToolFilter.isAllowed(toolName, childToolsConfig);
-                                });
+                // Filter before installation, even when the toolkit forbids runtime deletion.
+                // Rejected contributions leave the child's own same-name Harness tools intact.
+                inner.hookToolFilter(
+                        toolName ->
+                                (inheritedHookToolAllowlist.isEmpty()
+                                                || inheritedHookToolAllowlist.contains(toolName))
+                                        && ToolFilter.isAllowed(toolName, childToolsConfig));
             }
+            ReActAgent delegate = inner.build();
             selfRef.set(delegate);
 
             return new HarnessAgent(
