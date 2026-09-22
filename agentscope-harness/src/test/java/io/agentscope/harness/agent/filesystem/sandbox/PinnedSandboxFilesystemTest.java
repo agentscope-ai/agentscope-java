@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.sandbox;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,11 +32,18 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class PinnedSandboxFilesystemTest {
 
     @Test
     void releaseWaitsForActiveUploadThenRejectsLaterUploads() throws Exception {
+        String previous = System.getProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY);
+        System.setProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY, "5000");
         BlockingSandbox sandbox = new BlockingSandbox();
         PinnedSandboxFilesystem.markSandboxAcquired(sandbox);
         PinnedSandboxFilesystem filesystem = new PinnedSandboxFilesystem(sandbox);
@@ -51,7 +59,11 @@ class PinnedSandboxFilesystemTest {
 
             Future<?> release =
                     executor.submit(() -> PinnedSandboxFilesystem.markSandboxReleased(sandbox));
-            TimeUnit.MILLISECONDS.sleep(100);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (!filesystem.isSandboxReleased() && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertTrue(filesystem.isSandboxReleased(), "release must be visible before draining");
             assertFalse(release.isDone(), "release should briefly coordinate with active upload");
 
             sandbox.allowUploadToFinish.countDown();
@@ -66,11 +78,17 @@ class PinnedSandboxFilesystemTest {
         } finally {
             sandbox.allowUploadToFinish.countDown();
             executor.shutdownNow();
+            restoreTimeoutProperty(previous);
         }
     }
 
-    @Test
-    void releaseDoesNotWaitIndefinitelyForStalledUpload() throws Exception {
+    @ParameterizedTest
+    @ValueSource(longs = {0, 50})
+    void releaseDoesNotWaitIndefinitelyForStalledUpload(long timeoutMillis) throws Exception {
+        String previous = System.getProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY);
+        System.setProperty(
+                PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY,
+                Long.toString(timeoutMillis));
         BlockingSandbox sandbox = new BlockingSandbox();
         PinnedSandboxFilesystem.markSandboxAcquired(sandbox);
         PinnedSandboxFilesystem filesystem = new PinnedSandboxFilesystem(sandbox);
@@ -88,13 +106,51 @@ class PinnedSandboxFilesystemTest {
             PinnedSandboxFilesystem.markSandboxReleased(sandbox);
             long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
-            assertTrue(elapsedMillis < 2_500, "release gate wait must be bounded");
+            assertTrue(
+                    elapsedMillis >= timeoutMillis, "release should allow the configured budget");
+            assertTrue(
+                    elapsedMillis < 900, "release must use the configured budget, not the default");
             assertFalse(upload.isDone(), "the simulated remote upload should still be stalled");
+            assertTrue(filesystem.isSandboxReleased());
             assertFalse(filesystem.isSandboxRunning());
+            assertFalse(
+                    filesystem
+                            .uploadFiles(
+                                    RuntimeContext.empty(),
+                                    List.of(Map.entry("later.jsonl", new byte[] {2})))
+                            .get(0)
+                            .isSuccess());
         } finally {
             sandbox.allowUploadToFinish.countDown();
             executor.shutdownNow();
+            restoreTimeoutProperty(previous);
             assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "invalid", "9223372036854775808", ""})
+    void invalidTimeoutFallsBackWithoutPreventingRelease(String value) {
+        String previous = System.getProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY);
+        try {
+            System.clearProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY);
+            assertEquals(1000, PinnedSandboxFilesystem.releaseGateTimeoutMillis());
+            System.setProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY, value);
+            assertEquals(1000, PinnedSandboxFilesystem.releaseGateTimeoutMillis());
+            BlockingSandbox sandbox = new BlockingSandbox();
+            PinnedSandboxFilesystem filesystem = new PinnedSandboxFilesystem(sandbox);
+            PinnedSandboxFilesystem.markSandboxReleased(sandbox);
+            assertTrue(filesystem.isSandboxReleased());
+        } finally {
+            restoreTimeoutProperty(previous);
+        }
+    }
+
+    private static void restoreTimeoutProperty(String previous) {
+        if (previous == null) {
+            System.clearProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY);
+        } else {
+            System.setProperty(PinnedSandboxFilesystem.RELEASE_GATE_TIMEOUT_PROPERTY, previous);
         }
     }
 

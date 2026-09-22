@@ -40,13 +40,21 @@ import org.slf4j.LoggerFactory;
  * must not unpin this mirror filesystem.
  *
  * <p>Safe for DataAgent-style <em>user-managed</em> sandboxes that stay alive across
- * acquire/release. Self-managed sandbox release takes an exclusive gate before shutdown, so an
- * upload either completes before release or is skipped without touching released resources.
+ * acquire/release. Self-managed sandbox release rejects new uploads and waits a bounded time for
+ * active uploads. An upload still in flight when the wait expires may fail during shutdown.
  */
 public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
 
     private static final Logger log = LoggerFactory.getLogger(PinnedSandboxFilesystem.class);
-    private static final long RELEASE_GATE_TIMEOUT_MILLIS = 1_000;
+
+    /**
+     * JVM property controlling the per-release mirror drain budget in milliseconds (default 1000).
+     * Zero disables waiting. Invalid or negative values fall back to the default.
+     */
+    public static final String RELEASE_GATE_TIMEOUT_PROPERTY =
+            "agentscope.sandbox.mirror.release-timeout-millis";
+
+    private static final long DEFAULT_RELEASE_GATE_TIMEOUT_MILLIS = 1_000;
     private static final ReferenceQueue<Sandbox> STALE_SANDBOXES = new ReferenceQueue<>();
     private static final Map<IdentityWeakReference, MirrorGate> MIRROR_GATES = new HashMap<>();
 
@@ -65,6 +73,9 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
      * <p>A manager may reuse the same {@link Sandbox} object for a later call. Replacing rather
      * than reopening the old gate keeps mirrors from the previous call permanently released while
      * ensuring they cannot attach themselves to the new call's lifecycle.
+     *
+     * <p>The manager must serialize acquire/release for each self-managed sandbox object: only
+     * one live generation per instance is supported. Concurrent calls must use distinct instances.
      */
     public static void markSandboxAcquired(Sandbox sandbox) {
         if (sandbox == null) {
@@ -76,10 +87,17 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         }
     }
 
-    /** Prevents new mirror uploads and briefly waits for an in-flight upload before shutdown. */
+    /**
+     * Prevents new mirror uploads and briefly waits for an in-flight upload before shutdown.
+     *
+     * <p>The budget is read from {@link #RELEASE_GATE_TIMEOUT_PROPERTY} on each release. Uploads
+     * hold the read lock throughout remote transfer, so even a healthy slow upload can consume
+     * the entire budget. Consecutive releases each incur their own wait; this is not a global
+     * timeout or an upload timeout. Shutdown proceeds when the budget expires.
+     */
     public static void markSandboxReleased(Sandbox sandbox) {
         if (sandbox != null) {
-            gateFor(sandbox).markReleased();
+            gateFor(sandbox).markReleased(releaseGateTimeoutMillis());
         }
     }
 
@@ -98,7 +116,12 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         }
     }
 
-    /** Returns whether this pinned filesystem's call generation has been released. */
+    /**
+     * Returns whether this pinned filesystem's call generation has been released.
+     *
+     * <p>The volatile latch is published before the release wait, so this query observes release
+     * without queuing behind the writer or a stalled upload.
+     */
     public boolean isSandboxReleased() {
         return mirrorGate.released;
     }
@@ -126,6 +149,26 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         // Keep the pin for out-of-call mirror uploads.
     }
 
+    static long releaseGateTimeoutMillis() {
+        String configured = System.getProperty(RELEASE_GATE_TIMEOUT_PROPERTY);
+        if (configured != null) {
+            try {
+                long timeout = Long.parseLong(configured);
+                if (timeout >= 0) {
+                    return timeout;
+                }
+            } catch (NumberFormatException ignored) {
+                // Invalid configuration must not interrupt sandbox cleanup.
+            }
+            log.warn(
+                    "Invalid {} value '{}'; using {} ms",
+                    RELEASE_GATE_TIMEOUT_PROPERTY,
+                    configured,
+                    DEFAULT_RELEASE_GATE_TIMEOUT_MILLIS);
+        }
+        return DEFAULT_RELEASE_GATE_TIMEOUT_MILLIS;
+    }
+
     private static MirrorGate gateFor(Sandbox sandbox) {
         synchronized (MIRROR_GATES) {
             expungeStaleGates();
@@ -150,19 +193,17 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
         private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
         private volatile boolean released;
 
-        private void markReleased() {
+        private void markReleased(long timeoutMillis) {
             // Publish the latch before waiting so new uploads are rejected even if an existing
             // remote transfer is wedged. Release remains bounded because mirrors are best-effort.
             released = true;
             boolean acquired = false;
             try {
-                acquired =
-                        lock.writeLock()
-                                .tryLock(RELEASE_GATE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                acquired = lock.writeLock().tryLock(timeoutMillis, TimeUnit.MILLISECONDS);
                 if (!acquired) {
                     log.warn(
                             "Mirror upload still in flight after {} ms; releasing sandbox",
-                            RELEASE_GATE_TIMEOUT_MILLIS);
+                            timeoutMillis);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
