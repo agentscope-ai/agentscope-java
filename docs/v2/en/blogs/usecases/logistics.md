@@ -289,7 +289,7 @@ As the bottom-most layer of the architecture, its core is interacting with the L
 **5. Zero-intrusion integration of observability and advanced reasoning capabilities**
 
 - Rule: Trace instrumentation, Prompt caching, and tool invocation enhancements are automatically completed at the model layer; business code needs no manual handling.
-- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, `OpenAIBaseFormatter.applyCacheControl()` automatically adds cache markers; toolChoice and parallelToolCalls parameters directly control tool behavior.
+- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, the formatter adds cache markers while formatting messages; toolChoice and parallelToolCalls parameters directly control tool behavior.
 
 ![Model layer architecture I](https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2vyuibOsbQibMibMjVQOymQcVxoTOX2VY8z2jHJ6XdAN5A5FCfD8zWgxt5Abdt2sGI95MLD7eJFMF6pKYduAc8jvaMYS0VfMWw8c/640?wx_fmt=png&from=appmsg)
 
