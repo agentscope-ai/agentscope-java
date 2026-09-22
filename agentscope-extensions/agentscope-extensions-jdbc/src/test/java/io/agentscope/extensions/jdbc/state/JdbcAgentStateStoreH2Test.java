@@ -559,6 +559,47 @@ class JdbcAgentStateStoreH2Test {
     }
 
     @Test
+    @DisplayName("a failing migration DDL execution surfaces as RuntimeException")
+    void migrationDdlFailureThrows() {
+        DataSource empty = H2TestSupport.createDataSource("ddl_failure_test");
+        SessionStateDialect broken =
+                new LegacyMigratingH2Dialect() {
+                    @Override
+                    public List<String> sessionStateCreateTableDdls() {
+                        return List.of();
+                    }
+
+                    @Override
+                    public Optional<String> sessionStateEnsureVersionColumnDdl() {
+                        // Syntactically invalid: the probe finds no column, the ALTER fails.
+                        return Optional.of("ALTER TABLE agentscope_sessions ADD COLUMN ((");
+                    }
+                };
+
+        RuntimeException exception =
+                assertThrows(
+                        RuntimeException.class, () -> new JdbcAgentStateStore(empty, broken, true));
+
+        assertTrue(
+                exception.getMessage().contains("add version column"),
+                "failure must point at the migration DDL: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("createIfNotExist=false passes on a table that already has the column")
+    void verifyPathPassesOnMigratedTable() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("migrated_verify_test");
+        createLegacySessionsTable(legacy);
+        new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), true);
+
+        JdbcAgentStateStore verified =
+                new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), false);
+
+        verified.save("user1", "s1", "k", new TestState("v"));
+        assertEquals("v", verified.get("user1", "s1", "k", TestState.class).orElseThrow().value());
+    }
+
+    @Test
     @DisplayName("vendor dialects expose the expected migration DDL")
     void vendorMigrationDdls() {
         assertEquals(
