@@ -1233,6 +1233,7 @@ class AguiAgentAdapterV2Test {
                     (Map<String, Object>) interrupt.responseSchema().get("properties");
             assertTrue(properties.containsKey("approved"));
             assertTrue(properties.containsKey("editedArgs"));
+            assertTrue(properties.containsKey("reason"));
             assertNull(interrupt.expiresAt());
             assertTrue(interrupt.message().contains("echo"));
             assertEquals("echo", interrupt.metadata().get("toolName"));
@@ -1406,6 +1407,86 @@ class AguiAgentAdapterV2Test {
         }
 
         @Test
+        void testConfirmedToolResultsFromPreviousRunAreEmittedWithoutToolCallEvents() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            UserConfirmResultEvent confirmation =
+                    new UserConfirmResultEvent(
+                            "previous-reply", List.of(new ConfirmResult(true, toolUse)));
+            List<AguiEvent> events =
+                    runReActEvents(
+                            confirmation,
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "text"),
+                            confirmation,
+                            new ToolResultDataDeltaEvent(
+                                    "resumed-reply",
+                                    "tool-1",
+                                    "lookup",
+                                    TextBlock.builder().text("data").build()),
+                            new ToolCallDeltaEvent("previous-reply", "tool-1", "lookup", "{}"),
+                            new ToolCallEndEvent("previous-reply", "tool-1", "lookup"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "text\ndata");
+            assertEquals(
+                    "resumed-reply:tool-1", ((AguiEvent.ToolCallResult) events.get(0)).messageId());
+        }
+
+        @Test
+        void testConfirmedToolSuspensionDiscardsPartialResultWithoutEmittingToolCallEnd() {
+            ToolUseBlock toolUse = ToolUseBlock.builder().id("tool-1").name("lookup").build();
+            List<AguiEvent> events =
+                    runReActEvents(
+                            new UserConfirmResultEvent(
+                                    "previous-reply", List.of(new ConfirmResult(true, toolUse))),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "partial"),
+                            new ToolResultEndEvent(
+                                    "resumed-reply", "tool-1", "lookup", ToolResultState.RUNNING),
+                            new ToolResultStartEvent("resumed-reply", "tool-1", "lookup"),
+                            new ToolResultTextDeltaEvent(
+                                    "resumed-reply", "tool-1", "lookup", "final"),
+                            new ToolResultEndEvent("resumed-reply", "tool-1", "lookup", null));
+
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(events));
+            assertToolCallResult(events.get(0), "tool-1", "final");
+        }
+
+        @Test
+        void testAdoptionIsSilentAndLocalToTheStreamContext() {
+            AguiStreamContext context =
+                    new AguiStreamContext(
+                            "thread", "resumed-run", AguiAdapterConfig.defaultConfig());
+            context.adoptToolCall(null);
+            context.adoptToolCall(" ");
+            context.adoptToolCall("resumed-tool");
+            context.adoptToolCall("resumed-tool");
+            assertTrue(context.drainEvents().isEmpty());
+            assertTrue(context.finishPendingEvents().isEmpty());
+            context.endToolResult("reply", null);
+            context.endToolResult("reply", " ");
+            assertTrue(context.drainEvents().isEmpty());
+
+            context.startToolCall("current-tool", "lookup");
+            context.adoptToolCall("current-tool");
+            context.drainEvents();
+            assertEquals(
+                    List.of(AguiEventType.TOOL_CALL_END), types(context.finishPendingEvents()));
+            context.endToolResult("reply", "resumed-tool");
+            List<AguiEvent> result = context.drainEvents();
+            assertEquals(List.of(AguiEventType.TOOL_CALL_RESULT), types(result));
+            assertToolCallResult(result.get(0), "resumed-tool", null);
+
+            AguiStreamContext nextRun =
+                    new AguiStreamContext("thread", "next-run", AguiAdapterConfig.defaultConfig());
+            nextRun.endToolResult("reply", "resumed-tool");
+            assertTrue(nextRun.drainEvents().isEmpty());
+        }
+
+        @Test
         void testToolResultEventsWithoutStartedToolCallAreIgnored() {
             List<AguiEvent> events =
                     runReActEvents(
@@ -1468,14 +1549,24 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-usage", new ChatUsage(100, 20, 40, 0.8)));
+                            new ModelCallEndEvent(
+                                    "reply-usage",
+                                    ChatUsage.builder()
+                                            .inputTokens(100)
+                                            .outputTokens(20)
+                                            .cachedTokens(40)
+                                            .cacheCreationTokens(4)
+                                            .reasoningTokens(8)
+                                            .toolUsePromptTokens(6)
+                                            .time(0.8)
+                                            .build()));
 
             assertEquals(List.of(AguiEventType.CUSTOM), types(events));
             AguiEvent.Custom usageEvent = assertCustomEvent(events.get(0), "token_usage");
             Map<String, Object> value = customValue(usageEvent);
 
-            assertUsage(value.get("delta"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
+            assertUsage(value.get("delta"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
+            assertUsage(value.get("cumulative"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
             assertEquals(Map.of("replyId", "reply-usage"), value.get("modelCall"));
         }
 
@@ -1485,7 +1576,17 @@ class AguiAgentAdapterV2Test {
             List<AguiEvent> events =
                     runReActEvents(
                             config,
-                            new ModelCallEndEvent("reply-1", new ChatUsage(100, 20, 40, 0.8)),
+                            new ModelCallEndEvent(
+                                    "reply-1",
+                                    ChatUsage.builder()
+                                            .inputTokens(100)
+                                            .outputTokens(20)
+                                            .cachedTokens(40)
+                                            .cacheCreationTokens(4)
+                                            .reasoningTokens(8)
+                                            .toolUsePromptTokens(6)
+                                            .time(0.8)
+                                            .build()),
                             new ModelCallEndEvent("reply-2", new ChatUsage(50, 30, 10, 1.2)));
 
             assertEquals(List.of(AguiEventType.CUSTOM, AguiEventType.CUSTOM), types(events));
@@ -1494,9 +1595,9 @@ class AguiAgentAdapterV2Test {
                     customValue(assertCustomEvent(events.get(0), "token_usage"));
             Map<String, Object> secondValue =
                     customValue(assertCustomEvent(events.get(1), "token_usage"));
-            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 120L, 0.8);
-            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 80L, 1.2);
-            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 200L, 2.0);
+            assertUsage(firstValue.get("cumulative"), 100L, 20L, 40L, 4L, 8L, 6L, 120L, 0.8);
+            assertUsage(secondValue.get("delta"), 50L, 30L, 10L, 0L, 0L, 0L, 80L, 1.2);
+            assertUsage(secondValue.get("cumulative"), 150L, 50L, 50L, 4L, 8L, 6L, 200L, 2.0);
             assertEquals(Map.of("replyId", "reply-2"), secondValue.get("modelCall"));
         }
 
@@ -2284,6 +2385,9 @@ class AguiAgentAdapterV2Test {
             long inputTokens,
             long outputTokens,
             long cachedTokens,
+            long cacheCreationTokens,
+            long reasoningTokens,
+            long toolUsePromptTokens,
             long totalTokens,
             double time) {
         assertInstanceOf(Map.class, value);
@@ -2291,6 +2395,9 @@ class AguiAgentAdapterV2Test {
         assertEquals(inputTokens, usage.get("inputTokens"));
         assertEquals(outputTokens, usage.get("outputTokens"));
         assertEquals(cachedTokens, usage.get("cachedTokens"));
+        assertEquals(cacheCreationTokens, usage.get("cacheCreationTokens"));
+        assertEquals(reasoningTokens, usage.get("reasoningTokens"));
+        assertEquals(toolUsePromptTokens, usage.get("toolUsePromptTokens"));
         assertEquals(totalTokens, usage.get("totalTokens"));
         assertEquals(time, (Double) usage.get("time"), 0.000001);
     }

@@ -1,10 +1,20 @@
 ---
-title: "External Agents: integrate an independent application"
+title: "External Agent: overview and integration"
 ---
 
-[简体中文](/v2/zh/service/external-agent)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 External Agents keep your application's process, framework and deployment while joining the catalog, Session diagnostics and collaboration. They are neither Service-started Managed Agents nor necessarily Runtime Host providers.
+
+Start with the [practical guide](/v2/en/service/register-agentscope-agent) for creation or connection. This reference section collects detailed configuration, supported capabilities and execution principles.
+
+## In this chapter
+
+- [Registration and connections](/v2/en/service/external-agent-configuration)
+- [Frameworks and custom adapters](/v2/en/service/external-agent-frameworks)
+- [Execution and task dispatch](/v2/en/service/external-agent-execution)
 
 ## Choose a transport
 

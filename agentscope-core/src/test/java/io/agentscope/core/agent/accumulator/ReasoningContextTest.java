@@ -108,6 +108,70 @@ class ReasoningContextTest {
     }
 
     @Test
+    @DisplayName("Should propagate reasoning tokens from chunk usage")
+    void testReasoningTokensPropagation() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .reasoningTokens(20)
+                        .time(1.5)
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        assertNotNull(msg.getChatUsage());
+        assertEquals(20, msg.getChatUsage().getReasoningTokens());
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(20, resultUsage.getReasoningTokens());
+    }
+
+    @Test
+    @DisplayName("Should propagate detailed input token breakdown from chunk usage")
+    void testDetailedInputTokenBreakdownPropagation() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(30)
+                        .cacheCreationTokens(10)
+                        .toolUsePromptTokens(15)
+                        .time(1.5)
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        assertNotNull(msg.getChatUsage());
+        assertEquals(10, msg.getChatUsage().getCacheCreationTokens());
+        assertEquals(15, msg.getChatUsage().getToolUsePromptTokens());
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(10, resultUsage.getCacheCreationTokens());
+        assertEquals(15, resultUsage.getToolUsePromptTokens());
+    }
+
+    @Test
     @DisplayName("Should accumulate ChatUsage from multiple chunks")
     void testMultipleChunksUsageAccumulation() {
         // First chunk

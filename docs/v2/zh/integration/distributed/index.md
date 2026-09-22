@@ -22,12 +22,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 能力矩阵
 
-| 功能组件 | 接口 | Redis | OSS | MySQL |
-|---------|------|:-----:|:---:|:-----:|
-| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` |
-| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` |
-| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` |
-| 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` |
+| 功能组件 | 接口 | Redis | OSS | MySQL | MongoDB |
+|---------|------|:-----:|:---:|:-----:|:-------:|
+| Agent 状态持久化 | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
+| 工作区文件系统 KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
+| 沙箱快照 | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
+| 沙箱并发锁 | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
 
 > OSS 不提供 `SandboxExecutionGuard`——对象存储不适合做分布式锁。需要 sandbox 并发控制的 OSS 用户，用 `DistributedStore.builder()` 混入 Redis 的 guard。
 
@@ -84,6 +84,7 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 
 - [Redis](/v2/zh/integration/distributed/redis) — 最全功能覆盖，多副本生产首选
 - [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — 已有关系型数据库的场景
+- [MongoDB](/v2/zh/integration/distributed/mongodb) — 文档型存储，适合大量会话历史
 - [阿里云 OSS](/v2/zh/integration/distributed/oss) — 对象存储，大容量快照首选
 
 ## aistio 托管 Store

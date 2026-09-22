@@ -267,7 +267,7 @@ Both are additive: a client that ignores them keeps reading the flat fields (`te
 {
   "decisions": [
     { "toolCallId": "call-1", "approved": true },
-    { "toolCallId": "call-2", "approved": false }
+    { "toolCallId": "call-2", "approved": false, "reason": "not allowed in production" }
   ]
 }
 ```

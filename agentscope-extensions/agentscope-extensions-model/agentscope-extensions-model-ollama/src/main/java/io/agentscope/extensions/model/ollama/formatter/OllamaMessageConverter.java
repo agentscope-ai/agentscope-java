@@ -21,6 +21,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -103,12 +104,17 @@ public class OllamaMessageConverter {
 
         // 2. Map Content and Tool Calls (for Assistant)
         StringBuilder textContent = new StringBuilder();
+        StringBuilder thinkingContent = new StringBuilder();
         List<String> images = new ArrayList<>();
         List<OllamaToolCall> toolCalls = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock) {
                 textContent.append(((TextBlock) block).getText());
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                if (thinkingBlock.getThinking() != null) {
+                    thinkingContent.append(thinkingBlock.getThinking());
+                }
             } else if (block instanceof ImageBlock) {
                 ImageBlock imageBlock = (ImageBlock) block;
                 try {
@@ -139,6 +145,10 @@ public class OllamaMessageConverter {
 
         if (textContent.length() > 0) {
             ollamaMsg.setContent(textContent.toString());
+        }
+
+        if (thinkingContent.length() > 0) {
+            ollamaMsg.setThinking(thinkingContent.toString());
         }
 
         if (!images.isEmpty()) {

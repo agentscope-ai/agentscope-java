@@ -56,6 +56,9 @@ public class ReasoningContext {
     private int inputTokens = 0;
     private int outputTokens = 0;
     private int cachedTokens = 0;
+    private int cacheCreationTokens = 0;
+    private int reasoningTokens = 0;
+    private int toolUsePromptTokens = 0;
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
@@ -89,6 +92,9 @@ public class ReasoningContext {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
             cachedTokens = usage.getCachedTokens();
+            cacheCreationTokens = usage.getCacheCreationTokens();
+            reasoningTokens = usage.getReasoningTokens();
+            toolUsePromptTokens = usage.getToolUsePromptTokens();
             time = usage.getTime();
         }
 
@@ -184,6 +190,9 @@ public class ReasoningContext {
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
                             .cachedTokens(cachedTokens)
+                            .cacheCreationTokens(cacheCreationTokens)
+                            .reasoningTokens(reasoningTokens)
+                            .toolUsePromptTokens(toolUsePromptTokens)
                             .time(time)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -301,6 +310,9 @@ public class ReasoningContext {
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
                     .cachedTokens(cachedTokens)
+                    .cacheCreationTokens(cacheCreationTokens)
+                    .reasoningTokens(reasoningTokens)
+                    .toolUsePromptTokens(toolUsePromptTokens)
                     .time(time)
                     .build();
         }
