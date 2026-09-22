@@ -108,9 +108,11 @@ final class JevSelectionSupport {
         if (answer == null || answer.probabilities() == null || answer.probabilities().isEmpty()) {
             return null;
         }
+        double noneProbability = answer.probabilities().getOrDefault(NONE_OPTION, 0.0);
         return answer.probabilities().entrySet().stream()
                 .filter(entry -> !NONE_OPTION.equals(entry.getKey()))
                 .filter(entry -> entry.getValue() != null)
+                .filter(entry -> entry.getValue() > noneProbability)
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse(null);

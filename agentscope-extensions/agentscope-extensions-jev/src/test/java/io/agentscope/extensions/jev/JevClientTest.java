@@ -32,6 +32,7 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -296,11 +297,70 @@ class JevClientTest {
     }
 
     @Test
+    void rejectsNullResponseBody() {
+        when(transport.execute(any(HttpRequest.class))).thenReturn(response(200, "null"));
+
+        JevException exception =
+                assertThrows(JevException.class, () -> client().systemOneBlocking(request()));
+        assertTrue(exception.getMessage().contains("must not be null"));
+    }
+
+    @Test
+    void scalesProbabilitySumToleranceWithOptionCount() {
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        for (int i = 0; i < 255; i++) {
+            criteria.put("option_" + i, "Option " + i);
+        }
+        SystemOneRequest request =
+                SystemOneRequest.builder()
+                        .state("Pick one")
+                        .question("choice", new ChoiceQuestion("Pick one", criteria))
+                        .build();
+
+        Map<String, Double> probabilities = new LinkedHashMap<>();
+        for (int i = 0; i < 255; i++) {
+            double probability = 1.0 / 255;
+            if (i == 0) {
+                probability += 0.00001;
+            }
+            probabilities.put("option_" + i, probability);
+        }
+        String body =
+                JevClient.MAPPER
+                        .valueToTree(
+                                Map.of(
+                                        "model", "jev-1.13.0",
+                                        "answers",
+                                                Map.of(
+                                                        "choice",
+                                                        Map.of(
+                                                                "type",
+                                                                "choice",
+                                                                "choice",
+                                                                "option_0",
+                                                                "probabilities",
+                                                                probabilities,
+                                                                "confidence",
+                                                                0.9)),
+                                        "usage", Map.of("input_tokens", 100, "output_tokens", 20)))
+                        .toString();
+        when(transport.execute(any(HttpRequest.class))).thenReturn(response(200, body));
+
+        SystemOneResult result = client().systemOneBlocking(request);
+
+        assertTrue(result.answers().containsKey("choice"));
+    }
+
+    @Test
     void validatesClientAndRequestInput() {
         IllegalArgumentException missingKey =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JevClient.builder().baseUrl("http://typesafe.test").build());
+                        () ->
+                                JevClient.builder()
+                                        .apiKey(" ")
+                                        .baseUrl("http://typesafe.test")
+                                        .build());
         assertTrue(missingKey.getMessage().contains("apiKey"));
 
         IllegalArgumentException invalidUrl =
@@ -333,6 +393,12 @@ class JevClientTest {
                                                                         "Pick", Map.of("a", 1)))
                                                         .build()));
         assertTrue(invalidChoice.getMessage().contains("2 to 255"));
+    }
+
+    @Test
+    void blankPrimaryApiKeyFallsBackToJevApiKey() {
+        assertEquals("fallback", JevClient.Builder.defaultApiKey(" ", "fallback"));
+        assertEquals("primary", JevClient.Builder.defaultApiKey("primary", "fallback"));
     }
 
     @Test

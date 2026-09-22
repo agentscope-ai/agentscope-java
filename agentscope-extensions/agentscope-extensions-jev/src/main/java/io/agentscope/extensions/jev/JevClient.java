@@ -49,7 +49,7 @@ public final class JevClient {
     public static final String DEFAULT_MODEL = "jev-latest";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
     private static final String SYSTEM_ONE_ENDPOINT = "/v1/systemone";
-    private static final double PROBABILITY_SUM_TOLERANCE = 0.000001;
+    private static final double PROBABILITY_SUM_TOLERANCE_PER_OPTION = 0.000001;
 
     static final ObjectMapper MAPPER =
             new ObjectMapper()
@@ -141,6 +141,13 @@ public final class JevClient {
         } catch (JsonProcessingException e) {
             throw new JevException(
                     "Failed to parse System One response",
+                    response.getStatusCode(),
+                    response.getBody(),
+                    false);
+        }
+        if (result == null) {
+            throw new JevException(
+                    "System One response must not be null",
                     response.getStatusCode(),
                     response.getBody(),
                     false);
@@ -400,7 +407,7 @@ public final class JevClient {
             requireProbability(id, entry.getValue());
             sum += entry.getValue();
         }
-        if (Math.abs(sum - 1) > PROBABILITY_SUM_TOLERANCE) {
+        if (Math.abs(sum - 1) > PROBABILITY_SUM_TOLERANCE_PER_OPTION * probabilities.size()) {
             throw new JevException(
                     "System One answer for question '" + id + "' probabilities must sum to 1");
         }
@@ -486,8 +493,11 @@ public final class JevClient {
         }
 
         private static String defaultApiKey() {
-            String apiKey = System.getenv("TYPESAFE_API_KEY");
-            return apiKey != null ? apiKey : System.getenv("JEV_API_KEY");
+            return defaultApiKey(System.getenv("TYPESAFE_API_KEY"), System.getenv("JEV_API_KEY"));
+        }
+
+        static String defaultApiKey(String typesafeApiKey, String jevApiKey) {
+            return typesafeApiKey != null && !typesafeApiKey.isBlank() ? typesafeApiKey : jevApiKey;
         }
     }
 }

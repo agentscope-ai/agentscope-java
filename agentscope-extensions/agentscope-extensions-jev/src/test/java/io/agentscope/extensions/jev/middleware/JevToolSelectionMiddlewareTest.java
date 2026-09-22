@@ -270,6 +270,51 @@ class JevToolSelectionMiddlewareTest {
     }
 
     @Test
+    void keepsAllToolsWhenJevReturnsNoSelection() {
+        RuntimeContext ctx = RuntimeContext.empty();
+        JevToolSelectionMiddleware middleware =
+                JevToolSelectionMiddleware.builder(
+                                request ->
+                                        Mono.just(
+                                                result(
+                                                        Map.of(
+                                                                "tools_0",
+                                                                choice(
+                                                                        JevSelectionSupport
+                                                                                .NONE_OPTION,
+                                                                        Map.of(
+                                                                                "search",
+                                                                                0.1,
+                                                                                JevSelectionSupport
+                                                                                        .NONE_OPTION,
+                                                                                0.9),
+                                                                        0.9)))))
+                        .maxTools(1)
+                        .build();
+
+        ReasoningInput input =
+                new ReasoningInput(
+                        List.of(new UserMessage("Search the web")),
+                        List.of(tool("search", "Search the web"), tool("read_file", "Read a file")),
+                        GenerateOptions.builder().build());
+        AtomicReference<ReasoningInput> captured = new AtomicReference<>();
+
+        middleware
+                .onReasoning(
+                        null,
+                        ctx,
+                        input,
+                        next -> {
+                            captured.set(next);
+                            return reactor.core.publisher.Flux.empty();
+                        })
+                .then()
+                .block();
+
+        assertEquals(2, captured.get().tools().size());
+    }
+
+    @Test
     void chunksAndReranksLargeToolSets() {
         List<ToolSchema> tools = new java.util.ArrayList<>();
         for (int i = 0; i < 255; i++) {

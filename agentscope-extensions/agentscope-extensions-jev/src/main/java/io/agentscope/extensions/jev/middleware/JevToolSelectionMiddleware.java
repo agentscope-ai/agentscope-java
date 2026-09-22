@@ -113,6 +113,9 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
                         })
                 .flatMapMany(
                         selectedNames -> {
+                            if (selectedNames.isEmpty()) {
+                                return next.apply(input);
+                            }
                             return next.apply(
                                     new ReasoningInput(
                                             input.messages(),
@@ -142,7 +145,7 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         return jevCall.apply(request)
                 .flatMap(
                         result -> {
-                            // 从每块选出一个代表，进入 shortlist
+                            // Pick one representative from each chunk for the shortlist.
                             List<ToolSchema> shortlist = new ArrayList<>();
                             for (int i = 0; i < partitions.size(); i++) {
                                 Answer answer = result.answers().get("tools_" + i);
