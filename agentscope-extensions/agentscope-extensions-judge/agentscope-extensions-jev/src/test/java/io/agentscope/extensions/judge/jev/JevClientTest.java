@@ -35,6 +35,9 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.test.StepVerifier;
@@ -410,10 +413,15 @@ class JevClientTest {
 
     @Test
     void timesOutSlowTransport() throws Exception {
+        CountDownLatch called = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
         when(transport.execute(any(HttpRequest.class)))
                 .thenAnswer(
                         invocation -> {
-                            Thread.sleep(50);
+                            called.countDown();
+                            if (!release.await(2, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("test transport stalled");
+                            }
                             return response(200, successBody());
                         });
 
@@ -424,13 +432,23 @@ class JevClientTest {
                         .model("jev-latest")
                         .transport(transport)
                         .retryPolicy(new JevRetryPolicy(0, Duration.ofMillis(1)))
-                        .timeout(Duration.ofMillis(1))
+                        .timeout(Duration.ofMillis(50))
                         .build();
 
-        StepVerifier.create(client.systemOne(request()))
-                .expectErrorSatisfies(error -> assertTrue(error.getMessage().contains("timed out")))
-                .verify();
-        verify(transport).execute(any(HttpRequest.class));
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        CountDownLatch finished = new CountDownLatch(1);
+        client.systemOne(request())
+                .doOnError(
+                        e -> {
+                            error.set(e);
+                            finished.countDown();
+                        })
+                .subscribe();
+
+        assertTrue(called.await(2, TimeUnit.SECONDS), "transport was not called");
+        assertTrue(finished.await(2, TimeUnit.SECONDS), "timeout did not fire");
+        assertTrue(error.get().getMessage().contains("timed out"));
+        release.countDown();
     }
 
     @Test
