@@ -71,4 +71,26 @@ class LocalFilesystemSpecSharedWorkspaceTest {
         assertTrue(fs.write(RT, "out/agent.md", "from agent").isSuccess());
         assertTrue(Files.isRegularFile(workspace.resolve("local-user/out/agent.md")));
     }
+
+    @Test
+    void projectWritableWithSharedLocalWorkspaceRoutesWritesWithoutUserPrefix() {
+        // Pins the ProjectAwareOverlay branch where the effective (null) namespace factory is
+        // threaded into both projectFs and the overlay constructor (#3247 review).
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .project(project)
+                        .projectWritable(true)
+                        .sharedLocalWorkspace(true)
+                        .toFilesystem(workspace, rc -> List.of("local-user"));
+
+        // Non-workspace write routed to the project root — no {userId}/ prefix directory.
+        assertTrue(fs.write(RT, "docs/report.md", "shared write").isSuccess());
+        assertTrue(Files.isRegularFile(project.resolve("docs/report.md")));
+        assertFalse(Files.exists(project.resolve("local-user")));
+
+        // Workspace-metadata write still lands in the (shared) workspace root.
+        assertTrue(fs.write(RT, "MEMORY.md", "mem").isSuccess());
+        assertTrue(Files.isRegularFile(workspace.resolve("MEMORY.md")));
+        assertFalse(Files.exists(workspace.resolve("local-user")));
+    }
 }

@@ -192,6 +192,11 @@ public class RemoteFilesystemSpec {
      * <p>Shared prefix routes ({@code memory/}, {@code skills/}, ...) keep their per-user store
      * namespaces; only the default backend changes.
      *
+     * <p><b>Not safe for multi-tenant workspaces:</b> shared mode disables per-user namespace
+     * isolation at the workspace root — users/sessions configured on the same workspace
+     * directory will read and overwrite each other's files there. Intended for single-tenant
+     * host-app integrations where the host writes uploads directly to the workspace.
+     *
      * <p>Defaults to {@code false}, preserving the namespaced default backend (#3245).
      *
      * @param shared whether the default backend serves the shared workspace root
@@ -203,6 +208,7 @@ public class RemoteFilesystemSpec {
     }
 
     /**
+     * Builds the composite filesystem described by this spec.
      *
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell), per-user namespaced

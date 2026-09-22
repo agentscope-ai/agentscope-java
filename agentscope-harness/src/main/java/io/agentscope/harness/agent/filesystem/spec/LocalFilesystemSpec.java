@@ -101,6 +101,11 @@ public class LocalFilesystemSpec {
      *
      * <p>Defaults to {@code false}, preserving the namespaced behaviour — the same read/write
      * asymmetry as {@link RemoteFilesystemSpec#sharedLocalWorkspace(boolean)} (#3245).
+     *
+     * <p><b>Not safe for multi-tenant workspaces:</b> shared mode disables per-user namespace
+     * isolation at the workspace root — users/sessions configured on the same workspace
+     * directory will read and overwrite each other's files there. Intended for single-tenant
+     * host-app integrations.
      */
     private boolean sharedLocalWorkspace = false;
 
