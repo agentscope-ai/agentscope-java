@@ -2894,17 +2894,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // otherwise the preceding tool_use remains orphaned in history.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
-                                    if (rs.getGenerateReason()
-                                            == GenerateReason.PERMISSION_ASKING) {
-                                        Msg lastAssistant =
-                                                MessageUtils.lastAssistantMessage(
-                                                        state.contextMutable());
-                                        if (lastAssistant != null) {
-                                            return Mono.just(
-                                                    lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
-                                        }
-                                    }
                                     Mono<Void> persistResults =
                                             successPairs.isEmpty()
                                                     ? Mono.empty()
@@ -2918,6 +2907,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             Mono.fromSupplier(
                                                     () -> {
                                                         syncToolkitToState(state);
+                                                        if (rs.getGenerateReason()
+                                                                == GenerateReason
+                                                                        .PERMISSION_ASKING) {
+                                                            Msg lastAssistant =
+                                                                    MessageUtils
+                                                                            .lastAssistantMessage(
+                                                                                    state
+                                                                                            .contextMutable());
+                                                            if (lastAssistant != null) {
+                                                                return lastAssistant
+                                                                        .withGenerateReason(
+                                                                                GenerateReason
+                                                                                        .PERMISSION_ASKING);
+                                                            }
+                                                        }
+                                                        // The acting stop reason takes precedence
+                                                        // over a stop requested by a post-acting
+                                                        // hook.
                                                         return buildStopMsg(
                                                                 results, rs.getGenerateReason());
                                                     }));

@@ -30,6 +30,7 @@ import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -351,6 +352,60 @@ class ReActAgentNewLoopE2ETest {
                                         block instanceof ToolResultBlock toolResult
                                                 && "terminal-1".equals(toolResult.getId())),
                 "completed tool result must be stored before honoring the stop request");
+    }
+
+    @Test
+    void permissionStopPersistsAlreadyCompletedToolResult() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("allowed-1", "respond", "done"))));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("respond"));
+        MiddlewareBase permissionMiddleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .concatWith(
+                                        Flux.just(
+                                                new RequestStopEvent(
+                                                        "permission asked",
+                                                        GenerateReason.PERMISSION_ASKING)));
+                    }
+                };
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("use the terminal tool")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(permissionMiddleware)
+                        .build();
+
+        Msg result =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("respond now")
+                                                .build()))
+                        .block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.PERMISSION_ASKING, result.getGenerateReason());
+        assertEquals(1, model.calls.get());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(
+                                block ->
+                                        block instanceof ToolResultBlock toolResult
+                                                && "allowed-1".equals(toolResult.getId())),
+                "permission stop must preserve the result of an already completed tool");
     }
 
     @Test
