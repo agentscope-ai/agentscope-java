@@ -273,6 +273,10 @@ class BaseSandboxFilesystemTest {
             FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
             fs.write(RT, "dir with space/file.txt", "content");
 
+            // Review follow-up: move() builds commands with the same idiom — scan it too.
+            fs.lastCommand = null;
+            fs.move(RT, "a.txt", "dir with space/b.txt");
+
             // On a Windows host the argv -> command-line -> docker.exe re-parse round-trip drops
             // inner double quotes; any double-quoted span containing a space then breaks apart
             // into argv separators and the in-container shell sees a syntax error (#3262).
@@ -310,6 +314,22 @@ class BaseSandboxFilesystemTest {
             assertTrue(
                     result.error().contains("Syntax error"),
                     "failure message should carry the container's error output: " + result.error());
+        }
+
+        @Test
+        void write_failureMessageClampsHugeOutput() {
+            String huge = "x".repeat(50_000);
+            ExecuteResponse hugeOutput = new ExecuteResponse(huge, 2, false);
+            WriteResult result =
+                    new FixedResponseFilesystem(hugeOutput).write(RT, "some/file.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().length() < 700,
+                    () -> "raw command output must be clamped, got " + result.error().length());
+            assertTrue(
+                    result.error().contains("[output truncated]"),
+                    "clamped detail should carry a note: " + result.error());
         }
 
         @Test
