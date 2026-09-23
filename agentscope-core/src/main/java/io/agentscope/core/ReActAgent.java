@@ -134,7 +134,6 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -537,16 +536,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected ShutdownStateSaver shutdownStateSaverForCall(Object callScope) {
+        if (stateStore == null) {
+            return null;
+        }
         CallExecution scope = (CallExecution) callScope;
         return state -> {
-            // A terminal write owns the final state. A shutdown checkpoint must join it rather
-            // than overwrite its reconciled tool results with the still-live state.
+            // A terminal write owns the final state. The request remains registered until that
+            // write completes, so a shutdown checkpoint must not block or overwrite it.
             Mono<Void> terminal;
             synchronized (scope) {
                 terminal = scope.terminalSave;
             }
             if (terminal != null) {
-                joinTerminalSaveForShutdown(terminal);
                 return;
             }
             synchronized (scope.saveLock) {
@@ -577,19 +578,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return;
                 }
             }
-            joinTerminalSaveForShutdown(terminal);
+            // The terminal write was installed while we waited for saveLock. Its call lifecycle
+            // keeps the request active until the write finishes.
         };
-    }
-
-    private void joinTerminalSaveForShutdown(Mono<Void> terminal) {
-        Duration timeout = shutdownManager.getConfig().shutdownTimeout();
-        if (timeout == null) {
-            terminal.block();
-        } else {
-            // cache() keeps the write running after this wait expires. The request's normal
-            // cancellation cleanup still joins that write before its session gate is released.
-            terminal.block(timeout);
-        }
     }
 
     @Override

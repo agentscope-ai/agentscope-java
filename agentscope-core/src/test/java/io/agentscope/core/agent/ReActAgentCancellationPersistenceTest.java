@@ -81,7 +81,7 @@ class ReActAgentCancellationPersistenceTest {
     }
 
     @Test
-    void shutdownCheckpointJoinsActiveCancellationSave() throws Exception {
+    void shutdownCheckpointLeavesActiveCancellationSaveAlone() throws Exception {
         GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
         BlockingStore store = new BlockingStore();
         WaitingModel model = new WaitingModel(false);
@@ -96,12 +96,13 @@ class ReActAgentCancellationPersistenceTest {
             CompletableFuture<Void> checkpoint =
                     CompletableFuture.runAsync(
                             () -> manager.saveOnInterruptObserved(model.requestId.get()));
-            store.proceed.countDown();
             checkpoint.get(3, TimeUnit.SECONDS);
-            assertEquals(1, store.writes.get(), "shutdown must join the terminal save");
+            assertEquals(1, store.writes.get(), "shutdown must not duplicate the terminal save");
             assertFalse(
                     store.snapshot.isShutdownInterrupted(),
-                    "joining a terminal save must not mutate the state being written");
+                    "a checkpoint must not mutate the state being written");
+            store.proceed.countDown();
+            assertTrue(store.finished.await(3, TimeUnit.SECONDS));
             assertEquals(
                     1,
                     store.getVersioned(
@@ -114,29 +115,78 @@ class ReActAgentCancellationPersistenceTest {
     }
 
     @Test
-    void shutdownCheckpointStopsWaitingAfterConfiguredTimeout() throws Exception {
+    void shutdownTimeoutProcessesAnotherRequestDuringCancellationSave() throws Exception {
         GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
+        manager.resetForTesting();
         BlockingStore store = new BlockingStore();
         WaitingModel model = new WaitingModel(false);
         ReActAgent agent =
                 ReActAgent.builder().name("probe").model(model).stateStore(store).build();
+        CountDownLatch otherSaved = new CountDownLatch(1);
+        InMemoryAgentStateStore otherStore =
+                new InMemoryAgentStateStore() {
+                    @Override
+                    public long saveIfVersion(
+                            String uid, String sid, String key, State value, long version) {
+                        long saved = super.saveIfVersion(uid, sid, key, value, version);
+                        otherSaved.countDown();
+                        return saved;
+                    }
+                };
+        WaitingModel otherModel = new WaitingModel(false);
+        ReActAgent otherAgent =
+                ReActAgent.builder()
+                        .name("other-probe")
+                        .model(otherModel)
+                        .stateStore(otherStore)
+                        .build();
         Disposable call = agent.call(List.of(user("request")), CTX).subscribe();
+        Disposable otherCall = null;
         try {
             assertTrue(model.started.await(3, TimeUnit.SECONDS));
             call.dispose();
             assertTrue(store.entered.await(3, TimeUnit.SECONDS));
+            otherCall = otherAgent.call(List.of(user("other request")), CTX).subscribe();
+            assertTrue(otherModel.started.await(3, TimeUnit.SECONDS));
             manager.setConfig(
                     new GracefulShutdownConfig(
                             Duration.ofMillis(100), PartialReasoningPolicy.SAVE));
-            CompletableFuture.runAsync(() -> manager.saveOnInterruptObserved(model.requestId.get()))
-                    .get(2, TimeUnit.SECONDS);
+            manager.performGracefulShutdown();
+            manager.getShutdownTimeoutSignal().block(Duration.ofSeconds(3));
+            // The signal is emitted before checkpoints run. Wait for a checkpoint on a second
+            // request that was already active when shutdown began.
+            assertTrue(otherSaved.await(3, TimeUnit.SECONDS));
             assertEquals(1, store.writes.get());
+            assertFalse(manager.awaitTermination(Duration.ofMillis(100)));
             store.proceed.countDown();
-            assertTrue(store.finished.await(3, TimeUnit.SECONDS));
+            otherCall.dispose();
+            assertTrue(manager.awaitTermination(Duration.ofSeconds(3)));
         } finally {
             store.proceed.countDown();
             call.dispose();
+            if (otherCall != null) {
+                otherCall.dispose();
+            }
             manager.setConfig(GracefulShutdownConfig.DEFAULT);
+            manager.resetForTesting();
+        }
+    }
+
+    @Test
+    void shutdownWithoutStateStoreDoesNotMarkStateForPersistence() throws Exception {
+        GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
+        manager.resetForTesting();
+        WaitingModel model = new WaitingModel(false);
+        ReActAgent agent = ReActAgent.builder().name("probe").model(model).build();
+        Disposable call = agent.call(List.of(user("request")), CTX).subscribe();
+        try {
+            assertTrue(model.started.await(3, TimeUnit.SECONDS));
+            assertNotNull(model.requestId.get());
+            manager.saveOnInterruptObserved(model.requestId.get());
+            assertFalse(agent.getAgentState().isShutdownInterrupted());
+        } finally {
+            call.dispose();
+            manager.resetForTesting();
         }
     }
 

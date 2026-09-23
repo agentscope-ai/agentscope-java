@@ -32,7 +32,7 @@ public interface ShutdownStateSaver {
      * Persist the given agent state snapshot.
      *
      * @param state the current agent state. A request-scoped saver decides whether to set {@code
-     *     shutdownInterrupted} for a new checkpoint or join an existing terminal write unchanged.
+     *     shutdownInterrupted} for a new checkpoint or defer to an existing terminal write.
      */
     void save(AgentState state);
 }

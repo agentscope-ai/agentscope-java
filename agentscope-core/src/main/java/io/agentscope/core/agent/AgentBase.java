@@ -379,8 +379,8 @@ public abstract class AgentBase implements Agent {
 
     /**
      * Optional per-call override of the agent's registered shutdown state saver. The saver may
-     * perform blocking I/O; the shutdown timeout monitor invokes it off-thread. Other callers of
-     * the saver remain responsible for their own thread and timeout policy.
+     * perform blocking I/O; callers of the saver remain responsible for their own thread and
+     * timeout policy.
      */
     protected ShutdownStateSaver shutdownStateSaverForCall(Object scope) {
         return null;

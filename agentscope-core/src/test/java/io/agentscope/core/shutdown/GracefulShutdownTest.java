@@ -37,8 +37,6 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -327,57 +325,6 @@ class GracefulShutdownTest {
             StepVerifier.create(manager.getShutdownTimeoutSignal())
                     .expectComplete()
                     .verify(Duration.ofSeconds(5));
-        }
-
-        @Test
-        @DisplayName("A blocked checkpoint does not stall timeout enforcement for another request")
-        void blockedCheckpointDoesNotStallMonitor() throws Exception {
-            manager.setConfig(
-                    new GracefulShutdownConfig(
-                            Duration.ofMillis(100), PartialReasoningPolicy.SAVE));
-            CountDownLatch firstStarted = new CountDownLatch(1);
-            CountDownLatch releaseFirst = new CountDownLatch(1);
-            CountDownLatch secondSaved = new CountDownLatch(1);
-            TestableAgent first = createTestAgent("blocked-checkpoint");
-            String firstId = manager.registerRequest(first);
-            manager.bindRequestState(firstId, first.getAgentState());
-            manager.bindRequestSaver(
-                    firstId,
-                    state -> {
-                        firstStarted.countDown();
-                        try {
-                            releaseFirst.await(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                    });
-            String secondId = null;
-            try {
-                manager.performGracefulShutdown();
-                assertTrue(firstStarted.await(3, TimeUnit.SECONDS));
-
-                // A second tracked request appears while the first checkpoint is blocked.
-                // The next monitor tick must still interrupt and save it.
-                TestableAgent second = createTestAgent("later-checkpoint");
-                secondId = manager.registerRequest(second);
-                manager.bindRequestState(secondId, second.getAgentState());
-                manager.bindRequestSaver(secondId, state -> secondSaved.countDown());
-                assertTrue(secondSaved.await(3, TimeUnit.SECONDS));
-                assertTrue(second.getAgentState().interruptControl().isInterrupted());
-
-                manager.unregisterRequest(firstId);
-                manager.unregisterRequest(secondId);
-                assertFalse(manager.awaitTermination(Duration.ofMillis(100)));
-                releaseFirst.countDown();
-                assertTrue(manager.awaitTermination(Duration.ofSeconds(3)));
-            } finally {
-                releaseFirst.countDown();
-                manager.unregisterRequest(firstId);
-                if (secondId != null) {
-                    manager.unregisterRequest(secondId);
-                }
-                manager.setConfig(GracefulShutdownConfig.DEFAULT);
-            }
         }
 
         @Test

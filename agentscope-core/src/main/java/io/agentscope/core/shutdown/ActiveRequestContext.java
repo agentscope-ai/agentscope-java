@@ -38,7 +38,6 @@ final class ActiveRequestContext {
     private final String requestId;
     private final AgentBase agent;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
-    private final AtomicBoolean timeoutCheckpointStarted = new AtomicBoolean(false);
 
     private record SaverBinding(ShutdownStateSaver saver, boolean requestScoped) {}
 
@@ -90,8 +89,8 @@ final class ActiveRequestContext {
             return;
         }
         try {
-            // A request-scoped saver decides whether this is a new checkpoint or merely joins
-            // an existing terminal write. Do not mutate live state for the latter case.
+            // A request-scoped saver decides whether this is a new checkpoint or defers to an
+            // existing terminal write. Do not mutate live state for the latter case.
             if (!binding.requestScoped()) {
                 state.setShutdownInterrupted(true);
             }
@@ -99,10 +98,6 @@ final class ActiveRequestContext {
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }
-    }
-
-    boolean startTimeoutCheckpoint() {
-        return timeoutCheckpointStarted.compareAndSet(false, true);
     }
 
     boolean interruptForShutdown() {
