@@ -61,6 +61,8 @@ GenerateOptions thinkingOptions = GenerateOptions.builder()
 
 Chat formatter 会自动回放历史 assistant `ThinkingBlock`，并保留 thinking、text 和 tool-call Part 上的 Gemini `thoughtSignature`，即使消息经过 JSON 序列化也不会丢失。存储或转换对话历史时，请保留 content block metadata。
 
+持久化后无法恢复的签名（例如损坏或非 Base64 的值）不会被发送：框架会记录警告并丢弃该签名，请求继续执行。不同块类型的后果不同：thinking Part 会优雅地降级为普通文本 Part；而 function call Part 依赖签名，恢复持久化会话后，Gemini 3 可能会拒绝丢失 `thoughtSignature` 的 function call（通常返回 400 错误）。此时应移除或重新生成受影响的对话轮次，而不是原样重试。
+
 完整的单次请求链路见[Gemini 完整请求流程](/v2/zh/integration/model/gemini-request-flow)。
 
 ## Spring Boot

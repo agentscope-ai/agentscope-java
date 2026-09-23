@@ -143,6 +143,31 @@ class GeminiThinkingReplayWireFormatTest {
         assertFalse(part.containsKey("thought"));
     }
 
+    @Test
+    void shouldReplayThinkingPartWithCorruptSignatureAsOrdinaryTextPart() {
+        Msg message =
+                AssistantMessage.builder()
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Reasoning")
+                                        .metadata(
+                                                Map.of(
+                                                        ContentBlockMetadataKeys.THOUGHT_SIGNATURE,
+                                                        "not-valid-base64!"))
+                                        .build())
+                        .build();
+
+        Msg restored = roundTrip(message);
+        String requestJson = toJson(restored);
+
+        // The thought flag rides on the restored signature: shipping it without the signature
+        // would produce the signature-less thought Part Gemini is most likely to reject.
+        Map<String, Object> part = firstPart(requestJson);
+        assertEquals("Reasoning", part.get("text"));
+        assertFalse(part.containsKey("thought"));
+        assertFalse(part.containsKey("thoughtSignature"));
+    }
+
     /**
      * Serializes the message to JSON and back, mimicking session persistence where byte[]
      * metadata values become Base64 strings.

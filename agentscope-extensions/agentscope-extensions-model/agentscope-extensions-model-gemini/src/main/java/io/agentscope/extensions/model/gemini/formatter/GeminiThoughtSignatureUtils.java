@@ -48,43 +48,48 @@ final class GeminiThoughtSignatureUtils {
      * <p>A signature that is missing or corrupted after a persistence round trip is skipped with a
      * warning instead of failing the whole model call, matching the tolerant behavior of the
      * response parser: a dropped signature degrades to a request without it rather than aborting
-     * the conversation replay.
+     * the conversation replay. Callers that attach protocol flags depending on the signature (such
+     * as the {@code thought} flag) can use the return value to degrade the Part themselves.
+     *
+     * @return true if a signature was restored onto the Part builder, false otherwise
      */
-    static void applyMetadata(Part.Builder partBuilder, Map<String, Object> metadata) {
+    static boolean applyMetadata(Part.Builder partBuilder, Map<String, Object> metadata) {
         if (metadata == null || metadata.isEmpty()) {
-            return;
+            return false;
         }
 
         Object value = metadata.get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE);
         if (value == null) {
-            return;
+            return false;
         }
 
         if (value instanceof byte[] signature) {
             if (signature.length == 0) {
                 log.warn("Skipping empty Gemini thought signature");
-                return;
+                return false;
             }
             partBuilder.thoughtSignature(signature.clone());
-            return;
+            return true;
         }
 
         if (!(value instanceof String encodedSignature)) {
             log.warn(
                     "Skipping Gemini thought signature with unsupported metadata type: {}",
                     value.getClass().getName());
-            return;
+            return false;
         }
 
         if (encodedSignature.isEmpty()) {
             log.warn("Skipping empty Gemini thought signature");
-            return;
+            return false;
         }
 
         try {
             partBuilder.thoughtSignature(Base64.getDecoder().decode(encodedSignature));
+            return true;
         } catch (IllegalArgumentException e) {
             log.warn("Skipping non-Base64 Gemini thought signature: {}", e.getMessage());
+            return false;
         }
     }
 }
