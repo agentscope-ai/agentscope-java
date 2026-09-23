@@ -86,7 +86,7 @@ class SubagentDeclarationPhaseATest {
     }
 
     @Test
-    void loader_rejectsMalformedCompaction() {
+    void loader_ignoresMalformedCompactionWithoutDroppingAgent() {
         for (String value :
                 new String[] {
                     "oops",
@@ -95,16 +95,24 @@ class SubagentDeclarationPhaseATest {
                     "{keepTokens: 1.5}",
                     "{keepTokens: 4294967296}",
                     "{flushBeforeCompact: nope}",
-                    "{summaryPrompt: 42}",
-                    "{keepTokensRatio: .nan}"
+                    "{summaryPrompt: 42}"
                 }) {
-            assertNull(
+            SubagentDeclaration decl =
                     AgentSpecLoader.parse(
                             "---\ndescription: worker\ncompaction: " + value + "\n---\nbody",
                             "worker",
-                            null),
-                    value);
+                            null);
+            assertNotNull(decl, value);
+            assertEquals("worker", decl.getName());
+            assertNull(decl.getCompactionConfig(), value);
+            assertFalse(decl.isCompactionDisabled(), value);
         }
+        // SnakeYAML rejects non-finite numbers before compaction validation runs.
+        assertNull(
+                AgentSpecLoader.parse(
+                        "---\ndescription: worker\ncompaction: {keepTokensRatio: .nan}\n---\nbody",
+                        "worker",
+                        null));
     }
 
     @Test

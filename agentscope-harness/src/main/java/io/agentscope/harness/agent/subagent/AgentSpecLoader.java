@@ -345,8 +345,7 @@ public final class AgentSpecLoader {
         try {
             applyCompaction(fm.get("compaction"), builder);
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid compaction configuration for '{}': {}", name, e.getMessage());
-            return null;
+            log.warn("Ignoring invalid compaction config for '{}': {}", name, e.getMessage());
         }
 
         if (workspacePath != null) {
