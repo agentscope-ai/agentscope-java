@@ -23,6 +23,7 @@ import com.google.genai.types.GenerateContentResponseUsageMetadata;
 import com.google.genai.types.Part;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -166,6 +167,25 @@ public class GeminiResponseParser {
                 }
             }
         }
+    }
+
+    /**
+     * Parse Gemini FunctionCall to ToolUseBlock.
+     *
+     * @param functionCall Gemini FunctionCall object
+     * @param thoughtSignature Thought signature from the Part (may be null)
+     * @param blocks List to add parsed ToolUseBlock to
+     * @deprecated kept for source compatibility with out-of-tree subclasses that override the
+     *     legacy signature; override or call the metadata-based variant instead.
+     */
+    @Deprecated
+    protected void parseToolCall(
+            FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+        Map<String, Object> metadata =
+                thoughtSignature == null
+                        ? null
+                        : Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, thoughtSignature);
+        parseToolCall(functionCall, metadata, blocks);
     }
 
     /**
