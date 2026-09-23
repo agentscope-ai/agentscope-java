@@ -215,9 +215,9 @@ npm install -g @modelcontextprotocol/server-filesystem
 ```
 
 For remote transports, set `MCP_SSE_URL` or `MCP_HTTP_URL` before running the corresponding
-example. Optional credentials can be provided with `MCP_SSE_TOKEN` (Bearer), `MCP_HTTP_API_KEY`
-(`X-API-Key`), or `MCP_HTTP_BEARER_TOKEN` (Bearer) — the two `MCP_HTTP_*` credentials are
-mutually exclusive.
+example. Optional credentials can be provided with `MCP_SSE_TOKEN` (Bearer — SSE accepts a
+Bearer token only), `MCP_HTTP_API_KEY` (`X-API-Key`), or `MCP_HTTP_BEARER_TOKEN` (Bearer) — the
+two `MCP_HTTP_*` credentials are mutually exclusive.
 
 **What you'll learn:**
 - Connecting to MCP servers (StdIO, SSE, HTTP)
