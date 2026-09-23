@@ -349,6 +349,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope OpenAI Model Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -452,6 +459,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
