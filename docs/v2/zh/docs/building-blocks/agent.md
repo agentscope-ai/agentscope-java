@@ -125,10 +125,10 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // 通过反射注册带 @Tool 的方法
 toolkit.registerTool(new MyCustomTools());      // 自定义工具类（带 @Tool 注解的方法）
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap = McpClientBuilder.create("amap")
+        .streamableHttpTransport("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+        .buildAsync()
+        .block();
 toolkit.registerMcpClient(amap).block();
 
 ReActAgent agent =
