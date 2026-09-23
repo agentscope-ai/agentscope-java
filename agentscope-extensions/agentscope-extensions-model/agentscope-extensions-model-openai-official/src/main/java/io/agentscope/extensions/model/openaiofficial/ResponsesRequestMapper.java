@@ -247,6 +247,20 @@ final class ResponsesRequestMapper {
     private static void mapAdditionalBodyParams(
             ResponseCreateParams.Builder builder, Map<String, Object> params) {
 
+        String store = asString(params.get("store"));
+        if (store != null) {
+            if (!store.equalsIgnoreCase("true") && !store.equalsIgnoreCase("false")) {
+                throw new OpenAIOfficialModelException(
+                        "Invalid store value '" + store + "': expected a boolean.");
+            }
+            builder.store(Boolean.parseBoolean(store));
+        }
+
+        String previousResponseId = asString(params.get("previous_response_id"));
+        if (previousResponseId != null) {
+            builder.previousResponseId(previousResponseId);
+        }
+
         String maxToolCalls = asString(params.get("max_tool_calls"));
         if (maxToolCalls != null) {
             try {

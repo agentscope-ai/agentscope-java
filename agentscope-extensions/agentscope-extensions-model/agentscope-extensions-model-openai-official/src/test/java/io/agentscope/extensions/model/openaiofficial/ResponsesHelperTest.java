@@ -23,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import com.openai.models.responses.Response;
 import io.agentscope.core.model.ChatUsage;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -46,7 +45,6 @@ class ResponsesHelperTest {
         assertEquals("incomplete", md.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS));
         assertEquals(
                 1697000001.5, (Double) md.get(OpenAIOfficialConstants.MD_RESPONSE_COMPLETED_AT));
-        assertEquals("priority", md.get(OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER));
         assertEquals(
                 "max_output_tokens", md.get(OpenAIOfficialConstants.MD_RESPONSE_INCOMPLETE_REASON));
         @SuppressWarnings("unchecked")
@@ -66,32 +64,30 @@ class ResponsesHelperTest {
         assertEquals(1697000000.5, (Double) md.get(OpenAIOfficialConstants.MD_RESPONSE_CREATED_AT));
         assertFalse(md.containsKey(OpenAIOfficialConstants.MD_RESPONSE_STATUS));
         assertFalse(md.containsKey(OpenAIOfficialConstants.MD_RESPONSE_COMPLETED_AT));
-        assertFalse(md.containsKey(OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER));
         assertFalse(md.containsKey(OpenAIOfficialConstants.MD_RESPONSE_INCOMPLETE_REASON));
         assertFalse(md.containsKey(OpenAIOfficialConstants.MD_RESPONSE_ERROR));
     }
 
     @Test
-    void usageMappedToChatUsageAndReasoningTokensWrittenToMetadata() {
-        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 15L);
-        Map<String, Object> metadata = new HashMap<>();
-        ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now(), metadata);
+    void usageMappedToChatUsageTokenBreakdowns() {
+        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 5L, 15L);
+        ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now());
 
         assertNotNull(usage);
         assertEquals(100, usage.getInputTokens());
         assertEquals(50, usage.getOutputTokens());
         assertEquals(20, usage.getCachedTokens());
+        assertEquals(5, usage.getCacheCreationTokens());
+        assertEquals(15, usage.getReasoningTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
         assertEquals(150, usage.getTotalTokens());
-        assertEquals(15, metadata.get(OpenAIOfficialConstants.MD_USAGE_REASONING_TOKENS));
     }
 
     @Test
-    void usageAbsentReturnsNullAndDoesNotWriteReasoningTokens() {
+    void usageAbsentReturnsNullChatUsage() {
         Response response = TestSdkFixtures.textResponse("hello");
-        Map<String, Object> metadata = new HashMap<>();
-        ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now(), metadata);
+        ChatUsage usage = ResponsesHelper.extractUsage(response, Instant.now());
 
         assertNull(usage);
-        assertFalse(metadata.containsKey(OpenAIOfficialConstants.MD_USAGE_REASONING_TOKENS));
     }
 }

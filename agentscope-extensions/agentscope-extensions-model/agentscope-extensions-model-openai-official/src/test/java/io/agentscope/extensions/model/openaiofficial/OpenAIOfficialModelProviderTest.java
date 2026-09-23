@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -167,6 +168,21 @@ class OpenAIOfficialModelProviderTest {
                             ModelCreationContext.builder()
                                     .apiKey("sk-test-key")
                                     .option("additionalHeaders", Map.of("X-Custom", "value"))
+                                    .build());
+            assertNotNull(model);
+            assertEquals("gpt-4o", model.getModelName());
+        }
+
+        @Test
+        void createWithProxyConfigComponent() {
+            Model model =
+                    provider.create(
+                            "openai-official:gpt-4o",
+                            ModelCreationContext.builder()
+                                    .apiKey("sk-test-key")
+                                    .component(
+                                            ProxyConfig.class,
+                                            ProxyConfig.http("proxy.example.com", 8080))
                                     .build());
             assertNotNull(model);
             assertEquals("gpt-4o", model.getModelName());

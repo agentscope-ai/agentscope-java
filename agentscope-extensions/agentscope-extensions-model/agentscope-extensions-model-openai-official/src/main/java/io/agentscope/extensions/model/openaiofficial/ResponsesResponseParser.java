@@ -115,7 +115,7 @@ final class ResponsesResponseParser {
         String responseId = response.id();
         Map<String, Object> metadata = ResponsesHelper.extractResponseMetadata(response);
         String finishReason = (String) metadata.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS);
-        ChatUsage usage = ResponsesHelper.extractUsage(response, startTime, metadata);
+        ChatUsage usage = ResponsesHelper.extractUsage(response, startTime);
 
         return ChatResponse.builder()
                 .id(responseId)

@@ -31,8 +31,8 @@ final class ResponsesHelper {
     private ResponsesHelper() {}
 
     /**
-     * Extracts response-level metadata (id, status, timestamps, service tier,
-     * incomplete details, error) from a terminal {@link Response}.
+     * Extracts response-level metadata (id, status, timestamps, incomplete details,
+     * error) from a terminal {@link Response}.
      *
      * @param response the SDK Response object
      * @return a mutable metadata map containing response-level keys
@@ -52,12 +52,6 @@ final class ResponsesHelper {
         Optional<Double> completedAt = response.completedAt();
         if (completedAt.isPresent()) {
             metadata.put(OpenAIOfficialConstants.MD_RESPONSE_COMPLETED_AT, completedAt.get());
-        }
-
-        Optional<Response.ServiceTier> serviceTier = response.serviceTier();
-        if (serviceTier.isPresent()) {
-            metadata.put(
-                    OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER, serviceTier.get().asString());
         }
 
         Optional<Response.IncompleteDetails> incompleteDetails = response.incompleteDetails();
@@ -90,11 +84,9 @@ final class ResponsesHelper {
      *
      * @param response the SDK Response object
      * @param startTime the start time for wall-clock timing
-     * @param metadata the metadata map to write reasoning tokens into
      * @return a {@link ChatUsage}, or {@code null} if the response has no usage
      */
-    static ChatUsage extractUsage(
-            Response response, Instant startTime, Map<String, Object> metadata) {
+    static ChatUsage extractUsage(Response response, Instant startTime) {
         Optional<ResponseUsage> usageOpt = response.usage();
         if (usageOpt.isEmpty()) {
             return null;
@@ -104,16 +96,17 @@ final class ResponsesHelper {
         long inputTokens = respUsage.inputTokens();
         long outputTokens = respUsage.outputTokens();
         long cachedTokens = respUsage.inputTokensDetails().cachedTokens();
+        long cacheCreationTokens = respUsage.inputTokensDetails().cacheWriteTokens();
         long reasoningTokens = respUsage.outputTokensDetails().reasoningTokens();
 
         double time = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
-
-        metadata.put(OpenAIOfficialConstants.MD_USAGE_REASONING_TOKENS, (int) reasoningTokens);
 
         return ChatUsage.builder()
                 .inputTokens((int) inputTokens)
                 .outputTokens((int) outputTokens)
                 .cachedTokens((int) cachedTokens)
+                .cacheCreationTokens((int) cacheCreationTokens)
+                .reasoningTokens((int) reasoningTokens)
                 .time(time)
                 .build();
     }

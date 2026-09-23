@@ -24,6 +24,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -101,6 +102,11 @@ public final class OpenAIOfficialModelProvider implements ModelProvider {
                 findAssignableComponent(context, ResponsesMultiAgentFormatter.class);
         if (formatter != null) {
             builder.formatter(formatter);
+        }
+
+        ProxyConfig proxyConfig = context.component(ProxyConfig.class);
+        if (proxyConfig != null) {
+            builder.proxy(proxyConfig);
         }
 
         Object raw = context.option("additionalHeaders");

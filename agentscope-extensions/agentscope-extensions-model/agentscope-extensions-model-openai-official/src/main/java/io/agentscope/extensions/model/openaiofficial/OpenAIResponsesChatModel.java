@@ -34,6 +34,7 @@ import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.ModelProviderSupport;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
@@ -260,6 +261,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
         private Boolean strictJsonSchema;
         private ResponsesMultiAgentFormatter formatter;
         private Map<String, String> additionalHeaders;
+        private ProxyConfig proxyConfig;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -311,6 +313,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            return this;
+        }
+
         public OpenAIResponsesChatModel build() {
             Objects.requireNonNull(modelName, "modelName must be set");
 
@@ -355,7 +362,8 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
                             additionalHeaders,
                             effectiveOptions.getExecutionConfig() != null
                                     ? effectiveOptions.getExecutionConfig().getTimeout()
-                                    : null);
+                                    : null,
+                            proxyConfig);
 
             OpenAIResponsesChatModel model =
                     new OpenAIResponsesChatModel(

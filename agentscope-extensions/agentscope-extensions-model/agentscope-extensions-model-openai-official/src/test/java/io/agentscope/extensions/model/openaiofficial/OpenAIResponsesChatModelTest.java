@@ -41,6 +41,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -562,7 +563,7 @@ class OpenAIResponsesChatModelTest {
         }
 
         @Test
-        void builderDoesNotExposeProxyMethod() {
+        void builderExposesProxyMethod() {
             boolean found = false;
             for (java.lang.reflect.Method m :
                     OpenAIResponsesChatModel.Builder.class.getDeclaredMethods()) {
@@ -571,7 +572,18 @@ class OpenAIResponsesChatModelTest {
                     break;
                 }
             }
-            assertFalse(found, "Builder should not expose proxy() method");
+            assertTrue(found, "Builder should expose proxy() method");
+        }
+
+        @Test
+        void builderAcceptsProxyConfig() {
+            OpenAIResponsesChatModel model =
+                    OpenAIResponsesChatModel.builder()
+                            .apiKey(API_KEY)
+                            .modelName(MODEL_NAME)
+                            .proxy(ProxyConfig.http("proxy.example.com", 8080))
+                            .build();
+            assertNotNull(model);
         }
 
         @Test

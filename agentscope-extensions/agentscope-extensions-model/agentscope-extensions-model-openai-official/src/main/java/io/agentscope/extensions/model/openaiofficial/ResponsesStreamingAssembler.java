@@ -233,13 +233,9 @@ final class ResponsesStreamingAssembler {
 
             // Step 1: re-extraction from terminal response.output()
             String encryptedContent = null;
-            StringBuilder summaryBuilder = new StringBuilder();
             for (ResponseOutputItem item : response.output()) {
                 if (item.isReasoning()) {
                     ResponseReasoningItem reasoning = item.asReasoning();
-                    for (ResponseReasoningItem.Summary summary : reasoning.summary()) {
-                        summaryBuilder.append(summary.text());
-                    }
                     if (encryptedContent == null) {
                         Optional<String> ec = reasoning.encryptedContent();
                         if (ec.isPresent() && !ec.get().isEmpty()) {
@@ -248,19 +244,18 @@ final class ResponsesStreamingAssembler {
                     }
                 }
             }
-            String summaryText = summaryBuilder.toString();
             String reasoningText = reasoningTextAccumulator.toString();
 
             // Build metadata
             String responseId = response.id();
             Map<String, Object> metadata = ResponsesHelper.extractResponseMetadata(response);
             String finishReason = (String) metadata.get(OpenAIOfficialConstants.MD_RESPONSE_STATUS);
-            ChatUsage usage = ResponsesHelper.extractUsage(response, startTime, metadata);
+            ChatUsage usage = ResponsesHelper.extractUsage(response, startTime);
 
             // Reasoning metadata is placed on a ThinkingBlock in the terminal
             // content for reasoning replay.
             List<ContentBlock> terminalContent = new ArrayList<>();
-            if (encryptedContent != null || !summaryText.isEmpty() || !reasoningText.isEmpty()) {
+            if (encryptedContent != null || !reasoningText.isEmpty()) {
                 Map<String, Object> thinkingMetadata = new HashMap<>();
                 if (encryptedContent != null) {
                     thinkingMetadata.put(

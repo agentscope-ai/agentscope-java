@@ -42,8 +42,10 @@ final class OpenAIOfficialConstants {
                     "max_tool_calls",
                     "prompt_cache_key",
                     "prompt_cache_options",
+                    "previous_response_id",
                     "service_tier",
                     "safety_identifier",
+                    "store",
                     "reasoning.summary",
                     "reasoning.context",
                     "reasoning.mode");
@@ -55,12 +57,8 @@ final class OpenAIOfficialConstants {
     static final String MD_RESPONSE_STATUS = "openai.response.status";
     static final String MD_RESPONSE_CREATED_AT = "openai.response.created_at";
     static final String MD_RESPONSE_COMPLETED_AT = "openai.response.completed_at";
-    static final String MD_RESPONSE_SERVICE_TIER = "openai.response.service_tier";
     static final String MD_RESPONSE_INCOMPLETE_REASON = "openai.response.incomplete_reason";
     static final String MD_RESPONSE_ERROR = "openai.response.error";
-
-    // Usage-level
-    static final String MD_USAGE_REASONING_TOKENS = "openai.usage.reasoning_tokens";
 
     // Reasoning-level (internal state, used for history replay)
     static final String MD_REASONING_ENCRYPTED_CONTENT = "openai.reasoning.encrypted_content";

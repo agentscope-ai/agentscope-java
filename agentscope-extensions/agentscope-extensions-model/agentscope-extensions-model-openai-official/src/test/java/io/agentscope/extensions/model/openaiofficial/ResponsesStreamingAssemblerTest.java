@@ -138,7 +138,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.textDeltaEvent("Hi", "msg_001"),
                         TestSdkFixtures.completedEvent(
-                                TestSdkFixtures.usageResponse(100L, 50L, 0L, 0L)));
+                                TestSdkFixtures.usageResponse(100L, 50L, 0L, 0L, 0L)));
         List<ChatResponse> results = assemble(events);
 
         assertEquals(2, results.size());
@@ -410,9 +410,6 @@ class ResponsesStreamingAssemblerTest {
         assertEquals(
                 "max_output_tokens",
                 terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_INCOMPLETE_REASON));
-        assertEquals(
-                "priority",
-                terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER));
     }
 
     @Test
@@ -446,7 +443,7 @@ class ResponsesStreamingAssemblerTest {
                 List.of(
                         TestSdkFixtures.textDeltaEvent("Hi", "msg_001"),
                         TestSdkFixtures.completedEvent(
-                                TestSdkFixtures.usageResponse(100L, 50L, 20L, 10L)));
+                                TestSdkFixtures.usageResponse(100L, 50L, 20L, 5L, 10L)));
         List<ChatResponse> results = assemble(events);
 
         ChatResponse terminal = terminalBlock(results);
@@ -455,9 +452,10 @@ class ResponsesStreamingAssemblerTest {
         assertEquals(100, usage.getInputTokens());
         assertEquals(50, usage.getOutputTokens());
         assertEquals(20, usage.getCachedTokens());
+        assertEquals(5, usage.getCacheCreationTokens());
+        assertEquals(10, usage.getReasoningTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
         assertEquals(150, usage.getTotalTokens());
-        assertEquals(
-                10, terminal.getMetadata().get(OpenAIOfficialConstants.MD_USAGE_REASONING_TOKENS));
     }
 
     @Test
@@ -540,7 +538,7 @@ class ResponsesStreamingAssemblerTest {
                                 TestSdkFixtures.response(
                                         List.of(TestSdkFixtures.messageItem("partial")),
                                         ResponseStatus.INCOMPLETE,
-                                        TestSdkFixtures.usage(100L, 50L, 0L, 0L))));
+                                        TestSdkFixtures.usage(100L, 50L, 0L, 0L, 0L))));
         List<ChatResponse> results = assemble(events);
         ChatResponse terminal = terminalBlock(results);
         assertEquals("incomplete", terminal.getFinishReason());

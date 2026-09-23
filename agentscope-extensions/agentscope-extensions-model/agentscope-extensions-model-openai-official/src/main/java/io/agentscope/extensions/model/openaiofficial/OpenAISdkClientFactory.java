@@ -17,6 +17,11 @@ package io.agentscope.extensions.model.openaiofficial;
 
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.core.http.ProxyAuthenticator;
+import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.model.transport.ProxyType;
+import java.net.Proxy;
+import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
 
@@ -51,6 +56,7 @@ final class OpenAISdkClientFactory {
      * @param baseUrl           the base URL, or null/blank for SDK default
      * @param additionalHeaders builder-level headers to inject into the client (may be null)
      * @param timeout           the request timeout, or null for SDK default
+     * @param proxyConfig       the proxy configuration, or null to use the SDK default
      * @return a configured {@link OpenAIClient} with {@code maxRetries=0}
      * @throws OpenAIOfficialModelException if apiKey is missing/blank or SDK construction fails
      */
@@ -58,7 +64,8 @@ final class OpenAISdkClientFactory {
             String apiKey,
             String baseUrl,
             Map<String, String> additionalHeaders,
-            Duration timeout) {
+            Duration timeout,
+            ProxyConfig proxyConfig) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new OpenAIOfficialModelException(
                     "apiKey is required for the openai-official provider. Set it via"
@@ -83,10 +90,50 @@ final class OpenAISdkClientFactory {
                 additionalHeaders.forEach(builder::putHeader);
             }
 
+            applyProxy(builder, proxyConfig, baseUrl);
+
             return builder.build();
         } catch (RuntimeException e) {
             throw new OpenAIOfficialModelException(
                     "Failed to construct OpenAI client: " + e.getMessage(), e, null);
+        }
+    }
+
+    /**
+     * Applies a {@link ProxyConfig} to the OpenAI SDK client builder.
+     *
+     * <p>HTTP and unauthenticated SOCKS proxies are supported. HTTP authentication uses the SDK
+     * proxy authenticator. Authenticated SOCKS proxies are rejected. The model uses one base URL
+     * for its lifetime, so {@code nonProxyHosts} is resolved against that URL and can bypass the
+     * proxy for the target host.
+     */
+    static void applyProxy(
+            OpenAIOkHttpClient.Builder builder, ProxyConfig proxyConfig, String baseUrl) {
+        if (proxyConfig == null) {
+            return;
+        }
+
+        boolean authenticated = proxyConfig.hasAuthentication();
+        if (authenticated && proxyConfig.getType() != ProxyType.HTTP) {
+            throw new OpenAIOfficialModelException(
+                    "Authenticated SOCKS proxies are not supported by the openai-official"
+                            + " provider",
+                    null,
+                    null);
+        }
+
+        String effectiveBaseUrl =
+                baseUrl != null && !baseUrl.isBlank() ? baseUrl : "https://api.openai.com/v1";
+        URI uri = URI.create(effectiveBaseUrl);
+        if (proxyConfig.shouldBypass(uri.getHost())) {
+            builder.proxy(Proxy.NO_PROXY);
+            return;
+        }
+
+        builder.proxy(proxyConfig.toJavaProxy());
+        if (authenticated) {
+            builder.proxyAuthenticator(
+                    ProxyAuthenticator.basic(proxyConfig.getUsername(), proxyConfig.getPassword()));
         }
     }
 }

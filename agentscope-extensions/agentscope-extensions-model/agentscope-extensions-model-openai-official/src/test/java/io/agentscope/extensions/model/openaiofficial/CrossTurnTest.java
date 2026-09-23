@@ -318,6 +318,46 @@ class CrossTurnTest {
             assertFalse(captor.getAllValues().get(0).store().orElseThrow());
             assertFalse(captor.getAllValues().get(1).store().orElseThrow());
         }
+
+        @Test
+        void responsesServerSideStateParamsMergeAcrossTurns() {
+            OpenAIClient client = mockClient();
+            ResponseService svc = client.responses();
+            when(svc.create(any(ResponseCreateParams.class)))
+                    .thenReturn(
+                            TestSdkFixtures.textResponse("turn1"),
+                            TestSdkFixtures.textResponse("turn2"));
+
+            GenerateOptions configured =
+                    withExecConfig(
+                            GenerateOptions.builder().apiKey(API_KEY).modelName(MODEL_NAME).stream(
+                                            false)
+                                    .additionalBodyParam("store", true)
+                                    .build());
+            OpenAIResponsesChatModel model = createModel(client, configured, null, null, 0);
+
+            model.stream(simpleMessages(), null, null).collectList().block();
+            model.stream(
+                            simpleMessages(),
+                            null,
+                            GenerateOptions.builder()
+                                    .additionalBodyParam("store", false)
+                                    .additionalBodyParam("previous_response_id", "resp_turn1")
+                                    .build())
+                    .collectList()
+                    .block();
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc, times(2)).create(captor.capture());
+            ResponseCreateParams turn1Params = captor.getAllValues().get(0);
+            ResponseCreateParams turn2Params = captor.getAllValues().get(1);
+
+            assertTrue(turn1Params.store().orElseThrow());
+            assertFalse(turn1Params.previousResponseId().isPresent());
+            assertFalse(turn2Params.store().orElseThrow());
+            assertEquals("resp_turn1", turn2Params.previousResponseId().orElseThrow());
+        }
     }
 
     @Nested

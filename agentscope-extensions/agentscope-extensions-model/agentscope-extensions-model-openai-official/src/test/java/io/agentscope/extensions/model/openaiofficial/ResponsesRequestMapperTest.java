@@ -168,7 +168,7 @@ class ResponsesRequestMapperTest {
         }
 
         @Test
-        void storeAlwaysFalse() {
+        void storeDefaultsToFalse() {
             ResponseCreateParams params = mapWith(baseOptions(), null, null);
             assertFalse(params.store().orElseThrow());
         }
@@ -316,6 +316,46 @@ class ResponsesRequestMapperTest {
 
     @Nested
     class AdditionalBodyParams {
+
+        @Test
+        void store() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("store", true)
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.store().orElseThrow());
+        }
+
+        @Test
+        void storeAcceptsStringValue() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("store", "true")
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.store().orElseThrow());
+        }
+
+        @Test
+        void previousResponseId() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("previous_response_id", "resp_123")
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertEquals("resp_123", params.previousResponseId().orElseThrow());
+        }
+
+        @Test
+        void previousResponseIdUsesStringValue() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("previous_response_id", 123)
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertEquals("123", params.previousResponseId().orElseThrow());
+        }
 
         @Test
         void maxToolCalls() {

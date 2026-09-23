@@ -62,6 +62,8 @@ Encrypted reasoning content from previous turns is automatically replayed in mul
 
 This module integrates via the OpenAI Java SDK and currently supports only the Responses API; Chat Completions API support may be added in the future. The following options are **not supported** and will fail-fast when set: `frequencyPenalty`, `presencePenalty`, `topK`, `seed`, `cacheControl`, `thinkingBudget`, `endpointPath`, per-request `additionalHeaders`, and per-request `additionalQueryParams`.
 
-Responses-specific parameters are available through `GenerateOptions.additionalBodyParams` with a whitelist: `reasoning.summary`, `reasoning.context`, `reasoning.mode`, `service_tier`, `prompt_cache_key`, `prompt_cache_options`, `max_tool_calls`, `safety_identifier`.
+Responses-specific parameters are available through `GenerateOptions.additionalBodyParams` with a whitelist: `reasoning.summary`, `reasoning.context`, `reasoning.mode`, `service_tier`, `prompt_cache_key`, `prompt_cache_options`, `max_tool_calls`, `safety_identifier`, `store`, and `previous_response_id`.
+
+`store` controls server-side response storage and defaults to `false`. To use OpenAI's server-side conversation chaining, store the first response, read its ID from response metadata (`openai.response.id`), and pass that ID as `previous_response_id` in a later request. When `previous_response_id` is used, send only the new turn's input rather than repeating the full conversation history.
 
 Native structured output is always enabled (`supportsNativeStructuredOutput()` returns `true`). The SDK retry is disabled (`maxRetries=0`); retry is managed by AgentScope.

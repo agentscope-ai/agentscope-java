@@ -248,22 +248,25 @@ class ResponsesResponseParserTest {
 
     @Test
     void usageFieldsMappedToChatUsage() {
-        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 10L);
+        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 5L, 10L);
         ChatResponse result = parse(response);
         ChatUsage usage = result.getUsage();
         assertNotNull(usage);
         assertEquals(100, usage.getInputTokens());
         assertEquals(50, usage.getOutputTokens());
         assertEquals(20, usage.getCachedTokens());
+        assertEquals(5, usage.getCacheCreationTokens());
+        assertEquals(10, usage.getReasoningTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
         assertEquals(150, usage.getTotalTokens());
     }
 
     @Test
-    void reasoningTokensInMetadata() {
-        Response response = TestSdkFixtures.usageResponse(100L, 50L, 0L, 15L);
+    void reasoningTokensInChatUsage() {
+        Response response = TestSdkFixtures.usageResponse(100L, 50L, 0L, 0L, 15L);
         ChatResponse result = parse(response);
-        assertEquals(
-                15, result.getMetadata().get(OpenAIOfficialConstants.MD_USAGE_REASONING_TOKENS));
+        assertNotNull(result.getUsage());
+        assertEquals(15, result.getUsage().getReasoningTokens());
     }
 
     @Test
@@ -352,15 +355,6 @@ class ResponsesResponseParserTest {
     }
 
     @Test
-    void serviceTierInMetadata() {
-        Response response = TestSdkFixtures.fullMetadataResponse();
-        ChatResponse result = parse(response);
-        assertEquals(
-                "priority",
-                result.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_SERVICE_TIER));
-    }
-
-    @Test
     void incompleteReasonInMetadata() {
         Response response = TestSdkFixtures.fullMetadataResponse();
         ChatResponse result = parse(response);
@@ -383,7 +377,7 @@ class ResponsesResponseParserTest {
 
     @Test
     void metadataValuesAreJsonCompatible() {
-        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 10L);
+        Response response = TestSdkFixtures.usageResponse(100L, 50L, 20L, 5L, 10L);
         ChatResponse result = parse(response);
         for (Map.Entry<String, Object> entry : result.getMetadata().entrySet()) {
             Object value = entry.getValue();

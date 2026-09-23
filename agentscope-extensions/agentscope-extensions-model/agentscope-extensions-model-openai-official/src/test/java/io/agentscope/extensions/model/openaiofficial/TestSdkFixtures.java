@@ -309,8 +309,9 @@ public final class TestSdkFixtures {
     }
 
     /** Builds a Response with usage data. */
-    public static Response usageResponse(long input, long output, long cached, long reasoning) {
-        ResponseUsage usage = usage(input, output, cached, reasoning);
+    public static Response usageResponse(
+            long input, long output, long cached, long cacheWrite, long reasoning) {
+        ResponseUsage usage = usage(input, output, cached, cacheWrite, reasoning);
         return response(List.of(messageItem("test")), ResponseStatus.COMPLETED, usage);
     }
 
@@ -401,12 +402,13 @@ public final class TestSdkFixtures {
 
     // ── Usage builder ───────────────────────────────────────────────────────
 
-    public static ResponseUsage usage(long input, long output, long cached, long reasoning) {
+    public static ResponseUsage usage(
+            long input, long output, long cached, long cacheWrite, long reasoning) {
         return ResponseUsage.builder()
                 .inputTokens(input)
                 .inputTokensDetails(
                         ResponseUsage.InputTokensDetails.builder()
-                                .cacheWriteTokens(0L)
+                                .cacheWriteTokens(cacheWrite)
                                 .cachedTokens(cached)
                                 .build())
                 .outputTokens(output)
