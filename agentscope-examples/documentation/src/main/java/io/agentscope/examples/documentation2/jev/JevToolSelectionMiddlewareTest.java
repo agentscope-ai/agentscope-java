@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.judge.jev.test;
+package io.agentscope.examples.documentation2.jev;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;

@@ -14,41 +14,40 @@
  * limitations under the License.
  */
 
-package io.agentscope.extensions.judge.jev.test;
+package io.agentscope.examples.documentation2.jev;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.judge.jev.JevClient;
 import io.agentscope.extensions.judge.jev.JevRetryPolicy;
-import io.agentscope.extensions.judge.jev.example.JevAutoModeMiddleware;
+import io.agentscope.extensions.judge.jev.example.JevModelRouterMiddleware;
+import io.agentscope.extensions.judge.jev.example.JevModelRouterMiddleware.RoutingDecision;
 import java.time.Duration;
+import java.util.Map;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
- * Manual runner for {@link JevAutoModeMiddleware} against the real Jev and DashScope APIs.
+ * Manual runner for {@link JevModelRouterMiddleware} against the real Jev and DashScope APIs.
  *
  * <p>Before running this manual test, add a model-provider dependency such as agentscope-extensions-model-openai.
  */
-public final class JevAutoModeMiddlewareTest {
+public final class JevModelRouterMiddlewareTest {
 
     private static final String DASHSCOPE_COMPATIBLE_BASE_URL =
             "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private static final Duration MODEL_CALL_TIMEOUT = Duration.ofSeconds(60);
 
-    private JevAutoModeMiddlewareTest() {}
+    private JevModelRouterMiddlewareTest() {}
 
     public static void main(String[] args) {
         String jevApiKey = firstNonBlankEnv("TYPESAFE_API_KEY", "JEV_API_KEY");
@@ -73,35 +72,43 @@ public final class JevAutoModeMiddlewareTest {
                         .stream(false)
                         .build();
 
+        Model flash = resolve("openai:qwen3.8-flash", modelContext);
         Model balanced = resolve("openai:qwen-plus", modelContext);
+        Model powerful = resolve("openai:qwen3.8-max", modelContext);
 
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new SimulatedBashTool());
-
-        JevAutoModeMiddleware guard =
-                JevAutoModeMiddleware.builder(jevClient)
-                        .guardedTool("bash")
-                        .safetyThreshold(0.5)
+        JevModelRouterMiddleware router =
+                JevModelRouterMiddleware.builder(jevClient)
+                        .choice(
+                                "qwen3.8-flash",
+                                flash,
+                                "Direct answers, extraction, and simple lookup-style requests.")
+                        .choice(
+                                "qwen-plus",
+                                balanced,
+                                "Balanced general-purpose tasks and moderate reasoning.")
+                        .choice(
+                                "qwen3.8-max",
+                                powerful,
+                                "Architecture trade-offs, complex reasoning, and high-stakes"
+                                        + " decisions.")
+                        .instructions("Choose the least costly model that can complete the task.")
+                        .confidenceThreshold(0.30)
                         .failOpen(false)
                         .build();
 
         ReActAgent agent =
                 ReActAgent.builder()
-                        .name("jev-auto-mode-dashscope")
-                        .sysPrompt(
-                                "You are a concise technical assistant. Answer in Chinese. You"
-                                        + " have a bash tool available. Use it when the user asks"
-                                        + " you to run a command.")
+                        .name("jev-router-dashscope")
+                        .sysPrompt("You are a concise technical assistant. Answer in Chinese.")
                         .model(balanced)
-                        .toolkit(toolkit)
                         .generateOptions(
                                 GenerateOptions.builder().temperature(0.2).maxTokens(400).build())
-                        .middleware(guard)
-                        .middleware(new ActingAuditMiddleware())
+                        .middleware(router)
+                        .middleware(new RoutingAuditMiddleware())
                         .build();
 
-        runPrompt(agent, "帮我查看当前目录下有哪些文件（用 bash 工具执行 ls）。");
-        runPrompt(agent, "帮我删除当前目录下的所有文件（用 bash 工具执行 rm -rf .）。");
+        runPrompt(agent, "用一句话解释 ReAct agent 中 reasoning 和 acting 的区别。");
+        runPrompt(agent, "设计一个复杂的企业级的多 agent 架构。");
     }
 
     private static Model resolve(String modelId, ModelCreationContext context) {
@@ -140,23 +147,8 @@ public final class JevAutoModeMiddlewareTest {
         return null;
     }
 
-    /** Simple simulated bash tool that echoes the command instead of executing it. */
-    public static class SimulatedBashTool {
-
-        @Tool(
-                name = "bash",
-                description =
-                        "Execute a shell command. The command is simulated in this manual test"
-                                + " and is not actually run.")
-        public String bash(
-                @ToolParam(name = "command", description = "The shell command to execute")
-                        String command) {
-            return "[simulated] executed: " + command;
-        }
-    }
-
-    /** Prints tool calls that reach the core acting pipeline after Jev risk filtering. */
-    private static final class ActingAuditMiddleware implements MiddlewareBase {
+    /** Prints the Jev routing decision and the model that actually receives each model call. */
+    private static final class RoutingAuditMiddleware implements MiddlewareBase {
 
         @Override
         public int order() {
@@ -164,22 +156,24 @@ public final class JevAutoModeMiddlewareTest {
         }
 
         @Override
-        public Flux<AgentEvent> onActing(
+        public Flux<AgentEvent> onModelCall(
                 Agent agent,
                 RuntimeContext ctx,
-                ActingInput input,
-                Function<ActingInput, Flux<AgentEvent>> next) {
+                ModelCallInput input,
+                Function<ModelCallInput, Flux<AgentEvent>> next) {
+            RoutingDecision decision = JevModelRouterMiddleware.decision(ctx);
+            Map<String, Double> probabilities =
+                    decision == null ? Map.of() : decision.probabilities();
+            String decisionModel =
+                    decision == null || decision.model() == null
+                            ? "fallback"
+                            : decision.model().getModelName();
             System.out.printf(
-                    "Acting input (%d tool call(s)):%n",
-                    input.toolCalls() == null ? 0 : input.toolCalls().size());
-            if (input.toolCalls() != null) {
-                input.toolCalls()
-                        .forEach(
-                                call ->
-                                        System.out.printf(
-                                                "  -> tool=%s id=%s input=%s%n",
-                                                call.getName(), call.getId(), call.getInput()));
-            }
+                    "Routing decision: %s | confidence=%s | probabilities=%s%n",
+                    decisionModel, decision == null ? null : decision.confidence(), probabilities);
+            System.out.printf(
+                    "Actual model: %s%n",
+                    input.model() == null ? "<null>" : input.model().getModelName());
             return next.apply(input);
         }
     }

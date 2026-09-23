@@ -140,6 +140,12 @@
             <artifactId>agentscope-extensions-model-gemini</artifactId>
         </dependency>
 
+        <!-- Jev extension for example middlewares -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+        </dependency>
+
         <!-- Git-based Skill Repository -->
         <dependency>
             <groupId>io.agentscope</groupId>
