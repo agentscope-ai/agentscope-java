@@ -19,6 +19,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -58,6 +59,10 @@ public class UserEntity {
 
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
+
+    @Lob
+    @Column(name = "bindings_json")
+    private String bindingsJson;
 
     public UserEntity() {}
 
@@ -106,5 +111,13 @@ public class UserEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getBindingsJson() {
+        return bindingsJson;
+    }
+
+    public void setBindingsJson(String bindingsJson) {
+        this.bindingsJson = bindingsJson;
     }
 }

@@ -125,6 +125,16 @@ public interface RedisClientAdapter {
     Set<String> findKeysByPattern(String pattern);
 
     /**
+     * Execute a Lua script atomically.
+     *
+     * @param script the Lua script source
+     * @param keys Redis keys passed as {@code KEYS}
+     * @param args Redis arguments passed as {@code ARGV}
+     * @return the script return value as a long
+     */
+    long evalScript(String script, List<String> keys, List<String> args);
+
+    /**
      * Close the adapter and release resources.
      */
     void close();

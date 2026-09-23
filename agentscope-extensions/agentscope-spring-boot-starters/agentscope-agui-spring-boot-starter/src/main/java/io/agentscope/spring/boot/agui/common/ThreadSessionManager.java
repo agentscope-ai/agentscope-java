@@ -17,8 +17,12 @@ package io.agentscope.spring.boot.agui.common;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.state.AgentState;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,24 +31,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Manages agent sessions by threadId for server-side memory management.
+ * Manages agent sessions by {@code (userId, threadId)} for server-side memory.
  *
- * <p>This manager maintains a pool of agent instances, each associated with a threadId. When
- * server-side memory is enabled, the same agent instance is reused for requests with the same
- * threadId, preserving conversation history across requests.
+ * <p>When server-side memory is enabled, the same agent instance is reused for requests with the
+ * same user and thread, preserving conversation history across requests. Sessions for different
+ * users never share a slot, even when they reuse a thread id.
  *
  * <p><b>Usage:</b>
  *
  * <pre>{@code
  * ThreadSessionManager manager = new ThreadSessionManager(1000, 30);
  *
- * // Get or create an agent for a thread
- * Agent agent = manager.getOrCreateAgent("thread-123", "default", () -> createAgent());
+ * Agent agent =
+ *         manager.getOrCreateAgent(
+ *                 "user-1", "thread-123", "default", () -> createAgent());
  *
- * // Check if agent has memory
- * boolean hasMemory = manager.hasMemory("thread-123");
+ * boolean hasMemory =
+ *         manager.hasMemory(
+ *                 RuntimeContext.builder()
+ *                         .userId("user-1")
+ *                         .sessionId("thread-123")
+ *                         .build());
  *
- * // Clean up expired sessions
  * manager.cleanupExpiredSessions();
  * }</pre>
  */
@@ -52,7 +60,15 @@ public class ThreadSessionManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ThreadSessionManager.class);
 
-    private final Map<String, ThreadSession> sessions = new ConcurrentHashMap<>();
+    /**
+     * Sentinel namespace for callers that pass {@code userId == null}.
+     *
+     * <p>Must stay in sync with the anonymous sentinel used by {@code ReActAgent#slotKey}
+     * ({@value #ANON_USER}).
+     */
+    static final String ANON_USER = "__anon__";
+
+    private final Map<SessionKey, ThreadSession> sessions = new ConcurrentHashMap<>();
     private final int maxSessions;
     private final int sessionTimeoutMinutes;
 
@@ -68,10 +84,7 @@ public class ThreadSessionManager {
     }
 
     /**
-     * Get or create an agent for the given threadId.
-     *
-     * <p>This method is thread-safe. It uses atomic operations to ensure that concurrent requests
-     * for the same threadId will share the same agent instance.
+     * Get or create an agent for the given threadId under the anonymous user slot.
      *
      * @param threadId The thread identifier
      * @param agentId The agent type identifier
@@ -79,82 +92,154 @@ public class ThreadSessionManager {
      * @return The agent for this thread
      */
     public Agent getOrCreateAgent(String threadId, String agentId, Supplier<Agent> agentFactory) {
-        // Clean up if we're at capacity
-        if (sessions.size() >= maxSessions) {
-            cleanupExpiredSessions();
-            // If still at capacity, remove oldest session
-            if (sessions.size() >= maxSessions) {
-                removeOldestSession();
-            }
-        }
-
-        // Use compute() for atomic check-and-update to avoid race conditions
-        ThreadSession session =
-                sessions.compute(
-                        threadId,
-                        (k, existing) -> {
-                            if (existing == null) {
-                                // No existing session, create new one
-                                logger.debug("Creating new session for threadId: {}", threadId);
-                                return new ThreadSession(agentId, agentFactory.get());
-                            }
-                            if (!existing.getAgentId().equals(agentId)) {
-                                // Agent type changed, create new session
-                                logger.debug(
-                                        "Agent type changed for threadId {}: {} -> {}",
-                                        threadId,
-                                        existing.getAgentId(),
-                                        agentId);
-                                return new ThreadSession(agentId, agentFactory.get());
-                            }
-                            // Same agent type, update access time and reuse
-                            existing.updateLastAccess();
-                            return existing;
-                        });
-
-        return session.getAgent();
+        return getOrCreateAgent(null, threadId, agentId, agentFactory);
     }
 
     /**
-     * Check if a session exists and has memory for the given threadId.
+     * Get or create an agent for the given user and thread.
+     *
+     * <p>This method is thread-safe. Concurrent requests for the same {@code (userId, threadId)}
+     * share the same agent instance.
+     *
+     * @param userId The user identifier, may be {@code null} for anonymous
+     * @param threadId The thread identifier
+     * @param agentId The agent type identifier
+     * @param agentFactory Factory to create new agents if needed
+     * @return The agent for this user and thread
+     */
+    public Agent getOrCreateAgent(
+            String userId, String threadId, String agentId, Supplier<Agent> agentFactory) {
+        ensureCapacity();
+        return sessions.compute(
+                        sessionKey(userId, threadId),
+                        (k, existing) ->
+                                upsertSession(
+                                        existing, userId, threadId, agentId, null, agentFactory))
+                .getAgent();
+    }
+
+    /**
+     * Ensure a session exists for the given threadId under the anonymous user slot.
      *
      * @param threadId The thread identifier
+     * @param agentId The agent type identifier
+     * @param name Display name for the thread (may be null)
+     * @param agentFactory Factory to create new agents if needed
+     * @return The session for this thread
+     */
+    public ThreadSession ensureSession(
+            String threadId, String agentId, String name, Supplier<Agent> agentFactory) {
+        return ensureSession(null, threadId, agentId, name, agentFactory);
+    }
+
+    /**
+     * Ensure a session exists for the given user and thread, creating one if needed.
+     *
+     * @param userId The user identifier, may be {@code null} for anonymous
+     * @param threadId The thread identifier
+     * @param agentId The agent type identifier
+     * @param name Display name for the thread (may be null)
+     * @param agentFactory Factory to create new agents if needed
+     * @return The session for this user and thread
+     */
+    public ThreadSession ensureSession(
+            String userId,
+            String threadId,
+            String agentId,
+            String name,
+            Supplier<Agent> agentFactory) {
+        ensureCapacity();
+        return sessions.compute(
+                sessionKey(userId, threadId),
+                (k, existing) ->
+                        upsertSession(existing, userId, threadId, agentId, name, agentFactory));
+    }
+
+    /**
+     * Check if a session exists and has memory for the given runtime context.
+     *
+     * <p>The session is keyed by {@link RuntimeContext#getUserId()} and {@link
+     * RuntimeContext#getSessionId()}. When the agent is a harness wrapper, the inner {@link
+     * ReActAgent} is inspected without closing it.
+     *
+     * @param runtimeContext The runtime context identifying the user and thread
      * @return true if the session exists and the agent has non-empty memory
      */
-    public boolean hasMemory(String threadId) {
-        ThreadSession session = sessions.get(threadId);
+    public boolean hasMemory(RuntimeContext runtimeContext) {
+        if (runtimeContext == null || runtimeContext.getSessionId() == null) {
+            return false;
+        }
+        ThreadSession session =
+                sessions.get(sessionKey(runtimeContext.getUserId(), runtimeContext.getSessionId()));
         if (session == null) {
             return false;
         }
 
-        Agent agent = session.getAgent();
-        // Check if the agent's AgentState has any context messages.
-        if (agent instanceof ReActAgent reactAgent) {
-            AgentState state = reactAgent.getAgentState();
-            return state != null && !state.getContext().isEmpty();
+        ReActAgent reActAgent = AguiUtil.asReActAgent(session.getAgent());
+        if (reActAgent == null) {
+            return false;
         }
-
-        return false;
+        AgentState state = reActAgent.getAgentState(runtimeContext);
+        return state != null && !state.getContext().isEmpty();
     }
 
     /**
-     * Get the session for a threadId if it exists.
+     * Get the session for a threadId under the anonymous user slot if it exists.
      *
      * @param threadId The thread identifier
      * @return Optional containing the session, or empty if not found
      */
     public Optional<ThreadSession> getSession(String threadId) {
-        return Optional.ofNullable(sessions.get(threadId));
+        return getSession(null, threadId);
     }
 
     /**
-     * Remove a session by threadId.
+     * Get the session for a user and thread if it exists.
+     *
+     * @param userId The user identifier, may be {@code null} for anonymous
+     * @param threadId The thread identifier
+     * @return Optional containing the session, or empty if not found
+     */
+    public Optional<ThreadSession> getSession(String userId, String threadId) {
+        return Optional.ofNullable(sessions.get(sessionKey(userId, threadId)));
+    }
+
+    /**
+     * Returns an unmodifiable snapshot of all sessions keyed by threadId.
+     *
+     * <p>When two users share a thread id, the later entry in iteration order overwrites the
+     * snapshot. Use {@link ThreadSession#getUserId()} and {@link ThreadSession#getThreadId()} on
+     * each value for tenant-safe identity.
+     *
+     * @return session snapshot
+     */
+    public Map<String, ThreadSession> getSessions() {
+        Map<String, ThreadSession> snapshot = new LinkedHashMap<>();
+        for (ThreadSession session : sessions.values()) {
+            snapshot.put(session.getThreadId(), session);
+        }
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    /**
+     * Remove a session by threadId under the anonymous user slot.
      *
      * @param threadId The thread identifier
      * @return true if a session was removed
      */
     public boolean removeSession(String threadId) {
-        return sessions.remove(threadId) != null;
+        return removeSession(null, threadId);
+    }
+
+    /**
+     * Remove a session by user and thread.
+     *
+     * @param userId The user identifier, may be {@code null} for anonymous
+     * @param threadId The thread identifier
+     * @return true if a session was removed
+     */
+    public boolean removeSession(String userId, String threadId) {
+        return sessions.remove(sessionKey(userId, threadId)) != null;
     }
 
     /** Clean up sessions that have been inactive for longer than the timeout. */
@@ -180,9 +265,65 @@ public class ThreadSessionManager {
         }
     }
 
+    private ThreadSession upsertSession(
+            ThreadSession existing,
+            String userId,
+            String threadId,
+            String agentId,
+            String name,
+            Supplier<Agent> agentFactory) {
+        if (existing == null) {
+            logger.debug(
+                    "Creating new session for user {} threadId {}",
+                    normalizeUser(userId),
+                    threadId);
+            ThreadSession created =
+                    new ThreadSession(userId, threadId, agentId, agentFactory.get());
+            if (name != null && !name.isBlank()) {
+                created.setName(name);
+            }
+            return created;
+        }
+        if (!existing.getAgentId().equals(agentId)) {
+            logger.debug(
+                    "Agent type changed for user {} threadId {}: {} -> {}",
+                    normalizeUser(userId),
+                    threadId,
+                    existing.getAgentId(),
+                    agentId);
+            ThreadSession replacement =
+                    new ThreadSession(userId, threadId, agentId, agentFactory.get());
+            replacement.setName(name != null && !name.isBlank() ? name : existing.getName());
+            replacement.setArchived(existing.isArchived());
+            return replacement;
+        }
+        if (name != null && !name.isBlank()) {
+            existing.setName(name);
+        }
+        existing.updateLastAccess();
+        return existing;
+    }
+
+    private static SessionKey sessionKey(String userId, String threadId) {
+        return new SessionKey(normalizeUser(userId), threadId);
+    }
+
+    private static String normalizeUser(String userId) {
+        return userId == null || userId.isBlank() ? ANON_USER : userId;
+    }
+
+    private void ensureCapacity() {
+        if (sessions.size() >= maxSessions) {
+            cleanupExpiredSessions();
+            if (sessions.size() >= maxSessions) {
+                removeOldestSession();
+            }
+        }
+    }
+
     /** Remove the oldest session to make room for new ones. */
     private void removeOldestSession() {
-        String oldestKey = null;
+        SessionKey oldestKey = null;
         Instant oldestTime = Instant.MAX;
 
         for (var entry : sessions.entrySet()) {
@@ -194,7 +335,10 @@ public class ThreadSessionManager {
 
         if (oldestKey != null) {
             sessions.remove(oldestKey);
-            logger.debug("Removed oldest session: {}", oldestKey);
+            logger.debug(
+                    "Removed oldest session: user {} thread {}",
+                    oldestKey.userId(),
+                    oldestKey.threadId());
         }
     }
 
@@ -212,17 +356,36 @@ public class ThreadSessionManager {
         sessions.clear();
     }
 
+    private record SessionKey(String userId, String threadId) {}
+
     /** Represents a thread session with its agent and metadata. */
     public static class ThreadSession {
 
+        private final String userId;
+        private final String threadId;
         private final String agentId;
         private final Agent agent;
+        private final Instant createdAt;
         private Instant lastAccess;
+        private volatile String name;
+        private volatile boolean archived;
 
-        ThreadSession(String agentId, Agent agent) {
+        ThreadSession(String userId, String threadId, String agentId, Agent agent) {
+            this.userId = normalizeUser(userId);
+            this.threadId = threadId;
             this.agentId = agentId;
             this.agent = agent;
-            this.lastAccess = Instant.now();
+            Instant now = Instant.now();
+            this.createdAt = now;
+            this.lastAccess = now;
+        }
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public String getThreadId() {
+            return threadId;
         }
 
         public String getAgentId() {
@@ -233,11 +396,31 @@ public class ThreadSessionManager {
             return agent;
         }
 
+        public Instant getCreatedAt() {
+            return createdAt;
+        }
+
         public Instant getLastAccess() {
             return lastAccess;
         }
 
-        void updateLastAccess() {
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public boolean isArchived() {
+            return archived;
+        }
+
+        public void setArchived(boolean archived) {
+            this.archived = archived;
+        }
+
+        public void updateLastAccess() {
             this.lastAccess = Instant.now();
         }
     }

@@ -1,4 +1,8 @@
-# Handoffs（交接）
+---
+title: Handoffs
+---
+
+> **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。
 
 在 **Handoffs** 模式中，行为根据状态动态变化。工具会更新一个在轮次间持久存在的状态变量（如 `active_agent`），图根据该变量将请求路由到不同智能体。该模式适合客服、销售等场景：通过工具调用在专职智能体（如销售与支持）之间转移控制权。
 
@@ -239,23 +243,17 @@ resultOpt.ifPresent(state -> {
 
 完整的 Handoffs 示例（销售 + 支持与交接工具）位于仓库中：
 
-- **路径**：`agentscope-examples/multiagent-patterns/handoffs/`
 - **要点**：`AgentScopeHandoffsConfig`（图、智能体、路由），`TransferToSalesTool`、`TransferToSupportTool`，`RouteInitialAction`、`RouteAfterSalesAction`、`RouteAfterSupportAction`，以及用于调用图的 `AgentScopeHandoffsService`。
 
 在仓库根目录构建并运行：
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/handoffs spring-boot:run
-```
 
 在 `application.yml` 中设置 `agentscope.runner.enabled=true` 可在启动时运行演示。默认端口为 8089。
 
 ## 相关文档
 
-- [Pipeline](./pipeline.md) - 顺序与并行智能体执行
-- [Routing](./routing.md) - 分类并路由到专家智能体
-- [Supervisor](./supervisor.md) - 中心监督者与专职智能体即工具
-- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
-- [Agent as Tool](../task/agent-as-tool.md) - 将智能体注册为工具供其他智能体调用
-- [工具系统](../task/tool.md) - AgentScope 工具与 Toolkit
+- [Pipeline](/v1/zh/docs/multi-agent/pipeline) - 顺序与并行智能体执行
+- [Routing](/v1/zh/docs/multi-agent/routing) - 分类并路由到专家智能体
+- [Supervisor](/v1/zh/docs/multi-agent/supervisor) - 中心监督者与专职智能体即工具
+- [MsgHub](/v1/zh/docs/task/msghub) - 多智能体对话的消息广播
+- [Agent as Tool](/v1/zh/docs/task/agent-as-tool) - 将智能体注册为工具供其他智能体调用
+- [工具系统](/v1/zh/docs/task/tool) - AgentScope 工具与 Toolkit

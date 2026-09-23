@@ -1,6 +1,8 @@
-# 沙箱（Sandbox）
+---
+title: 沙箱
+---
 
-[Filesystem](../filesystem.md) 说明了 agent 的「文件与命令」从哪来。当这些操作必须**与宿主进程隔离**、在**可替换的执行环境**（本地 Unix、Docker 等）里完成，并在多次 `call` 之间**恢复同一份工作区状态**时，应选用本文描述的 **沙箱模式**（`filesystem(SandboxFilesystemSpec)`）。
+[Filesystem](/v1/zh/docs/harness/filesystem) 说明了 agent 的「文件与命令」从哪来。当这些操作必须**与宿主进程隔离**、在**可替换的执行环境**（本地 Unix、Docker 等）里完成，并在多次 `call` 之间**恢复同一份工作区状态**时，应选用本文描述的 **沙箱模式**（`filesystem(SandboxFilesystemSpec)`）。
 
 ## 1. 沙箱解决什么问题
 
@@ -23,7 +25,7 @@
 
 ## 3. 隔离维度（`IsolationScope`）
 
-`IsolationScope` 控制**沙箱状态的持久化键**（sandbox 模式）以及**共享存储的命名空间前缀**（store 模式，见 [Filesystem 模式一](../filesystem.md)）。两个模式共用同一个枚举，语义一致。
+`IsolationScope` 控制**沙箱状态的持久化键**（sandbox 模式）以及**共享存储的命名空间前缀**（store 模式，见 [Filesystem 模式一](/v1/zh/docs/harness/filesystem)）。两个模式共用同一个枚举，语义一致。
 
 | 范围 | 持久化键来源 | 缺失时行为 | 典型场景 |
 |------|------------|----------|---------|
@@ -470,12 +472,12 @@ SandboxExecutionGuard jvmGuard = key -> {
 
 ## 11. 与三种 Filesystem 模式怎么选
 
-沙箱是三种**声明式**配置之一。完整对比见 [Filesystem](../filesystem.md#三种声明式模式)；此处只给决策要点：
+沙箱是三种**声明式**配置之一。完整对比见 [Filesystem](/v1/zh/docs/harness/filesystem#三种声明式模式)；此处只给决策要点：
 
 | 你更需要 | 推荐模式 |
 |----------|----------|
-| 多实例共享 `MEMORY.md`、会话日志等到 KV，**不要**在宿主跑 shell | `RemoteFilesystemSpec`（见 [Filesystem — 模式一](../filesystem.md)） |
-| 单进程/本机、信任 shell、**不要**另起沙箱 | `LocalFilesystemSpec` 或默认本机 + shell（见 [Filesystem — 模式三](../filesystem.md)） |
+| 多实例共享 `MEMORY.md`、会话日志等到 KV，**不要**在宿主跑 shell | `RemoteFilesystemSpec`（见 [Filesystem — 模式一](/v1/zh/docs/harness/filesystem)） |
+| 单进程/本机、信任 shell、**不要**另起沙箱 | `LocalFilesystemSpec` 或默认本机 + shell（见 [Filesystem — 模式三](/v1/zh/docs/harness/filesystem)） |
 | **隔离执行**、命令与文件落沙箱、**长会话恢复**、可选**快照 + 集群** | **`SandboxFilesystemSpec`（本文）+ 可选 `sandboxDistributed`** |
 
 ## 12. 子 Agent
@@ -492,11 +494,11 @@ SandboxExecutionGuard jvmGuard = key -> {
 | Kubernetes | 自建 K8s 集群、节点级 bind mount | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
 | Daytona | 通用托管沙箱 HTTP API | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
 | E2B | 通用托管沙箱 + 平台快照 | [§5.7](#57-可选沙箱后端kubernetes--daytona--e2bagentscope-harness-子包) |
-| **AgentRun**（阿里云 FC 3.0 Sandbox） | 已用阿里云、需要中国大陆区域低延迟、想要实例级 NAS/OSS 动态挂载 | **[AgentRun 后端](./agentrun.md)** |
+| **AgentRun**（阿里云 FC 3.0 Sandbox） | 已用阿里云、需要中国大陆区域低延迟、想要实例级 NAS/OSS 动态挂载 | **[AgentRun 后端](/v1/zh/docs/harness/sandbox/agentrun)** |
 
 ## 14. 延伸阅读
 
-- [Filesystem](../filesystem.md) — 类层次、三种模式、`abstractFilesystem` 逃生口
-- [工具](../tool.md) — `FilesystemTool`、`ShellExecuteTool` 入参
-- [会话](../session.md) — `Session` 与 `WorkspaceSession`
-- [架构](../architecture.md) — Hook 协作与时序
+- [Filesystem](/v1/zh/docs/harness/filesystem) — 类层次、三种模式、`abstractFilesystem` 逃生口
+- [工具](/v1/zh/docs/harness/tool) — `FilesystemTool`、`ShellExecuteTool` 入参
+- [会话](/v1/zh/docs/harness/session) — `Session` 与 `WorkspaceSession`
+- [架构](/v1/zh/docs/harness/architecture) — Hook 协作与时序

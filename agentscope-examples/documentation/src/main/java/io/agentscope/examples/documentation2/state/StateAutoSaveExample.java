@@ -50,8 +50,8 @@ import java.nio.file.Paths;
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.session.SessionAutoSaveExample
+ *   mvn exec:java -pl agentscope-examples/documentation \
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.state.StateAutoSaveExample
  * </pre>
  */
 public class StateAutoSaveExample {

@@ -1,4 +1,6 @@
-# GitHub Channel
+---
+title: GitHub Channel
+---
 
 `agentscope-extensions-channel-github` 将你的 Agent 接入 GitHub issue 和 PR 评论线程。当有人在 issue 或 pull request 中评论时，Agent 以新评论的形式回复。
 

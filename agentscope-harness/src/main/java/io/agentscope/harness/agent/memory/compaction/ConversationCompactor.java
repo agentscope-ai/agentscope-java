@@ -23,6 +23,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig.TruncateArgsConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
@@ -138,6 +139,9 @@ public class ConversationCompactor {
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
                                 .onErrorResume(
                                         e -> {
+                                            if (ExceptionUtils.containsInterruptedException(e)) {
+                                                return Mono.error(e);
+                                            }
                                             log.warn(
                                                     "Memory flush before compaction failed: {}",
                                                     e.getMessage());
@@ -166,6 +170,9 @@ public class ConversationCompactor {
                                                     path))
                             .onErrorResume(
                                     e -> {
+                                        if (ExceptionUtils.containsInterruptedException(e)) {
+                                            return Mono.error(e);
+                                        }
                                         log.warn(
                                                 "Message offload before compaction failed: {}",
                                                 e.getMessage());
@@ -368,6 +375,9 @@ public class ConversationCompactor {
                 .defaultIfEmpty("(Summary unavailable)")
                 .onErrorResume(
                         e -> {
+                            if (ExceptionUtils.containsInterruptedException(e)) {
+                                return Mono.error(e);
+                            }
                             log.warn("Summarization LLM call failed: {}", e.getMessage());
                             return Mono.just("(Summarization failed: " + e.getMessage() + ")");
                         });

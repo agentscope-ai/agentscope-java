@@ -1,4 +1,6 @@
-# Memory
+---
+title: Memory
+---
 
 ## Purpose
 
@@ -18,7 +20,7 @@ Enable the agent to "remember facts across sessions" while preventing conversati
 
 ### Two-Layer Memory Model
 
-```{mermaid}
+```mermaid
 graph LR
     Conv[conversation messages] -->|over threshold| Compactor[ConversationCompactor]
     Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
@@ -146,7 +148,7 @@ List<MemoryIndex.SearchHit> hits = index.search("database migration", 10);
 
 ## Related Pages
 
-- [Tool](./tool.md) — `memory_search` / `memory_get` parameters and call examples
-- [Workspace](./workspace.md) — `MEMORY.md` / `memory/*.md` location in the workspace
-- [Session](./session.md) — how `.log.jsonl` / `.jsonl` feeds back into memory extraction
-- [Architecture](./architecture.md) — `CompactionHook` / `MemoryFlushHook` / `ToolResultEvictionHook` position in the lifecycle
+- [Tool](/v1/en/docs/harness/tool) — `memory_search` / `memory_get` parameters and call examples
+- [Workspace](/v1/en/docs/harness/workspace) — `MEMORY.md` / `memory/*.md` location in the workspace
+- [Session](/v1/en/docs/harness/session) — how `.log.jsonl` / `.jsonl` feeds back into memory extraction
+- [Architecture](/v1/en/docs/harness/architecture) — `CompactionHook` / `MemoryFlushHook` / `ToolResultEvictionHook` position in the lifecycle

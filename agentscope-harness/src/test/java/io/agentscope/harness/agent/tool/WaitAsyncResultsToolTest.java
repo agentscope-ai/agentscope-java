@@ -283,7 +283,11 @@ class WaitAsyncResultsToolTest {
         WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
 
         long start = System.currentTimeMillis();
-        String result = tool.waitForResults(120, "t1,missing", null, ctx());
+        String result =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                                IllegalArgumentException.class,
+                                () -> tool.waitForResults(120, "t1,missing", null, ctx()))
+                        .getMessage();
         long elapsed = System.currentTimeMillis() - start;
 
         assertTrue(result.contains("unknown task_ids"), "got: " + result);
@@ -463,12 +467,6 @@ class WaitAsyncResultsToolTest {
         }
 
         @Override
-        public void removeTask(RuntimeContext rc, String sessionId, String taskId) {}
-
-        @Override
-        public void clear() {}
-
-        @Override
         public Collection<BackgroundTask> listTasks(
                 RuntimeContext rc, String sessionId, TaskStatus filter) {
             if (filter == null) {
@@ -506,5 +504,14 @@ class WaitAsyncResultsToolTest {
         public void markDelivered(RuntimeContext rc, String sessionId, String taskId) {
             delivered.add(taskId);
         }
+    }
+
+    @Test
+    void emptyRepositoryDoesNotClaimWorkIsRunningOrCompleted() throws Exception {
+        String result =
+                new WaitAsyncResultsTool(emptyBus(), new StubTaskRepository(List.of()))
+                        .waitForResults(120, ctx());
+        assertTrue(result.contains("status: no_tasks"));
+        assertFalse(result.contains("have completed"));
     }
 }

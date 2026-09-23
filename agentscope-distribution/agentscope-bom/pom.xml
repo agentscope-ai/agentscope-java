@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.1-SNAPSHOT</revision>
+        <revision>2.0.4-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -246,6 +246,20 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions MongoDB (AgentStateStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-mongodb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions JDBC (shared dialect layer for MySQL/PostgreSQL stores) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Sandbox -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -286,6 +300,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-skill-git-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope aistio BYO data-plane SDK -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-aistio</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

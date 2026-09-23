@@ -24,16 +24,19 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -59,10 +62,17 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private static final Logger log = LoggerFactory.getLogger(CompactionMiddleware.class);
 
     private final WorkspaceManager workspaceManager;
+    private final Model model;
     private final CompactionConfig config;
 
     public CompactionMiddleware(WorkspaceManager workspaceManager, CompactionConfig config) {
+        this(workspaceManager, null, config);
+    }
+
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
         this.workspaceManager = workspaceManager;
+        this.model = model;
         this.config = config;
     }
 
@@ -77,7 +87,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         }
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         final Model dedicated = config.getModel();
-        final Model effective = dedicated != null ? dedicated : reActAgent.getModel(rc);
+        final Model effective =
+                dedicated != null ? dedicated : model != null ? model : reActAgent.getModel(rc);
 
         return Flux.defer(
                 () -> {
@@ -105,8 +116,20 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             new ConversationCompactor(effective, flushManager);
                     final Msg sys = systemMsg;
 
+                    // Only compaction may degrade; downstream reasoning errors must propagate.
                     return compactor
                             .compactIfNeeded(rc, conversation, effectiveConfig, agentId, sessionId)
+                            .onErrorResume(
+                                    error -> {
+                                        if (ExceptionUtils.containsInterruptedException(error)) {
+                                            return Mono.error(error);
+                                        }
+                                        log.warn(
+                                                "Compaction failed, continuing without compaction:"
+                                                        + " {}",
+                                                error.getMessage());
+                                        return Mono.just(Optional.empty());
+                                    })
                             .flatMapMany(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
@@ -129,14 +152,6 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                         newMessages,
                                                         input.tools(),
                                                         input.options()));
-                                    })
-                            .onErrorResume(
-                                    e -> {
-                                        log.warn(
-                                                "Compaction failed, continuing without compaction:"
-                                                        + " {}",
-                                                e.getMessage());
-                                        return next.apply(input);
                                     });
                 });
     }

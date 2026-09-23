@@ -1,8 +1,10 @@
-# Pipeline
+---
+title: Pipeline
+---
+
+> **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
 The pipeline example uses **Spring AI Alibaba** flow agents (**SequentialAgent**, **ParallelAgent**, **LoopAgent**) with **AgentScopeAgent** sub-agents and AgentScope **DashScopeChatModel** (`Model`). Each pipeline is built from ReActAgent-based AgentScopeAgents and invoked via `PipelineService`.
-
-**Location**: `agentscope-examples/multiagent-patterns/pipeline/`
 
 ## Prerequisites
 
@@ -320,24 +322,6 @@ public class PipelineCommandRunner implements ApplicationRunner {
 }
 ```
 
-## Build and run
-
-From the repo root:
-
-```bash
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline -am -B package -DskipTests
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
-```
-
-**With demo runner:**
-
-```bash
-export pipeline.runner.enabled=true
-./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
-```
-
-Or in `application.yml`: `pipeline.runner.enabled: true`.
-
 ## Configuration
 
 | Property | Default | Description |
@@ -345,32 +329,9 @@ Or in `application.yml`: `pipeline.runner.enabled: true`.
 | `spring.ai.dashscope.api-key` | (env `AI_DASHSCOPE_API_KEY`) | DashScope API key for the model |
 | `pipeline.runner.enabled` | `false` | If `true`, run Sequential, Parallel, and Loop demos on startup |
 
-## Project layout
-
-```
-agentscope-examples/multiagent-patterns/pipeline/
-├── README.md
-├── pom.xml
-└── src/main/
-    ├── java/.../pipeline/
-    │   ├── PipelineApplication.java
-    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) bean
-    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
-    │   ├── PipelineCommandRunner.java      # optional demo (pipeline.runner.enabled)
-    │   ├── PipelineRunnerConfig.java       # PipelineService bean
-    │   ├── sequential/
-    │   │   └── SequentialPipelineConfig.java
-    │   ├── parallel/
-    │   │   └── ParallelPipelineConfig.java
-    │   └── loop/
-    │       └── LoopPipelineConfig.java
-    └── resources/
-        └── application.yml
-```
-
 ## Related Documentation
 
-- [Routing](./routing.md) - Classify and route to specialist agents
-- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
-- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
-- [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern
+- [Routing](/v1/en/docs/multi-agent/routing) - Classify and route to specialist agents
+- [MsgHub](/v1/en/docs/task/msghub) - Message broadcasting for multi-agent conversations
+- [Handoffs](/v1/en/docs/multi-agent/handoffs) - State-driven routing and transfer between agents
+- [Multi-Agent Debate](/v1/en/docs/multi-agent/multiagent-debate) - Debate workflow pattern

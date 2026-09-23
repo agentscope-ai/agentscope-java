@@ -1,4 +1,6 @@
-# Session
+---
+title: Session
+---
 
 ## Purpose
 
@@ -22,7 +24,7 @@ The two are **parallel, independent paths**.
 
 ### Dual-Track Storage Layout
 
-```{mermaid}
+```mermaid
 graph LR
     Call[agent.call] --> Hook[SessionPersistenceHook]
     Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule snapshot)]
@@ -105,7 +107,7 @@ After `MemoryFlushManager.offloadMessages` completes, `WorkspaceManager.updateSe
 
 ## Related Pages
 
-- [Tool](./tool.md) — `session_search` / `session_list` / `session_history` parameters
-- [Memory](./memory.md) — when `offloadMessages` is called, and how it feeds back into `memory_search`
-- [Filesystem](./filesystem.md) — `userIdRef` + `NamespaceFactory` multi-tenant path isolation
-- [Architecture](./architecture.md) — `SessionPersistenceHook` position in `PostCallEvent` / `ErrorEvent`
+- [Tool](/v1/en/docs/harness/tool) — `session_search` / `session_list` / `session_history` parameters
+- [Memory](/v1/en/docs/harness/memory) — when `offloadMessages` is called, and how it feeds back into `memory_search`
+- [Filesystem](/v1/en/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` multi-tenant path isolation
+- [Architecture](/v1/en/docs/harness/architecture) — `SessionPersistenceHook` position in `PostCallEvent` / `ErrorEvent`

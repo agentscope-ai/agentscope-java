@@ -1,4 +1,6 @@
-# Chat Completions Web
+---
+title: Chat Completions Web
+---
 
 `agentscope-extensions-chat-completions-web` 把 AgentScope Agent 包装成 [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat) 兼容接口，让 OpenAI SDK、LangChain、LlamaIndex、ChatBox 等客户端"以为自己在调 OpenAI"。
 

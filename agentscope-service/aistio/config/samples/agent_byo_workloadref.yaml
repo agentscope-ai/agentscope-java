@@ -1,0 +1,24 @@
+apiVersion: agentscope.io/v1alpha1
+kind: Agent
+metadata:
+  name: order-agent
+  namespace: production
+  annotations:
+    agentscope.io/discovered-at: "2026-06-27T10:00:00Z"
+    agentscope.io/discovered-by: "DiscoveryController"
+spec:
+  type: BYO
+  runtime: agentscope-java
+  displayName: "订单处理"
+  description: "处理订单查询与退款"
+  byo:
+    workloadRef:
+      kind: Deployment
+      name: "order-agent-deployment"
+    agentPort: 8080
+    contractPath: "/agentscope"
+    overrides:
+      tools:
+        - type: McpServer
+          mcpServer:
+            name: "shared-knowledge-mcp"

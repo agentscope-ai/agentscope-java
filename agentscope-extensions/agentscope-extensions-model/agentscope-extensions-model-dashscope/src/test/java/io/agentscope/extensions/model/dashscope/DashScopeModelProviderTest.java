@@ -25,6 +25,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.transport.ProxyConfig;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -83,5 +84,20 @@ class DashScopeModelProviderTest {
     void modelRegistryFindsDashScopeProviderFromServiceLoader() {
         assertTrue(ModelRegistry.canResolve("dashscope:qwen-max"));
         assertTrue(ModelRegistry.canResolve("qwen-max"));
+    }
+
+    @Test
+    void createPassesMultimodalModelPatterns() {
+        DashScopeModelProvider provider = new DashScopeModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder()
+                        .apiKey("test-dashscope-key")
+                        .option("multimodalModelPatterns", List.of("deepseek-v4.1"))
+                        .build();
+
+        Model model = provider.create("dashscope:deepseek-v4.1", context);
+
+        assertTrue(model instanceof DashScopeChatModel);
+        assertTrue(model.getModelName().equals("deepseek-v4.1"));
     }
 }
