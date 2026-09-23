@@ -332,7 +332,8 @@ public final class SubagentDeclaration {
      * Optional compaction configuration for this subagent.
      *
      * <p>When {@code null}, the subagent inherits the parent configuration unless
-     * {@link #isCompactionDisabled()} is {@code true}.
+     * {@link #isCompactionDisabled()} is {@code true}. Remote subagents manage compaction on their
+     * own server and do not consume this setting.
      */
     public CompactionConfig getCompactionConfig() {
         return compactionConfig;

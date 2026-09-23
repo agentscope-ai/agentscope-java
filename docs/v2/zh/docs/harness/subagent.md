@@ -117,12 +117,12 @@ compaction:
 
 支持的字段包括 `triggerMessages`、`triggerTokens`、`reserved`、`keepMessages`、
 `keepTokens`、`keepTokensMin`、`keepTokensMax`、`keepTokensRatio`、`summaryPrompt`、
-`flushBeforeCompact` 和 `offloadBeforeCompact`。字段名区分大小写，类型错误或未知字段会使声明无效。
-省略 `compaction` 或设置为 null 时继承父配置。
+`flushBeforeCompact` 和 `offloadBeforeCompact`。字段名区分大小写。类型错误或未知字段会记录警告，
+但子 agent 声明仍会加载，并继承父 agent 的压缩配置。省略 `compaction` 或设置为 null 时也继承父配置。
 
 Java 中可调用 `SubagentDeclaration.Builder` 的 `.compaction(config)` 或 `.disableCompaction()`，
 最后一次调用生效；`.compaction(null)` 恢复继承。Java 配置还支持自定义模型、剪枝和参数截断。
-远程子 agent 自行管理压缩。
+这些设置仅适用于本地子 agent。远程子 agent 自行管理压缩，远程声明中的 `compaction` 设置会被忽略。
 
 ### 内置 `general-purpose`
 

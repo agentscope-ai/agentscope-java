@@ -121,11 +121,14 @@ compaction:
 Supported mapping fields are `triggerMessages`, `triggerTokens`, `reserved`, `keepMessages`,
 `keepTokens`, `keepTokensMin`, `keepTokensMax`, `keepTokensRatio`, `summaryPrompt`,
 `flushBeforeCompact`, and `offloadBeforeCompact`. Field names are case-sensitive. Invalid types
-or unknown fields reject the declaration. An absent or null `compaction` inherits the parent.
+or unknown fields produce a warning; the subagent remains available and inherits the parent's
+compaction settings. An absent or null `compaction` also inherits the parent.
 
 In Java, use `.compaction(config)` or `.disableCompaction()` on `SubagentDeclaration.Builder`.
 The last call wins; `.compaction(null)` restores inheritance. Java configurations also support
-custom models, pruning, and argument truncation. Remote subagents manage their own compaction.
+custom models, pruning, and argument truncation. These settings apply only to local subagents;
+remote subagents manage their own compaction, so a `compaction` value on a remote declaration is
+ignored.
 
 ### Built-in `general-purpose`
 
