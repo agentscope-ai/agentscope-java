@@ -135,6 +135,39 @@ class GeminiChatFormatterTest {
     }
 
     @Test
+    void testApplyThinkingLevelTrimsAndNormalizesCase() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().thinkingLevel("  HIGH ").build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertEquals("high", thinkingConfig.thinkingLevel().orElseThrow().toString());
+    }
+
+    @Test
+    void testApplyUnknownThinkingLevelIsForwardedUnchanged() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().thinkingLevel("unspecified").build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        // Unknown levels are still forwarded so the provider stays authoritative for new values.
+        var thinkingConfig = configBuilder.build().thinkingConfig().orElseThrow();
+        assertEquals("unspecified", thinkingConfig.thinkingLevel().orElseThrow().toString());
+    }
+
+    @Test
+    void testApplyBlankThinkingLevelIsDropped() {
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        GenerateOptions options = GenerateOptions.builder().thinkingLevel("   ").build();
+
+        formatter.applyOptions(configBuilder, options, null);
+
+        assertFalse(configBuilder.build().thinkingConfig().isPresent());
+    }
+
+    @Test
     void testExplicitIncludeThoughtsOverridesDefaultAndLegacyBehavior() {
         GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
         GenerateOptions options = GenerateOptions.builder().includeThoughts(false).build();
