@@ -233,6 +233,8 @@ HarnessAgent.builder()
 启用记忆能力时，agent 自动获得两个工具：
 
 - `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`，最多返回 30 条命中
+  （可用 `maxResults` 调整；超过 500 字符的命中行会被截断——需要完整上下文时用
+  `memory_get` 读取）
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
 
 模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。

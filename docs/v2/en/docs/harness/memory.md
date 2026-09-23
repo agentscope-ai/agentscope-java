@@ -234,6 +234,8 @@ Customize threshold or destination via `ToolResultEvictionConfig.builder()...bui
 When memory is enabled, the agent gets two tools:
 
 - `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`, up to 30 hits
+  (override with `maxResults`; matched lines longer than 500 chars are truncated — use
+  `memory_get` to read the full context around a hit)
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` — read a specific line range
 
 When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.

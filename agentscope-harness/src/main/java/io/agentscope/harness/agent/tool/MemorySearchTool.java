@@ -36,6 +36,16 @@ public class MemorySearchTool {
 
     private static final Logger log = LoggerFactory.getLogger(MemorySearchTool.class);
 
+    /** Default number of matching lines returned, matching the documented "up to 30 hits". */
+    static final int DEFAULT_MAX_RESULTS = 30;
+
+    /**
+     * Maximum length of a single returned match line (the {@code Source: <file>#<line>: } prefix
+     * excluded). Longer lines are truncated; {@code memory_get} remains the way to read the full
+     * context around a hit.
+     */
+    static final int MAX_LINE_CHARS = 500;
+
     private final WorkspaceManager workspaceManager;
 
     public MemorySearchTool(WorkspaceManager workspaceManager) {
@@ -52,31 +62,51 @@ public class MemorySearchTool {
     public String memorySearch(
             RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Keywords to search for in memory files")
-                    String query) {
+                    String query,
+            @ToolParam(
+                            name = "maxResults",
+                            description =
+                                    "Maximum number of matching lines to return (default: 30). Use"
+                                            + " memory_get to read full context around a match.",
+                            required = false)
+                    Integer maxResults) {
         if (query == null || query.isBlank()) {
             return "No query provided";
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        return keywordSearch(rc, query);
+        int limit = maxResults != null && maxResults > 0 ? maxResults : DEFAULT_MAX_RESULTS;
+        return keywordSearch(rc, query, limit);
     }
 
-    private String keywordSearch(RuntimeContext rc, String query) {
+    private String keywordSearch(RuntimeContext rc, String query, int maxResults) {
         StringJoiner results = new StringJoiner("\n");
         int matchCount = 0;
+        boolean truncatedByLimit = false;
 
         List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
         Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
 
         for (String relativePath : memoryPaths) {
+            if (matchCount >= maxResults) {
+                truncatedByLimit = true;
+                break;
+            }
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             if (content == null || content.isEmpty()) {
                 continue;
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
+                if (matchCount >= maxResults) {
+                    truncatedByLimit = true;
+                    break;
+                }
                 if (pattern.matcher(lines[i]).find()) {
-                    results.add(String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]));
+                    results.add(
+                            String.format(
+                                    "Source: %s#%d: %s",
+                                    relativePath, i + 1, truncateLine(lines[i])));
                     matchCount++;
                 }
             }
@@ -85,6 +115,21 @@ public class MemorySearchTool {
         if (matchCount == 0) {
             return "No matching memories found for: " + query;
         }
-        return "Found " + matchCount + " matches:\n\n" + results;
+        String header = "Found " + matchCount + " matches:\n\n" + results;
+        if (truncatedByLimit) {
+            header +=
+                    "\n\n[Results truncated at "
+                            + matchCount
+                            + " matches — refine the query or"
+                            + " use memory_get to read specific files]";
+        }
+        return header;
+    }
+
+    private static String truncateLine(String line) {
+        if (line.length() <= MAX_LINE_CHARS) {
+            return line;
+        }
+        return line.substring(0, MAX_LINE_CHARS) + "... [line truncated, use memory_get]";
     }
 }
