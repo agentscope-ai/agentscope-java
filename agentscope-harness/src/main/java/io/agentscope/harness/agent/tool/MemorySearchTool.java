@@ -43,8 +43,14 @@ public class MemorySearchTool {
      * Hard ceiling for the model-supplied {@code maxResults}. The parameter is model-controlled,
      * so without a ceiling a {@code maxResults=100000} call re-opens the context-overflow path
      * this tool's bounding exists to close.
+     *
+     * <p>The value keeps the worst case under the project's tool-result budget: a hit is at most
+     * {@link #MAX_LINE_CHARS} (500) plus the {@code Source: <path>#<line>: } prefix and the
+     * truncation suffix (~550 chars), and {@code memory_search} is excluded from tool-result
+     * eviction, so nothing downstream trims an oversized result. 100 x ~550 = ~55K chars stays
+     * under {@code ToolResultEvictionConfig.DEFAULT_MAX_RESULT_CHARS} (80K).
      */
-    static final int MAX_RESULTS_CEILING = 200;
+    static final int MAX_RESULTS_CEILING = 100;
 
     /**
      * Maximum length of a single returned match line (the {@code Source: <file>#<line>: } prefix
@@ -74,7 +80,7 @@ public class MemorySearchTool {
                             name = "maxResults",
                             description =
                                     "Maximum number of matching lines to return (default: 30,"
-                                            + " max: 200). Use memory_get to read full context"
+                                            + " max: 100). Use memory_get to read full context"
                                             + " around a match.",
                             required = false)
                     Integer maxResults) {

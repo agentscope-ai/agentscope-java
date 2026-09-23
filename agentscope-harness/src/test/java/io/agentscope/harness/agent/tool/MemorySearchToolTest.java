@@ -166,10 +166,10 @@ class MemorySearchToolTest {
         String result = tool.memorySearch(RT, "keyword", 100000);
 
         assertTrue(
-                result.startsWith("Found 200+ matches"),
+                result.startsWith("Found 100+ matches"),
                 () -> "model-supplied maxResults must be clamped to the ceiling: " + result);
         assertFalse(
-                result.contains("fact no 201"), "lines beyond the ceiling must not be returned");
+                result.contains("fact no 101"), "lines beyond the ceiling must not be returned");
     }
 
     @Test
