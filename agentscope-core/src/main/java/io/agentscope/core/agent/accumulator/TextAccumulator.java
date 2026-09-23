@@ -84,6 +84,14 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     }
 
     /**
+     * Returns a merged single-block view of the accumulated text.
+     *
+     * <p>The only guarantee this view gives is "the full text in stream order". Its metadata keeps
+     * the merged values, but once a Part boundary was crossed the scalar thought signature is
+     * dropped (no single signature covers text from multiple Parts), so consumers must not infer
+     * "signature present means this block is one replayable Part" beyond the single-Part case.
+     * Replay-accurate per-Part blocks are available from {@link #buildAllTextBlocks()}.
+     *
      * @hidden
      */
     @Override

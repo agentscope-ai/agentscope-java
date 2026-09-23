@@ -85,6 +85,15 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     }
 
     /**
+     * Returns a merged single-block view of the accumulated thinking.
+     *
+     * <p>The only guarantee this view gives is "the full thinking text in stream order". Its
+     * metadata keeps the merged values, but once a Part boundary was crossed the scalar thought
+     * signature is dropped (no single signature covers text from multiple Parts), so consumers
+     * must not infer "signature present means this block is one replayable Part" beyond the
+     * single-Part case. Replay-accurate per-Part blocks are available from {@link
+     * #buildAllThinkingBlocks()}.
+     *
      * @hidden
      */
     @Override

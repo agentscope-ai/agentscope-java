@@ -68,6 +68,10 @@ public final class TextBlock extends ContentBlock {
      * Gets provider-specific metadata associated with this text block.
      *
      * @return The metadata map, or an empty map if not set
+     * @apiNote The returned map is unmodifiable and never null (matching {@link ToolUseBlock}).
+     *     Earlier builds returned {@code null} when unset and a mutable map otherwise: callers
+     *     that used {@code null} as the "no metadata" signal must switch to {@code isEmpty()},
+     *     and callers that mutated the returned map must build their own copy.
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Map<String, Object> getMetadata() {

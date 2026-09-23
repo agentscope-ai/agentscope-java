@@ -22,6 +22,7 @@ import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -187,10 +188,29 @@ public class GeminiMessageConverter {
                         continue;
                     }
 
-                    Part.Builder partBuilder =
-                            Part.builder().text(thinkingBlock.getThinking()).thought(true);
-                    GeminiThoughtSignatureUtils.applyMetadata(
-                            partBuilder, thinkingBlock.getMetadata());
+                    Part.Builder partBuilder = Part.builder().text(thinkingBlock.getThinking());
+                    boolean signatureRestored =
+                            GeminiThoughtSignatureUtils.applyMetadata(
+                                    partBuilder, thinkingBlock.getMetadata());
+                    boolean hadSignature =
+                            thinkingBlock.getMetadata() != null
+                                    && thinkingBlock
+                                            .getMetadata()
+                                            .containsKey(
+                                                    ContentBlockMetadataKeys.THOUGHT_SIGNATURE);
+                    if (signatureRestored || !hadSignature) {
+                        // Signed thought Parts are replayed verbatim so Gemini can verify its
+                        // prior reasoning. Unsigned thought summaries keep the thought flag as
+                        // before signature support existed.
+                        partBuilder.thought(true);
+                    } else {
+                        // A signature existed but could not be restored. A signature-less
+                        // thought Part is a different (likely rejected) request shape, so
+                        // degrade to an ordinary text Part instead of shipping the thought flag.
+                        log.warn(
+                                "ThinkingBlock thought signature could not be restored; replaying"
+                                        + " it as an ordinary text Part");
+                    }
                     parts.add(partBuilder.build());
 
                 } else {
