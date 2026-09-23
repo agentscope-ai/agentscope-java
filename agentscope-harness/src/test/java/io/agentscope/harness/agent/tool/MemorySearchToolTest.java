@@ -66,7 +66,7 @@ class MemorySearchToolTest {
 
         String result = tool.memorySearch(RT, "keyword", null);
 
-        assertTrue(result.startsWith("Found 30 matches"), () -> "should cap at 30: " + result);
+        assertTrue(result.startsWith("Found 30+ matches"), () -> "should cap at 30: " + result);
         assertFalse(result.contains("fact no 31"), "lines beyond the cap must not be returned");
     }
 
@@ -80,7 +80,7 @@ class MemorySearchToolTest {
 
         String result = tool.memorySearch(RT, "keyword", 5);
 
-        assertTrue(result.startsWith("Found 5 matches"), () -> result);
+        assertTrue(result.startsWith("Found 5+ matches"), () -> result);
         assertFalse(result.contains("fact no 6"), "lines beyond maxResults must not be returned");
     }
 
@@ -139,7 +139,7 @@ class MemorySearchToolTest {
         String result = tool.memorySearch(RT, "keyword", null);
 
         assertEquals(
-                "Found 1 matches:\n\nSource: memory/2026-09-01.md#1: short fact about keyword",
+                "Found 1 match:\n\nSource: memory/2026-09-01.md#1: short fact about keyword",
                 result);
     }
 
@@ -153,5 +153,61 @@ class MemorySearchToolTest {
     void noMatchStillReportsQuery() {
         String result = tool.memorySearch(RT, "nothing-matches-this", null);
         assertEquals("No matching memories found for: nothing-matches-this", result);
+    }
+
+    @Test
+    void maxResultsClampedToHardCeiling() throws Exception {
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 250; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+
+        String result = tool.memorySearch(RT, "keyword", 100000);
+
+        assertTrue(
+                result.startsWith("Found 200+ matches"),
+                () -> "model-supplied maxResults must be clamped to the ceiling: " + result);
+        assertFalse(
+                result.contains("fact no 201"), "lines beyond the ceiling must not be returned");
+    }
+
+    @Test
+    void noTruncationNoteWhenCapReachedAtExactEnd() throws Exception {
+        // Exactly 30 matches and nothing after: loop-position heuristics would emit a false
+        // "refine the query" note; the flag must come from a real extra match.
+        StringBuilder ledger = new StringBuilder();
+        for (int i = 1; i <= 30; i++) {
+            ledger.append("fact no ").append(i).append(" about keyword\n");
+        }
+        writeMemoryFile("memory/2026-09-01.md", ledger.toString());
+        // A second file with no matches — must not trigger the note either.
+        writeMemoryFile("memory/2026-09-02.md", "unrelated content\n");
+
+        String result = tool.memorySearch(RT, "keyword", null);
+
+        assertEquals("Found 30 matches", result.substring(0, 16));
+        assertFalse(
+                result.toLowerCase().contains("truncat"),
+                () -> "no extra match exists, so no truncation note: " + result);
+    }
+
+    @Test
+    void truncateLineDoesNotSplitSurrogatePairs() throws Exception {
+        // CJK Extension B ideographs are surrogate pairs in UTF-16; a naive cut at 500 chars
+        // can land between the halves. 260 pairs = 520 code units, so the cut is inside.
+        String pairs = "\uD840\uDC00".repeat(260);
+        String longLine = "keyword " + pairs;
+        writeMemoryFile("memory/2026-09-01.md", longLine + "\n");
+
+        String result = tool.memorySearch(RT, "keyword", null);
+
+        int idx = result.indexOf("[line truncated");
+        assertTrue(idx > 0, "line should be truncated: " + result);
+        // The character right before the note must not be a lone high surrogate.
+        char before = result.charAt(idx - 1);
+        assertFalse(
+                Character.isHighSurrogate(before),
+                "cut must not leave a lone high surrogate before the truncation note");
     }
 }
