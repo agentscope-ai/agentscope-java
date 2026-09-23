@@ -264,8 +264,11 @@ public class GenerateOptions {
     /**
      * Gets the model-specific thinking level.
      *
-     * <p>Supported values are model dependent. Providers that support this option are responsible
-     * for translating it to their native request type.
+     * <p>Supported values are model dependent. For Gemini 3 models, accepted values are
+     * {@code "minimal"}, {@code "low"}, {@code "medium"}, and {@code "high"} (matching Gemini's
+     * ThinkingLevel values). The value is passed through to the provider as-is without validation
+     * here; providers that support this option are responsible for translating it to their native
+     * request type and rejecting unsupported values.
      *
      * @return the thinking level, or null if not set
      */
@@ -753,7 +756,10 @@ public class GenerateOptions {
         /**
          * Sets the model-specific thinking level.
          *
-         * <p>Supported values are model dependent and are validated by the target provider.
+         * <p>Supported values are model dependent. For Gemini 3 models, use {@code "minimal"},
+         * {@code "low"}, {@code "medium"}, or {@code "high"} (matching Gemini's ThinkingLevel
+         * values). The value is passed through to the provider as-is without validation; the
+         * target provider rejects unsupported values.
          *
          * @param thinkingLevel the thinking level
          * @return this builder

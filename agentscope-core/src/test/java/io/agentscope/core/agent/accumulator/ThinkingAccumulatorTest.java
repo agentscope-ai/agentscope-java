@@ -69,10 +69,10 @@ class ThinkingAccumulatorTest {
 
         assertTrue(accumulator.hasContent());
         assertEquals("Reasoning", aggregated.getThinking());
-        assertNull(aggregated.getMetadata());
+        assertTrue(aggregated.getMetadata().isEmpty());
         assertEquals(1, blocks.size());
         assertEquals("Reasoning", blocks.get(0).getThinking());
-        assertNull(blocks.get(0).getMetadata());
+        assertTrue(blocks.get(0).getMetadata().isEmpty());
     }
 
     @Test
