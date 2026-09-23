@@ -39,9 +39,9 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>doFinally</h2>
  * <ol>
+ *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
- *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
  * </ol>
  *

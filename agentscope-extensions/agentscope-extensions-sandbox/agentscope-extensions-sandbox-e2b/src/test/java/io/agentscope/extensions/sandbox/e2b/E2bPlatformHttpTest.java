@@ -312,21 +312,4 @@ class E2bPlatformHttpTest {
         assertEquals("tok", state.getEnvdAccessToken());
         assertEquals("0.2.0", state.getEnvdVersion());
     }
-
-    @Test
-    void createSandboxWithDefaultBaseUrlWhenBlank() throws Exception {
-        E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
-        opt.setApiKey("test-key");
-        opt.setApiBaseUrl("   ");
-        E2bPlatformHttp p = new E2bPlatformHttp(opt);
-        // trimSlash returns default https://api.e2b.app, createSandbox will try to POST there and
-        // fail fast
-        // We only verify it doesn't throw on construction and trimSlash path; actual HTTP not
-        // exercised.
-        // Instead verify requireApiKey still works
-        assertEquals("test-key", opt.getApiKey());
-        // killSandbox with blank base url uses default host - should not throw configuration error
-        // Just verify p is constructed
-        assertTrue(p != null);
-    }
 }

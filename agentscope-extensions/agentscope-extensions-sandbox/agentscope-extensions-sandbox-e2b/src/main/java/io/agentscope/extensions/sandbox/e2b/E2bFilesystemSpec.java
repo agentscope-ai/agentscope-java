@@ -96,10 +96,10 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     /**
-     * Max AgentScope-native snapshots kept per sandbox after each persist; {@code <= 0} disables
-     * pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning behaviour.
-     * Legacy/foreign snapshots are never pruned. See {@link
-     * E2bSandboxClientOptions#setSnapshotRetention(int)}.
+     * Maximum number of snapshots created by this session that are kept on shutdown; {@code <= 0}
+     * disables pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning
+     * behaviour. See {@link E2bSandboxClientOptions#setSnapshotRetention(int)} for the full
+     * contract.
      */
     public E2bFilesystemSpec snapshotRetention(int snapshotRetention) {
         options.setSnapshotRetention(snapshotRetention);

@@ -70,6 +70,24 @@ public class E2bSandbox extends AbstractBaseSandbox {
     }
 
     @Override
+    public void stop() throws Exception {
+        int recordedBefore = e2bState.getSnapshotIds().size();
+        try {
+            super.stop();
+        } catch (Exception e) {
+            // doPersistWorkspace records the new snapshot id before the archive is persisted;
+            // on failure the archive still references the previous snapshot, so roll the record
+            // back. This keeps the shared state consistent by itself — no local flag could cover
+            // restarts, node switches, or repeated shutdowns.
+            List<String> ids = e2bState.getSnapshotIds();
+            if (ids.size() > recordedBefore) {
+                ids.subList(recordedBefore, ids.size()).clear();
+            }
+            throw e;
+        }
+    }
+
+    @Override
     public void shutdown() throws Exception {
         if (!e2bState.isSandboxOwned()) {
             return;

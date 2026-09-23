@@ -150,7 +150,11 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setConnectTimeoutSeconds(call.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(call.getReadTimeoutSeconds());
         o.setMaxRetries(call.getMaxRetries());
-        o.setSnapshotRetention(call.getSnapshotRetention());
+        // 0 means "left at default" (indistinguishable from an explicit disable on a primitive),
+        // so only a positive per-call value overrides; the client default governs otherwise.
+        if (call.getSnapshotRetention() > 0) {
+            o.setSnapshotRetention(call.getSnapshotRetention());
+        }
         return o;
     }
 
