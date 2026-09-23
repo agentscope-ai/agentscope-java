@@ -537,6 +537,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected ShutdownStateSaver shutdownStateSaverForCall(Object callScope) {
         if (stateStore == null) {
+            // The constructor also skips bindStateSaver when there is no state store.
             return null;
         }
         CallExecution scope = (CallExecution) callScope;
@@ -1839,7 +1840,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Shared terminal write, including cancellation while a normal save is in flight. */
         Mono<Void> terminalSave;
 
-        /** Serializes forced-shutdown checkpoints with the terminal write. */
+        /**
+         * Serializes forced-shutdown checkpoints with terminal writes across blocking store I/O.
+         * A slow checkpoint can delay cancellation cleanup and release of the same-session gate.
+         * Lock order is saveLock then this CallExecution monitor; never acquire saveLock while
+         * holding the CallExecution monitor.
+         */
         final Object saveLock = new Object();
 
         /**

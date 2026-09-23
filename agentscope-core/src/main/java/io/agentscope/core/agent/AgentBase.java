@@ -380,7 +380,9 @@ public abstract class AgentBase implements Agent {
     /**
      * Optional per-call override of the agent's registered shutdown state saver. The saver may
      * perform blocking I/O; callers of the saver remain responsible for their own thread and
-     * timeout policy.
+     * timeout policy. If this saver defers to an in-flight terminal write, cancellation cleanup
+     * must await that write before the request is unregistered; otherwise shutdown may terminate
+     * before the write completes.
      */
     protected ShutdownStateSaver shutdownStateSaverForCall(Object scope) {
         return null;
