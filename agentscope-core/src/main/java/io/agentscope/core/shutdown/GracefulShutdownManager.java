@@ -28,11 +28,14 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Global manager for graceful shutdown lifecycle and active request tracking.
@@ -73,6 +76,8 @@ public final class GracefulShutdownManager {
     private final AtomicReference<ScheduledFuture<?>> monitorFuture = new AtomicReference<>();
     private final AtomicReference<Sinks.Empty<Void>> shutdownTimeoutSignal =
             new AtomicReference<>(Sinks.empty());
+    private final AtomicInteger pendingCheckpoints = new AtomicInteger();
+    private final AtomicLong lifecycleEpoch = new AtomicLong();
 
     private GracefulShutdownManager() {
         AgentScopeJvmShutdownHook.register(this);
@@ -105,8 +110,9 @@ public final class GracefulShutdownManager {
     /**
      * Register a {@link ShutdownStateSaver} for the given agent.
      *
-     * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}
-     * (with {@code shutdownInterrupted} set to {@code true}).
+     * <p>The saver is invoked during shutdown to persist the agent's {@link AgentState}. Legacy
+     * agent-level savers receive a state with {@code shutdownInterrupted} set; request-scoped savers
+     * decide whether to set that flag or join an existing terminal write unchanged.
      */
     public void bindStateSaver(Agent agent, ShutdownStateSaver saver) {
         if (agent == null || saver == null) {
@@ -300,11 +306,42 @@ public final class GracefulShutdownManager {
                 shutdownTimeoutSignal.get().tryEmitEmpty();
 
                 for (ActiveRequestContext ctx : activeRequestsById.values()) {
-                    ctx.saveState();
                     if (ctx.interruptForShutdown()) {
                         log.info(
                                 "Shutdown force interrupt issued for request {}",
                                 ctx.getRequestId());
+                    }
+                    // Store I/O and terminal-save joins may block. Never run either on the
+                    // single shutdown monitor, or one stalled request prevents enforcement for
+                    // every other request.
+                    boolean checkpoint;
+                    synchronized (terminationLock) {
+                        checkpoint =
+                                activeRequestsById.containsKey(ctx.getRequestId())
+                                        && ctx.startTimeoutCheckpoint();
+                        if (checkpoint) {
+                            pendingCheckpoints.incrementAndGet();
+                        }
+                    }
+                    if (checkpoint) {
+                        long epoch = lifecycleEpoch.get();
+                        try {
+                            Schedulers.boundedElastic()
+                                    .schedule(
+                                            () -> {
+                                                try {
+                                                    ctx.saveState();
+                                                } finally {
+                                                    finishCheckpoint(epoch);
+                                                }
+                                            });
+                        } catch (RuntimeException error) {
+                            finishCheckpoint(epoch);
+                            log.warn(
+                                    "Failed to schedule shutdown checkpoint for request {}",
+                                    ctx.getRequestId(),
+                                    error);
+                        }
                     }
                 }
             }
@@ -312,12 +349,20 @@ public final class GracefulShutdownManager {
     }
 
     private void updateTerminatedIfNoRequests() {
-        if (getState() == ShutdownState.SHUTTING_DOWN && activeRequestsById.isEmpty()) {
-            if (state.compareAndSet(ShutdownState.SHUTTING_DOWN, ShutdownState.TERMINATED)) {
-                synchronized (terminationLock) {
-                    terminationLock.notifyAll();
-                }
+        synchronized (terminationLock) {
+            if (getState() == ShutdownState.SHUTTING_DOWN
+                    && activeRequestsById.isEmpty()
+                    && pendingCheckpoints.get() == 0
+                    && state.compareAndSet(ShutdownState.SHUTTING_DOWN, ShutdownState.TERMINATED)) {
+                terminationLock.notifyAll();
             }
+        }
+    }
+
+    private void finishCheckpoint(long epoch) {
+        if (epoch == lifecycleEpoch.get()) {
+            pendingCheckpoints.decrementAndGet();
+            updateTerminatedIfNoRequests();
         }
     }
 
@@ -352,6 +397,8 @@ public final class GracefulShutdownManager {
      * Reset manager state. Intended for testing and demo purposes only.
      */
     public void resetForTesting() {
+        lifecycleEpoch.incrementAndGet();
+        pendingCheckpoints.set(0);
         ScheduledFuture<?> future = monitorFuture.getAndSet(null);
         if (future != null) {
             future.cancel(false);

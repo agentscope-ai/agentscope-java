@@ -377,7 +377,11 @@ public abstract class AgentBase implements Agent {
         return null;
     }
 
-    /** Optional per-call override of the agent's registered shutdown state saver. */
+    /**
+     * Optional per-call override of the agent's registered shutdown state saver. The saver may
+     * perform blocking I/O; the shutdown timeout monitor invokes it off-thread. Other callers of
+     * the saver remain responsible for their own thread and timeout policy.
+     */
     protected ShutdownStateSaver shutdownStateSaverForCall(Object scope) {
         return null;
     }
@@ -396,7 +400,9 @@ public abstract class AgentBase implements Agent {
      * previously-enqueued call with the same key to terminate before running, then becomes the tail
      * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
      * cancel). A cancelled call retains its place until its predecessor and cancellation cleanup
-     * finish, so cancelling a queued waiter cannot let later calls overtake an active writer.
+     * finish, so cancelling a queued waiter cannot let later calls overtake an active writer. A
+     * stalled predecessor or cleanup also stalls later same-key calls; this method does not impose a
+     * separate queue timeout.
      */
     private <T> Mono<T> serializeOnKey(
             Object key, Mono<T> action, Supplier<Mono<Void>> cancelCleanup) {

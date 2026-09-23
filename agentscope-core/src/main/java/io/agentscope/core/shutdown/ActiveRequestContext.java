@@ -38,6 +38,7 @@ final class ActiveRequestContext {
     private final String requestId;
     private final AgentBase agent;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
+    private final AtomicBoolean timeoutCheckpointStarted = new AtomicBoolean(false);
 
     private record SaverBinding(ShutdownStateSaver saver, boolean requestScoped) {}
 
@@ -98,6 +99,10 @@ final class ActiveRequestContext {
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }
+    }
+
+    boolean startTimeoutCheckpoint() {
+        return timeoutCheckpointStarted.compareAndSet(false, true);
     }
 
     boolean interruptForShutdown() {

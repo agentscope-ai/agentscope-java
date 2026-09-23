@@ -34,7 +34,9 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.shutdown.GracefulShutdownConfig;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
@@ -69,7 +71,7 @@ class ReActAgentCancellationPersistenceTest {
     }
 
     @Test
-    void shutdownCompletesAfterCancellationSaveFailure() throws Exception {
+    void shutdownCompletesAfterCancellationSaveRetry() throws Exception {
         shutdownDuringCancellation(true, false);
     }
 
@@ -108,6 +110,33 @@ class ReActAgentCancellationPersistenceTest {
         } finally {
             store.proceed.countDown();
             call.dispose();
+        }
+    }
+
+    @Test
+    void shutdownCheckpointStopsWaitingAfterConfiguredTimeout() throws Exception {
+        GracefulShutdownManager manager = GracefulShutdownManager.getInstance();
+        BlockingStore store = new BlockingStore();
+        WaitingModel model = new WaitingModel(false);
+        ReActAgent agent =
+                ReActAgent.builder().name("probe").model(model).stateStore(store).build();
+        Disposable call = agent.call(List.of(user("request")), CTX).subscribe();
+        try {
+            assertTrue(model.started.await(3, TimeUnit.SECONDS));
+            call.dispose();
+            assertTrue(store.entered.await(3, TimeUnit.SECONDS));
+            manager.setConfig(
+                    new GracefulShutdownConfig(
+                            Duration.ofMillis(100), PartialReasoningPolicy.SAVE));
+            CompletableFuture.runAsync(() -> manager.saveOnInterruptObserved(model.requestId.get()))
+                    .get(2, TimeUnit.SECONDS);
+            assertEquals(1, store.writes.get());
+            store.proceed.countDown();
+            assertTrue(store.finished.await(3, TimeUnit.SECONDS));
+        } finally {
+            store.proceed.countDown();
+            call.dispose();
+            manager.setConfig(GracefulShutdownConfig.DEFAULT);
         }
     }
 
@@ -170,18 +199,12 @@ class ReActAgentCancellationPersistenceTest {
             store.proceed.countDown();
             assertTrue(manager.awaitTermination(Duration.ofSeconds(3)));
             assertEquals(0, manager.getActiveRequestCount());
-            assertEquals(1, store.writes.get(), "cancelled queued calls must not execute or save");
-            if (!fail) {
-                assertTrue(
-                        text(store.get(
-                                                "probe-user",
-                                                "probe-session",
-                                                "agent_state",
-                                                AgentState.class)
-                                        .orElseThrow()
-                                        .getContext())
-                                .contains("must survive"));
-            }
+            assertEquals(fail ? 2 : 1, store.writes.get(), "only the failed write is retried");
+            assertTrue(
+                    text(store.get("probe-user", "probe-session", "agent_state", AgentState.class)
+                                    .orElseThrow()
+                                    .getContext())
+                            .contains("must survive"));
         } finally {
             store.proceed.countDown();
             call.dispose();
@@ -257,6 +280,30 @@ class ReActAgentCancellationPersistenceTest {
     }
 
     @Test
+    void cancellationRetriesFailedInFlightTerminalSave() throws Exception {
+        BlockingStore store = new BlockingStore();
+        store.fail = true;
+        ReActAgent agent =
+                ReActAgent.builder().name("probe").model(new Capturing()).stateStore(store).build();
+        Disposable call = agent.call(List.of(user("must survive")), CTX).subscribe();
+        try {
+            assertTrue(store.entered.await(3, TimeUnit.SECONDS));
+            call.dispose();
+            store.proceed.countDown();
+            assertTrue(store.secondFinished.await(3, TimeUnit.SECONDS));
+            assertEquals(2, store.writes.get());
+            assertTrue(
+                    text(store.get("probe-user", "probe-session", "agent_state", AgentState.class)
+                                    .orElseThrow()
+                                    .getContext())
+                            .contains("must survive"));
+        } finally {
+            store.proceed.countDown();
+            call.dispose();
+        }
+    }
+
+    @Test
     void cancellationSaveFailureReleasesSessionQueue() throws Exception {
         cancellationSaveAndResume(true);
     }
@@ -283,10 +330,8 @@ class ReActAgentCancellationPersistenceTest {
             assertFalse(next.isDone());
             store.proceed.countDown();
             assertNotNull(next.get(10, TimeUnit.SECONDS));
-            assertEquals(2, store.writes.get());
-            if (!fail) {
-                assertTrue(text(model.prompt).contains("first"));
-            }
+            assertEquals(fail ? 3 : 2, store.writes.get());
+            assertTrue(text(model.prompt).contains("first"));
         } finally {
             store.proceed.countDown();
             first.dispose();

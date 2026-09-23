@@ -134,6 +134,7 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -488,7 +489,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
             // cache() keeps an already-started write alive when its subscriber cancels. The
             // cancellation cleanup joins that same write instead of racing a second CAS.
-            scope.terminalSave =
+            AtomicReference<Mono<Void>> created = new AtomicReference<>();
+            Mono<Void> save =
                     Mono.<Void>fromRunnable(
                                     () -> {
                                         synchronized (scope.saveLock) {
@@ -516,8 +518,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         }
                                     })
                             .subscribeOn(Schedulers.boundedElastic())
+                            .doOnError(
+                                    error -> {
+                                        // The shared write has finished. A later cancellation
+                                        // cleanup may need to retry a transient store failure.
+                                        synchronized (scope) {
+                                            if (scope.terminalSave == created.get()) {
+                                                scope.terminalSave = null;
+                                            }
+                                        }
+                                    })
                             .cache();
-            return scope.terminalSave;
+            created.set(save);
+            scope.terminalSave = save;
+            return save;
         }
     }
 
@@ -532,7 +546,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 terminal = scope.terminalSave;
             }
             if (terminal != null) {
-                terminal.block();
+                joinTerminalSaveForShutdown(terminal);
                 return;
             }
             synchronized (scope.saveLock) {
@@ -563,14 +577,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return;
                 }
             }
-            terminal.block();
+            joinTerminalSaveForShutdown(terminal);
         };
+    }
+
+    private void joinTerminalSaveForShutdown(Mono<Void> terminal) {
+        Duration timeout = shutdownManager.getConfig().shutdownTimeout();
+        if (timeout == null) {
+            terminal.block();
+        } else {
+            // cache() keeps the write running after this wait expires. The request's normal
+            // cancellation cleanup still joins that write before its session gate is released.
+            terminal.block(timeout);
+        }
     }
 
     @Override
     protected Mono<Void> afterAgentCancellation(Object callScope) {
         CallExecution scope = (CallExecution) callScope;
         return Mono.defer(() -> saveStateToSession(scope, true))
+                .onErrorResume(error -> saveStateToSession(scope, true))
                 .onErrorResume(
                         error -> {
                             log.warn("Failed to persist agent state after cancellation", error);
