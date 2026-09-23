@@ -130,6 +130,20 @@ class SkillRegistry {
         return new ConcurrentHashMap<>(registeredSkills);
     }
 
+    /**
+     * Copies every registered skill into {@code target}.
+     *
+     * <p>Skill instances are shared rather than cloned: {@link AgentSkill} implementations are
+     * immutable and safe to register in more than one agent. Only the registry's own maps are
+     * duplicated, so later registrations on either side stay independent.
+     *
+     * @param target The registry to copy into (must not be null)
+     */
+    void copyTo(SkillRegistry target) {
+        target.skills.putAll(this.skills);
+        target.registeredSkills.putAll(this.registeredSkills);
+    }
+
     // ==================== Removal Operations ====================
 
     /**
