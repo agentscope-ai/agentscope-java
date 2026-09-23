@@ -253,7 +253,9 @@ public class GenerateOptions {
      * Gets whether model thoughts should be included in the response.
      *
      * <p>This option only controls whether supported models return their thought summaries. It does
-     * not by itself control the amount of thinking performed by the model.
+     * not by itself control the amount of thinking performed by the model. It is a provider-specific
+     * hint, not framework-wide behavior: providers that support it translate it to their native
+     * request type, and providers that do not support it silently ignore it.
      *
      * @return whether thoughts should be included, or null if not set
      */
@@ -266,9 +268,11 @@ public class GenerateOptions {
      *
      * <p>Supported values are model dependent. For Gemini 3 models, accepted values are
      * {@code "minimal"}, {@code "low"}, {@code "medium"}, and {@code "high"} (matching Gemini's
-     * ThinkingLevel values). The value is passed through to the provider as-is without validation
-     * here; providers that support this option are responsible for translating it to their native
-     * request type and rejecting unsupported values.
+     * ThinkingLevel values). Like {@link #getIncludeThoughts()}, this is a provider-specific hint:
+     * providers that support this option translate it to their native request type (the Gemini
+     * formatter trims surrounding whitespace and normalizes the case of the known values), while
+     * providers that do not support it silently ignore it. Values outside a provider's known set
+     * may surface as provider-side errors.
      *
      * @return the thinking level, or null if not set
      */
@@ -743,7 +747,9 @@ public class GenerateOptions {
          * Sets whether model thought summaries should be included in the response.
          *
          * <p>Use {@code false} to explicitly suppress thought summaries while retaining any
-         * provider-specific thinking configuration.
+         * provider-specific thinking configuration. This is a provider-specific hint: providers
+         * that support it translate it to their native request type, and providers that do not
+         * support it silently ignore it.
          *
          * @param includeThoughts whether thoughts should be included in the response
          * @return this builder
@@ -758,8 +764,11 @@ public class GenerateOptions {
          *
          * <p>Supported values are model dependent. For Gemini 3 models, use {@code "minimal"},
          * {@code "low"}, {@code "medium"}, or {@code "high"} (matching Gemini's ThinkingLevel
-         * values). The value is passed through to the provider as-is without validation; the
-         * target provider rejects unsupported values.
+         * values). Like {@link #includeThoughts(Boolean)}, this is a provider-specific hint:
+         * providers that support it translate it to their native request type (the Gemini
+         * formatter trims surrounding whitespace and normalizes the case of the known values),
+         * while providers that do not support it silently ignore it. Values outside a provider's
+         * known set may surface as provider-side errors.
          *
          * @param thinkingLevel the thinking level
          * @return this builder
