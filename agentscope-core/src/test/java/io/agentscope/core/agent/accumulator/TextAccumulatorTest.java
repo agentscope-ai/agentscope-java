@@ -77,10 +77,10 @@ class TextAccumulatorTest {
 
         assertTrue(accumulator.hasContent());
         assertEquals("Answer", aggregated.getText());
-        assertNull(aggregated.getMetadata());
+        assertTrue(aggregated.getMetadata().isEmpty());
         assertEquals(1, blocks.size());
         assertEquals("Answer", blocks.get(0).getText());
-        assertNull(blocks.get(0).getMetadata());
+        assertTrue(blocks.get(0).getMetadata().isEmpty());
     }
 
     @Test

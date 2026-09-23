@@ -18,6 +18,7 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,7 +49,10 @@ public final class TextBlock extends ContentBlock {
             @JsonProperty("text") String text,
             @JsonProperty("metadata") Map<String, Object> metadata) {
         this.text = text != null ? text : "";
-        this.metadata = metadata != null ? new HashMap<>(metadata) : null;
+        this.metadata =
+                metadata == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
     /**
@@ -63,9 +67,9 @@ public final class TextBlock extends ContentBlock {
     /**
      * Gets provider-specific metadata associated with this text block.
      *
-     * @return The metadata map, or null if no metadata is set
+     * @return The metadata map, or an empty map if not set
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Map<String, Object> getMetadata() {
         return metadata;
     }

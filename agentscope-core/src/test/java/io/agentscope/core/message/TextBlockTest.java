@@ -17,7 +17,8 @@ package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.util.JsonUtils;
 import java.util.Map;
@@ -51,7 +52,8 @@ class TextBlockTest {
         String serialized = JsonUtils.getJsonCodec().toJson(restored);
 
         assertEquals("answer", restored.getText());
-        assertNull(restored.getMetadata());
+        assertNotNull(restored.getMetadata());
+        assertTrue(restored.getMetadata().isEmpty());
         assertFalse(serialized.contains("metadata"));
     }
 
