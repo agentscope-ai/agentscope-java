@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.extensions.judge.jev.middleware;
+package io.agentscope.extensions.judge.jev.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,6 +37,10 @@ import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
+/**
+ * Unit tests for {@link JevToolSelectionMiddleware}. Jev is mocked with a stub function; the
+ * filtered tool list is verified through the {@code ReasoningInput} captured by {@code next}.
+ */
 class JevToolSelectionMiddlewareTest {
 
     @Test

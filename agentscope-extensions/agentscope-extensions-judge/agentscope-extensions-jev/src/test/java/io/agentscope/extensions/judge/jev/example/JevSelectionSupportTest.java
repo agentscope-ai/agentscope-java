@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.extensions.judge.jev.middleware;
+package io.agentscope.extensions.judge.jev.example;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 

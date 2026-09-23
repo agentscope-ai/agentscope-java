@@ -108,40 +108,18 @@ agentscope:
 - 校验 answer key、answer 类型、概率和 score legend 是否与请求匹配。
 - 对不可重试的客户端错误、重试耗尽和非法响应抛出 `JevException`。
 
-## 技能建议
+## 示例中间件
 
-`JevSkillSuggestionMiddleware` 会让 Jev 对可见技能排序，并在 system prompt 末尾追加一个
-`<skill_relevance>` 提示块。它不会替代 `DynamicSkillMiddleware`，也不会从技能列表里删除技能。
+`io.agentscope.extensions.judge.jev.example` 包里提供三个参考中间件。它们可以直接通过
+`ReActAgent.builder().middleware(...)` 挂载，也可以复制到项目里按需调整提示词和阈值：
 
-```java
-JevSkillSuggestionMiddleware skillSuggestion =
-        JevSkillSuggestionMiddleware.builder(client)
-                .repositories(skillRepositories)
-                .skillFilter(skillFilter)
-                .maxSuggestions(3)
-                .confidenceThreshold(0.5)
-                .failOpen(true)
-                .build();
+| 中间件 | 拦截点 | 作用 |
+| --- | --- | --- |
+| `JevToolSelectionMiddleware` | `onReasoning` | 用 Jev 筛选和排序发给主模型的工具 |
+| `JevModelRouterMiddleware` | `onAgent` / `onModelCall` | 用 Jev 在多个模型之间路由 |
+| `JevAutoModeMiddleware` | `onActing` | 用 Jev 在工具执行前判断风险 |
 
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .model(model)
-                .skillRepositories(skillRepositories)
-                .middleware(skillSuggestion)
-                .build();
-```
-
-行为：
-
-- 在 `onAgent` 阶段每个 agent 调用执行一次。
-- 在 `onSystemPrompt` 阶段追加建议。
-- 接受与 agent 相同的 `SkillFilter`，包括 runtime overlay。
-- 使用合成选项 `__none__`；只有概率高于它的技能才会被建议。
-- 超过 254 个技能时先分块，再对每块胜者重排。
-- `failOpen(true)` 时，Jev 失败则不追加建议。
-
-## 工具选择
+### 工具选择
 
 `JevToolSelectionMiddleware` 会减少发送给主模型的 tool schema 数量，同时保留核心工具，
 并用 Jev 对可选工具排序。
@@ -170,10 +148,70 @@ ReActAgent agent =
 - 默认保留 `load_skill_through_path`、`reset_tools` 和 `generate_response`。
 - 保留概率高于合成选项 `__none__` 的可选工具，最多保留 `maxTools` 个。
 - 每个 reasoning step 都会重新选择，并把完整 `input.messages()` 状态发给 Jev。
-- 新技能激活导致可见工具集合变化时，会再次调用 Jev。
 - 超过 254 个工具时先分块，再对每块胜者重排。
 - `failOpen(true)` 时，Jev 失败则保留原始工具列表。
 
-## 不是 ChatModel provider
+### 模型路由
 
-这个扩展有意不实现 `Model`、`ChatModelBase` 或 `ModelProvider`。Jev 不生成聊天文本，也不做常规 tool call；如果接入 `ModelRegistry`，会误导使用者把它当成普通对话模型。它更适合由应用代码、中间件、路由逻辑或 workflow 决策节点直接调用。
+`JevModelRouterMiddleware` 会在 agent 调用模型前，让 Jev 在已配置的模型中做选择。
+每个候选模型都有自己的路由标准，Jev 返回选择结果、校准概率和置信度。
+
+```java
+JevModelRouterMiddleware modelRouter =
+        JevModelRouterMiddleware.builder(client)
+                .choice("fast", fastModel, "Direct lookups, extraction, and localized changes.")
+                .choice("powerful", powerfulModel, "Architecture and high-stakes decisions.")
+                .instructions("Choose the least costly model that can complete the task.")
+                .confidenceThreshold(0.75)
+                .failOpen(true)
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(fallbackModel)
+                .middleware(modelRouter)
+                .build();
+```
+
+行为：
+
+- 读取最新用户消息，每个 agent 调用只决策一次。
+- 只替换 `ModelCallInput.model`；消息、工具和生成参数原样透传。
+- 选择结果、每个选项的概率和置信度存储在
+  `JevModelRouterMiddleware.decision(ctx)` 中。
+- 没有用户文本、置信度低于阈值、`failOpen(true)` 时 Jev 失败，或结果不可用时，回退到
+  agent 上配置的原始模型。
+- 最多支持 255 个候选模型；超过会在配置阶段直接报错。
+
+### 工具执行守卫
+
+`JevAutoModeMiddleware` 在工具真正执行前，用 Jev 判断高风险调用是否可以自动放行。
+
+```java
+JevAutoModeMiddleware autoMode =
+        JevAutoModeMiddleware.builder(client)
+                .guardedTool("bash")
+                .safetyThreshold(0.5)
+                .failOpen(true)
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(autoMode)
+                .build();
+```
+
+行为：
+
+- 在 `onActing` 阶段、工具执行前执行，位于确定性 `PermissionEngine` 管线之前。
+- 对名称命中 `guardedTools` 且状态不是 `ALLOWED` 的调用，向 Jev 发送一个 yes/no 风险
+  问题（`NoulQuestion`），请求 state 里包含完整对话历史和工具参数。
+- 多个 guarded 调用会合并为一个 Jev 请求，每个调用对应一个 question。
+- `NoulAnswer.noul()` 即 P(safe)，低于 `safetyThreshold` 的调用会被拒绝。
+- 被拒绝的调用不会执行：合成 `DENIED` 的 `ToolResultBlock` 写入对话状态，然后只把安全的调用传给后续执行。
+- 已经通过 HITL 确认为 `ALLOWED` 的调用跳过 Jev 检查，人工确认优先。
+- `failOpen(true)` 时，Jev 失败则放行；`failOpen(false)` 时，Jev 失败则报错。

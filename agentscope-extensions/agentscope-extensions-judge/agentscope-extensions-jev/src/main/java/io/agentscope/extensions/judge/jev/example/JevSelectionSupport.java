@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package io.agentscope.extensions.judge.jev.middleware;
+package io.agentscope.extensions.judge.jev.example;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.extensions.judge.jev.ChoiceAnswer;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -27,7 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Shared helpers for Jev-backed skill and tool selection. */
+/** Shared helpers for Jev-backed tool selection. */
 final class JevSelectionSupport {
 
     static final String NONE_OPTION = "__none__";
@@ -55,15 +54,6 @@ final class JevSelectionSupport {
             return Map.of();
         }
         return Map.of("messages", List.copyOf(messages));
-    }
-
-    static Map<String, Object> skillCriteria(List<AgentSkill> skills) {
-        Map<String, Object> criteria = new LinkedHashMap<>();
-        for (AgentSkill skill : skills) {
-            criteria.put(skill.getName(), skill.getDescription());
-        }
-        criteria.put(NONE_OPTION, "No skill is needed for this request.");
-        return criteria;
     }
 
     static Map<String, Object> toolCriteria(List<ToolSchema> tools) {

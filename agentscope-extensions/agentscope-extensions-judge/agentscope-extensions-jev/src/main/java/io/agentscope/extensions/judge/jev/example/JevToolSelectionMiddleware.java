@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.extensions.judge.jev.middleware;
+package io.agentscope.extensions.judge.jev.example;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -45,6 +45,11 @@ import reactor.core.publisher.Mono;
  *
  * <p>Always-included tools are preserved. Optional tools are ranked by Jev and only those with a
  * probability above the synthetic "none" option are kept, up to {@code maxTools}.
+ *
+ * <p>The filter runs in {@link #onReasoning} on every reasoning step, so it re-selects tools as
+ * the conversation grows. Tool sets larger than the Jev choice limit are chunked, each chunk's
+ * winner is shortlisted, and the shortlist is reranked in a second request. When Jev fails and
+ * {@code failOpen} is set (the default), the original tool list is kept.
  */
 public final class JevToolSelectionMiddleware implements MiddlewareBase {
 
@@ -71,7 +76,11 @@ public final class JevToolSelectionMiddleware implements MiddlewareBase {
         return new Builder(client::systemOne);
     }
 
-    static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
+    /**
+     * Creates a builder from a Jev call function. Useful for wrapping {@link JevClient#systemOne}
+     * with request/response logging or metrics.
+     */
+    public static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
         return new Builder(jevCall);
     }
 
