@@ -26,6 +26,8 @@ import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -50,10 +52,11 @@ class JdbcAgentStateStoreH2Test {
     record TestState(String value) implements State {}
 
     private JdbcAgentStateStore store;
+    private DataSource ds;
 
     @BeforeEach
     void setUp() {
-        DataSource ds = H2TestSupport.createDataSource("state_store_test");
+        ds = H2TestSupport.createDataSource("state_store_test");
         store = new JdbcAgentStateStore(ds, new H2Dialect(), true);
     }
 
@@ -218,6 +221,58 @@ class JdbcAgentStateStoreH2Test {
     }
 
     // ------------------------------------------------------------------
+    //  Slot id contract: sandbox-shaped ids contain path separators (#3231)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("sandbox-shaped session ids with path separators round-trip")
+    void sandboxShapedSessionIdsRoundTrip() {
+        // SessionSandboxStateStore packs isolation scopes into slash-separated session ids;
+        // validateSlotId used to reject them with "Session ID cannot contain path separators",
+        // silently dropping all sandbox resume state on JDBC backends.
+        store.save(null, "sandbox/session/01M31AQP7A24X0Y4A12RKADD5P", "k", new TestState("v1"));
+        store.save(
+                null, "sandbox/user/agent-7/01M31AQP7A24X0Y4A12RKADD5P", "k", new TestState("v2"));
+        store.save(null, "sandbox/agent/agent-7", "k", new TestState("v3"));
+        store.save(null, "sandbox/global", "k", new TestState("v4"));
+
+        assertEquals(
+                "v1",
+                store.get(null, "sandbox/session/01M31AQP7A24X0Y4A12RKADD5P", "k", TestState.class)
+                        .orElseThrow()
+                        .value());
+        assertEquals(
+                "v2",
+                store.get(
+                                null,
+                                "sandbox/user/agent-7/01M31AQP7A24X0Y4A12RKADD5P",
+                                "k",
+                                TestState.class)
+                        .orElseThrow()
+                        .value());
+        assertEquals(
+                "v3",
+                store.get(null, "sandbox/agent/agent-7", "k", TestState.class)
+                        .orElseThrow()
+                        .value());
+        assertTrue(store.exists(null, "sandbox/global"));
+
+        store.delete(null, "sandbox/agent/agent-7");
+        assertFalse(store.exists(null, "sandbox/agent/agent-7"));
+    }
+
+    @Test
+    @DisplayName("blank and oversized session ids are still rejected")
+    void blankAndOversizedSessionIdsStillRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> store.save("user1", "  ", "k", new TestState("v")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> store.save("user1", "s".repeat(256), "k", new TestState("v")));
+    }
+
+    // ------------------------------------------------------------------
     //  Optimistic concurrency (version column + CAS)
     // ------------------------------------------------------------------
 
@@ -253,6 +308,38 @@ class JdbcAgentStateStoreH2Test {
         assertEquals(
                 "created",
                 store.get("user1", "s1", "agent_state", TestState.class).orElseThrow().value());
+    }
+
+    @Test
+    @DisplayName("saveIfVersion(0) on a migration-backfilled version=0 row succeeds as CAS 0 -> 1")
+    void saveIfVersionZeroOnBackfilledRowSucceeds() throws Exception {
+        // Regression for issue #3162: rows backfilled by ALTER TABLE ... ADD COLUMN version
+        // ... DEFAULT 0 store version 0, which is also the "row absent" sentinel. The INSERT
+        // branch hits a duplicate key; the store must fall back to UPDATE ... WHERE version = 0
+        // instead of reporting a phantom CAS conflict.
+        String table = new H2Dialect().sessionStateTableName();
+        try (Connection conn = ds.getConnection();
+                PreparedStatement stmt =
+                        conn.prepareStatement(
+                                "INSERT INTO "
+                                        + table
+                                        + " (session_id, state_key, item_index, state_data,"
+                                        + " version) VALUES (?, ?, ?, ?, 0)")) {
+            stmt.setString(1, "user1:s1");
+            stmt.setString(2, "agent_state");
+            stmt.setInt(3, 0);
+            stmt.setString(4, "{\"value\":\"old\"}");
+            stmt.executeUpdate();
+        }
+
+        long newVersion =
+                store.saveIfVersion("user1", "s1", "agent_state", new TestState("new"), 0L);
+        assertEquals(1L, newVersion);
+
+        VersionedState<TestState> loaded =
+                store.getVersioned("user1", "s1", "agent_state", TestState.class);
+        assertEquals("new", loaded.value().value());
+        assertEquals(1L, loaded.version());
     }
 
     @Test

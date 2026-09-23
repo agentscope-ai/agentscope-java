@@ -107,6 +107,7 @@ title: 概览
 运行环境、语言生态、调试与训练流水线。
 
 - [Chat Completions Web](/v2/zh/integration/ecosystem/chat-completions-web)
+- [Jev](/v2/zh/integration/ecosystem/jev)
 - [AgentScope Studio](/v2/zh/integration/ecosystem/studio)
 - [在线训练（Training）](/v2/zh/integration/ecosystem/training)
 
