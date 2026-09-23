@@ -194,13 +194,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         String escapedPath = FilesystemUtils.shellQuote(filePath);
+        // No double-quoted span may contain a space: on a Windows host the argv →
+        // command-line → docker.exe re-parse round-trip drops the inner double quotes, and the
+        // space stops protecting the argument (issue #3262). `d=$(dirname ...)` keeps the quoted
+        // value in a variable; "$d" is then a single token with no space inside the quotes.
         String checkCmd =
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
+                        + "d=$(dirname "
                         + escapedPath
-                        + ")\" 2>&1";
+                        + "); mkdir -p \"$d\" 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -211,7 +215,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            String detail =
+                    checkResult.output() != null && !checkResult.output().isBlank()
+                            ? checkResult.output().strip()
+                            : "exit code " + checkResult.exitCode();
+            return WriteResult.fail("Failed to write file '" + filePath + "': " + detail);
         }
 
         List<FileUploadResponse> responses =

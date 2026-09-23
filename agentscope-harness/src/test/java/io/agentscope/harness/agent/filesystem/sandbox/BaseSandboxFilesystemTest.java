@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -263,6 +264,64 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        // ==================== Bug reproduction: #3262 quoted-space commands ====================
+
+        @Test
+        void write_commandHasNoDoubleQuotedSpanContainingSpace() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            fs.write(RT, "dir with space/file.txt", "content");
+
+            // On a Windows host the argv -> command-line -> docker.exe re-parse round-trip drops
+            // inner double quotes; any double-quoted span containing a space then breaks apart
+            // into argv separators and the in-container shell sees a syntax error (#3262).
+            String cmd = fs.lastCommand;
+            int i = 0;
+            while (i < cmd.length()) {
+                int open = cmd.indexOf('"', i);
+                if (open < 0) {
+                    break;
+                }
+                int close = cmd.indexOf('"', open + 1);
+                if (close < 0) {
+                    break;
+                }
+                assertFalse(
+                        cmd.substring(open + 1, close).contains(" "),
+                        "command contains a double-quoted span with a space: " + cmd);
+                i = close + 1;
+            }
+        }
+
+        @Test
+        void write_failureMessageCarriesExecuteOutput() {
+            // The container reports a dash syntax error; the failure message must surface it
+            // instead of a bare "Failed to write file '...'" (#3262 part d).
+            ExecuteResponse syntaxError =
+                    new ExecuteResponse(
+                            "sh: 1: Syntax error: end of file unexpected (expecting \")\")",
+                            2,
+                            false);
+            WriteResult result =
+                    new FixedResponseFilesystem(syntaxError).write(RT, "some/file.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("Syntax error"),
+                    "failure message should carry the container's error output: " + result.error());
+        }
+
+        @Test
+        void write_failureMessageFallsBackToExitCodeWhenOutputBlank() {
+            ExecuteResponse noOutput = new ExecuteResponse("", 3, false);
+            WriteResult result =
+                    new FixedResponseFilesystem(noOutput).write(RT, "some/file.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("3"),
+                    "failure message should fall back to the exit code: " + result.error());
         }
     }
 
