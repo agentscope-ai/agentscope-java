@@ -87,11 +87,17 @@ func (s *Server) claimChannelDelivery(c *gin.Context) {
 		}
 		allowed = err == nil
 	}
+	// A reply answers an inbound message that this host already authorized through the sender's
+	// binding, so the work-configuration gates below — which decide whether an issue, comment or
+	// approval notification may reach the peer — do not apply to it.
+	isReply := strings.HasPrefix(event, "channel-reply:")
 	cfg, err := s.loadChannelWorkSettings(ctx, chID)
-	if transient(err) {
+	if !isReply && transient(err) {
 		return
 	}
-	allowed = allowed && err == nil && cfg.Enabled
+	if !isReply {
+		allowed = allowed && err == nil && cfg.Enabled
+	}
 	if allowed && issueID != nil {
 		n, e := s.channelWork.Namespace(ctx, ch.OwnerID)
 		if transient(e) {
@@ -178,15 +184,35 @@ func (s *Server) channelDeliveryReceipt(c *gin.Context) {
 		LeaseToken        string `json:"leaseToken"`
 		ProviderMessageID string `json:"providerMessageId"`
 		Error             string `json:"error"`
+		DeferSeconds      int    `json:"deferSeconds"`
 	}
 	id, e := uuid.Parse(c.Param("deliveryId"))
-	if e != nil || c.ShouldBindJSON(&req) != nil || req.LeaseToken == "" || len(req.ProviderMessageID) > 512 || len(req.Error) > 512 || (req.ProviderMessageID == "") == (req.Error == "") {
+	if e != nil || c.ShouldBindJSON(&req) != nil || req.LeaseToken == "" || len(req.ProviderMessageID) > 512 || len(req.Error) > 512 || req.DeferSeconds < 0 || req.DeferSeconds > 3600 || (req.ProviderMessageID == "") == (req.Error == "") {
 		writeErr(c, 400, "receipt requires lease and either provider message ID or error")
 		return
 	}
 	state := "provider_accepted"
 	if req.Error != "" {
 		state = "pending"
+	}
+	// A deferred failure is one only a human can clear (an expired channel credential). It keeps the
+	// notification pending and gives the attempt back, so a long outage cannot burn the attempt
+	// budget and end in `failed`.
+	if state == "pending" && req.DeferSeconds > 0 {
+		tag, e := s.db.Pool.Exec(c.Request.Context(), `UPDATE channel_deliveries SET state='pending',
+ provider_message_id=$3,last_error=$4,attempts=GREATEST(attempts-1,0),
+ next_attempt=now()+make_interval(secs=>$5),updated_at=now()
+ WHERE id=$1 AND state='submitted' AND lease_token=$2 AND next_attempt>now()`, id, req.LeaseToken, req.ProviderMessageID, req.Error, req.DeferSeconds)
+		if e != nil {
+			writeErr(c, 503, "cannot save receipt")
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			writeErr(c, 409, "delivery lease expired or replaced")
+			return
+		}
+		c.Status(204)
+		return
 	}
 	tag, e := s.db.Pool.Exec(c.Request.Context(), `UPDATE channel_deliveries SET state=CASE WHEN $3='pending' AND attempts>=10 THEN 'failed' ELSE $3 END,
  provider_message_id=$4,last_error=$5,next_attempt=now()+make_interval(secs=>LEAST(600,5*(1<<LEAST(attempts,7)))),updated_at=now()

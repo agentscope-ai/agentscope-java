@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import {
   ChannelInfo,
@@ -33,6 +33,7 @@ import PlatformCredentialsForm, {
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
 import { AgentPicker } from '../components/AgentPicker';
+import { weixin, type WeixinLinkFlow } from '@/api/weixin';
 
 const S: Record<string, React.CSSProperties> = {
   root: { padding: '40px 44px', maxWidth: 1200 },
@@ -88,11 +89,12 @@ export default function ChannelsHubPage() {
   const scope = useControlPlaneScope();
   const admin = scope.roles.some(r => ['developer', 'admin'].includes(r));
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(params.get('create') === 'weixin');
 
   async function refresh() {
     setLoading(true);
@@ -159,7 +161,7 @@ export default function ChannelsHubPage() {
             <div
               key={c.channelId}
               style={S.card}
-              onClick={() => navigate(`/agent-center/entrypoints/${encodeURIComponent(c.channelId)}`)}
+              onClick={() => navigate(scope.scopedPath(`/agent-center/entrypoints/${encodeURIComponent(c.channelId)}`))}
               onMouseEnter={e => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
                 e.currentTarget.style.boxShadow = '0 8px 24px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04)';
@@ -201,8 +203,8 @@ export default function ChannelsHubPage() {
                 style={{ display: 'flex', gap: 8, marginTop: 6 }}
                 onClick={e => e.stopPropagation()}
               >
-                <button style={S.rowBtn} onClick={() => toggleDisabled(c)}>
-                  {c.disabled ? 'Enable' : 'Disable'}
+                <button style={S.rowBtn} onClick={() => c.type === 'weixin' ? navigate(scope.scopedPath(`/agent-center/entrypoints/${encodeURIComponent(c.channelId)}`)) : void toggleDisabled(c)}>
+                  {c.type === 'weixin' ? '管理微信连接' : c.disabled ? 'Enable' : 'Disable'}
                 </button>
                 <button
                   style={{ ...S.rowBtn, color: '#dc2626', borderColor: '#fca5a5' }}
@@ -221,14 +223,16 @@ export default function ChannelsHubPage() {
         )}
       </div>
 
-      {creating && (
+      {creating && !loading && admin && (
         <ChannelCreateDialog
           types={types}
+          initialType={params.get('create') === 'weixin' ? 'weixin' : undefined}
+          initialAgentId={params.get('agentId') || ''}
           onClose={() => setCreating(false)}
-          onCreated={(id) => {
+          onCreated={(id, link) => {
             setCreating(false);
             void refresh();
-            navigate(`/agent-center/entrypoints/${encodeURIComponent(id)}`);
+            navigate(scope.scopedPath(`/agent-center/entrypoints/${encodeURIComponent(id)}`), { state: link ? { weixinLink: { channelId: id, ...link } } : null });
           }}
         />
       )}
@@ -238,20 +242,25 @@ export default function ChannelsHubPage() {
 
 interface CreateProps {
   types: ChannelTypeSpec[];
+  initialType?: string;
+  initialAgentId?: string;
   onClose: () => void;
-  onCreated: (channelId: string) => void;
+  onCreated: (channelId: string, link?: { flow?: WeixinLinkFlow; error?: string }) => void;
 }
 
-function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
+function ChannelCreateDialog({ types, initialType, initialAgentId, onClose, onCreated }: CreateProps) {
+  const scope = useControlPlaneScope();
+  const namespace = scope.namespaces.find(n => n.tenant === scope.tenant && n.name === scope.namespace);
   const [channelId, setChannelId] = useState('');
-  const [type, setType] = useState(types[0]?.type ?? '');
+  const [type, setType] = useState(initialType ?? types[0]?.type ?? '');
   const [dmScope, setDmScope] = useState('PER_PEER');
-  const [defaultAgentId, setDefaultAgentId] = useState('');
+  const [defaultAgentId, setDefaultAgentId] = useState(initialAgentId || '');
   const [creds, setCreds] = useState<Record<string, string>>(
     () => credentialsFromProperties(types[0], undefined),
   );
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [preparingQr, setPreparingQr] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const typeSpec = types.find((t) => t.type === type);
@@ -265,6 +274,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
     setErr(null);
     if (!channelId.trim()) { setErr('channelId is required'); return; }
     if (!type) { setErr('platform is required'); return; }
+    if (type === 'weixin' && !defaultAgentId.trim()) { setErr('请选择接收微信私聊的默认 Agent。'); return; }
     const req: ChannelUpsertRequest = {
       channelId: channelId.trim(),
       type,
@@ -275,7 +285,13 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
     setBusy(true);
     try {
       const created = await createChannel(req);
-      onCreated(created.channelId);
+      if (type === 'weixin') {
+        setPreparingQr(true);
+        // Creation succeeded even if the provider is temporarily unavailable.
+        // Continue to the saved Channel so retrying cannot create a duplicate.
+        try { onCreated(created.channelId, { flow: await weixin.start(created.channelId) }); }
+        catch (reason) { onCreated(created.channelId, { error: reason instanceof Error ? reason.message : '二维码暂时无法生成，请重试。' }); }
+      } else onCreated(created.channelId);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -295,32 +311,34 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
   };
 
   return (
-    <div style={scrim} onClick={onClose}>
-      <div style={modal} onClick={e => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
+    <div style={scrim} onClick={() => { if (!busy) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="channel-create-title" style={modal} onClick={e => e.stopPropagation()}>
+        <h3 id="channel-create-title" style={{ margin: '0 0 16px', fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
           New channel
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div className="grid gap-3.5 sm:grid-cols-2">
           <div>
             <label style={S.formField}>Channel id</label>
             <input
               style={S.input}
+              aria-label="Channel id"
               value={channelId}
               onChange={e => setChannelId(e.target.value)}
-              placeholder="e.g. dingtalk-sales"
+              placeholder={type === 'weixin' ? 'e.g. weixin-personal' : 'e.g. dingtalk-sales'}
+              disabled={busy}
             />
           </div>
           <div>
             <label style={S.formField}>Platform</label>
-            <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
+            <select aria-label="Platform" style={S.input} value={type} disabled={busy} onChange={e => onTypeChange(e.target.value)}>
               {types.length === 0 && <option value="">— no platforms —</option>}
               {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
             </select>
           </div>
           <div>
             <label style={S.formField}>Conversation isolation</label>
-            <select style={S.input} value={dmScope} onChange={e => setDmScope(e.target.value)}>
+            <select style={S.input} value={dmScope} disabled={busy} onChange={e => setDmScope(e.target.value)}>
               {DM_SCOPES.map(s => (
                 <option key={s} value={s}>
                   {s === 'PER_PEER' ? 'Per person' : 'Shared inbox'}
@@ -330,19 +348,18 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
           </div>
           <div>
             <label style={S.formField}>Default Agent</label>
-            <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} aria-label="Channel default Agent" />
+            <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} disabled={busy} required={type === 'weixin'} aria-label="Channel default Agent" />
           </div>
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <label style={S.formField}>Credentials</label>
-          <PlatformCredentialsForm
+          {type === 'weixin' ? <div className="border-l-2 border-emerald-600 pl-4"><p className="text-sm font-medium text-emerald-900">使用微信扫码连接</p><p className="mt-1 text-sm leading-6 text-emerald-800">创建后会显示授权二维码。首次对话还需关联聊天账号。</p>{namespace && namespace.kind !== 'personal' && <p className="mt-2 text-sm text-amber-800">普通微信私聊仅支持个人空间。当前为共享空间，请在个人空间中创建 Channel 并选择自己的 Agent。</p>}</div> : <><label style={S.formField}>Credentials</label><PlatformCredentialsForm
             spec={typeSpec}
             values={creds}
             onChange={setCreds}
             showAdvanced={showAdvanced}
             onToggleAdvanced={() => setShowAdvanced((v) => !v)}
-          />
+          /></>}
         </div>
 
         {err && <div style={{ color: '#dc2626', fontSize: '0.9rem', marginTop: 10 }}>{err}</div>}
@@ -350,7 +367,7 @@ function ChannelCreateDialog({ types, onClose, onCreated }: CreateProps) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
           <button style={S.rowBtn} onClick={onClose} disabled={busy}>Cancel</button>
           <button style={{ ...S.rowBtn, ...S.primaryBtn }} onClick={handleSave} disabled={busy}>
-            {busy ? 'Creating…' : 'Create'}
+            {preparingQr ? '正在生成二维码…' : busy ? 'Creating…' : type === 'weixin' ? '创建并连接微信' : 'Create'}
           </button>
         </div>
       </div>

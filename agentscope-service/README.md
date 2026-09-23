@@ -196,6 +196,7 @@ Java services use `builder.*` properties and `BUILDER_*` environment variables. 
 | Variable | Purpose |
 | --- | --- |
 | `DASHSCOPE_API_KEY` | DashScope model credential for local turns |
+| `DEEPSEEK_API_KEY` | DeepSeek model credential for `deepseek:<model>` Agent turns |
 | `BUILDER_JWT_SECRET` | JWT signing secret shared by gateway/control components |
 | `BUILDER_INTERNAL_TOKEN` | Secret for trusted plane-to-plane requests |
 | `BUILDER_VAULT_MASTER_KEY` | Encryption key for vault credentials |

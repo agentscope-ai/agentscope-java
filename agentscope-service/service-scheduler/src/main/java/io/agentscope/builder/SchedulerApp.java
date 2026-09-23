@@ -24,7 +24,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>Hosts everything that executes work outside the request path of the other planes:
  *
  * <ul>
- *   <li><b>IM channel runtimes</b> (DingTalk, Feishu, WeCom, GitHub, GitLab) — channel
+ *   <li><b>IM channel runtimes</b> (DingTalk, Feishu, WeCom, Weixin, GitHub, GitLab) — channel
  *       configuration is pulled from the control plane's internal API; inbound messages are
  *       bridged into managed sessions (control plane find-or-create, data plane turn events)
  *   <li><b>Outbound delivery</b> — {@code /api/outbound/send} pushes agent-initiated messages

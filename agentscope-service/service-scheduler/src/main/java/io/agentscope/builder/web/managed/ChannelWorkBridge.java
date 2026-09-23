@@ -22,12 +22,14 @@ package io.agentscope.builder.web.managed;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.extensions.channel.weixin.WeixinCredentialRejectedException;
 import io.agentscope.harness.agent.gateway.ChannelManager;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -86,17 +88,68 @@ public class ChannelWorkBridge {
                 .flatMap(
                         result -> {
                             if (Boolean.TRUE.equals(result.chat())) {
+                                // The Agent's reply is persisted, not returned: the delivery queue
+                                // retries it, so a provider outage cannot fail the inbound message
+                                // and replay the Agent that produced the reply.
                                 return chat.dispatchAndAwaitReply(
                                                 result.ownerId(),
                                                 result.agentId(),
                                                 result.externalKey(),
                                                 message.getTextContent())
-                                        .map(ChannelWorkBridge::reply);
+                                        .flatMap(
+                                                text ->
+                                                        enqueueReply(in, metadata, text)
+                                                                .then(Mono.<Msg>empty()));
                             }
+                            // A courtesy reply ("bind your account first", "no permission") answers
+                            // a peer that is not bound, which the delivery queue refuses to claim,
+                            // so
+                            // it stays on the inline path. No Agent ran, so a failed send cannot
+                            // replay one.
                             return result.reply() == null || result.reply().isBlank()
                                     ? Mono.empty()
                                     : Mono.just(reply(result.reply()));
                         });
+    }
+
+    /**
+     * Persists the reply instead of sending it inline. Reply delivery belongs to this host: the
+     * queue below already retries with backoff, caps attempts and exposes a manual re-send, and a
+     * provider outage must not fail the inbound message — that would replay the Agent that produced
+     * the reply and duplicate its side effects.
+     */
+    private Mono<Void> enqueueReply(InboundMessage in, Map<String, Object> metadata, String text) {
+        if (text == null || text.isBlank()) return Mono.empty();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("channelId", in.channelId());
+        body.put("accountId", empty(in.accountId()));
+        body.put("senderId", empty(in.senderId()));
+        body.put("peerKind", in.peer().kind().name());
+        body.put("peerId", in.peer().id());
+        body.put("threadId", metadata.getOrDefault("channelThreadId", ""));
+        body.put("messageId", metadata.getOrDefault("channelMessageId", ""));
+        body.put("text", text);
+        body.put("eventKey", replyEventKey(in, metadata));
+        return control.post()
+                .uri("/api/internal/channels/replies")
+                .bodyValue(body)
+                .retrieve()
+                .toBodilessEntity()
+                .timeout(Duration.ofSeconds(10))
+                .then();
+    }
+
+    /**
+     * One reply per accepted inbound message, so a replay of that message (a lease takeover, a
+     * redelivered batch) cannot queue a second copy. The inbound intake rejects a message without a
+     * provider id, so the fallback cannot normally trigger — it is there because a key that is not
+     * unique would silently deduplicate a genuine reply rather than queue it.
+     */
+    private static String replyEventKey(InboundMessage in, Map<String, Object> metadata) {
+        Object messageId = metadata.getOrDefault("channelMessageId", "");
+        String key =
+                "channel-reply:" + in.channelId() + ":" + empty(in.accountId()) + ":" + messageId;
+        return String.valueOf(messageId).isBlank() ? key + ":" + UUID.randomUUID() : key;
     }
 
     /** A claimed delivery is never reported as accepted until the provider returns a message ID. */
@@ -132,13 +185,16 @@ public class ChannelWorkBridge {
                 if (messageId == null || messageId.isBlank())
                     throw new IllegalStateException("Provider receipt missing");
             } catch (Exception failure) {
-                receipt(
-                        d,
-                        Map.of(
-                                "leaseToken",
-                                d.leaseToken(),
-                                "error",
-                                failure.getClass().getSimpleName()));
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("leaseToken", d.leaseToken());
+                body.put("error", failure.getClass().getSimpleName());
+                if (credentialRejected(failure)) {
+                    // Only a human re-authorization clears an expired channel credential, so the
+                    // notification is parked for a while and its attempt is given back: a long
+                    // outage must not burn the attempt budget and end the delivery as failed.
+                    body.put("deferSeconds", 300);
+                }
+                receipt(d, body);
                 return;
             }
             // If persistence fails the lease expires. The next worker reuses the delivery ID
@@ -149,7 +205,16 @@ public class ChannelWorkBridge {
         }
     }
 
-    private void receipt(Delivery d, Map<String, String> body) {
+    /** Reactor may wrap the provider signal, so the cause chain is what decides. */
+    private static boolean credentialRejected(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof WeixinCredentialRejectedException) return true;
+            if (cause.getCause() == cause) break;
+        }
+        return false;
+    }
+
+    private void receipt(Delivery d, Map<String, Object> body) {
         control.post()
                 .uri("/api/internal/channels/deliveries/{id}/receipt", d.id())
                 .bodyValue(body)

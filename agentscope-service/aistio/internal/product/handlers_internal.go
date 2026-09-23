@@ -52,6 +52,7 @@ func (s *Server) registerInternal(r gin.IRouter) {
 	r.DELETE("/api/internal/sessions/:id/memory-stores/:storeId/memories/*path", s.sessionMemory(s.deleteMemory))
 	r.POST("/api/internal/deployments/:id/fire", s.internalFireDeployment)
 	r.GET("/api/internal/channels/config", s.internalChannelsConfig)
+	r.POST("/api/internal/channels/:channelId/credential", s.internalWeixinCredential)
 	r.POST("/api/internal/channels/runtime", s.internalChannelRuntimeReport)
 }
 
@@ -969,15 +970,64 @@ func (s *Server) internalChannelsConfig(c *gin.Context) {
 		delete(cfg, "channelId")
 		out[ch.ChannelID] = cfg
 	}
+	if err := rows.Err(); err != nil {
+		writeErr(c, 500, "channel configuration unavailable")
+		return
+	}
+	rows.Close()
+	weixinIDs := make([]string, 0)
+	for id, value := range out {
+		if value.(gin.H)["type"] == "weixin" {
+			weixinIDs = append(weixinIDs, id)
+		}
+	}
+	// One lookup for every weixin channel instead of one per channel: this endpoint is polled by
+	// every scheduler replica, so a per-channel query cost channels x replicas.
+	props, err := s.weixinRuntimeProperties(c.Request.Context(), weixinIDs)
+	if err != nil {
+		writeErr(c, 500, "channel configuration unavailable")
+		return
+	}
+	for _, id := range weixinIDs {
+		value, ok := props[id]
+		if !ok {
+			// A channel without a usable connection is dropped from the payload rather than
+			// failing the whole response: otherwise one channel's missing credential leaves every
+			// replica with no configuration at all. ErrNoRows behaved this way before; a broken
+			// join now does too.
+			log.Printf("weixin channel %s has no usable connection; omitted from channel config", id)
+			delete(out, id)
+			continue
+		}
+		out[id].(gin.H)["properties"] = value
+	}
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, out)
 }
 
+// channelRuntimeStaleReportMs bounds how old the last accepted report may be before a lease-less
+// failure report is allowed to overwrite it.
+//
+// Precondition: the scheduler's report interval must stay well below this bound - the default
+// ("builder.scheduler.channel-refresh-ms", 15s) is one eighth of it. The control plane cannot see
+// the configured interval, so a deployment that raises it into this range would make every healthy
+// leader look stale and reopen the flap this fence exists to prevent; SchedulerChannelRuntime warns
+// at startup when the interval is set above a minute.
+const channelRuntimeStaleReportMs = 2 * 60 * 1000
+
 type channelRuntimeReport struct {
-	Channels []struct {
-		ChannelID string  `json:"channelId"`
-		Started   bool    `json:"started"`
-		Error     *string `json:"error"`
-	} `json:"channels"`
+	Channels []channelRuntimeObservation `json:"channels"`
+}
+
+type channelRuntimeObservation struct {
+	ChannelID          string  `json:"channelId"`
+	Started            bool    `json:"started"`
+	Error              *string `json:"error"`
+	AccountID          string  `json:"accountId"`
+	CredentialRevision int64   `json:"credentialRevision"`
+	LeaseHolder        string  `json:"leaseHolder"`
+	LeaseGeneration    int64   `json:"leaseGeneration"`
+	Sequence           int64   `json:"sequence"`
 }
 
 func (s *Server) internalChannelRuntimeReport(c *gin.Context) {
@@ -992,14 +1042,86 @@ func (s *Server) internalChannelRuntimeReport(c *gin.Context) {
 		if id == "" {
 			continue
 		}
-		var errVal any
-		if item.Error != nil && strings.TrimSpace(*item.Error) != "" {
-			errVal = strings.TrimSpace(*item.Error)
+		item.ChannelID = id
+		if err := s.applyChannelRuntimeObservation(c.Request.Context(), item, now); err != nil {
+			writeErr(c, http.StatusInternalServerError, "runtime status unavailable")
+			return
 		}
-		_, _ = s.db.Pool.Exec(c.Request.Context(),
-			`UPDATE channels SET runtime_started=$1, runtime_error=$2, runtime_updated_at=$3
-			 WHERE channel_id=$4`,
-			item.Started, errVal, now, id)
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) applyChannelRuntimeObservation(ctx context.Context, item channelRuntimeObservation, now int64) error {
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Match the lifecycle lock order: Channel, then Weixin connection.
+	var typ string
+	var disabled bool
+	err = tx.QueryRow(ctx, `SELECT type,disabled FROM channels WHERE channel_id=$1 FOR UPDATE`, item.ChannelID).Scan(&typ, &disabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if typ == "weixin" {
+		if disabled {
+			return nil
+		}
+		if item.LeaseHolder == "" {
+			// A channel that failed to build or start never acquires a lease, so it reports the
+			// failure without lease authority. Record it on the channel row - an operator has to
+			// be able to see a failing channel - while leaving the connection's lease fields to
+			// the replica that actually holds the lease. A lease-less report without an error is
+			// a healthy standby and stays ignored.
+			if item.Error == nil || strings.TrimSpace(*item.Error) == "" {
+				return nil
+			}
+			// Fence the write the way the leased path does. A replica that merely failed to build
+			// the channel must not flap the status of the replica that holds the lease, so the
+			// report only lands when no lease holder is recorded or the last accepted report is
+			// already stale. The staleness arm keeps a holder that died without being cleared from
+			// hiding a failed start forever; the scheduler reports every 15s by default, so a
+			// healthy leader is never this old.
+			if _, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=false,runtime_error=$1,runtime_updated_at=$2
+			 WHERE channel_id=$3
+			  AND (NOT EXISTS (SELECT 1 FROM weixin_connections c
+			                    WHERE c.channel_id=channels.channel_id
+			                      AND NULLIF(c.runtime_lease_holder,'') IS NOT NULL)
+			       OR runtime_updated_at IS NULL
+			       OR runtime_updated_at < $4)`,
+				strings.TrimSpace(*item.Error), now, item.ChannelID, now-channelRuntimeStaleReportMs); err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
+		}
+		if item.AccountID == "" || item.CredentialRevision <= 0 || item.LeaseGeneration <= 0 || item.Sequence <= 0 {
+			return nil
+		}
+		accepted, err := tx.Exec(ctx, `UPDATE weixin_connections SET runtime_lease_generation=$1,
+		 runtime_lease_holder=$2,runtime_report_sequence=$3
+		 WHERE channel_id=$4 AND account_id=$5 AND credential_revision=$6 AND credential_id IS NOT NULL
+		 AND (runtime_lease_generation<$1 OR
+		 (runtime_lease_generation=$1 AND runtime_lease_holder=$2 AND runtime_report_sequence<=$3))`,
+			item.LeaseGeneration, item.LeaseHolder, item.Sequence, item.ChannelID, item.AccountID, item.CredentialRevision)
+		if err != nil {
+			return err
+		}
+		if accepted.RowsAffected() == 0 {
+			return nil
+		}
+	}
+	var errVal any
+	if item.Error != nil && strings.TrimSpace(*item.Error) != "" {
+		errVal = strings.TrimSpace(*item.Error)
+	}
+	_, err = tx.Exec(ctx, `UPDATE channels SET runtime_started=$1,runtime_error=$2,runtime_updated_at=$3 WHERE channel_id=$4`,
+		item.Started, errVal, now, item.ChannelID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
