@@ -16,14 +16,11 @@
 package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.google.genai.types.Part;
-import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.ContentBlockMetadataKeys;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -98,51 +95,33 @@ class GeminiThoughtSignatureUtilsTest {
     }
 
     @Test
-    void shouldRejectUnsupportedSignatureType() {
+    void shouldSkipUnsupportedSignatureType() {
         Part.Builder partBuilder = Part.builder().text("text");
 
-        FormatterException exception =
-                assertThrows(
-                        FormatterException.class,
-                        () ->
-                                GeminiThoughtSignatureUtils.applyMetadata(
-                                        partBuilder,
-                                        Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, 123)));
+        GeminiThoughtSignatureUtils.applyMetadata(
+                partBuilder, Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, 123));
 
-        assertEquals(
-                "Unsupported Gemini thought signature metadata type: java.lang.Integer",
-                exception.getMessage());
+        assertFalse(partBuilder.build().thoughtSignature().isPresent());
     }
 
     @Test
-    void shouldRejectEmptySignature() {
+    void shouldSkipEmptySignature() {
         Part.Builder partBuilder = Part.builder().text("text");
 
-        FormatterException exception =
-                assertThrows(
-                        FormatterException.class,
-                        () ->
-                                GeminiThoughtSignatureUtils.applyMetadata(
-                                        partBuilder,
-                                        Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, "")));
+        GeminiThoughtSignatureUtils.applyMetadata(
+                partBuilder, Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, ""));
 
-        assertEquals("Gemini thought signature must not be empty", exception.getMessage());
+        assertFalse(partBuilder.build().thoughtSignature().isPresent());
     }
 
     @Test
-    void shouldRejectInvalidBase64Signature() {
+    void shouldSkipInvalidBase64Signature() {
         Part.Builder partBuilder = Part.builder().text("text");
 
-        FormatterException exception =
-                assertThrows(
-                        FormatterException.class,
-                        () ->
-                                GeminiThoughtSignatureUtils.applyMetadata(
-                                        partBuilder,
-                                        Map.of(
-                                                ContentBlockMetadataKeys.THOUGHT_SIGNATURE,
-                                                "not-valid-base64!")));
+        GeminiThoughtSignatureUtils.applyMetadata(
+                partBuilder,
+                Map.of(ContentBlockMetadataKeys.THOUGHT_SIGNATURE, "not-valid-base64!"));
 
-        assertEquals("Invalid Base64 Gemini thought signature", exception.getMessage());
+        assertFalse(partBuilder.build().thoughtSignature().isPresent());
     }
 }

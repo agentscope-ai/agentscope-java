@@ -16,14 +16,17 @@
 package io.agentscope.extensions.model.gemini.formatter;
 
 import com.google.genai.types.Part;
-import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.ContentBlockMetadataKeys;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Utilities for persisting and restoring Gemini thought signatures. */
 final class GeminiThoughtSignatureUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(GeminiThoughtSignatureUtils.class);
 
     private GeminiThoughtSignatureUtils() {}
 
@@ -39,7 +42,14 @@ final class GeminiThoughtSignatureUtils {
         return metadata;
     }
 
-    /** Restore a persisted signature onto a Gemini Part builder. */
+    /**
+     * Restore a persisted signature onto a Gemini Part builder.
+     *
+     * <p>A signature that is missing or corrupted after a persistence round trip is skipped with a
+     * warning instead of failing the whole model call, matching the tolerant behavior of the
+     * response parser: a dropped signature degrades to a request without it rather than aborting
+     * the conversation replay.
+     */
     static void applyMetadata(Part.Builder partBuilder, Map<String, Object> metadata) {
         if (metadata == null || metadata.isEmpty()) {
             return;
@@ -51,24 +61,30 @@ final class GeminiThoughtSignatureUtils {
         }
 
         if (value instanceof byte[] signature) {
+            if (signature.length == 0) {
+                log.warn("Skipping empty Gemini thought signature");
+                return;
+            }
             partBuilder.thoughtSignature(signature.clone());
             return;
         }
 
         if (!(value instanceof String encodedSignature)) {
-            throw new FormatterException(
-                    "Unsupported Gemini thought signature metadata type: "
-                            + value.getClass().getName());
+            log.warn(
+                    "Skipping Gemini thought signature with unsupported metadata type: {}",
+                    value.getClass().getName());
+            return;
         }
 
         if (encodedSignature.isEmpty()) {
-            throw new FormatterException("Gemini thought signature must not be empty");
+            log.warn("Skipping empty Gemini thought signature");
+            return;
         }
 
         try {
             partBuilder.thoughtSignature(Base64.getDecoder().decode(encodedSignature));
         } catch (IllegalArgumentException e) {
-            throw new FormatterException("Invalid Base64 Gemini thought signature", e);
+            log.warn("Skipping non-Base64 Gemini thought signature: {}", e.getMessage());
         }
     }
 }

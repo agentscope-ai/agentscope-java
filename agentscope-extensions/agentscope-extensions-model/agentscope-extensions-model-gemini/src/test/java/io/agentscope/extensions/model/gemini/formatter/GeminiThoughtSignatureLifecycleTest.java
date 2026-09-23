@@ -17,7 +17,7 @@ package io.agentscope.extensions.model.gemini.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.google.genai.types.Candidate;
 import com.google.genai.types.Content;
@@ -25,7 +25,6 @@ import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -133,7 +132,7 @@ class GeminiThoughtSignatureLifecycleTest {
     }
 
     @Test
-    void shouldRejectInvalidBase64Signature() {
+    void shouldSkipInvalidBase64Signature() {
         Msg message =
                 AssistantMessage.builder()
                         .content(
@@ -146,6 +145,11 @@ class GeminiThoughtSignatureLifecycleTest {
                                         .build())
                         .build();
 
-        assertThrows(FormatterException.class, () -> converter.convertMessages(List.of(message)));
+        List<Part> replayedParts =
+                converter.convertMessages(List.of(message)).get(0).parts().orElseThrow();
+
+        assertEquals(1, replayedParts.size());
+        assertEquals("Answer", replayedParts.get(0).text().orElseThrow());
+        assertFalse(replayedParts.get(0).thoughtSignature().isPresent());
     }
 }
