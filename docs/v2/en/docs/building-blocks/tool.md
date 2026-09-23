@@ -350,14 +350,17 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
+
+// ... use the agent; close the MCP session when done (the wrapper is AutoCloseable)
+weather.close();
 ```
 
 </Tab>
