@@ -18,6 +18,9 @@ package io.agentscope.extensions.judge.jev.example;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
@@ -134,11 +137,11 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
                             }
                             List<ToolUseBlock> allowed = new ArrayList<>(partition.unguarded());
                             allowed.addAll(risk.allowed());
-                            writeDeniedResults(risk.denied(), state, agent);
+                            Flux<AgentEvent> deniedFlux = deniedEvents(risk.denied(), state, agent);
                             if (allowed.isEmpty()) {
-                                return Flux.empty();
+                                return deniedFlux;
                             }
-                            return next.apply(new ActingInput(allowed));
+                            return deniedFlux.concatWith(next.apply(new ActingInput(allowed)));
                         });
     }
 
@@ -231,16 +234,36 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
         return new RiskDecision(allowed, denied);
     }
 
-    private void writeDeniedResults(List<ToolUseBlock> denied, AgentState state, Agent agent) {
-        String agentName = agent != null && agent.getName() != null ? agent.getName() : "agent";
-        for (ToolUseBlock call : denied) {
-            ToolResultBlock result =
-                    ToolResultBlock.text(denyMessage)
-                            .withIdAndName(call.getId(), call.getName())
-                            .withState(ToolResultState.DENIED);
-            Msg msg = ToolResultMessageBuilder.buildToolResultMsg(result, call, agentName);
-            state.contextMutable().add(msg);
-        }
+    private Flux<AgentEvent> deniedEvents(
+            List<ToolUseBlock> denied, AgentState state, Agent agent) {
+        return Flux.defer(
+                () -> {
+                    String replyId = state.getReplyId();
+                    String agentName =
+                            agent != null && agent.getName() != null ? agent.getName() : "agent";
+                    List<AgentEvent> events = new ArrayList<>();
+                    for (ToolUseBlock call : denied) {
+                        ToolResultBlock result =
+                                ToolResultBlock.text(denyMessage)
+                                        .withIdAndName(call.getId(), call.getName())
+                                        .withState(ToolResultState.DENIED);
+                        Msg msg =
+                                ToolResultMessageBuilder.buildToolResultMsg(
+                                        result, call, agentName);
+                        state.contextMutable().add(msg);
+                        events.add(new ToolResultStartEvent(replyId, call.getId(), call.getName()));
+                        events.add(
+                                new ToolResultTextDeltaEvent(
+                                        replyId, call.getId(), call.getName(), denyMessage));
+                        events.add(
+                                new ToolResultEndEvent(
+                                        replyId,
+                                        call.getId(),
+                                        call.getName(),
+                                        ToolResultState.DENIED));
+                    }
+                    return Flux.fromIterable(events);
+                });
     }
 
     private void validate() {

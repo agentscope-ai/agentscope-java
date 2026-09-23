@@ -24,6 +24,9 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -35,6 +38,7 @@ import io.agentscope.extensions.judge.jev.NoulAnswer;
 import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import io.agentscope.extensions.judge.jev.Usage;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -126,6 +130,7 @@ class JevAutoModeMiddlewareTest {
                         .build();
 
         AtomicReference<ActingInput> captured = new AtomicReference<>();
+        List<io.agentscope.core.event.AgentEvent> events = new ArrayList<>();
         middleware
                 .onActing(
                         agent("test"),
@@ -135,10 +140,19 @@ class JevAutoModeMiddlewareTest {
                             captured.set(next);
                             return Flux.empty();
                         })
+                .doOnNext(events::add)
                 .then()
                 .block();
 
         assertTrue(captured.get() == null || captured.get().toolCalls().isEmpty());
+
+        assertEquals(3, events.size());
+        assertTrue(events.get(0) instanceof ToolResultStartEvent);
+        assertTrue(events.get(1) instanceof ToolResultTextDeltaEvent);
+        assertTrue(events.get(2) instanceof ToolResultEndEvent);
+        assertEquals(ToolResultState.DENIED, ((ToolResultEndEvent) events.get(2)).getState());
+        assertEquals("id-1", ((ToolResultEndEvent) events.get(2)).getToolCallId());
+        assertEquals(GUARDED_TOOL, ((ToolResultEndEvent) events.get(2)).getToolCallName());
 
         assertEquals(1, state.contextMutable().size());
         Msg deniedMsg = state.contextMutable().get(0);
