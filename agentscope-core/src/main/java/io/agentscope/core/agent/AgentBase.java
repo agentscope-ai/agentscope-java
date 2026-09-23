@@ -26,6 +26,7 @@ import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.ShutdownStateSaver;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
@@ -36,12 +37,15 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
@@ -108,7 +112,7 @@ public abstract class AgentBase implements Agent {
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
-     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono)}.
+     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono, Supplier)}.
      */
     private final ConcurrentHashMap<Object, Mono<Void>> callGates = new ConcurrentHashMap<>();
 
@@ -268,6 +272,7 @@ public abstract class AgentBase implements Agent {
                                             GracefulShutdownManager.getInstance()
                                                     .registerRequest(this);
                                     Object gateKey = callSerializationKey(rc);
+                                    AtomicReference<Object> callScope = new AtomicReference<>();
                                     // Build the per-call lifecycle lazily so it only runs once the
                                     // serialization gate (if any) admits this call:
                                     // beforeAgentExecution resolves/loads the session slot and must
@@ -276,11 +281,36 @@ public abstract class AgentBase implements Agent {
                                             Mono.defer(
                                                     () ->
                                                             runLifecycleBody(
-                                                                    msgs, rc, doCallFn, requestId));
+                                                                    msgs,
+                                                                    rc,
+                                                                    doCallFn,
+                                                                    requestId,
+                                                                    callScope::set));
+                                    Supplier<Mono<Void>> cancelCleanup =
+                                            () ->
+                                                    Mono.defer(
+                                                                    () ->
+                                                                            callScope.get() == null
+                                                                                    ? Mono.empty()
+                                                                                    : afterAgentCancellation(
+                                                                                            callScope
+                                                                                                    .get()))
+                                                            .doFinally(
+                                                                    ignored ->
+                                                                            GracefulShutdownManager
+                                                                                    .getInstance()
+                                                                                    .unregisterRequest(
+                                                                                            requestId));
                                     Mono<Msg> gated =
                                             gateKey == null
-                                                    ? lifecycle
-                                                    : serializeOnKey(gateKey, lifecycle);
+                                                    ? Mono.usingWhen(
+                                                            Mono.just(Boolean.TRUE),
+                                                            ignored -> lifecycle,
+                                                            ignored -> Mono.empty(),
+                                                            (ignored, error) -> Mono.empty(),
+                                                            ignored -> Mono.defer(cancelCleanup))
+                                                    : serializeOnKey(
+                                                            gateKey, lifecycle, cancelCleanup);
                                     return gated.contextWrite(
                                                     c ->
                                                             requestId == null || requestId.isEmpty()
@@ -289,9 +319,16 @@ public abstract class AgentBase implements Agent {
                                                                             SHUTDOWN_REQUEST_ID_KEY,
                                                                             requestId))
                                             .doFinally(
-                                                    sig ->
+                                                    sig -> {
+                                                        // Cancellation cleanup can outlive this
+                                                        // subscription. Keep it visible to graceful
+                                                        // shutdown until its asynchronous save
+                                                        // ends.
+                                                        if (sig != SignalType.CANCEL) {
                                                             GracefulShutdownManager.getInstance()
-                                                                    .unregisterRequest(requestId));
+                                                                    .unregisterRequest(requestId);
+                                                        }
+                                                    });
                                 }),
                 this::releaseExecution,
                 true);
@@ -301,12 +338,16 @@ public abstract class AgentBase implements Agent {
             List<Msg> msgs,
             RuntimeContext rc,
             Function<List<Msg>, Mono<Msg>> doCallFn,
-            String requestId) {
+            String requestId,
+            Consumer<Object> captureScope) {
         Object scope = beforeAgentExecution(msgs, rc);
+        captureScope.accept(scope);
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        GracefulShutdownManager.getInstance()
+                .bindRequestSaver(requestId, shutdownStateSaverForCall(scope));
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
@@ -336,13 +377,29 @@ public abstract class AgentBase implements Agent {
         return null;
     }
 
+    /** Optional per-call override of the agent's registered shutdown state saver. */
+    protected ShutdownStateSaver shutdownStateSaverForCall(Object scope) {
+        return null;
+    }
+
+    /**
+     * Asynchronous cleanup after cancellation has propagated through the call body. Same-key
+     * calls remain queued until this publisher terminates. Implementations must offload blocking
+     * work and handle cleanup failures without throwing from the cancellation callback.
+     */
+    protected Mono<Void> afterAgentCancellation(Object scope) {
+        return Mono.empty();
+    }
+
     /**
      * Serializes {@code action} against other actions sharing {@code key}: this call waits for the
      * previously-enqueued call with the same key to terminate before running, then becomes the tail
      * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
-     * cancel) so a failed/cancelled call never blocks the queue.
+     * cancel). A cancelled call retains its place until its predecessor and cancellation cleanup
+     * finish, so cancelling a queued waiter cannot let later calls overtake an active writer.
      */
-    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+    private <T> Mono<T> serializeOnKey(
+            Object key, Mono<T> action, Supplier<Mono<Void>> cancelCleanup) {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
@@ -355,13 +412,22 @@ public abstract class AgentBase implements Agent {
                                 prev[0] = tail == null ? Mono.empty() : tail;
                                 return releaseMono;
                             });
-                    return prev[0].onErrorComplete()
-                            .then(action)
-                            .doFinally(
-                                    sig -> {
+                    Mono<Void> releaseGate =
+                            Mono.fromRunnable(
+                                    () -> {
                                         release.tryEmitEmpty();
                                         callGates.remove(key, releaseMono);
                                     });
+                    return Mono.usingWhen(
+                            Mono.just(Boolean.TRUE),
+                            ignored -> prev[0].onErrorComplete().then(action),
+                            ignored -> releaseGate,
+                            (ignored, error) -> releaseGate,
+                            ignored ->
+                                    prev[0].onErrorComplete()
+                                            .then(Mono.defer(cancelCleanup))
+                                            .onErrorComplete()
+                                            .then(releaseGate));
                 });
     }
 

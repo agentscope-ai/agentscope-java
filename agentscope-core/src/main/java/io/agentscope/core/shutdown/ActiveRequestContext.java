@@ -39,7 +39,9 @@ final class ActiveRequestContext {
     private final AgentBase agent;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
 
-    private final ShutdownStateSaver saver;
+    private record SaverBinding(ShutdownStateSaver saver, boolean requestScoped) {}
+
+    private volatile SaverBinding saverBinding;
 
     /**
      * The per-call session state this request is running against, bound once {@code call()} has
@@ -51,7 +53,7 @@ final class ActiveRequestContext {
     ActiveRequestContext(String requestId, AgentBase agent, ShutdownStateSaver saver) {
         this.requestId = requestId;
         this.agent = agent;
-        this.saver = saver;
+        this.saverBinding = new SaverBinding(saver, false);
     }
 
     String getRequestId() {
@@ -69,6 +71,12 @@ final class ActiveRequestContext {
         }
     }
 
+    void bindSaver(ShutdownStateSaver saver) {
+        if (saver != null) {
+            this.saverBinding = new SaverBinding(saver, true);
+        }
+    }
+
     private AgentState resolveState() {
         AgentState bound = boundState;
         return bound != null ? bound : agent.getAgentState();
@@ -76,12 +84,17 @@ final class ActiveRequestContext {
 
     void saveState() {
         AgentState state = resolveState();
-        if (saver == null || state == null) {
+        SaverBinding binding = saverBinding;
+        if (binding.saver() == null || state == null) {
             return;
         }
         try {
-            state.setShutdownInterrupted(true);
-            saver.save(state);
+            // A request-scoped saver decides whether this is a new checkpoint or merely joins
+            // an existing terminal write. Do not mutate live state for the latter case.
+            if (!binding.requestScoped()) {
+                state.setShutdownInterrupted(true);
+            }
+            binding.saver().save(state);
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }

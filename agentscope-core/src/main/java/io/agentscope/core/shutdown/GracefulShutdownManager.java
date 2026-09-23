@@ -204,6 +204,11 @@ public final class GracefulShutdownManager {
         getActiveRequest(requestId).ifPresent(ctx -> ctx.bindState(state));
     }
 
+    /** Bind a saver to one request so shutdown checkpoints share that call's save ordering. */
+    public void bindRequestSaver(String requestId, ShutdownStateSaver saver) {
+        getActiveRequest(requestId).ifPresent(ctx -> ctx.bindSaver(saver));
+    }
+
     public void unregisterRequest(String requestId) {
         if (requestId == null || requestId.isEmpty()) {
             return;
