@@ -266,7 +266,7 @@ RuntimeContext.builder()
 {
   "decisions": [
     { "toolCallId": "call-1", "approved": true },
-    { "toolCallId": "call-2", "approved": false }
+    { "toolCallId": "call-2", "approved": false, "reason": "not allowed in production" }
   ]
 }
 ```

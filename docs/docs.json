@@ -328,6 +328,7 @@
                           "v2/en/integration/ecosystem/index",
                           "v2/en/integration/ecosystem/overview",
                           "v2/en/integration/ecosystem/chat-completions-web",
+                          "v2/en/integration/ecosystem/jev",
                           "v2/en/integration/ecosystem/studio",
                           "v2/en/integration/ecosystem/training"
                         ]
@@ -821,6 +822,7 @@
                           "v2/zh/integration/ecosystem/index",
                           "v2/zh/integration/ecosystem/overview",
                           "v2/zh/integration/ecosystem/chat-completions-web",
+                          "v2/zh/integration/ecosystem/jev",
                           "v2/zh/integration/ecosystem/studio",
                           "v2/zh/integration/ecosystem/training"
                         ]
@@ -2394,6 +2396,11 @@
       "permanent": true
     },
     {
+      "source": "/v2/en/integration/ecosystem/jev.html",
+      "destination": "/v2/en/integration/ecosystem/jev",
+      "permanent": true
+    },
+    {
       "source": "/v2/en/integration/ecosystem/overview.html",
       "destination": "/v2/en/integration/ecosystem/overview",
       "permanent": true
@@ -2956,6 +2963,11 @@
     {
       "source": "/v2/zh/integration/ecosystem/index.html",
       "destination": "/v2/zh/integration/ecosystem/index",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/ecosystem/jev.html",
+      "destination": "/v2/zh/integration/ecosystem/jev",
       "permanent": true
     },
     {
