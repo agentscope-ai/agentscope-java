@@ -1,5 +1,6 @@
 ---
 title: Filesystem
+zh_link: /v1/zh/docs/harness/filesystem
 ---
 
 ## Purpose

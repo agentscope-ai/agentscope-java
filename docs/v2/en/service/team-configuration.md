@@ -1,5 +1,6 @@
 ---
 title: "Team roles, members and policy settings"
+zh_link: /v2/zh/service/team-configuration
 ---
 
 <Note>

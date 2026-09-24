@@ -1,6 +1,7 @@
 ---
 title: "Enterprise operations: resolve order fulfillment exceptions"
 description: "Coordinate independently deployed AgentScope applications across orders, inventory, logistics, and after-sales systems."
+zh_link: /v2/zh/service/cases/order-fulfillment
 ---
 
 <Note>

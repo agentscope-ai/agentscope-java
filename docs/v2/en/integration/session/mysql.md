@@ -1,5 +1,6 @@
 ---
 title: MySQL State Store
+zh_link: /v2/zh/integration/session/mysql
 ---
 
 <Note>

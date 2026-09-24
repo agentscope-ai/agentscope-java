@@ -1,5 +1,6 @@
 ---
 title: AgentScope 2.0 Release
+zh_link: /v2/zh/blogs/agentscope-v2-release
 ---
 
 AgentScope is an open-source framework for building agent applications, helping developers go from large language models to deployable agents. The challenge today is no longer just getting an agent to answer a single request — it is getting it to **finish tasks reliably**: handle long, multi-step workflows, call tools safely, and integrate cleanly with external systems.

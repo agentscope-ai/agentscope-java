@@ -1,5 +1,6 @@
 ---
 title: "What is AgentScope Service?"
+zh_link: /v2/zh/service/index
 ---
 
 <Note>

@@ -1,6 +1,7 @@
 ---
 title: Middleware
 description: Intercept and extend agent behavior at key lifecycle points
+zh_link: /v2/zh/docs/building-blocks/middleware
 ---
 
 ## Overview

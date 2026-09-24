@@ -1,5 +1,6 @@
 ---
 title: 上下文构建
+en_link: /v2/en/docs/harness/context
 description: 了解 Harness 如何组织 System、会话与任务状态，接入动态业务信息，配置预算并排查构建失败
 ---
 

@@ -2,6 +2,7 @@
 title: Memory
 description: Two-layer long-term memory, conversation compaction, large tool-result
   offloading; prompts and trigger policy are customizable
+zh_link: /v2/zh/docs/harness/memory
 ---
 
 ## Role

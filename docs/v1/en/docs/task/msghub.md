@@ -1,5 +1,6 @@
 ---
 title: MsgHub
+zh_link: /v1/zh/docs/task/msghub
 ---
 
 MsgHub is a message broadcasting center for multi-agent conversations in AgentScope. It manages message distribution among a group of agents, eliminating the need for manual message passing code.

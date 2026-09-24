@@ -1,6 +1,7 @@
 ---
 title: 上下文与 AgentState
 description: 无状态 Agent 引擎、AgentState 生命周期、状态持久化与 RuntimeContext
+en_link: /v2/en/docs/building-blocks/context
 ---
 
 ## 本页与 Harness 上下文构建的关系
@@ -61,7 +62,7 @@ Harness 的材料组织与预算策略。
 | `getTasksContext()` | Todo、修订号，以及可选的任务目标、需求、证据绑定版本和验证摘要 |
 | `getToolContext()` | 工具组激活状态(`activatedGroups`) |
 
-`AgentState` 还携带一个瞬态的、不序列化的 `InterruptControl`,用于 per-session 中断信号——详见下方[Per-session 中断](#per-session-中断)。
+执行控制与 `AgentState` 分离，每次调用拥有独立中断信号，详见下方[Per-session 中断](#per-session-中断)。
 
 一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——配置共享状态存储后，其他实例可以加载已成功保存的状态；这不保证并发调用间实时一致，也不恢复尚未保存的进度或外部副作用。
 
@@ -248,28 +249,18 @@ agent.clearContext(RuntimeContext.builder()
 
 ### Per-session 中断
 
-每份 `AgentState` 都携带一个瞬态的 `InterruptControl`(`io.agentscope.core.interruption.InterruptControl`)——per-session 的中断信号,**永远不会被序列化**到状态存储(`AgentState` 上标记为 `@JsonIgnore transient`)。这使得可以精确中断某个 session 正在进行的 call,而不影响同一 agent 实例上的其他并发 call。
+每次执行拥有独立、仅在运行时存在的 `InterruptControl`，不存放在 `AgentState` 上，也不随会话历史持久化。按 session 中断时，框架定位该 session 当前已获得执行位置的调用：
 
 ```java
-// 中断指定 session —— 只有该 session 的 call 会收到信号
 agent.interrupt("alice", "session-001");
-
-// 带注入用户消息的中断
-agent.interrupt("alice", "session-001", Msg.userMsg("请停下来做个总结。"));
+agent.interrupt("alice", "session-001", new UserMessage("请停止。"));
 ```
 
-推理循环在每次迭代前检查 `state.interruptControl().isInterrupted()`。被触发后,循环进入 `handleInterrupt` 路径,保存状态并返回部分结果。
+空闲 session 不受影响。需要选择某次排队中或运行中的调用时，使用 `prepareRun` / `prepareCall` 返回的 `AgentRun`，见[单次执行控制](/v2/zh/docs/building-blocks/agent#控制单次执行)。即使属于同一 session，排队中的 B 与运行中的 A 也拥有独立控制信号。
 
-旧的无参 `interrupt()` 已弃用，面向匿名用户的默认 session 槽位，不会自动选择当前业务会话。
-多会话调用请传入明确身份，或使用 `interrupt(RuntimeContext)`。
+推理循环在协作检查点读取本次执行的信号。用户中断会生成带中断标记的恢复回复并保存会话状态。已废弃的无参 `interrupt()` 定位默认 session 的当前执行，不读取最近一次调用的上下文。
 
-
-<Note>
-
-`InterruptControl` 是纯运行时信号,不会被持久化。如果某个 session 在故障转移后恢复到另一台机器,中断标志从清零状态开始。另一个 `AgentState.shutdownInterrupted` 标志(是**会被持久化**的)记录了该 session 是否被优雅停机中断——agent 可以在下次加载时检测并恢复。
-
-</Note>
-
+`AgentState.shutdownInterrupted` 是单独持久化的恢复标记。优雅停机会绑定本次执行控制以及该次调用解析出的状态；排队调用没有待保存的会话状态。中断信号不会传给后续执行，也不会被另一节点加载。
 
 ### 并发使用
 

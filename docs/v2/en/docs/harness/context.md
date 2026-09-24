@@ -1,5 +1,6 @@
 ---
 title: Context construction
+zh_link: /v2/zh/docs/harness/context
 description: Understand model inputs, supply dynamic business context, enable task projections, and configure budgets
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: "Hosted 主机与 Runtime 参数"
+en_link: /v2/en/service/hosted-agent-configuration
 ---
 
 <Note>

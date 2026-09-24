@@ -3,6 +3,7 @@ title: AgentScope Java v2
 description: Build distributed, enterprise-grade agents
 mode: custom
 toc: false
+zh_link: /v2/zh/intro
 ---
 
 <div className="agentscope-landing">

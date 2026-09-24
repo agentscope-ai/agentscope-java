@@ -2,6 +2,7 @@
 title: Context & AgentState
 description: Stateless agent engine, AgentState lifecycle, state persistence, and
   RuntimeContext
+zh_link: /v2/zh/docs/building-blocks/context
 ---
 
 ## How this page relates to Harness context construction
@@ -62,7 +63,7 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 | `getTasksContext()` | Todo, revision, and optional objective, requirements, evidence-binding versions and verification summaries |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
 
-`AgentState` also carries a transient, non-serialised `InterruptControl` for per-session interrupt signalling — see [Per-session interrupt](#per-session-interrupt) below.
+Execution controls are separate from `AgentState`: each invocation owns an independent interrupt signal. See [Per-session interrupt](#per-session-interrupt) below.
 
 At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
 
@@ -252,29 +253,18 @@ The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Depr
 
 ### Per-session interrupt
 
-Each `AgentState` carries a transient `InterruptControl` (`io.agentscope.core.interruption.InterruptControl`) — a per-session interrupt signal that is **never serialised** to the state store (marked `@JsonIgnore transient` on `AgentState`). This allows targeted interruption of a single session's in-flight call without affecting other concurrent calls on the same agent instance.
+Each execution owns a runtime-only `InterruptControl`. It is neither stored on `AgentState` nor persisted with conversation history. A session-targeted interrupt resolves the currently admitted execution:
 
 ```java
-// Interrupt a specific session — only that session's call observes the signal
 agent.interrupt("alice", "session-001");
-
-// Interrupt with an injected user message
-agent.interrupt("alice", "session-001", Msg.userMsg("Please stop and summarise."));
+agent.interrupt("alice", "session-001", new UserMessage("Please stop."));
 ```
 
-The reasoning loop checks `state.interruptControl().isInterrupted()` before each iteration. When triggered, the loop enters the `handleInterrupt` path, which saves state and returns the partial result.
+An idle session is unaffected. To select a particular queued or running invocation, use the `AgentRun` returned by `prepareRun` or `prepareCall`; see [execution control](/v2/en/docs/building-blocks/agent#control-one-execution). Queued B and running A have independent controls even when they share a session.
 
-The deprecated no-argument `interrupt()` targets the anonymous default-session slot, not an
-automatically selected business session. Use explicit identity or `interrupt(RuntimeContext)`
-for multi-session calls.
+The reasoning loop checks its execution's signal at cooperative checkpoints. A user interrupt produces an interrupted recovery reply and saves conversation state. The deprecated no-argument `interrupt()` targets the default session's current execution, never the most recently used context.
 
-
-<Note>
-
-`InterruptControl` is a runtime-only signal; it is never persisted. If a session resumes on a different node after failover, the interrupt flag starts cleared. The separate `AgentState.shutdownInterrupted` flag (which **is** persisted) records whether the session was interrupted by graceful shutdown — the agent can detect and recover from that on next load.
-
-</Note>
-
+`AgentState.shutdownInterrupted` is a separate, persisted recovery marker. Graceful shutdown binds both the execution control and the state resolved for that call; queued calls have no state to save. No interrupt flag is carried into the next run or loaded on another node.
 
 ### Concurrent usage
 
