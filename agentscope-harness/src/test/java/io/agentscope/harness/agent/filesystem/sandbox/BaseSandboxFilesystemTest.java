@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -272,15 +273,21 @@ class BaseSandboxFilesystemTest {
         void write_commandHasNoDoubleQuotedSpanContainingSpace() {
             FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
             fs.write(RT, "dir with space/file.txt", "content");
+            String writeCmd = fs.lastCommand;
 
-            // Review follow-up: move() builds commands with the same idiom — scan it too.
-            fs.lastCommand = null;
+            // Review follow-up: move() builds commands with the same idiom — scan both.
             fs.move(RT, "a.txt", "dir with space/b.txt");
+            String moveCmd = fs.lastCommand;
 
             // On a Windows host the argv -> command-line -> docker.exe re-parse round-trip drops
             // inner double quotes; any double-quoted span containing a space then breaks apart
             // into argv separators and the in-container shell sees a syntax error (#3262).
-            String cmd = fs.lastCommand;
+            assertNoDoubleQuotedSpanWithSpace(writeCmd);
+            assertNoDoubleQuotedSpanWithSpace(moveCmd);
+        }
+
+        private static void assertNoDoubleQuotedSpanWithSpace(String cmd) {
+            assertNotNull(cmd, "command should have been captured");
             int i = 0;
             while (i < cmd.length()) {
                 int open = cmd.indexOf('"', i);
@@ -330,6 +337,29 @@ class BaseSandboxFilesystemTest {
             assertTrue(
                     result.error().contains("[output truncated]"),
                     "clamped detail should carry a note: " + result.error());
+        }
+
+        @Test
+        void write_failureMessageHandlesNullOutput() {
+            // The execution layer can produce a null output (e.g. timeout via a null
+            // Throwable.getMessage()); the failure path must not NPE.
+            ExecuteResponse nullOutput = new ExecuteResponse(null, 124, false);
+            WriteResult result =
+                    new FixedResponseFilesystem(nullOutput).write(RT, "some/file.txt", "content");
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("124"),
+                    "null output should fall back to the exit code: " + result.error());
+        }
+
+        @Test
+        void move_failureMessageHandlesNullOutput() {
+            ExecuteResponse nullOutput = new ExecuteResponse(null, 124, false);
+            WriteResult result = new FixedResponseFilesystem(nullOutput).move(RT, "a.txt", "b.txt");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().length() > 0, "failure message should exist");
         }
 
         @Test

@@ -537,6 +537,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      * as context-overflow territory for tool results, so error details get a tight local bound.
      */
     private static String clampDetail(String output) {
+        // Null-safe by design: move() passes result.output() unguarded, and the execution
+        // layer can produce a null output (e.g. ExecTimeoutException via a null
+        // Throwable.getMessage()).
+        if (output == null) {
+            return "no output";
+        }
         String stripped = output.strip();
         return stripped.length() <= MAX_DETAIL_CHARS
                 ? stripped
