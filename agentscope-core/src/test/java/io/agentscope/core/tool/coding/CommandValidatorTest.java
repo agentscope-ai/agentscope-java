@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class CommandValidatorTest {
@@ -47,14 +48,18 @@ class CommandValidatorTest {
                 "echo <(printf marker)",
                 "echo >(cat)",
                 "echo (printf marker)",
+                "echo marker)",
                 "echo {marker,other}",
+                "echo marker}",
                 "echo marker; printf other",
                 "echo marker | cat",
                 "echo marker && printf other",
                 "echo marker\nprintf other",
                 "echo '\\'$(printf marker)",
                 "echo '\\'; printf marker",
-                "echo \"unterminated"
+                "echo \"unterminated",
+                "echo 'unterminated",
+                "echo marker\\"
             })
     void unixRequiresApprovalForShellSyntax(String command) {
         assertFalse(unix.validate(command, Set.of("echo")).isAllowed(), command);
@@ -73,11 +78,16 @@ class CommandValidatorTest {
                 "echo \\`marker\\`",
                 "echo escaped\\;separator",
                 "echo '\\' literal",
+                "'echo'",
+                "\"echo\"",
                 "'echo' hello",
-                "\"echo\" hello"
+                "\"echo\" hello",
+                "'echo'\thello",
+                "\"echo\"\thello"
             })
     void unixAllowsLiteralArguments(String command) {
         assertTrue(unix.validate(command, Set.of("echo")).isAllowed(), command);
+        assertFalse(unix.containsMultipleCommands(command), command);
     }
 
     @ParameterizedTest
@@ -93,13 +103,15 @@ class CommandValidatorTest {
                 "echo marker >> output.txt",
                 "echo < input.txt",
                 "echo (marker)",
+                "echo marker)",
                 "echo marker & echo other",
                 "echo marker | more",
                 "echo marker\necho other",
                 "echo marker\recho other",
                 "echo \"^\" & echo other",
                 "echo 'marker & echo other'",
-                "echo \"unterminated"
+                "echo \"unterminated",
+                "echo marker^"
             })
     void windowsRequiresApprovalForShellSyntax(String command) {
         assertFalse(windows.validate(command, Set.of("echo")).isAllowed(), command);
@@ -114,10 +126,64 @@ class CommandValidatorTest {
                 "echo \"literal > < ( ) & |\"",
                 "echo ^& ^| ^> ^< ^( ^)",
                 "echo hello;world",
-                "echo \"^\" literal"
+                "echo \"^\" literal",
+                "\"echo\"",
+                "\"echo\"\thello"
             })
     void windowsAllowsLiteralArguments(String command) {
         assertTrue(windows.validate(command, Set.of("echo")).isAllowed(), command);
+        assertFalse(windows.containsMultipleCommands(command), command);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    void separatorDetectionHandlesMissingCommands(String command) {
+        for (CommandValidator validator : List.of(unix, windows)) {
+            assertFalse(validator.containsMultipleCommands(command));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"echo marker & echo other", "echo marker | more", "echo marker\necho other"})
+    void separatorDetectionFindsUnquotedSeparators(String command) {
+        for (CommandValidator validator : List.of(unix, windows)) {
+            assertTrue(validator.containsMultipleCommands(command), command);
+        }
+    }
+
+    @Test
+    void unixSeparatorDetectionHandlesSemicolonsAndSingleQuotedBackslashes() {
+        assertTrue(unix.containsMultipleCommands("echo marker; printf other"));
+        assertTrue(unix.containsMultipleCommands("echo '\\'; printf other"));
+    }
+
+    @Test
+    void separatorDetectionDoesNotReplaceApprovalValidation() {
+        // The public separator check retains its narrower contract; validation also checks
+        // expansions, redirection, grouping, and incomplete quoting or escaping.
+        for (String command :
+                List.of(
+                        "echo $SHELL",
+                        "echo `printf marker`",
+                        "echo $(printf marker)",
+                        "echo marker > output.txt",
+                        "echo 'unterminated",
+                        "echo marker\\")) {
+            assertFalse(unix.containsMultipleCommands(command), command);
+            assertFalse(unix.validate(command, Set.of("echo")).isAllowed(), command);
+        }
+        for (String command :
+                List.of(
+                        "echo %PATH%",
+                        "echo !PATH!",
+                        "echo (marker)",
+                        "echo marker > output.txt",
+                        "echo \"unterminated",
+                        "echo marker^")) {
+            assertFalse(windows.containsMultipleCommands(command), command);
+            assertFalse(windows.validate(command, Set.of("echo")).isAllowed(), command);
+        }
     }
 
     @Test
