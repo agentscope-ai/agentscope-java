@@ -1,5 +1,6 @@
 ---
 title: "Hosted host and Runtime settings"
+zh_link: /v2/zh/service/hosted-agent-configuration
 ---
 
 <Note>

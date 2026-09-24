@@ -1,5 +1,6 @@
 ---
 title: 记忆
+en_link: /v1/en/docs/harness/memory
 ---
 
 ## 作用

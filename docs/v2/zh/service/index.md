@@ -1,5 +1,6 @@
 ---
 title: "什么是 AgentScope Service"
+en_link: /v2/en/service/index
 ---
 
 <Note>

@@ -1,6 +1,7 @@
 ---
 title: "托管与混合团队：从客户需求到售前方案"
 description: "直接创建 Managed Team 交付方案和 PoC 计划，再接入 External 查询与 Hosted 实施。"
+en_link: /v2/en/service/cases/presales-team
 ---
 
 <Note>

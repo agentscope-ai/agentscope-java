@@ -2,6 +2,7 @@
 title: Context Compaction
 description: Keep the conversation within the model's token budget without losing
   critical information
+zh_link: /v2/zh/docs/harness/compaction
 ---
 
 <Note>

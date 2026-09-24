@@ -1,5 +1,6 @@
 ---
 title: "Memory: shared knowledge"
+zh_link: /v2/zh/service/memory
 ---
 
 <Note>

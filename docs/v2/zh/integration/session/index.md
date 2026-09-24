@@ -1,5 +1,6 @@
 ---
 title: Agent 状态存储
+en_link: /v2/en/integration/session/index
 ---
 
 选择下方指南，了解Agent 状态存储的配置与使用。

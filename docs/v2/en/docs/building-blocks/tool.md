@@ -1,6 +1,7 @@
 ---
 title: Tool
 description: Define, register, and manage the capabilities an agent can call
+zh_link: /v2/zh/docs/building-blocks/tool
 ---
 
 ## Overview
@@ -422,7 +423,7 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) as an ungrouped, always-visible tool.
 - It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
 At runtime, the agent invokes the viewer with two required arguments:
@@ -631,3 +632,26 @@ External execution tools and approval workflows
 
 
 </CardGroup>
+
+
+## Request-scoped tools and session isolation
+
+Agent construction copies tool registries and registration metadata. Existing tool instances remain shared by reference, so custom tools must support concurrent use. Hook and knowledge tools registered while building one agent do not overwrite another agent's registrations.
+
+Use `io.agentscope.core.tool.ToolRequestConfig` instead of mutating a shared Toolkit during a call:
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+External tools contain schemas only. Execution suspends for the caller to execute the tool and submit its result. External tools override backend tools with the same name. `EXTERNAL_ONLY` hides all backend tools, even with an empty external list or when Toolkit disallows deletion: composing a request view does not delete registrations. `AGENT_ONLY` rejects nonempty external tool maps.
+
+`Toolkit.callTool` and `callTools` also read configuration from their explicit RuntimeContext. `getTool(name)` inspects the underlying registry; use `getTool(name, config)` for the request view. Activation groups live in the session's `ToolContextState`; streaming tool callbacks belong to each invocation.
+
+Repositories with user- or session-dependent visibility implement `io.agentscope.core.skill.repository.RuntimeContextSkillRepository` in Core. Both Core and Harness pass the current context to the repository. Dynamic Skill views are cached by content signature. Concurrent cache misses share one completed materialization; rebuilding an evicted view uses a fresh directory so active executions keep their files. Cache eviction bounds retained boxes, not disk usage: generated directories remain until JVM shutdown. Callers own cleanup of explicitly supplied working directories; do not remove resources while executions still reference them.

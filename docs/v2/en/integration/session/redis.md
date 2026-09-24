@@ -1,5 +1,6 @@
 ---
 title: Redis State Store
+zh_link: /v2/zh/integration/session/redis
 ---
 
 <Note>

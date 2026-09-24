@@ -1,6 +1,7 @@
 ---
 title: 子 Agent（Subagent）
 description: 声明子 agent、同步/后台调用、自动反向通知、远程子 agent、流式转发
+en_link: /v2/en/docs/harness/subagent
 ---
 
 ## 作用
