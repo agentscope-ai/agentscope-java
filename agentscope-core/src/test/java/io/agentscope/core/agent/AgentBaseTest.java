@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -224,6 +225,25 @@ class AgentBaseTest {
 
         // Observe should complete without error
         agent.observe(messages).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+    }
+
+    @Test
+    @DisplayName("interrupt(RuntimeContext) falls back to interrupt() when not overridden")
+    void testInterruptRuntimeContextFallsBackToNoArg() {
+        AtomicBoolean noArgCalled = new AtomicBoolean();
+        TestAgent recording =
+                new TestAgent(TestConstants.TEST_AGENT_NAME) {
+                    @Override
+                    public void interrupt() {
+                        noArgCalled.set(true);
+                        super.interrupt();
+                    }
+                };
+
+        recording.interrupt(
+                RuntimeContext.builder().userId("user-1").sessionId("session-1").build());
+
+        assertTrue(noArgCalled.get(), "default interrupt(RuntimeContext) should call interrupt()");
     }
 
     @Test

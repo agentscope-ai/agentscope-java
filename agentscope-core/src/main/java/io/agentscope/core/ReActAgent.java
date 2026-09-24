@@ -19,7 +19,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.SessionStateAgent;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
@@ -213,7 +215,8 @@ import reactor.util.context.Context;
  * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
  */
 @SuppressWarnings("deprecation")
-public class ReActAgent extends AgentBase implements AutoCloseable {
+public class ReActAgent extends AgentBase
+        implements EventStreamingAgent, SessionStateAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final GracefulShutdownManager shutdownManager =
@@ -940,6 +943,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      *
      * @param ctx the runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         interrupt(ctx, null);
     }
@@ -1051,6 +1055,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private Flux<AgentEvent> buildAgentStream(
             List<Msg> msgs, RuntimeContext context, Function<List<Msg>, Mono<Msg>> doCallFn) {
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
         String replyId = UUID.randomUUID().toString().replace("-", "");
         Function<AgentInput, Flux<AgentEvent>> core =
                 input ->
@@ -1062,12 +1067,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                     // Call runLifecycle directly — NOT call() — to avoid the
                                     // onAgent chain being applied a second time.
-                                    Mono<Msg> lifecycle = runLifecycle(input.msgs(), doCallFn);
-                                    if (context != null) {
-                                        lifecycle =
-                                                lifecycle.contextWrite(
-                                                        c -> c.put(RUNTIME_CONTEXT_KEY, context));
-                                    }
+                                    Mono<Msg> lifecycle =
+                                            runLifecycle(input.msgs(), doCallFn)
+                                                    .contextWrite(
+                                                            c ->
+                                                                    c.put(
+                                                                            RUNTIME_CONTEXT_KEY,
+                                                                            effective));
                                     // Do not install AgentEventEmitter.CONTEXT_KEY when the
                                     // deprecated stream() → SubagentEventBus path is driving
                                     // this invocation. On that path AgentSpawnTool reads
@@ -1107,7 +1113,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     sink.onCancel(lifecycleDisposable);
                                 },
                                 FluxSink.OverflowStrategy.BUFFER);
-        return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
+        return MiddlewareChain.build(middlewares, this, effective, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
@@ -1124,8 +1130,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msgs input messages
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
-        return streamEvents(msgs, (RuntimeContext) null);
+        return streamEvents(msgs, RuntimeContext.empty());
     }
 
     /**
@@ -1134,6 +1141,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param msg input message
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg));
     }
@@ -1146,11 +1154,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * lifecycle execution.
      *
      * @param msgs input messages
-     * @param context runtime context to propagate into the call
+     * @param context runtime context to propagate into the call; {@code null} is normalised to
+     *     {@link RuntimeContext#empty()} so middlewares always receive a non-null context
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext context) {
-        return buildAgentStream(msgs, context, this::doCall);
+        return buildAgentStream(
+                msgs, context != null ? context : RuntimeContext.empty(), this::doCall);
     }
 
     /**
@@ -1161,6 +1172,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param context runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
         return streamEvents(List.of(msg), context);
     }
@@ -4401,6 +4413,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * @param ctx the runtime context (uses {@code getUserId()} and {@code getSessionId()})
      * @return the agent state for the identified session
      */
+    @Override
     public AgentState getAgentState(RuntimeContext ctx) {
         String uid = ctx != null ? ctx.getUserId() : null;
         String sid = ctx != null ? ctx.getSessionId() : null;
@@ -4419,6 +4432,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * {@code activateSlotForContext}. This method returns the locally cached instance (suitable
      * for the "get → mutate → save" pattern used by admin APIs and tests).
      */
+    @Override
     public AgentState getAgentState(String userId, String sessionId) {
         String slot = slotKey(userId, sessionId);
         return stateCache.computeIfAbsent(

@@ -15,8 +15,7 @@
  */
 package io.agentscope.examples.copilotkit.config;
 
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agui.AguiUtil;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadInfo;
 import io.agentscope.examples.copilotkit.model.CopilotKitModels.ThreadMutationRequest;
@@ -121,14 +120,14 @@ public class CopilotKitRouteConfiguration {
         threadSessionManager
                 .getSession(userId, threadId)
                 .ifPresent(
-                        threadSession -> {
-                            ReActAgent actAgent = AguiUtil.asReActAgent(threadSession.getAgent());
-                            if (actAgent != null) {
-                                actAgent.interrupt(userId, threadId);
-                            } else {
-                                threadSession.getAgent().interrupt();
-                            }
-                        });
+                        threadSession ->
+                                threadSession
+                                        .getAgent()
+                                        .interrupt(
+                                                RuntimeContext.builder()
+                                                        .userId(userId)
+                                                        .sessionId(threadId)
+                                                        .build()));
         return Mono.empty();
     }
 

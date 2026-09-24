@@ -15,10 +15,8 @@
  */
 package io.agentscope.core.agui.processor;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agui.AguiUtil;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -90,9 +88,9 @@ public class AguiRequestProcessor {
      *
      * <p>Contains the resolved agent (for interrupt handling) and the event stream.
      *
-     * @param agent The resolved agent instance
-     * @param events The event stream
-     * @param runtimeContext The resolved caller-provided runtime context, may be null
+     * @param agent          The resolved agent instance
+     * @param events         The event stream
+     * @param runtimeContext The resolved runtime context, including user id and session id
      */
     public record ProcessResult(
             Agent agent, Flux<AguiEvent> events, RuntimeContext runtimeContext) {
@@ -100,23 +98,35 @@ public class AguiRequestProcessor {
         /**
          * Interrupt this request's active session.
          *
-         * <p>AG-UI uses {@code threadId} as the session id. For a multi-session
-         * {@link ReActAgent}, preserve the caller's user id and target that session instead of
-         * invoking the deprecated no-argument interrupt method, which always targets the default
-         * session.
-         *
-         * @param threadId The AG-UI thread id for this request
+         * <p>Uses the resolved {@link RuntimeContext} so multi-session agents receive both the
+         * caller user id and the AG-UI {@code threadId} (session id). Replaces the former {@code
+         * interrupt(String threadId)} overload; call {@link Agent#interrupt(RuntimeContext)}
+         * directly when you already have a context.
          */
-        public void interrupt(String threadId) {
-            ReActAgent reActAgent = AguiUtil.asReActAgent(agent);
-            if (reActAgent != null) {
-                RuntimeContext interruptContext =
-                        RuntimeContext.builder(runtimeContext).sessionId(threadId).build();
-                reActAgent.interrupt(interruptContext);
-            } else {
-                agent.interrupt();
-            }
+        public void interrupt() {
+            agent.interrupt(runtimeContext != null ? runtimeContext : RuntimeContext.empty());
         }
+    }
+
+    /**
+     * Resolve the runtime context for an AG-UI request.
+     *
+     * <p>Invokes the configured {@link AguiRuntimeContextResolver} (if any) and pins {@code
+     * sessionId} to the request {@code threadId}. Transport handlers should call this before {@link
+     * #process(AguiRuntimeContextRequest, RuntimeContext)} so disconnect interrupts reuse the same
+     * context, including user id.
+     *
+     * @param request The AG-UI request context
+     * @return A runtime context with caller attributes and {@code sessionId=threadId}
+     */
+    public RuntimeContext resolveRuntimeContext(AguiRuntimeContextRequest<?> request) {
+        RuntimeContext resolved =
+                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
+        String threadId =
+                request != null && request.getInput() != null
+                        ? request.getInput().getThreadId()
+                        : null;
+        return RuntimeContext.builder(resolved).sessionId(threadId).build();
     }
 
     /**
@@ -132,22 +142,36 @@ public class AguiRequestProcessor {
      * @return A ProcessResult containing the agent and event stream
      */
     public ProcessResult process(AguiRuntimeContextRequest<?> request) {
+        return process(request, resolveRuntimeContext(request));
+    }
+
+    /**
+     * Process an AG-UI request with a pre-resolved runtime context.
+     *
+     * @param request The AG-UI request context carrying input, agent IDs, transport details and the
+     *     native request
+     * @param runtimeContext The runtime context resolved by the caller, typically via {@link
+     *     #resolveRuntimeContext(AguiRuntimeContextRequest)}
+     * @return A ProcessResult containing the agent and event stream
+     */
+    public ProcessResult process(
+            AguiRuntimeContextRequest<?> request, RuntimeContext runtimeContext) {
         RunAgentInput input = request.getInput();
         String headerAgentId = request.getHeaderAgentId();
         String pathAgentId = request.getPathAgentId();
         String threadId = input.getThreadId();
         String runId = input.getRunId();
 
-        RuntimeContext resolved =
-                runtimeContextResolver != null ? runtimeContextResolver.resolve(request) : null;
-        RuntimeContext runtimeContext =
-                RuntimeContext.builder(resolved).sessionId(threadId).build();
+        RuntimeContext effectiveContext =
+                runtimeContext != null
+                        ? RuntimeContext.builder(runtimeContext).sessionId(threadId).build()
+                        : resolveRuntimeContext(request);
 
         // Resolve agent ID
         String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
 
         // Resolve agent
-        Agent agent = agentResolver.resolveAgent(agentId, threadId, runtimeContext.getUserId());
+        Agent agent = agentResolver.resolveAgent(agentId, threadId, effectiveContext.getUserId());
 
         Flux<AguiEvent> events =
                 Flux.defer(
@@ -165,18 +189,18 @@ public class AguiRequestProcessor {
                             try {
                                 // Determine effective input based on server-side memory
                                 RunAgentInput effectiveInput = input;
-                                if (agentResolver.hasMemory(runtimeContext)) {
+                                if (agentResolver.hasMemory(effectiveContext)) {
                                     logger.debug(
                                             "Using server-side memory for thread {} user {},"
                                                     + " extracting follow-up messages",
                                             threadId,
-                                            runtimeContext.getUserId());
+                                            effectiveContext.getUserId());
                                     effectiveInput = extractLatestUserMessage(input);
                                 }
 
                                 RuntimeContext effectiveRuntimeContext =
                                         resumeCoordinator.addResumeInterrupts(
-                                                input, runtimeContext);
+                                                input, effectiveContext);
 
                                 // Create adapter and run
                                 AguiAgentAdapter adapter = adapterFactory.create(agent, config);
@@ -221,7 +245,7 @@ public class AguiRequestProcessor {
                                 return processorErrorEvents(input, error);
                             }
                         });
-        return new ProcessResult(agent, events, runtimeContext);
+        return new ProcessResult(agent, events, effectiveContext);
     }
 
     private Flux<AguiEvent> processorErrorEvents(RunAgentInput input, Throwable error) {
@@ -268,9 +292,9 @@ public class AguiRequestProcessor {
      *   <li>"default"</li>
      * </ol>
      *
-     * @param input The request input
+     * @param input         The request input
      * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable (may be null)
+     * @param pathAgentId   The agent ID from URL path variable (may be null)
      * @return The resolved agent ID
      */
     public String resolveAgentId(RunAgentInput input, String headerAgentId, String pathAgentId) {
@@ -372,7 +396,9 @@ public class AguiRequestProcessor {
         return new Builder();
     }
 
-    /** Builder for AguiRequestProcessor. */
+    /**
+     * Builder for AguiRequestProcessor.
+     */
     public static class Builder {
 
         private AgentResolver agentResolver;

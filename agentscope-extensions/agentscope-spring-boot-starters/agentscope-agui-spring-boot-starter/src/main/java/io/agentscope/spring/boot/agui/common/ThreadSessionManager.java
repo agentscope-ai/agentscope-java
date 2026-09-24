@@ -15,10 +15,9 @@
  */
 package io.agentscope.spring.boot.agui.common;
 
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agui.AguiUtil;
+import io.agentscope.core.agent.SessionStateAgent;
 import io.agentscope.core.state.AgentState;
 import java.time.Instant;
 import java.util.Collections;
@@ -159,8 +158,8 @@ public class ThreadSessionManager {
      * Check if a session exists and has memory for the given runtime context.
      *
      * <p>The session is keyed by {@link RuntimeContext#getUserId()} and {@link
-     * RuntimeContext#getSessionId()}. When the agent is a harness wrapper, the inner {@link
-     * ReActAgent} is inspected without closing it.
+     * RuntimeContext#getSessionId()}. Agents that expose session state implement {@link
+     * SessionStateAgent}; wrappers such as HarnessAgent are inspected directly.
      *
      * @param runtimeContext The runtime context identifying the user and thread
      * @return true if the session exists and the agent has non-empty memory
@@ -175,11 +174,11 @@ public class ThreadSessionManager {
             return false;
         }
 
-        ReActAgent reActAgent = AguiUtil.asReActAgent(session.getAgent());
-        if (reActAgent == null) {
+        Agent agent = session.getAgent();
+        if (!(agent instanceof SessionStateAgent stateful)) {
             return false;
         }
-        AgentState state = reActAgent.getAgentState(runtimeContext);
+        AgentState state = stateful.getAgentState(runtimeContext);
         return state != null && !state.getContext().isEmpty();
     }
 

@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
 
 /**
@@ -24,14 +25,18 @@ import io.agentscope.core.tool.Toolkit;
  * <p>This interface defines the core contract for agents, combining:
  * <ul>
  *   <li>{@link CallableAgent} - Process messages and generate responses</li>
- *   <li>{@link StreamableAgent} - Stream events during execution</li>
+ *   <li>{@link StreamableAgent} - Stream coarse-grained v1 events during execution</li>
  *   <li>{@link ObservableAgent} - Observe messages without responding</li>
  * </ul>
+ *
+ * <p>Fine-grained v2 streaming is an optional capability. Agents that emit
+ * {@link io.agentscope.core.event.AgentEvent}s should also implement {@link EventStreamingAgent}.
+ * Session-scoped {@link AgentState} is likewise optional via {@link SessionStateAgent}.
  *
  * <p>Design Philosophy:
  * <ul>
  *   <li>Memory management is NOT part of the core Agent interface - it's the responsibility
- *       of specific agent implementations (e.g., ReActAgent)</li>
+ *       of specific agent implementations (e.g., ReActAgent) via {@link SessionStateAgent}</li>
  *   <li>Structured output is a specialized capability provided by specific agents</li>
  *   <li>Observe pattern allows agents to receive messages without generating a reply,
  *       enabling multi-agent collaboration</li>
@@ -87,14 +92,28 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     void interrupt(Msg msg);
 
     /**
-     * Returns the agent's runtime {@link io.agentscope.core.state.AgentState}, or {@code null} if
-     * this agent type does not maintain one.
+     * Interrupt the in-flight call identified by {@code ctx}.
+     *
+     * <p>The default implementation falls back to {@link #interrupt()}. Multi-session agents and
+     * wrappers should override this to target the session in {@code ctx} instead of the default
+     * slot.
+     *
+     * @param ctx runtime context identifying the session, may be {@code null}
+     */
+    default void interrupt(RuntimeContext ctx) {
+        interrupt();
+    }
+
+    /**
+     * Returns the agent's runtime {@link AgentState}, or {@code null} if this agent type does not
+     * maintain one.
      *
      * <p>This is the canonical access point used by tool methods declared with
      * {@code @Tool(stateInjected=true)}: the framework binds the live state to the
-     * {@code AgentState} parameter at invocation time.
+     * {@code AgentState} parameter at invocation time. Session-scoped lookup belongs on
+     * {@link SessionStateAgent}.
      */
-    default io.agentscope.core.state.AgentState getAgentState() {
+    default AgentState getAgentState() {
         return null;
     }
 
