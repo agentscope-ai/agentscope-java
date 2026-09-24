@@ -188,10 +188,16 @@ public class MysqlAgentStateStore implements AgentStateStore {
             stmt.setString(2, tableName);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next() && rs.getInt(1) == 0) {
+                    // DEFAULT 1 (not 0): the ALTER backfills pre-existing rows with the
+                    // default, and 0 is the sentinel getVersioned() reports for "row absent".
+                    // Backfilling 0 would make every pre-existing row look absent to
+                    // saveIfVersion(..., 0), which takes the INSERT branch and hits a
+                    // duplicate key — a phantom CAS conflict. Both write paths start at
+                    // version 1, so 1 is the correct resting value for migrated rows.
                     String alterSql =
                             "ALTER TABLE "
                                     + getFullTableName()
-                                    + " ADD COLUMN version BIGINT NOT NULL DEFAULT 0";
+                                    + " ADD COLUMN version BIGINT NOT NULL DEFAULT 1";
                     try (PreparedStatement alter = conn.prepareStatement(alterSql)) {
                         alter.execute();
                     }
@@ -464,6 +470,14 @@ public class MysqlAgentStateStore implements AgentStateStore {
                     () -> {
                         if (expectedVersion == 0L) {
                             result[0] = insertIfAbsent(conn, slotId, key, value);
+                            if (result[0] == UNVERSIONED) {
+                                // The row already exists. If its stored version is still 0
+                                // (e.g. backfilled by an older ALTER TABLE migration), that
+                                // satisfies the CAS — bump 0 -> 1. If a concurrent writer
+                                // already moved it past 0 this matches nothing and correctly
+                                // reports UNVERSIONED.
+                                result[0] = updateIfVersion(conn, slotId, key, value, 0L);
+                            }
                         } else {
                             result[0] = updateIfVersion(conn, slotId, key, value, expectedVersion);
                         }

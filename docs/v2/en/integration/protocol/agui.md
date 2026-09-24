@@ -290,6 +290,10 @@ Both use the official AG-UI `reason: "tool_call"` because the interrupt is bound
             "editedArgs": {
               "type": "object",
               "description": "Full replacement of the tool args. Not merged."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Optional explanation supplied when the tool call is denied."
             }
           },
           "required": ["approved"]
@@ -332,6 +336,8 @@ The front end can show an approval or external-execution UI. After the user acts
 `status` supports the official `resolved` and `cancelled` values. For the common approval case where a user rejects a tool request, prefer `resolved` and express the business decision in `payload`, for example `{ "approved": false }`; use `cancelled` when the interrupt itself is cancelled.
 
 For permission confirmations, `payload.approved` must be the boolean `true` to approve the tool. Any missing, non-boolean, or `false` value is treated as denial. `payload.editedArgs`, when present, must be a JSON object and is a **full replacement** of the original tool arguments, not a partial merge. AgentScope Java rebuilds both the `ToolUseBlock.input` and raw JSON `ToolUseBlock.content` from `editedArgs`, so the approved tool executes the edited arguments.
+
+`payload.reason` is an optional string. On denial it becomes `ConfirmResult.reason` and is used as the DENIED tool-result text; when it is missing or blank, AgentScope keeps the default `Permission denied by user` message.
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 

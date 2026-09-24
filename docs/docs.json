@@ -328,8 +328,8 @@
                         "pages": [
                           "v2/en/integration/ecosystem/index",
                           "v2/en/integration/ecosystem/overview",
-                          "v2/en/integration/ecosystem/chat-completions-web",
-                          "v2/en/integration/ecosystem/studio",
+                         "v2/en/integration/ecosystem/chat-completions-web",
+                         "v2/en/integration/ecosystem/studio",
                           "v2/en/integration/ecosystem/training"
                         ]
                       }
@@ -364,6 +364,7 @@
                   {
                     "group": "Blogs",
                     "pages": [
+                      "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
                       "v2/zh/blogs/how-to-build-agent-harness/03-context-and-state",
@@ -389,21 +390,32 @@
                   }
                 ]
               },
-              {
-                "tab": "Community",
-                "groups": [
-                  {
-                    "group": "Community",
-                    "pages": [
-                      "v2/en/community/contributors"
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "version": "v1",
+             {
+               "tab": "Community",
+               "groups": [
+                 {
+                   "group": "Community",
+                   "pages": [
+                     "v2/en/community/contributors"
+                   ]
+                 }
+               ]
+             },
+             {
+               "tab": "JEV",
+               "groups": [
+                 {
+                   "group": "JEV",
+                   "pages": [
+                     "v2/en/jev/index"
+                   ]
+                 }
+               ]
+             }
+           ]
+         },
+         {
+           "version": "v1",
             "tabs": [
               {
                 "tab": "Home",
@@ -820,12 +832,12 @@
                       {
                         "group": "生态扩展",
                         "pages": [
-                          "v2/zh/integration/ecosystem/index",
-                          "v2/zh/integration/ecosystem/overview",
-                          "v2/zh/integration/ecosystem/chat-completions-web",
-                          "v2/zh/integration/ecosystem/studio",
-                          "v2/zh/integration/ecosystem/training"
-                        ]
+                         "v2/zh/integration/ecosystem/index",
+                         "v2/zh/integration/ecosystem/overview",
+                         "v2/zh/integration/ecosystem/chat-completions-web",
+                         "v2/zh/integration/ecosystem/studio",
+                         "v2/zh/integration/ecosystem/training"
+                       ]
                       }
                     ]
                   },
@@ -883,21 +895,32 @@
                   }
                 ]
               },
-              {
-                "tab": "社区",
-                "groups": [
-                  {
-                    "group": "社区",
-                    "pages": [
-                      "v2/zh/community/contributors"
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "version": "v1",
+             {
+               "tab": "社区",
+               "groups": [
+                 {
+                   "group": "社区",
+                   "pages": [
+                     "v2/zh/community/contributors"
+                   ]
+                 }
+               ]
+             },
+             {
+               "tab": "JEV",
+               "groups": [
+                 {
+                   "group": "JEV",
+                   "pages": [
+                     "v2/zh/jev/index"
+                   ]
+                 }
+               ]
+             }
+           ]
+         },
+         {
+           "version": "v1",
             "tabs": [
               {
                 "tab": "首页",
@@ -2395,8 +2418,13 @@
       "destination": "/v2/en/integration/ecosystem/index",
       "permanent": true
     },
-    {
-      "source": "/v2/en/integration/ecosystem/overview.html",
+   {
+     "source": "/v2/en/jev/index.html",
+     "destination": "/v2/en/jev/index",
+     "permanent": true
+   },
+   {
+     "source": "/v2/en/integration/ecosystem/overview.html",
       "destination": "/v2/en/integration/ecosystem/overview",
       "permanent": true
     },
@@ -2960,8 +2988,13 @@
       "destination": "/v2/zh/integration/ecosystem/index",
       "permanent": true
     },
-    {
-      "source": "/v2/zh/integration/ecosystem/overview.html",
+   {
+     "source": "/v2/zh/jev/index.html",
+     "destination": "/v2/zh/jev/index",
+     "permanent": true
+   },
+   {
+     "source": "/v2/zh/integration/ecosystem/overview.html",
       "destination": "/v2/zh/integration/ecosystem/overview",
       "permanent": true
     },

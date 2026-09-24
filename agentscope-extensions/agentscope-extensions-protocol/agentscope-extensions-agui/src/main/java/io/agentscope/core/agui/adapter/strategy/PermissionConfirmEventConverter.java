@@ -74,7 +74,13 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
                                     "type",
                                     "object",
                                     "description",
-                                    "Full replacement of the tool args. Not merged.")),
+                                    "Full replacement of the tool args. Not merged."),
+                            "reason",
+                            Map.of(
+                                    "type",
+                                    "string",
+                                    "description",
+                                    "Optional explanation supplied when the tool call is denied.")),
                     "required",
                     List.of("approved"));
 

@@ -80,9 +80,9 @@ Common options:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `triggerMessages` | `50` | Trigger by message count (`0` = off) |
-| `triggerTokens` | `80_000` | Trigger by estimated tokens (`0` = off) |
+| `triggerTokens` | `0` | Trigger by estimated tokens; `0` = dynamic (model context window minus `reserved`) |
 | `keepMessages` | `20` | Number of tail messages to keep |
-| `keepTokens` | `0` | When non-zero, walk back by token budget; overrides `keepMessages` |
+| `keepTokens` | `-1` | `-1` = dynamic (auto-computed from the model context window); `0` = use `keepMessages`; `>0` = fixed token budget, overriding `keepMessages` |
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
