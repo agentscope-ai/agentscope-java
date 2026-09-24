@@ -120,7 +120,17 @@ class ToolExecutor {
      * Combine the user-defined and internal chunk callbacks.
      */
     private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback() {
-        if (internalChunkCallback == null) {
+        return getEffectiveChunkCallback(null);
+    }
+
+    /** Combines shared user callbacks with the callback scoped to this tool call. */
+    private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback(
+            ToolCallParam param) {
+        BiConsumer<ToolUseBlock, ToolResultBlock> scopedInternalCallback =
+                param != null && param.getInternalChunkCallback() != null
+                        ? param.getInternalChunkCallback()
+                        : internalChunkCallback;
+        if (scopedInternalCallback == null) {
             return userChunkCallback != null
                     ? (toolUse, chunk) ->
                             invokeChunkCallback("user", userChunkCallback, toolUse, chunk)
@@ -128,10 +138,10 @@ class ToolExecutor {
         }
         if (userChunkCallback == null) {
             return (toolUse, chunk) ->
-                    invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+                    invokeChunkCallback("internal", scopedInternalCallback, toolUse, chunk);
         }
         return (toolUse, chunk) -> {
-            invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+            invokeChunkCallback("internal", scopedInternalCallback, toolUse, chunk);
             invokeChunkCallback("user", userChunkCallback, toolUse, chunk);
         };
     }
@@ -239,7 +249,8 @@ class ToolExecutor {
         }
 
         // Create emitter for streaming
-        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
+        ToolEmitter toolEmitter =
+                new DefaultToolEmitter(toolCall, getEffectiveChunkCallback(param));
 
         // Merge input with preset parameters. Preset values win so framework-controlled
         // parameters remain immutable from the caller/LLM perspective.
@@ -308,6 +319,16 @@ class ToolExecutor {
             ExecutionConfig executionConfig,
             Agent agent,
             io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+        return executeAll(toolCalls, parallel, executionConfig, agent, agentRuntimeContext, null);
+    }
+
+    Mono<List<ToolResultBlock>> executeAll(
+            List<ToolUseBlock> toolCalls,
+            boolean parallel,
+            ExecutionConfig executionConfig,
+            Agent agent,
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
@@ -324,7 +345,8 @@ class ToolExecutor {
                                                     toolCall,
                                                     executionConfig,
                                                     agent,
-                                                    agentRuntimeContext))
+                                                    agentRuntimeContext,
+                                                    internalChunkCallback))
                             .toList();
             return Flux.concat(monos).collectList();
         }
@@ -338,7 +360,11 @@ class ToolExecutor {
         for (ToolUseBlock toolCall : toolCalls) {
             Mono<ToolResultBlock> mono =
                     executeWithInfrastructure(
-                            toolCall, executionConfig, agent, agentRuntimeContext);
+                            toolCall,
+                            executionConfig,
+                            agent,
+                            agentRuntimeContext,
+                            internalChunkCallback);
             if (isConcurrencySafe(toolCall)) {
                 safeBatch.add(mono);
             } else {
@@ -375,13 +401,15 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+            io.agentscope.core.agent.RuntimeContext agentRuntimeContext,
+            BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .agent(agent)
                         .runtimeContext(agentRuntimeContext)
+                        .internalChunkCallback(internalChunkCallback)
                         .build();
 
         // Get core execution
