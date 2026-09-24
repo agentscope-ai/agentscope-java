@@ -1,6 +1,7 @@
 ---
 title: Model
 description: 在 AgentScope Java 中配置并连接 LLM 模型提供商
+en_link: /v2/en/docs/building-blocks/model
 ---
 
 ## 概述

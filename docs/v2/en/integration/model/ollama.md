@@ -1,5 +1,6 @@
 ---
 title: Ollama
+zh_link: /v2/zh/integration/model/ollama
 ---
 
 `agentscope-extensions-model-ollama` integrates locally hosted Ollama models. It is useful for local development, private deployments, and offline model serving.

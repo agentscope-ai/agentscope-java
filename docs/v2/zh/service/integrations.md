@@ -1,5 +1,6 @@
 ---
 title: "SDK 与组件选择"
+en_link: /v2/en/service/integrations
 ---
 
 <Note>

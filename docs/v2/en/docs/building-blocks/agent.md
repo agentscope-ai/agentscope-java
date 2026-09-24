@@ -1,6 +1,7 @@
 ---
 title: Agent
 description: Learn how to define and configure agents in AgentScope Java 2.0
+zh_link: /v2/zh/docs/building-blocks/agent
 ---
 
 ## Overview

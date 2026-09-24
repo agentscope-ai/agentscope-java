@@ -1,6 +1,7 @@
 ---
 title: Tool
 description: Define, register, and manage the capabilities an agent can call
+zh_link: /v2/zh/docs/building-blocks/tool
 ---
 
 ## Overview

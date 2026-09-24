@@ -1,5 +1,6 @@
 ---
 title: "Managed 支持的能力与接入类型"
+en_link: /v2/en/service/managed-agent-capabilities
 ---
 
 <Note>

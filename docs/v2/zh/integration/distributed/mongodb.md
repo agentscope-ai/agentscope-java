@@ -1,5 +1,6 @@
 ---
 title: MongoDB
+en_link: /v2/en/integration/distributed/mongodb
 ---
 
 # MongoDB

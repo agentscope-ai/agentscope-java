@@ -1,5 +1,6 @@
 ---
 title: "Team 角色、成员与策略参数"
+en_link: /v2/en/service/team-configuration
 ---
 
 <Note>

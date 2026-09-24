@@ -1,6 +1,7 @@
 ---
 title: 记忆（Memory）
 description: 双层长期记忆、对话压缩、大工具结果卸载，prompt 与触发策略均可定制
+en_link: /v2/en/docs/harness/memory
 ---
 
 ## 作用

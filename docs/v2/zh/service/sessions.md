@@ -1,5 +1,6 @@
 ---
 title: "执行参考：Session、Run 与 Attempt"
+en_link: /v2/en/service/sessions
 ---
 
 <Note>

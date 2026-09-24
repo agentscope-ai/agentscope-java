@@ -1,5 +1,6 @@
 ---
 title: RAG
+zh_link: /v1/zh/docs/task/rag
 ---
 
 AgentScope provides built-in RAG support, enabling Agents to access external knowledge bases.

@@ -1,6 +1,7 @@
 ---
 title: 上下文与 AgentState
 description: 无状态 Agent 引擎、AgentState 生命周期、状态持久化与 RuntimeContext
+en_link: /v2/en/docs/building-blocks/context
 ---
 
 ## 无状态 Agent 引擎

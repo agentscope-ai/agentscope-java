@@ -1,5 +1,6 @@
 ---
 title: 从配置驱动到业务原生：企业级 Agent 开发实践
+en_link: /v2/en/blogs/usecases/logistics
 ---
 
 ## 01 背景

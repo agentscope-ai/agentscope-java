@@ -1,5 +1,6 @@
 ---
 title: 'AIDC Logistics: Enterprise Agent Development Practice'
+zh_link: /v2/zh/blogs/usecases/aidc-logistics
 ---
 
 ## 01 Background

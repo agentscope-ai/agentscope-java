@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/overview
 ---
 
 This section collects the AgentScope Java extensions that connect to third-party systems and ecosystem services. Each extension is an independent Maven module under `agentscope-extensions/` — pull in only what you need.

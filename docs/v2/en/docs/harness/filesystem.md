@@ -2,6 +2,7 @@
 title: Filesystem
 description: 'Three deployment modes: local + shell / shared store / sandbox; IsolationScope
   dimensions; multi-user isolation; how skills and tools behave in each mode'
+zh_link: /v2/zh/docs/harness/filesystem
 ---
 
 ## Role

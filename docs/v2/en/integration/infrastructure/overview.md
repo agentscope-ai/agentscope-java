@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/infrastructure/overview
 ---
 
 These extensions plug AgentScope into the infrastructure you already run — gateways, registries, message buses, schedulers — so an Agent can be governed and scheduled like any other service.

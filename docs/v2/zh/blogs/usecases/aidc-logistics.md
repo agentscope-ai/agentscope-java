@@ -1,5 +1,6 @@
 ---
 title: AIDC 物流：企业级 Agent 开发实践
+en_link: /v2/en/blogs/usecases/aidc-logistics
 ---
 
 ## 01 背景

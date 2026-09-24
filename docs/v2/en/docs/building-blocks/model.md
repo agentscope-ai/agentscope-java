@@ -1,6 +1,7 @@
 ---
 title: Model
 description: Configure and connect LLM model providers in AgentScope Java
+zh_link: /v2/zh/docs/building-blocks/model
 ---
 
 ## Overview

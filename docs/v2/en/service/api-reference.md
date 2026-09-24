@@ -1,5 +1,6 @@
 ---
 title: "API reference: identity, resources and invocation"
+zh_link: /v2/zh/service/api-reference
 ---
 
 <Note>
