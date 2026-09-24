@@ -32,11 +32,12 @@ import (
 // per-session serialization (store advisory lock across replicas), optional
 // queue-until-idle, transport selection, post-refresh, and audit.
 type Router struct {
-	Registry *dataplane.Registry
-	Store    store.Store
-	Prober   prober.DataPlaneProber
-	ASDP     ASDPSender
-	HTTP     *http.Client
+	Registry      *dataplane.Registry
+	Store         store.Store
+	Prober        prober.DataPlaneProber
+	ASDP          ASDPSender
+	HTTP          *http.Client
+	InternalToken string
 
 	locks *keyedMutex // fallback when Store is nil
 }
@@ -215,7 +216,7 @@ func (r *Router) dispatch(ctx context.Context, sess *store.Session, entry *datap
 
 	usedASDP := false
 	if r.ASDP != nil && sess.InstanceRef != "" {
-		if err := r.ASDP.SendSessionCommand(sess.Namespace, sess.InstanceRef, sess.SessionID, req.Command); err == nil {
+		if err := r.ASDP.SendSessionCommand(sess.Tenant, sess.Namespace, sess.AgentID.String(), sess.InstanceRef, sess.SessionID, req.Command); err == nil {
 			usedASDP = true
 			dpResp = &dpCommandResponse{
 				Accepted:  true,
@@ -226,7 +227,7 @@ func (r *Router) dispatch(ctx context.Context, sess *store.Session, entry *datap
 		}
 	}
 	if !usedASDP {
-		dpResp, opErr = sendHTTP(cmdCtx, r.HTTP, entry.BaseURL, sess.SessionID, req.Command, commandID)
+		dpResp, opErr = sendHTTP(cmdCtx, r.HTTP, entry.BaseURL, sess.SessionID, req.Command, commandID, r.InternalToken)
 	}
 
 	completed := time.Now().UTC()

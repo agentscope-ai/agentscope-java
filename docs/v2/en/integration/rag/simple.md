@@ -1,4 +1,7 @@
-# Simple Knowledge
+---
+title: Simple
+zh_link: /v2/zh/integration/rag/simple
+---
 
 `agentscope-extensions-rag-simple` is the "DIY end-to-end" RAG implementation: it bundles document readers, chunking strategies, embedding adapters, and five out-of-the-box vector store adapters.
 

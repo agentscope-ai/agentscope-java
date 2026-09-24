@@ -1,6 +1,8 @@
 ---
-title: "Memory"
-description: "Two-layer long-term memory, conversation compaction, large tool-result offloading; prompts and trigger policy are customizable"
+title: Memory
+description: Two-layer long-term memory, conversation compaction, large tool-result
+  offloading; prompts and trigger policy are customizable
+zh_link: /v2/zh/docs/harness/memory
 ---
 
 ## Role
@@ -30,7 +32,7 @@ The first two are "long-term memory settling" and live on `MemoryConfig`; the th
 
 ## How the two layers work
 
-```{mermaid}
+```mermaid
 graph LR
     Conv["conversation messages"]
     Conv -->|each call end / can be throttled| Flush["Flush LLM call"]
@@ -79,9 +81,9 @@ Common options:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `triggerMessages` | `50` | Trigger by message count (`0` = off) |
-| `triggerTokens` | `80_000` | Trigger by estimated tokens (`0` = off) |
+| `triggerTokens` | `0` | Trigger by estimated tokens; `0` = dynamic (model context window minus `reserved`) |
 | `keepMessages` | `20` | Number of tail messages to keep |
-| `keepTokens` | `0` | When non-zero, walk back by token budget; overrides `keepMessages` |
+| `keepTokens` | `-1` | `-1` = dynamic (auto-computed from the model context window); `0` = use `keepMessages`; `>0` = fixed token budget, overriding `keepMessages` |
 | `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
 | `offloadBeforeCompact` | `true` | Append raw messages to the never-compacted log before compacting |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
@@ -268,6 +270,6 @@ Together these also skip `<memory_context>` (`MEMORY.md`) injection while keepin
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — where `MEMORY.md` / `memory/` live in the workspace
-- [Context](../building-blocks/context.md) — the never-compacted `*.log.jsonl` conversation log
-- [Architecture](./architecture.md) — how facts in long conversations settle into `MEMORY.md`
+- [Workspace](/v2/en/docs/harness/workspace) — where `MEMORY.md` / `memory/` live in the workspace
+- [Context](/v2/en/docs/building-blocks/context) — the never-compacted `*.log.jsonl` conversation log
+- [Architecture](/v2/en/docs/harness/architecture) — how facts in long conversations settle into `MEMORY.md`

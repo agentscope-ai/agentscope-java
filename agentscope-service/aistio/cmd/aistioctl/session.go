@@ -43,7 +43,7 @@ func sessionListCmd() *cobra.Command {
 		Short: "List sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := newAPIClient()
-			url := fmt.Sprintf("%s/api/v1/sessions?namespace=%s", apiEndpoint, namespace)
+			url := fmt.Sprintf("%s/api/v1/sessions?tenant=%s&namespace=%s", apiEndpoint, tenant, namespace)
 			if agent != "" {
 				url += "&agent=" + agent
 			}
@@ -106,7 +106,7 @@ func sessionGetCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := newAPIClient()
-			url := fmt.Sprintf("%s/api/v1/sessions/%s?namespace=%s", apiEndpoint, args[0], namespace)
+			url := fmt.Sprintf("%s/api/v1/sessions/%s?tenant=%s&namespace=%s", apiEndpoint, args[0], tenant, namespace)
 			if agent != "" {
 				url += "&agent=" + agent
 			}
@@ -160,7 +160,7 @@ func sessionTerminateCmd() *cobra.Command {
 
 func sessionCommand(sessionID, agent, action string) error {
 	client := newAPIClient()
-	url := fmt.Sprintf("%s/api/v1/sessions/%s/%s?namespace=%s", apiEndpoint, sessionID, action, namespace)
+	url := fmt.Sprintf("%s/api/v1/sessions/%s/%s?tenant=%s&namespace=%s", apiEndpoint, sessionID, action, tenant, namespace)
 	if agent != "" {
 		url += "&agent=" + agent
 	}

@@ -1,4 +1,7 @@
-# DeepSeek Model
+---
+title: DeepSeek
+zh_link: /v2/zh/integration/model/deepseek
+---
 
 `agentscope-extensions-model-openai` provides first-class DeepSeek support through the OpenAI-compatible model stack. Add the OpenAI model extension module, then use `deepseek:<model>` with `ModelRegistry`.
 

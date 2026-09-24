@@ -39,9 +39,9 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>doFinally</h2>
  * <ol>
+ *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Persist sandbox session state via {@link SandboxManager} and
  *       {@link io.agentscope.harness.agent.sandbox.SessionSandboxStateStore}</li>
- *   <li>Release the session via {@link SandboxManager} (stop + optional shutdown)</li>
  *   <li>Clear this call's session binding from the {@link RuntimeContext}</li>
  * </ol>
  *
@@ -172,21 +172,24 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         ctx.put(SandboxAcquireResult.class, null);
         // The guard lease must be released no matter what fails above it, otherwise the per-key
         // permit leaks and every future same-slot call blocks forever on the guard (issue #2800).
-        // Hence the finally: clear-binding, persist and release are all best-effort inside the try.
+        // Hence the finally: clear-binding, release and persist are all best-effort inside the try.
         try {
             // Compare-and-clear the fallback field so a releasing call never nulls a concurrent
             // sibling's binding (issue #2490); it only clears the field when it still points here.
             filesystemProxy.clearSandboxIfCurrent(result.getSandbox());
             SandboxContext sandboxContext = ctx.get(SandboxContext.class);
-            try {
-                sandboxManager.persistState(result, sandboxContext, ctx);
-            } catch (Exception e) {
-                log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
-            }
+            // Release (stop/persist workspace) first so state mutations made during stop — e.g.
+            // workspaceRootReady or per-session snapshot records — are captured by the persist
+            // below.
             try {
                 sandboxManager.release(result);
             } catch (Exception e) {
                 log.warn("[sandbox-mw] Failed to release sandbox session: {}", e.getMessage(), e);
+            }
+            try {
+                sandboxManager.persistState(result, sandboxContext, ctx);
+            } catch (Exception e) {
+                log.warn("[sandbox-mw] Failed to persist sandbox state: {}", e.getMessage(), e);
             }
         } finally {
             result.getLease().close();

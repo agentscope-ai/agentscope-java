@@ -15,10 +15,13 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/spring-ai-alibaba/aistio/internal/store"
 	authzv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -30,8 +33,25 @@ var resourceMapping = map[string]struct {
 	resource string
 	group    string
 }{
-	"teams":  {resource: "agentteams", group: "agentscope.io"},
-	"agents": {resource: "agents", group: "agentscope.io"},
+	"teams":                          {resource: "teams", group: "agentscope.io"},
+	"issues":                         {resource: "issues", group: "agentscope.io"},
+	"agent-tasks":                    {resource: "agenttasks", group: "agentscope.io"},
+	"artifacts":                      {resource: "artifacts", group: "agentscope.io"},
+	"inbox":                          {resource: "inbox", group: "agentscope.io"},
+	"approvals":                      {resource: "approvals", group: "agentscope.io"},
+	"automations":                    {resource: "automations", group: "agentscope.io"},
+	"orchestration-definitions":      {resource: "orchestrationdefinitions", group: "agentscope.io"},
+	"orchestration-runs":             {resource: "orchestrationruns", group: "agentscope.io"},
+	"execution-attempts":             {resource: "executionattempts", group: "agentscope.io"},
+	"agent-runtime-policies":         {resource: "agentruntimepolicies", group: "agentscope.io"},
+	"events":                         {resource: "issues", group: "agentscope.io"},
+	"agents":                         {resource: "agents", group: "agentscope.io"},
+	"agent-instances":                {resource: "agents", group: "agentscope.io"},
+	"runtime-profiles":               {resource: "agents", group: "agentscope.io"},
+	"runtime-pools":                  {resource: "agents", group: "agentscope.io"},
+	"runtime-hosts":                  {resource: "agents", group: "agentscope.io"},
+	"runtime-host-enrollments":       {resource: "agents", group: "agentscope.io"},
+	"runtime-host-enrollment-tokens": {resource: "agents", group: "agentscope.io"},
 	// Sessions are store-backed (no dedicated CRD); authorize against the
 	// owning "agents" resource.
 	"sessions":     {resource: "agents", group: "agentscope.io"},
@@ -47,6 +67,10 @@ const ctxConsoleAuth = "consoleAuth"
 // ctxInternalAuth marks a request authenticated by X-Builder-Internal-Token
 // (data-plane trust boundary).
 const ctxInternalAuth = "internalAuth"
+const (
+	ctxTaskAuth                 = "taskAuth"
+	ctxCompletedCoordinatorAuth = "completedCoordinatorAuth"
+)
 
 // authzMiddleware performs SubjectAccessReview-based authorization.
 // It runs after authMiddleware and expects the "username" key to be set in the
@@ -92,6 +116,24 @@ func (s *Server) authzMiddleware() gin.HandlerFunc {
 
 		verb := httpMethodToVerb(c)
 		namespace := resolveNamespace(c)
+		resourceName := ""
+		if storedTenant, storedNamespace, storedName, found, err := s.resolveStoredResourceScope(c); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				c.AbortWithStatusJSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
+			} else {
+				c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "authorization scope resolution failed"})
+			}
+			return
+		} else if found {
+			// A caller cannot override an object's persisted namespace with a
+			// different query parameter. UUID-addressed resources are always
+			// authorized against their stored scope.
+			if tenant := c.Query("tenant"); tenant != "" && tenant != storedTenant || namespace != "" && namespace != storedNamespace {
+				c.AbortWithStatusJSON(http.StatusNotFound, ErrorResponse{Error: "not found"})
+				return
+			}
+			namespace, resourceName = storedNamespace, storedName
+		}
 
 		sar := &authzv1.SubjectAccessReview{
 			Spec: authzv1.SubjectAccessReviewSpec{
@@ -102,6 +144,7 @@ func (s *Server) authzMiddleware() gin.HandlerFunc {
 					Verb:      verb,
 					Group:     group,
 					Resource:  resource,
+					Name:      resourceName,
 				},
 			},
 		}
@@ -132,6 +175,138 @@ func (s *Server) authzMiddleware() gin.HandlerFunc {
 			"user", user, "verb", verb, "resource", resource, "namespace", namespace)
 		c.Next()
 	}
+}
+
+// resolveStoredResourceScope resolves the authoritative namespace for
+// UUID-addressed collaboration resources before SubjectAccessReview. This is
+// intentionally performed in middleware so every current and future handler
+// under the route receives the same fail-closed behavior.
+func (s *Server) resolveStoredResourceScope(c *gin.Context) (tenant, namespace, name string, found bool, err error) {
+	if s.store == nil {
+		return "", "", "", false, nil
+	}
+	parse := func(param string) (uuid.UUID, bool, error) {
+		raw := c.Param(param)
+		if raw == "" {
+			return uuid.Nil, false, nil
+		}
+		id, parseErr := uuid.Parse(raw)
+		if parseErr != nil {
+			return uuid.Nil, true, store.ErrNotFound
+		}
+		return id, true, nil
+	}
+	if id, ok, parseErr := parse("issueId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetIssue(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("commentId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetComment(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("taskId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetAgentTask(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("teamId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetTeam(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("artifactId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, _, loadErr := s.store.Collaboration().GetArtifact(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("inboxId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetInbox(c.Request.Context(), id, s.operatorFromContext(c))
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("approvalId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetApproval(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("automationId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Collaboration().GetAutomation(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("definitionId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Orchestration().GetDefinition(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("runId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.Orchestration().GetRun(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	if id, ok, parseErr := parse("attemptId"); ok {
+		if parseErr != nil {
+			return "", "", "", true, parseErr
+		}
+		item, loadErr := s.store.ExecutionAttempts().Get(c.Request.Context(), id)
+		if loadErr != nil {
+			return "", "", "", true, loadErr
+		}
+		return item.Tenant, item.Namespace, item.ID.String(), true, nil
+	}
+	return "", "", "", false, nil
 }
 
 // resolveResource extracts the Kubernetes resource name and API group from

@@ -36,6 +36,5 @@ func init() {
 		&ModelConfig{}, &ModelConfigList{},
 		&MCPServer{}, &MCPServerList{},
 		&SandboxClaim{}, &SandboxClaimList{},
-		&AgentTeam{}, &AgentTeamList{},
 	)
 }

@@ -34,7 +34,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/spring-ai-alibaba/aistio/api/v1alpha1"
-	"github.com/spring-ai-alibaba/aistio/internal/controller"
 )
 
 var (
@@ -87,19 +86,6 @@ func TestMain(m *testing.M) {
 			panic("failed to create manager: " + err.Error())
 		}
 
-		// Register AgentTeamReconciler (legacy mode -- nil Lifecycle).
-		// The legacy path handles Pending->Running transitions without
-		// external dependencies (no TaskStore, MessageRouter, etc.).
-		if err := (&controller.AgentTeamReconciler{
-			Client:   mgr.GetClient(),
-			Scheme:   mgr.GetScheme(),
-			Recorder: mgr.GetEventRecorderFor("agentteam-controller"),
-			// Lifecycle is intentionally nil: the reconciler has a
-			// legacyHandlePending fallback that works without it.
-		}).SetupWithManager(mgr); err != nil {
-			panic("failed to setup AgentTeamReconciler: " + err.Error())
-		}
-
 		// NOTE: AgentReconciler is NOT registered here because it requires
 		// adapter.Get(runtime) to succeed, which needs a registered
 		// DataPlaneAdapter. The adapter registry is populated via init()
@@ -134,7 +120,7 @@ func TestMain(m *testing.M) {
 
 // testContext returns a context with a timeout suitable for test assertions.
 func testContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), testTimeout)
+	return context.WithTimeout(context.Background(), 10*time.Second)
 }
 
 // skipIfNoEnvtest skips the test if envtest binaries are not available.

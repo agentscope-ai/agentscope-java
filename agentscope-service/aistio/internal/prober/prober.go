@@ -23,6 +23,9 @@ import (
 // session-scoped query (unknown session on the live instance).
 var ErrNotFoundOnDataPlane = errors.New("prober: not found on data plane")
 
+// ErrBusyOnDataPlane is returned when the data plane answers 409 wait_idle.
+var ErrBusyOnDataPlane = errors.New("prober: session busy on data plane")
+
 // MaxSessionsProbePage is the defensive upper bound for GET /agentscope/sessions.
 // When a probe returns this many (or more) sessions, ArchiveMissing must be
 // skipped — the list may be silently truncated and omitted sessions are not
@@ -95,4 +98,7 @@ type DataPlaneProber interface {
 
 	// SendPlanMode calls POST /agentscope/sessions/{id}/plan-mode with {"active":bool}.
 	SendPlanMode(ctx context.Context, endpoint string, sessionID string, active bool) error
+
+	// SendUserMessage calls POST /agentscope/sessions/{id}/messages with {"content":"..."}.
+	SendUserMessage(ctx context.Context, endpoint string, sessionID string, content string) error
 }

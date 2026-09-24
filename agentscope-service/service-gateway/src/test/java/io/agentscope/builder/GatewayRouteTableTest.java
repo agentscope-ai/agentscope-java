@@ -24,6 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import reactor.test.StepVerifier;
@@ -57,13 +59,34 @@ class GatewayRouteTableTest {
                                     .isEqualTo(URI.create("http://scheduler:8083"));
                             assertThat(find(routes, "scheduler-channel-callbacks").getUri())
                                     .isEqualTo(URI.create("http://scheduler:8083"));
+                            assertThat(find(routes, "endpoint-invocation").getUri())
+                                    .isEqualTo(URI.create("http://control:8081"));
                             assertThat(find(routes, "reject-internal").getOrder())
                                     .isLessThan(find(routes, "data-session-turn").getOrder());
                             assertThat(find(routes, "data-session-turn").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
                             assertThat(find(routes, "scheduler-channel-callbacks").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
+                            assertThat(find(routes, "endpoint-invocation").getOrder())
+                                    .isLessThan(find(routes, "control-api").getOrder());
                         })
+                .verifyComplete();
+    }
+
+    @Test
+    void automationWebhookUsesControlApiRoute() {
+        StepVerifier.create(
+                        routeLocator
+                                .getRoutes()
+                                .filter(route -> "control-api".equals(route.getId()))
+                                .flatMap(
+                                        route ->
+                                                route.getPredicate()
+                                                        .apply(
+                                                                MockServerWebExchange.from(
+                                                                        MockServerHttpRequest.post(
+                                                                                "/hooks/v1/automations/rule/trigger")))))
+                .expectNext(true)
                 .verifyComplete();
     }
 

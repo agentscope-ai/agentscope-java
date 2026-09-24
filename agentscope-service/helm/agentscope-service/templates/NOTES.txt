@@ -1,0 +1,7 @@
+AgentScope Service is installed in {{ .Release.Namespace }}.
+Wait for every Deployment, then access the gateway:
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "service.name" . }}-control
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "service.name" . }}-gateway 18080:{{ .Values.service.port }}
+Open http://localhost:18080 and use the bootstrap administrator from your existing Secret.
+The Chart does not install PostgreSQL or a storage provisioner. Persistent volumes are retained on uninstall.
+Secret updates require a rolling restart. Back up the database, workspaces, artifacts and vault key together before upgrading.

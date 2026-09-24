@@ -61,9 +61,11 @@ import java.util.Objects;
  *
  * <p>Implementations are provided by extension modules:
  * <ul>
- *   <li>{@code agentscope-extensions-redis} — {@code RedisDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-cos} — {@code CosDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-jdbc} — {@code JdbcDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-mongodb} — {@code MongoDistributedStore}</li>
  *   <li>{@code agentscope-extensions-oss} — {@code OssDistributedStore}</li>
- *   <li>{@code agentscope-extensions-mysql} — {@code MysqlDistributedStore}</li>
+ *   <li>{@code agentscope-extensions-redis} — {@code RedisDistributedStore}</li>
  * </ul>
  *
  * <p><b>Priority:</b> explicit builder methods ({@code .stateStore()}, {@code .filesystem()})
