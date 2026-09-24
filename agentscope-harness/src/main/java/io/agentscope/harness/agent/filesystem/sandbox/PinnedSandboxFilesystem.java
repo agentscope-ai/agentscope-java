@@ -48,8 +48,9 @@ public final class PinnedSandboxFilesystem extends SandboxBackedFilesystem {
     private static final Logger log = LoggerFactory.getLogger(PinnedSandboxFilesystem.class);
 
     /**
-     * JVM property controlling the per-release mirror drain budget in milliseconds (default 1000).
-     * Zero disables waiting. Invalid or negative values fall back to the default.
+     * JVM property controlling the synchronous wait per release in milliseconds (default 1000).
+     * Zero disables waiting. Each consecutive release has its own budget; this is not a total
+     * shutdown deadline. Invalid or negative values fall back to the default.
      */
     public static final String RELEASE_GATE_TIMEOUT_PROPERTY =
             "agentscope.sandbox.mirror.release-timeout-millis";
