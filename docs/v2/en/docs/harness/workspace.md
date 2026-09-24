@@ -163,6 +163,7 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 | `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
+| `disableKnowledgeContext()` | `## Domain Knowledge` guidance, `knowledge/KNOWLEDGE.md` content and the `Knowledge files:` catalog; also omits the empty `<domain_knowledge_context>` element. Unlike `disableWorkspaceContext()`, this leaves `AGENTS.md`, `MEMORY.md` and memory tools intact |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
@@ -177,13 +178,16 @@ Because the workspace is a logical layout (see the callout above), "loading" nev
 Workspace materials load once per Agent call. The final context compiler places instructions
 and reference data separately rather than appending all files to System.
 
-| Material | Model placement | Budget behavior |
-| --- | --- | --- |
-| AGENTS.md | System / `project_rules` | Not directly evicted; included in final budget |
-| Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
-| MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
-| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
-| additionalContextFile | USER reference / `HARNESS_CONTEXT`, kind=additional | Required, not arbitrarily evicted |
+| Section | Source | Budgeted |
+|---------|--------|----------|
+| `## Session Context` | Template (today's date, OS, workspace absolute path, temp dir, current `sessionId`) | no |
+| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` guidance | Built-in templates (teach the model how to use memory + navigate knowledge). Memory sections are omitted / trimmed when `disableMemoryTools()` / `disableMemoryHooks()` are set; the Domain Knowledge section is omitted when `disableKnowledgeContext()` is set | no |
+| `## Workspace` section | Template, **branches per filesystem mode** (see below) — tells the model whether it runs locally / sandboxed / on a remote store | no |
+| `## Workspace Files (Injected)` notice | Framework auto-loads the following files from the workspace into a `<loaded_context>` XML block | see below |
+| `<agents_context>` | Full `AGENTS.md` | unlimited |
+| `<memory_context>` | `MEMORY.md`, char-truncated when over the remaining budget with a "use memory_search for older entries" note (plain truncate note when tools are disabled; omitted entirely when both memory tools and hooks are disabled) | `maxContextTokens`, default 8000 |
+| `<domain_knowledge_context>` | Full `knowledge/KNOWLEDGE.md` + listing of every file under `knowledge/`; omitted entirely when `disableKnowledgeContext()` is set | unlimited (filenames only as the catalog) |
+| `<x_md>` / `<y_md>` | Anything you added with `additionalContextFile("X.md")` | unlimited |
 
 maxContextTokens defaults to 8000 for workspace material preparation, not the final input cap.
 The final budget also includes System, history, state and tool schemas; unresolved overflow rejects
