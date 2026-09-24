@@ -1,5 +1,6 @@
 ---
 title: OSS State Store
+zh_link: /v2/zh/integration/session/oss
 ---
 
 <Note>

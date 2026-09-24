@@ -1,5 +1,6 @@
 ---
 title: "Quickstart"
+zh_link: /v2/zh/service/first-session
 ---
 
 <Note>

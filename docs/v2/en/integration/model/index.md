@@ -1,5 +1,6 @@
 ---
 title: Model Providers
+zh_link: /v2/zh/integration/model/index
 ---
 
 Model provider extensions connect AgentScope Java to hosted or local chat model APIs. Each provider can be selected through a `ModelRegistry` id when its extension module is on the classpath.

@@ -1,6 +1,7 @@
 ---
 title: 智能体
 description: 了解如何在 AgentScope Java 2.0 中定义和配置智能体
+en_link: /v2/en/docs/building-blocks/agent
 ---
 
 ## 概述

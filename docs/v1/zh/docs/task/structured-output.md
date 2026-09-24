@@ -1,5 +1,6 @@
 ---
 title: 结构化输出
+en_link: /v1/en/docs/task/structured-output
 ---
 
 结构化输出让 Agent 生成符合预定义 Schema 的类型化数据，实现从自然语言到结构化数据的可靠转换。

@@ -1,5 +1,6 @@
 ---
 title: "Workspaces: shared instructions and capabilities"
+zh_link: /v2/zh/service/workspaces
 ---
 
 <Note>

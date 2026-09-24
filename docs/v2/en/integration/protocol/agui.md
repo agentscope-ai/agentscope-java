@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+zh_link: /v2/zh/integration/protocol/agui
 ---
 
 ## Compatibility Notes

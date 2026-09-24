@@ -1,5 +1,6 @@
 ---
 title: 会话
+en_link: /v1/en/docs/harness/session
 ---
 
 ## 作用

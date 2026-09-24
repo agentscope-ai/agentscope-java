@@ -1,5 +1,6 @@
 ---
 title: 'From Config-Driven to Business-Native: Enterprise Agent Practice'
+zh_link: /v2/zh/blogs/usecases/logistics
 ---
 
 ## 01 Background

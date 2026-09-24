@@ -1,5 +1,6 @@
 ---
 title: Ollama
+en_link: /v2/en/integration/model/ollama
 ---
 
 `agentscope-extensions-model-ollama` 接入本地托管的 Ollama 模型，适合本地开发、私有化部署和离线模型服务。

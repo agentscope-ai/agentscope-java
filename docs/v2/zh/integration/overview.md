@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/overview
 ---
 
 本节汇总 AgentScope Java 与第三方系统、生态服务的集成扩展。每个扩展都是 `agentscope-extensions/` 下的独立 Maven 模块，按需引入即可。

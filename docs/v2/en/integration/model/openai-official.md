@@ -1,5 +1,6 @@
 ---
 title: OpenAI Official
+zh_link: /v2/zh/integration/model/openai-official
 ---
 
 # OpenAI Official Model

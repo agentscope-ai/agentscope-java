@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+en_link: /v2/en/integration/protocol/agui
 ---
 
 ## 兼容性说明

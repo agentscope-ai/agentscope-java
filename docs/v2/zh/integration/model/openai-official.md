@@ -1,5 +1,6 @@
 ---
 title: OpenAI Official
+en_link: /v2/en/integration/model/openai-official
 ---
 
 # OpenAI Official 模型

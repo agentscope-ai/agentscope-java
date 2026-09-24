@@ -2,6 +2,7 @@
 title: Subagent
 description: Declare subagents, sync/background calls, auto push-back, remote subagents,
   streaming forwarding
+zh_link: /v2/zh/docs/harness/subagent
 ---
 
 ## Role

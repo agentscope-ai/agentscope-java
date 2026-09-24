@@ -1,5 +1,6 @@
 ---
 title: MySQL Skill Repository
+zh_link: /v2/zh/integration/skill/mysql-repository
 ---
 
 `agentscope-extensions-skill-mysql-repository` stores skills in MySQL with full CRUD: edit and save in your admin console / business system, and the Agent picks up changes immediately on the next read.
