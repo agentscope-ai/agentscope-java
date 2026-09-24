@@ -1250,6 +1250,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
+        boolean disableKnowledgeContext = false;
         boolean disableTranscript = false;
         TranscriptStore transcriptStore;
         String transcriptTenant;
@@ -2246,6 +2247,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Disables knowledge-related system prompt injection: the
+         * {@code ## Domain Knowledge} guidance, the {@code knowledge/KNOWLEDGE.md}
+         * content, and the knowledge file catalog. Unlike {@code disableWorkspaceContext()} this
+         * leaves {@code AGENTS.md}, {@code MEMORY.md}, and memory tools intact. Use for agents
+         * that source knowledge from a custom enterprise tool instead of the local
+         * {@code knowledge/} directory.
+         */
+        public Builder disableKnowledgeContext() {
+            this.disableKnowledgeContext = true;
+            return this;
+        }
+
+        /**
          * Disables the independent session-transcript middleware. Prefer leaving transcript on;
          * memory hooks can be disabled separately via {@link #disableMemoryHooks()}.
          */
@@ -2532,7 +2546,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 environmentMemory,
                                 maxContextTokens,
                                 disableMemoryTools,
-                                disableMemoryHooks);
+                                disableMemoryHooks,
+                                disableKnowledgeContext);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);

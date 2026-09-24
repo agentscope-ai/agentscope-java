@@ -120,6 +120,20 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             These files (for example, `AGENTS.md` and `knowledge/KNOWLEDGE.md`) contain guidelines and domain context for this agent.
             """;
 
+    private static final String WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITH_MEMORY =
+            """
+            ## Workspace Files (Injected)
+            The following <loaded_context> was loaded in from files in your workspace.
+            These files (for example, `AGENTS.md` and `MEMORY.md`) contain memory, facts, preferences, guidelines, and user-specific details learned from prior interactions with user.
+            """;
+
+    private static final String WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITHOUT_MEMORY =
+            """
+            ## Workspace Files (Injected)
+            The following <loaded_context> was loaded in from files in your workspace.
+            These files (for example, `AGENTS.md`) contain guidelines and domain context for this agent.
+            """;
+
     private static final String TRUNCATION_NOTICE_WITH_SEARCH =
             "\n\n... (memory truncated — use memory_search for older entries) ...\n";
 
@@ -133,6 +147,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final int maxContextTokens;
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
+    private final boolean disableKnowledgeContext;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
 
@@ -159,12 +174,25 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             int maxContextTokens,
             boolean disableMemoryTools,
             boolean disableMemoryHooks) {
+        this(workspaceManager, agentName, environmentMemory, maxContextTokens,
+                disableMemoryTools, disableMemoryHooks, false);
+    }
+
+    public WorkspaceContextMiddleware(
+            WorkspaceManager workspaceManager,
+            String agentName,
+            String environmentMemory,
+            int maxContextTokens,
+            boolean disableMemoryTools,
+            boolean disableMemoryHooks,
+            boolean disableKnowledgeContext) {
         this.workspaceManager = workspaceManager;
         this.agentName = agentName != null && !agentName.isBlank() ? agentName : "HarnessAgent";
         this.environmentMemory = environmentMemory;
         this.maxContextTokens = maxContextTokens;
         this.disableMemoryTools = disableMemoryTools;
         this.disableMemoryHooks = disableMemoryHooks;
+        this.disableKnowledgeContext = disableKnowledgeContext;
     }
 
     public void setAdditionalContextFiles(List<String> files) {
@@ -183,6 +211,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      */
     public boolean isDisableMemoryHooks() {
         return disableMemoryHooks;
+    }
+
+    /**
+     * Whether knowledge context injection is disabled for this middleware (affects prompt
+     * guidance and knowledge file loading).
+     */
+    public boolean isDisableKnowledgeContext() {
+        return disableKnowledgeContext;
     }
 
     /**
@@ -213,7 +249,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
-        String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
+        String knowledgeContent =
+                disableKnowledgeContext
+                        ? ""
+                        : workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
         AbstractFilesystem filesystem = workspaceManager.getFilesystem();
         Path effectiveWorkspace =
@@ -257,7 +296,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private String buildGuidance() {
         StringBuilder sb = new StringBuilder();
-        sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        if (!disableKnowledgeContext) {
+            sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        }
         if (!disableMemoryTools) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
         }
@@ -523,6 +564,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private String workspaceFilesNotice() {
+        if (disableKnowledgeContext) {
+            return includeMemoryContext()
+                    ? WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITH_MEMORY
+                    : WORKSPACE_FILES_NOTICE_NO_KNOWLEDGE_WITHOUT_MEMORY;
+        }
         return includeMemoryContext()
                 ? WORKSPACE_FILES_NOTICE_WITH_MEMORY
                 : WORKSPACE_FILES_NOTICE_WITHOUT_MEMORY;
@@ -571,6 +617,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private String buildKnowledgeBlock(RuntimeContext rc, String knowledgeContent, Path workspace) {
+        if (disableKnowledgeContext) {
+            return "";
+        }
         List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
         StringBuilder sb = new StringBuilder();
 
