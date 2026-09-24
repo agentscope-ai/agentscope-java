@@ -310,6 +310,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         if (!persistence.isBlank()) {
             sb.append(persistence.strip()).append("\n\n");
         }
+        if (sb.isEmpty()) {
+            return "";
+        }
         return sb.toString().stripTrailing() + "\n";
     }
 
@@ -340,7 +343,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         if (!sessionContext.isBlank()) {
             sb.append(sessionContext).append("\n\n");
         }
-        sb.append(guidance);
+        if (!guidance.isEmpty()) {
+            sb.append(guidance);
+        }
         if (!workspaceParagraph.isEmpty()) {
             sb.append("\n").append(workspaceParagraph);
         }
@@ -559,7 +564,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         if (includeMemoryContext()) {
             sb.append(buildXmlContext("memory_context", memoryContent));
         }
-        sb.append(buildXmlContext("domain_knowledge_context", knowledgeBlock));
+        if (!knowledgeBlock.isBlank()) {
+            sb.append(buildXmlContext("domain_knowledge_context", knowledgeBlock));
+        }
         if (!additionalBlock.isBlank()) {
             sb.append(additionalBlock);
         }
