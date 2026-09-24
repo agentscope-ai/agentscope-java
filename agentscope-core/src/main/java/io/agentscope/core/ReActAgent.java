@@ -1697,7 +1697,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
 
-        InterruptControl interruption;
+        InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
