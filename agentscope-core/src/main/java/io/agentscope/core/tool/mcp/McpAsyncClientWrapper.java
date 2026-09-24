@@ -196,7 +196,11 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                 // block(CLOSE_TIMEOUT) throws when graceful close does not complete in time;
                 // fall back to forceful close so the wrapper never blocks indefinitely
                 // (which would leak the HTTP transport / future chain and exhaust the heap).
-                logger.warn("Graceful close of MCP client '{}' timed out after {}", name, CLOSE_TIMEOUT, e);
+                logger.warn(
+                        "Graceful close of MCP client '{}' timed out after {}",
+                        name,
+                        CLOSE_TIMEOUT,
+                        e);
                 client.close();
             }
         }
