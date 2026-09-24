@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>2.0.3-SNAPSHOT</revision>
+        <revision>2.0.4-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -246,6 +246,20 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions MongoDB (AgentStateStore) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-mongodb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions JDBC (shared dialect layer for MySQL/PostgreSQL stores) -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Sandbox -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -332,11 +346,23 @@
                 <artifactId>agentscope-extensions-channel-gitlab</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-weixin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Training Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-training</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -346,11 +372,11 @@
                 <artifactId>agentscope-extensions-model-openai</artifactId>
                 <version>${project.version}</version>
             </dependency>
-<!--            <dependency>-->
-<!--                <groupId>io.agentscope</groupId>-->
-<!--                <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--                <version>${project.version}</version>-->
-<!--            </dependency>-->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-openai-official</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-model-gemini</artifactId>
@@ -443,6 +469,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

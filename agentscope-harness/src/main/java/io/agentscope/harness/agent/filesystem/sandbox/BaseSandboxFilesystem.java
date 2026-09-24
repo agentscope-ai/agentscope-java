@@ -73,7 +73,13 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         String escapedPath = FilesystemUtils.shellQuote(path);
         String cmd =
-                "for f in "
+                "if [ ! -e "
+                        + escapedPath
+                        + " ]; then echo '__NOT_EXISTS__'; "
+                        + "elif [ ! -d "
+                        + escapedPath
+                        + " ]; then echo '__NOT_A_DIR__'; "
+                        + "else for f in "
                         + escapedPath
                         + "/*; do "
                         + "  if [ -d \"$f\" ]; then "
@@ -84,13 +90,25 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "    mtime=$(stat -c '%Y' \"$f\" 2>/dev/null || echo 0); "
                         + "    printf 'FILE:%s\\t%s\\t%s\\n' \"$f\" \"$size\" \"$mtime\"; "
                         + "  fi; "
-                        + "done 2>/dev/null";
+                        + "done; fi";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (!result.isSuccess()) {
+            return LsResult.fail(executeFailureMessage(result, "listing", path));
+        }
+        String output = result.output() != null ? result.output().strip() : "";
+
+        if ("__NOT_EXISTS__".equals(output)) {
+            return LsResult.fail("Path does not exist: " + path);
+        }
+        if ("__NOT_A_DIR__".equals(output)) {
+            return LsResult.fail("Not a directory: " + path);
+        }
+
         List<FileInfo> entries = new ArrayList<>();
 
-        if (result.output() != null && !result.output().isBlank()) {
-            for (String line : result.output().strip().split("\n")) {
+        if (!output.isBlank()) {
+            for (String line : output.split("\n")) {
                 if (line.startsWith("DIR:")) {
                     String payload = line.substring(4);
                     String[] parts = payload.split("\t", 2);
@@ -119,8 +137,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (!"text".equals(fileType)) {
             String cmd = "base64 " + escapedPath + " 2>/dev/null";
             ExecuteResponse result = execute(runtimeContext, cmd, null);
-            if (result.exitCode() != null && result.exitCode() != 0) {
-                return ReadResult.fail("File '" + filePath + "': file_not_found");
+            if (!result.isSuccess()) {
+                // Positive exit codes other than 124 (the timeout(1) convention — the command
+                // did not complete) mean the command ran and base64 could not read the file;
+                // stderr is discarded, so report the designed file_not_found signal instead of
+                // an empty error.
+                boolean commandRanAndFailedToRead =
+                        result.exitCode() != null
+                                && result.exitCode() > 0
+                                && result.exitCode() != 124;
+                return commandRanAndFailedToRead
+                        ? ReadResult.fail("File '" + filePath + "': file_not_found")
+                        : ReadResult.fail(executeFailureMessage(result, "reading", filePath));
             }
             String encoded = result.output() != null ? result.output().strip() : "";
             return ReadResult.success(new FileData(encoded, "base64"));
@@ -144,6 +172,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "; fi";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (!result.isSuccess()) {
+            return ReadResult.fail(executeFailureMessage(result, "reading", filePath));
+        }
         String output = result.output() != null ? result.output() : "";
 
         if (output.strip().equals("__NOT_FOUND__")) {
@@ -310,6 +341,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + " 2>/dev/null || true";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (!result.isSuccess()) {
+            return GrepResult.fail(
+                    executeFailureMessage(result, "searching", path != null ? path : "."));
+        }
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.isEmpty()) {
@@ -348,6 +383,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + "done";
 
         ExecuteResponse result = execute(runtimeContext, cmd, null);
+        if (!result.isSuccess()) {
+            return GlobResult.fail(
+                    executeFailureMessage(result, "globbing", path != null ? path : "/"));
+        }
         String output = result.output() != null ? result.output().strip() : "";
 
         if (output.isEmpty()) {
@@ -409,6 +448,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         ExecuteResponse result =
                 execute(runtimeContext, "test -e " + escapedPath + " && echo yes || echo no", null);
         return result.output() != null && result.output().strip().startsWith("yes");
+    }
+
+    /**
+     * Builds the failure message for a non-successful {@link #execute} response, prefixing the
+     * operation context and falling back to the exit code when the response carries no
+     * diagnostic output.
+     */
+    private static String executeFailureMessage(
+            ExecuteResponse result, String operation, String target) {
+        String detail =
+                result.output() != null && !result.output().isBlank()
+                        ? result.output()
+                        : "exit code " + result.exitCode();
+        return "Error " + operation + " '" + target + "': " + detail;
     }
 
     /**

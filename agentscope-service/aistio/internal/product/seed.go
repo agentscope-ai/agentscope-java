@@ -48,7 +48,7 @@ func seedUsers(ctx context.Context, db *DB) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("seeded user %s/%s roles=%s", u.username, u.password, u.roles)
+		log.Printf("seeded development user %s roles=%s", u.username, u.roles)
 	}
 	return nil
 }

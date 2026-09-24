@@ -19,103 +19,32 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PressureGauge } from '@/components/PressureGauge';
 import { phaseHint, phaseTone, type RuntimeSession } from '../api';
 
-function formatTime(v?: string) {
-  if (!v) return '—';
-  try {
-    return new Date(v).toLocaleString();
-  } catch {
-    return v;
-  }
+const number = (value?: number) => value == null ? 'Not reported' : value.toLocaleString();
+const time = (value?: string) => value ? new Date(value).toLocaleString() : 'Not reported';
+function Metric({ title, children }: { title: string; children: React.ReactNode }) {
+  return <Card><CardHeader className="pb-3"><CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle></CardHeader><CardContent className="space-y-1.5 text-sm">{children}</CardContent></Card>;
 }
-
 export function StatusStrip({ session }: { session?: RuntimeSession }) {
-  const healthy = session?.instanceHealthy;
-  const hint = phaseHint(session?.phase);
-  const instanceId = session?.instanceRef;
-  const instanceUrl = session?.instanceBaseUrl;
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Phase</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5">
-          <Badge tone={phaseTone(session?.phase)}>{session?.phase || '—'}</Badge>
-          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Model</CardTitle>
-        </CardHeader>
-        <CardContent className="truncate text-sm text-foreground">
-          {session?.model || '—'}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Pressure</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <PressureGauge value={session?.snapshot?.contextPressure} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Lifetime usage</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          <div className="font-mono text-sm tabular-nums text-foreground">
-            {(session?.snapshot?.totalTokens ?? 0).toLocaleString()}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Σ prompt+completion across turns — not the current context window
-            {session?.snapshot?.promptTokens != null || session?.snapshot?.completionTokens != null
-              ? ` · in ${(session?.snapshot?.promptTokens ?? 0).toLocaleString()} / out ${(session?.snapshot?.completionTokens ?? 0).toLocaleString()}`
-              : ''}
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Last active</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          {formatTime(session?.lastActiveAt)}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Instance</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5">
-          <div>
-            {healthy === true ? (
-              <Badge tone="success">healthy</Badge>
-            ) : healthy === false ? (
-              <Badge tone="danger">unhealthy</Badge>
-            ) : (
-              <Badge>unknown</Badge>
-            )}
-          </div>
-          {instanceId || instanceUrl ? (
-            <div className="min-w-0 space-y-0.5">
-              {instanceId ? (
-                <p className="truncate font-mono text-xs text-foreground" title={instanceId}>
-                  {instanceId}
-                </p>
-              ) : null}
-              {instanceUrl ? (
-                <p className="truncate font-mono text-xs text-muted-foreground" title={instanceUrl}>
-                  {instanceUrl}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No instance bound</p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const runtime = session?.runtime;
+  const hosted = runtime?.kind === 'hosted-runtime';
+  const hasInstance = !!session?.instanceRef || !!session?.agentInstanceId && session.agentInstanceId !== '00000000-0000-0000-0000-000000000000';
+  const snapshot = session?.snapshot;
+  return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <Metric title="Status"><Badge tone={phaseTone(session?.phase)}>{session?.phase || 'Loading'}</Badge><p className="text-xs text-muted-foreground">{phaseHint(session?.phase)}</p></Metric>
+    <Metric title="Model"><p>{session?.model || 'Not reported'}</p><p className="text-xs text-muted-foreground">Last active {time(session?.lastActiveAt)}</p></Metric>
+    <Metric title="Execution runtime">
+      <p className="font-medium">{runtime?.kind === 'managed' ? 'Managed Agent' : hosted ? `Hosted · ${runtime?.provider || 'Provider not reported'}` : runtime?.kind === 'external-application' ? 'External application' : 'Runtime not reported'}</p>
+      {hosted ? <>
+        {(runtime?.profile || runtime?.pool) && <p className="text-xs text-muted-foreground">{[runtime.profile, runtime.pool].filter(Boolean).join(' · ')}</p>}
+        {runtime?.hostId && <p className="break-all text-xs">Host {runtime.hostId}</p>}
+        <p className="text-xs text-muted-foreground">{runtime?.source === 'execution_attempt' ? 'From this execution attempt' : 'Awaiting an execution attempt'}</p>
+      </> : <>
+        {(runtime?.framework || session?.framework) && <p className="text-xs">{runtime?.framework || session?.framework} {runtime?.frameworkVersion || session?.frameworkVersion}</p>}
+        {hasInstance ? <div className="text-xs"><Badge tone={session?.instanceHealthy === true ? 'success' : session?.instanceHealthy === false ? 'danger' : 'default'}>{session?.instanceHealthy === true ? 'healthy' : session?.instanceHealthy === false ? 'unhealthy' : 'Health not reported'}</Badge><p className="mt-1 truncate" title={session?.instanceRef || session?.agentInstanceId}>{session?.instanceRef || session?.agentInstanceId}</p></div> : <p className="text-xs text-muted-foreground">No instance recorded for this session</p>}
+      </>}
+    </Metric>
+    <Metric title="Context window"><PressureGauge value={snapshot?.contextPressure ?? (snapshot?.contextPressureReported ? 0 : undefined)} /><p className="text-xs text-muted-foreground">Occupancy of the current model context.</p>{snapshot?.isCompacted && <Badge>Compacted</Badge>}</Metric>
+    <Metric title="Session token usage"><p className="font-mono tabular-nums">{number(snapshot?.totalTokens ?? (snapshot?.tokenUsageReported ? 0 : undefined))}</p><p className="text-xs text-muted-foreground">Input {number(snapshot?.promptTokens ?? (snapshot?.tokenUsageReported ? 0 : undefined))} · output {number(snapshot?.completionTokens ?? (snapshot?.tokenUsageReported ? 0 : undefined))}</p><p className="text-xs text-muted-foreground">Reported cumulative usage across turns.</p></Metric>
+    <Metric title="Telemetry snapshot"><p>{time(snapshot?.capturedAt)}</p><p className="text-xs text-muted-foreground">{snapshot ? 'Values reflect this collection time; they may lag behind current execution.' : 'This runtime has not supplied a telemetry snapshot. Conversation events remain available below.'}</p></Metric>
+  </div>;
 }

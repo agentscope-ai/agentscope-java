@@ -83,3 +83,19 @@ func TestAggregateAgentsHealthyCounts(t *testing.T) {
 		t.Fatalf("live after stale: %+v", live)
 	}
 }
+
+func TestRegistrySeparatesSameAgentAcrossTenants(t *testing.T) {
+	r := NewRegistry()
+	r.Upsert(Entry{Tenant: "tenant-a", AgentName: "same", Namespace: "shared", InstanceID: "a", BaseURL: "http://a"})
+	r.Upsert(Entry{Tenant: "tenant-b", AgentName: "same", Namespace: "shared", InstanceID: "b", BaseURL: "http://b"})
+
+	if got := r.ListByAgent("tenant-a", "same", "shared"); len(got) != 1 || got[0].InstanceID != "a" {
+		t.Fatalf("tenant-a entries = %+v", got)
+	}
+	if got := r.ListByAgent("tenant-b", "same", "shared"); len(got) != 1 || got[0].InstanceID != "b" {
+		t.Fatalf("tenant-b entries = %+v", got)
+	}
+	if got := r.AggregateAgents(); len(got) != 2 {
+		t.Fatalf("summaries = %+v", got)
+	}
+}

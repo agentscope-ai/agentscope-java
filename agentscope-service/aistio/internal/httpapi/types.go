@@ -16,23 +16,20 @@ package httpapi
 
 import (
 	"encoding/json"
-
-	"github.com/spring-ai-alibaba/aistio/api/v1alpha1"
 )
 
 // PushAgentRequest is the request body for POST /api/v1/agents/{name}/push.
 type PushAgentRequest struct {
-	DisplayName   string              `json:"displayName,omitempty"`
-	Description   string              `json:"description,omitempty"`
-	Runtime       string              `json:"runtime,omitempty"`
-	SystemPrompt  string              `json:"systemPrompt,omitempty"`
-	Model         *ModelSpec          `json:"model,omitempty"`
-	Tools         *ToolsSpec          `json:"tools,omitempty"`
-	Skills        []SkillSpec         `json:"skills,omitempty"`
-	Subagents     []SubagentEntry     `json:"subagents,omitempty"`
-	TeamTemplates []TeamTemplateEntry `json:"teamTemplates,omitempty"`
-	Deployment    *DeploymentSpec     `json:"deployment,omitempty"`
-	Extras        map[string]string   `json:"extras,omitempty"`
+	DisplayName  string            `json:"displayName,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Runtime      string            `json:"runtime,omitempty"`
+	SystemPrompt string            `json:"systemPrompt,omitempty"`
+	Model        *ModelSpec        `json:"model,omitempty"`
+	Tools        *ToolsSpec        `json:"tools,omitempty"`
+	Skills       []SkillSpec       `json:"skills,omitempty"`
+	Subagents    []SubagentEntry   `json:"subagents,omitempty"`
+	Deployment   *DeploymentSpec   `json:"deployment,omitempty"`
+	Extras       map[string]string `json:"extras,omitempty"`
 
 	// Image, when set, makes push create a BYO (image) agent instead of a
 	// Declarative one. Mutually exclusive with model/systemPrompt semantics.
@@ -85,20 +82,6 @@ type SubagentEntry struct {
 	Steps         int32    `json:"steps,omitempty"`
 	WorkspaceMode string   `json:"workspaceMode,omitempty"`
 	URL           string   `json:"url,omitempty"`
-}
-
-// TeamTemplateEntry defines a team template in a push request.
-type TeamTemplateEntry struct {
-	Name        string                    `json:"name"`
-	Description string                    `json:"description,omitempty"`
-	Members     []TeamTemplateMemberEntry `json:"members,omitempty"`
-}
-
-// TeamTemplateMemberEntry defines a member within a team template.
-type TeamTemplateMemberEntry struct {
-	Role     string `json:"role"`
-	AgentRef string `json:"agentRef"`
-	Prompt   string `json:"prompt,omitempty"`
 }
 
 // SkillSpec defines a skill.
@@ -199,9 +182,9 @@ type AgentSummary struct {
 	ActiveSessions int32  `json:"activeSessions"`
 	Revision       string `json:"revision,omitempty"`
 	// Presence is live | offline | historical (registry path).
-	Presence     string `json:"presence,omitempty"`
-	HealthyCount int    `json:"healthyCount,omitempty"`
-	InstanceCount int   `json:"instanceCount,omitempty"`
+	Presence      string `json:"presence,omitempty"`
+	HealthyCount  int    `json:"healthyCount,omitempty"`
+	InstanceCount int    `json:"instanceCount,omitempty"`
 }
 
 // SessionListResponse wraps a list of sessions.
@@ -218,76 +201,6 @@ type SessionSummary struct {
 	StartedAt    string `json:"startedAt,omitempty"`
 	LastActiveAt string `json:"lastActiveAt,omitempty"`
 	MessageCount int32  `json:"messageCount"`
-}
-
-// TeamCreateRequest is the request body for POST /api/v1/teams.
-type TeamCreateRequest struct {
-	Name           string                       `json:"name"`
-	Namespace      string                       `json:"namespace,omitempty"`
-	Objective      string                       `json:"objective"`
-	Lead           TeamLeadRequest              `json:"lead"`
-	Members        []TeamMemberRequest          `json:"members,omitempty"`
-	Recovery       *v1alpha1.RecoverySpec       `json:"recovery,omitempty"`
-	Lifecycle      *v1alpha1.TeamLifecycle      `json:"lifecycle,omitempty"`
-	DynamicMembers *v1alpha1.DynamicMembersSpec `json:"dynamicMembers,omitempty"`
-	ShutdownPolicy string                       `json:"shutdownPolicy,omitempty"`
-}
-
-// TeamLeadRequest defines team lead in create request.
-type TeamLeadRequest struct {
-	AgentRef         string `json:"agentRef"`
-	Prompt           string `json:"prompt,omitempty"`
-	DeployMode       string `json:"deployMode,omitempty"` // managed | byo
-	ManagedAgentID   string `json:"managedAgentId,omitempty"`
-	OwnerID          string `json:"ownerId,omitempty"`
-}
-
-// TeamMemberRequest defines a team member.
-type TeamMemberRequest struct {
-	Name             string `json:"name"`
-	AgentRef         string `json:"agentRef"`
-	Prompt           string `json:"prompt,omitempty"`
-	PlanApproval     bool   `json:"planApproval,omitempty"`
-	DeployMode       string `json:"deployMode,omitempty"`
-	ManagedAgentID   string `json:"managedAgentId,omitempty"`
-	OwnerID          string `json:"ownerId,omitempty"`
-}
-
-// TeamTaskRequest is the request body for creating a task.
-type TeamTaskRequest struct {
-	Subject     string   `json:"subject"`
-	Description string   `json:"description,omitempty"`
-	BlockedBy   []string `json:"blockedBy,omitempty"`
-	Owner       string   `json:"owner,omitempty"`
-}
-
-// TeamTaskClaimRequest is the body for claiming a task.
-type TeamTaskClaimRequest struct {
-	ClaimedBy       string `json:"claimedBy"`
-	ResourceVersion string `json:"resourceVersion,omitempty"`
-}
-
-// TeamTaskAssignRequest is the body for lead-assigning a task.
-type TeamTaskAssignRequest struct {
-	Owner           string `json:"owner"`
-	ResourceVersion string `json:"resourceVersion,omitempty"`
-}
-
-// TeamPlanRequest is the body for submitting a member plan for approval.
-type TeamPlanRequest struct {
-	PlanText string `json:"planText"`
-}
-
-// TeamPlanDecisionRequest is the optional body for approving/rejecting a plan.
-type TeamPlanDecisionRequest struct {
-	Note string `json:"note,omitempty"`
-}
-
-// TeamMessageRequest is the body for sending a message.
-type TeamMessageRequest struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Content string `json:"content"`
 }
 
 // ErrorResponse represents an error.

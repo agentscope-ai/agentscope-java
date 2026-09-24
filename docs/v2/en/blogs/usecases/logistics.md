@@ -1,8 +1,7 @@
 ---
-hide-toc: true
+title: 'From Config-Driven to Business-Native: Enterprise Agent Practice'
+zh_link: /v2/zh/blogs/usecases/logistics
 ---
-
-# From Configuration-Driven to Business-Native: Enterprise-Grade Agent Development Practices with AgentScope
 
 ## 01 Background
 
@@ -291,7 +290,7 @@ As the bottom-most layer of the architecture, its core is interacting with the L
 **5. Zero-intrusion integration of observability and advanced reasoning capabilities**
 
 - Rule: Trace instrumentation, Prompt caching, and tool invocation enhancements are automatically completed at the model layer; business code needs no manual handling.
-- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, `OpenAIBaseFormatter.applyCacheControl()` automatically adds cache markers; toolChoice and parallelToolCalls parameters directly control tool behavior.
+- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, the formatter adds cache markers while formatting messages; toolChoice and parallelToolCalls parameters directly control tool behavior.
 
 ![Model layer architecture I](https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2vyuibOsbQibMibMjVQOymQcVxoTOX2VY8z2jHJ6XdAN5A5FCfD8zWgxt5Abdt2sGI95MLD7eJFMF6pKYduAc8jvaMYS0VfMWw8c/640?wx_fmt=png&from=appmsg)
 
@@ -918,7 +917,7 @@ Beyond the lightweight-level creation design of `createAgent()`, the customizati
 
 The complete lifecycle performance profile table summarizes the latency and DB operations of each stage: `createAgent` → `hasMemory` → `onEnter` → `saveAgent` → `removeSession`.
 
-These four methods together constitute the lightweight runtime of the finance agent: `createAgent` solves lightweight creation (< 1ms, zero DB), `hasMemory` solves lightweight probing (index hit), `saveAgent` solves lightweight persistence (incremental writes), `removeSession` solves lightweight cleanup (batch deletion).
+These four methods together constitute the lightweight runtime of the finance agent: `createAgent` solves lightweight creation (&lt; 1ms, zero DB), `hasMemory` solves lightweight probing (index hit), `saveAgent` solves lightweight persistence (incremental writes), `removeSession` solves lightweight cleanup (batch deletion).
 
 ##### 5.1.4.3 Engineering-Grade Human in the Loop (SPI3)
 

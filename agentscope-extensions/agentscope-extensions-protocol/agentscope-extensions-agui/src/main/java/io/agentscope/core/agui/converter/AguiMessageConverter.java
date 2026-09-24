@@ -56,10 +56,12 @@ import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -75,6 +77,9 @@ public class AguiMessageConverter {
 
     /** AG-UI resume payload key: full replacement tool arguments. */
     private static final String RESUME_PAYLOAD_EDITED_ARGS = "editedArgs";
+
+    /** AG-UI resume payload key: optional reason supplied when denying the tool call. */
+    private static final String RESUME_PAYLOAD_REASON = "reason";
 
     /**
      * Creates a new AguiMessageConverter
@@ -103,6 +108,10 @@ public class AguiMessageConverter {
             for (InputContent input : blocksContent.parts()) {
                 blocks.add(toContentBlock(input));
             }
+        } else if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            // Tool message with no content (e.g. frontend tool returning nothing): still
+            // emit a ToolResultBlock so the pending tool call is resolved downstream.
+            addTextBlock(blocks, "", aguiMessage);
         }
 
         // Add tool calls if present (for assistant messages)
@@ -181,6 +190,13 @@ public class AguiMessageConverter {
      * Convert an AG-UI run input to AgentScope messages, resolving resume entries through known
      * originating interrupts when available.
      *
+     * <p>Some clients (notably CopilotKit {@code useInterrupt.resolve()}) send both a {@code
+     * role:"tool"} message and a matching {@code resume[]} entry for the same {@code toolCallId}.
+     * Ordinary tool resumes that would duplicate an already-present {@link ToolResultBlock} id are
+     * skipped so {@code ReActAgent} does not throw {@code Duplicate tool result ID}. Permission
+     * confirm resumes still produce a USER {@link ConfirmResult} message and are never skipped on
+     * that basis.
+     *
      * @param input The AG-UI run input
      * @param resumeInterrupts Mapping from interrupt ID to the originating interrupt
      * @return The converted AgentScope messages
@@ -189,6 +205,7 @@ public class AguiMessageConverter {
             RunAgentInput input, Map<String, AguiEvent.Interrupt> resumeInterrupts) {
         Objects.requireNonNull(input, "input cannot be null");
         List<Msg> msgs = new ArrayList<>(toMsgList(input.getMessages()));
+        Set<String> existingToolResultIds = collectToolResultIds(msgs);
         Map<String, AguiEvent.Interrupt> interrupts =
                 resumeInterrupts != null ? resumeInterrupts : Map.of();
         for (AguiResume resume : input.getResume()) {
@@ -199,11 +216,29 @@ public class AguiMessageConverter {
             }
             if (isPermissionConfirmInterrupt(interrupt)) {
                 msgs.add(toConfirmResultMsg(resume, toolCallId, interrupt));
-            } else {
+            } else if (!existingToolResultIds.contains(toolCallId)) {
                 msgs.add(toToolResultMsg(resume, toolCallId));
+                existingToolResultIds.add(toolCallId);
             }
         }
         return List.copyOf(msgs);
+    }
+
+    private static Set<String> collectToolResultIds(List<Msg> msgs) {
+        Set<String> ids = new HashSet<>();
+        for (Msg msg : msgs) {
+            if (msg.getContent() == null) {
+                continue;
+            }
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ToolResultBlock toolResult
+                        && toolResult.getId() != null
+                        && !toolResult.getId().isBlank()) {
+                    ids.add(toolResult.getId());
+                }
+            }
+        }
+        return ids;
     }
 
     /**
@@ -255,18 +290,22 @@ public class AguiMessageConverter {
      * @param aguiMessage the source message (for role/tool-call-id context)
      */
     private void addTextBlock(List<ContentBlock> blocks, String text, AguiMessage aguiMessage) {
+        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
+            // Tool results must always carry a ToolResultBlock, even when the frontend
+            // returned empty content.
+            String resultText = text != null ? text : "";
+            blocks.add(
+                    ToolResultBlock.builder()
+                            .id(aguiMessage.getToolCallId())
+                            .output(TextBlock.builder().text(resultText).build())
+                            .state(ToolResultState.SUCCESS)
+                            .build());
+            return;
+        }
         if (text == null || text.isEmpty()) {
             return;
         }
-        if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
-            blocks.add(
-                    ToolResultBlock.of(
-                            aguiMessage.getToolCallId(),
-                            null,
-                            TextBlock.builder().text(text).build()));
-        } else {
-            blocks.add(TextBlock.builder().text(text).build());
-        }
+        blocks.add(TextBlock.builder().text(text).build());
     }
 
     /**
@@ -434,7 +473,8 @@ public class AguiMessageConverter {
                         .content(toolContent)
                         .build();
 
-        ConfirmResult confirmResult = new ConfirmResult(approved, toolUseBlock);
+        ConfirmResult confirmResult =
+                new ConfirmResult(approved, toolUseBlock, null, reason(resume));
         return Msg.builder()
                 .id("agui-confirm-" + resume.getInterruptId())
                 .role(MsgRole.USER)
@@ -482,6 +522,15 @@ public class AguiMessageConverter {
             result.put(key, entry.getValue());
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    private static String reason(AguiResume resume) {
+        Object payload = resume.getPayload();
+        if (!(payload instanceof Map<?, ?> map)) {
+            return null;
+        }
+        String reason = stringValue(map.get(RESUME_PAYLOAD_REASON));
+        return reason == null || reason.isBlank() ? null : reason;
     }
 
     private static String stringValue(Object value) {

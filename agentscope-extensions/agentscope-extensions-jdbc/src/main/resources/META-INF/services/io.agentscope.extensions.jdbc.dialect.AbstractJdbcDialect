@@ -1,0 +1,4 @@
+io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect
+io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect
+io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect
+io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect

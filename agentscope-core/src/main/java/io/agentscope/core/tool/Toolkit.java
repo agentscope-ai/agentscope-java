@@ -26,6 +26,7 @@ import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
 import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -549,6 +550,18 @@ public class Toolkit {
         return mcpClientManager.removeMcpClient(mcpClientName);
     }
 
+    /** Releases clients registered by this toolkit. Copies do not own the source's clients. */
+    public void closeMcpClients() {
+        for (String name : mcpClientManager.getMcpClientNames()) {
+            try {
+                removeMcpClient(name).block();
+            } catch (RuntimeException e) {
+                logger.warn(
+                        "MCP client '{}' cleanup failed ({})", name, e.getClass().getSimpleName());
+            }
+        }
+    }
+
     // ==================== Tool Group Management (Delegated) ====================
 
     /**
@@ -629,6 +642,24 @@ public class Toolkit {
      */
     public void registerToolGroup(ToolGroup group) {
         groupManager.registerToolGroup(group);
+    }
+
+    /**
+     * Add an already-registered tool to an existing tool group.
+     *
+     * <p>A tool may belong to multiple groups. Adding the same tool to the same group more than
+     * once has no additional effect.
+     *
+     * @param groupName Name of the existing tool group
+     * @param toolName Name of the registered tool
+     * @throws IllegalArgumentException if the group or tool doesn't exist
+     */
+    public void addToolToGroup(String groupName, String toolName) {
+        groupManager.validateGroupExists(groupName);
+        if (toolRegistry.getTool(toolName) == null) {
+            throw new IllegalArgumentException("Tool not found: " + toolName);
+        }
+        groupManager.addToolToGroup(groupName, toolName);
     }
 
     /**
@@ -812,7 +843,10 @@ public class Toolkit {
         private Map<String, Map<String, Object>> presetParameters;
         private ExtendedModel extendedModel;
         private List<String> enableTools;
+        private String mcpToolNamePrefix = "";
         private List<String> disableTools;
+        private Boolean propagateMeta;
+        private final Map<String, Boolean> toolPropagateMeta = new LinkedHashMap<>();
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -921,14 +955,13 @@ public class Toolkit {
             return this;
         }
 
-        /**
-         * Set the list of tools to enable from the MCP client.
-         *
-         * <p>Only applicable when using mcpClient(). If not specified, all tools are enabled.
-         *
-         * @param enableTools List of tool names to enable
-         * @return This builder for chaining
-         */
+        /** Optional namespace for model-facing MCP tool names; wire names remain unchanged. */
+        public ToolRegistration mcpToolNamePrefix(String prefix) {
+            this.mcpToolNamePrefix = java.util.Objects.requireNonNull(prefix);
+            return this;
+        }
+
+        /** Selects remote tool names; an absent or empty list enables all tools. */
         public ToolRegistration enableTools(List<String> enableTools) {
             this.enableTools = enableTools;
             return this;
@@ -944,6 +977,64 @@ public class Toolkit {
          */
         public ToolRegistration disableTools(List<String> disableTools) {
             this.disableTools = disableTools;
+            return this;
+        }
+
+        /**
+         * Controls whether request metadata is propagated to the MCP server registered through
+         * this builder.
+         *
+         * <p>By default, entries registered under {@link io.agentscope.core.tool.mcp.McpMeta} in
+         * the runtime context plus the framework tool-call id are sent as the {@code meta} field
+         * of every tool call request. For MCP servers that are not fully trusted (e.g. external
+         * third-party services), set this to {@code false} so no metadata leaves the process.
+         *
+         * <p>When unset, no per-tool restriction is recorded (the tool flag stays {@code true})
+         * and the effective decision falls back to the connection-level switch on the MCP client
+         * wrapper, which is read live on every call.
+         *
+         * <p>Only applicable when using mcpClient().
+         *
+         * @param propagateMeta true to propagate metadata, false to omit the {@code meta} field
+         *     entirely from tool call requests
+         * @return This builder for chaining
+         */
+        public ToolRegistration propagateMeta(boolean propagateMeta) {
+            this.propagateMeta = propagateMeta;
+            return this;
+        }
+
+        /**
+         * Controls request metadata propagation for a single MCP tool of this client.
+         *
+         * <p>Per-tool entries win over the client-wide default set via
+         * {@link #propagateMeta(boolean)}, and both are further ANDed with the connection-level
+         * switch on the MCP client wrapper at call time. This mirrors the
+         * {@code enableTools}/{@code disableTools} shape: use it to keep one trusted tool
+         * receiving its metadata (e.g. a callback URL) while the rest of an untrusted server is
+         * silenced, or vice versa.
+         *
+         * <p>The tool name is the remote MCP tool name as exposed by the server (before any
+         * {@code mcpToolNamePrefix}). Repeat calls for different tools accumulate; a repeated
+         * call for the same tool overwrites the previous value. An entry whose name does not
+         * match a tool that is actually registered from this client (e.g. a typo or a name
+         * filtered out by {@code enableTools}/{@code disableTools}) fails the registration
+         * with an {@link IllegalArgumentException}, so a silencing override is never lost
+         * silently.
+         *
+         * <p>Only applicable when using mcpClient().
+         *
+         * @param toolName the remote MCP tool name
+         * @param propagateMeta true to allow metadata propagation for this tool, false to omit
+         *     the {@code meta} field from this tool's requests
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if {@code toolName} is {@code null} or blank
+         */
+        public ToolRegistration propagateMeta(String toolName, boolean propagateMeta) {
+            if (toolName == null || toolName.isBlank()) {
+                throw new IllegalArgumentException("MCP tool name cannot be null or blank");
+            }
+            this.toolPropagateMeta.put(toolName, propagateMeta);
             return this;
         }
 
@@ -1031,7 +1122,10 @@ public class Toolkit {
                                 enableTools,
                                 disableTools,
                                 groupName,
-                                presetParameters)
+                                presetParameters,
+                                mcpToolNamePrefix,
+                                propagateMeta,
+                                toolPropagateMeta)
                         .block();
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);

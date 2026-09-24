@@ -25,6 +25,8 @@ target/
 /nbdist/
 /.nb-gradle/
 build/
+!agentscope-service/frontend/src/features/build/
+!agentscope-service/frontend/src/features/build/**
 !**/src/main/**/build/
 !**/src/test/**/build/
 ### VS Code ###
@@ -53,10 +55,13 @@ docs/_build
 .claude
 openspec
 AGENTS.md
+# Product documentation must remain tracked on case-insensitive filesystems.
+!/docs/v2/*/service/agents.md
 CLAUDE.md
 .omc/
 .qoder/
 .cursor/
+.codex-tmp/
 
 ##Log
 logs/
@@ -101,3 +106,23 @@ agentscope-service/aistio/cover.out
 agentscope-service/aistio/coverage.*
 agentscope-service/aistio/.idea/
 agentscope-service/.dev-stack/
+
+# AgentScope Service release hygiene (reports remain local / CI artifacts).
+/agentscope-service/docs/test-reports/
+/agentscope-service/aistio/ui/*
+!/agentscope-service/aistio/ui/.gitkeep
+/agentscope-service/frontend/test-results/
+/agentscope-service/frontend/playwright-report/
+/agentscope-service/release/dist/
+/agentscope-service/deploy/.env
+/agentscope-service/deploy/*.env
+/agentscope-service/deploy/*.local.yaml
+/agentscope-service/aistio/sdk/dsh/node_modules/
+/agentscope-service/aistio/sdk/dsh/dist/
+/agentscope-service/aistio/sdk/dsh/*.tgz
+/agentscope-service/aistio/sdk/python/dist/
+/agentscope-service/aistio/sdk/python/.pytest_cache/
+
+# Mintlify documentation dependencies and local preview
+/docs/node_modules/
+/docs/.mintlify/

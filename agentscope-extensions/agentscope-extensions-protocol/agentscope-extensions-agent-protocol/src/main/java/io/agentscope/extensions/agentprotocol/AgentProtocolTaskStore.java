@@ -279,14 +279,15 @@ public final class AgentProtocolTaskStore {
             }
 
             String text = reply != null ? reply.getTextContent() : "";
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
             publishStatus(taskId, agentId, "success", null);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             return text;
         } catch (Exception e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("Protocol task {} failed", taskId, e);
+            clearSubmitContext(taskId);
             update(taskId, TaskStatus.FAILED, null, err, agentId, false, null);
             RemoteAgentEvent error = new RemoteAgentEvent();
             error.setType(RemoteEventType.RUN_ERROR);
@@ -295,7 +296,6 @@ public final class AgentProtocolTaskStore {
             error.setStatus("error");
             eventBus.publish(taskId, error);
             eventBus.complete(taskId);
-            clearSubmitContext(taskId);
             throw new RuntimeException(e);
         }
     }
@@ -374,17 +374,18 @@ public final class AgentProtocolTaskStore {
 
     private static List<ConfirmResult> toConfirmResults(
             List<RemotePendingConfirm> pending, List<RemoteConfirmDecision> decisions) {
-        Map<String, Boolean> byId = new HashMap<>();
+        Map<String, RemoteConfirmDecision> byId = new HashMap<>();
         if (decisions != null) {
             for (RemoteConfirmDecision d : decisions) {
                 if (d.getToolCallId() != null) {
-                    byId.put(d.getToolCallId(), d.isApproved());
+                    byId.put(d.getToolCallId(), d);
                 }
             }
         }
         List<ConfirmResult> results = new ArrayList<>();
         for (RemotePendingConfirm p : pending) {
-            boolean approved = byId.getOrDefault(p.getToolCallId(), false);
+            RemoteConfirmDecision decision = byId.get(p.getToolCallId());
+            boolean approved = decision != null && decision.isApproved();
             Map<String, Object> input = parseInputQuiet(p.getToolInputJson());
             ToolUseBlock toolCall =
                     ToolUseBlock.builder()
@@ -392,7 +393,12 @@ public final class AgentProtocolTaskStore {
                             .name(p.getToolName())
                             .input(input)
                             .build();
-            results.add(new ConfirmResult(approved, toolCall));
+            results.add(
+                    new ConfirmResult(
+                            approved,
+                            toolCall,
+                            null,
+                            decision == null ? null : decision.getReason()));
         }
         return results;
     }

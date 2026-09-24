@@ -142,7 +142,7 @@ final class E2bEnvdProcessClient {
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = Integer.MIN_VALUE;
+        int exit;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
                 String err = res.body() != null ? res.body().string() : "";
@@ -165,7 +165,7 @@ final class E2bEnvdProcessClient {
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
             throws IOException {
-        int exit = Integer.MIN_VALUE;
+        Integer exit = null;
         Descriptors.FieldDescriptor srEventF = startResponseDesc.findFieldByName("event");
         Descriptors.FieldDescriptor peDataF = processEventDesc.findFieldByName("data");
         Descriptors.FieldDescriptor peEndF = processEventDesc.findFieldByName("end");
@@ -211,6 +211,9 @@ final class E2bEnvdProcessClient {
             } catch (IOException e) {
                 continue;
             }
+        }
+        if (exit == null) {
+            throw new IOException("envd process stream ended before receiving a process exit code");
         }
         return exit;
     }

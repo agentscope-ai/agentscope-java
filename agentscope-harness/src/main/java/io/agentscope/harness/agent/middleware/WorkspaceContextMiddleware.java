@@ -134,6 +134,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
+    private boolean artifactDeliveryEnabled = false;
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -170,14 +171,28 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         this.additionalContextFiles = files != null ? files : List.of();
     }
 
-    /** Whether memory tools are disabled for this middleware (affects prompt guidance). */
+    /**
+     * Whether memory tools are disabled for this middleware (affects prompt guidance).
+     */
     public boolean isDisableMemoryTools() {
         return disableMemoryTools;
     }
 
-    /** Whether memory hooks are disabled for this middleware (affects prompt guidance). */
+    /**
+     * Whether memory hooks are disabled for this middleware (affects prompt guidance).
+     */
     public boolean isDisableMemoryHooks() {
         return disableMemoryHooks;
+    }
+
+    /**
+     * Whether an {@link io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget} is configured
+     * and the {@code deliver_artifact} tool is exposed. When {@code true}, the sandbox branch of the
+     * workspace paragraph tells the model to use that tool; when {@code false}, it states that files
+     * cannot leave the sandbox.
+     */
+    public void setArtifactDeliveryEnabled(boolean artifactDeliveryEnabled) {
+        this.artifactDeliveryEnabled = artifactDeliveryEnabled;
     }
 
     @Override
@@ -200,7 +215,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
-        String sessionContext = buildSessionContextSection(workspace, rc);
+        AbstractFilesystem filesystem = workspaceManager.getFilesystem();
+        Path effectiveWorkspace =
+                detectLocalUpper(filesystem) != null
+                        ? workspaceManager.resolveRuntimeDataPath(rc, "")
+                        : workspace;
+        String sessionContext = buildSessionContextSection(effectiveWorkspace, rc);
 
         String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -219,7 +239,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
 
         String workspaceParagraph =
-                buildWorkspaceParagraph(workspace, workspaceManager.getFilesystem());
+                buildWorkspaceParagraph(
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
         String loadedContext =
                 buildLoadedContextSection(
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock);
@@ -299,7 +320,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      *       don't recognize.
      * </ul>
      */
-    private static String buildWorkspaceParagraph(Path workspace, AbstractFilesystem fs) {
+    private static String buildWorkspaceParagraph(
+            Path workspace,
+            Path effectiveWorkspace,
+            AbstractFilesystem fs,
+            boolean artifactDeliveryEnabled) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -308,7 +333,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                     .append(project.toAbsolutePath())
                     .append("\n");
             sb.append("Workspace (your home base — memory, sessions, skills, runtime data): ")
-                    .append(workspace.toAbsolutePath())
+                    .append(effectiveWorkspace.toAbsolutePath())
                     .append("\n");
             List<Path> extraRoots = extraRootsOf(localUpper, project, workspace);
             if (!extraRoots.isEmpty()) {
@@ -343,10 +368,17 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             sb.append("Sandbox root: /workspace (container id: ")
                     .append(sandbox.id())
                     .append(")\n");
-            sb.append(
-                    "Files are isolated inside this container. The host filesystem is not"
-                            + " directly accessible — use upload/download tools when you need to"
-                            + " move bytes across the boundary.\n");
+            if (artifactDeliveryEnabled) {
+                sb.append(
+                        "Files are isolated inside this container. The host filesystem is not"
+                                + " directly accessible — see the File Isolation Notice below for"
+                                + " how to deliver files out of the sandbox.\n");
+            } else {
+                sb.append(
+                        "Files are isolated inside this container. The host filesystem is not"
+                                + " accessible and there is no mechanism for moving files across"
+                                + " the boundary.\n");
+            }
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")
                     .append(workspace.toAbsolutePath())
@@ -366,6 +398,30 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         sb.append(
                 "AGENTS.md defines persona and local conventions — honor them when consistent"
                         + " with safety and policy.\n");
+        if (artifactDeliveryEnabled
+                && fs instanceof AbstractSandboxFilesystem
+                && !(fs instanceof OverlayFilesystem)) {
+            sb.append(
+                    "**File Isolation Notice**\n"
+                            + "Files inside this container are isolated from the host filesystem"
+                            + " and are not directly accessible from outside. If your work"
+                            + " produces any final deliverables—such as documents, reports,"
+                            + " images, spreadsheets, archives, audio/video files, code"
+                            + " artifacts, or similar—you **must** call deliver_artifact"
+                            + " automatically when you finish the task to export them to their"
+                            + " configured external destination. Deliver it silently: do not ask"
+                            + " the user whether they want it delivered — the tool call itself lets"
+                            + " the user see and retrieve the artifact directly, so do not mention"
+                            + " the delivery or the deliver_artifact tool in your reply.\n"
+                            + "\n"
+                            + "**Important Notes**:\n"
+                            + "- Only deliver the final output of your task. **Do not** deliver"
+                            + " temporary files, working copies, internal intermediate files, or"
+                            + " any sensitive information (e.g., credentials, keys, personal"
+                            + " data).\n"
+                            + "- Do not simply print the file path as a reference; the user"
+                            + " cannot access your container's filesystem directly.\n");
+        }
         return sb.toString();
     }
 

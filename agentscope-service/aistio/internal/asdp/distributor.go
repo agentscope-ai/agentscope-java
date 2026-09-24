@@ -16,8 +16,10 @@ package asdp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -42,18 +44,19 @@ func NewDistributor(server *Server, snapshots *SnapshotStore) *Distributor {
 }
 
 // PushConfig pushes a config update to all connected instances of an agent.
-func (d *Distributor) PushConfig(namespace, agentName string, cfgType ConfigType, resources interface{}) error {
+func (d *Distributor) PushConfig(tenant, namespace, agentName string, cfgType ConfigType, resources interface{}) error {
 	logger := log.Log.WithName("asdp-distributor")
 
 	_, span := tracing.Tracer().Start(context.Background(), "asdp.PushConfig",
 		otelTrace.WithAttributes(
+			attribute.String("tenant", tenant),
 			attribute.String("agent", agentName),
 			attribute.String("namespace", namespace),
 			attribute.String("config_type", fmt.Sprintf("%d", cfgType)),
 		))
 	defer span.End()
 
-	snapshot, changed, err := d.snapshots.UpdateSnapshot(namespace, agentName, cfgType, resources)
+	snapshot, changed, err := d.snapshots.UpdateSnapshot(tenant, namespace, agentName, cfgType, resources)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -66,7 +69,7 @@ func (d *Distributor) PushConfig(namespace, agentName string, cfgType ConfigType
 		return nil
 	}
 
-	conns := d.server.GetConnectionsForAgent(namespace, agentName)
+	conns := d.server.GetConnectionsForAgentForTenant(tenant, namespace, agentName)
 	if len(conns) == 0 {
 		logger.Info("no connected instances, config will be pushed on reconnect",
 			"agent", agentName, "configType", cfgType, "version", snapshot.Version)
@@ -108,11 +111,11 @@ func (d *Distributor) PushConfig(namespace, agentName string, cfgType ConfigType
 // re-created agent of the same name starts from a clean version counter and
 // stale config is not re-pushed on reconnect.
 func (d *Distributor) ForgetAgent(namespace, agentName string) {
-	d.snapshots.DeleteAgent(namespace, agentName)
+	d.snapshots.DeleteAgent("default", namespace, agentName)
 }
 
 // PushFullSync pushes all current config snapshots to a newly connected instance.
-func (d *Distributor) PushFullSync(namespace, agentName, instanceID string) {
+func (d *Distributor) PushFullSync(tenant, namespace, agentID, agentName, instanceID string) {
 	logger := log.Log.WithName("asdp-distributor")
 
 	_, span := tracing.Tracer().Start(context.Background(), "asdp.PushFullSync",
@@ -123,7 +126,7 @@ func (d *Distributor) PushFullSync(namespace, agentName, instanceID string) {
 		))
 	defer span.End()
 
-	snapshots := d.snapshots.GetAllSnapshots(namespace, agentName)
+	snapshots := d.snapshots.GetAllSnapshots(tenant, namespace, agentName)
 	if len(snapshots) == 0 {
 		logger.Info("no config snapshots to push on connect",
 			"agent", agentName, "instance", instanceID)
@@ -131,7 +134,7 @@ func (d *Distributor) PushFullSync(namespace, agentName, instanceID string) {
 		return
 	}
 
-	conn, ok := d.server.GetConnection(namespace, instanceID)
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
 	if !ok {
 		logger.Info("instance not connected for full sync",
 			"agent", agentName, "instance", instanceID)
@@ -171,16 +174,16 @@ var ErrInstanceNotConnected = errors.New("asdp: instance not connected")
 
 // SendSessionCommand sends a session command to a specific instance.
 // It returns ErrInstanceNotConnected when the instance has no live stream.
-func (d *Distributor) SendSessionCommand(namespace, instanceID, sessionID, command string) error {
-	return d.SendSessionCommandWithParams(namespace, instanceID, sessionID, command, nil)
+func (d *Distributor) SendSessionCommand(tenant, namespace, agentID, instanceID, sessionID, command string) error {
+	return d.SendSessionCommandWithParams(tenant, namespace, agentID, instanceID, sessionID, command, nil)
 }
 
 // SendSessionCommandWithParams is like SendSessionCommand but includes params
-// (e.g. TeamContext JSON for team_join).
-func (d *Distributor) SendSessionCommandWithParams(namespace, instanceID, sessionID, command string, params []byte) error {
+// (for example an AgentTask locator and task-scoped token).
+func (d *Distributor) SendSessionCommandWithParams(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
 	logger := log.Log.WithName("asdp-distributor")
 
-	conn, ok := d.server.GetConnection(namespace, instanceID)
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
 	if !ok {
 		logger.Info("instance not connected for session command",
 			"instance", instanceID, "session", sessionID, "command", command)
@@ -204,65 +207,48 @@ func (d *Distributor) SendSessionCommandWithParams(namespace, instanceID, sessio
 	return conn.Send(down)
 }
 
+// SendConversationTurn delivers one fenced online turn to a connected Agent
+// instance. Unlike SessionCommand this command carries a public Invocation ID
+// and must be acknowledged through ConversationTurnReport.
+func (d *Distributor) SendConversationTurn(tenant, namespace, instanceID string, command *ConversationTurnCommand) error {
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, command.GetAgentId(), instanceID)
+	if !ok {
+		return ErrInstanceNotConnected
+	}
+	return conn.Send(&Downstream{Payload: &Downstream_ConversationTurn{ConversationTurn: command}})
+}
+
+// SendExecutionAttemptCommand sends a task wake only to the selected tenant's stream.
+func (d *Distributor) SendExecutionAttemptCommand(tenant, namespace, agentID, instanceID, sessionID, command string, params []byte) error {
+	conn, ok := d.server.GetConnectionForAgentInstance(tenant, namespace, agentID, instanceID)
+	if !ok {
+		return ErrInstanceNotConnected
+	}
+	var payload struct {
+		AttemptID, AgentTaskID, RunID, NodeID string
+		Generation                            int64
+		ContextURL, TaskToken, AttemptToken   string
+		RuntimeBinding                        json.RawMessage
+	}
+	if err := json.Unmarshal(params, &payload); err != nil {
+		return err
+	}
+	if command != "dispatch" && command != "cancel" {
+		return fmt.Errorf("unsupported execution attempt command %q", command)
+	}
+	cmd := &ExecutionAttemptCommand{AttemptId: payload.AttemptID, AgentTaskId: payload.AgentTaskID,
+		RunId: payload.RunID, NodeId: payload.NodeID, Generation: payload.Generation, Command: command,
+		ContextUrl: payload.ContextURL, TaskToken: payload.TaskToken, AttemptToken: payload.AttemptToken,
+		RuntimeBinding: payload.RuntimeBinding, Payload: params, Timestamp: time.Now().UnixMilli()}
+	return conn.Send(&Downstream{Payload: &Downstream_ExecutionAttempt{ExecutionAttempt: cmd}})
+}
+
 // GetConnectedInstance returns the instance ID of a connected instance for the
-// given agent on THIS replica, if any. The team outbox watcher uses it to
-// decide whether the local replica can deliver a message.
-func (d *Distributor) GetConnectedInstance(namespace, agentName string) (string, bool) {
-	conns := d.server.GetConnectionsForAgent(namespace, agentName)
+// given agent on THIS replica, if any.
+func (d *Distributor) GetConnectedInstance(tenant, namespace, agentName string) (string, bool) {
+	conns := d.server.GetConnectionsForAgentForTenant(tenant, namespace, agentName)
 	if len(conns) == 0 {
 		return "", false
 	}
 	return conns[0].InstanceID, true
-}
-
-// DeliverTeamEvent sends a team event with string content to a specific
-// instance. It adapts SendTeamEvent to the controller.TeamEventDeliverer
-// interface used by the team outbox watcher.
-func (d *Distributor) DeliverTeamEvent(namespace, instanceID, teamID, eventType, memberName, content string) error {
-	return d.SendTeamEvent(namespace, instanceID, teamID, eventType, memberName, []byte(content))
-}
-
-// SendTeamEvent sends a team event notification to a specific instance.
-func (d *Distributor) SendTeamEvent(namespace, instanceID, teamID, eventType, memberName string, payload []byte) error {
-	conn, ok := d.server.GetConnection(namespace, instanceID)
-	if !ok {
-		return nil
-	}
-
-	down := &Downstream{
-		Payload: &Downstream_TeamEvent{
-			TeamEvent: &TeamEvent{
-				TeamId:     teamID,
-				EventType:  eventType,
-				MemberName: memberName,
-				Payload:    payload,
-			},
-		},
-	}
-
-	return conn.Send(down)
-}
-
-// BroadcastTeamEvent sends a team event to all connected instances.
-func (d *Distributor) BroadcastTeamEvent(namespace, teamID, eventType, memberName string, payload []byte) {
-	logger := log.Log.WithName("asdp-distributor")
-
-	down := &Downstream{
-		Payload: &Downstream_TeamEvent{
-			TeamEvent: &TeamEvent{
-				TeamId:     teamID,
-				EventType:  eventType,
-				MemberName: memberName,
-				Payload:    payload,
-			},
-		},
-	}
-
-	for _, conn := range d.server.ListConnections() {
-		if conn.Namespace == namespace {
-			if err := conn.Send(down); err != nil {
-				logger.Error(err, "broadcast team event failed", "instance", conn.InstanceID)
-			}
-		}
-	}
 }

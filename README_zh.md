@@ -55,7 +55,7 @@
 
 AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框架，提供与模型能力相匹配的核心 Harness 抽象，可支持长期、稳定、安全可控的智能体任务执行。
 
-- [**事件系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/message-and-event.html) 统一的事件流，28 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
+- [**事件系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/message-and-event.html) 统一的事件流，31 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
 - [**权限系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/permission-system.html) 工具调用决策机制：允许 / 用户审批 / 拒绝。
 - [**Middleware** →](https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html) 基于 AOP 模式的 hook 事件拦截机制，灵活扩展推理-行动循环。
 - [**Workspace 与沙箱** →](https://java.agentscope.io/v2/zh/docs/harness/workspace.html) 在隔离环境中执行工具 —— 本地、Docker、Kubernetes 或 AgentRun 云沙箱。
@@ -200,7 +200,7 @@ AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生�
 
 消息、事件、扩展机制更小、更正交；HITL 与事件流式是框架运行的一部分，不是外挂层：
 
-- **事件流** —— 28 种类型化事件，模型调用、文本增量、工具执行、用户确认全部实时流出
+- **事件流** —— 31 种类型化事件，模型调用、文本增量、工具执行、用户确认全部实时流出
 - **消息模型** —— 文本 / 文件 / 图片 / 音视频 / 工具结果统一收敛到 `ContentBlock`，按 role 严格校验
 - **Middleware** —— `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` 五阶段取代 v1 扁平 hook
 - **HITL 一等公民** —— 确认工具参数、审批敏感操作、交给外部系统执行，智能体在暂停点精确恢复

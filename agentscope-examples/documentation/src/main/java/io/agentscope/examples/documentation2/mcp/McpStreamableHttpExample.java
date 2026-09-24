@@ -43,7 +43,7 @@ import java.io.InputStreamReader;
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
+ *   mvn exec:java -pl agentscope-examples/documentation \
  *       -Dexec.mainClass=io.agentscope.examples.documentation2.mcp.McpStreamableHttpExample
  * </pre>
  */
