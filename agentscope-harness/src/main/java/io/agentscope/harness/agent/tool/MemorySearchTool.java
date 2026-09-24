@@ -19,7 +19,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -62,11 +64,21 @@ public class MemorySearchTool {
     }
 
     private String keywordSearch(RuntimeContext rc, String query) {
-        StringJoiner results = new StringJoiner("\n");
-        int matchCount = 0;
+        String[] rawTokens = query.split("[\\s,，;；|｜、/\\\\]+");
+        List<Pattern> patterns = new ArrayList<>();
+        for (String t : rawTokens) {
+            if (!t.isEmpty()) {
+                patterns.add(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE));
+            }
+        }
+        if (patterns.isEmpty()) {
+            return "No matching memories found for: " + query;
+        }
 
         List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
-        Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
+        StringJoiner andResults = new StringJoiner("\n");
+        int andCount = 0;
+        List<Map.Entry<Integer, String>> orCandidates = new ArrayList<>();
 
         for (String relativePath : memoryPaths) {
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
@@ -75,16 +87,41 @@ public class MemorySearchTool {
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
-                if (pattern.matcher(lines[i]).find()) {
-                    results.add(String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]));
-                    matchCount++;
+                int hits = hitCount(lines[i], patterns);
+                if (hits == 0) {
+                    continue;
+                }
+                String label = String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]);
+                if (hits == patterns.size()) {
+                    andResults.add(label);
+                    andCount++;
+                } else {
+                    orCandidates.add(Map.entry(hits, label));
                 }
             }
         }
 
-        if (matchCount == 0) {
+        if (andCount > 0) {
+            return "Found " + andCount + " matches:\n\n" + andResults;
+        }
+        if (orCandidates.isEmpty()) {
             return "No matching memories found for: " + query;
         }
-        return "Found " + matchCount + " matches:\n\n" + results;
+        orCandidates.sort((a, b) -> Integer.compare(b.getKey(), a.getKey()));
+        StringJoiner orResults = new StringJoiner("\n");
+        for (Map.Entry<Integer, String> e : orCandidates) {
+            orResults.add(e.getValue());
+        }
+        return "Found " + orCandidates.size() + " matches:\n\n" + orResults;
+    }
+
+    private int hitCount(String line, List<Pattern> patterns) {
+        int count = 0;
+        for (Pattern p : patterns) {
+            if (p.matcher(line).find()) {
+                count++;
+            }
+        }
+        return count;
     }
 }
