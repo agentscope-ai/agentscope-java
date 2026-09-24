@@ -64,10 +64,9 @@ import reactor.core.scheduler.Schedulers;
  * </ul>
  *
  * <p><b>Thread Safety:</b>
- * Agent instances are NOT designed for concurrent execution. A single agent instance should not
- * be invoked concurrently from multiple threads (e.g., calling {@code call()} or {@code stream()}
- * simultaneously). The hooks list is mutable and modified during streaming operations without
- * synchronization, which is safe only under single-threaded execution per agent instance.
+ * The base lifecycle keeps execution state per subscription. Subclasses define serialization
+ * through callSerializationKey; ReActAgent serializes calls within each session. Configure hooks
+ * before invoking the agent rather than mutating configuration while calls are running.
  *
  * <p><b>Interrupt Mechanism:</b>
  * <pre>{@code
@@ -209,9 +208,20 @@ public abstract class AgentBase implements Agent {
                 : lifecycle.contextWrite(c -> c.put(RUNTIME_CONTEXT_KEY, context));
     }
 
+    /** Lightweight controls for admitted sessions; never retains a RuntimeContext. */
+    private final Map<Object, RunControl> runningCalls = new ConcurrentHashMap<>();
+
+    /** Session-level interruption targets only the execution currently admitted for this key. */
+    protected final void interruptRunning(Object key, InterruptSource source, Msg message) {
+        RunControl control = runningCalls.get(key);
+        if (control != null) {
+            control.interrupt(source, message);
+        }
+    }
+
     /**
      * Reactor Context key carrying the per-call scope object returned by {@link
-     * #beforeAgentExecution(List, RuntimeContext)}. Agents that maintain per-call state (e.g. {@code ReActAgent}'s
+     * #beforeAgentExecution(List, RuntimeContext, RunControl)}. Agents that maintain per-call state (e.g. {@code ReActAgent}'s
      * {@code CallExecution}) read it back from the Context in {@link #doCall} / {@link
      * #handleInterrupt} so concurrent calls on one instance never share mutable per-call state.
      */
@@ -239,63 +249,85 @@ public abstract class AgentBase implements Agent {
     /**
      * Shared {@code call()} lifecycle: acquire execution, then (inside {@code deferContextual} so
      * the caller-supplied {@link RuntimeContext} is read per-subscription) run {@link
-     * #beforeAgentExecution(List, RuntimeContext)} (which returns this call's per-call scope), carry
+     * #beforeAgentExecution(List, RuntimeContext, RunControl)} (which returns this call's per-call scope), carry
      * that scope on the Reactor Context, and run the preCall → doCall → postCall chain with error
      * handling, releasing execution on terminate.
      */
     protected Mono<Msg> runLifecycle(List<Msg> msgs, Function<List<Msg>, Mono<Msg>> doCallFn) {
         return Mono.using(
                 this::acquireExecution,
-                resource ->
-                        Mono.deferContextual(
-                                cv -> {
-                                    RuntimeContext rc =
-                                            (RuntimeContext)
-                                                    cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
-                                    // Track this call as a distinct shutdown request (keyed by its
-                                    // own requestId, not the shared agent id) so concurrent calls
-                                    // on
-                                    // one instance are interrupted/saved/unregistered
-                                    // independently.
-                                    String requestId =
-                                            GracefulShutdownManager.getInstance()
-                                                    .registerRequest(this);
-                                    Object gateKey = callSerializationKey(rc);
-                                    // Build the per-call lifecycle lazily so it only runs once the
-                                    // serialization gate (if any) admits this call:
-                                    // beforeAgentExecution resolves/loads the session slot and must
-                                    // not race a concurrent same-session call.
-                                    Mono<Msg> lifecycle =
-                                            Mono.defer(
-                                                    () ->
-                                                            runLifecycleBody(
-                                                                    msgs, rc, doCallFn, requestId));
-                                    Mono<Msg> gated =
-                                            gateKey == null
-                                                    ? lifecycle
-                                                    : serializeOnKey(gateKey, lifecycle);
-                                    return gated.contextWrite(
-                                                    c ->
-                                                            requestId == null || requestId.isEmpty()
-                                                                    ? c
-                                                                    : c.put(
-                                                                            SHUTDOWN_REQUEST_ID_KEY,
-                                                                            requestId))
-                                            .doFinally(
-                                                    sig ->
-                                                            GracefulShutdownManager.getInstance()
-                                                                    .unregisterRequest(requestId));
-                                }),
+                resource -> Mono.deferContextual(cv -> runInContext(msgs, doCallFn, cv)),
                 this::releaseExecution,
                 true);
+    }
+
+    private Mono<Msg> runInContext(
+            List<Msg> msgs,
+            Function<List<Msg>, Mono<Msg>> doCallFn,
+            reactor.util.context.ContextView cv) {
+        RuntimeContext rc = cv.getOrDefault(RUNTIME_CONTEXT_KEY, null);
+        RunControl supplied = cv.getOrDefault(RunControl.CONTEXT_KEY, null);
+        boolean managed = supplied != null && supplied.belongsTo(getAgentId());
+        RunControl control = managed ? supplied : new RunControl(getAgentId());
+        if (!managed) {
+            control.queue();
+        }
+        Object gateKey = callSerializationKey(rc);
+        GracefulShutdownManager shutdown = GracefulShutdownManager.getInstance();
+        String requestId = shutdown.registerRequest(this, control);
+        Runnable retire =
+                () -> {
+                    if (gateKey != null) {
+                        runningCalls.remove(gateKey, control);
+                    }
+                    shutdown.unregisterRequest(requestId);
+                };
+        // Resolve session state only after admission. Retire before releasing the queue gate so a
+        // retry cannot have its new registration removed by the preceding attempt's cleanup.
+        Mono<Msg> lifecycle =
+                Mono.defer(() -> runLifecycleBody(msgs, rc, doCallFn, requestId, control, gateKey))
+                        .doOnTerminate(retire)
+                        .doOnCancel(retire);
+        Mono<Msg> gated = gateKey == null ? lifecycle : serializeOnKey(gateKey, lifecycle);
+        return control.guard(gated)
+                .singleOrEmpty()
+                .doOnSuccess(
+                        value -> {
+                            if (!managed) control.finish(AgentRun.Status.COMPLETED);
+                        })
+                .doOnError(
+                        error -> {
+                            if (!managed) control.finish(AgentRun.Status.FAILED);
+                        })
+                .doOnCancel(
+                        () -> {
+                            if (!managed) control.cancel();
+                        })
+                .contextWrite(
+                        c ->
+                                requestId == null || requestId.isEmpty()
+                                        ? c
+                                        : c.put(SHUTDOWN_REQUEST_ID_KEY, requestId))
+                // Also unregister calls cancelled while queued, before a lifecycle body exists.
+                .doFinally(signal -> shutdown.unregisterRequest(requestId));
     }
 
     private Mono<Msg> runLifecycleBody(
             List<Msg> msgs,
             RuntimeContext rc,
             Function<List<Msg>, Mono<Msg>> doCallFn,
-            String requestId) {
-        Object scope = beforeAgentExecution(msgs, rc);
+            String requestId,
+            RunControl control,
+            Object gateKey) {
+        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+        if (!control.start()) {
+            return Mono.error(
+                    new java.util.concurrent.CancellationException("Agent run cancelled"));
+        }
+        Object scope = beforeAgentExecution(msgs, rc, control);
+        if (gateKey != null) {
+            runningCalls.put(gateKey, control);
+        }
         // Bind this call's resolved per-session state to the tracked shutdown request so graceful
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
@@ -311,8 +343,12 @@ public abstract class AgentBase implements Agent {
                                                 .flatMap(this::notifyPostCall)
                                                 .onErrorResume(
                                                         createErrorHandler(
+                                                                control,
                                                                 msgs.toArray(new Msg[0]))));
-        return scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+        Mono<Msg> scoped =
+                scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
+        // Nested calls own their own control; only the outer execution receives this handle.
+        return scoped.contextWrite(c -> c.delete(RunControl.CONTEXT_KEY));
     }
 
     /**
@@ -339,22 +375,24 @@ public abstract class AgentBase implements Agent {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
-                    Mono<Void> releaseMono = release.asMono();
                     @SuppressWarnings("unchecked")
-                    Mono<Void>[] prev = new Mono[1];
-                    callGates.compute(
-                            key,
-                            (k, tail) -> {
-                                prev[0] = tail == null ? Mono.empty() : tail;
-                                return releaseMono;
-                            });
-                    return prev[0].onErrorComplete()
-                            .then(action)
-                            .doFinally(
-                                    sig -> {
-                                        release.tryEmitEmpty();
-                                        callGates.remove(key, releaseMono);
+                    Mono<Void>[] previous = new Mono[1];
+                    Mono<Void> tail =
+                            callGates.compute(
+                                    key,
+                                    (k, existing) -> {
+                                        previous[0] = existing == null ? Mono.empty() : existing;
+                                        // A cancelled middle entry must continue waiting for its
+                                        // predecessor. Otherwise
+                                        // A -> B(cancelled) -> C could admit C while A still owns
+                                        // the session state.
+                                        return previous[0].then(release.asMono()).cache();
                                     });
+                    tail.subscribe(
+                            ignored -> {},
+                            ignored -> callGates.remove(key, tail),
+                            () -> callGates.remove(key, tail));
+                    return previous[0].then(action).doFinally(signal -> release.tryEmitEmpty());
                 });
     }
 
@@ -447,19 +485,15 @@ public abstract class AgentBase implements Agent {
     @Deprecated
     public void interrupt(InterruptSource source) {}
 
-    /** @deprecated No longer needed; ReActAgent uses per-session InterruptControl. */
+    /** @deprecated No longer needed; ReActAgent uses per-execution InterruptControl. */
     @Deprecated
     protected Mono<Void> checkInterruptedAsync() {
         return Mono.empty();
     }
 
-    /** @deprecated No-op; per-session interrupt state is managed by AgentState.interruptControl(). */
+    /** @deprecated No-op; interrupt state is owned by the execution. */
     @Deprecated
     protected void resetInterruptFlag() {}
-
-    private InterruptContext createInterruptContext() {
-        return InterruptContext.builder().source(InterruptSource.USER).build();
-    }
 
     /**
      * Acquire execution resources for a {@code call()} invocation.
@@ -485,11 +519,12 @@ public abstract class AgentBase implements Agent {
      * @param originalArgs Original arguments to pass to handleInterrupt
      * @return Function that handles errors appropriately
      */
-    private Function<Throwable, Mono<Msg>> createErrorHandler(Msg... originalArgs) {
+    private Function<Throwable, Mono<Msg>> createErrorHandler(
+            RunControl control, Msg... originalArgs) {
         return error -> {
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
-                return handleInterrupt(createInterruptContext(), originalArgs);
+                return handleInterrupt(control.interruption().toContext(), originalArgs);
             }
             return notifyError(error).then(Mono.error(error));
         };
@@ -501,7 +536,7 @@ public abstract class AgentBase implements Agent {
         return new AtomicBoolean(false);
     }
 
-    /** @deprecated Returns USER. Per-session interrupt source is on AgentState.interruptControl(). */
+    /** @deprecated Returns USER. Interrupt source is owned by the execution. */
     @Deprecated
     protected InterruptSource getInterruptSource() {
         return InterruptSource.USER;
@@ -564,15 +599,16 @@ public abstract class AgentBase implements Agent {
      * @param msgs the messages passed by the caller to {@code call()}
      * @param rc the caller-supplied per-call {@link RuntimeContext}, or {@code null} when none was
      *     provided (read from the Reactor Context, so concurrency-safe)
+     * @param control this execution's independent interruption and cancellation control
      * @return this call's per-call scope object, or {@code null} if this agent type keeps none
      */
-    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc, RunControl control) {
         return null;
     }
 
     /**
      * Invoked in {@code Mono.using} cleanup, before clearing the running state. Pairs with {@link
-     * #beforeAgentExecution(List, RuntimeContext)}. The default is a no-op.
+     * #beforeAgentExecution(List, RuntimeContext, RunControl)}. The default is a no-op.
      */
     protected void afterAgentExecution() {}
 
@@ -665,7 +701,7 @@ public abstract class AgentBase implements Agent {
      * available to subsequent events ({@code PreReasoningEvent}, {@code PreSummaryEvent}).
      *
      * @param systemMsg the system message produced by all PreCall hooks (may be null)
-     * @param callScope the per-call scope captured at call entry (see {@link #beforeAgentExecution(List, RuntimeContext)});
+     * @param callScope the per-call scope captured at call entry (see {@link #beforeAgentExecution(List, RuntimeContext, RunControl)});
      *     may be {@code null}
      */
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {}

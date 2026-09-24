@@ -210,6 +210,26 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
+## 控制单次执行
+
+`ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
+
+```java
+AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("你好")), context);
+String runId = run.runId(); // 先在应用的运行管理器中登记句柄。
+run.stream().subscribe(this::onEvent, this::onError);
+
+// 另一条请求链路可根据 runId 找到这个句柄。
+run.cancel();
+```
+
+- `cancel()` 立即取消响应式执行，支持订阅前和 session 排队期间取消。订阅者收到 `CancellationException`。取消排队中的 B 不会中断正在执行的 A，也不会让 C 越过 A 提前执行。
+- `interrupt()` / `interrupt(message)` 请求已获得执行位置的调用在协作检查点中断。ReActAgent 返回中断恢复消息后，句柄正常完成；若尚未获得执行位置，则只取消这次排队调用。
+- `status()` 返回 `CREATED`、`QUEUED`、`RUNNING`、`COMPLETED`、`FAILED` 或 `CANCELLED`。`QUEUED` 包含进入 Core 生命周期前的准备阶段。`termination()` 可观察终态而不启动执行。订阅者主动取消订阅也会取消句柄。
+- 一个句柄只允许一次订阅；下一次执行需要新句柄，重复订阅会被拒绝。已结束的句柄不能中断后续调用。
+
+运行管理器负责查找、鉴权及终态清理，Agent 不登记 RuntimeContext 对象。取消不会回滚外部副作用，也不能强行终止不响应取消的阻塞工具；立即取消不保证走协作中断的恢复回复和状态保存路径。
+
 ## 中断执行（Interrupt）
 
 当需要从外部中断一个正在运行的 agent call 时（用户取消、超时、优雅停机），使用 `interrupt`：
@@ -226,11 +246,11 @@ RuntimeContext target = RuntimeContext.builder()
 // 中断该 session 正在进行的 call
 agent.interrupt(target);
 
-// 带消息中断——中断消息会被 LLM 在恢复时看到
+// 将消息附加到中断上下文
 agent.interrupt(target, new UserMessage("用户已取消操作"));
 ```
 
-中断是 **per-session** 的：只影响指定 `(userId, sessionId)` 的 in-flight call，不会波及同一 agent 上其他 session 的并发请求。
+这个便捷 API 选择指定 `(userId, sessionId)` 中当前正在执行的调用，不能选择排队中的某次调用；精确操作请使用该次执行的句柄。中断空闲 session 不产生效果。中断信号本身属于执行，不保存在 AgentState 中。
 
 **中断后的行为：**
 - 当前推理/工具执行在下一个检查点（reasoning 开始、acting 开始、streaming 每个 chunk）被拦截

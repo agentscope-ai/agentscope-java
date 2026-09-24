@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -839,6 +840,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
+    }
+
+    /** Prepare a cancellable execution covering the complete harness/sandbox lifecycle. */
+    public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
+        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, ctx));
+    }
+
+    /** Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle. */
+    public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
+        return AgentRun.create(getAgentId(), () -> call(msgs, ctx));
     }
 
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================

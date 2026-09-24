@@ -210,6 +210,26 @@ Calls targeting the same `(userId, sessionId)` are **serialized** — a second r
 
 A complete Spring Boot example: `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
 
+## Control one execution
+
+`ReActAgent` and `HarnessAgent` provide `prepareRun(messages, context)` for events and `prepareCall(messages, context)` for the final reply. Both return an `AgentRun<T>` with a unique `runId()`. Preparing a handle does not execute the agent; subscribe once to `stream()` to start it.
+
+```java
+AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("Hello")), context);
+String runId = run.runId(); // Register the handle in the application's run manager first.
+run.stream().subscribe(this::onEvent, this::onError);
+
+// A separate request can look up this handle by runId.
+run.cancel();
+```
+
+- `cancel()` cancels the reactive execution immediately, including before subscription and while waiting for the session gate. Subscribers receive `CancellationException`. Cancelling queued B never interrupts running A or allows C to overtake A.
+- `interrupt()` / `interrupt(message)` asks an admitted execution to stop at a cooperative checkpoint. ReActAgent returns its interrupted recovery reply; the handle then completes normally. Before admission, interruption cancels only that queued execution.
+- `status()` returns `CREATED`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `QUEUED` includes setup before admission to the core lifecycle. `termination()` observes the terminal status without starting execution. Downstream subscription disposal also cancels the handle.
+- A handle permits one subscription. Create a new handle for a new execution; repeated subscriptions are rejected. Terminal handles cannot interrupt later calls.
+
+Run managers own lookup, authorization and terminal cleanup. The Agent does not retain a registry of RuntimeContext objects. Cancellation does not roll back external effects or forcibly terminate a blocking tool that ignores cancellation. Hard cancellation also does not promise the cooperative interrupted reply/state-save path.
+
 ## Interrupt
 
 To cancel an in-flight call from the outside (user cancellation, timeout, graceful shutdown), use `interrupt`:
@@ -226,11 +246,11 @@ RuntimeContext target = RuntimeContext.builder()
 // Interrupt the in-flight call for that session
 agent.interrupt(target);
 
-// Interrupt with a message — the LLM sees this message when the session resumes
+// Attach a message to the interruption context
 agent.interrupt(target, new UserMessage("User cancelled the operation"));
 ```
 
-Interrupt is **per-session**: it only affects the call running on the specified `(userId, sessionId)` — other concurrent sessions on the same agent are unaffected.
+This convenience API selects the call currently running in `(userId, sessionId)`. It does not select a queued call: use its execution handle for that. Interrupting an idle session is a no-op. The signal itself belongs to the execution and is not persisted in AgentState.
 
 **What happens after interrupt:**
 - The current reasoning/tool execution is stopped at the next checkpoint (start of reasoning, start of acting, each streaming chunk)
