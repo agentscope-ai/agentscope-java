@@ -18,7 +18,9 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -205,12 +207,10 @@ import reactor.util.context.Context;
  *     .build()).block();
  * }</pre>
  *
- * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
- * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
- * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
- * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
- * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
- * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
+ * <p><b>Concurrency:</b> Calls sharing a {@code (userId, sessionId)} slot are serialized;
+ * distinct slots can execute concurrently. Runtime contexts are passed through each call's
+ * execution scope, middleware parameters, and tool parameters, never through a shared current
+ * context accessor. Custom tools, hooks, and middlewares must also be safe for concurrent use.
  */
 @SuppressWarnings("deprecation")
 public class ReActAgent extends AgentBase implements AutoCloseable {
@@ -279,9 +279,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final PermissionContextState initialPermissionContext;
 
     // ==================== 2.0 Core Fields ====================
-
-    /** Active per-call RuntimeContext, set during call lifecycle only. */
-    private volatile RuntimeContext activeRc;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
@@ -743,7 +740,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc, RunControl control) {
         RuntimeContext ctx = rc;
         if (ctx == null) {
             ctx = RuntimeContext.empty();
@@ -758,22 +755,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
-        this.activeRc = ctx;
-        bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
         // per-subscription Reactor Context carried by streamEvents.
         scope.rc = ctx;
         scope.systemMsg = null;
-        // Clear any stale interrupt signal for this session before the new call begins.
-        scope.state.interruptControl().reset();
+        scope.interruption = control.interruption();
         return scope;
     }
 
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
-        RuntimeContext rc =
-                callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+        RuntimeContext rc = callExectution instanceof CallExecution ce ? ce.rc : null;
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         return applySystemPromptMiddlewares(base, rc)
                 .filter(prompt -> !prompt.isEmpty())
@@ -828,12 +821,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
         syncToolkitToState(ce.state);
-    }
-
-    @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
-        unbindRuntimeContextFromHooks();
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -928,10 +915,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Deprecated
     @Override
     public void interrupt(InterruptSource source) {
-        AgentState target = stateCache.get(slotKey(null, defaultSessionId));
-        if (target != null) {
-            target.interruptControl().trigger(source, null);
-        }
+        interruptRunning(slotKey(null, defaultSessionId), source, null);
     }
 
     /**
@@ -957,7 +941,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
         }
-        getAgentState(uid, sid).interruptControl().trigger(InterruptSource.USER, msg);
+        interruptRunning(slotKey(uid, sid), InterruptSource.USER, msg);
     }
 
     /**
@@ -975,7 +959,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * associated user message.
      */
     public void interrupt(String userId, String sessionId, Msg msg) {
-        getAgentState(userId, sessionId).interruptControl().trigger(InterruptSource.USER, msg);
+        interruptRunning(slotKey(userId, sessionId), InterruptSource.USER, msg);
     }
 
     /**
@@ -1109,6 +1093,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 FluxSink.OverflowStrategy.BUFFER);
         return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
+    }
+
+    /** Prepare a single-use event execution handle without starting the call. */
+    public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext context) {
+        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, context));
+    }
+
+    /** Prepare a single-use reply execution handle without starting the call. */
+    public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext context) {
+        return AgentRun.create(getAgentId(), () -> call(msgs, context));
     }
 
     // ==================== streamEvents public API ====================
@@ -1703,6 +1697,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
 
+        InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
@@ -1786,14 +1781,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Per-call interrupt checkpoint: reads this call's session-scoped {@link InterruptControl}
-         * (on its {@link AgentState}) so a targeted {@code interrupt(userId, sessionId)} only aborts
-         * the matching session's in-flight call, not other concurrent calls on the same agent.
+         * Reads this execution's own signal; queued calls never share cancellation state.
          */
         private Mono<Void> checkInterrupted() {
             return Mono.defer(
                     () ->
-                            state.interruptControl().isInterrupted()
+                            interruption.isInterrupted()
                                     ? Mono.error(
                                             new InterruptedException("Agent execution interrupted"))
                                     : Mono.empty());
@@ -2491,8 +2484,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 Msg msg = context.buildFinalMessage();
                                 if (msg != null) {
                                     boolean discard =
-                                            state.interruptControl().getSource()
-                                                            == InterruptSource.SYSTEM
+                                            interruption.getSource() == InterruptSource.SYSTEM
                                                     && shutdownManager
                                                                     .getConfig()
                                                                     .partialReasoningPolicy()
@@ -4308,10 +4300,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
-                    // Resolve the source from this call's session-scoped control (the
-                    // context passed by AgentBase is derived from the instance-level signal,
-                    // which is not call-scoped under concurrency).
-                    InterruptSource source = scope.state.interruptControl().getSource();
+                    // Resolve the source from this execution's own interrupt signal.
+                    InterruptSource source = scope.interruption.getSource();
                     if (source == InterruptSource.SYSTEM) {
                         String requestId =
                                 (String) cv.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, null);
@@ -4388,11 +4378,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     public AgentState getAgentState() {
         return getAgentState(null, defaultSessionId);
-    }
-
-    @Override
-    public RuntimeContext getRuntimeContext() {
-        return activeRc;
     }
 
     /**
