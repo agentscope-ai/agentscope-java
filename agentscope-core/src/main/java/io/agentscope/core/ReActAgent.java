@@ -205,12 +205,10 @@ import reactor.util.context.Context;
  *     .build()).block();
  * }</pre>
  *
- * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
- * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
- * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
- * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
- * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
- * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
+ * <p><b>Concurrency:</b> Calls sharing a {@code (userId, sessionId)} slot are serialized;
+ * distinct slots can execute concurrently. Runtime contexts are passed through each call's
+ * execution scope, middleware parameters, and tool parameters, never through a shared current
+ * context accessor. Custom tools, hooks, and middlewares must also be safe for concurrent use.
  */
 @SuppressWarnings("deprecation")
 public class ReActAgent extends AgentBase implements AutoCloseable {
@@ -279,9 +277,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final PermissionContextState initialPermissionContext;
 
     // ==================== 2.0 Core Fields ====================
-
-    /** Active per-call RuntimeContext, set during call lifecycle only. */
-    private volatile RuntimeContext activeRc;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
@@ -758,8 +753,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
-        this.activeRc = ctx;
-        bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
         // per-subscription Reactor Context carried by streamEvents.
@@ -772,8 +765,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
-        RuntimeContext rc =
-                callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+        RuntimeContext rc = callExectution instanceof CallExecution ce ? ce.rc : null;
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         return applySystemPromptMiddlewares(base, rc)
                 .filter(prompt -> !prompt.isEmpty())
@@ -828,12 +820,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
         syncToolkitToState(ce.state);
-    }
-
-    @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
-        unbindRuntimeContextFromHooks();
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -4388,11 +4374,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     public AgentState getAgentState() {
         return getAgentState(null, defaultSessionId);
-    }
-
-    @Override
-    public RuntimeContext getRuntimeContext() {
-        return activeRc;
     }
 
     /**

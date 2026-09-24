@@ -20,7 +20,6 @@ import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
@@ -101,9 +100,6 @@ public abstract class AgentBase implements Agent {
 
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
-    private final CopyOnWriteArrayList<RuntimeContextAware> runtimeContextAwareHooks =
-            new CopyOnWriteArrayList<>();
-
     /**
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
@@ -153,9 +149,6 @@ public abstract class AgentBase implements Agent {
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
-        for (Hook h : this.hooks) {
-            registerRuntimeContextHookIfNeeded(h);
-        }
     }
 
     @Override
@@ -560,18 +553,6 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Returns the current per-call {@link RuntimeContext}, or {@code null} when the agent keeps no
-     * per-call scope. The base implementation returns {@code null}; agents with per-call state
-     * (e.g. {@code ReActAgent}) override this to return their active call scope's context. Because
-     * the value is sourced from the agent's most-recently-activated scope, under concurrent calls
-     * on one instance this reflects the latest call — middlewares/tools that need their own call's
-     * context should read it from the per-subscription {@link RuntimeContext} they are handed.
-     */
-    public RuntimeContext getRuntimeContext() {
-        return null;
-    }
-
-    /**
      * Invoked at the start of a {@code call} / stream-backed call, after {@link
      * #acquireExecution} and before any hooks. {@link io.agentscope.core.ReActAgent} uses this to
      * activate the per-call session slot from the supplied {@link RuntimeContext} and returns the
@@ -596,32 +577,6 @@ public abstract class AgentBase implements Agent {
     protected void afterAgentExecution() {}
 
     /**
-     * Pushes {@code ctx} to all {@link RuntimeContextAware} hooks registered for this agent. The
-     * per-call {@link RuntimeContext} itself is no longer stored on a shared instance field; it
-     * lives on the agent's per-call scope (see {@link #getRuntimeContext()}).
-     */
-    protected void bindRuntimeContextToHooks(RuntimeContext ctx) {
-        for (RuntimeContextAware h : runtimeContextAwareHooks) {
-            h.setRuntimeContext(ctx);
-        }
-    }
-
-    /**
-     * Clears the {@link RuntimeContext} previously pushed to all {@link RuntimeContextAware} hooks.
-     */
-    protected void unbindRuntimeContextFromHooks() {
-        for (RuntimeContextAware h : runtimeContextAwareHooks) {
-            h.setRuntimeContext(null);
-        }
-    }
-
-    private void registerRuntimeContextHookIfNeeded(Hook hook) {
-        if (hook instanceof RuntimeContextAware r && !runtimeContextAwareHooks.contains(r)) {
-            runtimeContextAwareHooks.add(r);
-        }
-    }
-
-    /**
      * Get the list of hooks for this agent.
      * Protected to allow subclasses to access hooks for custom notification logic.
      *
@@ -642,7 +597,6 @@ public abstract class AgentBase implements Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
-            registerRuntimeContextHookIfNeeded(hook);
             sortHooks();
         }
     }
@@ -662,9 +616,6 @@ public abstract class AgentBase implements Agent {
     protected void removeHook(Hook hook) {
         if (hook != null) {
             hooks.remove(hook);
-            if (hook instanceof RuntimeContextAware r) {
-                runtimeContextAwareHooks.remove(r);
-            }
         }
     }
 
