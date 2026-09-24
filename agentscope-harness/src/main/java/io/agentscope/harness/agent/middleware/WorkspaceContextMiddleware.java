@@ -174,8 +174,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             int maxContextTokens,
             boolean disableMemoryTools,
             boolean disableMemoryHooks) {
-        this(workspaceManager, agentName, environmentMemory, maxContextTokens,
-                disableMemoryTools, disableMemoryHooks, false);
+        this(
+                workspaceManager,
+                agentName,
+                environmentMemory,
+                maxContextTokens,
+                disableMemoryTools,
+                disableMemoryHooks,
+                false);
     }
 
     public WorkspaceContextMiddleware(
@@ -250,9 +256,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent =
-                disableKnowledgeContext
-                        ? ""
-                        : workspaceManager.readKnowledgeMd(rc).strip();
+                disableKnowledgeContext ? "" : workspaceManager.readKnowledgeMd(rc).strip();
         Path workspace = workspaceManager.getWorkspace();
         AbstractFilesystem filesystem = workspaceManager.getFilesystem();
         Path effectiveWorkspace =
