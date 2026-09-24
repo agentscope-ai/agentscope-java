@@ -17,6 +17,7 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -40,6 +41,10 @@ import reactor.core.publisher.Mono;
 public class McpAsyncClientWrapper extends McpClientWrapper {
 
     private static final Logger logger = LoggerFactory.getLogger(McpAsyncClientWrapper.class);
+
+    /** Timeout for graceful close; prevents {@link #close()} from blocking forever when the MCP
+     * server stops responding (graceful-close future never completes). Falls back to forceful close. */
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final McpAsyncClient client;
 
@@ -186,9 +191,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                 client.closeGracefully()
                         .doOnSuccess(v -> logger.debug("MCP client '{}' closed", name))
                         .doOnError(e -> logger.error("Error closing MCP client '{}'", name, e))
-                        .block();
+                        .block(CLOSE_TIMEOUT);
             } catch (Exception e) {
-                logger.error("Exception during MCP client close", e);
+                // block(CLOSE_TIMEOUT) throws when graceful close does not complete in time;
+                // fall back to forceful close so the wrapper never blocks indefinitely
+                // (which would leak the HTTP transport / future chain and exhaust the heap).
+                logger.warn("Graceful close of MCP client '{}' timed out after {}", name, CLOSE_TIMEOUT, e);
                 client.close();
             }
         }
