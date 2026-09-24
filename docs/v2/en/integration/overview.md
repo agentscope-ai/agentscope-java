@@ -107,7 +107,6 @@ Plug Agents into your enterprise infrastructure.
 Runtime, language, debugging, and training extensions.
 
 - [Chat Completions Web](/v2/en/integration/ecosystem/chat-completions-web)
-- [Jev](/v2/en/integration/ecosystem/jev)
 - [AgentScope Studio](/v2/en/integration/ecosystem/studio)
 - [Online Training](/v2/en/integration/ecosystem/training)
 
