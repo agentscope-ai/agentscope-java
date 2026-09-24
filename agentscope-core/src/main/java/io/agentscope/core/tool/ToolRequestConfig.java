@@ -41,7 +41,8 @@ import java.util.Objects;
 public record ToolRequestConfig(
         Map<String, SchemaOnlyTool> externalTools, // name -> external (schema-only) tool, overrides
         // backend
-        ToolMergeMode mergeMode // AGENT_ONLY ⇒ NONE；否则 MERGE_EXTERNAL_PRIORITY | EXTERNAL_ONLY
+        ToolMergeMode mergeMode // AGENT_ONLY implies NONE; otherwise MERGE_EXTERNAL_PRIORITY or
+        // EXTERNAL_ONLY
         ) {
 
     /** Sentinel meaning "use the shared toolkit as-is". */

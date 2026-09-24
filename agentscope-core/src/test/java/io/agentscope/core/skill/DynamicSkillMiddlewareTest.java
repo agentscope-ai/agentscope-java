@@ -169,6 +169,97 @@ class DynamicSkillMiddlewareTest {
     }
 
     @Test
+    void concurrentMissesShareOneFullyMaterializedBox() throws Exception {
+        AgentSkill skill =
+                new AgentSkill(
+                        "shared",
+                        "Shared",
+                        "instructions",
+                        java.util.Map.of("data.txt", "complete resource"));
+        var barrier = new java.util.concurrent.CyclicBarrier(8);
+        DynamicSkillMiddleware mw =
+                new DynamicSkillMiddleware(
+                        List.of(new StubRepo(List.of(skill))),
+                        new Toolkit(),
+                        null,
+                        false,
+                        workDir) {
+                    @Override
+                    protected List<AgentSkill> filterVisible(
+                            List<AgentSkill> raw, RuntimeContext ctx) {
+                        try {
+                            barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (Exception e) {
+                            throw new AssertionError(e);
+                        }
+                        return raw;
+                    }
+                };
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        try {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<SkillBox>>();
+            for (int i = 0; i < 8; i++) {
+                futures.add(
+                        pool.submit(
+                                () -> {
+                                    RuntimeContext rc = RuntimeContext.empty();
+                                    mw.onSystemPrompt(null, rc, "").block();
+                                    SkillBox box = rc.get(SkillBox.class);
+                                    assertEquals(
+                                            "complete resource",
+                                            java.nio.file.Files.readString(
+                                                    box.getUploadDir()
+                                                            .resolve(skill.getSkillId())
+                                                            .resolve("data.txt")));
+                                    return box;
+                                }));
+            }
+            SkillBox first = futures.get(0).get(15, java.util.concurrent.TimeUnit.SECONDS);
+            for (var future : futures) {
+                org.junit.jupiter.api.Assertions.assertSame(
+                        first, future.get(15, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void evictionDoesNotRewriteResourcesOfAnActiveBox() throws Exception {
+        AgentSkill skill =
+                new AgentSkill(
+                        "shared",
+                        "Shared",
+                        "instructions",
+                        java.util.Map.of("data.txt", "original"));
+        StubRepo repo = new StubRepo(List.of(skill));
+        DynamicSkillMiddleware mw =
+                new DynamicSkillMiddleware(List.of(repo), new Toolkit(), null, false, workDir);
+        RuntimeContext rc = RuntimeContext.empty();
+        mw.onSystemPrompt(null, rc, "").block();
+        SkillBox active = rc.get(SkillBox.class);
+        Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
+        for (int i = 0; i < 32; i++) {
+            repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
+            mw.onSystemPrompt(null, RuntimeContext.empty(), "").block();
+        }
+        // An executing skill may have modified its workspace; rebuilding must leave it alone.
+        java.nio.file.Files.writeString(activeFile, "in use");
+        repo.skills = List.of(skill);
+        mw.onSystemPrompt(null, rc, "").block();
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                active.getUploadDir(), rc.get(SkillBox.class).getUploadDir());
+        assertEquals("in use", java.nio.file.Files.readString(activeFile));
+        assertEquals(
+                "original",
+                java.nio.file.Files.readString(
+                        rc.get(SkillBox.class)
+                                .getUploadDir()
+                                .resolve(skill.getSkillId())
+                                .resolve("data.txt")));
+    }
+
+    @Test
     void contextualRepositoryReceivesExactRequest() {
         var repo =
                 org.mockito.Mockito.mock(

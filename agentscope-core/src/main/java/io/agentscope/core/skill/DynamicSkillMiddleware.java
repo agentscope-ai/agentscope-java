@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -80,7 +79,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     /** Content-addressed cache of materialised {@link SkillBox}es, keyed by the visible-view
      * signature. Boxes are immutable after build, so sharing them across sessions with identical
      * content is safe and skips re-running {@code uploadSkillFiles}. */
-    private final Map<String, SkillBox> boxCache = new ConcurrentHashMap<>();
+    private final Map<String, SkillBox> boxCache = new LinkedHashMap<>();
 
     public DynamicSkillMiddleware(List<AgentSkillRepository> repositories, Toolkit toolkit) {
         this(repositories, toolkit, null, false, null);
@@ -213,25 +212,32 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         }
 
         String signature = computeSignature(visible);
-        SkillBox box = boxCache.get(signature);
-        if (box == null) {
-            box = buildBox(visible, signature);
-            if (boxCache.size() >= MAX_CACHED_BOXES) {
-                // The cache is keyed by distinct visible content, so it grows only when skills
-                // change or per-user namespaces produce new content; reset rather than grow
-                // unbounded.
-                boxCache.clear();
+        synchronized (boxCache) {
+            SkillBox box = boxCache.get(signature);
+            if (box == null) {
+                box = buildBox(visible, signature);
+                if (boxCache.size() >= MAX_CACHED_BOXES) {
+                    // Only bound retained boxes. Active requests may still reference evicted
+                    // boxes and their files, so resource directories must remain available.
+                    boxCache.clear();
+                }
+                boxCache.put(signature, box);
             }
-            boxCache.put(signature, box);
+            return box;
         }
-        return box;
     }
 
     private SkillBox buildBox(List<AgentSkill> visible, String signature) {
         SkillBox box = new SkillBox(toolkit);
-        // A cached box must retain its own resources when another visible version is loaded.
-        // Identical content reuses a directory; different content never overwrites it.
-        box.setWorkDir(ensureStableWorkDir().resolve(signature));
+        // Each materialization owns its directory. After eviction, rebuilding the same
+        // signature must not truncate files that an earlier request may still be reading.
+        try {
+            Path root = ensureStableWorkDir();
+            Files.createDirectories(root);
+            box.setWorkDir(Files.createTempDirectory(root, signature + "-"));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to allocate skill resource directory", e);
+        }
         for (AgentSkill skill : visible) {
             box.registerSkill(skill);
         }
@@ -252,8 +258,8 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
 
     /**
      * Lazily allocates the stable workDir on first call when the caller didn't provide one.
-     * The directory is registered for shutdown cleanup so a long-running JVM doesn't leak temp
-     * trees.
+     * The directory is registered for shutdown cleanup. Resource trees remain available while
+     * the JVM runs, including after cache eviction; caller-supplied roots are caller-managed.
      */
     private Path ensureStableWorkDir() {
         Path dir = stableWorkDir;

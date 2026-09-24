@@ -72,6 +72,30 @@ public class SkillBox {
         this.toolkit = toolkit;
     }
 
+    private SkillBox(SkillBox source, Toolkit toolkit) {
+        for (String id : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(id, source.getSkill(id));
+        }
+        skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
+        skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
+        this.toolkit = toolkit;
+        workDir = source.workDir;
+        uploadDir = source.uploadDir;
+        fileFilter = source.fileFilter;
+        autoUploadSkill = source.autoUploadSkill;
+    }
+
+    /**
+     * Creates an agent-owned registry, prompt provider and loader bound to the given toolkit.
+     * Registered skill values and caller-owned resource directories are shared.
+     *
+     * @param toolkit the agent's toolkit
+     * @return an independent skill box
+     */
+    public SkillBox copyForToolkit(Toolkit toolkit) {
+        return new SkillBox(this, java.util.Objects.requireNonNull(toolkit, "toolkit"));
+    }
+
     /**
      * Gets the skill system prompt for registered skills.
      *

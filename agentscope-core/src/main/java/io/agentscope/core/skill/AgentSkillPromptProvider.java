@@ -156,6 +156,15 @@ public class AgentSkillPromptProvider {
                         : instruction;
     }
 
+    AgentSkillPromptProvider copyFor(SkillRegistry registry) {
+        AgentSkillPromptProvider copy = new AgentSkillPromptProvider(registry, instruction);
+        copy.exposeAllMetadata = exposeAllMetadata;
+        copy.codeExecutionEnabled = codeExecutionEnabled;
+        copy.uploadDir = uploadDir;
+        copy.codeExecutionInstruction = codeExecutionInstruction;
+        return copy;
+    }
+
     /**
      * Gets the skill system prompt for the agent with all skills included.
      *

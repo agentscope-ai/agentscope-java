@@ -82,6 +82,59 @@ class SkillRuntimeIntegrationTest {
                 .build();
     }
 
+    @Test
+    void reusedBuilderKeepsLegacySkillLoadersBoundToTheirOwnAgent() {
+        Toolkit source = new Toolkit();
+        SkillBox shared = new SkillBox(source, "custom skill catalog");
+        shared.setAutoUploadSkill(false);
+        AgentSkill skill = new AgentSkill("shared", "Shared", "instructions", null);
+        shared.registerSkill(skill);
+        String group = skill.getSkillId() + "_skill_tools";
+        source.createToolGroup(group, "first agent group", false);
+        var builder =
+                io.agentscope.core.ReActAgent.builder()
+                        .name("agent")
+                        .model(org.mockito.Mockito.mock(io.agentscope.core.model.Model.class))
+                        .toolkit(source)
+                        .skillBox(shared);
+        var first = builder.build();
+        builder.toolkit(new Toolkit());
+        var second = builder.build();
+        assertEquals(1, first.getHooks().stream().filter(SkillHook.class::isInstance).count());
+        assertEquals(1, second.getHooks().stream().filter(SkillHook.class::isInstance).count());
+
+        Map<String, Object> input = Map.of("skillId", skill.getSkillId(), "path", "SKILL.md");
+        first.getToolkit()
+                .getTool("load_skill_through_path")
+                .callAsync(
+                        ToolCallParam.builder()
+                                .input(input)
+                                .runtimeContext(sessionContext())
+                                .build())
+                .block();
+        assertTrue(toolContext.getActivatedGroups().contains(group));
+        toolContext = ToolContextState.builder().build();
+        second.getToolkit()
+                .getTool("load_skill_through_path")
+                .callAsync(
+                        ToolCallParam.builder()
+                                .input(input)
+                                .runtimeContext(sessionContext())
+                                .build())
+                .block();
+        assertFalse(toolContext.getActivatedGroups().contains(group));
+
+        shared.removeSkill(skill.getSkillId());
+        PreCallEvent event = new PreCallEvent(first, new ArrayList<>());
+        first.getHooks().stream()
+                .filter(SkillHook.class::isInstance)
+                .findFirst()
+                .orElseThrow()
+                .onEvent(event)
+                .block();
+        assertTrue(event.getSystemMessage().getTextContent().contains("custom skill catalog"));
+    }
+
     // ==================== Simulated Integration Tests ====================
 
     @Test

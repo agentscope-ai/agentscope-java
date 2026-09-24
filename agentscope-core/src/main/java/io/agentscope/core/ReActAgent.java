@@ -5567,13 +5567,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
          */
         @SuppressWarnings("deprecation")
-        private void configureSkillBox(Toolkit agentToolkit) {
-            skillBox.bindToolkit(agentToolkit);
+        private Hook configureSkillBox(Toolkit agentToolkit) {
+            SkillBox skillBox = this.skillBox.copyForToolkit(agentToolkit);
             skillBox.registerSkillLoadTool();
             if (skillBox.isAutoUploadSkill()) {
                 skillBox.uploadSkillFiles();
             }
-            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
+            return new io.agentscope.core.skill.SkillHook(skillBox);
         }
 
         /**
@@ -5606,9 +5606,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (taskListEnabled) {
                 configureTodoTools(agentToolkit);
             }
-            if (skillBox != null) {
-                configureSkillBox(agentToolkit);
-            }
+            Hook skillHook = skillBox != null ? configureSkillBox(agentToolkit) : null;
             if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
                 middlewares.add(
                         new DynamicSkillMiddleware(
@@ -5622,10 +5620,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // List.sort is stable: middlewares with equal order retain their registration order.
             middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
-            ReActAgent agent = new ReActAgent(this, agentToolkit);
-            selfRef.set(agent);
-
-            return agent;
+            if (skillHook != null) {
+                hooks.add(skillHook);
+            }
+            try {
+                ReActAgent agent = new ReActAgent(this, agentToolkit);
+                selfRef.set(agent);
+                return agent;
+            } finally {
+                // Generated hooks belong only to this agent, not subsequent builder uses.
+                if (skillHook != null) {
+                    hooks.remove(skillHook);
+                }
+            }
         }
 
         /**
