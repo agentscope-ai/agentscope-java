@@ -223,12 +223,14 @@ public class WindowsCommandValidator implements CommandValidator {
 
             // cmd expands variables independently of quoting and caret escaping. Delayed
             // expansion may also be enabled by the host, so neither form is safe to allow.
+            // Even a literal or unmatched % or ! deliberately requires approval.
             if (checkExpansions && (c == '%' || c == '!' || c == '\r' || c == '\n')) {
                 return true;
             }
 
             // cmd /c may strip the first and last quotes when the executable is quoted.
             // Operators that appear quoted or escaped in the original string are then unsafe.
+            // This deliberately also requires approval for paths such as Program Files (x86).
             if (quotedExecutable && "&|<>()^".indexOf(c) >= 0) {
                 return true;
             }
@@ -251,7 +253,8 @@ public class WindowsCommandValidator implements CommandValidator {
                 continue;
             }
 
-            // Only check for separators outside quotes
+            // Double quotes suppress < > ( ) & | in cmd.exe. During validation, quoted
+            // executables are handled conservatively above because their quotes may be stripped.
             if (!inDoubleQuote) {
                 // Check for command separators (&, |, newline)
                 // Note: Semicolon is NOT a separator in Windows cmd.exe

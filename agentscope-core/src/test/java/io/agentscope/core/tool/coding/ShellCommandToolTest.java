@@ -145,6 +145,19 @@ class ShellCommandToolTest {
         assertFalse(Files.exists(tempDir.resolve("marker.txt")));
     }
 
+    @ParameterizedTest
+    @EnabledOnOs(OS.WINDOWS)
+    @ValueSource(strings = {"marker > marker.txt", "marker < marker.txt", "marker ( ) & |"})
+    void windowsQuotedOperatorsRemainLiteral(String argument) {
+        ShellCommandTool tool = new ShellCommandTool(tempDir.toString(), Set.of("echo"), null);
+
+        String result = execute(tool, "echo \"" + argument + "\"");
+
+        assertTrue(result.contains("<returncode>0</returncode>"), result);
+        assertTrue(result.contains(argument), result);
+        assertFalse(Files.exists(tempDir.resolve("marker.txt")));
+    }
+
     @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void substitutionCannotWriteFileWithoutApproval() {

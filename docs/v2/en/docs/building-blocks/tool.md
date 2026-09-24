@@ -487,6 +487,15 @@ With the default validators, only whitelisted commands without shell operators o
 execute directly. Other commands require an approval callback; without one, they are rejected.
 An empty allow-list (including `new ShellCommandTool()`) now requires approval too. To migrate,
 configure the required executables or use `new ShellCommandTool(allowedCommands, approvalCallback)`.
+Clearing the whitelist also requires approval for subsequent commands. Relative executables such
+as `./script` must both stay within the current directory and match the whitelist; a safe path
+alone does not grant permission. Custom `CommandValidator` implementations retain their own policy.
+
+On Windows, any `%` or `!` requires approval, even in literal arguments such as `echo 50% done`
+or `echo "done!"`. When the executable is quoted, any `& | < > ( ) ^` anywhere in the command
+also requires approval because `cmd.exe /c` may strip the outer quotes. This includes paths
+such as `"C:\Program Files (x86)\tool.exe"`.
+
 An allow-list is not a sandbox: an allowed interpreter such as `python3` can execute arbitrary
 code. Use an isolated sandbox for untrusted scripts.
 

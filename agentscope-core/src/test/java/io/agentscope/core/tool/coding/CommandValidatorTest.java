@@ -99,6 +99,10 @@ class CommandValidatorTest {
                 "echo !PATH!",
                 "echo \"!PATH!\"",
                 "echo ^!PATH^!",
+                "echo 50% done",
+                "echo \"50% done\"",
+                "echo done!",
+                "echo \"done!\"",
                 "echo marker > output.txt",
                 "echo marker >> output.txt",
                 "echo < input.txt",
@@ -223,5 +227,13 @@ class CommandValidatorTest {
             })
     void windowsRequiresApprovalWhenOuterQuoteStrippingExposesOperators(String command) {
         assertFalse(windows.validate(command, Set.of("echo")).isAllowed(), command);
+    }
+
+    @Test
+    void windowsRequiresApprovalForParenthesesInQuotedExecutablePaths() {
+        String executable = "C:\\Program Files (x86)\\tool";
+
+        assertFalse(
+                windows.validate("\"" + executable + ".exe\" arg", Set.of(executable)).isAllowed());
     }
 }

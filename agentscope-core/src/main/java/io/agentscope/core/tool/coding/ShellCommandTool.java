@@ -114,6 +114,10 @@ public class ShellCommandTool implements AgentTool {
 
     /**
      * Creates a tool that rejects commands until its whitelist is configured.
+     *
+     * <p>Since 2.0.4, an empty whitelist no longer permits unrestricted execution.
+     * Configure executables with {@link #addAllowedCommand(String)}, or use
+     * {@link #ShellCommandTool(Set, Function)} to provide an approval callback.
      */
     public ShellCommandTool() {
         this(null, null, null, createDefaultValidator(), StandardCharsets.UTF_8);

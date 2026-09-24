@@ -26,7 +26,7 @@ import java.util.Set;
  *   <li><b>Whitelist Check:</b> If whitelist is empty/null, require approval</li>
  *   <li><b>Shell Syntax Detection:</b> Require approval for shell operators or expansions</li>
  *   <li><b>Relative Path Safety:</b> For commands starting with {@code ./} or {@code .\}, verify path doesn't escape current directory</li>
- *   <li><b>Whitelist Validation:</b> Reject if executable not in whitelist</li>
+ *   <li><b>Whitelist Validation:</b> Reject if executable, including a safe relative path, is not in whitelist</li>
  * </ol>
  *
  * <p>Built-in implementations:
@@ -50,7 +50,7 @@ public interface CommandValidator {
      *   <li>If whitelist is null/empty → require approval</li>
      *   <li>Check for shell operators and expansions → require approval if found</li>
      *   <li>Check relative path safety → reject if escapes current directory</li>
-     *   <li>Check whitelist → reject if not in whitelist</li>
+     *   <li>Check whitelist → reject if executable, including a safe relative path, is not in whitelist</li>
      * </ol>
      *
      * <p>A rejected result is routed to the approval callback by {@link ShellCommandTool}.
@@ -87,6 +87,8 @@ public interface CommandValidator {
      *   <li>Windows: {@code &}, {@code |}, newline (escape: {@code ^})</li>
      * </ul>
      * <p>Separators within quotes are ignored.
+     * This is only a separator check; use {@link #validate(String, Set)} for the complete
+     * approval decision, including expansions and incomplete quoting or escaping.
      *
      * @param command The command string
      * @return true if multiple commands are detected, false otherwise
