@@ -32,6 +32,8 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.extensions.judge.jev.Answer;
 import io.agentscope.extensions.judge.jev.JevClient;
+import io.agentscope.extensions.judge.jev.JevConfirmedCalls;
+import io.agentscope.extensions.judge.jev.JevExecution;
 import io.agentscope.extensions.judge.jev.NoulAnswer;
 import io.agentscope.extensions.judge.jev.NoulQuestion;
 import io.agentscope.extensions.judge.jev.Question;
@@ -46,8 +48,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -71,12 +71,9 @@ import reactor.core.publisher.Mono;
  */
 public final class JevAutoModeMiddleware implements MiddlewareBase {
 
-    private static final Logger log = LoggerFactory.getLogger(JevAutoModeMiddleware.class);
-
     public static final String DEFAULT_DENY_MESSAGE =
-            "Blocked: this tool call was assessed as too risky to run automatically. If the"
-                    + " operation is genuinely necessary, ask the user for confirmation or"
-                    + " propose a safer alternative.";
+            "Blocked: this tool call did not pass the automatic-execution check. Request review"
+                    + " or propose a safer alternative.";
 
     private static final String QUESTION_ID_PREFIX = "tool_";
 
@@ -84,14 +81,14 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
     private final Set<String> guardedTools;
     private final double safetyThreshold;
     private final String denyMessage;
-    private final boolean failOpen;
+    private final JevExecution execution;
 
     private JevAutoModeMiddleware(Builder builder) {
         this.jevCall = builder.jevCall;
         this.guardedTools = Set.copyOf(builder.guardedTools);
         this.safetyThreshold = builder.safetyThreshold;
         this.denyMessage = builder.denyMessage;
-        this.failOpen = builder.failOpen;
+        this.execution = new JevExecution("tool-guard", builder.options);
         validate();
     }
 
@@ -100,7 +97,7 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
         return new Builder(client::systemOne);
     }
 
-    static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
+    public static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
         return new Builder(jevCall);
     }
 
@@ -115,37 +112,70 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
-        List<ToolUseBlock> toolCalls = input == null ? List.of() : input.toolCalls();
-        Partition partition = partition(toolCalls);
-        if (partition.guarded().isEmpty()) {
-            return next.apply(input);
-        }
-
-        AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
-        if (state == null) {
-            log.warn(
-                    "JevAutoModeMiddleware cannot resolve AgentState; passing guarded tool calls"
-                            + " through without risk assessment");
-            return next.apply(input);
-        }
-
-        return assess(state.getContext(), partition.guarded())
-                .flatMapMany(
-                        risk -> {
-                            if (risk.denied().isEmpty()) {
-                                return next.apply(input);
-                            }
-                            List<ToolUseBlock> allowed = new ArrayList<>(partition.unguarded());
-                            allowed.addAll(risk.allowed());
-                            Flux<AgentEvent> deniedFlux = deniedEvents(risk.denied(), state, agent);
-                            if (allowed.isEmpty()) {
-                                return deniedFlux;
-                            }
-                            return deniedFlux.concatWith(next.apply(new ActingInput(allowed)));
-                        });
+        return Flux.defer(
+                () -> {
+                    if (execution.mode() == JevExecution.Mode.OFF) return next.apply(input);
+                    List<ToolUseBlock> toolCalls = input == null ? List.of() : input.toolCalls();
+                    Partition partition = partition(toolCalls, ctx);
+                    if (partition.guarded().isEmpty()) return next.apply(input);
+                    AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
+                    return execution
+                            .execute(ctx, () -> assessDecision(ctx, state, partition.guarded()))
+                            .flatMapMany(
+                                    d -> {
+                                        if (execution.mode() != JevExecution.Mode.ENFORCE)
+                                            return next.apply(input);
+                                        RiskDecision risk =
+                                                d.status() == JevExecution.Status.DECIDED
+                                                        ? d.value()
+                                                        : new RiskDecision(
+                                                                List.of(), partition.guarded());
+                                        if (risk.denied().isEmpty()) return next.apply(input);
+                                        List<ToolUseBlock> allowed =
+                                                toolCalls.stream()
+                                                        .filter(c -> !risk.denied().contains(c))
+                                                        .toList();
+                                        Flux<AgentEvent> denied =
+                                                deniedEvents(risk.denied(), state, agent);
+                                        return allowed.isEmpty()
+                                                ? denied
+                                                : denied.concatWith(
+                                                        Flux.defer(
+                                                                () ->
+                                                                        next.apply(
+                                                                                new ActingInput(
+                                                                                        allowed))));
+                                    });
+                });
     }
 
-    private Partition partition(List<ToolUseBlock> toolCalls) {
+    private Mono<JevExecution.Decision<RiskDecision>> assessDecision(
+            RuntimeContext ctx, AgentState state, List<ToolUseBlock> guarded) {
+        if (guarded.stream()
+                .anyMatch(
+                        call ->
+                                JevConfirmedCalls.contains(ctx, call)
+                                        && !JevConfirmedCalls.matches(ctx, call))) {
+            return Mono.just(JevExecution.Decision.uncertain("CONFIRMATION_CHANGED"));
+        }
+        if (state == null) return Mono.just(JevExecution.Decision.uncertain("MISSING_STATE"));
+        return assess(state.getContext(), guarded)
+                .map(
+                        risk ->
+                                new JevExecution.Decision<>(
+                                        JevExecution.Status.DECIDED,
+                                        risk,
+                                        risk.denied().isEmpty() ? "ALLOW" : "DENY",
+                                        Map.of(
+                                                "deniedCalls",
+                                                risk.denied().stream()
+                                                        .map(ToolUseBlock::getId)
+                                                        .collect(
+                                                                java.util.stream.Collectors.joining(
+                                                                        ",")))));
+    }
+
+    private Partition partition(List<ToolUseBlock> toolCalls, RuntimeContext ctx) {
         List<ToolUseBlock> guarded = new ArrayList<>();
         List<ToolUseBlock> unguarded = new ArrayList<>();
         if (toolCalls != null) {
@@ -155,7 +185,9 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
                 }
                 boolean needsCheck =
                         guardedTools.contains(call.getName())
-                                && call.getState() != ToolCallState.ALLOWED;
+                                && (call.getState() != ToolCallState.ALLOWED
+                                        || JevConfirmedCalls.contains(ctx, call))
+                                && !JevConfirmedCalls.matches(ctx, call);
                 if (needsCheck) {
                     guarded.add(call);
                 } else {
@@ -168,20 +200,9 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
 
     private Mono<RiskDecision> assess(List<Msg> messages, List<ToolUseBlock> guarded) {
         SystemOneRequest request = riskRequest(messages, guarded);
-        return jevCall.apply(request)
-                .map(result -> parseDecision(guarded, result))
-                .onErrorResume(
-                        error -> {
-                            if (!failOpen) {
-                                return Mono.error(error);
-                            }
-                            log.warn(
-                                    "Jev risk assessment failed; failing open for {} guarded tool"
-                                            + " call(s)",
-                                    guarded.size(),
-                                    error);
-                            return Mono.just(new RiskDecision(List.copyOf(guarded), List.of()));
-                        });
+        return Mono.defer(() -> jevCall.apply(request))
+                .switchIfEmpty(Mono.error(new IllegalStateException("empty response")))
+                .map(result -> parseDecision(guarded, result));
     }
 
     private SystemOneRequest riskRequest(List<Msg> messages, List<ToolUseBlock> guarded) {
@@ -219,16 +240,25 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
     }
 
     private RiskDecision parseDecision(List<ToolUseBlock> guarded, SystemOneResult result) {
+        if (result.answers() == null || result.answers().size() != guarded.size())
+            throw new IllegalArgumentException("invalid answers");
         List<ToolUseBlock> allowed = new ArrayList<>();
         List<ToolUseBlock> denied = new ArrayList<>();
         for (int i = 0; i < guarded.size(); i++) {
             Answer answer = result.answers().get(QUESTION_ID_PREFIX + i);
+            if (!(answer instanceof NoulAnswer valid)
+                    || valid.noul() == null
+                    || !Double.isFinite(valid.noul())
+                    || valid.noul() < 0
+                    || valid.noul() > 1) throw new IllegalArgumentException("invalid risk answer");
             if (answer instanceof NoulAnswer noul
                     && noul.noul() != null
-                    && noul.noul() < safetyThreshold) {
-                denied.add(guarded.get(i));
-            } else {
+                    && Double.isFinite(noul.noul())
+                    && noul.noul() >= safetyThreshold
+                    && noul.noul() <= 1) {
                 allowed.add(guarded.get(i));
+            } else {
+                denied.add(guarded.get(i));
             }
         }
         return new RiskDecision(allowed, denied);
@@ -238,7 +268,7 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
             List<ToolUseBlock> denied, AgentState state, Agent agent) {
         return Flux.defer(
                 () -> {
-                    String replyId = state.getReplyId();
+                    String replyId = state == null ? "jev-guard" : state.getReplyId();
                     String agentName =
                             agent != null && agent.getName() != null ? agent.getName() : "agent";
                     List<AgentEvent> events = new ArrayList<>();
@@ -250,7 +280,7 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
                         Msg msg =
                                 ToolResultMessageBuilder.buildToolResultMsg(
                                         result, call, agentName);
-                        state.contextMutable().add(msg);
+                        if (state != null) state.contextMutable().add(msg);
                         events.add(new ToolResultStartEvent(replyId, call.getId(), call.getName()));
                         events.add(
                                 new ToolResultTextDeltaEvent(
@@ -278,7 +308,7 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
                 throw new IllegalArgumentException("guarded tool names must not be blank");
             }
         }
-        if (safetyThreshold < 0 || safetyThreshold > 1) {
+        if (!Double.isFinite(safetyThreshold) || safetyThreshold < 0 || safetyThreshold > 1) {
             throw new IllegalArgumentException("safetyThreshold must be between 0 and 1");
         }
         if (denyMessage == null || denyMessage.isBlank()) {
@@ -293,9 +323,9 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
     public static final class Builder {
         private final Function<SystemOneRequest, Mono<SystemOneResult>> jevCall;
         private final Set<String> guardedTools = new LinkedHashSet<>();
-        private double safetyThreshold = 0.5;
+        private double safetyThreshold = 0.8;
         private String denyMessage = DEFAULT_DENY_MESSAGE;
-        private boolean failOpen = true;
+        private JevExecution.Options options = JevExecution.Options.disabled();
 
         private Builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
             this.jevCall = jevCall;
@@ -319,7 +349,7 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
          * Minimum P(safe) required for a guarded tool call to pass. A call is denied when its
          * calibrated safety probability is below this value.
          *
-         * @param safetyThreshold threshold in [0, 1]; defaults to {@code 0.5}
+         * @param safetyThreshold threshold in [0, 1]; defaults to {@code 0.8}
          */
         public Builder safetyThreshold(double safetyThreshold) {
             this.safetyThreshold = safetyThreshold;
@@ -331,8 +361,8 @@ public final class JevAutoModeMiddleware implements MiddlewareBase {
             return this;
         }
 
-        public Builder failOpen(boolean failOpen) {
-            this.failOpen = failOpen;
+        public Builder execution(JevExecution.Options options) {
+            this.options = options;
             return this;
         }
 

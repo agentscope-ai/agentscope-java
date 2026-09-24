@@ -49,7 +49,7 @@ func (s *Server) registerSessions(r gin.IRouter) {
 // intentionally rejected until the data plane consumes them.
 var sessionOverrideKeys = map[string]bool{
 	"system": true, "model": true, "maxIters": true,
-	"name": true, "description": true,
+	"name": true, "description": true, "jev": true,
 }
 
 type createSessionReq struct {

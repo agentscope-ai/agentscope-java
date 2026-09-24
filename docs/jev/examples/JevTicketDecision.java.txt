@@ -1,0 +1,43 @@
+import io.agentscope.extensions.judge.jev.ChoiceAnswer;
+import io.agentscope.extensions.judge.jev.ChoiceQuestion;
+import io.agentscope.extensions.judge.jev.JevClient;
+import io.agentscope.extensions.judge.jev.JevRetryPolicy;
+import io.agentscope.extensions.judge.jev.NoulAnswer;
+import io.agentscope.extensions.judge.jev.NoulQuestion;
+import io.agentscope.extensions.judge.jev.SystemOneRequest;
+import io.agentscope.extensions.judge.jev.SystemOneResult;
+import java.time.Duration;
+import java.util.Map;
+
+/** Synthetic, read-only classification example. Running main makes one paid API call. */
+public class JevTicketDecision {
+    public static void main(String[] args) {
+        String key = System.getenv("TYPESAFE_API_KEY");
+        if (key == null || key.isBlank()) {
+            throw new IllegalStateException("Set TYPESAFE_API_KEY before running this example");
+        }
+        JevClient client = JevClient.builder()
+                .apiKey(key)
+                .model("jev-1.13.0")
+                .timeout(Duration.ofSeconds(5))
+                .retryPolicy(new JevRetryPolicy(0, Duration.ofMillis(500)))
+                .build();
+        SystemOneRequest request = SystemOneRequest.builder()
+                .state(Map.of("conversation", "账户无法使用。两笔99美元的归属还没查清。"
+                        + "请先恢复账户；只有确认重复才退重复的一笔，不要影响原订阅。"))
+                .question("priority", new ChoiceQuestion("用户最希望优先处理什么？",
+                        Map.of("account_recovery", "恢复现有账户访问", "refund", "执行退款",
+                                "needs_clarification", "无法判断")))
+                .question("conditional_refund", new NoulQuestion(
+                        "用户是否要求先确认重复扣款，再进行退款？", null))
+                .build();
+        SystemOneResult result = client.systemOneBlocking(request);
+        ChoiceAnswer priority = (ChoiceAnswer) result.answers().get("priority");
+        NoulAnswer conditional = (NoulAnswer) result.answers().get("conditional_refund");
+        System.out.println("model=" + result.model());
+        System.out.println("priority=" + priority.choice());
+        System.out.println("priorityConfidence=" + priority.confidence());
+        System.out.println("conditionalRefundProbability=" + conditional.noul());
+        // This example never authorizes or executes a refund.
+    }
+}

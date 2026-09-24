@@ -27,7 +27,7 @@ import io.agentscope.extensions.judge.jev.Answer;
 import io.agentscope.extensions.judge.jev.ChoiceAnswer;
 import io.agentscope.extensions.judge.jev.ChoiceQuestion;
 import io.agentscope.extensions.judge.jev.JevClient;
-import io.agentscope.extensions.judge.jev.Question;
+import io.agentscope.extensions.judge.jev.JevExecution;
 import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import java.util.Collections;
@@ -45,8 +45,7 @@ import reactor.core.publisher.Mono;
  * latest user message) and stores the result in {@link RuntimeContext}; {@link #onModelCall}
  * replaces {@code ModelCallInput.model} on every subsequent model call in that invocation. This
  * means an intermediate tool result cannot cause the agent to switch models mid-run. When the
- * decision is unusable (no user text, confidence below threshold, Jev failure while
- * {@code failOpen} is set, or an unrecognized answer), the model configured on the agent is used
+ * decision is unusable (no user text, confidence below threshold, Jev failure, or an unrecognized answer), the model configured on the agent is used
  * as the fallback.
  */
 public final class JevModelRouterMiddleware implements MiddlewareBase {
@@ -57,14 +56,18 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
     private final Map<String, ModelChoice> choices;
     private final String instructions;
     private final double confidenceThreshold;
-    private final boolean failOpen;
+    private final JevExecution execution;
+    private final java.util.function.BiPredicate<RuntimeContext, ModelChoice> eligible;
+    private final java.util.function.BiPredicate<ModelCallInput, ModelChoice> compatible;
 
     private JevModelRouterMiddleware(Builder builder) {
         this.jevCall = builder.jevCall;
         this.choices = Collections.unmodifiableMap(new LinkedHashMap<>(builder.choices));
         this.instructions = builder.instructions;
         this.confidenceThreshold = builder.confidenceThreshold;
-        this.failOpen = builder.failOpen;
+        this.execution = new JevExecution("model-routing", builder.options);
+        this.eligible = builder.eligible;
+        this.compatible = builder.compatible;
         validate();
     }
 
@@ -73,7 +76,7 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         return new Builder(client::systemOne);
     }
 
-    static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
+    public static Builder builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
         return new Builder(jevCall);
     }
 
@@ -88,25 +91,72 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        String userText = JevSelectionSupport.latestUserText(input.msgs());
-        if (userText.isBlank()) {
-            ctx.put(RoutingDecision.class, RoutingDecision.fallback());
-            return next.apply(input);
-        }
-
-        return selectModel(userText)
-                .onErrorResume(
-                        error -> {
-                            if (!failOpen) {
-                                return Mono.error(error);
-                            }
-                            return Mono.just(RoutingDecision.fallback());
-                        })
-                .flatMapMany(
-                        decision -> {
-                            ctx.put(RoutingDecision.class, decision);
-                            return next.apply(input);
-                        });
+        return Flux.defer(
+                () -> {
+                    ctx.put(RoutingDecision.class, RoutingDecision.fallback());
+                    String userText = JevSelectionSupport.latestUserText(input.msgs());
+                    if (userText.isBlank()) return next.apply(input);
+                    return execution
+                            .execute(
+                                    ctx,
+                                    () -> {
+                                        Map<String, ModelChoice> candidates = new LinkedHashMap<>();
+                                        choices.forEach(
+                                                (name, choice) -> {
+                                                    if (eligible.test(ctx, choice))
+                                                        candidates.put(name, choice);
+                                                });
+                                        if (candidates.isEmpty())
+                                            return Mono.just(
+                                                    JevExecution.Decision
+                                                            .<RoutingDecision>uncertain(
+                                                                    "NO_CANDIDATES"));
+                                        SystemOneRequest request =
+                                                SystemOneRequest.builder()
+                                                        .state(Map.of("userRequest", userText))
+                                                        .question(
+                                                                "models_0",
+                                                                new ChoiceQuestion(
+                                                                        instructions,
+                                                                        criteria(candidates)))
+                                                        .build();
+                                        return Mono.defer(() -> jevCall.apply(request))
+                                                .flatMap(r -> selectedModel(r))
+                                                .map(
+                                                        d ->
+                                                                d.model() != null
+                                                                                && candidates
+                                                                                        .values()
+                                                                                        .stream()
+                                                                                        .anyMatch(
+                                                                                                c ->
+                                                                                                        c
+                                                                                                                        .model()
+                                                                                                                == d
+                                                                                                                        .model())
+                                                                        ? new JevExecution
+                                                                                .Decision<>(
+                                                                                JevExecution.Status
+                                                                                        .DECIDED,
+                                                                                d,
+                                                                                "ROUTED",
+                                                                                Map.of(
+                                                                                        "model",
+                                                                                        d.model()
+                                                                                                .getModelName()))
+                                                                        : JevExecution.Decision
+                                                                                .<RoutingDecision>
+                                                                                        uncertain(
+                                                                                                "UNUSABLE_ROUTE"));
+                                    })
+                            .flatMapMany(
+                                    d -> {
+                                        if (execution.mode() == JevExecution.Mode.ENFORCE
+                                                && d.status() == JevExecution.Status.DECIDED)
+                                            ctx.put(RoutingDecision.class, d.value());
+                                        return next.apply(input);
+                                    });
+                });
     }
 
     @Override
@@ -117,6 +167,24 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
             Function<ModelCallInput, Flux<AgentEvent>> next) {
         RoutingDecision decision = decision(ctx);
         if (decision == null || decision.model() == null) {
+            return next.apply(input);
+        }
+        ModelChoice selected =
+                choices.values().stream()
+                        .filter(c -> c.model() == decision.model())
+                        .findFirst()
+                        .orElse(null);
+        boolean usable;
+        try {
+            usable =
+                    selected != null
+                            && eligible.test(ctx, selected)
+                            && compatible.test(input, selected);
+        } catch (RuntimeException error) {
+            usable = false;
+        }
+        if (!usable) {
+            ctx.put(RoutingDecision.class, RoutingDecision.fallback());
             return next.apply(input);
         }
         return next.apply(
@@ -134,28 +202,17 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         return ctx == null ? null : ctx.get(RoutingDecision.class);
     }
 
-    private Mono<RoutingDecision> selectModel(String userText) {
-        SystemOneRequest request = routingRequest(userText);
-
-        return jevCall.apply(request).flatMap(this::selectedModel);
-    }
-
-    private SystemOneRequest routingRequest(String userText) {
-        Map<String, Question> questions = new LinkedHashMap<>();
-        questions.put("models_0", new ChoiceQuestion(instructions, criteria(choices)));
-        return SystemOneRequest.builder()
-                .state(Map.of("userRequest", userText))
-                .questions(questions)
-                .build();
-    }
-
     private Mono<RoutingDecision> selectedModel(SystemOneResult result) {
         Answer answer = result.answers().get("models_0");
         if (!(answer instanceof ChoiceAnswer choice)) {
             return Mono.just(RoutingDecision.fallback());
         }
         ModelChoice modelChoice = choices.get(choice.choice());
-        if (modelChoice == null || choice.confidence() == null) {
+        if (modelChoice == null
+                || choice.confidence() == null
+                || !Double.isFinite(choice.confidence())
+                || choice.confidence() < 0
+                || choice.confidence() > 1) {
             return Mono.just(RoutingDecision.fallback());
         }
         if (choice.confidence() < confidenceThreshold) {
@@ -179,8 +236,8 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         if (jevCall == null) {
             throw new IllegalArgumentException("jevCall must not be null");
         }
-        if (choices.size() < 2) {
-            throw new IllegalArgumentException("at least two model choices are required");
+        if (choices.isEmpty()) {
+            throw new IllegalArgumentException("at least one model choice are required");
         }
         if (choices.size() > JevSelectionSupport.MAX_CHOICE_OPTIONS) {
             throw new IllegalArgumentException(
@@ -197,7 +254,9 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         if (instructions == null || instructions.isBlank()) {
             throw new IllegalArgumentException("instructions must not be blank");
         }
-        if (confidenceThreshold < 0 || confidenceThreshold > 1) {
+        if (!Double.isFinite(confidenceThreshold)
+                || confidenceThreshold < 0
+                || confidenceThreshold > 1) {
             throw new IllegalArgumentException("confidenceThreshold must be between 0 and 1");
         }
     }
@@ -231,8 +290,12 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
         private final Function<SystemOneRequest, Mono<SystemOneResult>> jevCall;
         private final Map<String, ModelChoice> choices = new LinkedHashMap<>();
         private String instructions = DEFAULT_INSTRUCTIONS;
-        private double confidenceThreshold = 0;
-        private boolean failOpen = true;
+        private double confidenceThreshold = 0.8;
+        private JevExecution.Options options = JevExecution.Options.disabled();
+        private java.util.function.BiPredicate<RuntimeContext, ModelChoice> eligible =
+                (ctx, choice) -> true;
+        private java.util.function.BiPredicate<ModelCallInput, ModelChoice> compatible =
+                (input, choice) -> input.tools() == null || input.tools().isEmpty();
 
         private Builder(Function<SystemOneRequest, Mono<SystemOneResult>> jevCall) {
             this.jevCall = jevCall;
@@ -260,8 +323,20 @@ public final class JevModelRouterMiddleware implements MiddlewareBase {
             return this;
         }
 
-        public Builder failOpen(boolean failOpen) {
-            this.failOpen = failOpen;
+        public Builder execution(JevExecution.Options options) {
+            this.options = options;
+            return this;
+        }
+
+        public Builder eligible(
+                java.util.function.BiPredicate<RuntimeContext, ModelChoice> predicate) {
+            eligible = Objects.requireNonNull(predicate);
+            return this;
+        }
+
+        public Builder compatible(
+                java.util.function.BiPredicate<ModelCallInput, ModelChoice> predicate) {
+            compatible = Objects.requireNonNull(predicate);
             return this;
         }
 

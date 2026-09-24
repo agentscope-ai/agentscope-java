@@ -1,0 +1,513 @@
+{
+  "overall": {
+    "jev": {
+      "n": 111,
+      "correct": 82,
+      "errors": 0,
+      "mean_s": 1.0838617068371392,
+      "median_s": 0.8375746250385419,
+      "p95_s": 2.4135469789616764,
+      "min_s": 0.5995984999462962,
+      "max_s": 3.3997451660688967,
+      "ties": 2,
+      "accuracy": 0.7387387387387387,
+      "wilson95": [
+        0.6500060698577332,
+        0.8114991686621063
+      ],
+      "brier_deterministic": 0.3590831683168317,
+      "ece10_deterministic": 0.10376237623762377,
+      "gold_probability_mean_tv": 0.20958,
+      "input_tokens": 167111,
+      "output_tokens": 5008,
+      "cached_tokens": 0
+    },
+    "qwen": {
+      "n": 111,
+      "correct": 90,
+      "errors": 2,
+      "mean_s": 1.4810750308406733,
+      "median_s": 1.389403959037736,
+      "p95_s": 2.1466481250245124,
+      "min_s": 0.8285499160410836,
+      "max_s": 8.032265459070913,
+      "ties": 1,
+      "accuracy": 0.8108108108108109,
+      "wilson95": [
+        0.7280299906058116,
+        0.8727975840709608
+      ],
+      "brier_deterministic": 0.3579641414141414,
+      "ece10_deterministic": 0.15242424242424238,
+      "gold_probability_mean_tv": 0.08100181818181819,
+      "input_tokens": 147444,
+      "output_tokens": 3754,
+      "cached_tokens": 0
+    }
+  },
+  "paired": {
+    "n": 111,
+    "both_correct": 79,
+    "both_wrong": 18,
+    "qwen_only_correct": 11,
+    "jev_only_correct": 3,
+    "accuracy_delta": 0.07207207207207207,
+    "mcnemar_exact_p": 0.057373046875,
+    "paired_bootstrap_delta95": [
+      0.009009009009009009,
+      0.13513513513513514
+    ]
+  },
+  "families": {
+    "adversarial": {
+      "jev": {
+        "n": 6,
+        "correct": 6,
+        "errors": 0,
+        "mean_s": 0.9206843609960439,
+        "median_s": 0.6978701665066183,
+        "p95_s": 1.6632981669390574,
+        "min_s": 0.6512685000197962,
+        "max_s": 1.923322208924219,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.6096569663469354,
+          0.9999999999999999
+        ],
+        "brier_deterministic": 0.0019666666666666647,
+        "ece10_deterministic": 0.018333333333333313,
+        "input_tokens": 3148,
+        "output_tokens": 237,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 6,
+        "correct": 6,
+        "errors": 0,
+        "mean_s": 1.3417305623103555,
+        "median_s": 1.3461917499662377,
+        "p95_s": 1.602254572469974,
+        "min_s": 1.0463678329251707,
+        "max_s": 1.6376617909409106,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.6096569663469354,
+          0.9999999999999999
+        ],
+        "brier_deterministic": 0.00023333333333333363,
+        "ece10_deterministic": 0.00666666666666671,
+        "input_tokens": 2227,
+        "output_tokens": 176,
+        "cached_tokens": 0
+      }
+    },
+    "ambiguous": {
+      "jev": {
+        "n": 7,
+        "correct": 6,
+        "errors": 0,
+        "mean_s": 1.3458408451572592,
+        "median_s": 1.0034571250434965,
+        "p95_s": 2.532142983097583,
+        "min_s": 0.6677432080032304,
+        "max_s": 2.724495582981035,
+        "ties": 0,
+        "accuracy": 0.8571428571428571,
+        "wilson95": [
+          0.48686549668097007,
+          0.9743210440510253
+        ],
+        "brier_deterministic": 0.29860000000000003,
+        "ece10_deterministic": 0.2814285714285714,
+        "input_tokens": 5610,
+        "output_tokens": 361,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 7,
+        "correct": 7,
+        "errors": 0,
+        "mean_s": 1.3469588455710826,
+        "median_s": 1.3812511670403183,
+        "p95_s": 1.4404630669858307,
+        "min_s": 1.2069034170126542,
+        "max_s": 1.4512486669700593,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.6456611570247934,
+          1.0
+        ],
+        "brier_deterministic": 0.005,
+        "ece10_deterministic": 0.040000000000000036,
+        "input_tokens": 4471,
+        "output_tokens": 225,
+        "cached_tokens": 0
+      }
+    },
+    "judge_hard": {
+      "jev": {
+        "n": 17,
+        "correct": 12,
+        "errors": 0,
+        "mean_s": 1.0255132868872299,
+        "median_s": 0.8887715419987217,
+        "p95_s": 1.9140184580581256,
+        "min_s": 0.5995984999462962,
+        "max_s": 2.588181458064355,
+        "ties": 0,
+        "accuracy": 0.7058823529411765,
+        "wilson95": [
+          0.468664666737861,
+          0.8672020613444361
+        ],
+        "brier_deterministic": 0.3630235294117647,
+        "ece10_deterministic": 0.15,
+        "input_tokens": 9113,
+        "output_tokens": 340,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 17,
+        "correct": 16,
+        "errors": 0,
+        "mean_s": 1.0827766177107525,
+        "median_s": 1.0949454159708694,
+        "p95_s": 1.2560511499643325,
+        "min_s": 0.8285499160410836,
+        "max_s": 1.2704842500388622,
+        "ties": 0,
+        "accuracy": 0.9411764705882353,
+        "wilson95": [
+          0.730174547964372,
+          0.9895398693548358
+        ],
+        "brier_deterministic": 0.11823529411764706,
+        "ece10_deterministic": 0.05294117647058827,
+        "input_tokens": 6792,
+        "output_tokens": 260,
+        "cached_tokens": 0
+      }
+    },
+    "long_policy": {
+      "jev": {
+        "n": 19,
+        "correct": 13,
+        "errors": 0,
+        "mean_s": 0.93719982668929,
+        "median_s": 0.8154001659713686,
+        "p95_s": 1.597461707994807,
+        "min_s": 0.6417847080156207,
+        "max_s": 1.7905252079945058,
+        "ties": 1,
+        "accuracy": 0.6842105263157895,
+        "wilson95": [
+          0.4601001017506463,
+          0.846358289955714
+        ],
+        "brier_deterministic": 0.46269473684210527,
+        "ece10_deterministic": 0.21631578947368418,
+        "input_tokens": 61057,
+        "output_tokens": 964,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 19,
+        "correct": 15,
+        "errors": 1,
+        "mean_s": 1.4344523355891732,
+        "median_s": 1.4998685410246253,
+        "p95_s": 1.8744569877744646,
+        "min_s": 0.8416592919966206,
+        "max_s": 2.1552182500017807,
+        "ties": 0,
+        "accuracy": 0.7894736842105263,
+        "wilson95": [
+          0.5666528575973392,
+          0.9149246150840843
+        ],
+        "brier_deterministic": 0.30573333333333336,
+        "ece10_deterministic": 0.1094444444444444,
+        "input_tokens": 57920,
+        "output_tokens": 764,
+        "cached_tokens": 0
+      }
+    },
+    "multi_hop": {
+      "jev": {
+        "n": 18,
+        "correct": 16,
+        "errors": 0,
+        "mean_s": 1.0341547801702593,
+        "median_s": 0.8218539794906974,
+        "p95_s": 2.1031429294496773,
+        "min_s": 0.6619644579477608,
+        "max_s": 2.2592688750009984,
+        "ties": 0,
+        "accuracy": 0.8888888888888888,
+        "wilson95": [
+          0.6719975513339578,
+          0.9689811315464172
+        ],
+        "brier_deterministic": 0.22411111111111112,
+        "ece10_deterministic": 0.13222222222222219,
+        "input_tokens": 49823,
+        "output_tokens": 996,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 18,
+        "correct": 14,
+        "errors": 1,
+        "mean_s": 1.6019826435561602,
+        "median_s": 1.4946338750305586,
+        "p95_s": 2.3258023081754797,
+        "min_s": 0.9681539579760283,
+        "max_s": 2.456447167089209,
+        "ties": 0,
+        "accuracy": 0.7777777777777778,
+        "wilson95": [
+          0.5478497354769452,
+          0.90999218086618
+        ],
+        "brier_deterministic": 0.3423764705882353,
+        "ece10_deterministic": 0.19529411764705873,
+        "input_tokens": 44307,
+        "output_tokens": 739,
+        "cached_tokens": 0
+      }
+    },
+    "probability": {
+      "jev": {
+        "n": 10,
+        "correct": 8,
+        "errors": 0,
+        "mean_s": 1.0136724833631887,
+        "median_s": 0.7315884794224985,
+        "p95_s": 1.7249346438562496,
+        "min_s": 0.6184908329742029,
+        "max_s": 1.7353262499673292,
+        "ties": 0,
+        "accuracy": 0.8,
+        "wilson95": [
+          0.49015684672072335,
+          0.9433190520193067
+        ],
+        "gold_probability_mean_tv": 0.20958,
+        "input_tokens": 11444,
+        "output_tokens": 385,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 10,
+        "correct": 10,
+        "errors": 0,
+        "mean_s": 1.40799942498561,
+        "median_s": 1.3577567500178702,
+        "p95_s": 1.7586154438438824,
+        "min_s": 1.0936040410306305,
+        "max_s": 1.8288777499692515,
+        "ties": 1,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.7224598312333834,
+          1.0
+        ],
+        "gold_probability_mean_tv": 0.08100181818181819,
+        "input_tokens": 10100,
+        "output_tokens": 310,
+        "cached_tokens": 0
+      }
+    },
+    "routing_hard": {
+      "jev": {
+        "n": 5,
+        "correct": 5,
+        "errors": 0,
+        "mean_s": 0.9771290584234521,
+        "median_s": 0.687461958033964,
+        "p95_s": 1.6730018255766481,
+        "min_s": 0.6355203751008958,
+        "max_s": 1.8293869589688256,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.5655085052479191,
+          1.0000000000000002
+        ],
+        "brier_deterministic": 0.0,
+        "ece10_deterministic": 0.0,
+        "input_tokens": 2977,
+        "output_tokens": 321,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 5,
+        "correct": 5,
+        "errors": 0,
+        "mean_s": 2.994645092030987,
+        "median_s": 1.6787527500418946,
+        "p95_s": 6.853427967266178,
+        "min_s": 1.5582226669648662,
+        "max_s": 8.032265459070913,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.5655085052479191,
+          1.0000000000000002
+        ],
+        "brier_deterministic": 0.004760000000000001,
+        "ece10_deterministic": 0.03399999999999997,
+        "input_tokens": 1993,
+        "output_tokens": 216,
+        "cached_tokens": 0
+      }
+    },
+    "temporal_numeric": {
+      "jev": {
+        "n": 15,
+        "correct": 3,
+        "errors": 0,
+        "mean_s": 1.466521772253327,
+        "median_s": 0.8532697919290513,
+        "p95_s": 3.1199658998171795,
+        "min_s": 0.6748213339596987,
+        "max_s": 3.3997451660688967,
+        "ties": 1,
+        "accuracy": 0.2,
+        "wilson95": [
+          0.07047420643610414,
+          0.4518593533465045
+        ],
+        "brier_deterministic": 0.8573733333333333,
+        "ece10_deterministic": 0.45066666666666666,
+        "input_tokens": 13812,
+        "output_tokens": 828,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 15,
+        "correct": 4,
+        "errors": 0,
+        "mean_s": 1.5625039528822526,
+        "median_s": 1.486410792102106,
+        "p95_s": 2.100878995750099,
+        "min_s": 1.1034367500105873,
+        "max_s": 2.336654542014003,
+        "ties": 0,
+        "accuracy": 0.26666666666666666,
+        "wilson95": [
+          0.1089727610318281,
+          0.5195088965768675
+        ],
+        "brier_deterministic": 1.3526,
+        "ece10_deterministic": 0.6746666666666665,
+        "input_tokens": 11573,
+        "output_tokens": 626,
+        "cached_tokens": 0
+      }
+    },
+    "tradeoff": {
+      "jev": {
+        "n": 6,
+        "correct": 5,
+        "errors": 0,
+        "mean_s": 1.0637768401841943,
+        "median_s": 0.9290565834962763,
+        "p95_s": 1.688205489248503,
+        "min_s": 0.7242084580939263,
+        "max_s": 1.8950285830069333,
+        "ties": 0,
+        "accuracy": 0.8333333333333334,
+        "wilson95": [
+          0.43649056343635395,
+          0.9699474141282697
+        ],
+        "brier_deterministic": 0.3755,
+        "ece10_deterministic": 0.3166666666666666,
+        "input_tokens": 5902,
+        "output_tokens": 312,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 6,
+        "correct": 5,
+        "errors": 0,
+        "mean_s": 1.4150028259997878,
+        "median_s": 1.4622642290196382,
+        "p95_s": 1.6114877807267476,
+        "min_s": 1.0124071660684422,
+        "max_s": 1.6414970409823582,
+        "ties": 0,
+        "accuracy": 0.8333333333333334,
+        "wilson95": [
+          0.43649056343635395,
+          0.9699474141282697
+        ],
+        "brier_deterministic": 0.286975,
+        "ece10_deterministic": 0.1316666666666666,
+        "input_tokens": 5010,
+        "output_tokens": 230,
+        "cached_tokens": 0
+      }
+    },
+    "trap": {
+      "jev": {
+        "n": 8,
+        "correct": 8,
+        "errors": 0,
+        "mean_s": 1.0131863748683827,
+        "median_s": 0.7067704789806157,
+        "p95_s": 1.6540942562685814,
+        "min_s": 0.6196243750164285,
+        "max_s": 1.6834748750552535,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.6755843804891231,
+          1.0
+        ],
+        "brier_deterministic": 0.006900000000000002,
+        "ece10_deterministic": 0.04250000000000001,
+        "input_tokens": 4225,
+        "output_tokens": 264,
+        "cached_tokens": 0
+      },
+      "qwen": {
+        "n": 8,
+        "correct": 8,
+        "errors": 0,
+        "mean_s": 1.4302440887404373,
+        "median_s": 1.2376694169361144,
+        "p95_s": 2.263917662389576,
+        "min_s": 1.0001439589541405,
+        "max_s": 2.621385582955554,
+        "ties": 0,
+        "accuracy": 1.0,
+        "wilson95": [
+          0.6755843804891231,
+          1.0
+        ],
+        "brier_deterministic": 0.004225000000000001,
+        "ece10_deterministic": 0.02750000000000001,
+        "input_tokens": 3051,
+        "output_tokens": 208,
+        "cached_tokens": 0
+      }
+    }
+  },
+  "posthoc_exact_score_key_recovery": [
+    {
+      "id": "hard-opus-b-multi_hop-05",
+      "prediction": "2",
+      "correct": true
+    },
+    {
+      "id": "hard-opus-c-long_policy-05",
+      "prediction": "2",
+      "correct": false
+    }
+  ]
+}
