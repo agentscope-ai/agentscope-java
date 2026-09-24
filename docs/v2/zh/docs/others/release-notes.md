@@ -7,6 +7,14 @@ description: AgentScope Java 各版本变更记录
 
 ---
 
+## 未发布
+
+### 兼容性
+
+- 结构化输出校验改用按失败域区分的异常类型：schema 缺失或无法编译时，首次尝试即快速失败并抛出 `StructuredOutputConfigurationException`（此前为耗尽重试预算后抛 `StructuredOutputValidationException`）；当重试预算因平台/内部故障（而非模型输出问题）耗尽时，调用将抛出 `StructuredOutputUnknownFailureException`，原始故障保留在 cause 中（此前视配置不同：或裸抛原始异常，或返回指向模型侧的校验结论）。按旧异常类型做错误映射的调用方请同步调整。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05

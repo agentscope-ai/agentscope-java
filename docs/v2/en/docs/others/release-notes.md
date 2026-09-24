@@ -7,6 +7,22 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Compatibility
+
+- Structured-output validation now throws failure-domain-typed exceptions. A schema that is
+  missing or fails to compile fails fast on the first attempt with
+  `StructuredOutputConfigurationException` (previously: `StructuredOutputValidationException`
+  after exhausting the retry budget). When the retry budget is exhausted by a platform /
+  internal fault rather than a model-output problem, the call now throws
+  `StructuredOutputUnknownFailureException` with the original fault preserved as the cause
+  (previously: configuration-dependent — the original exception was rethrown bare, or a
+  model-blaming validation verdict was returned). Callers mapping the previous exception
+  types to user-facing errors should update accordingly.
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
