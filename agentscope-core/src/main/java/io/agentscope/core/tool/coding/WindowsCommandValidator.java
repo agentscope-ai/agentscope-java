@@ -25,8 +25,8 @@ import org.slf4j.LoggerFactory;
  * <p><b>Validation Order:</b>
  * <ol>
  *   <li>Extract executable from command (remove quotes, handle paths with spaces, remove path, remove extensions, convert to lowercase)</li>
- *   <li>If no whitelist configured → allow (backward compatible)</li>
- *   <li>Check for multiple command separators → reject if found</li>
+ *   <li>If no whitelist configured → require approval</li>
+ *   <li>Check for shell operators and expansions → require approval if found</li>
  *   <li>Check relative path safety (commands starting with {@code .\} or {@code ./}) → reject if escapes current directory</li>
  *   <li>Check whitelist (case-insensitive) → reject if not in whitelist</li>
  * </ol>
@@ -54,31 +54,26 @@ public class WindowsCommandValidator implements CommandValidator {
         // Extract and check executable (case-insensitive for Windows)
         String executable = extractExecutable(command);
 
-        // If no whitelist is configured, allow all commands (backward compatible)
+        if (executable.isEmpty()) {
+            return ValidationResult.rejected("Cannot determine command executable", executable);
+        }
+
+        // An absent policy must go through the approval callback, not bypass it.
         if (allowedCommands == null || allowedCommands.isEmpty()) {
-            return ValidationResult.allowed(executable);
+            return ValidationResult.rejected("No command whitelist configured", executable);
         }
 
-        // Check for multiple commands
-        if (containsMultipleCommands(command)) {
-            logger.debug("Command contains multiple command separators: {}", command);
+        if (containsUnsafeShellSyntax(command, true)) {
             return ValidationResult.rejected(
-                    "Command contains multiple command separators (&, |, newline)",
-                    extractExecutable(command));
+                    "Command contains shell operators, expansions, or unbalanced quoting",
+                    executable);
         }
 
-        if (executable.startsWith(".\\") || executable.startsWith("./")) {
-            if (isPathWithinCurrentDirectory(executable)) {
-                logger.debug(
-                        "Command '{}' is safe relative path executable file execution", executable);
-                return ValidationResult.allowed(executable);
-            } else {
-                logger.debug(
-                        "Command '{}' is not safe relative path executable file execution",
-                        executable);
-                return ValidationResult.rejected(
-                        "Command '" + executable + "' escapes current directory", executable);
-            }
+        // Staying within the current directory does not grant whitelist membership.
+        if ((executable.startsWith(".\\") || executable.startsWith("./"))
+                && !isPathWithinCurrentDirectory(executable)) {
+            return ValidationResult.rejected(
+                    "Command '" + executable + "' escapes current directory", executable);
         }
 
         // Check if any whitelist entry matches (case-insensitive)
@@ -108,6 +103,12 @@ public class WindowsCommandValidator implements CommandValidator {
             if (trimmed.startsWith("\"")) {
                 int endQuote = trimmed.indexOf('"', 1);
                 if (endQuote > 0) {
+                    // A quoted prefix is not necessarily the complete executable token.
+                    if (endQuote + 1 < trimmed.length()
+                            && trimmed.charAt(endQuote + 1) != ' '
+                            && trimmed.charAt(endQuote + 1) != '\t') {
+                        return "";
+                    }
                     executable = trimmed.substring(1, endQuote);
                 } else {
                     // No closing quote, treat as unquoted
@@ -205,15 +206,32 @@ public class WindowsCommandValidator implements CommandValidator {
      */
     @Override
     public boolean containsMultipleCommands(String command) {
+        return containsUnsafeShellSyntax(command, false);
+    }
+
+    private boolean containsUnsafeShellSyntax(String command, boolean checkExpansions) {
         if (command == null || command.isEmpty()) {
             return false;
         }
 
         boolean inDoubleQuote = false;
         boolean escaped = false;
+        boolean quotedExecutable = checkExpansions && command.trim().startsWith("\"");
 
         for (int i = 0; i < command.length(); i++) {
             char c = command.charAt(i);
+
+            // cmd expands variables independently of quoting and caret escaping. Delayed
+            // expansion may also be enabled by the host, so neither form is safe to allow.
+            if (checkExpansions && (c == '%' || c == '!' || c == '\r' || c == '\n')) {
+                return true;
+            }
+
+            // cmd /c may strip the first and last quotes when the executable is quoted.
+            // Operators that appear quoted or escaped in the original string are then unsafe.
+            if (quotedExecutable && "&|<>()^".indexOf(c) >= 0) {
+                return true;
+            }
 
             // Handle escape sequences (^ is the escape character in cmd.exe)
             if (escaped) {
@@ -221,7 +239,8 @@ public class WindowsCommandValidator implements CommandValidator {
                 continue;
             }
 
-            if (c == '^') {
+            // A caret is literal inside double quotes, including immediately before a quote.
+            if (c == '^' && !inDoubleQuote) {
                 escaped = true;
                 continue;
             }
@@ -239,9 +258,12 @@ public class WindowsCommandValidator implements CommandValidator {
                 if (c == '&' || c == '|' || c == '\n') {
                     return true;
                 }
+                if (checkExpansions && (c == '<' || c == '>' || c == '(' || c == ')')) {
+                    return true;
+                }
             }
         }
 
-        return false;
+        return checkExpansions && (inDoubleQuote || escaped);
     }
 }

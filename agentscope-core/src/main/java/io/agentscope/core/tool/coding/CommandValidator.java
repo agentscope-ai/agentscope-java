@@ -23,8 +23,8 @@ import java.util.Set;
  * <p><b>Validation Flow:</b>
  * <ol>
  *   <li><b>Extract Executable:</b> Parse command to extract the executable name</li>
- *   <li><b>Whitelist Check:</b> If whitelist is empty/null, allow all (backward compatible)</li>
- *   <li><b>Multi-Command Detection:</b> Reject if command contains multiple command separators</li>
+ *   <li><b>Whitelist Check:</b> If whitelist is empty/null, require approval</li>
+ *   <li><b>Shell Syntax Detection:</b> Require approval for shell operators or expansions</li>
  *   <li><b>Relative Path Safety:</b> For commands starting with {@code ./} or {@code .\}, verify path doesn't escape current directory</li>
  *   <li><b>Whitelist Validation:</b> Reject if executable not in whitelist</li>
  * </ol>
@@ -47,14 +47,17 @@ public interface CommandValidator {
      * <p>Validation checks (in order):
      * <ol>
      *   <li>Extract executable name</li>
-     *   <li>If whitelist is null/empty → allow (backward compatible)</li>
-     *   <li>Check for multiple command separators → reject if found</li>
+     *   <li>If whitelist is null/empty → require approval</li>
+     *   <li>Check for shell operators and expansions → require approval if found</li>
      *   <li>Check relative path safety → reject if escapes current directory</li>
      *   <li>Check whitelist → reject if not in whitelist</li>
      * </ol>
      *
+     * <p>A rejected result is routed to the approval callback by {@link ShellCommandTool}.
+     * Without an approving callback, the command is not executed.
+     *
      * @param command The command string to validate
-     * @param allowedCommands Set of allowed command executables (null or empty means allow all)
+     * @param allowedCommands Set of allowed command executables (null or empty requires approval)
      * @return ValidationResult containing the validation outcome
      */
     ValidationResult validate(String command, Set<String> allowedCommands);

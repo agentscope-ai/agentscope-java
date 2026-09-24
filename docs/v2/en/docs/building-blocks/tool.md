@@ -466,9 +466,10 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.coding.ShellCommandTool;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import java.util.Set;
 
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ShellCommandTool(Set.of("python3")));
 toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
 toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
 
@@ -481,6 +482,13 @@ ReActAgent agent =
                 .skillRepository(skillRepo)
                 .build();
 ```
+
+With the default validators, only whitelisted commands without shell operators or expansions
+execute directly. Other commands require an approval callback; without one, they are rejected.
+An empty allow-list (including `new ShellCommandTool()`) now requires approval too. To migrate,
+configure the required executables or use `new ShellCommandTool(allowedCommands, approvalCallback)`.
+An allow-list is not a sandbox: an allowed interpreter such as `python3` can execute arbitrary
+code. Use an isolated sandbox for untrusted scripts.
 
 - **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
 
