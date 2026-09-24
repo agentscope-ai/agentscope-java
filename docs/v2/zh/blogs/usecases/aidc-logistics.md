@@ -729,11 +729,10 @@ FinanceAguiRuntimeContextBuilder 是我们针对运行链路定制的第一个 S
 public ProcessResult process(RunAgentInput input, String headerAgentId, String pathAgentId) {
         String threadId = input.getThreadId();
         String agentId = this.resolveAgentId(input, headerAgentId, pathAgentId);
+        // 完整输入直接透传：AguiAgentAdapter 会注册 RuntimeContext.onAgentStateBound
+        // 回调，自动剔除已持久化在服务端 AgentState 中的历史消息（自动合并），
+        // 复用层不再需要自行提取最新一条用户消息。
         RunAgentInput effectiveInput = input;
-        if (this.agentResolver.hasMemory(threadId) && !input.hasResume()) {
-            logger.debug("Using server-side memory for thread {}, extracting latest user message", threadId);
-            effectiveInput = this.extractLatestUserMessage(input);
-        }
         // 在运行之前构建的上下文
         RuntimeContext runtimeContext = this.buildRuntimeContext(effectiveInput);
         Agent agent = this.agentResolver.resolveAgent(agentId, threadId);
@@ -909,7 +908,7 @@ HTTP Header（X-Temperature 等） > DB JSON 字段（modelParams） > DEFAULT �
 
 除了 `createAgent()` 的轻量级别的创建设计，还有 `saveAgent` 和 `removeSession`、`hasMemory` 的定制，对于 financeAgent 的整体轻量也有功不可没的作用。
 
-- `hasMemory()` — 双检存在性探测：先查 `ac_agent_session`，再查 `ac_agent_block.maxSeq`，避免全量加载对话历史即可判断"是否有历史"。这是复用层决定是否走 `extractLatestUserMessage` 的关键钩子。
+- `hasMemory()` — 双检存在性探测：先查 `ac_agent_session`，再查 `ac_agent_block.maxSeq`，避免全量加载对话历史即可判断"是否有历史"。它曾是复用层决定是否走 `extractLatestUserMessage` 的关键钩子；内置管线现在通过 `AguiAgentAdapter` 注册的 `RuntimeContext.onAgentStateBound` 回调，将输入消息与已持久化的 AgentState 上下文自动合并去重，因此该探测只供仍需要存在性检查的自定义 resolver 使用。
 - `saveAgent()` — 增量持久化：通过 JdbcSession 黑名单跳过 `memory_messages` 的全量写入，只增量 append 新 block（`seq > dbMaxSeq`），写放大从 O(N) 降到 O(Δ)。
 - `removeSession()` — 级联清理：单次锁获取内完成 `ac_agent_session` + `ac_agent_block` 的批量删除，并同步清理 `tailSnapshot` 缓存。
 

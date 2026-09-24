@@ -147,6 +147,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -758,6 +759,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
+        // Per-call state bound; fire the onAgentStateBound callback. The hook may modify the
+        // incoming message list in place — runLifecycleBody already handed us a private mutable
+        // copy whenever a callback is registered (see AgentBase#runLifecycleBody).
+        BiConsumer<RuntimeContext, List<Msg>> onAgentStateBound = ctx.getOnAgentStateBound();
+        if (onAgentStateBound != null) {
+            onAgentStateBound.accept(ctx, msgs);
+        }
         this.activeRc = ctx;
         bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
