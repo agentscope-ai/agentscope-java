@@ -21,13 +21,13 @@ description: 智能体定义与进化的 source of truth：目录布局、工作
 | 子 agent 声明 | `subagents/<agent-id>.md` |
 | 工具白名单 + MCP server | `tools.json` |
 
-> **以上全部可选。** 每个工作区文件都有完全对等的 API 配置方式：你可以通过 builder 方法（`.systemPrompt(...)`、`.skill(SkillDeclaration...)`、`.subagent(SubagentDeclaration...)`、`.toolsConfig(...)` 等）传入同等配置。工作区与 API 始终等价——用哪种完全取决于你。
+> **以上全部可选。** 每个工作区文件都有完全对等的 API 配置方式：你可以通过 builder 方法（`.sysPrompt(...)`、`.skill(SkillDeclaration...)`、`.subagent(SubagentDeclaration...)`、`.toolsConfig(...)` 等）传入同等配置。工作区与 API 始终等价——用哪种完全取决于你。
 >
 > **那为什么还要用工作区？** 因为把"定义"表达成文件（而不是代码），正是让一个 agent 天然多租户的关键：*同一套* agent 逻辑，可以为*不同用户*携带不同的人格、知识库、技能集——只需放一个用户级覆盖目录，无需代码分支、无需多套部署。详见下文 [同一套 agent 逻辑，按用户定制](#同一套-agent-逻辑按用户定制)。
 
 智能体的*进化*（跨会话累积学到的一切）由框架自动写入工作区，无需手动管理生命周期：
 
-- **长期记忆**（`MEMORY.md` + `memory/`）—— 从对话中提取的事实，由后台任务维护与压缩，每轮注入 system prompt。
+- **长期记忆**（`MEMORY.md` + `memory/`）—— 从对话中提取的事实，由后台任务维护与压缩，每次 call 加载为参考上下文。
 - **自学习技能**（`skills/`）—— agent 从成功模式中起草新技能；经过可选的审批闸门后成为可复用能力，再由后台 curator 把长期未用的老化、归档。
 - **计划文件**（`plans/`）—— Plan Mode 中写下的计划会持久化、跨调用保留，让"想清楚"与"做出来"解耦。
 - **工具结果落盘**（compaction）—— 超大工具输出写到磁盘，上下文里只留 head/tail 预览 + `read_file` 指针，agent 之后可按需重读而不撑爆 prompt。
@@ -41,9 +41,9 @@ description: 智能体定义与进化的 source of truth：目录布局、工作
 
 | 类型 | 谁写 | 谁读 | 例子 |
 |------|------|------|------|
-| **静态资产**（工程师编辑） | 你 / 团队 | 框架每轮注入 system prompt 或调用时按需读 | `AGENTS.md`、`knowledge/`、`skills/`、`subagents/`、`tools.json` |
+| **静态资产**（工程师编辑） | 你 / 团队 | 框架按指令/参考资料分层加载，或按需读取 | `AGENTS.md`、`knowledge/`、`skills/`、`subagents/`、`tools.json` |
 | **运行时文件**（每次 call 写回） | 框架 / agent | 框架下次 call 时还原 | `agents/<agentId>/sessions/`、`agents/<agentId>/tasks/`、`plans/` |
-| **长期记忆**（跨会话累积） | agent + 后台任务 | 框架每轮注入 system prompt + agent 用工具查询 | `MEMORY.md`、`memory/YYYY-MM-DD.md` |
+| **长期记忆**（跨会话累积） | agent + 后台任务 | 框架每次 call 加载为参考上下文 + agent 用工具查询 | `MEMORY.md`、`memory/YYYY-MM-DD.md` |
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
 
@@ -157,8 +157,8 @@ env:
 
 | 方法 | 关掉的是 |
 |------|---------|
-| `disableWorkspaceContext()` | system prompt 注入（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
-| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `<memory_context>`（`MEMORY.md`） |
+| `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
+| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
@@ -169,26 +169,26 @@ env:
 
 因为工作区是逻辑布局（见上方提示框），"加载"从不假设它是一个普通本机目录——每次读取都经过配置的 `AbstractFilesystem`，所以无论文件落在本机磁盘、远端存储还是沙箱里，同一套逻辑都成立。下面的[两层读](#两层读架构filesystem-first--本地兜底)正是把这种"与后端无关"落到实处的机制；各模式如何在物理上解析路径，见 [filesystem](/v2/zh/docs/harness/filesystem)。
 
-### 一次推理的 system prompt 拼装
+### 工作区材料如何进入请求
 
-每次 `call()` 进入 reasoning 阶段时，`WorkspaceContextMiddleware`（位于 `io.agentscope.harness.agent.middleware`）会按下表把工作区文件拼成一段文本，**追加到** builder 上配置的 `sysPrompt` 之后形成最终 system 消息：
+工作区材料每次 Agent call 读取一次，再由最终 Context 构建器分层组织，不直接把全部文件追加进 System。
 
-| 段落 | 来源 | 受预算约束 |
-|------|------|-----------|
-| `## Session Context` | 模板生成（日期、操作系统、workspace 绝对路径、临时目录、当前 `sessionId`） | 否 |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略 | 否 |
-| `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
-| `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |
-| `<agents_context>` | `AGENTS.md` 全文 | 无限 |
-| `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入） | `maxContextTokens` 默认 8000 |
-| `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表 | 无限（仅文件名做索引） |
-| `<x_md>` / `<y_md>` | 你 `additionalContextFile("X.md")` 添加的任意文件 | 无限 |
+| 材料 | 模型中的位置 | 预算行为 |
+| --- | --- | --- |
+| AGENTS.md | System / `project_rules` | 不直接淘汰，计入最终预算 |
+| 工作原则、环境信息 | System / `working_principles`、`environment` | 计入最终预算 |
+| MEMORY.md | USER 参考消息 / `HARNESS_CONTEXT`，kind=memory | 准备时可截断，最终预算不足时可省略 |
+| knowledge 入口及路径索引 | USER 参考消息 / `HARNESS_CONTEXT`，kind=knowledge | 可因最终预算省略 |
+| additionalContextFile | USER 参考消息 / `HARNESS_CONTEXT`，kind=additional | 必需材料，不能任意淘汰 |
 
-要点：
+`maxContextTokens` 默认 8000，用于工作区材料准备，不代表最终模型输入上限。
+最终预算还包括 System、历史、状态和工具 Schema；仍超限则拒绝请求。
+MEMORY.md 在记忆工具和 Hooks 都关闭时不加载。
+知识目录只加载入口和索引，其余文件由模型按需读取。
 
-- **每轮都重新拼。** 你改了 `AGENTS.md` 或 `MEMORY.md`，下一次 `call()` 立刻生效，不需要重启或重建 agent。
-- **`MEMORY.md` 估算 token 后才注入。** 超出剩余预算就按字符截断并附一行提示，引导模型用 `memory_search` 工具查老内容。
-- **`knowledge/` 是目录索引 + 入口文件**。完整内容不会全量塞进 prompt——只把 `KNOWLEDGE.md` 全文加上其它文件的路径清单注入，让模型用 `read_file` 自己取需要的。
+AGENTS.md 不需要 XML 标签。同一次 call 内文件变化不自动刷新；
+下一次 call 重新加载。消息示例、动态业务来源及预算设置见
+[上下文构建](/v2/zh/docs/harness/context)。
 
 ### 两层读架构（filesystem-first + 本地兜底）
 
@@ -329,7 +329,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ```
 workspace/
-├── MEMORY.md                  ← 策划后的长期记忆，每轮注入 system prompt
+├── MEMORY.md                  ← 策划后的长期记忆，每次 call 加载为参考上下文
 └── memory/
     └── YYYY-MM-DD.md          ← 每天追加的事实流水账（未去重）
 ```
@@ -338,7 +338,7 @@ workspace/
 
 - 对话压缩前，`MemoryFlushMiddleware` 把对话前缀里的新事实抽到 `memory/YYYY-MM-DD.md`（追加）；
 - 后台节流任务定期把 `memory/` 合并去重，重写 `MEMORY.md`；
-- `MEMORY.md` 每轮以受预算控制的方式注入 system prompt。
+- `MEMORY.md` 每次 call 加载，并以受预算控制的方式进入参考消息。
 
 读取路径：
 
@@ -365,7 +365,7 @@ workspace/
 
 | 通道 | 落在哪 | 怎么开 | 怎么累积 | 深入文档 |
 |------|--------|--------|---------|---------|
-| **长期记忆** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | 压缩前 `MemoryFlushMiddleware` 从对话前缀抽取事实；后台节流任务合并去重写回 `MEMORY.md`，每轮重新注入 | [记忆](/v2/zh/docs/harness/memory) |
+| **长期记忆** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | 压缩前 `MemoryFlushMiddleware` 从对话前缀抽取事实；后台节流任务合并去重写回 `MEMORY.md`，下一次 call 重新加载 | [记忆](/v2/zh/docs/harness/memory) |
 | **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](/v2/zh/docs/harness/skill#自学习闭环可选) |
 | **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](/v2/zh/docs/harness/plan-mode) |
 | **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文压缩](/v2/zh/docs/harness/compaction) |
@@ -480,7 +480,7 @@ agents/<agentId>/
 
 ```
 knowledge/
-├── KNOWLEDGE.md         ← 入口/概览，全文注入 system prompt
+├── KNOWLEDGE.md         ← 入口/概览，作为参考材料加载
 ├── api-reference.md
 ├── domain-terms.md
 └── ...

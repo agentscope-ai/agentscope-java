@@ -89,6 +89,7 @@ import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
@@ -96,6 +97,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.observation.ActionObservationException;
+import io.agentscope.core.observation.ActionObservations;
+import io.agentscope.core.observation.ActionObserver;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionEngine;
@@ -129,6 +133,8 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.builtin.RequirementTools;
+import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -256,6 +262,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private final List<MiddlewareBase> middlewares;
     private final ModelRequestPreparer modelRequestPreparer;
+    private final ActionObserver actionObserver;
     private final boolean enablePendingToolRecovery;
 
     // ==================== Persistence ====================
@@ -347,6 +354,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         mws.addAll(builder.middlewares);
         this.middlewares = List.copyOf(mws);
         this.modelRequestPreparer = builder.modelRequestPreparer;
+        this.actionObserver = builder.actionObserver;
 
         this.stateStore = builder.stateStore;
         this.conflictPolicy =
@@ -828,6 +836,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
+        if (actionObserver != null) {
+            RuntimeContext base = run != null ? run : RuntimeContext.empty();
+            String sid = base.getSessionId();
+            run =
+                    RuntimeContext.builder(base)
+                            .sessionId(sid == null || sid.isBlank() ? defaultSessionId : sid)
+                            .put(ActionObserver.CONTEXT_KEY, actionObserver)
+                            .build();
+        }
         if (run == null) {
             if (toolExecutionContext != null) {
                 return RuntimeContext.builder().toolExecutionContext(toolExecutionContext).build();
@@ -3061,19 +3078,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .concatMap(
                                     entry -> {
                                         ToolUseBlock use = entry.getKey();
-                                        return Flux.<AgentEvent>just(
-                                                new ToolResultStartEvent(
-                                                        replyId, use.getId(), use.getName()),
-                                                new ToolResultTextDeltaEvent(
-                                                        replyId,
-                                                        use.getId(),
-                                                        use.getName(),
-                                                        "Permission denied by rules"),
-                                                new ToolResultEndEvent(
-                                                        replyId,
-                                                        use.getId(),
-                                                        use.getName(),
-                                                        ToolResultState.DENIED));
+                                        ToolCallParam deniedParam =
+                                                ToolCallParam.builder()
+                                                        .toolUseBlock(use)
+                                                        .agent(ReActAgent.this)
+                                                        .runtimeContext(
+                                                                buildMergedRuntimeContext(rc))
+                                                        .build();
+                                        return ActionObservations.observe(
+                                                        deniedParam,
+                                                        () -> Mono.just(entry.getValue()))
+                                                .thenMany(
+                                                        Flux.<AgentEvent>just(
+                                                                new ToolResultStartEvent(
+                                                                        replyId,
+                                                                        use.getId(),
+                                                                        use.getName()),
+                                                                new ToolResultTextDeltaEvent(
+                                                                        replyId,
+                                                                        use.getId(),
+                                                                        use.getName(),
+                                                                        "Permission denied by"
+                                                                                + " rules"),
+                                                                new ToolResultEndEvent(
+                                                                        replyId,
+                                                                        use.getId(),
+                                                                        use.getName(),
+                                                                        ToolResultState.DENIED)));
                                     });
 
             if (approved.isEmpty()) {
@@ -3466,6 +3497,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             Exception.class,
                             error -> {
                                 // Preserve interruption signal for agent stop policy
+                                if (ActionObservationException.causedBy(error))
+                                    return Mono.error(error);
                                 if (error instanceof InterruptedException) {
                                     return Mono.error(error);
                                 }
@@ -3563,6 +3596,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * schema validation the executor performs for registered tools.
          */
         private Mono<ToolResultBlock> executeStructuredTool(ToolUseBlock use) {
+            ToolCallParam param =
+                    ToolCallParam.builder()
+                            .toolUseBlock(use)
+                            .input(use.getInput() == null ? Map.of() : use.getInput())
+                            .agent(ReActAgent.this)
+                            .runtimeContext(buildMergedRuntimeContext(rc))
+                            .build();
+            return ActionObservations.observe(
+                    param, () -> executeStructuredToolUnobserved(use, param));
+        }
+
+        private Mono<ToolResultBlock> executeStructuredToolUnobserved(
+                ToolUseBlock use, ToolCallParam param) {
             String validationError =
                     ToolValidator.validateInput(use.getContent(), soTool.getParameters());
             if (validationError != null) {
@@ -3574,13 +3620,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         + "': "
                                         + validationError));
             }
-            ToolCallParam param =
-                    ToolCallParam.builder()
-                            .toolUseBlock(use)
-                            .input(use.getInput() == null ? Map.of() : use.getInput())
-                            .agent(ReActAgent.this)
-                            .runtimeContext(buildMergedRuntimeContext(rc))
-                            .build();
             return soTool.callAsync(param).map(rb -> rb.withIdAndName(use.getId(), use.getName()));
         }
 
@@ -4751,6 +4790,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         final Set<Hook> hooks = new LinkedHashSet<>();
         private final List<MiddlewareBase> middlewares = new ArrayList<>();
         private ModelRequestPreparer modelRequestPreparer;
+        private ActionObserver actionObserver;
+
+        /** Install acknowledged action recording. Unconfigured ReAct agents keep their normal loop. */
+        public Builder actionObserver(ActionObserver observer) {
+            this.actionObserver = Objects.requireNonNull(observer);
+            return this;
+        }
 
         /** Installs the final request preparation boundary, outside the middleware onion. */
         public Builder modelRequestPreparer(ModelRequestPreparer preparer) {
@@ -4760,6 +4806,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private boolean enableMetaTool = false;
         private boolean taskListEnabled = false;
+        private boolean taskRequirementsEnabled = false;
+
+        /** Enables candidate requirement proposals independently from todo tracking. */
+        public Builder enableTaskRequirements(boolean enabled) {
+            taskRequirementsEnabled = enabled;
+            return this;
+        }
+
         private ToolExecutionContext toolExecutionContext;
         private boolean enablePendingToolRecovery = false;
 
@@ -5504,8 +5558,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * middleware. Opt-in via {@link #enableTaskList()}.
          */
         private void configureTodoTools(Toolkit agentToolkit) {
-            agentToolkit.registerTool(new io.agentscope.core.tool.builtin.TodoTools());
-            middlewares.add(new io.agentscope.core.middleware.TaskReminderMiddleware());
+            if (taskListEnabled) agentToolkit.registerTool(new TodoTools());
+            if (taskRequirementsEnabled) agentToolkit.registerTool(new RequirementTools());
+            middlewares.add(new TaskReminderMiddleware(taskListEnabled, taskRequirementsEnabled));
         }
 
         /**
@@ -5556,7 +5611,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (!knowledgeBases.isEmpty()) {
                 configureRAG(agentToolkit);
             }
-            if (taskListEnabled) {
+            if (taskListEnabled || taskRequirementsEnabled) {
                 configureTodoTools(agentToolkit);
             }
             if (skillBox != null) {

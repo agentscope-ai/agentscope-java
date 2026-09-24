@@ -8,7 +8,7 @@ description: 双层长期记忆、对话压缩、大工具结果卸载，prompt 
 让 agent "记住跨会话的事实"，同时避免对话上下文无限增长。Harness 把记忆拆成两层：
 
 - **第一层·日流水账** `memory/YYYY-MM-DD.md` —— 每天追加，原始且未去重；
-- **第二层·策划后长期记忆** `MEMORY.md` —— 周期性 LLM 合并去重的产物；每轮推理时作为长期记忆注入 system prompt。
+- **第二层·策划后长期记忆** `MEMORY.md` —— 周期性 LLM 合并去重的产物；每次 Agent call 加载，在模型请求中作为参考资料进入 HARNESS_CONTEXT，而不是 System。
 
 围绕这两层，还有三个常用机制：
 
@@ -39,7 +39,7 @@ graph LR
     Compactor -->|offload 原文| Sess["sessions/&lt;id&gt;.log.jsonl"]
     Compactor -->|压缩前再 flush 一次| Flush
     Daily -. 节流后台 Consolidation .-> MEM["MEMORY.md"]
-    MEM -->|每轮推理注入| SYS["system prompt"]
+    MEM -->|每次 call 加载| SYS["HARNESS_CONTEXT 参考消息"]
 ```
 
 要点：
@@ -262,7 +262,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-两者一起用时，还会跳过 `<memory_context>`（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
+两者一起用时，还会跳过 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
 
 `disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
 
@@ -271,3 +271,5 @@ HarnessAgent.builder()
 - [工作区](/v2/zh/docs/harness/workspace) — `MEMORY.md` / `memory/` 在工作区的位置
 - [Context](/v2/zh/docs/building-blocks/context) — 永不压缩的对话日志 `*.log.jsonl`
 - [架构](/v2/zh/docs/harness/architecture) — 长会话事实如何沉淀进 `MEMORY.md`
+
+消息位置、刷新时机和最终预算见 [上下文构建](/v2/zh/docs/harness/context)。

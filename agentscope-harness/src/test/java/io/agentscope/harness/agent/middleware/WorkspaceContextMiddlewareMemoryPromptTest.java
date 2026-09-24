@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Ensures Memory Recall / Persistence guidance and {@code <memory_context>} stay aligned with
+ * Ensures Memory Recall / Persistence guidance and memory reference material stay aligned with
  * {@code disableMemoryTools} / {@code disableMemoryHooks}.
  */
 class WorkspaceContextMiddlewareMemoryPromptTest {
@@ -75,6 +75,8 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         assertNotNull(prompt);
         assertTrue(prompt.contains("agent persona"));
+        assertTrue(prompt.contains("## Runtime Environment"));
+        assertFalse(prompt.contains("AgentStateStore Context"));
         assertNotNull(readThread.get());
         assertNotSame(
                 callerThread, readThread.get(), "workspace context read ran on caller thread");

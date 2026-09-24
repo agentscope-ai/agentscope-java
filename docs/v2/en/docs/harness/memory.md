@@ -9,7 +9,7 @@ description: Two-layer long-term memory, conversation compaction, large tool-res
 Lets the agent "remember facts across sessions" while keeping the conversation context bounded. Harness splits memory into two layers:
 
 - **Layer 1 · daily log** `memory/YYYY-MM-DD.md` — append-only each day, raw and not deduped;
-- **Layer 2 · curated long-term** `MEMORY.md` — periodically merged + deduped by the LLM; injected into the system prompt every reasoning step as long-term memory.
+- **Layer 2 · curated long-term** `MEMORY.md` — periodically merged + deduped by the LLM; loaded once per Agent call and supplied as HARNESS_CONTEXT reference material, not System.
 
 Three companion mechanisms:
 
@@ -40,7 +40,7 @@ graph LR
     Compactor -->|offload raw| Sess["sessions/&lt;id&gt;.log.jsonl"]
     Compactor -->|flush again before summarizing| Flush
     Daily -. throttled background consolidation .-> MEM["MEMORY.md"]
-    MEM -->|injected each reasoning step| SYS["system prompt"]
+    MEM -->|loaded per call| SYS["HARNESS_CONTEXT reference message"]
 ```
 
 Key points:
@@ -263,7 +263,7 @@ HarnessAgent.builder()
     .build();
 ```
 
-Together these also skip `<memory_context>` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
+Together these also skip memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
 
 `disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
 
@@ -272,3 +272,5 @@ Together these also skip `<memory_context>` (`MEMORY.md`) injection while keepin
 - [Workspace](/v2/en/docs/harness/workspace) — where `MEMORY.md` / `memory/` live in the workspace
 - [Context](/v2/en/docs/building-blocks/context) — the never-compacted `*.log.jsonl` conversation log
 - [Architecture](/v2/en/docs/harness/architecture) — how facts in long conversations settle into `MEMORY.md`
+
+For message placement, refresh timing and final budgeting, see [Context construction](/v2/en/docs/harness/context).

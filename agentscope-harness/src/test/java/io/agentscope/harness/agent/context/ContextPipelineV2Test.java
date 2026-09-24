@@ -484,8 +484,17 @@ class ContextPipelineV2Test {
         assertTrue(system.contains("Base instructions."));
         assertTrue(system.contains("<instruction_rules "));
         assertTrue(system.contains("<project_rules "));
+        assertTrue(system.contains("## Runtime Environment"));
+        assertFalse(system.contains("AgentStateStore Context"));
+        assertFalse(system.contains("<working_context"));
+        assertFalse(system.contains("<memory_context"));
         assertTrue(system.contains("Use explicit imports."));
         assertFalse(system.contains("A previous decision."));
+        Msg references = calls.get(0).get(calls.get(0).size() - 1);
+        assertEquals(MsgRole.USER, references.getRole());
+        assertTrue(references.getTextContent().contains("<HARNESS_CONTEXT>"));
+        assertTrue(references.getTextContent().contains("kind=\"memory\""));
+        assertTrue(references.getTextContent().contains("source=\"workspace:MEMORY.md\""));
         assertTrue(
                 calls.get(0)
                         .get(calls.get(0).size() - 1)

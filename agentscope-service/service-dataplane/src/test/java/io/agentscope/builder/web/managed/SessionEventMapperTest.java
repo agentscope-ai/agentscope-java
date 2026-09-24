@@ -39,6 +39,33 @@ import org.junit.jupiter.api.Test;
 
 class SessionEventMapperTest {
     @Test
+    void verificationPersistsAsBoundedCheckRatherThanTaskCompletion() {
+        var payload = Map.<String, Object>of("verification_id", "check", "outcome", "PASSED");
+        var result =
+                new SessionEventMapper(new ObjectMapper())
+                        .map(
+                                new CustomEvent("task_verification", payload),
+                                new SessionEventMapper.PreviewIds());
+        assertThat(result.persisted().orElseThrow().type())
+                .isEqualTo(SessionEventTypes.SPAN_TASK_VERIFICATION);
+        assertThat(result.persisted().orElseThrow().payload()).isEqualTo(payload);
+    }
+
+    @Test
+    void actionObservationPersistsWithoutChangingModelPreview() {
+        var ids = new SessionEventMapper.PreviewIds();
+        String previewId = ids.messageEventId();
+        var payload = Map.<String, Object>of("action_id", "action", "status", "RETURNED");
+        var result =
+                new SessionEventMapper(new ObjectMapper())
+                        .map(new CustomEvent("action_observation", payload), ids);
+        assertThat(result.persisted().orElseThrow().type())
+                .isEqualTo(SessionEventTypes.SPAN_ACTION_OBSERVATION);
+        assertThat(result.persisted().orElseThrow().payload()).isEqualTo(payload);
+        assertThat(ids.messageEventId()).isEqualTo(previewId);
+    }
+
+    @Test
     void failedContextBuildPersistsWithoutOpeningModelPreview() {
         var ids = new SessionEventMapper.PreviewIds();
         String previewId = ids.messageEventId();

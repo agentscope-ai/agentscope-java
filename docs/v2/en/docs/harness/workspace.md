@@ -23,13 +23,13 @@ Agent *definition* — who the agent is and how it behaves — can be declared e
 | Subagent declarations | `subagents/<agent-id>.md` |
 | Tool allowlist + MCP servers | `tools.json` |
 
-> **All workspace config files are optional.** Every file has a fully equivalent API counterpart: you can pass the same configuration via builder methods (`.systemPrompt(...)`, `.skill(SkillDeclaration...)`, `.subagent(SubagentDeclaration...)`, `.toolsConfig(...)`, etc.). The workspace and the API are always in parity — which one you use is entirely your choice.
+> **All workspace config files are optional.** Every file has a fully equivalent API counterpart: you can pass the same configuration via builder methods (`.sysPrompt(...)`, `.skill(SkillDeclaration...)`, `.subagent(SubagentDeclaration...)`, `.toolsConfig(...)`, etc.). The workspace and the API are always in parity — which one you use is entirely your choice.
 >
 > **Why the workspace, then?** Because expressing definition as files (rather than code) is what makes one agent natively multi-tenant: the *same* agent logic can carry a *different* persona, knowledge base, and skill set per user, just by dropping a per-user override directory — no code branches, no separate deployments. See [One agent logic, customized per user](#one-agent-logic-customized-per-user) below.
 
 Agent *evolution* — everything the agent learns or accumulates across sessions — is stored automatically in the workspace with no explicit lifecycle management required:
 
-- **Long-term memory** (`MEMORY.md` + `memory/`) — facts extracted from conversations, maintained and compacted by background tasks, injected each turn.
+- **Long-term memory** (`MEMORY.md` + `memory/`) — facts extracted from conversations, maintained and compacted by background tasks, loaded as reference context per call.
 - **Self-learning skills** (`skills/`) — the agent drafts new skills from successful patterns; after an optional review gate they become reusable capabilities, then a background curator ages out / archives the unused ones.
 - **Plans** (`plans/`) — plans written during Plan Mode persist and survive across calls, keeping "figure it out" decoupled from "do it".
 - **Offloaded tool results** (compaction) — oversized tool outputs are written to disk and replaced in-context with a head/tail preview + a `read_file` pointer, so the agent can re-read them later without bloating the prompt.
@@ -43,9 +43,9 @@ Evolution data is long-lived by default: memory accumulates indefinitely, sessio
 
 | Kind | Written by | Read by | Examples |
 |------|------------|---------|----------|
-| **Static assets** (engineer-edited) | You / your team | Framework injects into the system prompt each turn, or reads on demand at call time | `AGENTS.md`, `knowledge/`, `skills/`, `subagents/`, `tools.json` |
+| **Static assets** (engineer-edited) | You / your team | Framework loads instructions and references separately, or reads on demand | `AGENTS.md`, `knowledge/`, `skills/`, `subagents/`, `tools.json` |
 | **Runtime files** (rewritten on every call) | Framework / agent | Framework restores them on the next call | `agents/<agentId>/sessions/`, `agents/<agentId>/tasks/`, `plans/` |
-| **Long-term memory** (accumulated across sessions) | Agent + background tasks | Framework injects into the system prompt + agent queries via tools | `MEMORY.md`, `memory/YYYY-MM-DD.md` |
+| **Long-term memory** (accumulated across sessions) | Agent + background tasks | Framework loads reference context per call + agent queries via tools | `MEMORY.md`, `memory/YYYY-MM-DD.md` |
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
 
@@ -162,8 +162,8 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 
 | Method | What it disables |
 |--------|------------------|
-| `disableWorkspaceContext()` | system-prompt injection (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
-| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips `<memory_context>` (`MEMORY.md`) injection |
+| `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
+| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
@@ -174,26 +174,27 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 
 Because the workspace is a logical layout (see the callout above), "loading" never assumes a plain local directory — every read goes through the configured `AbstractFilesystem`, so the same logic works whether files sit on local disk, in a remote store, or inside a sandbox. The [two-layer read](#two-layer-reads-filesystem-first--local-fallback) below is what makes that backing-store independence concrete; [Filesystem](/v2/en/docs/harness/filesystem) covers how each mode resolves paths physically.
 
-### System-prompt assembly per turn
+### How workspace materials enter requests
 
-Before every reasoning step, `WorkspaceContextMiddleware` (`io.agentscope.harness.agent.middleware`) assembles the following sections and **appends them to** the `sysPrompt` you set on the builder to form the final system message:
+Workspace materials load once per Agent call. The final context compiler places instructions
+and reference data separately rather than appending all files to System.
 
-| Section | Source | Budgeted |
-|---------|--------|----------|
-| `## Session Context` | Template (today's date, OS, workspace absolute path, temp dir, current `sessionId`) | no |
-| `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` guidance | Built-in templates (teach the model how to use memory + navigate knowledge). Memory sections are omitted / trimmed when `disableMemoryTools()` / `disableMemoryHooks()` are set | no |
-| `## Workspace` section | Template, **branches per filesystem mode** (see below) — tells the model whether it runs locally / sandboxed / on a remote store | no |
-| `## Workspace Files (Injected)` notice | Framework auto-loads the following files from the workspace into a `<loaded_context>` XML block | see below |
-| `<agents_context>` | Full `AGENTS.md` | unlimited |
-| `<memory_context>` | `MEMORY.md`, char-truncated when over the remaining budget with a "use memory_search for older entries" note (plain truncate note when tools are disabled; omitted entirely when both memory tools and hooks are disabled) | `maxContextTokens`, default 8000 |
-| `<domain_knowledge_context>` | Full `knowledge/KNOWLEDGE.md` + listing of every file under `knowledge/` | unlimited (filenames only as the catalog) |
-| `<x_md>` / `<y_md>` | Anything you added with `additionalContextFile("X.md")` | unlimited |
+| Material | Model placement | Budget behavior |
+| --- | --- | --- |
+| AGENTS.md | System / `project_rules` | Not directly evicted; included in final budget |
+| Guidance and environment | System / `working_principles`, `environment` | Included in final budget |
+| MEMORY.md | USER reference / `HARNESS_CONTEXT`, kind=memory | May be truncated during preparation or omitted for final budget |
+| Knowledge entry and path index | USER reference / `HARNESS_CONTEXT`, kind=knowledge | May be omitted for final budget |
+| additionalContextFile | USER reference / `HARNESS_CONTEXT`, kind=additional | Required, not arbitrarily evicted |
 
-Key points:
+maxContextTokens defaults to 8000 for workspace material preparation, not the final input cap.
+The final budget also includes System, history, state and tool schemas; unresolved overflow rejects
+the request. MEMORY.md is excluded when both memory tools and hooks are disabled.
+Knowledge loads the entry and index; other files are read on demand.
 
-- **Re-assembled every turn.** Edit `AGENTS.md` or `MEMORY.md` and the next `call()` picks up the change — no restart, no rebuild.
-- **`MEMORY.md` is token-estimated before injection.** Overflow truncates by character count with a trailing note that nudges the model toward `memory_search`.
-- **`knowledge/` is a directory index + entry file.** The full tree never enters the prompt — only `KNOWLEDGE.md` plus a listing of paths; the agent reads what it needs with `read_file`.
+Write ordinary Markdown in AGENTS.md. Files are not automatically refreshed within a call;
+the next call reloads them. See [Context construction](/v2/en/docs/harness/context)
+for message examples, dynamic sources and budgeting.
 
 ### Two-layer reads (filesystem-first + local fallback)
 
@@ -334,7 +335,7 @@ Two layers:
 
 ```
 workspace/
-├── MEMORY.md                  ← curated long-term memory, injected each turn
+├── MEMORY.md                  ← curated long-term memory, loaded as reference context per call
 └── memory/
     └── YYYY-MM-DD.md          ← append-only daily fact log (no dedup)
 ```
@@ -343,7 +344,7 @@ Write path:
 
 - Before compaction, `MemoryFlushMiddleware` extracts new facts from the prefix of the conversation into `memory/YYYY-MM-DD.md` (append).
 - A throttled background task periodically merges/dedups `memory/` and rewrites `MEMORY.md`.
-- `MEMORY.md` is injected (budgeted) into the system prompt every turn.
+- `MEMORY.md` is loaded per call and included as budgeted reference context.
 
 Read path:
 
@@ -370,7 +371,7 @@ Beyond its static definition, the workspace is where the agent's *accumulated ex
 
 | Channel | Where it lives | Turn it on | How it accrues | Deep dive |
 |---------|----------------|------------|----------------|-----------|
-| **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, re-injected every turn | [Memory](/v2/en/docs/harness/memory) |
+| **Long-term memory** | `MEMORY.md` + `memory/YYYY-MM-DD.md` | `.compaction(...)` | `MemoryFlushMiddleware` extracts facts from the conversation prefix before compaction; a throttled background task merges + dedups them into `MEMORY.md`, reloaded as reference material on the next call | [Memory](/v2/en/docs/harness/memory) |
 | **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](/v2/en/docs/harness/skill#self-learning-loop-optional) |
 | **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](/v2/en/docs/harness/plan-mode) |
 | **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Compaction](/v2/en/docs/harness/compaction) |
@@ -485,7 +486,7 @@ For cross-node recovery / multi-replica deployments this data must be shared (ei
 
 ```
 knowledge/
-├── KNOWLEDGE.md         ← entry / overview, injected in full into the system prompt
+├── KNOWLEDGE.md         ← entry / overview, loaded as reference material
 ├── api-reference.md
 ├── domain-terms.md
 └── ...

@@ -104,7 +104,7 @@ public class TodoTools {
         String result = todoWrite(todos, state);
         var output = TextBlock.builder().text(result).build();
         if (result.startsWith("Error:")) {
-            return ToolResultBlock.of(output);
+            return ToolResultBlock.error(result);
         }
         return ToolResultBlock.of(
                 List.of(output),
@@ -135,6 +135,7 @@ public class TodoTools {
         // downgrade): the model is responsible for keeping exactly one active task.
         int inProgress = 0;
         for (TodoItem item : items) {
+            if (item == null) return "Error: todos must not contain null items.";
             Task.State parsed = parseState(item.getStatus());
             if (parsed == null) {
                 return "Error: invalid status '"
@@ -157,10 +158,11 @@ public class TodoTools {
         }
 
         TaskContextState ctx = state.getTasksContext();
+        TaskContextState snapshot = ctx.snapshot();
         // Preserve ids/created_at for tasks whose content matches an existing one (best-effort),
         // so stable identifiers survive across full-list rewrites.
         Map<String, Task> byContent = new LinkedHashMap<>();
-        for (Task existing : ctx.getTasks()) {
+        for (Task existing : snapshot.getTasks()) {
             byContent.putIfAbsent(existing.getSubject(), existing);
         }
 
@@ -188,10 +190,7 @@ public class TodoTools {
             rebuilt.add(b.build());
         }
 
-        List<Task> live = ctx.tasksMutable();
-        live.clear();
-        live.addAll(rebuilt);
-        ctx.markUpdated();
+        ctx.replaceTasks(rebuilt, snapshot.getRevision());
 
         return render(rebuilt);
     }

@@ -29,6 +29,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -44,7 +45,12 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.context.ContextPolicy;
+import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSource;
+import io.agentscope.harness.agent.context.ContextSourceOptions;
+import io.agentscope.harness.agent.context.ContextSources;
 import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.TaskContextOptions;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
@@ -86,6 +92,7 @@ import io.agentscope.harness.agent.middleware.TeamsMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import io.agentscope.harness.agent.middleware.TranscriptMiddleware;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
+import io.agentscope.harness.agent.observation.StateStoreActionObserver;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
@@ -138,6 +145,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -1235,6 +1243,40 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ToolResultEvictionConfig toolResultEvictionConfig = ToolResultEvictionConfig.defaults();
         boolean disableCompaction = false;
         ContextPolicy contextPolicy = ContextPolicy.defaults();
+        ContextSources contextSources = ContextSources.empty();
+        ContextSelectionPolicy contextSelectionPolicy = ContextSelectionPolicy.defaults();
+
+        /** Loads read-only business data before each reasoning request, not during registration. */
+        public Builder contextSource(String id, ContextSource source) {
+            contextSources = contextSources.withSource(id, source, ContextSourceOptions.defaults());
+            return this;
+        }
+
+        /** Source failures and budget eviction are independent policies. */
+        public Builder contextSource(
+                String id, ContextSource source, Consumer<ContextSourceOptions.Builder> configure) {
+            var options = ContextSourceOptions.builder();
+            Objects.requireNonNull(configure).accept(options);
+            contextSources = contextSources.withSource(id, source, options.build());
+            return this;
+        }
+
+        /** Adds a named stable instruction from trusted application configuration. */
+        public Builder instruction(String id, String content) {
+            contextSources = contextSources.withInstruction(id, content);
+            return this;
+        }
+
+        /** Selects task projections and the optional candidate tool; does not run verification. */
+        public Builder taskContext(TaskContextOptions options) {
+            contextSources = contextSources.withTaskContext(options);
+            return this;
+        }
+
+        public Builder contextSelectionPolicy(ContextSelectionPolicy policy) {
+            contextSelectionPolicy = Objects.requireNonNull(policy);
+            return this;
+        }
 
         /** Configures final model input budgeting and metadata-only context observations. */
         public Builder contextPolicy(ContextPolicy policy) {
@@ -1442,6 +1484,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Builder b = new Builder();
             if (agent.getModelRequestPreparer() instanceof HarnessContextBuilder contextBuilder) {
                 b.contextPolicy(contextBuilder.policy());
+                b.contextSources = contextBuilder.sources();
+                b.contextSelectionPolicy(contextBuilder.selectionPolicy());
             }
 
             // Observable configuration.
@@ -1452,6 +1496,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
             b.toolkit(agent.getToolkit().copy());
+            if (b.contextSources.taskContext().requirementProposals()) {
+                // Re-register from the copied task options at build time. This also lets the
+                // caller disable proposals on the copy without retaining the original tool.
+                b.toolkit.removeTool("task_requirement_propose");
+            }
 
             // Persistence.
             AgentStateStore srcSession = agent.getStateStore();
@@ -1508,7 +1557,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Extension chains. Middlewares are the v2 surface; hooks remain for v1 carry-over.
             List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
             if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
-                b.middlewares(filterCopyableMiddlewares(srcMiddlewares));
+                List<MiddlewareBase> copyable = filterCopyableMiddlewares(srcMiddlewares);
+                if (b.contextSources.taskContext().requirementProposals()) {
+                    // Task configuration rebuilds its reminder. Preserve a copied todo capability
+                    // without adding a second requirement grounding block.
+                    for (MiddlewareBase middleware : copyable) {
+                        if (middleware.getClass() == TaskReminderMiddleware.class
+                                && ((TaskReminderMiddleware) middleware).todoEnabled()) {
+                            b.enableTaskList();
+                        }
+                    }
+                    copyable =
+                            copyable.stream()
+                                    .filter(
+                                            middleware ->
+                                                    middleware.getClass()
+                                                            != TaskReminderMiddleware.class)
+                                    .toList();
+                }
+                b.middlewares(copyable);
             }
             List<Hook> srcHooks = agent.getHooks();
             if (srcHooks != null && !srcHooks.isEmpty()) {
@@ -2255,7 +2322,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * Disables memory flush + background consolidation, and removes the "automatically
          * extracted" Persistence line from the workspace system prompt. Combined with {@link
          * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
-         * {@code <memory_context>}.
+         * the reference materials in {@code HARNESS_CONTEXT}.
          */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
@@ -2456,6 +2523,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
+            inner.actionObserver(new StateStoreActionObserver(effectiveSession));
             AbstractFilesystem filesystem =
                     HarnessAgentBuilderSupport.resolveFilesystem(
                             this, resolvedWorkspace, resolvedAgentId, workspaceIndex, nsFactory);
@@ -2628,8 +2696,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     !disableToolResultEviction && toolResultEvictionConfig != null
                             ? new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig)
                             : null;
+            inner.enableTaskRequirements(contextSources.taskContext().requirementProposals());
             inner.modelRequestPreparer(
-                    new HarnessContextBuilder(contextPolicy, compactionHook, contextEviction));
+                    new HarnessContextBuilder(
+                            contextPolicy,
+                            compactionHook,
+                            contextEviction,
+                            contextSources,
+                            contextSelectionPolicy));
             if (messageBus != null) {
                 inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }

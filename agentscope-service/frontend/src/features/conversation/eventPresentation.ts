@@ -42,6 +42,8 @@ export function presentEvent(event: ConversationEvent) {
   const labels: Record<string, [string, string]> = {
     'span.model_request_start': ['Model request started', 'The agent sent a request to the model. This marks a request boundary, not thinking content.'],
     'span.model_request_end': ['Model request finished', 'The model request ended. Tool execution or another model request may follow.'],
+    'span.action_observation': ['Action recorded', 'Execution facts were saved. A returned tool result is not independent verification that the task is complete.'],
+    'span.task_verification': ['Acceptance check recorded', 'A bounded check was recorded for a versioned subject. It is not an overall task completion verdict and may become stale.'],
     'session.status_running': ['Session running', 'The runtime is processing this turn.'],
     'session.status_idle': ['Session idle', 'The runtime finished processing and is waiting for input. This does not indicate that the issue was accepted.'],
     'session.status_requires_action': ['Waiting for action', 'The runtime needs an external action before it can continue.'],
@@ -72,7 +74,23 @@ export function presentEvent(event: ConversationEvent) {
   add('Execution attempt', meta.attemptId, 'One attempt to execute the task; a retry has a different attempt ID.');
   add('Turn', meta.turnId, 'The processing turn within this session.');
   add('Tool call', event.callId, 'Matches the tool request with its result.');
+  if (type === 'span.action_observation') {
+    add('Action', raw.action_id, 'Identifies one execution attempt, including retries.');
+    add('Observed status', raw.status, 'Execution state, not a task acceptance verdict.');
+    if (!event.callId) add('Tool call', raw.tool_call_id, 'Connects this observation to the tool request.');
+    const details = record(raw.execution_details);
+    add('Exit code', details.exitCode, 'Process exit code; zero alone does not prove task completion.');
+    if (details.exitCode === 0) relations.push({ label: 'Exit code', value: '0', description: 'Process exited successfully; task acceptance is separate.' });
+    if (details.outputTruncated === true) relations.push({ label: 'Output', value: 'Truncated', description: 'Captured output is incomplete. Do not treat it as a complete report.' });
+  }
   add('Dispatch generation', meta.dispatchGeneration, 'The dispatch version used to reject events from an older attempt.');
+  if (type === 'span.task_verification') {
+    add('Verification', raw.verification_id, 'Identifies the stored check result.');
+    add('Criterion', raw.requirement_id, 'The confirmed acceptance criterion selected by the caller.');
+    add('Checked action', raw.action_id, 'The recorded action inspected by the verifier.');
+    add('Recorded outcome', raw.outcome, 'Historical check outcome; current validity depends on the subject and contract version.');
+    add('Checked version', record(raw.evidence_binding).subjectVersion, 'Version captured before the action ran.');
+  }
   add('Endpoint invocation', meta.endpointInvocationId, 'The API request that initiated this work.');
   const diagnostics: EventRelation[] = [];
   if (meta.managedEventId) diagnostics.push({ label: 'Runtime event', value: String(meta.managedEventId), description: 'The original event ID allocated by the managed runtime.' });

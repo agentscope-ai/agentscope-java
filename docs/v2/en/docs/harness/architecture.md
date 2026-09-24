@@ -52,11 +52,11 @@ Three layers exist; the framework moves data between them automatically.
 
 - **In-call state** — `AgentState` (conversation context, permission rules, Plan Mode state, tool state) plus `RuntimeContext` (`sessionId`, `userId`, sandbox handle, extras).
 - **Cross-call state** — auto-saved at the end of every `call()` and auto-loaded on the next: the `AgentState` runtime snapshot in the configured `AgentStateStore` (default `~/.agentscope/state/<agentId>/`, addressed by `(userId, sessionId)`), the never-compacted full conversation log under `sessions/<sessionId>.log.jsonl`, subtask records, and sandbox metadata.
-- **Long-term memory** — accumulated across sessions: `memory/YYYY-MM-DD.md` is append-only, periodically merged into `MEMORY.md` by a throttled background job; `MEMORY.md` is injected into the system prompt every reasoning step.
+- **Long-term memory** — accumulated across sessions: `memory/YYYY-MM-DD.md` is append-only, periodically merged into `MEMORY.md` by a throttled background job; `MEMORY.md` loads once per call as reference context, not System instructions.
 
 Three invariants worth remembering:
 
-- The system prompt is rebuilt every reasoning step, so edits to `AGENTS.md` or `MEMORY.md` take effect immediately — no restart.
+- Final requests are rebuilt each reasoning step, but workspace files load per call. Edits to AGENTS.md or MEMORY.md take effect on the next call without restarting.
 - Compaction, memory distillation, and background maintenance are throttled; they don't run every turn.
 - `AgentState` is persisted by core's `ReActAgent` + `AgentStateStore`. Harness no longer adds its own persistence hook.
 
@@ -70,7 +70,7 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Related pages
 
-- [Workspace](/v2/en/docs/harness/workspace) — directory layout, what gets injected into the system prompt, `tools.json`
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, instruction and reference sources, `tools.json`
 - [Context & AgentState](/v2/en/docs/building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
 - [Memory](/v2/en/docs/harness/memory) — two-layer memory
 - [Compaction](/v2/en/docs/harness/compaction) — summary compaction, large-result offloading, overflow recovery
@@ -80,3 +80,7 @@ To insert custom behaviour without bypassing Harness's plumbing:
 - [Skill](/v2/en/docs/harness/skill) — four-layer composition, self-learning loop
 - [Plan Mode](/v2/en/docs/harness/plan-mode) — read-only phase + HITL exit
 - [Channel](/v2/en/docs/harness/channel) — session management, multi-agent routing, streaming SSE
+
+## Final model input construction
+
+Harness organizes System, conversation, task state and references at the final model-call boundary. Supply dynamic business information through contextSource. See [Context construction] for configuration, defaults and limits(/v2/en/docs/harness/context).

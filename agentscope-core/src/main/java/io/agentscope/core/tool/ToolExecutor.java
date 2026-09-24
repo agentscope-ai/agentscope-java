@@ -16,9 +16,12 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.observation.ActionObservationException;
+import io.agentscope.core.observation.ActionObservations;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
@@ -165,6 +168,10 @@ class ToolExecutor {
      * @return Mono containing execution result
      */
     Mono<ToolResultBlock> execute(ToolCallParam param) {
+        return ActionObservations.observe(param, () -> executeUnobserved(param));
+    }
+
+    private Mono<ToolResultBlock> executeUnobserved(ToolCallParam param) {
         return TracerRegistry.get().callTool(this.toolkit, param, () -> executeCore(param));
     }
 
@@ -220,22 +227,17 @@ class ToolExecutor {
         }
 
         // Merge runtime context: param-level > toolkit default
-        io.agentscope.core.agent.RuntimeContext runtimeContext = param.getRuntimeContext();
+        RuntimeContext runtimeContext = param.getRuntimeContext();
         @SuppressWarnings("deprecation")
         ToolExecutionContext toolkitDefault = config.getDefaultContext();
         if (runtimeContext == null && toolkitDefault != null) {
-            runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder()
-                            .toolExecutionContext(toolkitDefault)
-                            .build();
+            runtimeContext = RuntimeContext.builder().toolExecutionContext(toolkitDefault).build();
         } else if (runtimeContext != null && toolkitDefault != null) {
             ToolExecutionContext merged =
                     ToolExecutionContext.merge(
                             runtimeContext.asToolExecutionContext(), toolkitDefault);
             runtimeContext =
-                    io.agentscope.core.agent.RuntimeContext.builder(runtimeContext)
-                            .toolExecutionContext(merged)
-                            .build();
+                    RuntimeContext.builder(runtimeContext).toolExecutionContext(merged).build();
         }
 
         // Create emitter for streaming
@@ -276,6 +278,7 @@ class ToolExecutor {
                         })
                 .onErrorResume(
                         e -> {
+                            if (ActionObservationException.causedBy(e)) return Mono.error(e);
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
@@ -307,7 +310,7 @@ class ToolExecutor {
             boolean parallel,
             ExecutionConfig executionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+            RuntimeContext agentRuntimeContext) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
@@ -375,7 +378,7 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            io.agentscope.core.agent.RuntimeContext agentRuntimeContext) {
+            RuntimeContext agentRuntimeContext) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
@@ -385,11 +388,17 @@ class ToolExecutor {
                         .build();
 
         // Get core execution
-        Mono<ToolResultBlock> execution = execute(param);
+        // Persistence is outside the execution timeout: a slow commit must not replay a tool.
+        Mono<ToolResultBlock> execution =
+                ActionObservations.observe(
+                        param,
+                        () ->
+                                applyTimeout(
+                                        applyScheduling(executeUnobserved(param)),
+                                        executionConfig,
+                                        toolCall));
 
-        // Apply infrastructure layers
-        execution = applyScheduling(execution);
-        execution = applyTimeout(execution, executionConfig, toolCall);
+        // Every retry receives a separate observed attempt.
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
@@ -398,6 +407,7 @@ class ToolExecutor {
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
+                            if (ActionObservationException.causedBy(e)) return Mono.error(e);
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
@@ -449,7 +459,10 @@ class ToolExecutor {
                 Retry.backoff(maxAttempts - 1, initialBackoff)
                         .maxBackoff(maxBackoff)
                         .jitter(0.5)
-                        .filter(retryOn)
+                        .filter(
+                                error ->
+                                        !ActionObservationException.causedBy(error)
+                                                && retryOn.test(error))
                         .doBeforeRetry(
                                 signal ->
                                         logger.warn(

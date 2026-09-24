@@ -28,6 +28,7 @@ import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.middleware.TaskContextProjection;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
@@ -56,15 +57,44 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
     private final ToolResultEvictionMiddleware eviction;
+    private final ContextSources sources;
+    private final ContextSelectionPolicy selectionPolicy;
 
     public HarnessContextBuilder(
             ContextPolicy policy,
             CompactionMiddleware compaction,
             ToolResultEvictionMiddleware eviction) {
+        this(
+                policy,
+                compaction,
+                eviction,
+                ContextSources.empty(),
+                ContextSelectionPolicy.defaults());
+    }
+
+    public HarnessContextBuilder(
+            ContextPolicy policy,
+            CompactionMiddleware compaction,
+            ToolResultEvictionMiddleware eviction,
+            ContextSources sources,
+            ContextSelectionPolicy selectionPolicy) {
         this.policy = Objects.requireNonNull(policy);
         this.compaction = compaction;
         this.eviction = eviction;
+        this.sources = Objects.requireNonNull(sources);
+        this.selectionPolicy = Objects.requireNonNull(selectionPolicy);
     }
+
+    public ContextSources sources() {
+        return sources;
+    }
+
+    public ContextSelectionPolicy selectionPolicy() {
+        return selectionPolicy;
+    }
+
+    private record ProjectionSnapshot(
+            TaskContextState tasks, boolean planActive, String planFile) {}
 
     public ContextPolicy policy() {
         return policy;
@@ -127,11 +157,60 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             Agent agent, RuntimeContext rc, ModelCallInput input, String callId, Purpose purpose) {
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         List<Msg> original = state == null ? List.of() : List.copyOf(state.contextMutable());
-        List<Msg> history = original;
-        List<String> transforms = new ArrayList<>();
+        ProjectionSnapshot snapshot =
+                state == null
+                        ? null
+                        : new ProjectionSnapshot(
+                                state.getTasksContext().snapshot(),
+                                state.getPlanModeContext().isPlanActive(),
+                                state.getPlanModeContext().getCurrentPlanFile());
         WorkspaceContextMaterials materials = rc.get(WorkspaceContextMaterials.class);
-        List<ContextItem> selected =
-                new ArrayList<>(materials == null ? List.of() : materials.items());
+        List<ContextItem> workspace =
+                materials == null ? List.of() : List.copyOf(materials.items());
+        var readContext =
+                new ContextRequest(
+                        agent == null ? null : agent.getAgentId(),
+                        rc.getUserId(),
+                        rc.getSessionId(),
+                        callId,
+                        purpose);
+        return sources.collect(readContext)
+                .flatMap(
+                        collected -> {
+                            var selected = new ArrayList<>(workspace);
+                            selected.addAll(collected.items());
+                            Set<String> sourceIds = new HashSet<>();
+                            for (ContextItem item : selected) {
+                                if (!sourceIds.add(item.sourceId()))
+                                    throw new IllegalArgumentException(
+                                            "Duplicate context source: " + item.sourceId());
+                            }
+                            return compileSnapshot(
+                                    agent,
+                                    rc,
+                                    input,
+                                    callId,
+                                    purpose,
+                                    state,
+                                    snapshot,
+                                    original,
+                                    selected,
+                                    new ArrayList<>(collected.transforms()));
+                        });
+    }
+
+    private Mono<ModelCallInput> compileSnapshot(
+            Agent agent,
+            RuntimeContext rc,
+            ModelCallInput input,
+            String callId,
+            Purpose purpose,
+            AgentState state,
+            ProjectionSnapshot snapshot,
+            List<Msg> original,
+            List<ContextItem> selected,
+            List<String> transforms) {
+        List<Msg> history = original;
         if (purpose != Purpose.REASONING) {
             selected.removeIf(item -> item.placement() != ContextItem.Placement.SYSTEM);
         }
@@ -151,19 +230,28 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         }
         long limit = inputLimit(current);
         if (purpose == Purpose.REASONING) {
-            for (String kind : List.of("memory", "knowledge")) {
-                if (policy.estimator().estimate(project(current, state)).tokens() <= limit) break;
-                for (ContextItem item : List.copyOf(selected)) {
-                    if (!item.required() && kind.equals(item.kind()) && !item.content().isBlank()) {
-                        selected.remove(item);
-                        transforms.add("omitted_for_budget:" + item.sourceId());
-                    }
-                }
+            List<String> order = List.copyOf(selectionPolicy.omissionOrder(List.copyOf(selected)));
+            Map<String, ContextItem> byId = new LinkedHashMap<>();
+            selected.forEach(item -> byId.put(item.sourceId(), item));
+            Set<String> seen = new HashSet<>();
+            for (String id : order) {
+                ContextItem item = byId.get(id);
+                if (item == null
+                        || item.required()
+                        || item.placement() == ContextItem.Placement.SYSTEM
+                        || !seen.add(id))
+                    throw new IllegalArgumentException("Invalid context omission candidate: " + id);
+            }
+            for (String id : order) {
+                if (policy.estimator().estimate(project(current, snapshot)).tokens() <= limit)
+                    break;
+                selected.remove(byId.get(id));
+                transforms.add("omitted_for_budget:" + id);
                 current = withMaterials(current, selected);
             }
         }
         List<Msg> fixed =
-                (purpose == Purpose.REASONING ? project(current, state) : current)
+                (purpose == Purpose.REASONING ? project(current, snapshot) : current)
                         .messages().stream()
                                 .filter(msg -> msg.getRole() == MsgRole.SYSTEM || synthetic(msg))
                                 .toList();
@@ -182,7 +270,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     if (!result.messages().equals(before.messages()))
                         transforms.add("history_compaction");
                     ModelCallInput prepared =
-                            layout(purpose == Purpose.REASONING ? project(result, state) : result);
+                            layout(
+                                    purpose == Purpose.REASONING
+                                            ? project(result, snapshot)
+                                            : result);
                     var estimate = policy.estimator().estimate(prepared);
                     long finalLimit = inputLimit(prepared);
                     RuntimeException validationError = null;
@@ -239,7 +330,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     finalLimit,
                                     estimate.method(),
                                     estimate.exact(),
-                                    state == null ? 0 : state.getTasksContext().getRevision(),
+                                    snapshot == null ? 0 : snapshot.tasks().getRevision(),
                                     items,
                                     transforms,
                                     validation);
@@ -249,6 +340,18 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     // asynchronous work;
                     // never overwrite a history changed by a hook or another owner while preparing.
                     if (state != null) {
+                        if (state.getTasksContext().getRevision() != snapshot.tasks().getRevision()
+                                || state.getPlanModeContext().isPlanActive()
+                                        != snapshot.planActive()
+                                || !Objects.equals(
+                                        state.getPlanModeContext().getCurrentPlanFile(),
+                                        snapshot.planFile())) {
+                            rc.put(
+                                    ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + callId,
+                                    manifest.withValidation("state_conflict"));
+                            throw new ConcurrentModificationException(
+                                    "Task or plan changed during context preparation");
+                        }
                         if (!state.contextMutable().equals(original)) {
                             rc.put(
                                     ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + callId,
@@ -399,10 +502,14 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return copy(input, List.copyOf(ordered));
     }
 
-    private ModelCallInput project(ModelCallInput input, AgentState state) {
+    private ModelCallInput project(ModelCallInput input, ProjectionSnapshot state) {
         if (state == null) return input;
         List<Msg> messages =
-                TaskContextProjection.project(input.messages(), state.getTasksContext());
+                TaskContextProjection.project(
+                        input.messages(),
+                        state.tasks(),
+                        sources.taskContext().requirements(),
+                        sources.taskContext().verificationResults());
         List<Msg> rebuilt = new ArrayList<>();
         for (Msg msg : messages) {
             if (!(synthetic(msg)
@@ -410,13 +517,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 rebuilt.add(msg);
             }
         }
-        var plan = state.getPlanModeContext();
-        if (plan.isPlanActive() || plan.getCurrentPlanFile() != null) {
+        if (state.planActive() || state.planFile() != null) {
             String text =
                     "<RUNTIME_STATE>\nMode: "
-                            + (plan.isPlanActive() ? "PLAN (read-only)" : "BUILD")
+                            + (state.planActive() ? "PLAN (read-only)" : "BUILD")
                             + "\nPlan reference: "
-                            + escape(plan.getCurrentPlanFile())
+                            + escape(state.planFile())
                             + "\n"
                             + "This is a mode/path projection, not evidence of approval or"
                             + " completed work.\n"

@@ -53,7 +53,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
-            ## AgentStateStore Context
+            ## Runtime Environment
             This is the %s. We are setting up the context for our chat.
             Today's date is %s.
             My operating system is: %s

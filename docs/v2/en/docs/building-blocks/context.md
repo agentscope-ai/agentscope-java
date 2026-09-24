@@ -4,9 +4,25 @@ description: Stateless agent engine, AgentState lifecycle, state persistence, an
   RuntimeContext
 ---
 
+## How this page relates to Harness context construction
+
+This page explains **where session state lives, how it is persisted and restored, and how tools
+access the current call's state**. For model message layout, business sources, budgets and
+prompt examples, see [Harness context construction](/v2/en/docs/harness/context).
+
+| Concept | Responsibility | Sent directly to the model? |
+| --- | --- | --- |
+| AgentState | Conversation history, task state, plan mode and permissions | Not as a whole; request construction selects content |
+| RuntimeContext | Current call identity, attributes and AgentState reference | Arbitrary attributes are not automatically prompt content |
+| Model request context | Instructions, messages, state projections, references and tool schemas for one inference | Yes; not a raw serialization of persisted state |
+
+Harness projects task state into transient TASK_STATE and loads MEMORY.md as reference data.
+These generated messages are not thereby appended to durable history. Plain ReActAgent does
+not automatically enable the Harness material and budget policies.
+
 ## Stateless Agent Engine
 
-`ReActAgent` (and `HarnessAgent` that wraps it) is designed as a **stateless engine**: the agent instance itself holds only immutable configuration — system prompt, model, tools, middleware chain — while all per-session mutable data lives in `AgentState`, indexed by `(userId, sessionId)`. A single agent instance can concurrently serve many users and sessions; the caller simply passes a different `RuntimeContext` on each `call()`.
+`ReActAgent` (and `HarnessAgent` that wraps it) is designed as a **stateless engine**: the instance reuses configuration — system prompt, model, tools and middleware — while recoverable session data lives in `AgentState`; the instance also holds runtime facilities such as state caches and execution gates, indexed by `(userId, sessionId)`. A single agent instance can concurrently serve many users and sessions; the caller simply passes a different `RuntimeContext` on each `call()`.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -25,9 +41,9 @@ description: Stateless agent engine, AgentState lifecycle, state persistence, an
 ### What this means for you
 
 - **No agent-per-user registry.** One `HarnessAgent` instance can serve all your users — just vary `RuntimeContext.userId` and `RuntimeContext.sessionId` per request.
-- **Concurrency is built in.** Different `(userId, sessionId)` pairs run fully in parallel; the same pair is automatically serialised to preserve conversation consistency.
-- **State is fully internal.** The agent loads `AgentState` from the store at call entry and saves it at call exit — the caller never manages state objects directly.
-- **Per-call isolation.** Each `call()` works on its own `AgentState` snapshot. Middleware and tools access the call-scoped state via `RuntimeContext.getAgentState()` (injected by the framework at call entry), so concurrent calls never see each other's state.
+- **Session concurrency.** Within one instance, different identity pairs may run in parallel; the same slot is serialized by its execution gate. This is not a distributed lock. Shared tools, middleware and business dependencies must be thread-safe.
+- **Automatic persistence.** With a state store configured, the framework loads and saves state. Ordinary chat needs no manual state management, but business objectives, requirement decisions and evidence versions still require explicit application updates.
+- **Call-scoped access.** Tools and middleware use the framework-injected RuntimeContext.getAgentState() for the current session. Do not keep a global current-state reference. This API is not authorization or isolation for externally shared objects.
 
 ---
 
@@ -43,12 +59,25 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 | `getSummary()` | Compacted summary (when compaction is enabled) |
 | `getPermissionContext()` | Tool permission rules — see [Permissions](/v2/en/docs/building-blocks/permission-system) |
 | `getPlanModeContext()` | Whether Plan Mode is active, current plan file path |
-| `getTasksContext()` | The `todo_write` task list |
+| `getTasksContext()` | Todo, revision, and optional objective, requirements, evidence-binding versions and verification summaries |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
 
 `AgentState` also carries a transient, non-serialised `InterruptControl` for per-session interrupt signalling — see [Per-session interrupt](#per-session-interrupt) below.
 
-At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. **Provided the state store is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
+At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
+
+### Task state is not automatic business acceptance
+
+Todo is updated by todo_write or the application; the application sets task identity and objective
+through beginTask. The optional proposal tool only creates candidates; a trusted caller confirms
+or rejects through decide. The application maintains subject versions, and explicit
+VerificationService calls produce verification summaries.
+
+Persisting fields does not automatically infer them from user messages, PLAN.md or tool text.
+Progress completion, confirmed requirements and passed checks have different meanings; none
+automatically establishes overall completion. Harness taskContext options control projection.
+See [Optional task information](/v2/en/docs/harness/context#optional-task-information)
+for the field/writer mapping and display configuration.
 
 ### The auto-persistence and recovery flow
 
@@ -58,13 +87,13 @@ call(msgs, RuntimeContext(userId, sessionId))
   ├─ per-session gate: serialise same (uid, sid), others run in parallel
   │
   ▼
-  load AgentState from cache or stateStore
+  reload from store on each call if configured; otherwise use slot cache
   │   inject onto RuntimeContext: rc.setAgentState(state)
   │
   ▼
   reasoning loop
-  │   middlewares mutate state.contextMutable()
-  │   (compaction, Plan, todo_write, permissions, …)
+  │   messages update context; Plan, Todo and permissions update their own substate
+  │   Harness builds transient model views; validates before committing compacted history
   │
   ▼
   save AgentState
@@ -76,7 +105,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 
 This wiring lives in `ReActAgent` itself; `HarnessAgent` inherits it for free. The agent instance holds no fixed session — each call reads / writes the slot named by its `RuntimeContext` (falling back to the builder-time `defaultSessionId`).
 
-> Mid-`call()` state changes happen against the in-memory `AgentState`. **The state store is written once per call (and on shutdown), not on every message** — so the throughput pressure on your store stays low.
+> Reasoning mainly updates in-memory state. Normal completion, controlled failure/interruption and shutdown paths attempt to save agent_state; forced process termination may prevent saving. Administrative operations such as clearContext can also save explicitly. Execution observations and verification reports write separate state keys, so the store does not necessarily receive only one write per call.
 
 ### Built-in and extension implementations
 
@@ -118,9 +147,9 @@ The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-ho
 </Warning>
 
 
-### Real-time resume across processes and machines
+### Resume saved sessions across processes and machines
 
-Once the state store is distributed (e.g. Redis), cross-machine resume is **automatic**:
+With a shared store, each call reloads the slot's persisted state. This example assumes node A has finished saving before node B continues, not concurrent execution of the same session:
 
 ```java
 // Node A — start a conversation
@@ -146,11 +175,13 @@ agentB.call(nextMsg, RuntimeContext.builder()
 
 This buys you:
 
-- **Failover**: a crashed node — conversations migrate to a healthy one, user notices nothing.
-- **Rolling deploys**: old pods save on shutdown, new pods load on first call — **conversations never break across releases**.
-- **Cross-surface continuity**: a user starts in the Web UI, switches to the CLI — same `(userId, sessionId)`, all memory present.
+- **Recovery**: another node can load the last successfully saved snapshot. Unsaved progress may be lost; reconcile external tool effects before replaying work.
+- **Rolling deploys**: graceful shutdown attempts to save, and a new instance loads persisted state. Allow shutdown time and verify that state formats and business configuration remain suitable.
+- **Cross-surface continuity**: Web UI and CLI can continue saved sessions with the same store and identity slot; the application must authorize access.
 
-The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is enough for most cases; add `userId` when you need per-user partitioning.
+The identity pair selects the state slot. Anonymous/single-tenant calls may omit userId; multi-tenant applications must obtain it from trusted authentication, not arbitrary client input.
+
+Cross-instance concurrency also needs session routing or distributed coordination. Versioned stores use CAS on save, with ConflictPolicy determining conflict handling; unversioned stores lack this protection. CAS does not undo external tool side effects.
 
 ### Multi-user isolation
 
@@ -167,11 +198,11 @@ agent.call(msg, RuntimeContext.builder()
     .sessionId("bob-1").userId("bob").build()).block();
 ```
 
-Two users — separate state, separate filesystem paths, no crosstalk. For `AgentState`-level user isolation in production, set `userId` on the `RuntimeContext`: the store addresses each slot by `(userId, sessionId)` (with `RedisAgentStateStore` the `userId` becomes part of the Redis key) rather than relying on filesystem path bucketing.
+Different identity pairs select different state slots; filesystem sharing separately depends on IsolationScope. Set RuntimeContext.userId after authentication and authorization: the store addresses each slot by `(userId, sessionId)` (with `RedisAgentStateStore` the `userId` becomes part of the Redis key) rather than relying on filesystem path bucketing.
 
 ### Reading and writing `AgentState` directly
 
-When you need to bypass the agent loop (admin console, audit, batch migration):
+For out-of-loop reads such as administration or auditing, address state by identity. Do not mutate it concurrently with an active call. Obtaining or changing the object does not itself persist it or provide a transaction or authorization check:
 
 ```java
 import io.agentscope.core.state.AgentState;
@@ -194,7 +225,7 @@ AgentState restored = AgentState.fromJsonString(json);
 
 To let a user start a fresh topic without creating a new session, call `clearContext`. It keeps the
 same `(userId, sessionId)` and preserves non-conversation state such as permissions, tools, tasks,
-and Plan Mode. It clears the model-visible message buffer and compaction summary, then immediately
+and Plan Mode. It clears the historical message buffer and compaction summary, then immediately
 persists the result when the agent has an `AgentStateStore`.
 
 ```java
@@ -207,8 +238,9 @@ agent.clearContext(RuntimeContext.builder()
     .build());
 ```
 
-Call it after the session's current request has completed. It does not cancel an in-flight call;
-the next call starts with the cleared conversation context.
+Call it after the session's current request has completed; it does not cancel an in-flight call.
+The next request can still load System, workspace references and retained task/plan projections.
+It is not a complete model-input reset. For a fresh session, use a new sessionId rather than merely clearing history.
 
 
 <Note>
@@ -232,7 +264,9 @@ agent.interrupt("alice", "session-001", Msg.userMsg("Please stop and summarise."
 
 The reasoning loop checks `state.interruptControl().isInterrupted()` before each iteration. When triggered, the loop enters the `handleInterrupt` path, which saves state and returns the partial result.
 
-The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`.
+The deprecated no-argument `interrupt()` targets the anonymous default-session slot, not an
+automatically selected business session. Use explicit identity or `interrupt(RuntimeContext)`
+for multi-session calls.
 
 
 <Note>
@@ -244,7 +278,7 @@ The legacy no-arg `interrupt()` still works for single-session scenarios — it 
 
 ### Concurrent usage
 
-Because the agent is a stateless engine, a single instance handles concurrent requests naturally:
+One instance can handle concurrent sessions; shared tools and middleware in this example must be thread-safe:
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -254,7 +288,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .stateStore(redisStore)
     .build();
 
-// Different users — fully parallel, no contention
+// Different user slots can run concurrently; shared business dependencies may contend
 Mono<Msg> aliceCall = agent.call(aliceMsg, RuntimeContext.builder()
     .userId("alice").sessionId("s1").build());
 Mono<Msg> bobCall = agent.call(bobMsg, RuntimeContext.builder()
@@ -268,13 +302,13 @@ Mono<Msg> call1 = agent.call(msg1, RuntimeContext.builder()
 Mono<Msg> call2 = agent.call(msg2, RuntimeContext.builder()
     .userId("alice").sessionId("s1").build());
 
-// call2 queues behind call1 — conversation history stays consistent
+// Same-slot calls execute in gate-entry order; variable declaration order does not guarantee subscription order
 Flux.merge(call1, call2).collectList().block();
 ```
 
 **Concurrency rules:**
-- **Different `(userId, sessionId)`** → fully parallel, each call works on its own `AgentState`.
-- **Same `(userId, sessionId)`** → per-session async gate serialises calls in FIFO order — state consistency guaranteed without external locking.
+- **Different identity pairs** → may run concurrently with different session states; shared business resources still need coordination.
+- **Same instance and identity pair** → serialized in execution-gate entry order; cross-instance access needs separate coordination.
 - **`interrupt(userId, sessionId)`** → targets exactly one session, other in-flight calls unaffected.
 
 
@@ -289,7 +323,7 @@ The in-memory state cache grows with the number of distinct sessions a single ag
 
 ## `RuntimeContext` — per-call metadata
 
-`RuntimeContext` (in `io.agentscope.core.agent`) is a lightweight per-call carrier passed to `agent.call(msgs, ctx)`; hooks and tools share it for the duration of one call. Its free-form / typed attributes are **not persisted**; its `sessionId` / `userId` fields select which `AgentState` slot the state store loads and saves for this call. At call entry, the framework injects the call-scoped `AgentState` onto the `RuntimeContext` so that middleware, tools, and hooks can access the correct per-call state via `ctx.getAgentState()`.
+`RuntimeContext` (in `io.agentscope.core.agent`) is a lightweight per-call carrier passed to `agent.call(msgs, ctx)`; hooks and tools share it for the duration of one call. Its free-form / typed attributes are **not automatically persisted or included in model messages**; its `sessionId` / `userId` fields select which `AgentState` slot the state store loads and saves for this call. At call entry, the framework injects the call-scoped `AgentState` onto the `RuntimeContext` so that middleware, tools, and hooks can access the correct per-call state via `ctx.getAgentState()`.
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -310,7 +344,7 @@ Available accessors:
 |------|------|
 | `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
 | `getAgentState()` / `setAgentState(AgentState)` | Call-scoped `AgentState`, injected by the framework at call entry. Middleware and tools should read state from here, not from `agent.getAgentState()` |
-| `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Use this in middleware/tools for concurrency safety |
+| `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
@@ -327,7 +361,7 @@ Available accessors:
 
 <Tip>
 
-**Accessing `AgentState` from middleware and tools:** Always use `RuntimeContext.resolveAgentState(ctx, agent)` rather than `agent.getAgentState()` during call execution. Under concurrency, `agent.getAgentState()` returns the last-active session's state (an arbitrary choice when multiple calls are in flight), while `ctx.getAgentState()` returns the state for **this call's** session — which is what you almost always want.
+**Accessing `AgentState` from middleware and tools:** Always use `RuntimeContext.resolveAgentState(ctx, agent)` rather than `agent.getAgentState()` during call execution. The deprecated no-argument agent.getAgentState() returns the anonymous default-session slot, not the last active session. ctx.getAgentState() is the current call's state. resolveAgentState still falls back when it is absent; fallback is not a session-routing guarantee.
 
 </Tip>
 
@@ -335,6 +369,8 @@ Available accessors:
 ---
 
 ## Related pages
+
+- [Harness context construction](/v2/en/docs/harness/context) — final message layout, dynamic sources, task projections and budgets
 
 - [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API and builder fields
 - [Context Compaction](/v2/en/docs/harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)

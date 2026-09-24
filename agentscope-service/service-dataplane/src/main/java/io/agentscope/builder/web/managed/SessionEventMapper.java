@@ -35,6 +35,8 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.ModelRequestPreparer;
+import io.agentscope.core.observation.ActionObserver;
+import io.agentscope.harness.agent.verification.VerificationService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -251,6 +253,16 @@ public class SessionEventMapper {
             }
             return MappingResult.persist(
                     SessionEventTypes.AGENT_TOOL_RESULT, payload, buf.eventId());
+        }
+        if (event instanceof CustomEvent custom
+                && ActionObserver.EVENT_NAME.equals(custom.getName())) {
+            return MappingResult.persist(
+                    SessionEventTypes.SPAN_ACTION_OBSERVATION, custom.getValue());
+        }
+        if (event instanceof CustomEvent custom
+                && VerificationService.EVENT_NAME.equals(custom.getName())) {
+            return MappingResult.persist(
+                    SessionEventTypes.SPAN_TASK_VERIFICATION, custom.getValue());
         }
         if (event instanceof CustomEvent custom
                 && ModelRequestPreparer.BUILD_EVENT_NAME.equals(custom.getName())) {

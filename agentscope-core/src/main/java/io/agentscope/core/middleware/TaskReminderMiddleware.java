@@ -31,6 +31,25 @@ import reactor.core.publisher.Mono;
  * that owns task projection suppresses this early pass. Synthetic reminders never enter history.
  */
 public class TaskReminderMiddleware implements MiddlewareBase {
+    private final boolean todo;
+    private final boolean requirements;
+
+    public TaskReminderMiddleware() {
+        this(true, false);
+    }
+
+    public TaskReminderMiddleware(boolean todo, boolean requirements) {
+        this.todo = todo;
+        this.requirements = requirements;
+    }
+
+    public boolean todoEnabled() {
+        return todo;
+    }
+
+    public boolean requirementsEnabled() {
+        return requirements;
+    }
 
     private static final String GROUNDING =
             """
@@ -41,13 +60,25 @@ public class TaskReminderMiddleware implements MiddlewareBase {
             `in_progress`, and update the whole list as you make progress. Your current list (if
             any) is available as the latest complete tool receipt or a `<TASK_STATE>` projection.
             Use the latest state, not older statuses. These are agent-maintained progress records,
-            not independent evidence of successful verification.\
+            not independent evidence of successful verification.
+            Never infer task acceptance from all todos being completed.\
+            """;
+
+    private static final String REQUIREMENTS_GROUNDING =
+            """
+
+            ## Candidate requirements
+            Use task_requirement_propose to capture candidate constraints or acceptance criteria.
+            A user-message or PLAN.md reference does not itself confirm a proposal. Only explicit
+            caller/user decisions can confirm it. CONFIRMED means authorized, not verified or satisfied.
+            Never infer task acceptance from all todos being completed.\
             """;
 
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         String base = currentPrompt != null ? currentPrompt : "";
-        return Mono.just(base + GROUNDING);
+        return Mono.just(
+                base + (todo ? GROUNDING : "") + (requirements ? REQUIREMENTS_GROUNDING : ""));
     }
 
     @Override
@@ -68,7 +99,8 @@ public class TaskReminderMiddleware implements MiddlewareBase {
         List<Msg> messages =
                 TaskContextProjection.project(
                         input.messages() == null ? List.of() : input.messages(),
-                        state.getTasksContext());
+                        state.getTasksContext(),
+                        requirements);
         return next.apply(new ReasoningInput(messages, input.tools(), input.options()));
     }
 }

@@ -66,6 +66,7 @@
                     "group": "Harness",
                     "pages": [
                       "v2/en/docs/harness/architecture",
+                      "v2/en/docs/harness/context",
                       "v2/en/docs/harness/compaction",
                       "v2/en/docs/harness/workspace",
                       "v2/en/docs/harness/memory",
@@ -559,6 +560,7 @@
                     "group": "Harness",
                     "pages": [
                       "v2/zh/docs/harness/architecture",
+                      "v2/zh/docs/harness/context",
                       "v2/zh/docs/harness/compaction",
                       "v2/zh/docs/harness/workspace",
                       "v2/zh/docs/harness/memory",

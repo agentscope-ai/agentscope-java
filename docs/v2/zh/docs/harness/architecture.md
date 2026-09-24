@@ -51,11 +51,11 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 
 - **调用内状态** —— `AgentState`（对话上下文、权限规则、Plan Mode 状态、工具状态）加上 `RuntimeContext`（`sessionId`、`userId`、沙箱句柄、extra）。
 - **跨调用状态** —— 每次 `call()` 结束自动写盘、下次自动加载：存在 `AgentStateStore`（默认 `~/.agentscope/state/<agentId>/`，按 `(userId, sessionId)` 寻址）里的 `AgentState` 运行时快照、`sessions/<sessionId>.log.jsonl` 的永不压缩对话日志、子任务记录、沙箱元数据。
-- **长期记忆** —— 跨 session 累积：`memory/YYYY-MM-DD.md` 只追加；后台节流任务把它周期合并到 `MEMORY.md`；`MEMORY.md` 每轮推理被注入 system prompt。
+- **长期记忆** —— 跨 session 累积：`memory/YYYY-MM-DD.md` 只追加；后台节流任务把它周期合并到 `MEMORY.md`；`MEMORY.md` 每次 call 加载为参考上下文，不作为 System 指令。
 
 三个值得记住的规律：
 
-- system prompt 每轮重新拼，所以你改 `AGENTS.md` 或 `MEMORY.md` 立刻生效，不需要重启。
+- 最终请求每轮重新构建，但工作区文件按 call 加载；修改 AGENTS.md 或 MEMORY.md 后下一次 call 生效，不需要重启。
 - 压缩、记忆提炼、后台维护都被节流闸门管着，不会每轮都跑。
 - `AgentState` 由 core 的 `ReActAgent` + `AgentStateStore` 自动持久化。Harness 不再额外做这件事。
 
@@ -69,7 +69,7 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 
 ## 相关文档
 
-- [工作区](/v2/zh/docs/harness/workspace) — 目录结构、注入到 system prompt 的内容、`tools.json`
+- [工作区](/v2/zh/docs/harness/workspace) — 目录结构、指令与参考材料的来源、`tools.json`
 - [上下文与 AgentState](/v2/zh/docs/building-blocks/context) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
 - [记忆](/v2/zh/docs/harness/memory) — 两层记忆
 - [上下文压缩](/v2/zh/docs/harness/compaction) — 摘要压缩、大结果卸载、溢出兜底
@@ -79,3 +79,7 @@ Harness 在构建期按固定顺序串起所有内置 middleware。你通过 `.m
 - [技能](/v2/zh/docs/harness/skill) — 四层合成、自学习闭环
 - [计划模式](/v2/zh/docs/harness/plan-mode) — 只读阶段 + HITL 退出
 - [Channel](/v2/zh/docs/harness/channel) — 会话管理、多 agent 路由、流式 SSE
+
+## 模型输入的统一构建
+
+Harness 在最终模型调用边界统一组织 System、对话、任务状态和参考材料；动态业务信息通过 contextSource 接入。配置、默认行为和限制见 [上下文构建](/v2/zh/docs/harness/context)。
