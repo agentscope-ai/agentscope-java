@@ -8,6 +8,14 @@ en_link: /v2/en/docs/others/release-notes
 
 ---
 
+## 尚未发布
+
+### Harness 工作区队列兼容性
+
+文件系统支持的 `WorkspaceMessageBus` 队列将以 `{id}.payload` 和 `{id}.ready` 发布条目，不再只使用单个 `{id}.json` 文件（[#3281](https://github.com/agentscope-ai/agentscope-java/pull/3281)）。旧版消费实例只扫描 `.json`，看不到新版条目。使用共享后端时，应先升级全部队列消费实例，再让新版生产实例发布消息；也可以在滚动升级期间暂停队列流量。
+
+---
+
 ## 2.0.1
 
 > 发布日期：2026-08-05

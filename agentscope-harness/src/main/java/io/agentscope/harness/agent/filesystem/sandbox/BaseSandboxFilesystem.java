@@ -41,8 +41,13 @@ import java.util.Map;
  * <p>This class provides default implementations for all {@link AbstractFilesystem} methods by
  * delegating
  * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
- * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * commands. Read uses server-side commands for paginated access. Non-empty writes delegate
+ * content transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * Exclusive writes require {@link #execute} to run a POSIX-compatible shell whose {@code set -C}
+ * prevents overwriting an existing file. Empty files use that exclusive placeholder directly;
+ * non-empty writes require {@link #uploadFiles} to replace it. A backend without the exclusive
+ * create guarantee must not back an atomic
+ * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -207,11 +212,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         + " ]; then echo 'EXISTS'; else echo 'CREATE_FAILED'; fi; exit 1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
-        if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
-            if (checkResult.output() != null && checkResult.output().strip().equals("EXISTS")) {
+        Integer exitCode = checkResult.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            if (exitCode != null
+                    && checkResult.output() != null
+                    && checkResult.output().strip().equals("EXISTS")) {
                 return WriteResult.alreadyExists(filePath);
             }
             return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
+        }
+
+        if (content.isEmpty()) {
+            return WriteResult.ok(filePath);
         }
 
         List<FileUploadResponse> responses =

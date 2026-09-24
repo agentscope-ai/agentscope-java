@@ -58,7 +58,14 @@ import reactor.core.scheduler.Schedulers;
  * </pre>
  *
  * <p>Claims are not leased. A crash after claiming an entry can leave it unavailable until
- * operator-led recovery; automatically reclaiming it could deliver the same entry twice.
+ * operator-led recovery; automatically reclaiming it could deliver the same entry twice. Entry
+ * ids use a per-instance {@link System#nanoTime()} seed, so sorted order does not guarantee FIFO
+ * across processes.
+ *
+ * <p>A failed ready-marker write may still leave the marker visible. A {@link #queuePush} error
+ * therefore does not prove that the entry is absent. The failed publisher preserves the payload
+ * and any marker, which may belong to another writer, for a possible drain or operator-led
+ * recovery. {@link #queueDelete} removes the entire queue for a key, not just an orphaned entry.
  *
  * <p>New queue entries use {@code .payload} and {@code .ready} files. Older consumers that only
  * scan {@code .json} entries will not see entries created by this version during a mixed-version
@@ -108,7 +115,14 @@ public class WorkspaceMessageBus implements MessageBus {
 
                     WriteResult publish = fs.write(RC, readyPath, "");
                     if (!publish.isSuccess()) {
-                        fs.delete(RC, payloadPath);
+                        // A failed write does not establish ownership of the marker. Removing
+                        // either file here could discard an entry another writer published.
+                        log.warn(
+                                "queuePush: publication of {} failed ({}); retaining payload {}"
+                                        + " for possible drain or operator recovery",
+                                readyPath,
+                                publish.error(),
+                                payloadPath);
                         throw new IllegalStateException(
                                 "queuePush: failed to publish entry "
                                         + readyPath
@@ -353,11 +367,12 @@ public class WorkspaceMessageBus implements MessageBus {
 
     private WriteResult deleteQueueEntry(String path) {
         if (path.endsWith(".ready")) {
-            String payloadPath = path.substring(0, path.length() - ".ready".length()) + ".payload";
-            WriteResult payloadDeletion = fs.delete(RC, payloadPath);
-            if (!payloadDeletion.isSuccess()) {
-                return payloadDeletion;
+            WriteResult markerDeletion = fs.delete(RC, path);
+            if (!markerDeletion.isSuccess()) {
+                return markerDeletion;
             }
+            String payloadPath = path.substring(0, path.length() - ".ready".length()) + ".payload";
+            return fs.delete(RC, payloadPath);
         }
         return fs.delete(RC, path);
     }

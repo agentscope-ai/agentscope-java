@@ -164,6 +164,142 @@ class WorkspaceMessageBusTest {
     }
 
     @Test
+    void failedPublishWithSurvivingReadyMarkerKeepsPayloadReadable() {
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult write(
+                            io.agentscope.core.agent.RuntimeContext context,
+                            String path,
+                            String content) {
+                        WriteResult result = super.write(context, path, content);
+                        if (path.endsWith(".ready") && result.isSuccess()) {
+                            // Sandbox upload can fail after creating the marker, and cleanup can
+                            // fail too. Model the persisted marker with a real local file.
+                            return WriteResult.fail(
+                                    "upload denied; failed to remove placeholder: cleanup denied");
+                        }
+                        return result;
+                    }
+
+                    @Override
+                    public WriteResult delete(
+                            io.agentscope.core.agent.RuntimeContext context, String path) {
+                        if (path.endsWith(".ready")) {
+                            return WriteResult.fail("cleanup denied");
+                        }
+                        return super.delete(context, path);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> testBus.queuePush("failed-publish", Map.of("value", "kept")).block());
+
+        List<BusEntry> drained = testBus.queueDrain("failed-publish", 1).block();
+        assertEquals(1, drained.size());
+        assertEquals("kept", drained.get(0).payload().get("value"));
+    }
+
+    @Test
+    void failedPublishWithoutReadyMarkerRetainsPayloadForOperatorCleanup() throws IOException {
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult write(
+                            io.agentscope.core.agent.RuntimeContext context,
+                            String path,
+                            String content) {
+                        if (path.endsWith(".ready")) {
+                            return WriteResult.fail("publish denied");
+                        }
+                        return super.write(context, path, content);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> testBus.queuePush("failed-publish", Map.of("value", "orphan")).block());
+
+        Path queueDir =
+                tempDir.resolve("bus/queues/" + WorkspaceMessageBus.hashKey("failed-publish"));
+        try (var entries = Files.list(queueDir)) {
+            assertTrue(entries.anyMatch(path -> path.toString().endsWith(".payload")));
+        }
+        assertFalse(testBus.queuePeek("failed-publish").block());
+        testBus.queueDelete("failed-publish").block();
+        assertFalse(Files.exists(queueDir));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void existingReadyMarkerIsNotDeletedByFailedPublisher(boolean structuredConflict) {
+        AtomicReference<String> readyPath = new AtomicReference<>();
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult write(
+                            io.agentscope.core.agent.RuntimeContext context,
+                            String path,
+                            String content) {
+                        if (path.endsWith(".ready")) {
+                            readyPath.set(path);
+                            assertTrue(super.write(context, path, content).isSuccess());
+                            return structuredConflict
+                                    ? WriteResult.alreadyExists(path)
+                                    : WriteResult.fail("unknown write outcome");
+                        }
+                        return super.write(context, path, content);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> testBus.queuePush("marker-conflict", Map.of("value", "kept")).block());
+
+        Path marker = tempDir.resolve(readyPath.get().substring(1));
+        assertTrue(Files.exists(marker));
+        Path payload =
+                marker.resolveSibling(
+                        marker.getFileName().toString().replace(".ready", ".payload"));
+        assertTrue(Files.exists(payload));
+    }
+
+    @Test
+    void failedReadyDeletionRetainsPayloadForRecovery() {
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult delete(
+                            io.agentscope.core.agent.RuntimeContext context, String path) {
+                        if (path.endsWith(".ready")) {
+                            return WriteResult.fail("permission denied");
+                        }
+                        return super.delete(context, path);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+        String entryId = testBus.queuePush("delete-failure", Map.of("value", "delivered")).block();
+
+        List<BusEntry> drained = testBus.queueDrain("delete-failure", 1).block();
+        assertEquals(1, drained.size());
+        assertEquals("delivered", drained.get(0).payload().get("value"));
+
+        Path entryPath =
+                tempDir.resolve(
+                        "bus/queues/"
+                                + WorkspaceMessageBus.hashKey("delete-failure")
+                                + "/"
+                                + entryId);
+        assertTrue(Files.exists(Path.of(entryPath + ".ready")));
+        assertTrue(Files.exists(Path.of(entryPath + ".payload")));
+        assertTrue(testBus.queueDrain("delete-failure", 1).block().isEmpty());
+    }
+
+    @Test
     void claimStorageFailureIsNotReportedAsEmptyQueue() {
         LocalFilesystem filesystem =
                 new LocalFilesystem(tempDir, true, 10) {

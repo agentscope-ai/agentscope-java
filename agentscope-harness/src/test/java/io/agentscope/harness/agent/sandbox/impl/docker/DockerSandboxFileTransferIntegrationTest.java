@@ -116,10 +116,8 @@ class DockerSandboxFileTransferIntegrationTest {
         WriteResult second = filesystem.write(RuntimeContext.empty(), path, "replacement");
         ReadResult read = filesystem.read(RuntimeContext.empty(), path, 0, 10);
 
-        assertTrue(
-                marker.isSuccess(),
-                "empty marker upload must replace its shell-created placeholder");
-        assertEquals(0, markerCheck.exitCode(), "the uploaded ready marker must remain empty");
+        assertTrue(marker.isSuccess(), "empty marker must keep its shell-created placeholder");
+        assertEquals(0, markerCheck.exitCode(), "the ready marker must remain empty");
         assertTrue(first.isSuccess(), "upload must replace the shell-created empty placeholder");
         assertFalse(second.isSuccess(), "a second create-only write must fail");
         assertEquals("original", read.fileData().content());

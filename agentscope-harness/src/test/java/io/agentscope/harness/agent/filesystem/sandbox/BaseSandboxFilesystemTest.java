@@ -115,6 +115,17 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void emptyWriteDoesNotAssumeUnknownCreateOutcomeSucceeded() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.isAlreadyExists());
+        }
+
+        @Test
         void writeReportsPlaceholderCleanupFailureAlongsideUploadFailure() {
             FailedUploadCleanupFilesystem filesystem = new FailedUploadCleanupFilesystem();
 
@@ -444,6 +455,19 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void emptyWriteKeepsExclusivePlaceholderWithoutUploading() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem(true);
+            Path path = tmpDir.resolve("claim.marker");
+
+            WriteResult first = fs.write(RT, path.toString(), "");
+
+            assertTrue(first.isSuccess());
+            assertTrue(Files.exists(path));
+            assertEquals(0L, Files.size(path));
+            assertTrue(fs.write(RT, path.toString(), "").isAlreadyExists());
+        }
+
+        @Test
         void writeFailureForNonWritableDirectoryIsNotReportedAsAlreadyExists() throws IOException {
             LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
             Path directory = Files.createDirectory(tmpDir.resolve("read-only"));
@@ -614,6 +638,16 @@ class BaseSandboxFilesystemTest {
 
     private static final class LocalShellSandboxFilesystem extends BaseSandboxFilesystem {
 
+        private final boolean failUploads;
+
+        private LocalShellSandboxFilesystem() {
+            this(false);
+        }
+
+        private LocalShellSandboxFilesystem(boolean failUploads) {
+            this.failUploads = failUploads;
+        }
+
         @Override
         public String id() {
             return "local-shell";
@@ -637,6 +671,9 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            if (failUploads) {
+                return List.of(FileUploadResponse.fail(files.get(0).getKey(), "unexpected upload"));
+            }
             return files.stream()
                     .map(
                             file -> {

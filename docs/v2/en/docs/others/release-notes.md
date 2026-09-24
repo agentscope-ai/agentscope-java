@@ -8,6 +8,14 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Harness workspace queue compatibility
+
+The filesystem-backed `WorkspaceMessageBus` queue will publish `{id}.payload` and `{id}.ready` instead of a single `{id}.json` ([#3281](https://github.com/agentscope-ai/agentscope-java/pull/3281)). Older drain-side instances scan only `.json` and cannot see new entries. On a shared backend, upgrade all drain-side instances before new writers publish, or pause queue traffic during the rollout.
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
