@@ -1,5 +1,6 @@
 ---
 title: Subagents
+en_link: /v1/en/docs/multi-agent/subagent
 ---
 
 > **说明：** 原先的 Spring Boot 示例模块 `agentscope-examples/multiagent-patterns/` 已在 2.0 包重构中移除。请以本文中的代码片段作为参考实现。其他可运行示例见 `agentscope-examples/documentation/`。

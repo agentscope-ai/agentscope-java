@@ -1,5 +1,6 @@
 ---
 title: "API 参考：认证、资源与调用"
+en_link: /v2/en/service/api-reference
 ---
 
 <Note>

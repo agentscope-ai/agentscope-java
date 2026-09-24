@@ -1,5 +1,6 @@
 ---
 title: "Hosted 支持的 Provider 与能力差异"
+en_link: /v2/en/service/hosted-agent-providers
 ---
 
 <Note>

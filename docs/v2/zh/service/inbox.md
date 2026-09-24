@@ -1,5 +1,6 @@
 ---
 title: "控制台信箱：通知、审批与验收"
+en_link: /v2/en/service/inbox
 ---
 
 <Note>

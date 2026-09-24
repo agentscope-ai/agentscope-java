@@ -1,6 +1,7 @@
 ---
 title: 计划模式（Plan Mode）
 description: 动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段
+en_link: /v2/en/docs/harness/plan-mode
 ---
 
 ## 作用

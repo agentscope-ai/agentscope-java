@@ -199,8 +199,23 @@ class DialectSqlTests {
         BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
         assertTrue(upsert.sql().contains("ON DUPLICATE KEY UPDATE"));
 
+        assertTrue(upsert.sql().replaceAll("\\s+", " ").contains("version = version + 1"));
+
         BoundSql check = d.sessionStateCheckTableExists("my_table");
         assertTrue(check.sql().contains("DATABASE()"));
+    }
+
+    @Test
+    @DisplayName("PostgresDialect state UPSERT increments the stored version on conflict")
+    void postgresStateUpsertIncrementsVersion() {
+        var d = new PostgresDialect();
+        BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
+        assertTrue(
+                upsert.sql().contains("ON CONFLICT (session_id, state_key, item_index) DO UPDATE"));
+        assertTrue(
+                upsert.sql()
+                        .replaceAll("\\s+", " ")
+                        .contains("version = " + d.sessionStateTableName() + ".version + 1"));
     }
 
     @Test

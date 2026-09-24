@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v1/en/docs/harness/overview
 ---
 
 `agentscope-harness` 在 `agentscope-core` 的 `ReActAgent` 之上，通过 Hook 和 Toolkit 两个扩展点，装配出一套面向**长期稳定运行**的工程化基础设施。用户入口只有一个类：`HarnessAgent`。

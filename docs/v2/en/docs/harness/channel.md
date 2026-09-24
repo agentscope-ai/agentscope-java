@@ -1,6 +1,7 @@
 ---
 title: Channel
 description: Route messages, manage sessions, and stream events through Channel
+zh_link: /v2/zh/docs/harness/channel
 ---
 
 ## What they do

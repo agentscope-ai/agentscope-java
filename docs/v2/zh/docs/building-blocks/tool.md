@@ -1,6 +1,7 @@
 ---
 title: Tool
 description: 定义、注册并管理 agent 可调用的能力
+en_link: /v2/en/docs/building-blocks/tool
 ---
 
 ## 概述

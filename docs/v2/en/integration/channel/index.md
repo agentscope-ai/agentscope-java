@@ -1,5 +1,6 @@
 ---
 title: Channel Adapters
+zh_link: /v2/zh/integration/channel/index
 ---
 
 These extensions connect your Agent to real-world messaging platforms through the Harness [Channel](/v2/en/docs/harness/channel) interface. Each adapter handles platform-specific authentication, webhook verification, message parsing, and reply delivery — so your Agent code stays platform-agnostic.

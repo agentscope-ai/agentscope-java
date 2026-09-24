@@ -2,6 +2,7 @@
 title: Plan Mode
 description: 'Think before acting: a read-only phase that writes a plan file and requires
   HITL approval before executing'
+zh_link: /v2/zh/docs/harness/plan-mode
 ---
 
 ## Role

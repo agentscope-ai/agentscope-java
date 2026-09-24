@@ -1,6 +1,7 @@
 ---
 title: Permission System
 description: Fine-grained control over which tools your agents can execute and when
+zh_link: /v2/zh/docs/building-blocks/permission-system
 ---
 
 ## Overview

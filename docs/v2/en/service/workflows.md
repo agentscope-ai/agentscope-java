@@ -1,5 +1,6 @@
 ---
 title: "Workflow: multi-Agent process orchestration"
+zh_link: /v2/zh/service/workflows
 ---
 
 <Note>

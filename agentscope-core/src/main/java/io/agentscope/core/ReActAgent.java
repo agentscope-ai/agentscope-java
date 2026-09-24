@@ -532,7 +532,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * CAS-aware persist of {@code agent_state}. Applies {@link #conflictPolicy} on conflict.
      *
      * @return the new store version, or {@link AgentStateStore#UNVERSIONED} when the backend does
-     *     not version / the write used unconditional overwrite without a version return
+     *     not version
      */
     private long persistAgentStateCas(
             String userId,
@@ -542,14 +542,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             long expectedVersion,
             int loadedContextSize) {
         if (!stateStore.supportsVersioning() || expectedVersion == AgentStateStore.UNVERSIONED) {
-            stateStore.save(userId, sessionId, "agent_state", toSave);
             if (stateStore.supportsVersioning()) {
-                VersionedState<AgentState> after =
-                        stateStore.getVersioned(userId, sessionId, "agent_state", AgentState.class);
-                if (after.version() != AgentStateStore.UNVERSIONED) {
-                    slotVersions.put(slot, after.version());
-                    return after.version();
+                // Unconditional write through the versioning API: the store returns the
+                // version assigned to THIS write (JDBC #3220, in-memory likewise), so
+                // slotVersions can no longer capture a concurrent writer's version between
+                // the write and a separate version read.
+                long written =
+                        stateStore.saveIfVersion(
+                                userId,
+                                sessionId,
+                                "agent_state",
+                                toSave,
+                                AgentStateStore.UNVERSIONED);
+                if (written != AgentStateStore.UNVERSIONED) {
+                    slotVersions.put(slot, written);
+                    return written;
                 }
+                // Defensive only: a versioning backend returning UNVERSIONED for an
+                // unconditional write violates the AgentStateStore contract.
+                stateStore.save(userId, sessionId, "agent_state", toSave);
+            } else {
+                stateStore.save(userId, sessionId, "agent_state", toSave);
             }
             return AgentStateStore.UNVERSIONED;
         }
@@ -1455,6 +1468,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         int totalInput = 0;
         int totalOutput = 0;
         int totalCached = 0;
+        int totalCacheCreation = 0;
+        int totalReasoning = 0;
+        int totalToolUsePrompt = 0;
         double totalTime = 0;
         boolean hasUsage = false;
         for (Msg msg : agentState.getContext()) {
@@ -1465,6 +1481,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
                     totalCached += usage.getCachedTokens();
+                    totalCacheCreation += usage.getCacheCreationTokens();
+                    totalReasoning += usage.getReasoningTokens();
+                    totalToolUsePrompt += usage.getToolUsePromptTokens();
                     totalTime += usage.getTime();
                 }
             }
@@ -1474,6 +1493,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         .inputTokens(totalInput)
                         .outputTokens(totalOutput)
                         .cachedTokens(totalCached)
+                        .cacheCreationTokens(totalCacheCreation)
+                        .reasoningTokens(totalReasoning)
+                        .toolUsePromptTokens(totalToolUsePrompt)
                         .time(totalTime)
                         .build()
                 : null;
@@ -2039,14 +2061,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
          *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume, and publish the complete
+         *       the tool will no longer be pending on resume, using the user-supplied
+         *       {@link ConfirmResult#getReason() reason} when present, and publish the complete
          *       tool-result event lifecycle.</li>
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
-            List<ToolUseBlock> deniedToolCalls = new ArrayList<>();
+            List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
@@ -2063,21 +2086,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
-                    deniedToolCalls.add(target);
+                    String reason = r.getReason();
+                    deniedToolCalls.add(
+                            Map.entry(
+                                    target,
+                                    reason == null || reason.isBlank()
+                                            ? PERMISSION_DENIED_BY_USER
+                                            : reason));
                 }
             }
             MessageUtils.replaceToolUseBlocks(state.contextMutable(), replacements);
-            for (ToolUseBlock denied : deniedToolCalls) {
+            for (Map.Entry<ToolUseBlock, String> entry : deniedToolCalls) {
+                ToolUseBlock denied = entry.getKey();
+                String reasonText = entry.getValue();
                 ToolResultBlock deniedResult =
-                        ToolResultBlock.text(PERMISSION_DENIED_BY_USER)
+                        ToolResultBlock.text(reasonText)
                                 .withIdAndName(denied.getId(), denied.getName())
                                 .withState(ToolResultState.DENIED);
                 Msg deniedMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(
                                 deniedResult, denied, getName());
                 state.contextMutable().add(deniedMsg);
-                deniedToolResultEvents(denied, replyId, PERMISSION_DENIED_BY_USER)
-                        .forEach(this::publishEvent);
+                deniedToolResultEvents(denied, replyId, reasonText).forEach(this::publishEvent);
             }
         }
 

@@ -1,5 +1,6 @@
 ---
 title: AgentScope Java 1.1 · Harness
+zh_link: /v2/zh/blogs/agentscope-v1-harness
 ---
 
 Picking up from where I left off, in a previous article I took a deep dive into OpenClaw and the Harness Engineering practices behind it, and sketched out a "Harness Framework" to explain how that philosophy could be applied to enterprise agent development.

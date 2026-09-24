@@ -1,5 +1,6 @@
 ---
 title: AIDC 物流：企业级 Agent 开发实践
+en_link: /v2/en/blogs/usecases/aidc-logistics
 ---
 
 ## 01 背景
@@ -289,7 +290,7 @@ return "NEED_CONFIRM: 金额过大，请确认";
 **5. 可观测性与高级推理能力零侵入集成**
 
 - 规则：Trace 埋点、Prompt 缓存、工具调用增强等能力在模型层自动完成，业务代码无需手动处理。
-- 源码分析：`ChatModelBase.stream()` 通过 `TracerRegistry.get().callModel()` 自动包裹调用；cacheControl=true 时 `OpenAIBaseFormatter.applyCacheControl()` 自动添加缓存标记；toolChoice 与 parallelToolCalls 参数直接控制工具行为。
+- 源码分析：`ChatModelBase.stream()` 通过 `TracerRegistry.get().callModel()` 自动包裹调用；cacheControl=true 时 formatter 在格式化消息时自动添加缓存标记；toolChoice 与 parallelToolCalls 参数直接控制工具行为。
 
 ![模型层架构一](https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2vyuibOsbQibMibMjVQOymQcVxoTOX2VY8z2jHJ6XdAN5A5FCfD8zWgxt5Abdt2sGI95MLD7eJFMF6pKYduAc8jvaMYS0VfMWw8c/640?wx_fmt=png&from=appmsg)
 
