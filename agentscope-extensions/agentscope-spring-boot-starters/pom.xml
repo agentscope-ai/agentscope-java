@@ -38,6 +38,7 @@
 
     <modules>
         <module>agentscope-spring-boot-starter</module>
+        <module>agentscope-jev-spring-boot-starter</module>
         <module>agentscope-openai-spring-boot-starter</module>
         <module>agentscope-dashscope-spring-boot-starter</module>
         <module>agentscope-gemini-spring-boot-starter</module>

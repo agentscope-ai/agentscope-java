@@ -341,11 +341,23 @@
                 <artifactId>agentscope-extensions-channel-gitlab</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-channel-weixin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope Training Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-training</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-jev</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -452,6 +464,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Jev Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-jev-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
