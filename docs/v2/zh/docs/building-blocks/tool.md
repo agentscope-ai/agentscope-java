@@ -423,7 +423,7 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）作为无分组、始终可见的工具注册。
 - 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
 运行时阶段，agent 用两个必填参数调用查看器：
@@ -632,3 +632,26 @@ Agent 如何在 ReAct 循环中编排 tool 调用
 
 
 </CardGroup>
+
+
+## 请求级工具视图与会话隔离
+
+Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
+
+调用期间不要通过修改共享 Toolkit 注入外部工具或切换会话的工具组。使用 `io.agentscope.core.tool.ToolRequestConfig` 描述本次请求的工具视图：
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+外部工具只包含 schema，执行时返回 suspended，由调用方执行后提交结果。同名外部工具覆盖后端工具；`EXTERNAL_ONLY` 隐藏全部后端工具，即使外部列表为空或 Toolkit 禁止删除工具也一样，因为请求视图不会删除注册。`AGENT_ONLY` 不允许同时配置外部工具。
+
+`Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
+
+需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 的物化资源按内容签名分目录，缓存命中不会读取其他版本覆盖的文件。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
