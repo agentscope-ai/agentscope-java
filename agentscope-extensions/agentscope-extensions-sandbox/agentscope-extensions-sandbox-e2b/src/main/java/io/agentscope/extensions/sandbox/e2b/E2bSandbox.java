@@ -51,6 +51,14 @@ public class E2bSandbox extends AbstractBaseSandbox {
     private final E2bPlatformHttp platform;
     private E2bEnvdProcessClient envd;
 
+    /**
+     * Snapshot id created by the workspace persist in flight on this instance, or {@code null} when
+     * none is running. {@link #doPersistWorkspace()} sets it right before the id enters {@link
+     * E2bSandboxState#getSnapshotIds()}, so {@link #stop()} can drop exactly the id this call
+     * created when the archive fails to persist.
+     */
+    private String lastCreatedSnapshotId;
+
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
         super(state);
         this.e2bState = state;
@@ -69,19 +77,32 @@ public class E2bSandbox extends AbstractBaseSandbox {
         super.start();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A failed workspace persist must not leave its snapshot id in {@link
+     * E2bSandboxState#getSnapshotIds()}: the persisted archive still references the previous
+     * snapshot, and a record holding the newer id as well would make {@link #cleanupSnapshots()}
+     * delete the snapshot that archive restores from. The id is therefore removed by identity, not
+     * by position — the record is shared state, and ids another session appended meanwhile are not
+     * this call's to drop. The exception is re-thrown unchanged: {@code SandboxManager.release}
+     * swallows it and the caller persists the state afterwards, so the corrected record still
+     * reaches the store.
+     */
     @Override
     public void stop() throws Exception {
-        int recordedBefore = e2bState.getSnapshotIds().size();
+        // Only the persist in flight may be rolled back: an id recorded by an earlier persist
+        // (e.g. a direct persistWorkspace() call) must not be dropped by a later failure here.
+        lastCreatedSnapshotId = null;
         try {
             super.stop();
         } catch (Exception e) {
-            // doPersistWorkspace records the new snapshot id before the archive is persisted;
-            // on failure the archive still references the previous snapshot, so roll the record
-            // back. This keeps the shared state consistent by itself — no local flag could cover
-            // restarts, node switches, or repeated shutdowns.
-            List<String> ids = e2bState.getSnapshotIds();
-            if (ids.size() > recordedBefore) {
-                ids.subList(recordedBefore, ids.size()).clear();
+            String created = lastCreatedSnapshotId;
+            if (created != null) {
+                e2bState.getSnapshotIds().remove(created);
+                log.debug(
+                        "[sandbox-e2b] rolled back snapshot id {} after failed workspace persist",
+                        created);
             }
             throw e;
         }
@@ -117,6 +138,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
                         SandboxErrorCode.WORKSPACE_ARCHIVE_WRITE_ERROR,
                         "E2B snapshot response missing snapshotID: " + snap);
             }
+            lastCreatedSnapshotId = id;
             e2bState.getSnapshotIds().add(id);
             return new ByteArrayInputStream(E2bSnapshotRefs.encodeSnapshotId(id));
         }

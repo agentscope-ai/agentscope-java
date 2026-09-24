@@ -212,7 +212,8 @@ final class E2bPlatformHttp {
         return opt.getApiKey();
     }
 
-    private static String trimSlash(String u) {
+    /** Blank base URL means the E2B cloud default; a trailing slash is dropped for path joins. */
+    static String trimSlash(String u) {
         if (u == null || u.isBlank()) {
             return "https://api.e2b.app";
         }

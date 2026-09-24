@@ -290,6 +290,16 @@ class E2bPlatformHttpTest {
     }
 
     @Test
+    void trimSlashResolvesBaseUrl() {
+        // A blank base URL falls back to the E2B cloud default; the trailing slash is trimmed so
+        // request paths are joined without a double slash.
+        assertEquals("https://api.e2b.app", E2bPlatformHttp.trimSlash(null));
+        assertEquals("https://api.e2b.app", E2bPlatformHttp.trimSlash("   "));
+        assertEquals("https://api.e2b.app", E2bPlatformHttp.trimSlash("https://api.e2b.app/"));
+        assertEquals("http://localhost:8080", E2bPlatformHttp.trimSlash("http://localhost:8080"));
+    }
+
+    @Test
     void applySandboxFieldsHandlesNullAndPartial() throws Exception {
         E2bSandboxState state = new E2bSandboxState();
         com.fasterxml.jackson.databind.ObjectMapper om =

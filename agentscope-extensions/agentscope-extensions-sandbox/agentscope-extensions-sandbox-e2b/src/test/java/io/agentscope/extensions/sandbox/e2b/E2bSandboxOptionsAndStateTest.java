@@ -16,15 +16,24 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class E2bSandboxOptionsAndStateTest {
 
@@ -471,11 +480,115 @@ class E2bSandboxOptionsAndStateTest {
         }
     }
 
-    /** {@link SandboxSnapshot} whose archive persist always fails. */
+    @Test
+    void stopFailureDropsOnlyTheIdItsOwnPersistRecorded() throws Exception {
+        okhttp3.mockwebserver.MockWebServer server = new okhttp3.mockwebserver.MockWebServer();
+        server.start();
+        try {
+            server.enqueue(
+                    new okhttp3.mockwebserver.MockResponse()
+                            .setBody("{\"snapshotID\":\"team/new-snap:tag\"}"));
+
+            E2bSandboxState state = new E2bSandboxState();
+            state.setWorkspaceSpec(new WorkspaceSpec());
+            state.setSandboxId("sbx-1");
+            state.setPersistenceMode(E2bPersistenceMode.NATIVE_SNAPSHOT);
+            state.setSnapshotIds(new java.util.ArrayList<>(List.of("team/old-snap:tag")));
+            // Another session over the same state object records its snapshot while this
+            // instance's archive persist is in flight.
+            state.setSnapshot(new FailingSnapshot("team/other-snap:tag", state));
+
+            E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
+            opt.setApiKey("k");
+            opt.setApiBaseUrl(server.url("/").toString());
+            opt.setMaxRetries(1);
+            E2bSandbox sandbox = new E2bSandbox(state, opt);
+
+            try {
+                sandbox.stop();
+                assertTrue(false, "stop should propagate the archive persist failure");
+            } catch (IOException expected) {
+            }
+
+            assertEquals(
+                    List.of("team/old-snap:tag", "team/other-snap:tag"),
+                    state.getSnapshotIds(),
+                    "the failed persist drops its own id only, not the one another writer"
+                            + " appended");
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    @Test
+    void failedStopPersistsRolledBackRecordThroughSandboxManager() throws Exception {
+        okhttp3.mockwebserver.MockWebServer server = new okhttp3.mockwebserver.MockWebServer();
+        server.start();
+        try {
+            server.enqueue(
+                    new okhttp3.mockwebserver.MockResponse()
+                            .setBody("{\"snapshotID\":\"team/new-snap:tag\"}"));
+            server.enqueue(new okhttp3.mockwebserver.MockResponse().setResponseCode(200));
+
+            E2bSandboxClientOptions opt = new E2bSandboxClientOptions();
+            opt.setApiKey("k");
+            opt.setApiBaseUrl(server.url("/").toString());
+            opt.setMaxRetries(1);
+            E2bSandboxClient client = new E2bSandboxClient(opt, null);
+
+            E2bSandboxState state = new E2bSandboxState();
+            state.setWorkspaceSpec(new WorkspaceSpec());
+            state.setSandboxOwned(true);
+            state.setSandboxId("sbx-1");
+            state.setPersistenceMode(E2bPersistenceMode.NATIVE_SNAPSHOT);
+            state.setSnapshotIds(new java.util.ArrayList<>(List.of("team/old-snap:tag")));
+            state.setSnapshot(new FailingSnapshot());
+            E2bSandbox sandbox = new E2bSandbox(state, opt);
+
+            SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+            SandboxManager manager = new SandboxManager(client, store, "e2b-agent");
+            SandboxAcquireResult acquired = SandboxAcquireResult.selfManaged(sandbox);
+
+            // release swallows the stop failure (logging it) and still shuts down; the middleware
+            // persists the state after release, so the rollback must be visible to the store.
+            manager.release(acquired);
+            manager.persistState(acquired, null, RuntimeContext.builder().sessionId("s1").build());
+
+            ArgumentCaptor<String> persisted = ArgumentCaptor.forClass(String.class);
+            verify(store).save(any(), persisted.capture());
+            assertTrue(persisted.getValue().contains("team/old-snap:tag"), persisted.getValue());
+            assertFalse(
+                    persisted.getValue().contains("team/new-snap:tag"),
+                    "the persisted record must not reference the never-persisted snapshot: "
+                            + persisted.getValue());
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    /**
+     * {@link SandboxSnapshot} whose archive persist always fails; optionally emulating a second
+     * writer recording its own snapshot id in the shared state while the persist is in flight.
+     */
     private static final class FailingSnapshot implements SandboxSnapshot {
+
+        private final String concurrentlyRecordedId;
+        private final E2bSandboxState sharedState;
+
+        FailingSnapshot() {
+            this(null, null);
+        }
+
+        FailingSnapshot(String concurrentlyRecordedId, E2bSandboxState sharedState) {
+            this.concurrentlyRecordedId = concurrentlyRecordedId;
+            this.sharedState = sharedState;
+        }
 
         @Override
         public void persist(InputStream workspaceArchive) throws Exception {
+            if (concurrentlyRecordedId != null) {
+                sharedState.getSnapshotIds().add(concurrentlyRecordedId);
+            }
             throw new IOException("disk full");
         }
 

@@ -56,9 +56,10 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
      * are never touched. Blank ids are dropped and duplicates collapsed (first occurrence wins)
      * before counting. A snapshot whose deletion fails is kept in the record so a later
      * shutdown can retry, which may temporarily leave more than {@code snapshotRetention} ids
-     * recorded. A failed stop rolls back the ids it recorded, so the record always matches the
-     * archive and unconditional cleanup never removes the referenced snapshot; the price is that
-     * a persist failure strands the just-created cloud snapshot unreferenced — it is never
+     * recorded. A failed stop removes the id its own persist recorded, so the record always
+     * matches the archive and unconditional cleanup never removes the referenced snapshot (ids
+     * recorded concurrently by another session over the same state are left alone); the price is
+     * that a persist failure strands the just-created cloud snapshot unreferenced — it is never
      * retried.
      *
      * <p>Like {@link #setMaxRetries(int)} and the timeout fields, this value is overridden by the
