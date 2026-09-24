@@ -195,23 +195,23 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         String escapedPath = FilesystemUtils.shellQuote(filePath);
         String checkCmd =
-                "if [ -e "
+                "mkdir -p \"$(dirname "
                         + escapedPath
-                        + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
+                        + ")\" 2>&1 || exit 1; "
+                        + "if (set -C; : > "
                         + escapedPath
-                        + ")\" 2>&1";
+                        + ") 2>/dev/null; then exit 0; fi; if [ -e "
+                        + escapedPath
+                        + " ] || [ -L "
+                        + escapedPath
+                        + " ]; then echo 'EXISTS'; else echo 'CREATE_FAILED'; fi; exit 1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
-            if (checkResult.output() != null && checkResult.output().contains("EXISTS")) {
-                return WriteResult.fail(
-                        "Cannot write to "
-                                + filePath
-                                + " because it already exists. Read and then make an"
-                                + " edit, or write to a new path.");
+            if (checkResult.output() != null && checkResult.output().strip().equals("EXISTS")) {
+                return WriteResult.alreadyExists(filePath);
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
         }
 
         List<FileUploadResponse> responses =
@@ -225,7 +225,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (responses.isEmpty() || !responses.get(0).isSuccess()) {
             String err =
                     responses.isEmpty() ? "upload returned no response" : responses.get(0).error();
-            return WriteResult.fail("Failed to write file '" + filePath + "': " + err);
+            WriteResult cleanup = delete(runtimeContext, filePath);
+            String error = "Failed to write file '" + filePath + "': " + err;
+            if (!cleanup.isSuccess()) {
+                error += "; failed to remove placeholder: " + cleanup.error();
+            }
+            return WriteResult.fail(error);
         }
 
         return WriteResult.ok(filePath);

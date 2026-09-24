@@ -16,10 +16,16 @@
 package io.agentscope.harness.agent.sandbox.impl.docker;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -91,6 +97,32 @@ class DockerSandboxFileTransferIntegrationTest {
         byte[] downloaded = sandbox.downloadFile(path);
 
         assertArrayEquals(payload, downloaded, "uploaded and downloaded bytes must be identical");
+    }
+
+    @Test
+    void filesystemWriteUploadsOverExclusivePlaceholder() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        filesystem.setSandbox(sandbox);
+        String markerPath = "/workspace/queue-entry.ready";
+        String path = "/workspace/queue-claim.txt";
+
+        WriteResult marker = filesystem.write(RuntimeContext.empty(), markerPath, "");
+        ExecuteResponse markerCheck =
+                filesystem.execute(
+                        RuntimeContext.empty(),
+                        "test -f " + markerPath + " && test ! -s " + markerPath,
+                        10);
+        WriteResult first = filesystem.write(RuntimeContext.empty(), path, "original");
+        WriteResult second = filesystem.write(RuntimeContext.empty(), path, "replacement");
+        ReadResult read = filesystem.read(RuntimeContext.empty(), path, 0, 10);
+
+        assertTrue(
+                marker.isSuccess(),
+                "empty marker upload must replace its shell-created placeholder");
+        assertEquals(0, markerCheck.exitCode(), "the uploaded ready marker must remain empty");
+        assertTrue(first.isSuccess(), "upload must replace the shell-created empty placeholder");
+        assertFalse(second.isSuccess(), "a second create-only write must fail");
+        assertEquals("original", read.fileData().content());
     }
 
     @Test

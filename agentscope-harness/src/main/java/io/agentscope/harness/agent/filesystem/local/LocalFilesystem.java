@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -45,6 +46,7 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -326,19 +328,18 @@ public class LocalFilesystem implements AbstractFilesystem {
         Path resolved = resolvePath(runtimeContext, filePath);
 
         if (Files.exists(resolved)) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit,"
-                            + " or write to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
 
         try {
             if (resolved.getParent() != null) {
                 Files.createDirectories(resolved.getParent());
             }
-            Files.writeString(resolved, content, StandardCharsets.UTF_8);
+            Files.writeString(
+                    resolved, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
             return WriteResult.ok(filePath);
+        } catch (FileAlreadyExistsException e) {
+            return WriteResult.alreadyExists(filePath);
         } catch (IOException e) {
             return WriteResult.fail("Error writing file '" + filePath + "': " + e.getMessage());
         }

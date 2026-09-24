@@ -15,26 +15,43 @@
  */
 package io.agentscope.harness.agent.bus;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.tracing.Tracer;
 import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.Disposable;
 
 class WorkspaceMessageBusTest {
@@ -102,6 +119,134 @@ class WorkspaceMessageBusTest {
 
         List<BusEntry> drained = bus.queueDrain("q1", 10).block();
         assertTrue(drained.isEmpty());
+    }
+
+    @Test
+    void drainsLegacyJsonQueueEntries() {
+        LocalFilesystem filesystem = new LocalFilesystem(tempDir, true, 10);
+        WorkspaceMessageBus legacyBus = new WorkspaceMessageBus(filesystem, "/bus");
+        String path =
+                "/bus/queues/"
+                        + WorkspaceMessageBus.hashKey("legacy")
+                        + "/00000000000000000001.json";
+        WriteResult write =
+                filesystem.write(
+                        io.agentscope.core.agent.RuntimeContext.empty(),
+                        path,
+                        "{\"value\":\"legacy\"}");
+        assertTrue(write.isSuccess());
+
+        List<BusEntry> drained = legacyBus.queueDrain("legacy", 1).block();
+
+        assertEquals(1, drained.size());
+        assertEquals("legacy", drained.get(0).payload().get("value"));
+        assertFalse(Files.exists(tempDir.resolve(path.substring(1))));
+        assertFalse(Files.exists(tempDir.resolve(path.substring(1) + ".claim")));
+    }
+
+    @Test
+    void missingPayloadDoesNotConsumeDrainLimit() {
+        LocalFilesystem filesystem = new LocalFilesystem(tempDir, true, 10);
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+        String queueDir = "/bus/queues/" + WorkspaceMessageBus.hashKey("with-ghost");
+        WriteResult ghostMarker =
+                filesystem.write(
+                        io.agentscope.core.agent.RuntimeContext.empty(),
+                        queueDir + "/00000000000000000001.ready",
+                        "");
+        assertTrue(ghostMarker.isSuccess());
+        testBus.queuePush("with-ghost", Map.of("value", "live")).block();
+
+        List<BusEntry> drained = testBus.queueDrain("with-ghost", 1).block();
+
+        assertEquals(1, drained.size());
+        assertEquals("live", drained.get(0).payload().get("value"));
+    }
+
+    @Test
+    void claimStorageFailureIsNotReportedAsEmptyQueue() {
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult write(
+                            io.agentscope.core.agent.RuntimeContext context,
+                            String path,
+                            String content) {
+                        if (path.endsWith(".claim")) {
+                            return WriteResult.fail("permission denied");
+                        }
+                        return super.write(context, path, content);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+        testBus.queuePush("claim-failure", Map.of("value", "waiting")).block();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> testBus.queueDrain("claim-failure", 1).block());
+
+        assertTrue(error.getMessage().contains("permission denied"));
+        assertTrue(testBus.queuePeek("claim-failure").block());
+    }
+
+    @Test
+    void routedClaimConflictIsNotReportedAsStorageFailure() {
+        CompositeFilesystem filesystem =
+                new CompositeFilesystem(
+                        new LocalFilesystem(tempDir.resolve("default"), true, 10),
+                        Map.of(
+                                "/route/",
+                                new LocalFilesystem(tempDir.resolve("routed"), true, 10)));
+        WorkspaceMessageBus routedBus = new WorkspaceMessageBus(filesystem, "/route/bus");
+        String entryId = routedBus.queuePush("shared", Map.of("value", "waiting")).block();
+        String claimPath =
+                "/route/bus/queues/"
+                        + WorkspaceMessageBus.hashKey("shared")
+                        + "/"
+                        + entryId
+                        + ".ready.claim";
+        assertTrue(
+                filesystem
+                        .write(io.agentscope.core.agent.RuntimeContext.empty(), claimPath, "")
+                        .isSuccess());
+
+        List<BusEntry> drained =
+                assertDoesNotThrow(() -> routedBus.queueDrain("shared", 1).block());
+        assertTrue(drained.isEmpty());
+        assertTrue(routedBus.queuePeek("shared").block());
+    }
+
+    @Test
+    void claimStorageFailureDoesNotDiscardAlreadyDrainedEntries() {
+        AtomicInteger claimAttempts = new AtomicInteger();
+        LocalFilesystem filesystem =
+                new LocalFilesystem(tempDir, true, 10) {
+                    @Override
+                    public WriteResult write(
+                            io.agentscope.core.agent.RuntimeContext context,
+                            String path,
+                            String content) {
+                        if (path.endsWith(".claim") && claimAttempts.incrementAndGet() >= 2) {
+                            return WriteResult.fail("permission denied");
+                        }
+                        return super.write(context, path, content);
+                    }
+                };
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(filesystem, "/bus");
+        testBus.queuePush("claim-failure", Map.of("value", "first")).block();
+        testBus.queuePush("claim-failure", Map.of("value", "second")).block();
+
+        List<BusEntry> drained = testBus.queueDrain("claim-failure", 2).block();
+
+        assertEquals(1, drained.size());
+        assertEquals("first", drained.get(0).payload().get("value"));
+        assertTrue(testBus.queuePeek("claim-failure").block());
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> testBus.queueDrain("claim-failure", 2).block());
+        assertTrue(error.getMessage().contains("permission denied"));
     }
 
     @Test
@@ -205,6 +350,71 @@ class WorkspaceMessageBusTest {
         assertTrue(bus2.queueDrain("shared", 10).block().isEmpty());
     }
 
+    @ParameterizedTest(name = "legacyEntry={0}")
+    @ValueSource(booleans = {false, true})
+    void concurrentDrainsDeliverEachEntryOnce(boolean legacyEntry) throws Exception {
+        DelayedClaimLocalFilesystem fs = new DelayedClaimLocalFilesystem(tempDir);
+        WorkspaceMessageBus bus1 = new WorkspaceMessageBus(fs, "/concurrent-bus");
+        WorkspaceMessageBus bus2 = new WorkspaceMessageBus(fs, "/concurrent-bus");
+        if (legacyEntry) {
+            String path =
+                    "/concurrent-bus/queues/"
+                            + WorkspaceMessageBus.hashKey("shared")
+                            + "/00000000000000000001.json";
+            WriteResult write =
+                    fs.write(
+                            io.agentscope.core.agent.RuntimeContext.empty(),
+                            path,
+                            "{\"value\":\"once\"}");
+            assertTrue(write.isSuccess());
+        } else {
+            bus1.queuePush("shared", Map.of("value", "once")).block();
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<List<BusEntry>> first =
+                    executor.submit(() -> bus1.queueDrain("shared", 1).block());
+            Future<List<BusEntry>> second =
+                    executor.submit(() -> bus2.queueDrain("shared", 1).block());
+
+            int delivered = first.get(5, TimeUnit.SECONDS).size();
+            delivered += second.get(5, TimeUnit.SECONDS).size();
+            assertEquals(1, delivered);
+            assertEquals(2, fs.claimWrites.get(), "both drains must attempt the same claim");
+            assertEquals(1, fs.successfulClaims.get(), "only one concurrent claim may succeed");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void drainDoesNotConsumeEntryWhileQueuePushIsWriting() throws Exception {
+        PartiallyWrittenLocalFilesystem fs = new PartiallyWrittenLocalFilesystem(tempDir);
+        WorkspaceMessageBus bus = new WorkspaceMessageBus(fs, "/publishing-bus");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<String> push =
+                    executor.submit(
+                            () -> bus.queuePush("shared", Map.of("value", "complete")).block());
+
+            assertTrue(
+                    fs.partialWriteStarted.await(5, TimeUnit.SECONDS),
+                    "queuePush did not reach the partial-write point");
+            assertTrue(bus.queueDrain("shared", 1).block().isEmpty());
+
+            fs.finishWrite.countDown();
+            push.get(5, TimeUnit.SECONDS);
+
+            List<BusEntry> drained = bus.queueDrain("shared", 1).block();
+            assertEquals(1, drained.size());
+            assertEquals("complete", drained.get(0).payload().get("value"));
+        } finally {
+            fs.finishWrite.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     // ---- Session events ----
 
     @Test
@@ -236,11 +446,11 @@ class WorkspaceMessageBusTest {
         assertTrue(Files.exists(busDir), "Bus root directory should exist");
         assertTrue(Files.exists(busDir.resolve("queues")), "queues/ should exist");
 
-        long jsonFiles =
+        long readyMarkers =
                 Files.walk(busDir.resolve("queues"))
-                        .filter(p -> p.toString().endsWith(".json"))
+                        .filter(p -> p.toString().endsWith(".ready"))
                         .count();
-        assertTrue(jsonFiles >= 1, "Should have at least one .json queue entry");
+        assertTrue(readyMarkers >= 1, "Should have at least one published queue entry");
     }
 
     // ---- Scheduler affinity regression guard ----
@@ -322,6 +532,125 @@ class WorkspaceMessageBusTest {
         } finally {
             // Global hook cleanup — must not leak into other tests in the JVM.
             TracerRegistry.resetToNoop();
+        }
+    }
+
+    private static final class DelayedClaimLocalFilesystem extends LocalFilesystem {
+
+        private final CountDownLatch listings = new CountDownLatch(2);
+        private final CountDownLatch firstClaimCreated = new CountDownLatch(1);
+        private final CountDownLatch secondClaimAttempted = new CountDownLatch(1);
+        private final AtomicInteger queueReads = new AtomicInteger();
+        private final AtomicInteger claimWrites = new AtomicInteger();
+        private final AtomicInteger successfulClaims = new AtomicInteger();
+
+        private DelayedClaimLocalFilesystem(Path rootDir) {
+            super(rootDir, true, 10);
+        }
+
+        @Override
+        public LsResult ls(io.agentscope.core.agent.RuntimeContext context, String path) {
+            LsResult result = super.ls(context, path);
+            if (path.contains("/queues/")) {
+                listings.countDown();
+                await(listings);
+            }
+            return result;
+        }
+
+        @Override
+        public ReadResult read(
+                io.agentscope.core.agent.RuntimeContext context,
+                String filePath,
+                int offset,
+                int limit) {
+            ReadResult result = super.read(context, filePath, offset, limit);
+            if (filePath.endsWith(".json") || filePath.endsWith(".payload")) {
+                if (queueReads.incrementAndGet() == 1) {
+                    await(secondClaimAttempted);
+                }
+            }
+            return result;
+        }
+
+        @Override
+        public WriteResult write(
+                io.agentscope.core.agent.RuntimeContext context, String filePath, String content) {
+            if (filePath.endsWith(".claim")) {
+                int attempt = claimWrites.incrementAndGet();
+                if (attempt == 2) {
+                    await(firstClaimCreated);
+                }
+                WriteResult result = super.write(context, filePath, content);
+                if (result.isSuccess()) {
+                    successfulClaims.incrementAndGet();
+                    if (attempt == 1) {
+                        firstClaimCreated.countDown();
+                    }
+                }
+                if (attempt == 2) {
+                    secondClaimAttempted.countDown();
+                }
+                return result;
+            }
+            return super.write(context, filePath, content);
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                if (!latch.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting for a concurrency-test barrier");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Interrupted while waiting for a test barrier", e);
+            }
+        }
+    }
+
+    private static final class PartiallyWrittenLocalFilesystem extends LocalFilesystem {
+
+        private final Path rootDir;
+        private final CountDownLatch partialWriteStarted = new CountDownLatch(1);
+        private final CountDownLatch finishWrite = new CountDownLatch(1);
+
+        private PartiallyWrittenLocalFilesystem(Path rootDir) {
+            super(rootDir, true, 10);
+            this.rootDir = rootDir;
+        }
+
+        @Override
+        public WriteResult write(
+                io.agentscope.core.agent.RuntimeContext context, String filePath, String content) {
+            if (!filePath.contains("/queues/")
+                    || !(filePath.endsWith(".json") || filePath.endsWith(".payload"))) {
+                return super.write(context, filePath, content);
+            }
+
+            Path resolved = rootDir.resolve(filePath.substring(1));
+            byte[] bytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try {
+                Files.createDirectories(resolved.getParent());
+                try (FileChannel channel =
+                        FileChannel.open(
+                                resolved,
+                                StandardOpenOption.CREATE_NEW,
+                                StandardOpenOption.WRITE)) {
+                    ByteBuffer firstByte = ByteBuffer.wrap(bytes, 0, 1);
+                    while (firstByte.hasRemaining()) {
+                        channel.write(firstByte);
+                    }
+                    partialWriteStarted.countDown();
+                    DelayedClaimLocalFilesystem.await(finishWrite);
+                    ByteBuffer remainder = ByteBuffer.wrap(bytes, 1, bytes.length - 1);
+                    while (remainder.hasRemaining()) {
+                        channel.write(remainder);
+                    }
+                }
+                return WriteResult.ok(filePath);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 }

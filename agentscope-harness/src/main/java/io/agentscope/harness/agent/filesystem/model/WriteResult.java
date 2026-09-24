@@ -23,6 +23,10 @@ package io.agentscope.harness.agent.filesystem.model;
  */
 public record WriteResult(String path, String error) {
 
+    private static final String ALREADY_EXISTS_PREFIX = "Cannot write to ";
+    private static final String ALREADY_EXISTS_SUFFIX =
+            " because it already exists. Read and then make an edit, or write to a new path.";
+
     public static WriteResult ok(String path) {
         return new WriteResult(path, null);
     }
@@ -31,7 +35,19 @@ public record WriteResult(String path, String error) {
         return new WriteResult(null, error);
     }
 
+    /** Creates the shared create-if-absent conflict result used by filesystem backends. */
+    public static WriteResult alreadyExists(String path) {
+        return fail(ALREADY_EXISTS_PREFIX + path + ALREADY_EXISTS_SUFFIX);
+    }
+
     public boolean isSuccess() {
         return error == null;
+    }
+
+    /** Recognizes a create-if-absent conflict independently of a routed backend's path. */
+    public boolean isAlreadyExists() {
+        return error != null
+                && error.startsWith(ALREADY_EXISTS_PREFIX)
+                && error.endsWith(ALREADY_EXISTS_SUFFIX);
     }
 }
