@@ -118,6 +118,20 @@ The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-ho
 </Warning>
 
 
+### Sandbox mirror release wait
+
+For self-managed sandboxes, `agentscope.sandbox.mirror.release-timeout-millis` controls the **synchronous wait per release** for session mirror uploads already in progress. It is a process-wide JVM system property: all agents in the same JVM share it, and it is read at each release. There is no per-agent builder override.
+
+The value is an integer number of milliseconds. The default is `1000`; `0` disables waiting. Negative, malformed, or out-of-range values log a warning and fall back to `1000`. For example, when launching your application's executable JAR (replace `your-agent-app.jar` with its actual path), allow up to five seconds per release:
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+Release first rejects new mirrors, then waits for active uploads before calling the sandbox manager's release operation. Each consecutive release can consume the full budget again. This setting limits only that mirror wait; it is neither a per-upload timeout nor a deadline for total shutdown. User-managed sandboxes that remain alive across calls do not use this release wait.
+
+If the budget expires, shutdown proceeds and an in-flight mirror may fail. The warning `Mirror upload still in flight after ... ms; releasing sandbox` identifies this case. Increasing the value gives slow uploads more time but can add the same amount of latency to each call's release. Setting it to `0` avoids the wait but gives active mirrors no time to finish. Monitor this warning and call completion latency when tuning; remove the JVM option to restore the default. This setting does not change the agent state-store location controlled by `agentscope.state.home`.
+
 ### Real-time resume across processes and machines
 
 Once the state store is distributed (e.g. Redis), cross-machine resume is **automatic**:

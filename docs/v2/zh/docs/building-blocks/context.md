@@ -117,6 +117,20 @@ HarnessAgent agent = HarnessAgent.builder()
 </Warning>
 
 
+### 沙箱镜像的释放等待
+
+对于自管理沙箱，`agentscope.sandbox.mirror.release-timeout-millis` 控制**每次释放时同步等待**正在进行的会话镜像上传的时间。它是进程级 JVM 系统属性：同一 JVM 中的所有 Agent 共用，并在每次释放时读取；目前没有按 Agent 设置的 builder 覆盖项。
+
+取值为整数，单位为毫秒，默认 `1000`；`0` 表示不等待。负数、格式错误或超出整数范围的值会记录警告并回退到 `1000`。例如，启动应用的可执行 JAR 时，可以设置每次释放最多等待五秒（请将 `your-agent-app.jar` 替换为实际路径）：
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+释放时先拒绝新的镜像上传，再等待已有上传，随后调用沙箱管理器的释放操作。连续多次释放时，每次都可能用完整个等待额度。该配置只限制这段镜像等待时间，既不是单次上传的超时，也不是整体关闭流程的截止时间。跨调用保持运行的用户管理沙箱不使用这段释放等待。
+
+等待耗尽后仍会继续关闭沙箱，尚未完成的镜像上传可能失败。日志 `Mirror upload still in flight after ... ms; releasing sandbox` 表示发生了这种情况。增大配置值能给慢上传更多完成时间，但也可能让每次调用的释放阶段增加同样长的延迟；设为 `0` 可省去等待，但不会给进行中的镜像留出完成时间。调整时同时观察这条警告和调用完成延迟；移除 JVM 参数即可恢复默认值。该参数不会改变由 `agentscope.state.home` 控制的 Agent 状态存储目录。
+
 ### 同 (userId, sessionId) 跨进程、跨机器实时恢复
 
 只要状态存储是分布式的(例如 Redis),这一切就是**自动**的:
