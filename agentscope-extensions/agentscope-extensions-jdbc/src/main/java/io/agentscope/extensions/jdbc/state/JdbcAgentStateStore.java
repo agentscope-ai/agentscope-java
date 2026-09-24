@@ -136,7 +136,8 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        executeUpsert(conn, slotId, key, JsonUtils.getJsonCodec().toJson(value));
+                        upsertSingleState(
+                                conn, slotId, key, JsonUtils.getJsonCodec().toJson(value));
                     });
         } catch (Exception e) {
             throw new RuntimeException("Failed to save state: " + key, e);
@@ -238,14 +239,30 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
-    /**
-     * Writes and obtains the assigned version in one database transaction. This method
-     * does not delegate to {@link #save(String, String, String, State)}, including for
-     * unconditional writes, so the version is captured before the write lock is released.
-     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (expectedVersion == UNVERSIONED) {
+            String slotId = slotId(userId, sessionId);
+            validateSlotId(slotId);
+            validateStateKey(key);
+            String json = JsonUtils.getJsonCodec().toJson(value);
+            try (Connection conn = dataSource.getConnection()) {
+                long[] result = new long[1];
+                executeInWriteTransaction(
+                        conn,
+                        () -> {
+                            upsertSingleState(conn, slotId, key, json);
+                            // Read the version inside the same write transaction: capturing it
+                            // before the write lock is released guarantees the returned version
+                            // belongs to the row this call just wrote, not a concurrent writer's.
+                            result[0] = readVersion(conn, slotId, key);
+                        });
+                return result[0];
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to save state if version: " + key, e);
+            }
+        }
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
         validateStateKey(key);
@@ -256,10 +273,7 @@ public class JdbcAgentStateStore implements AgentStateStore {
             executeInWriteTransaction(
                     conn,
                     () -> {
-                        if (expectedVersion == UNVERSIONED) {
-                            executeUpsert(conn, slotId, key, json);
-                            result[0] = readVersion(conn, slotId, key);
-                        } else if (expectedVersion == 0L) {
+                        if (expectedVersion == 0L) {
                             BoundSql insertSql =
                                     dialect.sessionStateInsertIfAbsent(
                                             slotId, key, SINGLE_STATE_INDEX, json);
@@ -296,7 +310,12 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
-    private void executeUpsert(Connection conn, String slotId, String key, String json)
+    /**
+     * The single definition of an unconditional single-state write, shared by save() and
+     * the UNVERSIONED branch of saveIfVersion(). Keeping it in one place prevents the two
+     * paths from drifting apart.
+     */
+    private void upsertSingleState(Connection conn, String slotId, String key, String json)
             throws SQLException {
         BoundSql boundSql = dialect.sessionStateUpsert(slotId, key, SINGLE_STATE_INDEX, json);
         try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
