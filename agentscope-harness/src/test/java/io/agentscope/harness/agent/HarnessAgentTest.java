@@ -638,11 +638,12 @@ class HarnessAgentTest {
         InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
         CountDownLatch guardEntered = new CountDownLatch(1);
         CountDownLatch allowAcquire = new CountDownLatch(1);
+        CountDownLatch guardReleased = new CountDownLatch(1);
         spec.executionGuard(
                 key -> {
                     guardEntered.countDown();
                     allowAcquire.await();
-                    return () -> {};
+                    return guardReleased::countDown;
                 });
         AtomicReference<RuntimeContext> active = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -700,6 +701,9 @@ class HarnessAgentTest {
                                                 .class));
                 assertTrue(run.cancel());
                 assertTrue(terminated.await(2, TimeUnit.SECONDS));
+                assertTrue(
+                        guardReleased.await(2, TimeUnit.SECONDS),
+                        "asynchronous cancellation cleanup must release the sandbox guard");
                 assertNull(
                         active.get()
                                 .get(
