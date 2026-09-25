@@ -30,8 +30,10 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,6 +49,14 @@ class DisableKnowledgeContextSubagentPropagationTest {
 
     @TempDir Path workspace;
 
+    @BeforeEach
+    void seedKnowledgeFile() throws Exception {
+        // Provide a knowledge file so the rendered-prompt assertions exercise the real
+        // Domain Knowledge section (matches WorkspaceContextMiddlewareKnowledgePromptTest).
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/KNOWLEDGE.md"), "knowledge entry");
+    }
+
     @Test
     void generalPurposeSubagent_inheritsDisabledKnowledgeContext() throws Exception {
         SubagentEntry entry = buildSubagentEntry(parentBuilder().disableKnowledgeContext());
@@ -54,6 +64,8 @@ class DisableKnowledgeContextSubagentPropagationTest {
 
         try (HarnessAgent child = createChild(entry)) {
             assertTrue(knowledgeMiddleware(child).isDisableKnowledgeContext());
+            // End-to-end: the rendered child prompt must not contain the Domain Knowledge section.
+            assertFalse(renderedChildPrompt(child).contains("## Domain Knowledge"));
         }
     }
 
@@ -75,6 +87,8 @@ class DisableKnowledgeContextSubagentPropagationTest {
 
         try (HarnessAgent child = createChild(entry)) {
             assertTrue(knowledgeMiddleware(child).isDisableKnowledgeContext());
+            // End-to-end: the rendered child prompt must not contain the Domain Knowledge section.
+            assertFalse(renderedChildPrompt(child).contains("## Domain Knowledge"));
         }
     }
 
@@ -85,6 +99,8 @@ class DisableKnowledgeContextSubagentPropagationTest {
 
         try (HarnessAgent child = createChild(entry)) {
             assertFalse(knowledgeMiddleware(child).isDisableKnowledgeContext());
+            // End-to-end: knowledge enabled, so the rendered child prompt keeps the section.
+            assertTrue(renderedChildPrompt(child).contains("## Domain Knowledge"));
         }
     }
 
@@ -122,5 +138,15 @@ class DisableKnowledgeContextSubagentPropagationTest {
         }
         throw new AssertionError(
                 "WorkspaceContextMiddleware not found among child middlewares: " + middlewares);
+    }
+
+    /**
+     * Renders the child agent's system prompt through its {@link WorkspaceContextMiddleware}, so
+     * tests can assert on the actual prompt content (end-to-end), not just the propagated flag.
+     */
+    private String renderedChildPrompt(HarnessAgent child) {
+        WorkspaceContextMiddleware mw = knowledgeMiddleware(child);
+        String prompt = mw.onSystemPrompt(child, RuntimeContext.empty(), "BASE\n").block();
+        return prompt != null ? prompt : "";
     }
 }
