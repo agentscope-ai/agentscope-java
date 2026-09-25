@@ -25,6 +25,8 @@ import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -273,7 +275,15 @@ public class QuartzAgentScheduler implements AgentScheduler {
                 CronScheduleBuilder csb =
                         CronScheduleBuilder.cronSchedule(scheduleConfig.getCronExpression());
                 if (scheduleConfig.getZoneId() != null) {
-                    csb = csb.inTimeZone(TimeZone.getTimeZone(scheduleConfig.getZoneId()));
+                    String zoneId = scheduleConfig.getZoneId();
+                    TimeZone timeZone;
+                    try {
+                        timeZone = TimeZone.getTimeZone(ZoneId.of(zoneId).normalized());
+                    } catch (DateTimeException e) {
+                        // ScheduleConfig has already checked this against known TimeZone IDs.
+                        timeZone = TimeZone.getTimeZone(zoneId);
+                    }
+                    csb = csb.inTimeZone(timeZone);
                 }
                 Trigger trigger =
                         TriggerBuilder.newTrigger()

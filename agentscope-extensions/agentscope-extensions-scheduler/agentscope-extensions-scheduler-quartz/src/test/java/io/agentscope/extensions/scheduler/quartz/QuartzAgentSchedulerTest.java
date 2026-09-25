@@ -36,10 +36,14 @@ import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.quartz.CronScheduleBuilder;
+import org.quartz.CronTrigger;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.JobKey;
@@ -85,7 +89,9 @@ class QuartzAgentSchedulerTest {
         Trigger trigger =
                 TriggerBuilder.newTrigger()
                         .withIdentity("trigger", "agentscope-quartz")
-                        .withSchedule(CronScheduleBuilder.cronSchedule("0 0 8 * * ?"))
+                        .withSchedule(
+                                CronScheduleBuilder.cronSchedule("0 0 8 * * ?")
+                                        .inTimeZone(TimeZone.getTimeZone("PST")))
                         .build();
         // Since getTriggersOfJob returns List<? extends Trigger>, we need to be careful with
         // generics
@@ -98,6 +104,8 @@ class QuartzAgentSchedulerTest {
         assertNotNull(tasks);
         assertEquals(1, tasks.size());
         assertEquals("QuartzOnlyTask", tasks.get(0).getName());
+        assertEquals(
+                "PST", ((QuartzScheduleAgentTask) tasks.get(0)).getScheduleConfig().getZoneId());
 
         mockAgentScheduler.shutdown();
     }
@@ -680,6 +688,62 @@ class QuartzAgentSchedulerTest {
 
         ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
         assertNotNull(task);
+    }
+
+    @Test
+    void testScheduleWithPrefixedOffsetAndLegacyZoneIdsPreservesOffset() throws SchedulerException {
+        for (Map.Entry<String, Integer> expected :
+                Map.of("UTC+01:00", 3_600_000, "UT+01:00", 3_600_000, "PST", -28_800_000)
+                        .entrySet()) {
+            String zoneId = expected.getKey();
+            Scheduler quartzScheduler = mock(Scheduler.class);
+            QuartzAgentScheduler agentScheduler =
+                    QuartzAgentScheduler.builder().scheduler(quartzScheduler).build();
+            DashScopeModelConfig modelConfig =
+                    DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+            RuntimeAgentConfig agentConfig =
+                    RuntimeAgentConfig.builder()
+                            .name("OffsetZoneAgent")
+                            .modelConfig(modelConfig)
+                            .sysPrompt("Test prompt")
+                            .build();
+
+            agentScheduler.schedule(
+                    agentConfig,
+                    ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId(zoneId).build());
+
+            ArgumentCaptor<Trigger> triggerCaptor = ArgumentCaptor.forClass(Trigger.class);
+            verify(quartzScheduler).scheduleJob(any(JobDetail.class), triggerCaptor.capture());
+            assertEquals(
+                    expected.getValue(),
+                    ((CronTrigger) triggerCaptor.getValue()).getTimeZone().getRawOffset(),
+                    zoneId);
+            agentScheduler.shutdown();
+        }
+    }
+
+    @Test
+    void testScheduleWithOffsetZoneIdPreservesOffset() throws SchedulerException {
+        Scheduler quartzScheduler = mock(Scheduler.class);
+        QuartzAgentScheduler agentScheduler =
+                QuartzAgentScheduler.builder().scheduler(quartzScheduler).build();
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("OffsetZoneAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        agentScheduler.schedule(
+                agentConfig, ScheduleConfig.builder().cron("0 0 8 * * ?").zoneId("+01:00").build());
+
+        ArgumentCaptor<Trigger> triggerCaptor = ArgumentCaptor.forClass(Trigger.class);
+        verify(quartzScheduler).scheduleJob(any(JobDetail.class), triggerCaptor.capture());
+        assertEquals(
+                3_600_000, ((CronTrigger) triggerCaptor.getValue()).getTimeZone().getRawOffset());
+        agentScheduler.shutdown();
     }
 
     @Test
