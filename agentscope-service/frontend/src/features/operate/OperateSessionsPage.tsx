@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Page, PageHeader } from '@/components/Page';
 import { PressureGauge } from '@/components/PressureGauge';
 import { fetchManagedAgents, fetchRuntimeSessions, phaseTone, sessionDetailPath } from './api';
+import { useControlPlaneScope } from '@/app/ScopeContext';
 
 const PAGE_SIZE = 50;
 const PHASES = ['active', 'idle', 'compressing', 'archived', 'terminated'] as const;
@@ -33,6 +34,7 @@ function isPhase(v: string): v is (typeof PHASES)[number] {
 }
 
 export default function OperateSessionsPage() {
+  const scope = useControlPlaneScope();
   const [params, setParams] = useSearchParams();
   const [agent, setAgent] = useState(() => params.get('agent') || '');
   const [phase, setPhase] = useState(() => {
@@ -65,17 +67,18 @@ export default function OperateSessionsPage() {
   }
 
   const agents = useQuery({
-    queryKey: ['v1-agents', 'all'],
-    queryFn: () => fetchManagedAgents({ presence: 'all' }),
+    queryKey: ['v1-agents', scope.namespace, 'all'],
+    queryFn: () => fetchManagedAgents({ presence: 'all', namespace: scope.namespace }),
     refetchInterval: 30_000,
   });
 
   const sessions = useQuery({
-    queryKey: ['runtime-sessions', agent, phase, offset],
+    queryKey: ['runtime-sessions', scope.namespace, agent, phase, offset],
     queryFn: () =>
       fetchRuntimeSessions({
         agent: agent || undefined,
         phase: phase || undefined,
+        namespace: scope.namespace,
         limit: PAGE_SIZE,
         offset,
       }),
@@ -107,7 +110,7 @@ export default function OperateSessionsPage() {
     <Page>
       <PageHeader
         title="Sessions"
-        description="Runtime sessions across all managed data planes."
+        description="Conversation context across Agents and execution backends."
       />
 
       <div className="flex flex-wrap items-end gap-3">
@@ -159,9 +162,9 @@ export default function OperateSessionsPage() {
         <EmptyState title="No matches" description={`No sessions on this page match “${q.trim()}”.`} />
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border bg-muted/50 text-[13px] uppercase tracking-wide text-muted-foreground">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.035)]">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                 <tr>
                   <th className="px-5 py-3.5 font-medium">Agent</th>
                   <th className="px-5 py-3.5 font-medium">Session</th>
@@ -170,12 +173,12 @@ export default function OperateSessionsPage() {
                   <th className="px-5 py-3.5 font-medium">Messages</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-slate-100">
                 {filtered.map((s) => (
                   <tr key={s.id || `${s.agentName}/${s.sessionId}`} className="hover:bg-muted/40">
                     <td className="px-5 py-3.5 font-medium">{s.agentName}</td>
                     <td className="px-5 py-3.5">
-                      <Link className="text-primary hover:underline" to={sessionDetailPath(s)}>
+                      <Link className="text-primary hover:underline" to={scope.scopedPath(sessionDetailPath(s))}>
                         {s.sessionId}
                       </Link>
                     </td>

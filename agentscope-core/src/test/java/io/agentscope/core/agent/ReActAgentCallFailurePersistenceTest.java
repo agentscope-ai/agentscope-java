@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -190,6 +191,56 @@ class ReActAgentCallFailurePersistenceTest {
         assertFalse(textContents(persisted.getContext()).contains("incomplete answer"));
     }
 
+    @Test
+    @DisplayName("empty model response persists the user input")
+    void emptyModelResponsePersistsUserInput() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(new EmptyResponseModel(), store);
+
+        assertNull(
+                agent.call(List.of(userMsg("empty response request"))).block(),
+                "an empty model response should complete without a result message");
+
+        AgentState persisted =
+                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                        .orElseThrow();
+        assertEquals(List.of("empty response request"), textContents(persisted.getContext()));
+        assertEquals(
+                List.of(MsgRole.USER), persisted.getContext().stream().map(Msg::getRole).toList());
+    }
+
+    @Test
+    @DisplayName("empty fallback structured response persists the user input")
+    void emptyFallbackStructuredResponsePersistsUserInput() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(new EmptyResponseModel(), store);
+
+        assertNull(
+                agent.call(List.of(userMsg("empty fallback request")), StructuredReply.class)
+                        .block());
+
+        AgentState persisted =
+                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                        .orElseThrow();
+        assertEquals(List.of("empty fallback request"), textContents(persisted.getContext()));
+    }
+
+    @Test
+    @DisplayName("empty native structured response persists the user input")
+    void emptyNativeStructuredResponsePersistsUserInput() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(new EmptyResponseModel(true), store);
+
+        assertNull(
+                agent.call(List.of(userMsg("empty native request")), StructuredReply.class)
+                        .block());
+
+        AgentState persisted =
+                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                        .orElseThrow();
+        assertEquals(List.of("empty native request"), textContents(persisted.getContext()));
+    }
+
     private static ReActAgent agent(ChatModelBase model, InMemoryAgentStateStore store) {
         return ReActAgent.builder()
                 .name("asst")
@@ -299,6 +350,34 @@ class ReActAgentCallFailurePersistenceTest {
 
         private List<List<Msg>> calls() {
             return calls;
+        }
+    }
+
+    private static final class EmptyResponseModel extends ChatModelBase {
+        private final boolean nativeStructuredOutput;
+
+        private EmptyResponseModel() {
+            this(false);
+        }
+
+        private EmptyResponseModel(boolean nativeStructuredOutput) {
+            this.nativeStructuredOutput = nativeStructuredOutput;
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutput() {
+            return nativeStructuredOutput;
+        }
+
+        @Override
+        public String getModelName() {
+            return "empty-response";
+        }
+
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            return Flux.just(ChatResponse.builder().content(List.of()).build());
         }
     }
 

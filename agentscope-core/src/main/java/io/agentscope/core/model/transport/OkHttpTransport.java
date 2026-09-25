@@ -307,7 +307,7 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic(), false);
     }
 
     @Override

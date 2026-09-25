@@ -16,16 +16,22 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.openai.dto.OpenAIContentPart;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Base formatter for OpenAI Chat Completion HTTP API.
@@ -42,7 +48,10 @@ import java.util.Map;
 public abstract class OpenAIBaseFormatter
         extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
+    private static final Logger log = LoggerFactory.getLogger(OpenAIBaseFormatter.class);
+
     private static final Map<String, String> EPHEMERAL_CACHE_CONTROL = Map.of("type", "ephemeral");
+    private static final int MAX_CACHE_MARKERS = 4;
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
@@ -169,36 +178,102 @@ public abstract class OpenAIBaseFormatter
         return request;
     }
 
-    /**
-     * Apply cache control to OpenAI messages.
-     *
-     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
-     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
-     * marking) will not be overwritten.
-     *
-     * @param messages the list of formatted OpenAI messages
-     */
-    public void applyCacheControl(List<OpenAIMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return;
+    static void setCacheControlOnContent(OpenAIMessage message) {
+        OpenAIContentPart lastPart = getOrCreateLastContentPart(message);
+        if (lastPart == null) {
+            throw new IllegalStateException(
+                    "Cannot place cache_control on a message without a content part");
         }
-        for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
-                msg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
-            }
-        }
-        OpenAIMessage lastMsg = messages.get(messages.size() - 1);
-        if (lastMsg.getCacheControl() == null) {
-            lastMsg.setCacheControl(EPHEMERAL_CACHE_CONTROL);
+        if (lastPart.getCacheControl() == null) {
+            lastPart.setCacheControl(EPHEMERAL_CACHE_CONTROL);
         }
     }
 
-    /**
-     * Get the ephemeral cache control constant.
-     *
-     * @return unmodifiable map representing ephemeral cache control
-     */
-    static Map<String, String> getEphemeralCacheControl() {
-        return EPHEMERAL_CACHE_CONTROL;
+    private static OpenAIContentPart getOrCreateLastContentPart(OpenAIMessage message) {
+        Object content = message.getContent();
+        if (content instanceof String text) {
+            OpenAIContentPart textPart = OpenAIContentPart.text(text);
+            message.setContent(List.of(textPart));
+            return textPart;
+        } else if (content instanceof List<?> parts) {
+            for (int i = parts.size() - 1; i >= 0; i--) {
+                if (parts.get(i) instanceof OpenAIContentPart part) {
+                    return part;
+                }
+            }
+        }
+        return null;
+    }
+
+    static Boolean cacheControlDirective(Msg msg) {
+        if (msg == null || msg.getMetadata() == null) {
+            return null;
+        }
+        Object directive = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        return directive instanceof Boolean value ? value : null;
+    }
+
+    static void applyAutomaticCacheControl(
+            List<OpenAIMessage> messages, List<Boolean> cacheDirectives, GenerateOptions options) {
+        if (messages == null
+                || messages.isEmpty()
+                || options == null
+                || !Boolean.TRUE.equals(options.getCacheControl())) {
+            return;
+        }
+        if (messages.size() != cacheDirectives.size()) {
+            throw new IllegalStateException(
+                    "Cache-control directives do not match formatted messages");
+        }
+
+        int markerCount = countCacheMarkers(messages);
+        if (markerCount > MAX_CACHE_MARKERS) {
+            log.warn(
+                    "Request contains {} explicit cache_control markers; provider uses the last {};"
+                            + " skipping automatic markers",
+                    markerCount,
+                    MAX_CACHE_MARKERS);
+            return;
+        }
+
+        LinkedHashSet<Integer> candidates = new LinkedHashSet<>();
+        int lastIndex = messages.size() - 1;
+        if (shouldAutoCache(cacheDirectives.get(lastIndex))) {
+            candidates.add(lastIndex);
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            if ("system".equals(messages.get(i).getRole())
+                    && shouldAutoCache(cacheDirectives.get(i))) {
+                candidates.add(i);
+            }
+        }
+
+        for (Integer index : candidates) {
+            if (markerCount >= MAX_CACHE_MARKERS) {
+                break;
+            }
+            setCacheControlOnContent(messages.get(index));
+            markerCount++;
+        }
+    }
+
+    private static boolean shouldAutoCache(Boolean directive) {
+        return directive == null;
+    }
+
+    private static int countCacheMarkers(List<OpenAIMessage> messages) {
+        int count = 0;
+        for (OpenAIMessage message : messages) {
+            Object content = message.getContent();
+            if (content instanceof List<?> parts) {
+                for (Object part : parts) {
+                    if (part instanceof OpenAIContentPart contentPart
+                            && contentPart.getCacheControl() != null) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
     }
 }

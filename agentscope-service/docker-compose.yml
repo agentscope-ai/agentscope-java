@@ -2,12 +2,11 @@
 #
 #   docker compose up --build
 #
-# Prerequisites:
-#   mvn -pl agentscope-service -am install -DskipTests
-#   (cd frontend && npm run build)   # emits aistio/ui, baked into the image
+# Development: builds the Java, Go and frontend sources in containers.
+# Published-image deployment: deploy/compose.yaml.
 #
 # Services:
-#   gateway    :8080
+#   gateway    :18080 (host) -> :8080 (container)
 #   control    :8081  (aistiod: /api/*, /api/v1/*, console SPA)
 #   data       :8082
 #   scheduler  :8083
@@ -52,8 +51,8 @@ services:
 
   control:
     build:
-      context: ./aistio
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.control
     command:
       - --storage-driver=postgres
       - --storage-dsn=postgres://builder:builder@db:5432/builder?sslmode=disable&search_path=rt
@@ -65,6 +64,9 @@ services:
       BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:-builder-compose-dev-secret-change-in-production-32chars}
       BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-compose-local-internal-token-at-least-32chars}
       BUILDER_DATA_URL: http://data:8082
+      # Compose is a development profile. Local means the data container's
+      # filesystem/shell, not the developer host.
+      BUILDER_ALLOW_LOCAL_ENVIRONMENT: "true"
     ports:
       - "8081:8081"
     healthcheck:
@@ -79,10 +81,10 @@ services:
 
   data:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-dataplane/target/service-dataplane-2.0.1-SNAPSHOT.jar
+        MODULE: service-dataplane
     environment:
       << : *builder-env
       SERVER_PORT: 8082
@@ -97,10 +99,10 @@ services:
 
   scheduler:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-scheduler/target/service-scheduler-2.0.1-SNAPSHOT.jar
+        MODULE: service-scheduler
     environment:
       << : *builder-env
       SERVER_PORT: 8083
@@ -115,17 +117,17 @@ services:
 
   gateway:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.plane
+      context: ..
+      dockerfile: agentscope-service/docker/Dockerfile.service
       args:
-        JAR_FILE: service-gateway/target/service-gateway-2.0.1-SNAPSHOT.jar
+        MODULE: service-gateway
     environment:
       SERVER_PORT: 8080
       BUILDER_CONTROL_URL: http://control:8081
       BUILDER_DATA_URL: http://data:8082
       BUILDER_SCHEDULER_URL: http://scheduler:8083
     ports:
-      - "8080:8080"
+      - "${BUILDER_GATEWAY_PORT:-18080}:8080"
     healthcheck:
       << : *plane-health
     depends_on:

@@ -1,3 +1,6 @@
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.artifact.persistence.enabled) -}}
+{{- fail "replicaCount > 1 requires artifact.persistence.enabled=true with shared RWX storage" -}}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,6 +35,7 @@ spec:
             - --storage-max-open-conns={{ .Values.storage.maxOpenConns }}
             - --storage-max-idle-conns={{ .Values.storage.maxIdleConns }}
             - --storage-conn-max-lifetime={{ .Values.storage.connMaxLifetime }}
+            - --artifact-root={{ .Values.artifact.root }}
             {{- if .Values.storage.retention.sessionEvents }}
             - --retention-session-events={{ .Values.storage.retention.sessionEvents }}
             {{- end }}
@@ -60,6 +64,7 @@ spec:
             {{- if .Values.product.enabled }}
             - --static-dir={{ .Values.product.staticDir }}
             - --workspace-root={{ .Values.product.workspaceRoot }}
+            - --allow-local-environment={{ .Values.product.allowLocalEnvironment }}
             {{- end }}
           {{- if or .Values.api.authToken (eq .Values.storage.driver "postgres") .Values.product.enabled }}
           env:
@@ -115,11 +120,17 @@ spec:
               containerPort: {{ .Values.webhook.port }}
               protocol: TCP
             {{- end }}
-          {{- if .Values.webhook.enabled }}
+          {{- if or .Values.webhook.enabled .Values.artifact.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.artifact.persistence.enabled }}
+            - name: artifacts
+              mountPath: {{ .Values.artifact.root }}
+            {{- end }}
+            {{- if .Values.webhook.enabled }}
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
+            {{- end }}
           {{- end }}
           livenessProbe:
             httpGet:
@@ -135,11 +146,18 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if .Values.webhook.enabled }}
+      {{- if or .Values.webhook.enabled .Values.artifact.persistence.enabled }}
       volumes:
+        {{- if .Values.artifact.persistence.enabled }}
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-artifacts" .Release.Name) .Values.artifact.persistence.existingClaim }}
+        {{- end }}
+        {{- if .Values.webhook.enabled }}
         - name: webhook-certs
           secret:
             secretName: {{ .Values.webhook.certSecret }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

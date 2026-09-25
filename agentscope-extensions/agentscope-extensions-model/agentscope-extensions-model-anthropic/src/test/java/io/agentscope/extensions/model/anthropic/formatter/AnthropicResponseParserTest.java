@@ -28,6 +28,7 @@ import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageDeltaUsage;
+import com.anthropic.models.messages.OutputTokensDetails;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
 import com.anthropic.models.messages.RawContentBlockStartEvent;
 import com.anthropic.models.messages.RawMessageDeltaEvent;
@@ -107,6 +108,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -141,6 +143,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(1000L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.of(500L));
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(200L));
 
@@ -171,6 +174,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(200L);
         when(usage.outputTokens()).thenReturn(100L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -210,6 +214,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(150L);
         when(usage.outputTokens()).thenReturn(75L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -293,6 +298,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(300L);
         when(usage.outputTokens()).thenReturn(150L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -332,6 +338,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(50L);
         when(usage.outputTokens()).thenReturn(0L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -356,6 +363,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
         when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
@@ -578,12 +586,15 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         // input_tokens excludes cached tokens in the Anthropic API; the parser adds them back
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
+        OutputTokensDetails outputTokensDetails = mock(OutputTokensDetails.class);
 
         when(message.id()).thenReturn("msg_cached");
         when(message.content()).thenReturn(List.of());
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.of(outputTokensDetails));
+        when(outputTokensDetails.thinkingTokens()).thenReturn(12L);
         when(usage.cacheReadInputTokens()).thenReturn(Optional.of(80L));
         when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(20L));
 
@@ -593,7 +604,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(responseUsage);
         assertEquals(200, responseUsage.getInputTokens()); // 100 + 80 + 20
         assertEquals(80, responseUsage.getCachedTokens());
+        assertEquals(20, responseUsage.getCacheCreationTokens());
         assertEquals(50, responseUsage.getOutputTokens());
+        assertEquals(12, responseUsage.getReasoningTokens());
     }
 
     @Test
@@ -622,6 +635,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
         when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
         when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
         when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
@@ -640,6 +654,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                             assertNotNull(usage);
                             assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
                             assertEquals(50, usage.getCachedTokens());
+                            assertEquals(30, usage.getCacheCreationTokens());
                             assertEquals(42, usage.getOutputTokens());
                         })
                 .verifyComplete();
@@ -657,6 +672,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
         when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
         when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.of(50L));
         when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.of(30L));
@@ -672,6 +688,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                             assertNotNull(usage);
                             assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
                             assertEquals(50, usage.getCachedTokens());
+                            assertEquals(30, usage.getCacheCreationTokens());
                             assertEquals(42, usage.getOutputTokens());
                         })
                 .verifyComplete();

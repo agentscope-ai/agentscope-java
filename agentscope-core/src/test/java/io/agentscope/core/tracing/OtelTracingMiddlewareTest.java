@@ -137,9 +137,43 @@ class OtelTracingMiddlewareTest {
     }
 
     @Test
+    void onAgent_keepsTopLevelReplyIdWhenSubagentStarts() {
+        Agent agent = stubAgent("parent", "agent-parent");
+        AgentStartEvent parentStart = new AgentStartEvent("sess-1", "parent-reply", "parent");
+        AgentStartEvent childStart = new AgentStartEvent("sess-1", "child-reply", "child");
+        childStart.withSource("parent/child");
+
+        middleware
+                .onAgent(
+                        agent,
+                        null,
+                        new AgentInput(List.of()),
+                        in -> Flux.just(parentStart, childStart))
+                .collectList()
+                .block();
+
+        SpanData span = spanExporter.getFinishedSpanItems().get(0);
+        assertEquals(
+                "parent-reply",
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.stringKey(
+                                        "agentscope.agent.reply_id")));
+    }
+
+    @Test
     void onModelCall_createsChatSpanWithUsage() {
         Agent agent = stubAgent("model-agent", "agent-003");
-        ChatUsage usage = new ChatUsage(100, 50, 1.5);
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(30)
+                        .cacheCreationTokens(10)
+                        .reasoningTokens(20)
+                        .toolUsePromptTokens(15)
+                        .time(1.5)
+                        .build();
         ModelCallEndEvent mce = new ModelCallEndEvent("reply-1", usage);
 
         ModelCallInput input = new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o"));
@@ -176,6 +210,49 @@ class OtelTracingMiddlewareTest {
                         .get(
                                 io.opentelemetry.api.common.AttributeKey.longKey(
                                         "gen_ai.usage.output_tokens")));
+        assertEquals(
+                30L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.usage.cache_read.input_tokens")));
+        assertEquals(
+                10L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.usage.cache_creation.input_tokens")));
+        assertEquals(
+                20L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.usage.reasoning.output_tokens")));
+        assertEquals(
+                15L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "agentscope.usage.tool_use_prompt_tokens")));
+    }
+
+    @Test
+    void onModelCall_ignoresNullUsage() {
+        Agent agent = stubAgent("model-agent-no-usage", "agent-no-usage");
+        ModelCallEndEvent mce = new ModelCallEndEvent("reply-no-usage", null);
+
+        ModelCallInput input = new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o"));
+        middleware.onModelCall(agent, null, input, in -> Flux.just(mce)).collectList().block();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertEquals(1, spans.size());
+        assertEquals(
+                null,
+                spans.get(0)
+                        .getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.usage.input_tokens")));
     }
 
     @Test
