@@ -152,7 +152,7 @@ class TextReaderTest {
     }
 
     @Test
-    @DisplayName("Should handle empty text")
+    @DisplayName("Should not create documents for empty text")
     void testEmptyText() throws ReaderException {
         TextReader reader = new TextReader(10, SplitStrategy.CHARACTER, 0);
         ReaderInput input = ReaderInput.fromString("");
@@ -160,8 +160,23 @@ class TextReaderTest {
         List<Document> documents = reader.read(input).block();
 
         assertNotNull(documents);
-        assertEquals(1, documents.size());
-        assertEquals("", documents.get(0).getMetadata().getContentText());
+        assertTrue(documents.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should skip blank chunks and keep chunk IDs sequential")
+    void testSkipBlankChunksAndKeepSequentialIds() throws ReaderException {
+        TextReader reader = new TextReader(3, SplitStrategy.CHARACTER, 0);
+        ReaderInput input = ReaderInput.fromString("abc   def");
+
+        List<Document> documents = reader.read(input).block();
+
+        assertNotNull(documents);
+        assertEquals(2, documents.size());
+        assertEquals("abc", documents.get(0).getMetadata().getContentText());
+        assertEquals("0", documents.get(0).getMetadata().getChunkId());
+        assertEquals("def", documents.get(1).getMetadata().getContentText());
+        assertEquals("1", documents.get(1).getMetadata().getChunkId());
     }
 
     @Test
