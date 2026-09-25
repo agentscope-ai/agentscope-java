@@ -1,4 +1,7 @@
-# Model
+---
+title: Model Integration
+zh_link: /v1/zh/docs/task/model
+---
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
 
@@ -161,7 +164,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // Enables thinking mode and automatically enables streaming
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // Token budget for thinking
                 .build())

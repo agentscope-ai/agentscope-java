@@ -54,11 +54,11 @@ type dpErrorBody struct {
 
 // ASDPSender optionally delivers a session command over a live ASDP stream.
 type ASDPSender interface {
-	SendSessionCommand(namespace, instanceID, sessionID, command string) error
+	SendSessionCommand(tenant, namespace, agentID, instanceID, sessionID, command string) error
 }
 
 // sendHTTP posts the command to the data-plane contract endpoint.
-func sendHTTP(ctx context.Context, client *http.Client, baseURL, sessionID, command, commandID string) (*dpCommandResponse, *Error) {
+func sendHTTP(ctx context.Context, client *http.Client, baseURL, sessionID, command, commandID, internalToken string) (*dpCommandResponse, *Error) {
 	if client == nil {
 		client = &http.Client{Timeout: commandTimeout(command)}
 	}
@@ -69,6 +69,9 @@ func sendHTTP(ctx context.Context, client *http.Client, baseURL, sessionID, comm
 	}
 	if commandID != "" {
 		req.Header.Set("X-Command-Id", commandID)
+	}
+	if internalToken != "" {
+		req.Header.Set("X-Builder-Internal-Token", internalToken)
 	}
 
 	resp, err := client.Do(req)

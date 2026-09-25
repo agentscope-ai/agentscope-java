@@ -25,7 +25,7 @@ import io.opentelemetry.api.common.AttributeKey;
 import java.util.List;
 
 /**
- * Copied from <a href=https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/model/gen-ai/registry.yaml>OpenTelemetry semantic conventions 1.37.0</a>.
+ * Copied from <a href=https://github.com/open-telemetry/semantic-conventions/blob/v1.41.0/model/gen-ai/registry.yaml>OpenTelemetry semantic conventions 1.41.0</a>.
  * */
 public final class GenAiIncubatingAttributes {
     static final AttributeKey<String> GEN_AI_INPUT_MESSAGES = stringKey("gen_ai.input.messages");
@@ -113,6 +113,15 @@ public final class GenAiIncubatingAttributes {
 
     static final AttributeKey<Long> GEN_AI_USAGE_OUTPUT_TOKENS =
             longKey("gen_ai.usage.output_tokens");
+
+    static final AttributeKey<Long> GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS =
+            longKey("gen_ai.usage.cache_creation.input_tokens");
+
+    static final AttributeKey<Long> GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS =
+            longKey("gen_ai.usage.cache_read.input_tokens");
+
+    static final AttributeKey<Long> GEN_AI_USAGE_REASONING_OUTPUT_TOKENS =
+            longKey("gen_ai.usage.reasoning.output_tokens");
 
     static final class GenAiOperationNameIncubatingValues {
         static final String CHAT = "chat";

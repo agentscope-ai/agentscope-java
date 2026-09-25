@@ -1,4 +1,7 @@
-# Subagents
+---
+title: Subagents
+zh_link: /v1/zh/docs/multi-agent/subagent
+---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.
 
@@ -152,6 +155,6 @@ String answer = orchestratorService.run(
 
 ## Related Documentation
 
-- [Supervisor](./supervisor.md) - One supervisor, one tool per specialist
-- [Agent as Tool](../task/agent-as-tool.md) - Register a single agent as a tool
-- [Pipeline](./pipeline.md) - Sequential and parallel composition
+- [Supervisor](/v1/en/docs/multi-agent/supervisor) - One supervisor, one tool per specialist
+- [Agent as Tool](/v1/en/docs/task/agent-as-tool) - Register a single agent as a tool
+- [Pipeline](/v1/en/docs/multi-agent/pipeline) - Sequential and parallel composition

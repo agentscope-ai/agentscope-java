@@ -1,6 +1,7 @@
 ---
-title: "Middleware"
-description: "Intercept and extend agent behavior at key lifecycle points"
+title: Middleware
+description: Intercept and extend agent behavior at key lifecycle points
+zh_link: /v2/zh/docs/building-blocks/middleware
 ---
 
 ## Overview
@@ -33,9 +34,13 @@ onAgent/
     └── onActing (per tool call)
 ```
 
-:::{note}
+
+<Note>
+
 `onActing` only wraps tool executions inside the agent runtime. Tools executed outside the agent via external execution are not tracked by `onActing`.
-:::
+
+</Note>
+
 
 ## Equipping middleware
 
@@ -257,7 +262,7 @@ Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedM
 
 ### Reading RuntimeContext
 
-Every `MiddlewareBase` hook receives the [`RuntimeContext`](./agent.md#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
+Every `MiddlewareBase` hook receives the [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) bound for this `call` / `stream` as the second argument — you can read session fields and typed/string attributes, and you can write back to it to forward values to downstream hooks and tools.
 
 ```java
 import io.agentscope.core.agent.Agent;
@@ -469,9 +474,13 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 }
 ```
 
-:::{tip}
-For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed.
-:::
+
+<Tip>
+
+For a simple primary→backup fallback, `ReActAgent.Builder` already exposes `fallbackModel(...)` and `maxRetries(...)` directly — no middleware needed. Observing the switch is the same story: it happens below the `onModelCall` seam, so use `ReActAgent.Builder.failoverListener(...)` rather than a middleware.
+
+</Tip>
+
 
 ### Stop agent when all tools are denied
 

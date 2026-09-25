@@ -38,6 +38,31 @@ public final class SharedWorkspacePaths {
      * Returns the on-disk root directory under which all shared workspace content lives. Callers
      * should append their own segments rather than walking the filesystem directly.
      */
+    /** Stable, non-user-controlled directory for a single authenticated session. */
+    public Path resolveSessionDataPath(String ownerId, String sessionId) {
+        if (ownerId == null || ownerId.isBlank() || sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("ownerId and sessionId are required");
+        }
+        String ownerKey =
+                java.util
+                        .UUID
+                        .nameUUIDFromBytes(
+                                ownerId.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .toString();
+        String sessionKey =
+                java.util
+                        .UUID
+                        .nameUUIDFromBytes(
+                                sessionId.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .toString();
+        return workspaceRoot
+                .toAbsolutePath()
+                .normalize()
+                .resolve("sessions")
+                .resolve(ownerKey)
+                .resolve(sessionKey);
+    }
+
     public Path workspaceRoot() {
         return workspaceRoot;
     }

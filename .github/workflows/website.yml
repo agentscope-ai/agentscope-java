@@ -1,54 +1,43 @@
-name: Deploy Docs to GitHub Pages
+name: Validate Mintlify Docs
 
 on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/website.yml'
   push:
-    branches:
-      - main
+    branches: [main, Mintlify]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  validate:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: docs
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run validate
+      - run: npm run broken-links
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          cd docs
-          python -m pip install --upgrade pip
-          pip install -q -e ".[dev]"
-
-      - name: Build Docs
-        run: |
-          cd docs
-          # ``clean --all`` also drops .jupyter_cache so cache-buster query
-          # strings on static assets (e.g. ``tabs.js?v=…``) are recomputed
-          # from current content. Without it, browsers may serve stale JS
-          # whose URL hash hasn't changed even after the file was edited.
-          jupyter-book clean --all .
-          jupyter-book build .
-
-      - name: Generate v1 redirect stubs
-        # Backfills HTML meta-refresh stubs at the legacy 1.x URL paths
-        # (e.g. /en/harness/overview.html) pointing at the corresponding
-        # v1 page under the v2_dev layout (/v1/en/docs/harness/overview.html).
-        # GitHub Pages cannot return HTTP 302; meta-refresh is the static
-        # equivalent and is treated as 301 by search engines.
-        run: |
-          cd docs
-          python scripts/generate_v1_redirects.py _build/html
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/_build/html
-          cname: java.agentscope.io
+# Mintlify's GitHub App deploys the branch configured in its Git Settings.
+# No GitHub Pages build, publishing token, or Java build is required.
