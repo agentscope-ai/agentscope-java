@@ -171,50 +171,6 @@ public class MysqlDialect extends AbstractJdbcDialect {
     }
 
     @Override
-    protected List<BinaryCollationColumn> binaryCollationColumns() {
-        return List.of(
-                new BinaryCollationColumn(storeTableName(), "namespace_path"),
-                new BinaryCollationColumn(storeTableName(), "item_key"),
-                new BinaryCollationColumn(sessionStateTableName(), "session_id"),
-                new BinaryCollationColumn(sessionStateTableName(), "state_key"),
-                new BinaryCollationColumn(snapshotTableName(), "snapshot_id"));
-    }
-
-    /**
-     * MySQL's own catalog: {@code INFORMATION_SCHEMA.COLUMNS} carries the collation actually attached
-     * to a column, and {@code DATABASE()} scopes the lookup to the connected schema.
-     *
-     * <p>One query per column keeps this readable; the probe runs once per assembled dialect, over a
-     * handful of key columns, so the extra round trips are not worth batching here.
-     *
-     * <p>Any failure is reported as {@code null} ("collation unknown") rather than propagated: this is
-     * a diagnostic, and a datasource that cannot answer it must not stop a store from being assembled.
-     * The {@code RuntimeException} arm covers drivers or pools that throw unchecked exceptions from
-     * these calls.
-     */
-    @Override
-    protected String attachedCollation(final BinaryCollationColumn column) {
-        String sql =
-                "SELECT COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS"
-                        + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?";
-        try (Connection conn = getDataSource().getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, column.table());
-            stmt.setString(2, column.column());
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() ? rs.getString(1) : null;
-            }
-        } catch (SQLException | RuntimeException e) {
-            log.debug(
-                    "Could not read the collation of {}.{}: {}",
-                    column.table(),
-                    column.column(),
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    @Override
     public BoundSql snapshotUpsert(String snapshotId, InputStream data) {
         return new BoundSql(
                 "INSERT INTO "

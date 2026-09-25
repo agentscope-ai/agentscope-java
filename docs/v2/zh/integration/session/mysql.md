@@ -86,15 +86,29 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
 
 两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是精确标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。
 
-在此排序规则引入之前创建的表仍保持大小写不敏感，因为 `CREATE TABLE IF NOT EXISTS` 不会修改已存在的表。store 检测到该差异时会输出一条 warning，迁移属运维动作：
+### 迁移在此改动之前创建的表
+
+`CREATE TABLE IF NOT EXISTS` 不会修改已存在的表，因此更早部署的实例仍保持大小写不敏感，需要由运维执行迁移。`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots` 三张表的主键都是调用方提供的标识符，道理相同：
 
 ```sql
+ALTER TABLE agentscope_store
+    MODIFY namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY item_key       VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
 ALTER TABLE agentscope_sessions
     MODIFY session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     MODIFY state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_snapshots
+    MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
 ```
 
-请注意二进制排序规则同时改变了这两列的**读取**语义：比较与前缀查询（`session_id = ?`、`LIKE 'prefix%'`）变为大小写敏感，原先用小写 `sess-1` 能查到 `SESS-1` 的场景将不再匹配。请在会话空闲窗口执行迁移；另外，若某次部署已经写入了两个仅大小写不同的 id，其中一行早已被覆盖丢失。
+若配置过表前缀或逐表名称覆盖，请相应替换表名。另需注意：`agentscope_snapshots` 由 legacy 的 `agentscope-extensions-mysql` 快照客户端创建时**不带**二进制排序规则，由 `agentscope-extensions-jdbc` 方言创建时才带；混用两条路径的部署只有在执行过上面 `ALTER` 的地方才具备该行为。
+
+有两点需要提前考虑：
+
+- **读取语义随排序规则一起改变。** 比较与前缀查询（`session_id = ?`、`LIKE 'prefix%'`）变为大小写敏感，原先用小写 `sess-1` 能查到 `SESS-1` 的场景将不再匹配。请在会话空闲窗口执行迁移。
+- **已有数据可能已经丢失。** 若迁移前曾写入两个仅大小写不同的键，第二次写入会通过 `ON DUPLICATE KEY UPDATE` 覆盖第一次，那一行无法从表中恢复。
 
 - `(userId, sessionId)` 二元组会被打包进 `session_id` 列，形如 `{userSegment}:{sessionId}`（`userSegment` 为 `userId`，匿名 session 用 `__anon__`）。
 - 单值：`item_index = 0`

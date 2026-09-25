@@ -25,7 +25,6 @@ import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.io.ByteArrayInputStream;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -152,63 +151,6 @@ class DialectSqlTests {
                         .contains(
                                 "snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY"
                                         + " KEY"));
-    }
-
-    @Test
-    @DisplayName("MysqlDialect declares exactly the key columns its DDL pins a binary collation on")
-    void mysqlDeclaresTheKeyColumnsItPins() {
-        var d = new MysqlDialect();
-
-        // Derived from the DDL itself rather than restated, so the declaration and the DDL cannot
-        // drift apart: if a key column is added to one and not the other, this fails. The DDL is
-        // read
-        // through the same normalisation as the assertion above, so column padding does not matter.
-        assertEquals(keyColumnsPinnedByDdl(d), AbstractJdbcDialect.keyColumnsOf(d));
-    }
-
-    /** Key columns the store / session / snapshot DDL actually pins utf8mb4_bin on. */
-    private static List<AbstractJdbcDialect.BinaryCollationColumn> keyColumnsPinnedByDdl(
-            final AbstractJdbcDialect d) {
-        List<AbstractJdbcDialect.BinaryCollationColumn> pinned = new ArrayList<>();
-        addPinned(pinned, d.storeTableName(), columnsPinning(d.storeCreateTableDdls().get(0)));
-        addPinned(
-                pinned,
-                d.sessionStateTableName(),
-                columnsPinning(d.sessionStateCreateTableDdls().get(0)));
-        addPinned(
-                pinned, d.snapshotTableName(), columnsPinning(d.snapshotCreateTableDdls().get(0)));
-        return pinned;
-    }
-
-    private static void addPinned(
-            final List<AbstractJdbcDialect.BinaryCollationColumn> pinned,
-            final String table,
-            final List<String> columns) {
-        for (String each : columns) {
-            pinned.add(new AbstractJdbcDialect.BinaryCollationColumn(table, each));
-        }
-    }
-
-    private static List<String> columnsPinning(final String ddl) {
-        List<String> columns = new ArrayList<>();
-        Matcher matcher =
-                Pattern.compile("(\\w+)\\s+VARCHAR\\(\\d+\\)\\s+COLLATE\\s+utf8mb4_bin")
-                        .matcher(normalise(ddl));
-        while (matcher.find()) {
-            columns.add(matcher.group(1));
-        }
-        return columns;
-    }
-
-    @Test
-    @DisplayName(
-            "other dialects declare no binary-collation columns: they are already case-sensitive")
-    void otherDialectsDeclareNoBinaryCollationColumns() {
-        for (AbstractJdbcDialect d :
-                List.of(new PostgresDialect(), new H2Dialect(), new SqliteDialect())) {
-            assertTrue(AbstractJdbcDialect.keyColumnsOf(d).isEmpty());
-            assertTrue(keyColumnsPinnedByDdl(d).isEmpty());
-        }
     }
 
     private static String normalise(final String ddl) {

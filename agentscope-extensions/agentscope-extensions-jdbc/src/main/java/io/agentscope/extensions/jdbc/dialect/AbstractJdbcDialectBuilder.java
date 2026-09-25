@@ -111,10 +111,6 @@ public class AbstractJdbcDialectBuilder {
         }
         dialect.bindDataSource(this.dataSource);
         createTablesIfNeeded(dialect);
-        // Runs regardless of autoCreateTable: the case that most needs the warning is the caller
-        // who
-        // assembles its own schema, and CREATE TABLE IF NOT EXISTS would be a silent no-op for it.
-        dialect.verifyBinaryCollation();
         return dialect;
     }
 
