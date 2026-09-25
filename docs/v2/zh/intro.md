@@ -3,6 +3,7 @@ title: AgentScope Java v2
 description: 构建分布式企业级智能体
 mode: custom
 toc: false
+en_link: /v2/en/intro
 ---
 
 <div className="agentscope-landing">

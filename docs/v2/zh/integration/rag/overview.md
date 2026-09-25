@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/rag/overview
 ---
 
 `io.agentscope.core.rag.Knowledge` 是 AgentScope 用于"接入外部知识库"的接口。Agent 在推理时通过它检索文档片段，再交给模型用于生成。`agentscope-extensions-*` 仓库下提供了多种实现：

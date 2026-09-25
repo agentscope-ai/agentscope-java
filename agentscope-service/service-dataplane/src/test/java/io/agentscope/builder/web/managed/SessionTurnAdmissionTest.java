@@ -32,7 +32,9 @@ import io.agentscope.builder.web.coord.TurnLeaseService;
 import io.agentscope.builder.web.managed.service.DeletedSessionRegistry;
 import io.agentscope.builder.web.managed.service.SessionEventLog;
 import io.agentscope.builder.web.toolbus.ToolConfirmationCoordinator;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.util.List;
@@ -41,6 +43,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -178,6 +181,7 @@ class SessionTurnAdmissionTest {
         CountDownLatch releaseBuildA = new CountDownLatch(1);
         CountDownLatch replacementSubscribed = new CountDownLatch(1);
         AtomicInteger buildCalls = new AtomicInteger();
+        AtomicReference<AgentRun<AgentEvent>> replacementRun = new AtomicReference<>();
         when(builds.getOrBuildAgent(any(), any()))
                 .thenAnswer(
                         invocation -> {
@@ -188,12 +192,19 @@ class SessionTurnAdmissionTest {
                             }
                             return agentB;
                         });
-        when(agentB.streamEvents(
+        when(agentB.prepareRun(
                         org.mockito.ArgumentMatchers.<List<Msg>>any(), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
-                            replacementSubscribed.countDown();
-                            return reactor.core.publisher.Flux.never();
+                            AgentRun<AgentEvent> run =
+                                    AgentRun.create(
+                                            "agent-b",
+                                            () -> {
+                                                replacementSubscribed.countDown();
+                                                return reactor.core.publisher.Flux.never();
+                                            });
+                            replacementRun.set(run);
+                            return run;
                         });
         HandsLeaseService hands = mock(HandsLeaseService.class);
         when(hands.acquire(any(), any())).thenReturn(Optional.empty());
@@ -211,7 +222,8 @@ class SessionTurnAdmissionTest {
                         coordinationStore,
                         new DeletedSessionRegistry(),
                         controlPlane,
-                        mock(ToolConfirmationCoordinator.class));
+                        mock(ToolConfirmationCoordinator.class),
+                        new AgentRunRegistry());
 
         runner.runTurnAsync(session(), "old", () -> {});
         assertThat(buildAEntered.await(2, TimeUnit.SECONDS)).isTrue();
@@ -223,9 +235,45 @@ class SessionTurnAdmissionTest {
                 .get(0)
                 .accept(new CoordinationStore.TurnInterruptRequest("turn_lease_lost", null));
 
+        AgentRun<AgentEvent> run = replacementRun.get();
+        runner.interruptRun("wrong-owner", "sess_lead", run.runId());
+        runner.interruptRun("user_1", "sess_lead", "stale-run");
+        callbacks
+                .get(1)
+                .accept(
+                        new CoordinationStore.TurnInterruptRequest(
+                                "run.interrupt", "run:stale-run"));
+        // Even the right run id delivered through an old lease cannot cancel the replacement.
+        callbacks
+                .get(0)
+                .accept(
+                        new CoordinationStore.TurnInterruptRequest(
+                                "run.interrupt", "run:" + run.runId()));
+        assertThat(run.status().isTerminal()).isFalse();
+        verify(coordinationStore)
+                .requestFencedTurnInterrupt("sess_lead", "run.interrupt", "run:" + run.runId());
         verify(agentB, never()).interrupt();
         verify(coordinationStore, never()).requestTurnInterrupt(anyString(), anyString());
-        runner.interrupt("sess_lead");
+        callbacks
+                .get(1)
+                .accept(
+                        new CoordinationStore.TurnInterruptRequest(
+                                "run.interrupt", "run:" + run.runId()));
+        assertThat(run.status()).isEqualTo(AgentRun.Status.CANCELLED);
+    }
+
+    @Test
+    void remoteRunCancellationAlwaysCarriesAnExactFence() {
+        CoordinationStore store = mock(CoordinationStore.class);
+        SessionTurnRunner runner =
+                runnerWithLease(
+                        freeLease(),
+                        mock(ControlPlaneClient.class),
+                        mock(ToolConfirmationCoordinator.class),
+                        store);
+        runner.interruptRun("user_1", "sess_lead", "run-123");
+        verify(store).requestFencedTurnInterrupt("sess_lead", "run.interrupt", "run:run-123");
+        verify(store, never()).requestTurnInterrupt(anyString(), anyString());
     }
 
     private static TurnLeaseService busyLease() {
@@ -274,7 +322,8 @@ class SessionTurnAdmissionTest {
                 coordinationStore,
                 new DeletedSessionRegistry(),
                 controlPlaneClient,
-                confirmationCoordinator);
+                confirmationCoordinator,
+                new AgentRunRegistry());
     }
 
     private static ManagedSessionDto session() {

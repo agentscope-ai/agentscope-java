@@ -1,6 +1,7 @@
 ---
 title: Permission System
 description: 精细控制 agent 可以执行哪些 tool、何时执行
+en_link: /v2/en/docs/building-blocks/permission-system
 ---
 
 ## 概述

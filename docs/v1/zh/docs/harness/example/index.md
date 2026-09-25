@@ -1,5 +1,6 @@
 ---
 title: 示例
+en_link: /v1/en/docs/harness/example/index
 ---
 
 本小节收录可运行的 Harness 示例与场景化 walkthrough。

@@ -1,6 +1,7 @@
 ---
 title: 上下文压缩
 description: 在不丢失关键信息的前提下,把对话上下文控制在模型的 token 预算内
+en_link: /v2/en/docs/harness/compaction
 ---
 
 <Note>

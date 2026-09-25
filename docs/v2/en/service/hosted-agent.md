@@ -1,5 +1,6 @@
 ---
 title: "Hosted Agent: overview and usage"
+zh_link: /v2/zh/service/hosted-agent
 ---
 
 <Note>

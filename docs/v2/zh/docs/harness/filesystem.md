@@ -1,6 +1,7 @@
 ---
 title: 文件系统（Filesystem）
 description: 三种部署模式：本机 + shell / 共享存储 / 沙箱；IsolationScope 隔离维度；多用户隔离；技能与工具在各模式下的行为
+en_link: /v2/en/docs/harness/filesystem
 ---
 
 ## 作用
