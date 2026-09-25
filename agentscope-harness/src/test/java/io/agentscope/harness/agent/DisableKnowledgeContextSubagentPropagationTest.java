@@ -15,7 +15,9 @@
  */
 package io.agentscope.harness.agent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -41,27 +43,17 @@ import org.junit.jupiter.api.io.TempDir;
 @HarnessQuiescence
 class DisableKnowledgeContextSubagentPropagationTest {
 
+    private static final String GENERAL_PURPOSE = "general-purpose";
+
     @TempDir Path workspace;
 
     @Test
     void generalPurposeSubagent_inheritsDisabledKnowledgeContext() throws Exception {
-        HarnessAgent.Builder parent =
-                HarnessAgent.builder()
-                        .model(new MockModel("unused"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .stateStore(new InMemoryAgentStateStore())
-                        .disableKnowledgeContext();
+        SubagentEntry entry = buildSubagentEntry(parentBuilder().disableKnowledgeContext());
+        assertEquals(GENERAL_PURPOSE, entry.name());
 
-        SubagentEntry entry =
-                parent.buildSubagentEntries(workspace).stream()
-                        .filter(e -> "general-purpose".equals(e.name()))
-                        .findFirst()
-                        .orElseThrow();
-
-        try (HarnessAgent child = (HarnessAgent) createChild(entry)) {
-            WorkspaceContextMiddleware mw = knowledgeMiddleware(child);
-            assertTrue(mw.isDisableKnowledgeContext());
+        try (HarnessAgent child = createChild(entry)) {
+            assertTrue(knowledgeMiddleware(child).isDisableKnowledgeContext());
         }
     }
 
@@ -75,52 +67,50 @@ class DisableKnowledgeContextSubagentPropagationTest {
                         .workspaceMode(WorkspaceMode.SHARED)
                         .build();
 
-        HarnessAgent.Builder parent =
-                HarnessAgent.builder()
-                        .model(new MockModel("unused"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .stateStore(new InMemoryAgentStateStore())
-                        .subagent(declaration)
-                        .disableKnowledgeContext();
-
         SubagentEntry entry =
-                parent.buildSubagentEntries(workspace).stream()
-                        .filter(e -> declaration.getName().equals(e.name()))
-                        .findFirst()
-                        .orElseThrow();
+                buildSubagentEntry(
+                        parentBuilder().subagent(declaration).disableKnowledgeContext(),
+                        declaration.getName());
+        assertEquals(declaration.getName(), entry.name());
 
-        try (HarnessAgent child = (HarnessAgent) createChild(entry)) {
-            WorkspaceContextMiddleware mw = knowledgeMiddleware(child);
-            assertTrue(mw.isDisableKnowledgeContext());
+        try (HarnessAgent child = createChild(entry)) {
+            assertTrue(knowledgeMiddleware(child).isDisableKnowledgeContext());
         }
     }
 
     @Test
     void generalPurposeSubagent_defaultsToKnowledgeEnabled() throws Exception {
-        HarnessAgent.Builder parent =
-                HarnessAgent.builder()
-                        .model(new MockModel("unused"))
-                        .workspace(workspace)
-                        .abstractFilesystem(new LocalFilesystem(workspace))
-                        .stateStore(new InMemoryAgentStateStore());
+        SubagentEntry entry = buildSubagentEntry(parentBuilder());
+        assertEquals(GENERAL_PURPOSE, entry.name());
 
-        SubagentEntry entry =
-                parent.buildSubagentEntries(workspace).stream()
-                        .filter(e -> "general-purpose".equals(e.name()))
-                        .findFirst()
-                        .orElseThrow();
-
-        try (HarnessAgent child = (HarnessAgent) createChild(entry)) {
-            WorkspaceContextMiddleware mw = knowledgeMiddleware(child);
-            assertFalse(mw.isDisableKnowledgeContext());
+        try (HarnessAgent child = createChild(entry)) {
+            assertFalse(knowledgeMiddleware(child).isDisableKnowledgeContext());
         }
     }
 
-    private Object createChild(SubagentEntry entry) {
+    private HarnessAgent.Builder parentBuilder() {
+        return HarnessAgent.builder()
+                .model(new MockModel("unused"))
+                .workspace(workspace)
+                .abstractFilesystem(new LocalFilesystem(workspace))
+                .stateStore(new InMemoryAgentStateStore());
+    }
+
+    private SubagentEntry buildSubagentEntry(HarnessAgent.Builder parent) {
+        return parent.buildSubagentEntries(workspace).stream().findFirst().orElseThrow();
+    }
+
+    private SubagentEntry buildSubagentEntry(HarnessAgent.Builder parent, String name) {
+        return parent.buildSubagentEntries(workspace).stream()
+                .filter(e -> name.equals(e.name()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private HarnessAgent createChild(SubagentEntry entry) {
         RuntimeContext context =
                 RuntimeContext.builder().userId("user").sessionId("child-session").build();
-        return entry.factory().create(context);
+        return assertInstanceOf(HarnessAgent.class, entry.factory().create(context));
     }
 
     private WorkspaceContextMiddleware knowledgeMiddleware(HarnessAgent child) {
