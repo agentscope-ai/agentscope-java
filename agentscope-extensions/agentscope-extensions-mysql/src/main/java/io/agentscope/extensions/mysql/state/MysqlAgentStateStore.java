@@ -31,8 +31,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * MySQL database-based session implementation.
@@ -74,8 +72,6 @@ import org.slf4j.LoggerFactory;
  * </ul>
  */
 public class MysqlAgentStateStore implements AgentStateStore {
-
-    private static final Logger LOG = LoggerFactory.getLogger(MysqlAgentStateStore.class);
 
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
