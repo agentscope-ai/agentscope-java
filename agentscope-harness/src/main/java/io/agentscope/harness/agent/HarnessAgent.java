@@ -842,14 +842,27 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
     }
 
-    /** Prepare a cancellable execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
+     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
+     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
+     * RuntimeContext#empty()} so derived defaults inherit this runId.
+     */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> streamEvents(msgs, source));
     }
 
-    /** Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
+     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()});
+     * {@code ensureSessionDefaults} still runs at subscribe time and never alters it. A null
+     * context uses a fresh {@link RuntimeContext#empty()} so derived defaults inherit this
+     * runId.
+     */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> call(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> call(msgs, source));
     }
 
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================
