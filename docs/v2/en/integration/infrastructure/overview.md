@@ -1,12 +1,15 @@
-# Infrastructure / Middleware
+---
+title: Overview
+zh_link: /v2/zh/integration/infrastructure/overview
+---
 
 These extensions plug AgentScope into the infrastructure you already run — gateways, registries, message buses, schedulers — so an Agent can be governed and scheduled like any other service.
 
 | Extension | Middleware | Capability |
 | --- | --- | --- |
-| [Higress](higress.md) | [Higress](https://higress.io/) AI gateway | Pull tools published as MCP on the gateway into the Toolkit |
-| [Nacos](nacos.md) | [Nacos](https://nacos.io/) | A2A AgentCard registry/discovery, prompt config center, skill repository |
-| [Scheduler](scheduler.md) | XXL-Job / Quartz | Run an Agent on a CRON schedule or fixed rate |
+| [Higress](/v2/en/integration/infrastructure/higress) | [Higress](https://higress.io/) AI gateway | Pull tools published as MCP on the gateway into the Toolkit |
+| [Nacos](/v2/en/integration/infrastructure/nacos) | [Nacos](https://nacos.io/) | A2A AgentCard registry/discovery, prompt config center, skill repository |
+| [Scheduler](/v2/en/integration/infrastructure/scheduler) | XXL-Job / Quartz | Run an Agent on a CRON schedule or fixed rate |
 
 ## Where this fits
 

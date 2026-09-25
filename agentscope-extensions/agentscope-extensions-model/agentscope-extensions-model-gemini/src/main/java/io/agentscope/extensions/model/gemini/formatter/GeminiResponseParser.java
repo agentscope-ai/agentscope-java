@@ -94,18 +94,21 @@ public class GeminiResponseParser {
             if (response.usageMetadata().isPresent()) {
                 GenerateContentResponseUsageMetadata metadata = response.usageMetadata().get();
 
-                int inputTokens = metadata.promptTokenCount().orElse(0);
-                int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
+                int inputTokens =
+                        metadata.promptTokenCount().orElse(0)
+                                + metadata.toolUsePromptTokenCount().orElse(0);
+                int cachedTokens = metadata.cachedContentTokenCount().orElse(0);
                 int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
-
-                // Output tokens exclude thinking tokens (following DashScope behavior)
-                // In Gemini, candidatesTokenCount includes thinking, so we subtract it
-                int outputTokens = totalOutputTokens - thinkingTokens;
+                int toolUsePromptTokens = metadata.toolUsePromptTokenCount().orElse(0);
+                int outputTokens = metadata.candidatesTokenCount().orElse(0) + thinkingTokens;
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .cachedTokens(cachedTokens)
+                                .toolUsePromptTokens(toolUsePromptTokens)
+                                .reasoningTokens(thinkingTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)

@@ -15,6 +15,10 @@
  */
 package io.agentscope.extensions.model.ollama;
 
+import static io.agentscope.core.model.ModelProviderSupport.findAssignableComponent;
+import static io.agentscope.core.model.ModelProviderSupport.firstNonBlank;
+import static io.agentscope.core.model.ModelProviderSupport.intOption;
+
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
@@ -61,11 +65,13 @@ public final class OllamaModelProvider implements ModelProvider {
         }
         OllamaChatModel.Builder builder =
                 OllamaChatModel.builder().modelName(modelName).baseUrl(baseUrl);
+        if (context.getStream() != null) {
+            builder.stream(context.getStream());
+        }
         applyAdvancedOptions(builder, context);
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
     private static void applyAdvancedOptions(
             OllamaChatModel.Builder builder, ModelCreationContext context) {
         OllamaOptions defaultOptions = context.component(OllamaOptions.class);
@@ -81,8 +87,7 @@ public final class OllamaModelProvider implements ModelProvider {
             builder.proxy(proxyConfig);
         }
         Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter =
-                (Formatter<OllamaMessage, OllamaResponse, OllamaRequest>)
-                        findAssignableComponent(context, Formatter.class);
+                findAssignableComponent(context, Formatter.class);
         if (formatter != null) {
             builder.formatter(formatter);
         }
@@ -90,40 +95,5 @@ public final class OllamaModelProvider implements ModelProvider {
         if (contextWindowSize != null) {
             builder.contextWindowSize(contextWindowSize);
         }
-    }
-
-    private static String firstNonBlank(String preferred, String fallback) {
-        String normalized = trimToNull(preferred);
-        return normalized != null ? normalized : trimToNull(fallback);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static Object findAssignableComponent(
-            ModelCreationContext context, Class<?> componentType) {
-        for (Object value : context.getComponents().values()) {
-            if (componentType.isInstance(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Integer intOption(ModelCreationContext context, String key) {
-        Object value = context.option(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        throw new IllegalArgumentException(
-                "ModelCreationContext option " + key + " must be a number");
     }
 }

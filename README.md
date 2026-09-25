@@ -55,17 +55,19 @@
 
 AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
 
-- [**Event System** →](https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html) A unified event stream with 28 typed events for real-time frontend rendering and human-in-the-loop.
+- [**Event System** →](https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html) A unified event stream with 31 typed events for real-time frontend rendering and human-in-the-loop.
 - [**Permission System** →](https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
 - [**Middleware** →](https://java.agentscope.io/v2/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
 - [**Workspace & Sandbox** →](https://java.agentscope.io/v2/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
 - [**Multi-Agent Orchestration** →](https://java.agentscope.io/v2/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
 - [**Distributed Deployment** →](https://java.agentscope.io/v2/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
+- [**Agent Evolution** →](https://help.aliyun.com/zh/document_detail/3042583.html) Provides Agent observability and auditing, Agent evaluation and experimentation, and Agent asset management and continuous optimization.
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ## News
 <!-- BEGIN NEWS -->
+- **[2026-08] [AgentScope Service](./agentscope-service):** An agent Control Plane and Dashboard for agent observation, registration and orchestration, designed to be compatible with AgentScope, LangChain, ADK, and Claude / Qoder, etc.
 - **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`:** Model provider modularization; unified DataBlock multimodal support; native structured output; Channel IM integration; Tencent Cloud COS state persistence. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`:** Async tool execution and scheduled wakeup dispatching; subagent cross-replica routing and session recovery. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -95,7 +97,7 @@ Welcome to join our community on
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -105,7 +107,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 
@@ -129,9 +131,10 @@ public class FirstAgent {
                 .name("assistant")
                 .sysPrompt("You are a helpful AI assistant.")
                 // ModelRegistry resolves the string and reads the matching
-                // API-key env var (e.g. OPENAI_API_KEY) automatically.
+                // API-key env var (e.g. OPENAI_API_KEY or DEEPSEEK_API_KEY)
+                // automatically.
                 // Examples: "openai:gpt-4.1", "openai:o3",
-                // "deepseek:deepseek-chat", "dashscope:qwen-plus",
+                // "deepseek:deepseek-v4-flash", "dashscope:qwen-plus",
                 // "anthropic:claude-sonnet-4-7", "ollama:llama3"
                 .model("dashscope:qwen-plus")
                 // Or pass a ChatModel object directly:
@@ -161,6 +164,14 @@ public class FirstAgent {
 }
 ```
 
+## AgentScope Service
+**[AgentScope Service](./agentscope-service)** — an Agent Control Plane built on AgentScope Harness that provides:
++ **Control Plane.** It provides agent registration, discovery, and distributed coordination services for every agent in the enterprise. It works with mainstream agent runtimes including AgentScope, LangChain, ADK, and Claude / Qoder, giving you a single place to inspect agent metrics and operate on live sessions — for example, compressing session context.
++ **Managed Agents Platform** Built on the AgentScope Harness runtime, managed agents lets you run multiple Agents on one fully-managed platform under unified operations. The platform hosts Harness capabilities, while tool execution can be delegated to a sandbox that you control.
++ **Agent Teams** Agents registered with AgentScope Service can be assembled into one or more Teams, whether the Agent is a self-hosted AgentScope runtime or a low-code Managed Agent Harness runtime, Agents can be orchestrated together to tackle more complex work.
+
+![agentscope-service-architecture.png](docs/imgs/agentservice/agentscope-service-architecture.png)
+
 ## Key Design
 
 AgentScope Java 2.0 is a major step up from a "build an agent" toolkit toward a complete platform for **running agents in production**. The improvements fall into three focus areas:
@@ -188,7 +199,7 @@ Production agents must serve many tenants, run untrusted code safely, and surviv
 
 Messages, events, and the extension model are smaller, more orthogonal — HITL and event streaming are part of how the framework runs, not add-ons:
 
-- **Event stream** — 28 typed events covering model calls, text deltas, tool execution, and user confirmations in real time
+- **Event stream** — 31 typed events covering model calls, text deltas, tool execution, and user confirmations in real time
 - **Message model** — text / files / images / audio / video / tool results unified into `ContentBlock`, role-strict validation at construction
 - **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` five stages replace v1's flat hooks
 - **HITL first class** — confirm tool arguments, approve sensitive actions, hand off to external systems, agent pauses and resumes exactly

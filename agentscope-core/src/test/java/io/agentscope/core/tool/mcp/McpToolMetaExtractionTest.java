@@ -20,12 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -52,8 +52,8 @@ class McpToolMetaExtractionTest {
 
     @BeforeEach
     void setUp() {
-        mockClientWrapper = mock(McpClientWrapper.class);
-        when(mockClientWrapper.getName()).thenReturn("test-client");
+        // McpTool.callAsync reads the connection-level switch live; default it to on.
+        mockClientWrapper = McpClientWrapperTestSupport.mockWrapper("test-client", true);
 
         parameters = new HashMap<>();
         parameters.put("type", "object");
@@ -87,6 +87,29 @@ class McpToolMetaExtractionTest {
         verify(mockClientWrapper).callTool(eq("test-tool"), any(Map.class), metaCaptor.capture());
 
         return metaCaptor.getValue();
+    }
+
+    @Test
+    void carriesCallIdentityOutsideArgumentsWithoutMutatingUserMetadata() {
+        McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
+        McpMeta original =
+                new McpMeta(Map.of("traceId", "trace", "io.agentscope/toolCallId", "untrusted"));
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(
+                                ToolUseBlock.builder()
+                                        .id("call-local-validation")
+                                        .name("test-tool")
+                                        .input(Map.of())
+                                        .build())
+                        .runtimeContext(
+                                RuntimeContext.builder().put(McpMeta.class, original).build())
+                        .build();
+        Map<String, Object> captured = captureMeta(tool, param);
+        assertEquals("call-local-validation", captured.get("io.agentscope/toolCallId"));
+        assertEquals("trace", captured.get("traceId"));
+        assertEquals("untrusted", original.entries().get("io.agentscope/toolCallId"));
+        verify(mockClientWrapper).callTool(eq("test-tool"), eq(Map.of()), eq(captured));
     }
 
     // ==================== RuntimeContext path ====================

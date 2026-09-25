@@ -68,7 +68,11 @@ public class ShellExecuteTool {
                 return "Error: working_directory must be a relative path within the workspace"
                         + " (absolute paths, '~', and '..' are not allowed).";
             }
-            effectiveCommand = "cd '" + wd.replace("'", "'\\''") + "' && " + command;
+            effectiveCommand =
+                    commandWithWorkingDirectory(
+                            wd,
+                            command,
+                            System.getProperty("os.name").toLowerCase().contains("win"));
         }
 
         int timeoutSeconds = timeout != null && timeout > 0 ? timeout : 30;
@@ -83,5 +87,13 @@ public class ShellExecuteTool {
             sb.append("\n(output was truncated)");
         }
         return sb.toString();
+    }
+
+    static String commandWithWorkingDirectory(
+            String workingDirectory, String command, boolean windows) {
+        if (windows) {
+            return "cd /d \"" + workingDirectory.replace("\"", "\"\"") + "\" && " + command;
+        }
+        return "cd '" + workingDirectory.replace("'", "'\\''") + "' && " + command;
     }
 }

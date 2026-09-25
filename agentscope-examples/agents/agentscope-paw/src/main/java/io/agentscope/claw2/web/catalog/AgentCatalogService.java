@@ -24,6 +24,7 @@ import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.transcript.TranscriptStore;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -67,6 +68,8 @@ public class AgentCatalogService {
     private final Model model;
     private final ToolEventBus toolEventBus;
     private final TemplateRegistry templateRegistry;
+    private final Optional<TranscriptStore> transcriptStore;
+    private final String transcriptTenant;
 
     /** Custom agent ids that have been built and registered in the gateway during this run. */
     private final ConcurrentHashMap<String, String> registeredCustomIds = new ConcurrentHashMap<>();
@@ -76,12 +79,19 @@ public class AgentCatalogService {
             UserAgentDefinitionStore store,
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
-            TemplateRegistry templateRegistry) {
+            TemplateRegistry templateRegistry,
+            Optional<TranscriptStore> transcriptStore,
+            String pawTranscriptTenant) {
         this.bootstrap = bootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
+        this.transcriptStore = transcriptStore != null ? transcriptStore : Optional.empty();
+        this.transcriptTenant =
+                pawTranscriptTenant != null && !pawTranscriptTenant.isBlank()
+                        ? pawTranscriptTenant
+                        : "default";
     }
 
     // -----------------------------------------------------------------
@@ -347,6 +357,7 @@ public class AgentCatalogService {
         HarnessAgent.Builder b = HarnessAgent.builder();
         String name = entry.name() != null ? entry.name() : entry.id();
         b.name(name);
+        b.agentId(entry.id());
         if (entry.description() != null) b.description(entry.description());
         if (entry.sysPrompt() != null) b.sysPrompt(entry.sysPrompt());
         if (entry.maxIters() != null) b.maxIters(entry.maxIters());
@@ -357,6 +368,8 @@ public class AgentCatalogService {
         }
         b.workspace(workspace);
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
+        transcriptStore.ifPresent(
+                store -> b.transcriptStore(store).transcriptTenant(transcriptTenant));
 
         HarnessAgent agent = b.build();
         HarnessGateway gateway = bootstrap.gateway();

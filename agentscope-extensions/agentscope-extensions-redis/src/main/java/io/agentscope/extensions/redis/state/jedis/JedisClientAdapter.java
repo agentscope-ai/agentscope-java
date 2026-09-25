@@ -169,6 +169,15 @@ public class JedisClientAdapter implements RedisClientAdapter {
     }
 
     @Override
+    public long evalScript(String script, List<String> keys, List<String> args) {
+        Object result = unifiedJedis.eval(script, keys, args);
+        if (result instanceof Number number) {
+            return number.longValue();
+        }
+        throw new IllegalStateException("Unexpected Lua script result: " + result);
+    }
+
+    @Override
     public void close() {
         unifiedJedis.close();
     }

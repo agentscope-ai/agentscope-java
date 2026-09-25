@@ -1206,4 +1206,174 @@ class OllamaChatModelTest {
 
         assertNotNull(model);
     }
+
+    // ========== stream flag routing (fix: doStream used to hardcode streaming) ==========
+    @Test
+    @DisplayName(
+            "stream(false) should use non-streaming transport and return full reply on blockLast")
+    void testStreamFalseRoutesToNonStreamingAndReturnsFullReply() throws Exception {
+        // Non-streaming response: a single complete JSON with content "Hello World"
+        String nonStreamingJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello World\"},"
+                        + "\"done\":true,\"eval_count\":2}";
+
+        HttpResponse mockResponse =
+                HttpResponse.builder().statusCode(200).body(nonStreamingJson).build();
+        when(httpTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+        OllamaChatModel nonStreamingModel =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .stream(false)
+                        .build();
+
+        GenerateOptions genOptions = OllamaOptions.builder().build().toGenerateOptions();
+        ChatResponse resp =
+                nonStreamingModel.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                genOptions)
+                        .blockLast();
+
+        // Must have gone through the non-streaming execute() path
+        verify(httpTransport).execute(any(HttpRequest.class));
+        // And blockLast() must carry the full reply content (not an empty trailing chunk)
+        assertNotNull(resp);
+        assertNotNull(resp.getContent());
+        assertFalse(resp.getContent().isEmpty(), "blockLast() content must not be empty");
+        ContentBlock block = resp.getContent().get(0);
+        assertTrue(block instanceof TextBlock);
+        assertEquals("Hello World", ((TextBlock) block).getText());
+    }
+
+    /**
+     * Confirms the default (stream=true) still routes through the streaming path, preserving
+     * backward compatibility for callers that consume the full Flux.
+     */
+    @Test
+    @DisplayName("default (stream=true) should still use streaming transport")
+    void testDefaultStreamTrueStillUsesStreamingTransport() {
+        // Streaming responses: two content chunks + an empty done marker
+        String chunk1 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},"
+                        + "\"done\":false}";
+        String chunk2 =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\" World\"},"
+                        + "\"done\":false}";
+        String doneMarker =
+                "{\"model\":\"" + TEST_MODEL_NAME + "\",\"done\":true,\"eval_count\":2}";
+
+        when(httpTransport.stream(any(HttpRequest.class)))
+                .thenReturn(Flux.just(chunk1, chunk2, doneMarker));
+
+        // Default builder — no stream() call — must remain streaming
+        OllamaChatModel streamingModel =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .build();
+
+        GenerateOptions genOptions = OllamaOptions.builder().build().toGenerateOptions();
+        List<ChatResponse> responses =
+                streamingModel.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                genOptions)
+                        .collectList()
+                        .block();
+
+        // Streaming path must be used
+        verify(httpTransport).stream(any(HttpRequest.class));
+        assertNotNull(responses);
+        assertEquals(3, responses.size(), "streaming should emit one response per chunk");
+    }
+
+    @Test
+    @DisplayName("GenerateOptions.stream(false) should override the model's streaming default")
+    void testGenerateOptionsStreamFalseOverridesDefaultStreaming() throws Exception {
+        String nonStreamingJson =
+                "{\"model\":\""
+                        + TEST_MODEL_NAME
+                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello World\"},"
+                        + "\"done\":true,\"eval_count\":2}";
+
+        HttpResponse mockResponse =
+                HttpResponse.builder().statusCode(200).body(nonStreamingJson).build();
+        when(httpTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+        OllamaChatModel streamingByDefault =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .baseUrl("http://localhost:11434")
+                        .httpTransport(httpTransport)
+                        .build();
+
+        GenerateOptions requestOptions = GenerateOptions.builder().stream(false).build();
+        ChatResponse resp =
+                streamingByDefault.stream(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                                null,
+                                requestOptions)
+                        .blockLast();
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpTransport).execute(requestCaptor.capture());
+        assertTrue(requestCaptor.getValue().getBody().contains("\"stream\":false"));
+        assertNotNull(resp);
+        assertEquals("Hello World", ((TextBlock) resp.getContent().get(0)).getText());
+    }
+
+    /**
+     * The legacy 5-arg constructor (kept for backward compatibility) must delegate to the 6-arg one
+     * with {@code stream=true}. Without this test, the delegation line is uncovered.
+     */
+    @Test
+    @DisplayName("5-arg constructor defaults to streaming (backward compatible delegation)")
+    void testLegacyConstructorDefaultsToStreaming() {
+        OllamaChatModel model =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null);
+        assertTrue(model.isStreaming(), "5-arg constructor must default to streaming");
+    }
+
+    /**
+     * The 6-arg constructor with {@code stream=false} must expose non-streaming mode via {@link
+     * OllamaChatModel#isStreaming()}. Covers the explicit-stream-flag constructor overload.
+     */
+    @Test
+    @DisplayName("6-arg constructor with stream=false exposes non-streaming mode")
+    void testExplicitConstructorHonorsStreamFlag() {
+        OllamaChatModel streaming =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null,
+                        true);
+        assertTrue(streaming.isStreaming());
+
+        OllamaChatModel nonStreaming =
+                new OllamaChatModel(
+                        TEST_MODEL_NAME,
+                        "http://localhost:11434",
+                        OllamaOptions.builder().build(),
+                        new OllamaChatFormatter(),
+                        null,
+                        false);
+        assertFalse(nonStreaming.isStreaming());
+    }
 }

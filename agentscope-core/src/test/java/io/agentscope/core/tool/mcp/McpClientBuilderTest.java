@@ -211,6 +211,44 @@ class McpClientBuilderTest {
     }
 
     @Test
+    void testPropagateMeta_DefaultsToTrue() {
+        McpClientWrapper asyncWrapper =
+                McpClientBuilder.create("meta-default-async")
+                        .stdioTransport("echo", "hello")
+                        .buildAsync()
+                        .block();
+        assertNotNull(asyncWrapper);
+        assertTrue(asyncWrapper.isPropagateMeta());
+
+        McpClientWrapper syncWrapper =
+                McpClientBuilder.create("meta-default-sync")
+                        .stdioTransport("echo", "hello")
+                        .buildSync();
+        assertNotNull(syncWrapper);
+        assertTrue(syncWrapper.isPropagateMeta());
+    }
+
+    @Test
+    void testPropagateMeta_DisabledAppliedToBuiltWrappers() {
+        McpClientWrapper asyncWrapper =
+                McpClientBuilder.create("meta-off-async")
+                        .propagateMeta(false)
+                        .stdioTransport("echo", "hello")
+                        .buildAsync()
+                        .block();
+        assertNotNull(asyncWrapper);
+        assertFalse(asyncWrapper.isPropagateMeta());
+
+        McpClientWrapper syncWrapper =
+                McpClientBuilder.create("meta-off-sync")
+                        .propagateMeta(false)
+                        .stdioTransport("echo", "hello")
+                        .buildSync();
+        assertNotNull(syncWrapper);
+        assertFalse(syncWrapper.isPropagateMeta());
+    }
+
+    @Test
     void testBuildAsync_WithStdioTransport() {
         McpClientBuilder builder =
                 McpClientBuilder.create("stdio-client")

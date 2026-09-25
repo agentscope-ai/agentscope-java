@@ -17,6 +17,8 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,12 +35,15 @@ import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KubernetesSandboxTest {
@@ -77,7 +82,41 @@ class KubernetesSandboxTest {
         assertEquals("out", result.stdout());
         ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
         verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
-        assertEquals("cd '/workspace' && (echo hi)", cmd.getValue());
+        assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"cat <<'EOF'\nhello\nEOF", "echo hi\n# comment", "echo hi \\", "echo hi"})
+    void doExecKeepsClosingParenOnItsOwnLine(String command) throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("done", "", 0));
+
+        ExecResult result = sandbox.doExec(null, command, 30);
+
+        assertEquals(0, result.exitCode());
+        ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
+        verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
+        String wrapped = cmd.getValue();
+        assertEquals("cd '/workspace' && (\n" + command + "\n)", wrapped);
+        // Closing ')' must be on its own line, not glued to the last payload line.
+        assertTrue(wrapped.endsWith("\n)"));
+        String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
+        assertFalse(wrapped.contains(lastPayloadLine + ")"));
+    }
+
+    @Test
+    void doExecRejectsNullOrBlankCommand() {
+        SandboxException.ExecException nullEx =
+                assertThrows(
+                        SandboxException.ExecException.class, () -> sandbox.doExec(null, null, 30));
+        assertEquals("empty command rejected by KubernetesSandbox", nullEx.getStderr());
+
+        SandboxException.ExecException blankEx =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "  \t", 30));
+        assertEquals("empty command rejected by KubernetesSandbox", blankEx.getStderr());
     }
 
     @Test
@@ -106,6 +145,43 @@ class KubernetesSandboxTest {
         verify(files, never()).write(anyString(), any(byte[].class));
         String b64 = Base64.getEncoder().encodeToString(tar);
         verify(commands).run(contains("echo '" + b64 + "' | base64 -d > /tmp/ws-hydrate-"));
+    }
+
+    @Test
+    void hydrateUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-one".getBytes()));
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-two".getBytes()));
+
+        // Concurrent transfers must never share a temp archive: a deterministic name lets
+        // one call's rm -f cleanup delete another call's archive before tar -xf runs.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).write(path.capture(), any(byte[].class));
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(second.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(!first.equals(second));
+    }
+
+    @Test
+    void persistUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+        when(files.read(startsWith(".agentscope-tmp/ws-persist-")))
+                .thenReturn("fake-tar".getBytes());
+
+        sandbox.doPersistWorkspace();
+        sandbox.doPersistWorkspace();
+
+        // Same uniqueness contract as hydrate: concurrent persists must not share a
+        // temp archive, even if a future refactor splits the naming method.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).read(path.capture());
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-persist-"));
+        assertTrue(!first.equals(second));
     }
 
     @Test

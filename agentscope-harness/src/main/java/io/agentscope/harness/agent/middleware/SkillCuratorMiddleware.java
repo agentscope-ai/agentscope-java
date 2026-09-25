@@ -23,16 +23,15 @@ import io.agentscope.harness.agent.skill.curator.SkillCurator;
 import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * Schedules {@link SkillCurator} runs after the main {@code call()} completes. Behaves like
- * {@code MemoryMaintenanceMiddleware}: gates on idle-time + interval, runs on a single-thread
- * daemon executor so the agent loop is never blocked.
+ * Schedules {@link SkillCurator} runs after the main {@code call()} completes. Gates on the
+ * curator's interval + {@code PeriodicGate}, and runs on a single-thread daemon executor so the
+ * agent loop is never blocked.
  */
 public class SkillCuratorMiddleware implements HarnessRuntimeMiddleware {
 
@@ -40,7 +39,6 @@ public class SkillCuratorMiddleware implements HarnessRuntimeMiddleware {
 
     private final SkillCurator curator;
     private final ScheduledExecutorService executor;
-    private final AtomicReference<Instant> lastCallEnded = new AtomicReference<>();
     private volatile boolean shutdown = false;
 
     public SkillCuratorMiddleware(SkillCurator curator) {
@@ -60,18 +58,12 @@ public class SkillCuratorMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        return next.apply(input)
-                .doOnComplete(
-                        () -> {
-                            lastCallEnded.set(Instant.now());
-                            maybeRunCurator();
-                        });
+        return next.apply(input).doOnComplete(this::maybeRunCurator);
     }
 
     /**
-     * Called from the {@code onAgent} doOnComplete: if the gate accepts, dispatch a curator run
-     * to the daemon executor. {@code minIdleHours} == 0 makes this run effectively eagerly,
-     * matching plan-text default.
+     * Called from the {@code onAgent} doOnComplete: if the curator gate accepts, dispatch a run
+     * to the daemon executor.
      */
     private void maybeRunCurator() {
         if (shutdown) {

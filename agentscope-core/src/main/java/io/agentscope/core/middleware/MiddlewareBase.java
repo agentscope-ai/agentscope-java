@@ -59,6 +59,20 @@ import reactor.core.publisher.Mono;
 public interface MiddlewareBase {
 
     /**
+     * Returns this middleware's execution order.
+     *
+     * <p>A larger number means a higher priority and places the middleware closer to the outside
+     * of the onion chain: for example, {@code 2} runs before {@code 1}, and {@code 0} runs after
+     * {@code 1}. Middlewares with the same order retain their builder registration order. The
+     * default value is {@code 1}.
+     *
+     * @return the execution order; higher values execute first before delegating to {@code next}
+     */
+    default int order() {
+        return 1;
+    }
+
+    /**
      * Intercept the entire agent invocation.
      *
      * @param agent the agent instance
@@ -111,6 +125,10 @@ public interface MiddlewareBase {
 
     /**
      * Intercept the raw model API call.
+     *
+     * <p>Transformations to {@link io.agentscope.core.event.TextBlockDeltaEvent} instances in the
+     * returned stream are reflected in the final response message. This allows middleware to
+     * normalize model text before consumers, including native structured-output parsing, use it.
      *
      * @param agent the agent instance
      * @param ctx   per-call runtime context (session, user, attributes)

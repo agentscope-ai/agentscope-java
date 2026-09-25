@@ -1,4 +1,7 @@
-# Memory
+---
+title: Memory Management
+zh_link: /v1/zh/docs/task/memory
+---
 
 ## Overview
 
@@ -314,5 +317,5 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExa
 
 ## Related Documentation
 
-- [Session Management](./session.md)
-- [ReActAgent Guide](./agent-config.md)
+- [Session Management](/v1/en/docs/task/session)
+- [ReActAgent Guide](/v1/en/docs/task/agent-config)

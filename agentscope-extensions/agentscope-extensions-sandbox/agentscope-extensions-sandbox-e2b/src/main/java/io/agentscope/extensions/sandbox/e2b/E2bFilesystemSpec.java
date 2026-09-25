@@ -90,6 +90,22 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Maximum number of snapshots created by this session that are kept on shutdown; {@code <= 0}
+     * disables pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning
+     * behaviour. See {@link E2bSandboxClientOptions#setSnapshotRetention(int)} for the full
+     * contract.
+     */
+    public E2bFilesystemSpec snapshotRetention(int snapshotRetention) {
+        options.setSnapshotRetention(snapshotRetention);
+        return this;
+    }
+
+    public E2bFilesystemSpec workspaceRoot(String workspaceRoot) {
+        defaultWorkspaceSpec.setRoot(workspaceRoot);
+        return this;
+    }
+
     public E2bFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;

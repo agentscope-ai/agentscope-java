@@ -56,7 +56,14 @@ public class ReasoningContext {
     private int inputTokens = 0;
     private int outputTokens = 0;
     private int cachedTokens = 0;
+    private int cacheCreationTokens = 0;
+    private int reasoningTokens = 0;
+    private int toolUsePromptTokens = 0;
     private double time = 0;
+
+    // Provider-specific response metadata to propagate to the final message
+    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
+    private final Map<String, Object> responseMetadata = new HashMap<>();
 
     public ReasoningContext(String agentName) {
         this.agentName = agentName;
@@ -85,7 +92,15 @@ public class ReasoningContext {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
             cachedTokens = usage.getCachedTokens();
+            cacheCreationTokens = usage.getCacheCreationTokens();
+            reasoningTokens = usage.getReasoningTokens();
+            toolUsePromptTokens = usage.getToolUsePromptTokens();
             time = usage.getTime();
+        }
+
+        // Propagate provider-specific metadata
+        if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
+            responseMetadata.putAll(chunk.getMetadata());
         }
 
         List<Msg> streamingMsgs = new ArrayList<>();
@@ -166,8 +181,8 @@ public class ReasoningContext {
             return null;
         }
 
-        // Build metadata with accumulated ChatUsage
-        Map<String, Object> metadata = new HashMap<>();
+        // Build metadata: start with propagated response metadata, then add ChatUsage
+        Map<String, Object> metadata = new HashMap<>(responseMetadata);
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
             chatUsage =
@@ -175,6 +190,9 @@ public class ReasoningContext {
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
                             .cachedTokens(cachedTokens)
+                            .cacheCreationTokens(cacheCreationTokens)
+                            .reasoningTokens(reasoningTokens)
+                            .toolUsePromptTokens(toolUsePromptTokens)
                             .time(time)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
@@ -240,6 +258,16 @@ public class ReasoningContext {
     }
 
     /**
+     * Replace accumulated text after {@code onModelCall} middleware transforms text delta events.
+     *
+     * @hidden
+     * @param text text reconstructed from the transformed event stream
+     */
+    public void replaceAccumulatedText(String text) {
+        textAcc.replace(text);
+    }
+
+    /**
      * Get the accumulated thinking content.
      *
      * @hidden
@@ -282,6 +310,9 @@ public class ReasoningContext {
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
                     .cachedTokens(cachedTokens)
+                    .cacheCreationTokens(cacheCreationTokens)
+                    .reasoningTokens(reasoningTokens)
+                    .toolUsePromptTokens(toolUsePromptTokens)
                     .time(time)
                     .build();
         }

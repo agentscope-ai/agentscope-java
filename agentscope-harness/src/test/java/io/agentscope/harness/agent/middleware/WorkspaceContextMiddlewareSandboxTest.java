@@ -15,7 +15,6 @@
  */
 package io.agentscope.harness.agent.middleware;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,7 +62,7 @@ class WorkspaceContextMiddlewareSandboxTest {
         assertNotNull(prompt);
         assertTrue(prompt.contains("Sandbox root: /custom/root"));
         assertTrue(prompt.contains("container id: sbox-1"));
-        assertTrue(prompt.contains("upload/download tools"));
+        assertTrue(prompt.contains("no mechanism for moving files across the boundary"));
         assertTrue(prompt.contains("AGENTS.md defines persona"));
     }
 
@@ -136,9 +135,8 @@ class WorkspaceContextMiddlewareSandboxTest {
 
         String prompt = mw.onSystemPrompt(null, RC, "BASE\n").block();
         assertNotNull(prompt);
-        assertTrue(prompt.contains("Session Context"));
-        assertTrue(prompt.contains("Session ID: test-session"));
-        assertFalse(prompt.contains("AgentStateStore"));
+        assertTrue(prompt.contains("AgentStateStore Context"));
+        assertTrue(prompt.contains("AgentStateStore ID: test-session"));
     }
 
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {

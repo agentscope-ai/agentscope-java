@@ -213,6 +213,7 @@ class OpenAIMessageConverterTest {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.SYSTEM)
+                        .name("System Planner")
                         .content(
                                 List.of(
                                         TextBlock.builder()
@@ -224,6 +225,7 @@ class OpenAIMessageConverterTest {
 
         assertNotNull(result);
         assertEquals("system", result.getRole());
+        assertEquals("System_Planner", result.getName());
         assertEquals("You are a helpful assistant", result.getContentAsString());
     }
 

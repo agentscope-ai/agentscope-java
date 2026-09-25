@@ -1,4 +1,7 @@
-# HayStack Knowledge
+---
+title: HayStack
+zh_link: /v2/zh/integration/rag/haystack
+---
 
 `agentscope-extensions-rag-haystack` connects AgentScope to a [HayStack](https://haystack.deepset.ai/) RAG service. Document management and indexing happen on the HayStack side; AgentScope only invokes its retrieval API.
 

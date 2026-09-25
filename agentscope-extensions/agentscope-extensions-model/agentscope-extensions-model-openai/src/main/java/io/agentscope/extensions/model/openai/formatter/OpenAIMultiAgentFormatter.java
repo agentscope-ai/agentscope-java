@@ -15,9 +15,12 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,35 +67,64 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
+        return doFormat(msgs, null);
+    }
+
+    @Override
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs, GenerateOptions options) {
         List<OpenAIMessage> result = new ArrayList<>();
+        List<Boolean> cacheDirectives = new ArrayList<>();
 
-        // Group messages into sequences
-        List<MessageGroup> groups = groupMessages(msgs);
-
-        for (MessageGroup group : groups) {
+        for (MessageGroup group : groupMessages(msgs)) {
             switch (group.type) {
                 case SYSTEM -> {
                     Msg systemMsg = group.messages.get(0);
-                    result.add(messageConverter.convertToMessage(systemMsg, false));
+                    result.add(convertMessage(systemMsg, false));
+                    cacheDirectives.add(cacheControlDirective(systemMsg));
                 }
-                case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
+                case TOOL_SEQUENCE -> {
+                    for (Msg msg : group.messages) {
+                        if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
+                            result.add(convertMessage(msg, hasMediaContent(msg)));
+                            cacheDirectives.add(cacheControlDirective(msg));
+                        }
+                    }
+                }
                 case AGENT_CONVERSATION -> {
-                    result.add(
+                    OpenAIMessage mergedMessage =
                             conversationMerger.mergeToUserMessage(
                                     group.messages,
                                     msg -> formatRoleLabel(msg.getRole()),
-                                    this::convertToolResultToString));
+                                    this::convertToolResultToString);
+                    cacheDirectives.add(
+                            applyMergedCacheControlMetadata(group.messages, mergedMessage));
+                    result.add(mergedMessage);
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
-                    result.add(
-                            messageConverter.convertToMessage(
-                                    bypassMsg, hasMediaContent(bypassMsg)));
+                    result.add(convertMessage(bypassMsg, hasMediaContent(bypassMsg)));
+                    cacheDirectives.add(cacheControlDirective(bypassMsg));
                 }
             }
         }
 
+        applyAutomaticCacheControl(result, cacheDirectives, options);
         return result;
+    }
+
+    private Boolean applyMergedCacheControlMetadata(
+            List<Msg> messages, OpenAIMessage mergedMessage) {
+        // A merged output has one content boundary, so the last explicit directive wins.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg message = messages.get(i);
+            if (message.getMetadata() != null
+                    && message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL)
+                            instanceof Boolean) {
+                messageConverter.applyCacheControlFromMetadata(message, mergedMessage);
+                return (Boolean) message.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+            }
+        }
+        return null;
     }
 
     // ========== Private Helper Methods ==========
@@ -147,24 +179,24 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
                 if (msg.hasContentBlocks(ToolUseBlock.class)) {
                     yield MessageGroupType.TOOL_SEQUENCE;
                 }
+                if (msg.getRole() == MsgRole.ASSISTANT && hasReasoningDetails(msg)) {
+                    yield MessageGroupType.TOOL_SEQUENCE;
+                }
                 yield MessageGroupType.AGENT_CONVERSATION;
             }
         };
     }
 
     /**
-     * Format tool sequence messages.
+     * Check whether a message carries encrypted reasoning details that must be preserved
+     * on an individual assistant message (cannot be merged into a user history message).
      */
-    private List<OpenAIMessage> formatToolSequence(List<Msg> msgs) {
-        List<OpenAIMessage> result = new ArrayList<>();
-
-        for (Msg msg : msgs) {
-            if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
-                result.add(messageConverter.convertToMessage(msg, hasMediaContent(msg)));
-            }
+    private boolean hasReasoningDetails(Msg msg) {
+        ThinkingBlock tb = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (tb == null || tb.getMetadata() == null) {
+            return false;
         }
-
-        return result;
+        return tb.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS);
     }
 
     /**

@@ -1,6 +1,8 @@
 ---
-title: "Context & AgentState"
-description: "Stateless agent engine, AgentState lifecycle, state persistence, and RuntimeContext"
+title: Context & AgentState
+description: Stateless agent engine, AgentState lifecycle, state persistence, and
+  RuntimeContext
+zh_link: /v2/zh/docs/building-blocks/context
 ---
 
 ## Stateless Agent Engine
@@ -32,7 +34,7 @@ description: "Stateless agent engine, AgentState lifecycle, state persistence, a
 
 ## AgentState
 
-An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
+An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentState`** (`io.agentscope.core.state.AgentState`) — a complete snapshot of everything that makes the agent restartable:
 
 | `AgentState` field | Content |
 |---|---|
@@ -40,12 +42,12 @@ An [`AgentStateStore`](../../integration/session/index.md) persists an **`AgentS
 | `getUserId()` | The user identifier (nullable for anonymous sessions) |
 | `getContext()` / `contextMutable()` | Current conversation history (user / assistant / tool calls / tool results) |
 | `getSummary()` | Compacted summary (when compaction is enabled) |
-| `getPermissionContext()` | Tool permission rules — see [Permissions](./permission-system.md) |
+| `getPermissionContext()` | Tool permission rules — see [Permissions](/v2/en/docs/building-blocks/permission-system) |
 | `getPlanModeContext()` | Whether Plan Mode is active, current plan file path |
 | `getTasksContext()` | The `todo_write` task list |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
 
-`AgentState` also carries a transient, non-serialised `InterruptControl` for per-session interrupt signalling — see [Per-session interrupt](#per-session-interrupt) below.
+Execution controls are separate from `AgentState`: each invocation owns an independent interrupt signal. See [Per-session interrupt](#per-session-interrupt) below.
 
 At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. **Provided the state store is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
 
@@ -109,9 +111,13 @@ HarnessAgent agent = HarnessAgent.builder()
         .build();
 ```
 
-:::{warning}
+
+<Warning>
+
 The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
-:::
+
+</Warning>
+
 
 ### Real-time resume across processes and machines
 
@@ -152,7 +158,7 @@ The `(userId, sessionId)` pair defines the namespacing: `sessionId` alone is eno
 `sessionId` and `userId` solve different problems:
 
 - **`sessionId`** — which conversation this is; independent `AgentState` snapshot.
-- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](../harness/filesystem.md).
+- **`userId`** — which user owns this conversation; also drives which user's namespace files land in, see [Filesystem](/v2/en/docs/harness/filesystem).
 
 ```java
 agent.call(msg, RuntimeContext.builder()
@@ -185,29 +191,48 @@ AgentState restored = AgentState.fromJsonString(json);
 | `setSummary(...)` / `getSummary()` | Custom compaction summary (for your own compaction middleware) |
 | `toJson()` / `fromJsonString(String)` | Serialize / deserialize |
 
-:::{note}
+### Clearing a session's conversation context
+
+To let a user start a fresh topic without creating a new session, call `clearContext`. It keeps the
+same `(userId, sessionId)` and preserves non-conversation state such as permissions, tools, tasks,
+and Plan Mode. It clears the model-visible message buffer and compaction summary, then immediately
+persists the result when the agent has an `AgentStateStore`.
+
+```java
+agent.clearContext("alice", "session-001");
+
+// Or use the same RuntimeContext used by calls.
+agent.clearContext(RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-001")
+    .build());
+```
+
+Call it after the session's current request has completed. It does not cancel an in-flight call;
+the next call starts with the cleared conversation context.
+
+
+<Note>
+
 The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Deprecated(forRemoval = true)` in 2.0. New code should use `AgentState.getContext()` + an `AgentStateStore`; `Memory` remains only as a source-compat shim.
-:::
+
+</Note>
+
 
 ### Per-session interrupt
 
-Each `AgentState` carries a transient `InterruptControl` (`io.agentscope.core.interruption.InterruptControl`) — a per-session interrupt signal that is **never serialised** to the state store (marked `@JsonIgnore transient` on `AgentState`). This allows targeted interruption of a single session's in-flight call without affecting other concurrent calls on the same agent instance.
+Each execution owns a runtime-only `InterruptControl`. It is neither stored on `AgentState` nor persisted with conversation history. A session-targeted interrupt resolves the currently admitted execution:
 
 ```java
-// Interrupt a specific session — only that session's call observes the signal
 agent.interrupt("alice", "session-001");
-
-// Interrupt with an injected user message
-agent.interrupt("alice", "session-001", Msg.userMsg("Please stop and summarise."));
+agent.interrupt("alice", "session-001", new UserMessage("Please stop."));
 ```
 
-The reasoning loop checks `state.interruptControl().isInterrupted()` before each iteration. When triggered, the loop enters the `handleInterrupt` path, which saves state and returns the partial result.
+An idle session is unaffected. To select a particular queued or running invocation, use the `AgentRun` returned by `prepareRun` or `prepareCall`; see [execution control](/v2/en/docs/building-blocks/agent#control-one-execution). Queued B and running A have independent controls even when they share a session.
 
-The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`.
+The reasoning loop checks its execution's signal at cooperative checkpoints. A user interrupt produces an interrupted recovery reply and saves conversation state. The deprecated no-argument `interrupt()` targets the default session's current execution, never the most recently used context.
 
-:::{note}
-`InterruptControl` is a runtime-only signal; it is never persisted. If a session resumes on a different node after failover, the interrupt flag starts cleared. The separate `AgentState.shutdownInterrupted` flag (which **is** persisted) records whether the session was interrupted by graceful shutdown — the agent can detect and recover from that on next load.
-:::
+`AgentState.shutdownInterrupted` is a separate, persisted recovery marker. Graceful shutdown binds both the execution control and the state resolved for that call; queued calls have no state to save. No interrupt flag is carried into the next run or loaded on another node.
 
 ### Concurrent usage
 
@@ -244,9 +269,13 @@ Flux.merge(call1, call2).collectList().block();
 - **Same `(userId, sessionId)`** → per-session async gate serialises calls in FIFO order — state consistency guaranteed without external locking.
 - **`interrupt(userId, sessionId)`** → targets exactly one session, other in-flight calls unaffected.
 
-:::{tip}
+
+<Tip>
+
 The in-memory state cache grows with the number of distinct sessions a single agent instance has served. For most deployments (hundreds of sessions) this is negligible. For very large-scale scenarios (millions of sessions per process), consider an agent factory pattern with bounded instance pools — but this is rarely needed since `AgentState` objects are lightweight.
-:::
+
+</Tip>
+
 
 ---
 
@@ -272,6 +301,7 @@ Available accessors:
 | Method | Description |
 |------|------|
 | `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
+| `getRunId()` | Stable per-call correlation id (see [runId correlation](#runid-correlation) below), never null |
 | `getAgentState()` / `setAgentState(AgentState)` | Call-scoped `AgentState`, injected by the framework at call entry. Middleware and tools should read state from here, not from `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Use this in middleware/tools for concurrency safety |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
@@ -279,19 +309,53 @@ Available accessors:
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
 
-:::{tip}
-**The `AgentStateStore` is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
-:::
+### runId correlation
 
-:::{tip}
+Every `RuntimeContext` carries a never-null `runId`: a non-blank value supplied via `builder().runId(x)` is kept as-is; otherwise (unset or blank) `build()` generates one (32-char hex). Its purpose is to tie a **single execution** together across the execution layer and the product layer:
+
+- Middleware, tools, logs, and tracing can all correlate one invocation via `ctx.getRunId()` — under multi-session concurrency, grepping a single runId recovers the full trace of that call;
+- Handles created by `prepareRun` / `prepareCall` adopt the context's runId, so `run.runId() == ctx.getRunId()` — naturally aligned with the `AgentRunRegistry` registration key, the SSE `SESSION_RUN_STARTED` event, and the id the frontend uses to cancel a run;
+- Subagent contexts are derived via `RuntimeContext.builder(parentRc)`, which copies the runId, so subagents spawned through `agent_spawn` inherit the parent call's id — even when the subagent gets an independent sessionId, the chain id keeps the whole execution linked.
+
+```java
+// Orchestration layer threading an explicit chain id (uniqueness is the caller's job):
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("s-001")
+    .runId("trace-2026-09-25-0001")   // spans the whole multi-agent flow
+    .build();
+
+// Correlate this execution from middleware / tools:
+log.info("[runId={}] tool executed", ctx.getRunId());
+
+// Handle and execution layer share the same id:
+AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
+assert run.runId().equals(ctx.getRunId());
+```
+
+> One-execution-one-runId relies on caller discipline: reusing the same ctx (or a context derived from it) across sequential calls makes those executions share the runId, and the framework does not error; concurrent duplicate runIds are only rejected at the service layer by `AgentRunRegistry`. For strict isolation, create a fresh context per call or pass an explicit new runId.
+
+
+<Tip>
+
+**The `AgentStateStore` is bound at builder time and cannot be switched per call via `RuntimeContext`.** What *does* vary per call is the `(userId, sessionId)` slot it addresses — set `userId` for per-user isolation (or a custom `keyPrefix` on the store); do not try to hand each call a different state store instance.
+
+</Tip>
+
+
+
+<Tip>
+
 **Accessing `AgentState` from middleware and tools:** Always use `RuntimeContext.resolveAgentState(ctx, agent)` rather than `agent.getAgentState()` during call execution. Under concurrency, `agent.getAgentState()` returns the last-active session's state (an arbitrary choice when multiple calls are in flight), while `ctx.getAgentState()` returns the state for **this call's** session — which is what you almost always want.
-:::
+
+</Tip>
+
 
 ---
 
 ## Related pages
 
-- [Agent](./agent.md) — full `ReActAgent` API and builder fields
-- [Context Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
-- [Memory](../harness/memory.md) — long-term memory, background maintenance
-- [Permissions](./permission-system.md) — persistence of permission rules
+- [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API and builder fields
+- [Context Compaction](/v2/en/docs/harness/compaction) — conversation summarization, tool-result eviction, overflow recovery (builds on top of the AgentState foundation described here)
+- [Memory](/v2/en/docs/harness/memory) — long-term memory, background maintenance
+- [Permissions](/v2/en/docs/building-blocks/permission-system) — persistence of permission rules

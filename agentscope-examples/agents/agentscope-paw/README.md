@@ -17,7 +17,7 @@ browser tab.
 paw deliberately doesn't try to be more than that. There's no login, no
 multi-tenant isolation, no Docker sandbox, no horizontal scaling. If you need
 any of those — host paw-style agents for a team, or run untrusted code in
-isolation — the sister projects [agentscope-builder](../agentscope-builder/)
+isolation — the sister projects [agentscope-service](../../../agentscope-service/)
 and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
 
 ### At a glance
@@ -576,6 +576,59 @@ Recognised properties (all under `paw.*`, with matching `PAW_*` env vars):
 
 If you provide your own `Model` Spring bean (for example by importing another
 `@Configuration`), the auto-wired DashScope model is skipped.
+
+## Operate / aistio BYO + transcript testing
+
+paw is the reference BYO data plane for verifying session history with
+[aistio](../../../agentscope-service/aistio/). After each turn,
+`TranscriptMiddleware` writes structured JSONL segments (independent of memory
+flush). aistiod can read the same directory via `AISTIO_TRANSCRIPT_FS_ROOT`, so
+Operate message history survives DP shutdown.
+
+Layout:
+
+```
+${claw.home}/transcripts/{tenant}/{agentId}/{sessionId}/events/{seqStart}-{seqEnd}-{writerId}.jsonl
+```
+
+`tenant` defaults to `claw.aistio.namespace` (`default`). `agentId` is the
+catalog id (auto-generated config uses `default`). **Set
+`CLAW_AISTIO_AGENT_NAME` to that same id** so Operate FS reads hit the path paw
+writes.
+
+```bash
+# Terminal 1 — control plane
+export AISTIO_TRANSCRIPT_FS_ROOT="$HOME/.agentscope/claw/transcripts"
+# start aistiod (:8081)
+
+# Terminal 2 — paw
+export DASHSCOPE_API_KEY=sk-...
+export CLAW_AISTIO_ENABLED=true
+export AISTIO_CONTROL_HTTP=http://localhost:8081
+export BUILDER_INTERNAL_TOKEN=local-dev-internal-token-at-least-32chars
+export CLAW_AISTIO_AGENT_NAME=default
+export CLAW_AISTIO_NAMESPACE=default
+export CLAW_PORT=8090
+java -jar agentscope-examples/agents/agentscope-paw/target/agentscope-paw-*.jar
+```
+
+Checklist:
+
+1. Chat in the paw UI (include a tool call if possible).
+2. `ls $HOME/.agentscope/claw/transcripts/default/default/*/events/`
+3. Open the session in Operate → Messages (tool_use / tool_result should be structured).
+4. Stop paw and refresh Messages — history should still load from the FS root.
+5. Optional: `GET /api/v1/sessions/{id}/events?before=…&limit=50`
+
+Contract: [wrapper-transcript-contract.md](../../../agentscope-service/aistio/docs/zh/controlplane/wrapper-transcript-contract.md).
+
+| Property | Env | Default |
+| --- | --- | --- |
+| `claw.aistio.enabled` | `CLAW_AISTIO_ENABLED` | `false` |
+| `claw.aistio.agent-name` | `CLAW_AISTIO_AGENT_NAME` | `default` (must match catalog id) |
+| `claw.transcript.enabled` | `CLAW_TRANSCRIPT_ENABLED` | `true` |
+| `claw.transcript.root` | `CLAW_TRANSCRIPT_ROOT` | `${claw.home}/transcripts` |
+| `claw.transcript.tenant` | `CLAW_TRANSCRIPT_TENANT` | = aistio namespace |
 
 ## What this fork is _not_
 

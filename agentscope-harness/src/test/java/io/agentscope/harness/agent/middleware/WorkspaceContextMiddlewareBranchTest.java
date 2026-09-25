@@ -64,7 +64,7 @@ class WorkspaceContextMiddlewareBranchTest {
         assertTrue(prompt.contains("Distributed workspace template root"));
         assertTrue(prompt.contains(workspace.toAbsolutePath().toString()));
         assertTrue(prompt.contains("My operating system is:"));
-        assertTrue(prompt.contains("Temporary files directory:"));
+        assertTrue(prompt.contains("The project's temporary directory is:"));
     }
 
     @Test
@@ -79,6 +79,6 @@ class WorkspaceContextMiddlewareBranchTest {
         assertTrue(prompt.contains("Your working directory is:"));
         assertTrue(prompt.contains(workspace.toAbsolutePath().toString()));
         assertTrue(prompt.contains("My operating system is:"));
-        assertTrue(prompt.contains("Temporary files directory:"));
+        assertTrue(prompt.contains("The project's temporary directory is:"));
     }
 }

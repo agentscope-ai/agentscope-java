@@ -1,6 +1,14 @@
-```{note}
-This page has been superseded by [Distributed Storage — MySQL](../distributed/mysql.md). Content below is kept for reference.
-```
+---
+title: MySQL State Store
+zh_link: /v2/zh/integration/session/mysql
+---
+
+<Note>
+
+This page has been superseded by [Distributed Storage — MySQL](/v2/en/integration/distributed/mysql). Content below is kept for reference.
+
+</Note>
+
 
 # MySQL State Store
 

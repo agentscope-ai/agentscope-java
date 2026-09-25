@@ -142,7 +142,7 @@ final class E2bEnvdProcessClient {
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit = Integer.MIN_VALUE;
+        int exit;
         try (Response res = callClient.newCall(req).execute()) {
             if (!res.isSuccessful()) {
                 String err = res.body() != null ? res.body().string() : "";
@@ -165,7 +165,7 @@ final class E2bEnvdProcessClient {
     private int drainStartStream(
             InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
             throws IOException {
-        int exit = Integer.MIN_VALUE;
+        Integer exit = null;
         Descriptors.FieldDescriptor srEventF = startResponseDesc.findFieldByName("event");
         Descriptors.FieldDescriptor peDataF = processEventDesc.findFieldByName("data");
         Descriptors.FieldDescriptor peEndF = processEventDesc.findFieldByName("end");
@@ -204,14 +204,16 @@ final class E2bEnvdProcessClient {
                     DynamicMessage end = (DynamicMessage) pe.getField(peEndF);
                     Descriptors.FieldDescriptor ec =
                             end.getDescriptorForType().findFieldByName("exit_code");
-                    if (end.hasField(ec)) {
-                        Object v = end.getField(ec);
-                        exit = v instanceof Integer ? (Integer) v : ((Long) v).intValue();
+                    if (ec != null) {
+                        exit = ((Number) end.getField(ec)).intValue();
                     }
                 }
             } catch (IOException e) {
                 continue;
             }
+        }
+        if (exit == null) {
+            throw new IOException("envd process stream ended before receiving a process exit code");
         }
         return exit;
     }
@@ -344,8 +346,6 @@ final class E2bEnvdProcessClient {
             JsonNode exitCodeNode = endNode.path("exitCode");
             if (exitCodeNode.canConvertToInt()) {
                 endBuilder.setField(exitCodeField, exitCodeNode.intValue());
-            }
-            if (!endBuilder.getAllFields().isEmpty()) {
                 event.setField(processEventDesc.findFieldByName("end"), endBuilder.build());
             }
         }
