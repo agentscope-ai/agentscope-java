@@ -222,7 +222,7 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
   - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
 
-对于 A2A `AgentRunner` 实现，如果细粒度事件流不可用，请不要覆写 `streamEvents(...)`，或返回 `UnsupportedAgentEventStreamException`，这样才能选择 legacy `stream(...)` fallback。覆写后的 `streamEvents(...)` 如果返回普通的 `UnsupportedOperationException`，会被视为执行失败，不会再次通过 legacy stream 重试。
+A2A server 会将权限 HITL 的 `RequireUserConfirmEvent` 映射为 `TaskState.INPUT_REQUIRED`，并保持 task 未完成。状态消息包含 `DataPart`，其 `type` 为 `"agentscope.confirmation_request"`，并带有 `replyId` 和 `toolCalls`。客户端可在同一 task 上发送 `type: "agentscope.confirmation_response"` 的 `DataPart`，携带匹配的 `replyId`，以及非空 `results` 数组（每项包含 `toolCallId` 和 `confirmed`）。结果可携带 id 和 name 相同的修改后 `toolCall`；仅其中的 `input` 会覆盖原请求。确认通过的结果可附带 `rules`（`tool_name`、`rule_content`、`behavior`、`source`），拒绝结果可附带 `reason`。
 
 新代码统一改用：
 

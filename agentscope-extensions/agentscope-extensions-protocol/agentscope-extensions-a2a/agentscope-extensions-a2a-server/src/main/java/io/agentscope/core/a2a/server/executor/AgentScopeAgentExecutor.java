@@ -22,6 +22,7 @@ import io.a2a.server.agentexecution.AgentExecutor;
 import io.a2a.server.agentexecution.RequestContext;
 import io.a2a.server.events.EventQueue;
 import io.a2a.server.tasks.TaskUpdater;
+import io.a2a.spec.DataPart;
 import io.a2a.spec.JSONRPCError;
 import io.a2a.spec.Message;
 import io.a2a.spec.Part;
@@ -33,14 +34,13 @@ import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
-import io.agentscope.core.a2a.server.executor.runner.UnsupportedAgentEventStreamException;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
@@ -52,7 +52,12 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import java.util.HashSet;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionRule;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +80,12 @@ import reactor.core.publisher.SignalType;
 public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
+
+    static final String CONFIRMATION_REQUEST_TYPE = "agentscope.confirmation_request";
+
+    static final String CONFIRMATION_RESPONSE_TYPE = "agentscope.confirmation_response";
+
+    private static final String CONFIRMATION_TYPE_KEY = "type";
 
     private final Map<String, Subscription> subscriptions;
 
@@ -110,10 +121,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     @Override
     public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         try {
-            List<Msg> inputMessages =
-                    MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
+            List<Msg> inputMessages = convertInputMessage(context);
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
-            Flux<AgentEvent> resultFlux = streamAgentEvents(inputMessages, requestOptions);
+            Flux<AgentEvent> resultFlux = agentRunner.streamEvents(inputMessages, requestOptions);
 
             Task task = context.getTask();
             if (task == null) {
@@ -122,7 +132,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             } else {
                 log.info("[{}] Using existing task.", task.getId());
             }
-            if (isBlockRequest(context)) {
+            if (isBlockRequest(context) && context.getTask() == null) {
                 processTaskBlocking(context, eventQueue, task, resultFlux);
             } else {
                 processTaskNonBlocking(context, eventQueue, task, resultFlux);
@@ -138,6 +148,242 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
     }
 
+    private List<Msg> convertInputMessage(RequestContext context) {
+        Message request = context.getMessage();
+        DataPart confirmationResponse = findControlPart(request, CONFIRMATION_RESPONSE_TYPE);
+        Task task = context.getTask();
+        boolean taskRequiresInput =
+                task != null
+                        && task.getStatus() != null
+                        && task.getStatus().state() == TaskState.INPUT_REQUIRED;
+
+        if (taskRequiresInput && confirmationResponse == null) {
+            throw new IllegalArgumentException(
+                    "This task requires an AgentScope confirmation_response DataPart.");
+        }
+        if (confirmationResponse != null && !taskRequiresInput) {
+            throw new IllegalArgumentException(
+                    "AgentScope confirmation responses are only valid for INPUT_REQUIRED tasks.");
+        }
+        if (confirmationResponse == null) {
+            return MessageConvertUtil.convertFromMessageToMsgs(request);
+        }
+
+        PendingConfirmation pending = findPendingConfirmation(task);
+        List<ConfirmResult> confirmationResults =
+                parseConfirmationResults(confirmationResponse, pending);
+        List<Part<?>> userParts =
+                request.getParts().stream()
+                        .filter(
+                                part ->
+                                        !(part instanceof DataPart dataPart
+                                                && isControlPart(
+                                                        dataPart, CONFIRMATION_RESPONSE_TYPE)))
+                        .toList();
+        Message userMessage = new Message.Builder(request).parts(userParts).build();
+        List<Msg> inputMessages =
+                new ArrayList<>(MessageConvertUtil.convertFromMessageToMsgs(userMessage));
+        if (inputMessages.isEmpty()) {
+            inputMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmationResults))
+                            .build());
+        } else {
+            int lastIndex = inputMessages.size() - 1;
+            Msg lastMessage = inputMessages.get(lastIndex);
+            Map<String, Object> metadata =
+                    lastMessage.getMetadata() == null
+                            ? new HashMap<>()
+                            : new HashMap<>(lastMessage.getMetadata());
+            metadata.put(Msg.METADATA_CONFIRM_RESULTS, confirmationResults);
+            inputMessages.set(lastIndex, lastMessage.withMetadata(metadata));
+        }
+        return inputMessages;
+    }
+
+    private static DataPart findControlPart(Message message, String expectedType) {
+        if (message == null || message.getParts() == null) {
+            return null;
+        }
+        List<DataPart> matchingParts =
+                message.getParts().stream()
+                        .filter(DataPart.class::isInstance)
+                        .map(DataPart.class::cast)
+                        .filter(part -> isControlPart(part, expectedType))
+                        .toList();
+        if (matchingParts.size() > 1) {
+            throw new IllegalArgumentException(
+                    "An A2A message must contain at most one " + expectedType + " DataPart.");
+        }
+        return matchingParts.isEmpty() ? null : matchingParts.get(0);
+    }
+
+    private static boolean isControlPart(DataPart dataPart, String expectedType) {
+        return dataPart.getData() != null
+                && expectedType.equals(dataPart.getData().get(CONFIRMATION_TYPE_KEY));
+    }
+
+    private static PendingConfirmation findPendingConfirmation(Task task) {
+        Message statusMessage = task.getStatus().message();
+        DataPart requestPart = findControlPart(statusMessage, CONFIRMATION_REQUEST_TYPE);
+        if (requestPart == null) {
+            throw new IllegalArgumentException(
+                    "The INPUT_REQUIRED task does not contain an AgentScope confirmation request.");
+        }
+        Map<String, Object> requestData = requestPart.getData();
+        String replyId = requiredString(requestData.get("replyId"), "replyId");
+        Object rawToolCalls = requestData.get("toolCalls");
+        if (!(rawToolCalls instanceof List<?> toolCalls) || toolCalls.isEmpty()) {
+            throw new IllegalArgumentException("The confirmation request has no toolCalls.");
+        }
+        Map<String, Map<String, Object>> toolCallsById = new LinkedHashMap<>();
+        for (Object rawToolCall : toolCalls) {
+            Map<String, Object> toolCall = toStringMap(rawToolCall, "toolCall");
+            String id = requiredString(toolCall.get("id"), "toolCall.id");
+            if (toolCallsById.putIfAbsent(id, toolCall) != null) {
+                throw new IllegalArgumentException("Duplicate toolCall id in request: " + id);
+            }
+        }
+        return new PendingConfirmation(replyId, toolCallsById);
+    }
+
+    private static List<ConfirmResult> parseConfirmationResults(
+            DataPart responsePart, PendingConfirmation pending) {
+        Map<String, Object> responseData = responsePart.getData();
+        if (!pending.replyId().equals(responseData.get("replyId"))) {
+            throw new IllegalArgumentException(
+                    "Confirmation replyId does not match the pending request.");
+        }
+        Object rawResults = responseData.get("results");
+        if (!(rawResults instanceof List<?> results) || results.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Confirmation response must include non-empty results.");
+        }
+
+        Set<String> resultIds = new java.util.HashSet<>();
+        List<ConfirmResult> confirmationResults = new ArrayList<>();
+        for (Object rawResult : results) {
+            Map<String, Object> result = toStringMap(rawResult, "result");
+            String toolCallId = requiredString(result.get("toolCallId"), "result.toolCallId");
+            Object rawConfirmed = result.get("confirmed");
+            if (!(rawConfirmed instanceof Boolean confirmed)) {
+                throw new IllegalArgumentException("result.confirmed must be a boolean.");
+            }
+            if (!resultIds.add(toolCallId)) {
+                throw new IllegalArgumentException(
+                        "Duplicate confirmation result for toolCallId: " + toolCallId);
+            }
+            Map<String, Object> requestedToolCall = pending.toolCallsById().get(toolCallId);
+            if (requestedToolCall == null) {
+                throw new IllegalArgumentException(
+                        "Confirmation result references an unknown toolCallId: " + toolCallId);
+            }
+
+            Map<String, Object> toolCall = new LinkedHashMap<>(requestedToolCall);
+            Object rawModifiedToolCall = result.get("toolCall");
+            if (rawModifiedToolCall != null) {
+                Map<String, Object> modifiedToolCall = toStringMap(rawModifiedToolCall, "toolCall");
+                if (!toolCallId.equals(modifiedToolCall.get("id"))) {
+                    throw new IllegalArgumentException(
+                            "result.toolCall.id must match result.toolCallId.");
+                }
+                String requestedToolName =
+                        requiredString(requestedToolCall.get("name"), "toolCall.name");
+                String modifiedToolName =
+                        requiredString(modifiedToolCall.get("name"), "toolCall.name");
+                if (!requestedToolName.equals(modifiedToolName)) {
+                    throw new IllegalArgumentException(
+                            "result.toolCall.name must match the requested tool call.");
+                }
+                if (modifiedToolCall.containsKey("input")) {
+                    toolCall.put("input", modifiedToolCall.get("input"));
+                }
+            }
+            String reason = optionalString(result.get("reason"), "result.reason");
+            List<PermissionRule> rules = parsePermissionRules(result.get("rules"));
+            confirmationResults.add(
+                    new ConfirmResult(
+                            confirmed, toToolUseBlock(toolCall, toolCallId), rules, reason));
+        }
+        return confirmationResults;
+    }
+
+    private static List<PermissionRule> parsePermissionRules(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof List<?> rules)) {
+            throw new IllegalArgumentException("result.rules must be an array.");
+        }
+        List<PermissionRule> parsedRules = new ArrayList<>();
+        for (Object rawRule : rules) {
+            Map<String, Object> rule = toStringMap(rawRule, "result.rules entry");
+            String behavior = requiredString(rule.get("behavior"), "rule.behavior");
+            parsedRules.add(
+                    new PermissionRule(
+                            requiredString(rule.get("tool_name"), "rule.tool_name"),
+                            optionalString(rule.get("rule_content"), "rule.rule_content"),
+                            PermissionBehavior.fromString(behavior),
+                            requiredString(rule.get("source"), "rule.source")));
+        }
+        return parsedRules;
+    }
+
+    private static ToolUseBlock toToolUseBlock(Map<String, Object> data, String expectedId) {
+        String id = requiredString(data.get("id"), "toolCall.id");
+        if (!expectedId.equals(id)) {
+            throw new IllegalArgumentException("toolCall.id does not match the pending request.");
+        }
+        String name = requiredString(data.get("name"), "toolCall.name");
+        return ToolUseBlock.builder()
+                .id(id)
+                .name(name)
+                .input(optionalStringMap(data.get("input"), "toolCall.input"))
+                .content(optionalString(data.get("content"), "toolCall.content"))
+                .metadata(optionalStringMap(data.get("metadata"), "toolCall.metadata"))
+                .build();
+    }
+
+    private static Map<String, Object> optionalStringMap(Object value, String field) {
+        return value == null ? Map.of() : toStringMap(value, field);
+    }
+
+    private static Map<String, Object> toStringMap(Object value, String field) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            throw new IllegalArgumentException(field + " must be an object.");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException(field + " keys must be strings.");
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private static String optionalString(Object value, String field) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String string) {
+            return string;
+        }
+        throw new IllegalArgumentException(field + " must be a string.");
+    }
+
+    private static String requiredString(Object value, String field) {
+        String string = optionalString(value, field);
+        if (string == null || string.isBlank()) {
+            throw new IllegalArgumentException(field + " must not be blank.");
+        }
+        return string;
+    }
+
+    private record PendingConfirmation(
+            String replyId, Map<String, Map<String, Object>> toolCallsById) {}
+
     private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
         Message message = context.getParams().message();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
@@ -152,69 +398,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             return String.valueOf(message.getMetadata().get("userId"));
         }
         return "";
-    }
-
-    /**
-     * Prefer the fine-grained event stream while keeping custom legacy runners source-compatible.
-     *
-     * <p>{@link AgentRunner#streamEvents(List, AgentRequestOptions)} has a default unsupported
-     * implementation, so the fallback is only selected when a runner has not migrated yet. The
-     * legacy events are wrapped as {@link AgentEvent}s before they reach the handlers, which keeps
-     * the A2A processing path on one event model.
-     */
-    private Flux<AgentEvent> streamAgentEvents(
-            List<Msg> inputMessages, AgentRequestOptions requestOptions) {
-        // Catch only the explicit compatibility marker. A real UnsupportedOperationException from
-        // the agent pipeline must propagate; falling back then could execute the agent twice.
-        return Flux.defer(
-                () -> {
-                    try {
-                        Flux<AgentEvent> fineGrainedStream =
-                                agentRunner.streamEvents(inputMessages, requestOptions);
-                        AtomicBoolean emitted = new AtomicBoolean();
-                        return fineGrainedStream
-                                .doOnNext(event -> emitted.set(true))
-                                .onErrorResume(
-                                        UnsupportedAgentEventStreamException.class,
-                                        error -> {
-                                            if (emitted.get()) {
-                                                return Flux.error(error);
-                                            }
-                                            log.debug(
-                                                    "Falling back to legacy AgentRunner.stream()"
-                                                            + " for task {}",
-                                                    requestOptions.getTaskId());
-                                            return streamLegacyEvents(
-                                                    inputMessages, requestOptions);
-                                        });
-                    } catch (UnsupportedAgentEventStreamException error) {
-                        log.debug(
-                                "Falling back to legacy AgentRunner.stream() for task {}",
-                                requestOptions.getTaskId());
-                        return streamLegacyEvents(inputMessages, requestOptions);
-                    }
-                });
-    }
-
-    private Flux<AgentEvent> streamLegacyEvents(
-            List<Msg> inputMessages, AgentRequestOptions requestOptions) {
-        return agentRunner.stream(inputMessages, requestOptions)
-                .flatMapIterable(AgentScopeAgentExecutor::adaptLegacyEvent);
-    }
-
-    private static List<AgentEvent> adaptLegacyEvent(Event event) {
-        if (event == null || event.getType() == null || event.getMessage() == null) {
-            return List.of();
-        }
-        AgentEventType eventType =
-                switch (event.getType()) {
-                    case REASONING, SUMMARY -> AgentEventType.TEXT_BLOCK_DELTA;
-                    case TOOL_RESULT -> AgentEventType.TOOL_RESULT_TEXT_DELTA;
-                    case HINT -> AgentEventType.HINT_BLOCK;
-                    case AGENT_RESULT -> AgentEventType.AGENT_RESULT;
-                    default -> null;
-                };
-        return eventType == null ? List.of() : List.of(new LegacyAgentEvent(event, eventType));
     }
 
     private String getSessionId(Message message) {
@@ -255,7 +438,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private void processTaskBlocking(
             RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
-                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+                new BlockingFluxEventHandler(context, agentExecuteProperties, task, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
@@ -270,7 +453,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
-            eventQueue.enqueueEvent(task);
+            if (context.getTask() == null) {
+                eventQueue.enqueueEvent(task);
+            }
             log.info("[{}] Starting streaming request processing", context.getTaskId());
             processStreamingOutput(resultFlux, taskUpdater, context);
         } catch (Exception e) {
@@ -329,7 +514,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final Set<AgentEventType> requiredEventTypes;
 
-        private final Set<LegacyEventKey> streamedLegacyEvents;
+        private final AtomicBoolean waitingForInput;
 
         private BaseFluxEventHandler(
                 RequestContext context, AgentExecuteProperties executeProperties) {
@@ -337,7 +522,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             this.executeProperties = executeProperties;
             this.accumulatedOutput = new LinkedList<>();
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
-            this.streamedLegacyEvents = new HashSet<>();
+            this.waitingForInput = new AtomicBoolean();
         }
 
         private Set<AgentEventType> generateRequiredEventTypes(
@@ -361,23 +546,26 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         void doOnNext(AgentEvent output) {
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
-            Msg responseMessage =
-                    output instanceof LegacyAgentEvent
-                            ? (isNoResponseEvent(output) ? null : convertToMsg(output))
-                            : convertToResponseMessage(output);
+            if (output instanceof RequireUserConfirmEvent request) {
+                if (!waitingForInput.compareAndSet(false, true)) {
+                    throw new IllegalStateException(
+                            "An agent stream requested user confirmation more than once.");
+                }
+                handleInputRequired(request);
+                return;
+            }
+            Msg responseMessage = convertToResponseMessage(output);
             if (responseMessage != null) {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);
-            if (output instanceof LegacyAgentEvent legacyEvent
-                    && responseMessage != null
-                    && !legacyEvent.legacyEvent.isLast()) {
-                streamedLegacyEvents.add(
-                        new LegacyEventKey(
-                                legacyEvent.legacyEvent.getType(),
-                                legacyEvent.legacyEvent.getMessageId()));
-            }
         }
+
+        protected final boolean isWaitingForInput() {
+            return waitingForInput.get();
+        }
+
+        protected abstract void handleInputRequired(RequireUserConfirmEvent request);
 
         /**
          * Handle agent execute complete with Flux doOnComplete.
@@ -399,23 +587,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         /**
          * Determines whether the given event should not be sent as a response to the A2A client,
-         * for example, lifecycle events, tool-call-related events, or duplicate result messages.
+         * for example, lifecycle events or inner events disabled by configuration.
          *
          * @param output agent output event
          * @return {@code true} if the event should not be responded to, otherwise {@code false}.
          */
         protected boolean isNoResponseEvent(AgentEvent output) {
-            if (!requiredEventTypes.contains(output.getType())) {
-                return true;
-            }
-            if (!(output instanceof LegacyAgentEvent legacyEvent)
-                    || !legacyEvent.legacyEvent.isLast()) {
-                return false;
-            }
-            return streamedLegacyEvents.contains(
-                    new LegacyEventKey(
-                            legacyEvent.legacyEvent.getType(),
-                            legacyEvent.legacyEvent.getMessageId()));
+            return !requiredEventTypes.contains(output.getType());
         }
 
         private Msg convertToResponseMessage(AgentEvent output) {
@@ -517,17 +695,27 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final EventQueue eventQueue;
 
+        private final Task task;
+
+        private final TaskUpdater taskUpdater;
+
         private BlockingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
+                Task task,
                 EventQueue eventQueue) {
             super(context, executeProperties);
             this.eventQueue = eventQueue;
+            this.task = task;
+            this.taskUpdater = new TaskUpdater(context, eventQueue);
             this.resultMessageRef = new AtomicReference<>();
         }
 
         @Override
         void doOnComplete() {
+            if (isWaitingForInput()) {
+                return;
+            }
             log.info(
                     "[{}] Process agent output for blocking request completed.",
                     context.getTaskId());
@@ -542,22 +730,22 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         @Override
+        protected void handleInputRequired(RequireUserConfirmEvent request) {
+            if (context.getTask() == null) {
+                eventQueue.enqueueEvent(task);
+            }
+            taskUpdater.startWork();
+            taskUpdater.requiresInput(confirmationRequestMessage(taskUpdater, request));
+        }
+
+        @Override
         protected void handleEvent(AgentEvent output, Msg responseMessage) {
-            if (!(output instanceof AgentResultEvent) && !(output instanceof LegacyAgentEvent)) {
+            if (!(output instanceof AgentResultEvent resultEvent)) {
                 // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
                 // according to properties.
                 return;
             }
-            if (!AgentEventType.AGENT_RESULT.equals(output.getType())) {
-                return;
-            }
-            Msg outputMessage =
-                    output instanceof AgentResultEvent resultEvent
-                            ? resultEvent.getResult()
-                            : convertToMsg(output);
-            if (outputMessage == null) {
-                return;
-            }
+            Msg outputMessage = resultEvent.getResult();
             Message message =
                     MessageConvertUtil.convertFromMsgToMessage(
                             outputMessage, context.getTaskId(), context.getContextId());
@@ -590,6 +778,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         void doOnComplete() {
+            if (isWaitingForInput()) {
+                return;
+            }
             log.info(
                     "[{}] Process agent output for non-blocking request completed.",
                     taskUpdater.getTaskId());
@@ -601,6 +792,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                     taskUpdater.getContextId())
                             : null;
             taskUpdater.complete(completeMessage);
+        }
+
+        @Override
+        protected void handleInputRequired(RequireUserConfirmEvent request) {
+            taskUpdater.requiresInput(confirmationRequestMessage(taskUpdater, request));
         }
 
         @Override
@@ -621,7 +817,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         private boolean isStreamingChunk(AgentEvent output) {
-            return AgentScopeAgentExecutor.isStreamingChunk(output);
+            return output instanceof TextBlockDeltaEvent
+                    || output instanceof ThinkingBlockDeltaEvent
+                    || output instanceof ToolResultTextDeltaEvent
+                    || output instanceof ToolResultDataDeltaEvent;
         }
 
         @Override
@@ -630,90 +829,42 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
     }
 
-    private static boolean isStreamingChunk(AgentEvent output) {
-        if (output instanceof LegacyAgentEvent legacyEvent) {
-            return !legacyEvent.legacyEvent.isLast();
+    private static Message confirmationRequestMessage(
+            TaskUpdater taskUpdater, RequireUserConfirmEvent request) {
+        String replyId = requiredString(request.getReplyId(), "RequireUserConfirmEvent.replyId");
+        if (request.getToolCalls().isEmpty()) {
+            throw new IllegalStateException("RequireUserConfirmEvent did not include tool calls.");
         }
-        return output instanceof TextBlockDeltaEvent
-                || output instanceof ThinkingBlockDeltaEvent
-                || output instanceof ToolResultTextDeltaEvent
-                || output instanceof ToolResultDataDeltaEvent;
+        List<Map<String, Object>> toolCalls =
+                request.getToolCalls().stream()
+                        .map(AgentScopeAgentExecutor::confirmationToolCallData)
+                        .toList();
+        Map<String, Object> data =
+                Map.of(
+                        CONFIRMATION_TYPE_KEY,
+                        CONFIRMATION_REQUEST_TYPE,
+                        "replyId",
+                        replyId,
+                        "toolCalls",
+                        toolCalls);
+        return taskUpdater.newAgentMessage(
+                List.of(
+                        new TextPart("User confirmation is required before these tool calls run."),
+                        new DataPart(data)),
+                Map.of());
     }
 
-    private static Msg convertToMsg(AgentEvent output) {
-        if (output instanceof LegacyAgentEvent legacyEvent) {
-            return legacyEvent.legacyEvent.getMessage();
+    private static Map<String, Object> confirmationToolCallData(ToolUseBlock toolCall) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", requiredString(toolCall.getId(), "toolCall.id"));
+        data.put("name", requiredString(toolCall.getName(), "toolCall.name"));
+        data.put("input", toolCall.getInput());
+        if (toolCall.getContent() != null) {
+            data.put("content", toolCall.getContent());
         }
-        if (output instanceof AgentResultEvent resultEvent) {
-            return resultEvent.getResult();
+        if (!toolCall.getMetadata().isEmpty()) {
+            data.put("metadata", toolCall.getMetadata());
         }
-        if (output instanceof TextBlockDeltaEvent textDeltaEvent) {
-            return messageWithContent(
-                    textDeltaEvent.getReplyId(),
-                    MsgRole.ASSISTANT,
-                    TextBlock.builder().text(textDeltaEvent.getDelta()).build());
-        }
-        if (output instanceof ThinkingBlockDeltaEvent thinkingDeltaEvent) {
-            return messageWithContent(
-                    thinkingDeltaEvent.getReplyId(),
-                    MsgRole.ASSISTANT,
-                    ThinkingBlock.builder().thinking(thinkingDeltaEvent.getDelta()).build());
-        }
-        if (output instanceof HintBlockEvent hintBlockEvent) {
-            return messageWithContent(
-                    hintBlockEvent.getReplyId(),
-                    MsgRole.USER,
-                    new HintBlock(
-                            hintBlockEvent.getBlockId(),
-                            hintBlockEvent.getHint(),
-                            hintBlockEvent.getHintSource()));
-        }
-        if (output instanceof ToolResultTextDeltaEvent toolTextDeltaEvent) {
-            return messageWithContent(
-                    toolTextDeltaEvent.getReplyId(),
-                    MsgRole.TOOL,
-                    ToolResultBlock.of(
-                            toolTextDeltaEvent.getToolCallId(),
-                            toolTextDeltaEvent.getToolCallName(),
-                            TextBlock.builder().text(toolTextDeltaEvent.getDelta()).build()));
-        }
-        if (output instanceof ToolResultDataDeltaEvent toolDataDeltaEvent) {
-            ContentBlock data = toolDataDeltaEvent.getData();
-            if (data == null) {
-                return null;
-            }
-            return messageWithContent(
-                    toolDataDeltaEvent.getReplyId(),
-                    MsgRole.TOOL,
-                    ToolResultBlock.of(
-                            toolDataDeltaEvent.getToolCallId(),
-                            toolDataDeltaEvent.getToolCallName(),
-                            data));
-        }
-        return null;
-    }
-
-    private static Msg messageWithContent(String id, MsgRole role, ContentBlock content) {
-        return Msg.builder().id(id).role(role).content(content).build();
-    }
-
-    private record LegacyEventKey(EventType type, String messageId) {}
-
-    /** Adapter that lets legacy custom runners use the AgentEvent-only handler path. */
-    private static final class LegacyAgentEvent extends AgentEvent {
-
-        private final Event legacyEvent;
-
-        private final AgentEventType type;
-
-        private LegacyAgentEvent(Event legacyEvent, AgentEventType type) {
-            this.legacyEvent = legacyEvent;
-            this.type = type;
-        }
-
-        @Override
-        public AgentEventType getType() {
-            return type;
-        }
+        return data;
     }
 }

@@ -16,7 +16,6 @@
 
 package io.agentscope.core.a2a.server.executor.runner;
 
-import io.agentscope.core.agent.Event;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
@@ -28,9 +27,8 @@ import reactor.core.publisher.Flux;
  * <p>This interface defines the core contract for running agents in the A2A Server.
  * It provides methods for starting, stopping, and get messages from agents.
  *
- * <p>This interface is designed for extending actual handling logics for {@link io.agentscope.core.agent.Agent}.
- * The legacy {@link #stream(List, AgentRequestOptions)} method uses {@link Msg} as input and {@link Event} as output,
- * while {@link #streamEvents(List, AgentRequestOptions)} exposes the fine-grained {@link AgentEvent} lifecycle.
+ * <p>This interface is designed for extending actual handling logics for {@link io.agentscope.core.agent.Agent},
+ * methods will use {@link Msg} as input and use {@link AgentEvent} as output.
  * Developers can do some pre-processing before call {@link io.agentscope.core.agent.Agent} or post-processing after
  * calling {@link io.agentscope.core.agent.Agent}.
  */
@@ -51,40 +49,13 @@ public interface AgentRunner {
     String getAgentDescription();
 
     /**
-     * Start to handle agent request with the legacy coarse-grained streaming output.
+     * Start to handle agent request with streaming output.
      *
      * @param requestMessages the messages from a2a client
      * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
      * @return Flux of events emitted during execution
      */
-    @Deprecated(since = "2.0.0")
-    default Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
-        return Flux.error(
-                new UnsupportedOperationException(
-                        "This AgentRunner does not support legacy Event streaming"));
-    }
-
-    /**
-     * Start to handle an agent request with fine-grained lifecycle events.
-     *
-     * <p>Implementations that support the v2 event model should override this method. Existing
-     * custom runners remain source-compatible whether they implement this method or only the
-     * legacy {@link #stream(List, AgentRequestOptions)} contract.
-     * The A2A executor selects the legacy stream only when this default implementation is used or
-     * the returned Flux terminates with {@link UnsupportedAgentEventStreamException} before any
-     * element is emitted; a plain
-     * {@link UnsupportedOperationException} from an overridden implementation is treated as a
-     * real execution failure.
-     *
-     * @param requestMessages the messages from a2a client
-     * @param options the options for agent request, such as {@code taskId}, {@code sessionId} or {@code userId} of this request
-     * @return Flux of fine-grained events emitted during execution, or a Flux that terminates with
-     *     {@link UnsupportedAgentEventStreamException} when the runner does not support
-     *     fine-grained events
-     */
-    default Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        return Flux.error(new UnsupportedAgentEventStreamException());
-    }
+    Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options);
 
     /**
      * Stop to handle agent request.

@@ -222,7 +222,7 @@ Python 2.0's `agent.reply_stream()` exposes a single streaming signature (`Async
   - Still consumed internally by the harness (subagent event forwarding: `SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`), AGUI, A2A, chat-completions-web, and Kotlin extension modules as the event-bus / adapter input. They will be flipped to `forRemoval = true` only after those modules migrate to `AgentEvent`, so the entire downstream is not warning-flooded in a single release.
   - Subagent events are forwarded on `HarnessAgent.streamEvents(...)` with a non-null `source` path (including remote Agent Protocol children when `remoteStreaming` is enabled).
 
-For A2A `AgentRunner` implementations, leave `streamEvents(...)` unoverridden or return `UnsupportedAgentEventStreamException` when the fine-grained stream is unavailable to select the legacy `stream(...)` fallback. A plain `UnsupportedOperationException` from an overridden `streamEvents(...)` is treated as an execution failure and is not retried through the legacy stream.
+The A2A server maps permission-HITL `RequireUserConfirmEvent`s to `TaskState.INPUT_REQUIRED` and keeps the task open. Its status message includes a `DataPart` with `type: "agentscope.confirmation_request"`, `replyId`, and `toolCalls`. Resume the same task with a `DataPart` using `type: "agentscope.confirmation_response"`, the matching `replyId`, and a non-empty `results` list of `{toolCallId, confirmed}` entries. A result may include a modified `toolCall` with the same id and name; only its `input` overrides the requested tool call. Confirmed results may include `rules` (`tool_name`, `rule_content`, `behavior`, and `source`); denied results may include a `reason`.
 
 New code should use:
 

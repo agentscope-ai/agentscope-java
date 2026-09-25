@@ -17,25 +17,27 @@
 package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * Abstract Implementation for {@link AgentRunner} by {@link ReActAgent}.
  *
- * <p>Use {@link ReActAgent} directly to handler request from A2A client. In this implementation, {@link ReActAgent}
- * should be created for each request and be cached to intercept when the request is stopped.
+ * <p>Use {@link ReActAgent} directly to handle requests from A2A clients. An agent is created per task and retained
+ * while the task is paused for user confirmation; it is removed when execution completes or the task is stopped.
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final Map<String, ReActAgent> agentCache;
+    private final Map<String, CachedAgent> agentCache;
 
     protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
@@ -52,42 +54,83 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
     }
 
     @Override
-    public Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
-        return streamWithAgent(options.getTaskId(), agent -> agent.stream(requestMessages));
-    }
-
-    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        return streamWithAgent(options.getTaskId(), agent -> agent.streamEvents(requestMessages));
-    }
-
-    private <T> Flux<T> streamWithAgent(
-            String taskId, Function<ReActAgent, Flux<T>> streamFunction) {
+        String taskId = options.getTaskId();
         return Flux.defer(
                 () -> {
-                    AtomicReference<ReActAgent> createdAgent = new AtomicReference<>();
-                    ReActAgent agent =
+                    CachedAgent cachedAgent =
                             agentCache.compute(
                                     taskId,
-                                    (id, cachedAgent) -> {
-                                        if (cachedAgent != null) {
-                                            return cachedAgent;
+                                    (id, existing) -> {
+                                        if (existing == null) {
+                                            return new CachedAgent(buildReActAgent());
                                         }
-                                        ReActAgent newAgent = buildReActAgent();
-                                        createdAgent.set(newAgent);
-                                        return newAgent;
+                                        if (!existing.paused) {
+                                            throw new IllegalStateException(
+                                                    "Agent already exists for taskId: " + taskId);
+                                        }
+                                        existing.paused = false;
+                                        return existing;
                                     });
-                    if (createdAgent.get() == null) {
-                        return Flux.error(
-                                new IllegalStateException(
-                                        "Agent already exists for taskId: " + taskId));
-                    }
+                    AtomicReference<RequireUserConfirmEvent> confirmationRequest =
+                            new AtomicReference<>();
                     try {
-                        return streamFunction
-                                .apply(agent)
-                                .doFinally(signal -> agentCache.remove(taskId, agent));
-                    } catch (Throwable error) {
-                        agentCache.remove(taskId, agent);
+                        return cachedAgent
+                                .agent
+                                .streamEvents(requestMessages)
+                                .concatMap(
+                                        event -> {
+                                            if (event instanceof RequireUserConfirmEvent request) {
+                                                if (!confirmationRequest.compareAndSet(
+                                                        null, request)) {
+                                                    return Mono.error(
+                                                            new IllegalStateException(
+                                                                    "An agent stream requested"
+                                                                            + " user confirmation"
+                                                                            + " more than once."));
+                                                }
+                                                return Mono.empty();
+                                            }
+                                            return Mono.just(event);
+                                        })
+                                // Let the agent finish pausing before exposing the request to the
+                                // client.
+                                .concatWith(
+                                        Flux.defer(
+                                                () -> {
+                                                    RequireUserConfirmEvent request =
+                                                            confirmationRequest.get();
+                                                    if (request == null) {
+                                                        return Flux.empty();
+                                                    }
+                                                    AtomicBoolean retained = new AtomicBoolean();
+                                                    agentCache.computeIfPresent(
+                                                            taskId,
+                                                            (id, current) -> {
+                                                                if (current == cachedAgent) {
+                                                                    current.paused = true;
+                                                                    retained.set(true);
+                                                                }
+                                                                return current;
+                                                            });
+                                                    if (!retained.get()) {
+                                                        return Flux.error(
+                                                                new IllegalStateException(
+                                                                        "Agent was stopped before"
+                                                                            + " confirmation could"
+                                                                            + " be requested."));
+                                                    }
+                                                    return Flux.just(request);
+                                                }))
+                                .doFinally(
+                                        signal -> {
+                                            if (signal != SignalType.ON_COMPLETE
+                                                    || confirmationRequest.get() == null) {
+                                                agentCache.remove(taskId, cachedAgent);
+                                            }
+                                        });
+                    } catch (RuntimeException | Error error) {
+                        agentCache.remove(taskId, cachedAgent);
                         return Flux.error(error);
                     }
                 });
@@ -95,9 +138,9 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public void stop(String taskId) {
-        ReActAgent agent = agentCache.remove(taskId);
-        if (null != agent) {
-            agent.interrupt();
+        CachedAgent cachedAgent = agentCache.remove(taskId);
+        if (cachedAgent != null) {
+            cachedAgent.agent.interrupt();
         }
     }
 
@@ -107,4 +150,15 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
      * @return {@link ReActAgent} instance
      */
     protected abstract ReActAgent buildReActAgent();
+
+    private static final class CachedAgent {
+
+        private final ReActAgent agent;
+
+        private boolean paused;
+
+        private CachedAgent(ReActAgent agent) {
+            this.agent = agent;
+        }
+    }
 }

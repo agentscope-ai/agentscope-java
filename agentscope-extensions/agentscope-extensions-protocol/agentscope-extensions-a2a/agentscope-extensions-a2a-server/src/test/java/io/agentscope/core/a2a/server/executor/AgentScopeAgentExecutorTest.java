@@ -44,24 +44,30 @@ import io.a2a.spec.StreamingEventKind;
 import io.a2a.spec.Task;
 import io.a2a.spec.TaskArtifactUpdateEvent;
 import io.a2a.spec.TaskState;
+import io.a2a.spec.TaskStatus;
 import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.server.constants.A2aServerConstants;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
-import io.agentscope.core.a2a.server.executor.runner.UnsupportedAgentEventStreamException;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionRule;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -159,42 +165,6 @@ class AgentScopeAgentExecutorTest {
                     List.of("streaming result 1 2"),
                     mockContext.getTaskId(),
                     mockContext.getContextId());
-        }
-
-        @Test
-        @DisplayName("Should execute blocking request through the fine-grained event stream")
-        void testExecuteBlockingAgentWithFineGrainedEvents() throws JSONRPCError {
-            doMockForContext(false, false, true);
-            Msg resultMessage = Msg.builder().textContent("fine-grained blocking result").build();
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(
-                            Flux.just(
-                                    new TextBlockDeltaEvent(
-                                            UUID.randomUUID().toString(),
-                                            "text",
-                                            "fine-grained blocking result"),
-                                    new AgentResultEvent(resultMessage)));
-
-            AtomicReference<Message> messageRef = new AtomicReference<>();
-            doAnswer(
-                            (Answer<Void>)
-                                    invocationOnMock -> {
-                                        Object arg = invocationOnMock.getArgument(0);
-                                        messageRef.set((Message) arg);
-                                        return null;
-                                    })
-                    .when(mockEventQueue)
-                    .enqueueEvent(any(Message.class));
-            executor.execute(mockContext, mockEventQueue);
-
-            assertNotNull(messageRef.get());
-            assertBlockResultMessage(
-                    messageRef.get(),
-                    List.of("fine-grained blocking result"),
-                    mockContext.getTaskId(),
-                    mockContext.getContextId());
-            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
-            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
         }
 
         @Test
@@ -355,6 +325,61 @@ class AgentScopeAgentExecutorTest {
                     mockContext.getContextId());
         }
 
+        @Test
+        @DisplayName("Should return an input-required task for a blocking confirmation request")
+        void testBlockingRequestRequiresUserConfirmation() throws JSONRPCError {
+            doMockForContext(false, false, true);
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id("tool-call-1")
+                            .name("delete_file")
+                            .input(Map.of("path", "report.txt"))
+                            .build();
+            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
+                    .thenReturn(
+                            Flux.just(new RequireUserConfirmEvent("reply-1", List.of(toolCall))));
+
+            AtomicReference<List<StreamingEventKind>> events =
+                    new AtomicReference<>(new LinkedList<>());
+            doAnswer(
+                            (Answer<Void>)
+                                    invocation -> {
+                                        events.get().add(invocation.getArgument(0));
+                                        return null;
+                                    })
+                    .when(mockEventQueue)
+                    .enqueueEvent(any(StreamingEventKind.class));
+
+            executor.execute(mockContext, mockEventQueue);
+
+            List<TaskStatusUpdateEvent> statuses =
+                    events.get().stream()
+                            .filter(TaskStatusUpdateEvent.class::isInstance)
+                            .map(TaskStatusUpdateEvent.class::cast)
+                            .toList();
+            assertEquals(2, statuses.size());
+            assertEquals(TaskState.WORKING, statuses.get(0).getStatus().state());
+            TaskStatusUpdateEvent inputRequired = statuses.get(1);
+            assertEquals(TaskState.INPUT_REQUIRED, inputRequired.getStatus().state());
+            assertFalse(inputRequired.isFinal());
+            DataPart payload =
+                    inputRequired.getStatus().message().getParts().stream()
+                            .filter(DataPart.class::isInstance)
+                            .map(DataPart.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(
+                    AgentScopeAgentExecutor.CONFIRMATION_REQUEST_TYPE,
+                    payload.getData().get("type"));
+            assertEquals("reply-1", payload.getData().get("replyId"));
+            assertFalse(
+                    statuses.stream()
+                            .anyMatch(
+                                    status ->
+                                            TaskState.COMPLETED.equals(
+                                                    status.getStatus().state())));
+        }
+
         private void assertBlockResultMessage(
                 Message message, List<String> expectedBlocks, String taskId, String contextId) {
             assertEquals(taskId, message.getTaskId());
@@ -394,141 +419,348 @@ class AgentScopeAgentExecutorTest {
         }
 
         @Test
-        @DisplayName("Should execute agent through the fine-grained event stream")
-        void testExecuteAgentWithFineGrainedEvents() throws JSONRPCError {
+        @DisplayName("Should pause an A2A task for user confirmation")
+        void testStreamingRequestRequiresUserConfirmation() throws JSONRPCError {
             doMockForContext(true, false, false);
-            String replyId = UUID.randomUUID().toString();
-            Msg resultMessage = Msg.builder().textContent("fine-grained result").build();
-            Flux<AgentEvent> agentEvents =
-                    Flux.just(
-                            new TextBlockDeltaEvent(replyId, "text", "fine-grained result"),
-                            new AgentResultEvent(resultMessage));
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(agentEvents);
-
-            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
-
-            assertStreamingEventKind(
-                    messageRef.get(),
-                    List.of("fine-grained result"),
-                    mockContext.getTaskId(),
-                    mockContext.getContextId(),
-                    false,
-                    false);
-            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
-            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
-        }
-
-        @Test
-        @DisplayName(
-                "Should fall back to the legacy stream when fine-grained events are unsupported")
-        void testExecuteAgentFallsBackToLegacyStream() throws JSONRPCError {
-            doMockForContext(true, false, false);
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(Flux.error(new UnsupportedAgentEventStreamException()));
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(mockLegacyFlux());
-
-            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
-            executor.execute(mockContext, mockEventQueue);
-
-            assertStreamingEventKind(
-                    messageRef.get(),
-                    List.of("streaming result 1", " 2"),
-                    mockContext.getTaskId(),
-                    mockContext.getContextId(),
-                    false,
-                    false);
-            verify(mockAgentRunner).streamEvents(anyList(), any(AgentRequestOptions.class));
-            verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
-        }
-
-        @Test
-        @DisplayName("Should not fall back for a real unsupported operation from the agent")
-        void testDoesNotFallBackForAgentUnsupportedOperation() throws JSONRPCError {
-            doMockForContext(true, false, false);
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(Flux.error(new UnsupportedOperationException("agent failure")));
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(mockLegacyFlux());
-
-            executor.execute(mockContext, mockEventQueue);
-
-            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
-        }
-
-        @Test
-        @DisplayName("Should not fall back after a fine-grained stream has emitted output")
-        void testDoesNotFallBackAfterFineGrainedOutput() throws JSONRPCError {
-            doMockForContext(true, false, false);
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id("tool-call-1")
+                            .name("delete_file")
+                            .input(Map.of("path", "report.txt"))
+                            .metadata(Map.of("provider", "value"))
+                            .build();
             when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
                     .thenReturn(
-                            Flux.concat(
-                                    Flux.just(
-                                            new TextBlockDeltaEvent(
-                                                    "reply-id", "block-id", "partial")),
-                                    Flux.error(new UnsupportedAgentEventStreamException())));
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(mockLegacyFlux());
+                            Flux.just(new RequireUserConfirmEvent("reply-1", List.of(toolCall))));
+            AtomicReference<List<StreamingEventKind>> events = mockStreamingEventQueueRef();
 
             executor.execute(mockContext, mockEventQueue);
 
-            verify(mockAgentRunner, never()).stream(anyList(), any(AgentRequestOptions.class));
+            List<TaskStatusUpdateEvent> statuses =
+                    events.get().stream()
+                            .filter(TaskStatusUpdateEvent.class::isInstance)
+                            .map(TaskStatusUpdateEvent.class::cast)
+                            .toList();
+            assertEquals(2, statuses.size());
+            TaskStatusUpdateEvent inputRequired = statuses.get(1);
+            assertEquals(TaskState.INPUT_REQUIRED, inputRequired.getStatus().state());
+            assertFalse(inputRequired.isFinal());
+            DataPart payload =
+                    inputRequired.getStatus().message().getParts().stream()
+                            .filter(DataPart.class::isInstance)
+                            .map(DataPart.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("reply-1", payload.getData().get("replyId"));
+            Object rawRequestedCalls = payload.getData().get("toolCalls");
+            assertTrue(rawRequestedCalls instanceof List<?>);
+            List<?> requestedCalls = (List<?>) rawRequestedCalls;
+            assertTrue(requestedCalls.get(0) instanceof Map<?, ?>);
+            Map<?, ?> requestedCall = (Map<?, ?>) requestedCalls.get(0);
+            assertEquals("tool-call-1", requestedCall.get("id"));
+            assertEquals("delete_file", requestedCall.get("name"));
+            assertEquals(Map.of("path", "report.txt"), requestedCall.get("input"));
+            assertEquals(Map.of("provider", "value"), requestedCall.get("metadata"));
+            assertFalse(
+                    statuses.stream()
+                            .anyMatch(
+                                    status ->
+                                            TaskState.COMPLETED.equals(
+                                                    status.getStatus().state())));
         }
 
         @Test
-        @DisplayName("Should fall back when the capability marker is thrown synchronously")
-        void testFallsBackForSynchronousCapabilityMarker() throws JSONRPCError {
-            doMockForContext(true, false, false);
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenThrow(new UnsupportedAgentEventStreamException());
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(mockLegacyFlux());
+        @DisplayName("Should convert a confirmation response into validated AgentScope metadata")
+        void testStreamingRequestConvertsConfirmationResponse() throws JSONRPCError {
+            String taskId = doMockForContext(false, false, true);
+            String contextId = mockContext.getContextId();
+            String replyId = "reply-1";
+            Map<String, Object> requestedToolCall =
+                    Map.of(
+                            "id",
+                            "tool-call-1",
+                            "name",
+                            "delete_file",
+                            "input",
+                            Map.of("path", "report.txt"),
+                            "metadata",
+                            Map.of("provider", "value"));
+            Message pendingMessage =
+                    new Message.Builder()
+                            .role(Message.Role.AGENT)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_REQUEST_TYPE,
+                                                    "replyId",
+                                                    replyId,
+                                                    "toolCalls",
+                                                    List.of(
+                                                            requestedToolCall,
+                                                            Map.of(
+                                                                    "id",
+                                                                    "tool-call-2",
+                                                                    "name",
+                                                                    "run_shell",
+                                                                    "input",
+                                                                    Map.of(
+                                                                            "command",
+                                                                            "rm -rf /tmp/x"))))))
+                            .taskId(taskId)
+                            .contextId(contextId)
+                            .build();
+            Task task =
+                    new Task(
+                            taskId,
+                            contextId,
+                            new TaskStatus(
+                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                            null,
+                            List.of(),
+                            null);
+            Message request =
+                    new Message.Builder()
+                            .role(Message.Role.USER)
+                            .parts(
+                                    new TextPart("Proceed"),
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_RESPONSE_TYPE,
+                                                    "replyId",
+                                                    replyId,
+                                                    "results",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "toolCallId",
+                                                                    "tool-call-1",
+                                                                    "confirmed",
+                                                                    true,
+                                                                    "toolCall",
+                                                                    Map.of(
+                                                                            "id",
+                                                                            "tool-call-1",
+                                                                            "name",
+                                                                            "delete_file",
+                                                                            "input",
+                                                                            Map.of(
+                                                                                    "path",
+                                                                                    "approved.txt")),
+                                                                    "rules",
+                                                                    List.of(
+                                                                            Map.of(
+                                                                                    "tool_name",
+                                                                                    "delete_file",
+                                                                                    "rule_content",
+                                                                                    "report.txt",
+                                                                                    "behavior",
+                                                                                    "allow",
+                                                                                    "source",
+                                                                                    "user"))),
+                                                            Map.of(
+                                                                    "toolCallId",
+                                                                    "tool-call-2",
+                                                                    "confirmed",
+                                                                    false,
+                                                                    "reason",
+                                                                    "The path is outside the"
+                                                                            + " approved"
+                                                                            + " directory.")))))
+                            .taskId(taskId)
+                            .contextId(contextId)
+                            .build();
+            when(mockContext.getTask()).thenReturn(task);
+            when(mockContext.getMessage()).thenReturn(request);
+            when(mockContext.getParams().message()).thenReturn(request);
+            AtomicReference<List<Msg>> agentInput = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Flux<AgentEvent>>)
+                                    invocation -> {
+                                        agentInput.set(invocation.getArgument(0));
+                                        return Flux.empty();
+                                    })
+                    .when(mockAgentRunner)
+                    .streamEvents(anyList(), any(AgentRequestOptions.class));
+            mockStreamingEventQueueRef();
 
-            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
 
-            assertStreamingEventKind(
-                    messageRef.get(),
-                    List.of("streaming result 1", " 2"),
-                    mockContext.getTaskId(),
-                    mockContext.getContextId(),
-                    false,
-                    false);
-            verify(mockAgentRunner).stream(anyList(), any(AgentRequestOptions.class));
+            assertEquals(1, agentInput.get().size());
+            Msg confirmationMessage = agentInput.get().get(0);
+            assertEquals(MsgRole.USER, confirmationMessage.getRole());
+            assertEquals(1, confirmationMessage.getContent().size());
+            assertEquals(
+                    "Proceed", ((TextBlock) confirmationMessage.getContent().get(0)).getText());
+            Object rawResults = confirmationMessage.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+            assertTrue(rawResults instanceof List<?>);
+            List<?> results = (List<?>) rawResults;
+            assertEquals(2, results.size());
+            ConfirmResult confirmedResult = assertInstanceOf(ConfirmResult.class, results.get(0));
+            ConfirmResult deniedResult = assertInstanceOf(ConfirmResult.class, results.get(1));
+            assertTrue(confirmedResult.isConfirmed());
+            assertEquals("tool-call-1", confirmedResult.getToolCall().getId());
+            assertEquals("delete_file", confirmedResult.getToolCall().getName());
+            assertEquals(Map.of("path", "approved.txt"), confirmedResult.getToolCall().getInput());
+            assertEquals(Map.of("provider", "value"), confirmedResult.getToolCall().getMetadata());
+            assertEquals(
+                    List.of(
+                            new PermissionRule(
+                                    "delete_file", "report.txt", PermissionBehavior.ALLOW, "user")),
+                    confirmedResult.getRules());
+            assertFalse(deniedResult.isConfirmed());
+            assertEquals("tool-call-2", deniedResult.getToolCall().getId());
+            assertEquals("The path is outside the approved directory.", deniedResult.getReason());
         }
 
         @Test
-        @DisplayName("Should deduplicate interleaved legacy chunks by event type and message ID")
-        void testDeduplicatesInterleavedLegacyChunks() throws JSONRPCError {
-            doMockForContext(true, false, false);
-            Msg xChunk = Msg.builder().id("x").textContent("x chunk").build();
-            Msg yChunk = Msg.builder().id("y").textContent("y chunk").build();
-            Msg xResult = Msg.builder().id("x").textContent("x result").build();
-            Msg sharedReasoning = Msg.builder().id("shared").textContent("reasoning").build();
-            Msg sharedSummary = Msg.builder().id("shared").textContent("summary").build();
-            when(mockAgentRunner.streamEvents(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(Flux.error(new UnsupportedAgentEventStreamException()));
-            when(mockAgentRunner.stream(anyList(), any(AgentRequestOptions.class)))
-                    .thenReturn(
-                            Flux.just(
-                                    new Event(EventType.REASONING, xChunk, false),
-                                    new Event(EventType.REASONING, yChunk, false),
-                                    new Event(EventType.REASONING, xResult, true),
-                                    new Event(EventType.REASONING, sharedReasoning, false),
-                                    new Event(EventType.SUMMARY, sharedSummary, true)));
+        @DisplayName("Should reject confirmation replies that change the requested tool")
+        void testStreamingRequestRejectsChangedToolIdentity() throws JSONRPCError {
+            String taskId = doMockForContext(true, false, false);
+            String contextId = mockContext.getContextId();
+            String replyId = "reply-current";
+            Message pendingMessage =
+                    new Message.Builder()
+                            .role(Message.Role.AGENT)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_REQUEST_TYPE,
+                                                    "replyId",
+                                                    replyId,
+                                                    "toolCalls",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "id",
+                                                                    "tool-call-1",
+                                                                    "name",
+                                                                    "delete_file",
+                                                                    "input",
+                                                                    Map.of(
+                                                                            "path",
+                                                                            "report.txt"))))))
+                            .build();
+            Task task =
+                    new Task(
+                            taskId,
+                            contextId,
+                            new TaskStatus(
+                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                            null,
+                            List.of(),
+                            null);
+            Message request =
+                    new Message.Builder()
+                            .role(Message.Role.USER)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_RESPONSE_TYPE,
+                                                    "replyId",
+                                                    replyId,
+                                                    "results",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "toolCallId",
+                                                                    "tool-call-1",
+                                                                    "confirmed",
+                                                                    true,
+                                                                    "toolCall",
+                                                                    Map.of(
+                                                                            "id",
+                                                                            "tool-call-1",
+                                                                            "name",
+                                                                            "run_shell",
+                                                                            "input",
+                                                                            Map.of(
+                                                                                    "command",
+                                                                                    "rm -rf"
+                                                                                        + " /tmp/x")))))))
+                            .taskId(taskId)
+                            .contextId(contextId)
+                            .build();
+            when(mockContext.getTask()).thenReturn(task);
+            when(mockContext.getMessage()).thenReturn(request);
+            when(mockContext.getParams().message()).thenReturn(request);
 
-            AtomicReference<List<StreamingEventKind>> messageRef = mockStreamingEventQueueRef();
             executor.execute(mockContext, mockEventQueue);
 
-            assertStreamingEventKind(
-                    messageRef.get(),
-                    List.of("x chunk", "y chunk", "reasoning", "summary"),
-                    mockContext.getTaskId(),
-                    mockContext.getContextId(),
-                    false,
-                    false);
+            verify(mockAgentRunner, never())
+                    .streamEvents(anyList(), any(AgentRequestOptions.class));
+        }
+
+        @Test
+        @DisplayName("Should reject stale confirmation replies before invoking the runner")
+        void testStreamingRequestRejectsStaleConfirmationReply() throws JSONRPCError {
+            String taskId = doMockForContext(true, false, false);
+            String contextId = mockContext.getContextId();
+            Message pendingMessage =
+                    new Message.Builder()
+                            .role(Message.Role.AGENT)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_REQUEST_TYPE,
+                                                    "replyId",
+                                                    "reply-current",
+                                                    "toolCalls",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "id",
+                                                                    "tool-call-1",
+                                                                    "name",
+                                                                    "delete_file",
+                                                                    "input",
+                                                                    Map.of(
+                                                                            "path",
+                                                                            "report.txt"))))))
+                            .build();
+            Task task =
+                    new Task(
+                            taskId,
+                            contextId,
+                            new TaskStatus(
+                                    TaskState.INPUT_REQUIRED, pendingMessage, OffsetDateTime.now()),
+                            null,
+                            List.of(),
+                            null);
+            Message staleRequest =
+                    new Message.Builder()
+                            .role(Message.Role.USER)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_RESPONSE_TYPE,
+                                                    "replyId",
+                                                    "reply-stale",
+                                                    "results",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "toolCallId",
+                                                                    "tool-call-1",
+                                                                    "confirmed",
+                                                                    true)))))
+                            .taskId(taskId)
+                            .contextId(contextId)
+                            .build();
+            when(mockContext.getTask()).thenReturn(task);
+            when(mockContext.getMessage()).thenReturn(staleRequest);
+            when(mockContext.getParams().message()).thenReturn(staleRequest);
+
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner, never())
+                    .streamEvents(anyList(), any(AgentRequestOptions.class));
         }
 
         @Test
@@ -889,15 +1121,5 @@ class AgentScopeAgentExecutorTest {
                             Msg.builder().textContent("streaming result 1 2").build()));
         }
         return Flux.fromIterable(mockEvents).delayElements(Duration.ofMillis(10));
-    }
-
-    private Flux<Event> mockLegacyFlux() {
-        String resultMsgId = UUID.randomUUID().toString();
-        Msg firstChunk = Msg.builder().id(resultMsgId).textContent("streaming result 1").build();
-        Msg secondChunk = Msg.builder().id(resultMsgId).textContent(" 2").build();
-        return Flux.just(
-                        new Event(EventType.REASONING, firstChunk, false),
-                        new Event(EventType.REASONING, secondChunk, false))
-                .delayElements(Duration.ofMillis(10));
     }
 }

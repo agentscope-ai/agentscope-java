@@ -21,18 +21,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -158,87 +160,17 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
         // When
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
-        result.blockLast();
 
         // Then
         assertNotNull(result);
+        verify(mockBuilder, times(0)).build();
+        result.subscribe();
         verify(mockBuilder, times(1)).build();
         verify(mockAgent, times(1)).streamEvents(messages);
-    }
-
-    @Test
-    @DisplayName("Should stream fine-grained agent events and cache agent")
-    void testStreamAgentEventsAndCacheAgent() {
-        // Given
-        String taskId = UUID.randomUUID().toString();
-        requestOptions.setTaskId(taskId);
-
-        List<Msg> messages = List.of(mock(Msg.class));
-
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
-
-        // When
-        AgentRunner agentRunner = runner;
-        Flux<AgentEvent> result = agentRunner.streamEvents(messages, requestOptions);
-        result.blockLast();
-
-        // Then
-        assertNotNull(result);
-        verify(mockBuilder, times(1)).build();
-        verify(mockAgent, times(1)).streamEvents(messages);
-    }
-
-    @Test
-    @DisplayName("Should not reserve a task ID before the stream is subscribed")
-    void testUnsubscribedStreamDoesNotReserveTaskId() {
-        String taskId = UUID.randomUUID().toString();
-        requestOptions.setTaskId(taskId);
-        List<Msg> messages = List.of(mock(Msg.class));
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
-
-        runner.streamEvents(messages, requestOptions);
-        assertDoesNotThrow(() -> runner.streamEvents(messages, requestOptions).blockLast());
-        verify(mockAgent, times(1)).streamEvents(messages);
-    }
-
-    @Test
-    @DisplayName("Should reject fine-grained streaming for legacy runners")
-    void testRejectUnsupportedFineGrainedStream() {
-        // Given
-        AgentRunner legacyRunner =
-                new AgentRunner() {
-                    @Override
-                    public String getAgentName() {
-                        return "legacy";
-                    }
-
-                    @Override
-                    public String getAgentDescription() {
-                        return "legacy runner";
-                    }
-
-                    @Override
-                    public Flux<Event> stream(
-                            List<Msg> requestMessages, AgentRequestOptions options) {
-                        return Flux.empty();
-                    }
-
-                    @Override
-                    public void stop(String taskId) {}
-                };
-
-        // When & Then
-        UnsupportedAgentEventStreamException exception =
-                assertThrows(
-                        UnsupportedAgentEventStreamException.class,
-                        () -> legacyRunner.streamEvents(List.of(), requestOptions).blockLast());
-        assertEquals(
-                "This AgentRunner does not support fine-grained AgentEvent streaming",
-                exception.getMessage());
     }
 
     @Test
@@ -252,34 +184,13 @@ class AgentRunnerTest {
 
         when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
 
-        // First call to populate the cache
-        var subscription = runner.streamEvents(messages, requestOptions).subscribe();
+        // First subscription populates the cache.
+        runner.streamEvents(messages, requestOptions).subscribe();
 
         // When & Then
         assertThrows(
                 IllegalStateException.class,
                 () -> runner.streamEvents(messages, requestOptions).blockLast());
-        subscription.dispose();
-    }
-
-    @Test
-    @DisplayName("Should throw exception when agent already exists for fine-grained stream")
-    void testThrowExceptionWhenAgentAlreadyExistsForStreamEvents() {
-        // Given
-        String taskId = UUID.randomUUID().toString();
-        requestOptions.setTaskId(taskId);
-
-        List<Msg> messages = List.of(mock(Msg.class));
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
-
-        // First call to populate the cache
-        var subscription = runner.streamEvents(messages, requestOptions).subscribe();
-
-        // When & Then
-        assertThrows(
-                IllegalStateException.class,
-                () -> runner.streamEvents(messages, requestOptions).blockLast());
-        subscription.dispose();
     }
 
     @Test
@@ -310,50 +221,78 @@ class AgentRunnerTest {
 
         // Try to stream again with the same taskId - should succeed since agent was removed
         Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
-        secondResult.blockLast();
         assertNotNull(secondResult);
+        secondResult.blockLast();
+        verify(mockBuilder, times(2)).build();
     }
 
     @Test
-    @DisplayName("Should remove agent from cache when fine-grained stream completes")
-    void testRemoveAgentFromCacheOnStreamEventsComplete() {
-        // Given
+    @DisplayName("Should retain a paused agent until the confirmation response completes")
+    void testRetainAgentWhileWaitingForConfirmation() {
         String taskId = UUID.randomUUID().toString();
         requestOptions.setTaskId(taskId);
+        List<Msg> firstRequest = List.of(Msg.builder().textContent("Run the tool").build());
+        List<Msg> confirmation = List.of(Msg.builder().textContent("Confirmed").build());
+        when(mockAgent.streamEvents(firstRequest))
+                .thenReturn(
+                        Flux.just(
+                                new RequireUserConfirmEvent(
+                                        "reply-1",
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("delete_file")
+                                                        .input(Map.of("path", "report.txt"))
+                                                        .build()))));
+        when(mockAgent.streamEvents(confirmation)).thenReturn(Flux.empty());
 
-        List<Msg> messages = List.of(mock(Msg.class));
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
+        runner.streamEvents(firstRequest, requestOptions).blockLast();
+        verify(mockBuilder, times(1)).build();
 
-        // When
-        runner.streamEvents(messages, requestOptions).blockLast();
+        runner.streamEvents(confirmation, requestOptions).blockLast();
+        verify(mockAgent, times(1)).streamEvents(firstRequest);
+        verify(mockAgent, times(1)).streamEvents(confirmation);
 
-        // Then: completion releases the task ID for a new request.
-        Flux<AgentEvent> secondResult = runner.streamEvents(messages, requestOptions);
-        secondResult.blockLast();
-        assertNotNull(secondResult);
-        verify(mockAgent, times(2)).streamEvents(messages);
+        when(mockAgent.streamEvents(firstRequest)).thenReturn(Flux.empty());
+        runner.streamEvents(firstRequest, requestOptions).blockLast();
+        verify(mockBuilder, times(2)).build();
     }
 
     @Test
-    @DisplayName("Should remove agent from cache when fine-grained stream fails")
-    void testRemoveAgentFromCacheOnStreamEventsError() {
-        // Given
+    @DisplayName("Should allow resuming as soon as the confirmation event is emitted")
+    void testResumeImmediatelyAfterConfirmationEvent() {
         String taskId = UUID.randomUUID().toString();
         requestOptions.setTaskId(taskId);
+        List<Msg> firstRequest = List.of(Msg.builder().textContent("Run the tool").build());
+        List<Msg> confirmation = List.of(Msg.builder().textContent("Confirmed").build());
+        when(mockAgent.streamEvents(firstRequest))
+                .thenReturn(
+                        Flux.just(
+                                new RequireUserConfirmEvent(
+                                        "reply-1",
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("tool-call-1")
+                                                        .name("delete_file")
+                                                        .input(Map.of("path", "report.txt"))
+                                                        .build()))));
+        when(mockAgent.streamEvents(confirmation)).thenReturn(Flux.empty());
+        boolean[] resumed = {false};
 
-        List<Msg> messages = List.of(mock(Msg.class));
-        when(mockAgent.streamEvents(messages))
-                .thenReturn(Flux.error(new RuntimeException("stream failed")), Flux.empty());
+        runner.streamEvents(firstRequest, requestOptions)
+                .doOnNext(
+                        event -> {
+                            if (event instanceof RequireUserConfirmEvent) {
+                                runner.streamEvents(confirmation, requestOptions).blockLast();
+                                resumed[0] = true;
+                            }
+                        })
+                .blockLast();
 
-        // When
-        Flux<AgentEvent> failedResult = runner.streamEvents(messages, requestOptions);
-
-        // Then: an error also releases the task ID for a new request.
-        assertThrows(RuntimeException.class, failedResult::blockLast);
-        Flux<AgentEvent> recoveredResult = runner.streamEvents(messages, requestOptions);
-        recoveredResult.blockLast();
-        assertNotNull(recoveredResult);
-        verify(mockAgent, times(2)).streamEvents(messages);
+        assertTrue(resumed[0]);
+        verify(mockBuilder, times(1)).build();
+        verify(mockAgent, times(1)).streamEvents(firstRequest);
+        verify(mockAgent, times(1)).streamEvents(confirmation);
     }
 
     @Test
@@ -365,19 +304,16 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(messages)).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(messages)).thenReturn(Flux.never());
         runner.streamEvents(messages, requestOptions).subscribe();
 
         runner.stop(taskId);
         verify(mockAgent, times(1)).interrupt();
 
         // Try to stream again with the same taskId - should succeed since agent was removed
-        when(mockAgent.streamEvents(messages)).thenReturn(Flux.empty());
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
-        result.blockLast();
         assertNotNull(result);
+        result.subscribe();
     }
 
     @Test
