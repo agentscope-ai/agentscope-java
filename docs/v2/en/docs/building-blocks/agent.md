@@ -126,10 +126,12 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // reflectively register @Tool methods
 toolkit.registerTool(new MyCustomTools());      // custom tool class
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap =
+        McpClientBuilder.create("amap")
+                .streamableHttpTransport(
+                        "https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+                .buildAsync()
+                .block();
 toolkit.registerMcpClient(amap).block();
 
 ReActAgent agent =
@@ -166,9 +168,7 @@ The `ModelRegistry` string form (`<provider>:<model>`) requires the matching mod
 | `stateStore` | `AgentStateStore` | `null` (no persistence) | When set, agent automatically loads/saves `AgentState` on every `call`, keyed by the `(userId, sessionId)` of the call's `RuntimeContext` |
 | `defaultSessionId` | `String` | agent `name` | Fallback `sessionId` used when a call's `RuntimeContext` carries none |
 | `permissionContext` | `PermissionContextState` | `DEFAULT` mode | Fine-grained tool execution rules, see [Permission System](/v2/en/docs/building-blocks/permission-system) |
-| `modelConfig` | `ModelConfig` | default | Model retries and fallback model |
-| `reactConfig` | `ReactConfig` | default | Max iterations and reject handling |
-| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop (alternative to `reactConfig`) |
+| `maxIters` | `int` | `10` | Max iterations of the ReAct main loop |
 
 ## Multi-user / multi-session concurrency
 
@@ -353,7 +353,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` provides `RuntimeContext` overloads for `call`, `streamEvents`, and the legacy `stream` API. For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
+`ReActAgent` provides `RuntimeContext` overloads for `call` and `streamEvents`. For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
 
 ### Who reads it
 
@@ -384,7 +384,7 @@ The agent pauses and emits a special event in two cases: a tool call requiring *
 
 When the permission system decides a tool call needs user approval, the agent emits `RequireUserConfirmEvent` and pauses.
 
-**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()` / `getSuggestedRules()`.
+**1. Receive `RequireUserConfirmEvent`** — use `streamEvents` to detect the pause. The event carries `getReplyId()` (used to resume) and `getToolCalls()` — a list of `ToolUseBlock` each exposing `getId()` / `getName()` / `getInput()`.
 
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -392,16 +392,20 @@ import io.agentscope.core.event.RequireUserConfirmEvent;
 agent.streamEvents(msg)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
-                confirm.getToolCalls().forEach(tc -> {
-                    System.out.println("Tool: " + tc.getName() + ", input: " + tc.getInput());
-                    System.out.println("Suggested rules: " + tc.getSuggestedRules());
-                });
+                confirm.getToolCalls()
+                        .forEach(
+                                tc ->
+                                        System.out.println(
+                                                "Tool: "
+                                                        + tc.getName()
+                                                        + ", input: "
+                                                        + tc.getInput()));
             }
         })
         .blockLast();
 ```
 
-**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back, or accept the suggested rules so identical future calls auto-allow:
+**2. Build confirm results** — construct a `ConfirmResult` per pending call. You can tweak the tool input on the way back; to remember a choice for identical future calls, pass explicit `PermissionRule`s in the `rules` argument (suggested rules surface on the permission engine's `PermissionDecision`, not on the tool call):
 
 ```java
 import io.agentscope.core.event.ConfirmResult;
@@ -412,10 +416,8 @@ List<ConfirmResult> confirmResults = new ArrayList<>();
 for (var tc : confirmEvent.getToolCalls()) {
     confirmResults.add(
             new ConfirmResult(
-                    /* confirmed = */ true,                  // false to deny
-                    /* toolCall  = */ tc,                    // pass back (optionally modified)
-                    /* rules     = */ tc.getSuggestedRules() // accept rules → future calls auto-allow
-                    ));
+                    /* confirmed = */ true, // false to deny
+                    /* toolCall  = */ tc)); // pass back (optionally modified)
 }
 ```
 
