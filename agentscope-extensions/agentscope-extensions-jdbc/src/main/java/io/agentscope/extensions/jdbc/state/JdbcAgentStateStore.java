@@ -131,17 +131,13 @@ public class JdbcAgentStateStore implements AgentStateStore {
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
         validateStateKey(key);
-
-        try (Connection conn = dataSource.getConnection()) {
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        upsertSingleState(
-                                conn, slotId, key, JsonUtils.getJsonCodec().toJson(value));
-                    });
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to save state: " + key, e);
-        }
+        String json = JsonUtils.getJsonCodec().toJson(value);
+        executeInWriteTransaction(
+                "Failed to save state: " + key,
+                conn -> {
+                    upsertSingleState(conn, slotId, key, json);
+                    return null;
+                });
     }
 
     @Override
@@ -156,45 +152,42 @@ public class JdbcAgentStateStore implements AgentStateStore {
 
         String hashKey = key + HASH_KEY_SUFFIX;
 
-        try (Connection conn = dataSource.getConnection()) {
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        String currentHash = ListHashUtil.computeHash(values);
-                        String storedHash = getStoredHash(conn, slotId, hashKey);
-                        int existingCount = getListCount(conn, slotId, key);
-                        boolean needsFullRewrite =
-                                ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
+        executeInWriteTransaction(
+                "Failed to save list: " + key,
+                conn -> {
+                    String currentHash = ListHashUtil.computeHash(values);
+                    String storedHash = getStoredHash(conn, slotId, hashKey);
+                    int existingCount = getListCount(conn, slotId, key);
+                    boolean needsFullRewrite =
+                            ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
-                        if (needsFullRewrite) {
-                            LOG.debug(
-                                    "List rewrite for key '{}': existing={}, incoming={}",
-                                    key,
-                                    existingCount,
-                                    values.size());
-                            deleteListItems(conn, slotId, key);
-                            insertItems(conn, slotId, key, values, 0);
-                            saveHash(conn, slotId, hashKey, currentHash);
-                        } else if (values.size() > existingCount) {
-                            // Incremental append: the stored hash matched the prefix of the
-                            // incoming list, so only the tail is inserted. A hash collision
-                            // here would silently diverge the stored state — logged for
-                            // troubleshooting.
-                            LOG.debug(
-                                    "Incremental append for key '{}': appending {} items after"
-                                            + " existing {}",
-                                    key,
-                                    values.size() - existingCount,
-                                    existingCount);
-                            List<? extends State> newItems =
-                                    values.subList(existingCount, values.size());
-                            insertItems(conn, slotId, key, newItems, existingCount);
-                            saveHash(conn, slotId, hashKey, currentHash);
-                        }
-                    });
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to save list: " + key, e);
-        }
+                    if (needsFullRewrite) {
+                        LOG.debug(
+                                "List rewrite for key '{}': existing={}, incoming={}",
+                                key,
+                                existingCount,
+                                values.size());
+                        deleteListItems(conn, slotId, key);
+                        insertItems(conn, slotId, key, values, 0);
+                        saveHash(conn, slotId, hashKey, currentHash);
+                    } else if (values.size() > existingCount) {
+                        // Incremental append: the stored hash matched the prefix of the
+                        // incoming list, so only the tail is inserted. A hash collision
+                        // here would silently diverge the stored state — logged for
+                        // troubleshooting.
+                        LOG.debug(
+                                "Incremental append for key '{}': appending {} items after"
+                                        + " existing {}",
+                                key,
+                                values.size() - existingCount,
+                                existingCount);
+                        List<? extends State> newItems =
+                                values.subList(existingCount, values.size());
+                        insertItems(conn, slotId, key, newItems, existingCount);
+                        saveHash(conn, slotId, hashKey, currentHash);
+                    }
+                    return null;
+                });
     }
 
     @Override
@@ -239,75 +232,69 @@ public class JdbcAgentStateStore implements AgentStateStore {
         }
     }
 
+    /**
+     * Writes and obtains the assigned version in one database transaction. The version is
+     * always captured before the write lock is released, so it belongs to the row this
+     * call just wrote. {@code UNVERSIONED} is an unconditional write — not a CAS — but it
+     * still returns the assigned version.
+     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        if (expectedVersion == UNVERSIONED) {
-            String slotId = slotId(userId, sessionId);
-            validateSlotId(slotId);
-            validateStateKey(key);
-            String json = JsonUtils.getJsonCodec().toJson(value);
-            try (Connection conn = dataSource.getConnection()) {
-                long[] result = new long[1];
-                executeInWriteTransaction(
-                        conn,
-                        () -> {
-                            upsertSingleState(conn, slotId, key, json);
-                            // Read the version inside the same write transaction: capturing it
-                            // before the write lock is released guarantees the returned version
-                            // belongs to the row this call just wrote, not a concurrent writer's.
-                            result[0] = readVersion(conn, slotId, key);
-                        });
-                return result[0];
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to save state if version: " + key, e);
-            }
-        }
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
         validateStateKey(key);
-
         String json = JsonUtils.getJsonCodec().toJson(value);
-        try (Connection conn = dataSource.getConnection()) {
-            long[] result = new long[1];
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        if (expectedVersion == 0L) {
-                            BoundSql insertSql =
-                                    dialect.sessionStateInsertIfAbsent(
-                                            slotId, key, SINGLE_STATE_INDEX, json);
-                            // Guard the INSERT with a savepoint: on vendors like Postgres a
-                            // failed statement aborts the whole transaction, which would
-                            // poison the fallback UPDATE below.
-                            Savepoint savepoint = conn.setSavepoint("cas_insert_if_absent");
-                            try (PreparedStatement stmt = conn.prepareStatement(insertSql.sql())) {
-                                bindParams(stmt, insertSql.params());
-                                result[0] = stmt.executeUpdate() == 1 ? 1L : UNVERSIONED;
-                            } catch (SQLException e) {
-                                if (!isDuplicateKey(e)) {
-                                    throw e;
-                                }
-                                conn.rollback(savepoint);
-                                result[0] = UNVERSIONED;
-                            }
-                            if (result[0] == UNVERSIONED) {
-                                // The row already exists. If its stored version is still 0
-                                // (e.g. backfilled by an ALTER TABLE migration), that satisfies
-                                // the CAS — bump 0 -> 1. If a concurrent writer already moved it
-                                // past 0 this matches nothing and correctly reports UNVERSIONED.
-                                result[0] = executeUpdateIfVersion(conn, slotId, key, json, 0L);
-                            }
-                        } else {
-                            result[0] =
-                                    executeUpdateIfVersion(
-                                            conn, slotId, key, json, expectedVersion);
-                        }
+
+        if (expectedVersion == UNVERSIONED) {
+            return executeInWriteTransaction(
+                    "Failed to save state if version: " + key,
+                    conn -> {
+                        upsertSingleState(conn, slotId, key, json);
+                        // Read the version inside the same write transaction: capturing it
+                        // before the write lock is released guarantees the returned version
+                        // belongs to the row this call just wrote, not a concurrent writer's.
+                        return readVersion(conn, slotId, key);
                     });
-            return result[0];
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to save state if version: " + key, e);
         }
+        return executeInWriteTransaction(
+                "Failed to save state if version: " + key,
+                conn -> executeCasWrite(conn, slotId, key, json, expectedVersion));
+    }
+
+    /**
+     * CAS write body: {@code expectedVersion == 0} inserts if absent (savepoint-guarded,
+     * with the 0 -> 1 backfill bump), any higher version takes the versioned UPDATE.
+     * Returns the new version, or {@link AgentStateStore#UNVERSIONED} when the compare
+     * fails and nothing was written.
+     */
+    private long executeCasWrite(
+            Connection conn, String slotId, String key, String json, long expectedVersion)
+            throws SQLException {
+        if (expectedVersion > 0L) {
+            return executeUpdateIfVersion(conn, slotId, key, json, expectedVersion);
+        }
+        BoundSql insertSql =
+                dialect.sessionStateInsertIfAbsent(slotId, key, SINGLE_STATE_INDEX, json);
+        // Guard the INSERT with a savepoint: on vendors like Postgres a failed statement
+        // aborts the whole transaction, which would poison the fallback UPDATE below.
+        Savepoint savepoint = conn.setSavepoint("cas_insert_if_absent");
+        try (PreparedStatement stmt = conn.prepareStatement(insertSql.sql())) {
+            bindParams(stmt, insertSql.params());
+            if (stmt.executeUpdate() == 1) {
+                return 1L;
+            }
+        } catch (SQLException e) {
+            if (!isDuplicateKey(e)) {
+                throw e;
+            }
+            conn.rollback(savepoint);
+        }
+        // The row already exists. If its stored version is still 0 (e.g. backfilled by an
+        // ALTER TABLE migration), that satisfies the CAS — bump 0 -> 1. If a concurrent
+        // writer already moved it past 0 this matches nothing and correctly reports
+        // UNVERSIONED.
+        return executeUpdateIfVersion(conn, slotId, key, json, 0L);
     }
 
     /**
@@ -405,20 +392,16 @@ public class JdbcAgentStateStore implements AgentStateStore {
     public void delete(String userId, String sessionId) {
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
-
-        try (Connection conn = dataSource.getConnection()) {
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        BoundSql boundSql = dialect.sessionStateDeleteSession(slotId);
-                        try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
-                            bindParams(stmt, boundSql.params());
-                            stmt.executeUpdate();
-                        }
-                    });
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to delete session: " + slotId, e);
-        }
+        executeInWriteTransaction(
+                "Failed to delete session: " + slotId,
+                conn -> {
+                    BoundSql boundSql = dialect.sessionStateDeleteSession(slotId);
+                    try (PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
+                        bindParams(stmt, boundSql.params());
+                        stmt.executeUpdate();
+                    }
+                    return null;
+                });
     }
 
     @Override
@@ -540,30 +523,41 @@ public class JdbcAgentStateStore implements AgentStateStore {
     // -------------------------------------------------------------------------
 
     @FunctionalInterface
-    private interface SqlOperation {
-        void execute() throws Exception;
+    private interface SqlCall<T> {
+        T execute(Connection conn) throws Exception;
     }
 
-    private void executeInWriteTransaction(Connection conn, SqlOperation operation)
-            throws Exception {
-        boolean originalAutoCommit = conn.getAutoCommit();
-        if (originalAutoCommit) {
-            conn.setAutoCommit(false);
-        }
-        try {
-            operation.execute();
-            conn.commit();
-        } catch (Exception e) {
+    /**
+     * The single definition of the write scaffolding: opens the connection, runs the call
+     * inside a write transaction (rollback on failure, with a failed rollback attached as
+     * suppressed), restores auto-commit, and wraps any failure in a {@link RuntimeException}
+     * carrying {@code errorMessage}. Callers contribute only the SQL work and the
+     * user-facing error prefix, so no write path repeats connection/transaction/catch.
+     */
+    private <T> T executeInWriteTransaction(String errorMessage, SqlCall<T> operation) {
+        try (Connection conn = dataSource.getConnection()) {
+            boolean originalAutoCommit = conn.getAutoCommit();
+            if (originalAutoCommit) {
+                conn.setAutoCommit(false);
+            }
             try {
-                conn.rollback();
-            } catch (SQLException rollbackException) {
-                e.addSuppressed(rollbackException);
+                T result = operation.execute(conn);
+                conn.commit();
+                return result;
+            } catch (Exception e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackException) {
+                    e.addSuppressed(rollbackException);
+                }
+                throw e;
+            } finally {
+                if (conn.getAutoCommit() != originalAutoCommit) {
+                    conn.setAutoCommit(originalAutoCommit);
+                }
             }
-            throw e;
-        } finally {
-            if (conn.getAutoCommit() != originalAutoCommit) {
-                conn.setAutoCommit(originalAutoCommit);
-            }
+        } catch (Exception e) {
+            throw new RuntimeException(errorMessage, e);
         }
     }
 
