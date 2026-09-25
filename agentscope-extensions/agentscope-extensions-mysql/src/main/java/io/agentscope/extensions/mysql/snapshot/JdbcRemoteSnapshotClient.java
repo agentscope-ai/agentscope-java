@@ -62,6 +62,8 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
         // snapshot_id is the primary key and a caller-supplied identifier, so it pins a binary
         // collation: the table default is case-insensitive, and two snapshot ids differing only in
         // letter case would otherwise collide and the second upload would overwrite the first.
+        // ROW_FORMAT=DYNAMIC keeps the 2048-byte primary key under InnoDB's index limit even on
+        // row formats that still carry the legacy 767-byte restriction.
         String ddl =
                 "CREATE TABLE IF NOT EXISTS "
                         + tableName
@@ -69,7 +71,7 @@ public class JdbcRemoteSnapshotClient implements RemoteSnapshotClient {
                         + "snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, "
                         + "data LONGBLOB NOT NULL, "
                         + "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                        + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+                        + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC";
         try (Connection conn = dataSource.getConnection();
                 Statement stmt = conn.createStatement()) {
             stmt.execute(ddl);

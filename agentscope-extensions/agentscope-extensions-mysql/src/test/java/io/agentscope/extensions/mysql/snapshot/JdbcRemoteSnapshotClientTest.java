@@ -52,7 +52,7 @@ class JdbcRemoteSnapshotClientTest {
         // The table states its charset and engine as well, so the payload column does not depend on
         // whatever the schema default happens to be.
         assertTrue(ddl.contains("data LONGBLOB NOT NULL"));
-        assertTrue(ddl.contains("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"));
+        assertTrue(ddl.contains("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC"));
     }
 
     @Test

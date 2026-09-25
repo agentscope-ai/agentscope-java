@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是精确标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。
+两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是大小写敏感的标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。注意 `utf8mb4_bin` 为 PAD SPACE 语义——仅尾部空格不同的值仍视为相等。
 
 ### 迁移在此改动之前创建的表
 

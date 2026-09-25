@@ -241,9 +241,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
      * characters like hyphens.
      */
     private void createTableIfNotExist() {
-        // session_id and state_key are exact identifiers, so they pin a binary collation: the
-        // table default (utf8mb4_unicode_ci) is case-insensitive, which would make session ids
-        // or state keys differing only in case share a row. Payload columns keep the default.
+        // session_id and state_key are case-sensitive identifiers, so they pin a binary collation:
+        // the table default (utf8mb4_unicode_ci) is case-insensitive, which would make session ids
+        // or state keys differing only in case share a row. utf8mb4_bin is PAD SPACE, so values
+        // differing only in trailing spaces still compare equal. Payload columns keep the default.
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
                         + getFullTableName()

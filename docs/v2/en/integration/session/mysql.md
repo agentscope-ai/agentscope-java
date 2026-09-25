@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-The two key columns pin `utf8mb4_bin` while the table default stays `utf8mb4_unicode_ci`: `session_id` and `state_key` are exact identifiers, and the table default is case-insensitive, so without the binary collation two ids differing only in letter case would collide on the primary key and share a row.
+The two key columns pin `utf8mb4_bin` while the table default stays `utf8mb4_unicode_ci`: `session_id` and `state_key` are case-sensitive identifiers, and the table default is case-insensitive, so without the binary collation two ids differing only in letter case would collide on the primary key and share a row. Note that `utf8mb4_bin` is PAD SPACE — values differing only in trailing spaces still compare equal.
 
 ### Migrating tables created before this change
 
