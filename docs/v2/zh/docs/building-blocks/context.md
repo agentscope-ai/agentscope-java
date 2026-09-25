@@ -298,12 +298,39 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | 方法 | 说明 |
 |------|------|
 | `getSessionId()` / `getUserId()` | 内置字段,用于路由状态槽位与租户 |
+| `getRunId()` | 每次调用的稳定关联 ID(见下方[runId 关联](#runid关联)),恒非 null |
 | `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`,由框架在 call 入口注入。中间件和工具应从这里读状态,而非 `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。中间件/工具中使用此方法保证并发安全 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
+
+### runId 关联
+
+`RuntimeContext` 上有一个恒非 null 的 `runId`:`builder().runId(x)` 显式传入非空白值时原样保留,否则(未设置或为空白)在 `build()` 时自动生成(32 位 hex)。它的用途是把**一次执行**在执行层和产品层串起来:
+
+- 中间件、工具、日志、tracing 都能用 `ctx.getRunId()` 关联同一次调用——多会话并发时,grep 一个 runId 即可还原某次调用的完整链路;
+- `prepareRun` / `prepareCall` 创建的 `AgentRun` 句柄直接采纳 ctx 的 runId,因此 `run.runId() == ctx.getRunId()`,与 `AgentRunRegistry` 注册键、SSE 的 `SESSION_RUN_STARTED` 事件、前端取消运行所用的 id 天然同源;
+- 子代理上下文经 `RuntimeContext.builder(parentRc)` 派生时拷贝 runId,`agent_spawn` 触发的子代理自动继承父调用的 id——即使子代理有独立 sessionId,链路 id 也能把整条执行串起来。
+
+```java
+// 编排层显式贯穿业务链路 id(唯一性由调用方负责):
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("s-001")
+    .runId("trace-2026-09-25-0001")   // 贯穿整个多 agent 流程
+    .build();
+
+// 中间件 / 工具中关联本次执行:
+log.info("[runId={}] tool executed", ctx.getRunId());
+
+// 句柄与执行层同 id:
+AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
+assert run.runId().equals(ctx.getRunId());
+```
+
+> 一个执行一个 runId 靠调用方纪律保证:同一个 ctx(或从它派生的 ctx)顺序用在多次调用上时,这些执行会共享同一个 runId,框架不报错;并发的重复 runId 只在 service 层被 `AgentRunRegistry` 拒绝。需要严格隔离时,每次调用新建 ctx 或显式传新 runId 即可。
 
 
 <Tip>
