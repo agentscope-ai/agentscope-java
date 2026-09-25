@@ -558,6 +558,36 @@ public class SessionTurnRunner {
                                         .externalSandbox(sandbox)
                                         .isolationScope(IsolationScope.SESSION)
                                         .build()));
+        var jevRunId = new java.util.concurrent.atomic.AtomicReference<String>();
+        rcBuilder.put(
+                io.agentscope.builder.web.catalog.JevServiceSupport.TraceSink.class,
+                new io.agentscope.builder.web.catalog.JevServiceSupport.TraceSink(
+                        record -> {
+                            String runId = jevRunId.get();
+                            if (runId == null) return;
+                            appendTurnEvent(
+                                    session.id(),
+                                    "jev.decision",
+                                    Map.of(
+                                            "run_id",
+                                            runId,
+                                            "purpose",
+                                            record.purpose(),
+                                            "version",
+                                            record.version(),
+                                            "mode",
+                                            record.mode().name(),
+                                            "status",
+                                            record.status().name(),
+                                            "reason",
+                                            record.reason(),
+                                            "elapsed_ms",
+                                            record.elapsed().toMillis(),
+                                            "recommendation",
+                                            record.recommendation()),
+                                    null,
+                                    executionScope);
+                        }));
         RuntimeContext rc = rcBuilder.build();
 
         SessionEventMapper.PreviewIds previewIds = new SessionEventMapper.PreviewIds();
@@ -596,6 +626,7 @@ public class SessionTurnRunner {
                     }
                 };
         AgentRun<AgentEvent> run = agent.prepareRun(inputMsgs, rc);
+        jevRunId.set(run.runId());
         synchronized (turnMutex(session.id())) {
             // A stale turn may finish agent construction after a replacement was admitted. Never
             // let its late registrations overwrite the replacement's cancellation handles.

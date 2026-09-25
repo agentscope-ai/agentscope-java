@@ -120,6 +120,8 @@ agentscope:
 | `JevModelRouterMiddleware` | `onAgent` / `onModelCall` | 用 Jev 在多个模型之间路由 |
 | `JevAutoModeMiddleware` | `onActing` | 用 Jev 在工具执行前判断风险 |
 
+中间件默认OFF；下例显式开启SHADOW，仅记录建议。需要接管时改为ENFORCE，以下筛选/拦截行为描述适用于ENFORCE。模型路由对带工具请求默认回退，需通过compatible谓词声明候选能力。
+
 ### 工具选择
 
 `JevToolSelectionMiddleware` 会减少发送给主模型的 tool schema 数量，同时保留核心工具，
@@ -130,8 +132,10 @@ JevToolSelectionMiddleware toolSelection =
         JevToolSelectionMiddleware.builder(client)
                 .alwaysIncludeTools(Set.of("load_skill_through_path", "reset_tools"))
                 .maxTools(3)
-                .confidenceThreshold(0.5)
-                .failOpen(true)
+                .confidenceThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -147,10 +151,10 @@ ReActAgent agent =
 
 - 在 `onReasoning` 阶段、模型调用前执行。
 - 默认保留 `load_skill_through_path`、`reset_tools` 和 `generate_response`。
-- 保留概率高于合成选项 `__none__` 的可选工具，最多保留 `maxTools` 个。
+- 按独立Noul适用性筛选，最多保留 `maxTools` 个；明确none只保留必要工具。
 - 每个 reasoning step 都会重新选择，并把完整 `input.messages()` 状态发给 Jev。
-- 超过 254 个工具时先分块，再对每块胜者重排。
-- `failOpen(true)` 时，Jev 失败则保留原始工具列表。
+- 每64个工具分批判断，同一逻辑选择共享总预算。
+- 判断失败或不确定时保留原始工具列表。
 
 ### 模型路由
 
@@ -164,7 +168,9 @@ JevModelRouterMiddleware modelRouter =
                 .choice("powerful", powerfulModel, "Architecture and high-stakes decisions.")
                 .instructions("Choose the least costly model that can complete the task.")
                 .confidenceThreshold(0.75)
-                .failOpen(true)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -181,7 +187,7 @@ ReActAgent agent =
 - 只替换 `ModelCallInput.model`；消息、工具和生成参数原样透传。
 - 选择结果、每个选项的概率和置信度存储在
   `JevModelRouterMiddleware.decision(ctx)` 中。
-- 没有用户文本、置信度低于阈值、`failOpen(true)` 时 Jev 失败，或结果不可用时，回退到
+- 没有用户文本、置信度低于阈值、Jev 失败，或结果不可用时，回退到
   agent 上配置的原始模型。
 - 最多支持 255 个候选模型；超过会在配置阶段直接报错。
 
@@ -193,8 +199,10 @@ ReActAgent agent =
 JevAutoModeMiddleware autoMode =
         JevAutoModeMiddleware.builder(client)
                 .guardedTool("bash")
-                .safetyThreshold(0.5)
-                .failOpen(true)
+                .safetyThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -215,4 +223,4 @@ ReActAgent agent =
 - `NoulAnswer.noul()` 即 P(safe)，低于 `safetyThreshold` 的调用会被拒绝。
 - 被拒绝的调用不会执行：合成 `DENIED` 的 `ToolResultBlock` 写入对话状态，然后只把安全的调用传给后续执行。
 - 已经通过 HITL 确认为 `ALLOWED` 的调用跳过 Jev 检查，人工确认优先。
-- `failOpen(true)` 时，Jev 失败则放行；`failOpen(false)` 时，Jev 失败则报错。
+- ENFORCE下，缺状态、超时或非法结果拒绝受保护调用；SHADOW保留原输入。

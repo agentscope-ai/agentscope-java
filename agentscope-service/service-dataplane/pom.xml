@@ -34,6 +34,11 @@
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>service-common</artifactId>
             <version>${revision}</version>
         </dependency>

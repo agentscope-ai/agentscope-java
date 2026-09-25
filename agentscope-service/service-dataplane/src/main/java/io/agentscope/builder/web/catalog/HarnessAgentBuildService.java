@@ -142,6 +142,13 @@ public class HarnessAgentBuildService {
         this.managedEventLog = eventLog;
     }
 
+    private JevServiceSupport jevServiceSupport;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setJevServiceSupport(JevServiceSupport support) {
+        this.jevServiceSupport = support;
+    }
+
     /** Resolves (and caches) the {@link HarnessAgent} for a managed-session turn. */
     public HarnessAgent getOrBuildAgent(ManagedSessionDto session, SessionAgentBuildSpec spec) {
         SessionResolveResult resolved = resolveSession(session);
@@ -469,6 +476,8 @@ public class HarnessAgentBuildService {
 
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
         b.middleware(toolConfirmationMiddleware);
+        if (jevServiceSupport != null)
+            jevServiceSupport.middlewares(spec.overridesJson()).forEach(b::middleware);
 
         applyManagedSessionBuildOptions(
                 b,

@@ -112,6 +112,8 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                 if (toolUse.getInput() != null) {
                     toolInput.putAll(toolUse.getInput());
                 }
+                var jevApproval =
+                        io.agentscope.extensions.judge.jev.JevConfirmedCalls.snapshot(toolUse);
                 ToolConfirmationCoordinator.ConfirmationDecision decision =
                         coordinator.awaitDecision(
                                 sessionId,
@@ -120,6 +122,7 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                                 toolInput,
                                 ctx.get(ManagedTurnContext.class));
                 if (decision.allow()) {
+                    io.agentscope.extensions.judge.jev.JevConfirmedCalls.remember(ctx, jevApproval);
                     allowed.add(toolUse);
                 } else {
                     denied.add(

@@ -121,6 +121,8 @@ tuned:
 | `JevModelRouterMiddleware` | `onAgent` / `onModelCall` | Route between multiple models |
 | `JevAutoModeMiddleware` | `onActing` | Assess risk before tool execution |
 
+Middleware defaults to OFF. The examples enable SHADOW to observe recommendations; selection and denial take effect only in ENFORCE. Routing tool-bearing requests requires an explicit compatible predicate.
+
 ### Select tools
 
 `JevToolSelectionMiddleware` reduces the tool schema list sent to the primary model. It preserves
@@ -131,8 +133,10 @@ JevToolSelectionMiddleware toolSelection =
         JevToolSelectionMiddleware.builder(client)
                 .alwaysIncludeTools(Set.of("load_skill_through_path", "reset_tools"))
                 .maxTools(3)
-                .confidenceThreshold(0.5)
-                .failOpen(true)
+                .confidenceThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -148,10 +152,10 @@ Behavior:
 
 - Runs in `onReasoning`, before the model call.
 - Preserves `load_skill_through_path`, `reset_tools`, and `generate_response` by default.
-- Keeps optional tools whose probability is above the synthetic `__none__` option, up to `maxTools`.
+- Scores tool applicability independently using Noul and retains up to `maxTools`; explicit none retains only necessary tools.
 - Re-runs on every reasoning step and sends the full `input.messages()` state to Jev.
-- Chunks tool sets larger than 254 tools and reranks the chunk winners.
-- Falls back to the original tool list when Jev fails and `failOpen(true)` is set.
+- Evaluates batches of 64 tools under one total decision budget.
+- Falls back to the original tool list on failure or uncertainty.
 
 ### Route models
 
@@ -166,7 +170,9 @@ JevModelRouterMiddleware modelRouter =
                 .choice("powerful", powerfulModel, "Architecture and high-stakes decisions.")
                 .instructions("Choose the least costly model that can complete the task.")
                 .confidenceThreshold(0.75)
-                .failOpen(true)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -186,7 +192,7 @@ Behavior:
 - Stores the selected model, option probabilities, and confidence as
   `JevModelRouterMiddleware.decision(ctx)`.
 - Falls back to the model configured on the agent when there is no user text, confidence is below
-  the threshold, Jev fails while `failOpen(true)` is set, or the answer is unusable.
+  the threshold, Jev fails, or the answer is unusable.
 - Supports up to 255 model choices; larger candidate sets fail during configuration.
 
 ### Guard tool execution
@@ -198,8 +204,10 @@ execute automatically.
 JevAutoModeMiddleware autoMode =
         JevAutoModeMiddleware.builder(client)
                 .guardedTool("bash")
-                .safetyThreshold(0.5)
-                .failOpen(true)
+                .safetyThreshold(0.8)
+                .execution(new io.agentscope.extensions.judge.jev.JevExecution.Options(
+                    io.agentscope.extensions.judge.jev.JevExecution.Mode.SHADOW,
+                    java.time.Duration.ofSeconds(2), "v1", (ctx, record) -> {}))
                 .build();
 
 ReActAgent agent =
@@ -224,5 +232,4 @@ Behavior:
   conversation state, and only safe calls are passed to the execution pipeline.
 - Calls already confirmed as `ALLOWED` through HITL skip the Jev check, so human confirmation
   takes precedence.
-- With `failOpen(true)`, a Jev failure lets the call through; with `failOpen(false)`, the failure
-  propagates.
+- In ENFORCE mode, missing state, timeouts and invalid responses deny guarded calls. SHADOW preserves the original input.
