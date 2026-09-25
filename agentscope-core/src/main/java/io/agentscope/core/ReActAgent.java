@@ -1099,8 +1099,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Prepare a single-use event execution handle without starting the call. Adopts the context's
-     * runId ({@code run.runId() == ctx.getRunId()}); a null context uses a fresh {@link
-     * RuntimeContext#empty()}.
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
      */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext context) {
         RuntimeContext effective = context != null ? context : RuntimeContext.empty();
@@ -1110,8 +1111,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Prepare a single-use reply execution handle without starting the call. Adopts the context's
-     * runId ({@code run.runId() == ctx.getRunId()}); a null context uses a fresh {@link
-     * RuntimeContext#empty()}.
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
      */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext context) {
         RuntimeContext effective = context != null ? context : RuntimeContext.empty();

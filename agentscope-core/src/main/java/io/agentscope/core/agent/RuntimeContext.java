@@ -395,7 +395,8 @@ public class RuntimeContext {
 
         /**
          * Sets an explicit per-call correlation id (e.g. an orchestration trace id); uniqueness
-         * is the caller's. Unset or blank generates one at {@code build()} time.
+         * is the caller's. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or
+         * blank generates one at {@code build()} time.
          */
         public Builder runId(String runId) {
             this.runId = runId;
@@ -444,7 +445,8 @@ public class RuntimeContext {
             }
             this.sessionId = source.sessionId;
             this.userId = source.userId;
-            // Keep the source's correlation id so derived contexts (subagent chains) stay linked.
+            // Derived contexts intentionally share the source's runId (agent_spawn chains); a
+            // later runId(x) overrides it.
             this.runId = source.runId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
