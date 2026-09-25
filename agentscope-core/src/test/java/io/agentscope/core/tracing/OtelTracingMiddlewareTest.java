@@ -40,7 +40,9 @@ import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.TracerProvider;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
@@ -52,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -730,6 +733,51 @@ class OtelTracingMiddlewareTest {
         assertEquals(List.of(toolEnd), toolEvents);
         assertEquals(0, spanExporter.getFinishedSpanItems().size());
         assertGlobalStillExports(openTelemetrySdk, spanExporter, null);
+    }
+
+    @Test
+    void injectedSdk_resolvesTracerOnceAndReusesItOnEachHook() {
+        AtomicInteger lookups = new AtomicInteger();
+        OpenTelemetry counting =
+                new OpenTelemetry() {
+                    @Override
+                    public TracerProvider getTracerProvider() {
+                        lookups.incrementAndGet();
+                        return OpenTelemetry.noop().getTracerProvider();
+                    }
+
+                    @Override
+                    public ContextPropagators getPropagators() {
+                        return OpenTelemetry.noop().getPropagators();
+                    }
+                };
+        OtelTracingMiddleware cached = new OtelTracingMiddleware(counting);
+        assertEquals(1, lookups.get(), "app-owned tracer is resolved once at construction");
+
+        Agent agent = stubAgent("cache-agent", "agent-cache");
+        AgentStartEvent start = new AgentStartEvent("sess-c", "reply-c", "cache-agent");
+        assertEquals(
+                List.of(start),
+                cached.onAgent(agent, null, new AgentInput(List.of()), in -> Flux.just(start))
+                        .collectList()
+                        .block());
+        ModelCallEndEvent modelEnd = new ModelCallEndEvent("reply-c", new ChatUsage(1, 1, 0.1));
+        assertEquals(
+                List.of(modelEnd),
+                cached.onModelCall(
+                                agent,
+                                null,
+                                new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
+                                in -> Flux.just(modelEnd))
+                        .collectList()
+                        .block());
+        assertEquals(
+                List.of(),
+                cached.onActing(agent, null, new ActingInput(List.of()), in -> Flux.empty())
+                        .collectList()
+                        .block());
+        assertEquals(1, lookups.get(), "hooks reuse the tracer cached for this OpenTelemetry");
+        assertEquals(0, spanExporter.getFinishedSpanItems().size());
     }
 
     @Test

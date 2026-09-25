@@ -188,7 +188,9 @@ ReActAgent agent =
                 .build();
 ```
 
-Passing `appSdk` does not replace `GlobalOpenTelemetry` and does not change `StudioManager`. `StudioManager` still installs deprecated `TracerRegistry` tracing on its own during `initialize()`. Vendor instrumentation that rewrites tracer lookup, and a missing Studio call-tree expansion control, need separate verification against the deployment that produces them. This middleware only selects which OpenTelemetry SDK records the `onAgent`, `onModelCall`, and `onActing` spans. `OpenTelemetry.noop()` is also a valid argument: the downstream chain still runs, and no spans are recorded.
+Passing `appSdk` does not replace `GlobalOpenTelemetry` and does not change `StudioManager`. `StudioManager` still installs deprecated `TracerRegistry` tracing on its own during `initialize()`. Vendor instrumentation that rewrites tracer lookup, and a missing Studio call-tree expansion control, need separate verification against the deployment that produces them. This middleware selects which OpenTelemetry SDK records the `onAgent`, `onModelCall`, and `onActing` spans. `OpenTelemetry.noop()` is also a valid argument: the downstream chain still runs, and no spans are recorded.
+
+Constructing `OtelTracingMiddleware` — either `new OtelTracingMiddleware()` or `new OtelTracingMiddleware(appSdk)` — also registers a JVM-wide Reactor hook, `ContextPropagationOperator.registerOnEachOperator()`, the first time any instance is created. The hook wraps every operator of every `Flux` and `Mono` in the process so parent spans survive `publishOn` / `subscribeOn` hops. It is independent of which SDK records spans: an application-owned SDK isolates tracer lookup from `GlobalOpenTelemetry`, not this instrumentation side effect. The hook is installed at most once per JVM and is not removed when the middleware or the SDK is closed.
 
 Each reply produces a nested span tree with attributes such as agent name, session ID, model name, token counts, tool name, and inputs.
 

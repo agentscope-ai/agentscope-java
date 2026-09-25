@@ -188,7 +188,9 @@ ReActAgent agent =
                 .build();
 ```
 
-传入 `appSdk` 不会替换 `GlobalOpenTelemetry`，也不会改变 `StudioManager`。`StudioManager` 在 `initialize()` 时仍会独立安装已弃用的 `TracerRegistry` 追踪。供应商插桩如果改写了 tracer 查找结果，以及 Studio 调用树缺少展开控件，都需要对照实际部署另行验证。此 middleware 只决定 `onAgent`、`onModelCall`、`onActing` 的 span 记到哪一个 OpenTelemetry SDK。传入 `OpenTelemetry.noop()` 同样合法：下游链路仍会执行，且不会记录 span。
+传入 `appSdk` 不会替换 `GlobalOpenTelemetry`，也不会改变 `StudioManager`。`StudioManager` 在 `initialize()` 时仍会独立安装已弃用的 `TracerRegistry` 追踪。供应商插桩如果改写了 tracer 查找结果，以及 Studio 调用树缺少展开控件，都需要对照实际部署另行验证。此 middleware 决定 `onAgent`、`onModelCall`、`onActing` 的 span 记到哪一个 OpenTelemetry SDK。传入 `OpenTelemetry.noop()` 同样合法：下游链路仍会执行，且不会记录 span。
+
+构造 `OtelTracingMiddleware`（无论是 `new OtelTracingMiddleware()` 还是 `new OtelTracingMiddleware(appSdk)`）时，第一次创建实例还会注册一个 JVM 范围的 Reactor hook：`ContextPropagationOperator.registerOnEachOperator()`。该 hook 会包装进程中每一个 `Flux` 和 `Mono` 的每一个 operator，使父 span 在 `publishOn` / `subscribeOn` 跨线程之后仍然成立。它与 span 记到哪一个 SDK 无关：应用自持的 SDK 只把 tracer 查找从 `GlobalOpenTelemetry` 隔离开，并不能避免这个全局插桩副作用。该 hook 在每个 JVM 中最多安装一次，关闭 middleware 或 SDK 也不会移除它。
 
 每次 reply 会产出一棵嵌套 span 树，关键属性包括 agent 名称、session ID、模型名、token 数、工具名与入参等。
 
