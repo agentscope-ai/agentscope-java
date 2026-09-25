@@ -1,5 +1,6 @@
 ---
 title: Skills
+zh_link: /v1/zh/docs/multi-agent/skills
 ---
 
 > **Note:** The former Spring Boot example module `agentscope-examples/multiagent-patterns/` was removed during the 2.0 package refactor. Use the code snippets on this page as the reference implementation. For other runnable samples, see `agentscope-examples/documentation/`.

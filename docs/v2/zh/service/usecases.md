@@ -1,5 +1,6 @@
 ---
 title: "场景案例"
+en_link: /v2/en/service/usecases
 ---
 
 <Note>

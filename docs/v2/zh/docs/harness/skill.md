@@ -1,6 +1,7 @@
 ---
 title: 技能（Skill）
 description: 四层技能合成、技能市场、自学习闭环
+en_link: /v2/en/docs/harness/skill
 ---
 
 一个 skill 就是一份写好的能力包：一个目录里放一份 `SKILL.md`（说明用途、给 agent 看的指令），可以再带一些参考文档、脚本或样例。写好后丢给 agent，它会在合适的时候自己用。

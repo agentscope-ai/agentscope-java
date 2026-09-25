@@ -1,6 +1,7 @@
 ---
 title: 消息与事件
 description: 智能体通信，与前端流式数据传输
+en_link: /v2/en/docs/building-blocks/message-and-event
 ---
 
 消息（Message）与事件（Event）是 AgentScope 中两种基础数据结构。

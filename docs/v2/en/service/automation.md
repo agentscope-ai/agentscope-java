@@ -1,5 +1,6 @@
 ---
 title: "Automated tasks: schedules and webhooks"
+zh_link: /v2/zh/service/automation
 ---
 
 <Note>

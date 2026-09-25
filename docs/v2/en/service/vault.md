@@ -1,5 +1,6 @@
 ---
 title: "Vault: credentials for tools"
+zh_link: /v2/zh/service/vault
 ---
 
 <Note>

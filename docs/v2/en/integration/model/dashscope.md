@@ -1,5 +1,6 @@
 ---
 title: DashScope
+zh_link: /v2/zh/integration/model/dashscope
 ---
 
 `agentscope-extensions-model-dashscope` integrates Alibaba Cloud DashScope Qwen models, including multimodal and reasoning-capable Qwen models.
