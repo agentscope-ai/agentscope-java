@@ -16,7 +16,11 @@
 package io.agentscope.extensions.scheduler.config;
 
 import io.agentscope.extensions.scheduler.AgentScheduler;
+import java.time.DateTimeException;
+import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.TimeZone;
 
 /**
  * Configuration for scheduled agent tasks.
@@ -87,6 +91,17 @@ public class ScheduleConfig {
                 if (cronExpression == null || cronExpression.trim().isEmpty()) {
                     throw new IllegalArgumentException(
                             "Cron expression must not be null or empty for CRON mode");
+                }
+                if (zoneId != null) {
+                    try {
+                        ZoneId.of(zoneId);
+                    } catch (DateTimeException e) {
+                        // Keep accepting IDs used by existing Quartz triggers (e.g. PST).
+                        if (!Arrays.asList(TimeZone.getAvailableIDs()).contains(zoneId)) {
+                            throw new IllegalArgumentException(
+                                    "Invalid time zone ID: " + zoneId, e);
+                        }
+                    }
                 }
                 break;
             case FIXED_RATE:
@@ -271,6 +286,9 @@ public class ScheduleConfig {
          * time zone will be used.
          *
          * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC", "Europe/London"
+         *
+         * <p>For CRON schedules the ID is validated eagerly when the config is built; an
+         * invalid or blank ID raises {@link IllegalArgumentException}.
          *
          * @param zoneIdStr The time zone ID string (e.g., "Asia/Shanghai")
          * @return This builder
