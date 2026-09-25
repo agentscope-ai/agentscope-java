@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.a2a.spec.DataPart;
@@ -28,7 +27,6 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.util.JsonException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +46,8 @@ import org.junit.jupiter.api.Test;
  *   <li>Handling unsupported block types</li>
  *   <li>Parsing ToolResultBlock with List&lt;ContentBlock&gt; output</li>
  *   <li>Parsing ToolResultBlock with non-String and non-List output</li>
+ *   <li>Converting raw map, String and null items in ToolResultBlock output</li>
+ *   <li>Keeping unconvertible output items as raw JSON TextBlock</li>
  * </ul>
  */
 @DisplayName("DataPartParser Tests")
@@ -223,14 +223,39 @@ class DataPartParserTest {
     }
 
     @Test
-    @DisplayName("Should throw JsonException when an output item has an unknown type")
+    @DisplayName("Should keep unconvertible output items as raw JSON TextBlock")
     void testParseToolResultBlockWithUnknownTypeInOutput() {
         Map<String, Object> rawUnknownBlock = new LinkedHashMap<>();
         rawUnknownBlock.put("type", "unknown_type");
+        rawUnknownBlock.put("value", "42");
 
-        DataPart part = toolResultPartWithOutput(List.of(rawUnknownBlock));
+        Map<String, Object> rawTextBlock = new LinkedHashMap<>();
+        rawTextBlock.put("type", "text");
+        rawTextBlock.put("text", "still here");
 
-        assertThrows(JsonException.class, () -> parser.parse(part));
+        ToolResultBlock result =
+                (ToolResultBlock)
+                        parser.parse(
+                                toolResultPartWithOutput(List.of(rawUnknownBlock, rawTextBlock)));
+
+        assertEquals(2, result.getOutput().size());
+        TextBlock fallback = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertTrue(fallback.getText().contains("unknown_type"));
+        TextBlock valid = assertInstanceOf(TextBlock.class, result.getOutput().get(1));
+        assertEquals("still here", valid.getText());
+    }
+
+    @Test
+    @DisplayName("Should wrap String items in ToolResultBlock output as TextBlock")
+    void testParseToolResultBlockWithStringItemsInOutput() {
+        ToolResultBlock result =
+                (ToolResultBlock) parser.parse(toolResultPartWithOutput(List.of("line1", "line2")));
+
+        assertEquals(2, result.getOutput().size());
+        assertEquals(
+                "line1", assertInstanceOf(TextBlock.class, result.getOutput().get(0)).getText());
+        assertEquals(
+                "line2", assertInstanceOf(TextBlock.class, result.getOutput().get(1)).getText());
     }
 
     private DataPart toolResultPartWithOutput(List<?> output) {
