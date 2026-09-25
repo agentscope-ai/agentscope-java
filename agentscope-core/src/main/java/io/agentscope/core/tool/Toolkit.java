@@ -546,6 +546,15 @@ public class Toolkit {
      * The default {@code TOOL_DEFAULTS} uses {@code maxAttempts(1)}, which
      * is a no-op for retry.
      *
+     * <p><b>Scheduling hop</b>: Execution now subscribes on the toolkit's
+     * executor (or {@code Schedulers.boundedElastic()} when none is
+     * configured) via {@code subscribeOn}. The previous implementation ran
+     * directly on the caller's thread. Callers that rely on
+     * thread-local state or security context propagated from the calling
+     * thread should migrate those values into the {@code ToolCallParam}
+     * or toolkit configuration, as they will no longer be visible on the
+     * execution thread.
+     *
      * <p><b>Exception-as-result contract</b>: Any exception thrown by the
      * tool, timeouts after retry is exhausted, or the shutdown guard
      * firing — all are caught and materialised as a normal
