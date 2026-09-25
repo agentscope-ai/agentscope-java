@@ -34,8 +34,9 @@ import org.mockito.ArgumentCaptor;
  *
  * <p>{@code snapshot_id} is the primary key and a caller-supplied identifier, so its collation is the
  * difference between two ids differing only in letter case being two rows or one — with the second
- * upload silently overwriting the first. A MySQL server is not available to the suite, so the test
- * asserts the DDL that is actually issued.
+ * upload silently overwriting the first. This unit suite runs without a live MySQL server and
+ * asserts the DDL that is actually issued; the runtime behaviour is covered by the
+ * testcontainers-based {@code MysqlIntegrationTest} (mysql:8.0) in agentscope-extensions-jdbc.
  */
 @DisplayName("JdbcRemoteSnapshotClient snapshot table DDL")
 class JdbcRemoteSnapshotClientTest {

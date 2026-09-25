@@ -231,10 +231,9 @@ class MysqlAgentStateStoreTest {
         // differ only in case would otherwise share session state.
         //
         // With createIfNotExist=true the constructor verifies existence after creating (next ->
-        // true), then checks the version column (next -> true) and finally probes the key-column
-        // collations, whose row loop needs false to stop. The DDL itself is picked out of the
-        // captured statements rather than by position, so the assertion does not depend on how many
-        // statements the constructor issues.
+        // true) and then runs the INFORMATION_SCHEMA version-column check (next -> true). The
+        // DDL itself is picked out of the captured statements rather than by position, so the
+        // assertion does not depend on how many statements the constructor issues.
         when(resultSet.next()).thenReturn(true, true, false);
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
 
