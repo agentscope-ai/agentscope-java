@@ -2,6 +2,7 @@
 title: Context & AgentState
 description: Stateless agent engine, AgentState lifecycle, state persistence, and
   RuntimeContext
+zh_link: /v2/zh/docs/building-blocks/context
 ---
 
 ## Stateless Agent Engine
@@ -46,7 +47,7 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 | `getTasksContext()` | The `todo_write` task list |
 | `getToolContext()` | Active toolkit groups (`activatedGroups`) |
 
-`AgentState` also carries a transient, non-serialised `InterruptControl` for per-session interrupt signalling — see [Per-session interrupt](#per-session-interrupt) below.
+Execution controls are separate from `AgentState`: each invocation owns an independent interrupt signal. See [Per-session interrupt](#per-session-interrupt) below.
 
 At the end of each `call()`, the framework writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. **Provided the state store is distributed (e.g. Redis), agent instances on different processes — even different physical machines — see identical state.**
 
@@ -220,27 +221,18 @@ The 1.0 `Memory` interface (`InMemoryMemory` / `LongTermMemory`, etc.) is `@Depr
 
 ### Per-session interrupt
 
-Each `AgentState` carries a transient `InterruptControl` (`io.agentscope.core.interruption.InterruptControl`) — a per-session interrupt signal that is **never serialised** to the state store (marked `@JsonIgnore transient` on `AgentState`). This allows targeted interruption of a single session's in-flight call without affecting other concurrent calls on the same agent instance.
+Each execution owns a runtime-only `InterruptControl`. It is neither stored on `AgentState` nor persisted with conversation history. A session-targeted interrupt resolves the currently admitted execution:
 
 ```java
-// Interrupt a specific session — only that session's call observes the signal
 agent.interrupt("alice", "session-001");
-
-// Interrupt with an injected user message
-agent.interrupt("alice", "session-001", Msg.userMsg("Please stop and summarise."));
+agent.interrupt("alice", "session-001", new UserMessage("Please stop."));
 ```
 
-The reasoning loop checks `state.interruptControl().isInterrupted()` before each iteration. When triggered, the loop enters the `handleInterrupt` path, which saves state and returns the partial result.
+An idle session is unaffected. To select a particular queued or running invocation, use the `AgentRun` returned by `prepareRun` or `prepareCall`; see [execution control](/v2/en/docs/building-blocks/agent#control-one-execution). Queued B and running A have independent controls even when they share a session.
 
-The legacy no-arg `interrupt()` still works for single-session scenarios — it routes to the currently active session's `InterruptControl`.
+The reasoning loop checks its execution's signal at cooperative checkpoints. A user interrupt produces an interrupted recovery reply and saves conversation state. The deprecated no-argument `interrupt()` targets the default session's current execution, never the most recently used context.
 
-
-<Note>
-
-`InterruptControl` is a runtime-only signal; it is never persisted. If a session resumes on a different node after failover, the interrupt flag starts cleared. The separate `AgentState.shutdownInterrupted` flag (which **is** persisted) records whether the session was interrupted by graceful shutdown — the agent can detect and recover from that on next load.
-
-</Note>
-
+`AgentState.shutdownInterrupted` is a separate, persisted recovery marker. Graceful shutdown binds both the execution control and the state resolved for that call; queued calls have no state to save. No interrupt flag is carried into the next run or loaded on another node.
 
 ### Concurrent usage
 
@@ -309,12 +301,39 @@ Available accessors:
 | Method | Description |
 |------|------|
 | `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
+| `getRunId()` | Stable per-call correlation id (see [runId correlation](#runid-correlation) below), never null |
 | `getAgentState()` / `setAgentState(AgentState)` | Call-scoped `AgentState`, injected by the framework at call entry. Middleware and tools should read state from here, not from `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Use this in middleware/tools for concurrency safety |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
 | `get(Class<T>)` / `put(Class<T>, T)` | Typed singleton get/put |
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
+
+### runId correlation
+
+Every `RuntimeContext` carries a never-null `runId`: a non-blank value supplied via `builder().runId(x)` is kept as-is; otherwise (unset or blank) `build()` generates one (32-char hex). Its purpose is to tie a **single execution** together across the execution layer and the product layer:
+
+- Middleware, tools, logs, and tracing can all correlate one invocation via `ctx.getRunId()` — under multi-session concurrency, grepping a single runId recovers the full trace of that call;
+- Handles created by `prepareRun` / `prepareCall` adopt the context's runId, so `run.runId() == ctx.getRunId()` — naturally aligned with the `AgentRunRegistry` registration key, the SSE `SESSION_RUN_STARTED` event, and the id the frontend uses to cancel a run;
+- Subagent contexts are derived via `RuntimeContext.builder(parentRc)`, which copies the runId, so subagents spawned through `agent_spawn` inherit the parent call's id — even when the subagent gets an independent sessionId, the chain id keeps the whole execution linked.
+
+```java
+// Orchestration layer threading an explicit chain id (uniqueness is the caller's job):
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("s-001")
+    .runId("trace-2026-09-25-0001")   // spans the whole multi-agent flow
+    .build();
+
+// Correlate this execution from middleware / tools:
+log.info("[runId={}] tool executed", ctx.getRunId());
+
+// Handle and execution layer share the same id:
+AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
+assert run.runId().equals(ctx.getRunId());
+```
+
+> One-execution-one-runId relies on caller discipline: reusing the same ctx (or a context derived from it) across sequential calls makes those executions share the runId, and the framework does not error; concurrent duplicate runIds are only rejected at the service layer by `AgentRunRegistry`. For strict isolation, create a fresh context per call or pass an explicit new runId.
 
 
 <Tip>

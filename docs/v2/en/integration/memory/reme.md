@@ -1,5 +1,6 @@
 ---
 title: ReMe
+zh_link: /v2/zh/integration/memory/reme
 ---
 
 `agentscope-extensions-reme` integrates with the self-hosted ReMe memory service. Its distinguishing features are **trajectory-based** memory extraction and **workspace-level** isolation.

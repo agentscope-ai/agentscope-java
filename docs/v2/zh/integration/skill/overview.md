@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/skill/overview
 ---
 
 `AgentSkill` 是 AgentScope 用 Markdown + 资源文件来描述一个可复用"技能"的格式（参考 [Harness · 技能](/v2/zh/docs/harness/skill)）。`AgentSkillRepository` 接口负责把这些技能从外部存储里加载进来，再交给 `Toolkit` / `ReActAgent` 使用。

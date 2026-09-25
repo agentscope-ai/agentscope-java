@@ -18,7 +18,9 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -125,6 +127,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.tool.Toolkit;
@@ -147,6 +150,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -205,12 +209,10 @@ import reactor.util.context.Context;
  *     .build()).block();
  * }</pre>
  *
- * <p><b>Thread Safety:</b> {@code ReActAgent} is <em>not</em> thread-safe. A single instance
- * processes exactly one {@code call()} at a time; a concurrent invocation on the same instance
- * throws {@link IllegalStateException}. For web services or other concurrent scenarios, create
- * one agent instance per request via a factory method. {@link io.agentscope.core.model.Model},
- * {@link io.agentscope.core.tool.Toolkit} (as a template — {@code build()} deep-copies it), and
- * {@link io.agentscope.core.state.AgentStateStore} are all safe to share across instances.
+ * <p><b>Concurrency:</b> Calls sharing a {@code (userId, sessionId)} slot are serialized;
+ * distinct slots can execute concurrently. Runtime contexts are passed through each call's
+ * execution scope, middleware parameters, and tool parameters, never through a shared current
+ * context accessor. Custom tools, hooks, and middlewares must also be safe for concurrent use.
  */
 @SuppressWarnings("deprecation")
 public class ReActAgent extends AgentBase implements AutoCloseable {
@@ -279,9 +281,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final PermissionContextState initialPermissionContext;
 
     // ==================== 2.0 Core Fields ====================
-
-    /** Active per-call RuntimeContext, set during call lifecycle only. */
-    private volatile RuntimeContext activeRc;
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
     private final ConcurrentHashMap<String, AgentState> stateCache = new ConcurrentHashMap<>();
@@ -470,14 +469,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     /**
      * Persist the current {@link AgentState} via the configured {@link AgentStateStore}, or {@code
-     * Mono.empty()} when no AgentStateStore was provided. Synchronises toolkit activeGroups into the state
-     * before writing. Uses optimistic concurrency when the store supports versioning.
+     * Mono.empty()} when no AgentStateStore was provided. Uses optimistic concurrency when the
+     * store supports versioning.
      */
     private Mono<Void> saveStateToSession(CallExecution scope) {
         if (stateStore == null) {
             return Mono.empty();
         }
-        syncToolkitToState(scope.state);
         SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
@@ -705,11 +703,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(loaded.getPermissionContext()));
         }
-        CallExecution scope = new CallExecution(loaded, loadedEngine, slot, loadedVersion);
-        if (toolkit != null) {
-            toolkit.setActiveGroups(loaded.getToolContext().getActivatedGroups());
-        }
-        return scope;
+        return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
     }
 
     // ==================== Config assembly helpers ====================
@@ -743,7 +737,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     @Override
-    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc) {
+    protected Object beforeAgentExecution(List<Msg> msgs, RuntimeContext rc, RunControl control) {
         RuntimeContext ctx = rc;
         if (ctx == null) {
             ctx = RuntimeContext.empty();
@@ -758,22 +752,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         // the active session's state via rc.getAgentState() (call-scoped, concurrency-safe)
         // rather than agent.getAgentState() (not call-scoped under concurrency).
         ctx.setAgentState(scope.state);
-        this.activeRc = ctx;
-        bindRuntimeContextToHooks(ctx);
         // Seed per-call state onto the active execution scope. The system message is initialised
         // by consumeSystemMsgAfterPreCall; the event sink (if any) is bound in doCall() from the
         // per-subscription Reactor Context carried by streamEvents.
         scope.rc = ctx;
+        // Per-call tool request config (immutable tool difference, external tools + merge mode).
+        // The shared toolkit field is never copied and never mutated; the per-call difference is
+        // carried on the scope's toolRequestConfig and composed with the shared toolkit on demand.
+        ToolRequestConfig requestConfig = ctx.getToolRequestConfig();
+        scope.toolRequestConfig = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
+        scope.activeToolkit = this.toolkit;
         scope.systemMsg = null;
-        // Clear any stale interrupt signal for this session before the new call begins.
-        scope.state.interruptControl().reset();
+        scope.interruption = control.interruption();
         return scope;
     }
 
     @Override
     protected Mono<Msg> seedSystemMsg(Object callExectution) {
-        RuntimeContext rc =
-                callExectution instanceof CallExecution ce ? ce.rc : getRuntimeContext();
+        RuntimeContext rc = callExectution instanceof CallExecution ce ? ce.rc : null;
         String base = sysPrompt != null ? sysPrompt.trim() : "";
         return applySystemPromptMiddlewares(base, rc)
                 .filter(prompt -> !prompt.isEmpty())
@@ -827,13 +823,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     protected void consumeSystemMsgAfterPreCall(Msg systemMsg, Object callScope) {
         CallExecution ce = (CallExecution) callScope;
         ce.systemMsg = systemMsg;
-        syncToolkitToState(ce.state);
-    }
-
-    @Override
-    protected void afterAgentExecution() {
-        this.activeRc = null;
-        unbindRuntimeContextFromHooks();
     }
 
     private RuntimeContext buildMergedRuntimeContext(RuntimeContext run) {
@@ -928,10 +917,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Deprecated
     @Override
     public void interrupt(InterruptSource source) {
-        AgentState target = stateCache.get(slotKey(null, defaultSessionId));
-        if (target != null) {
-            target.interruptControl().trigger(source, null);
-        }
+        interruptRunning(slotKey(null, defaultSessionId), source, null);
     }
 
     /**
@@ -957,7 +943,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (sid == null || sid.isBlank()) {
             sid = defaultSessionId;
         }
-        getAgentState(uid, sid).interruptControl().trigger(InterruptSource.USER, msg);
+        interruptRunning(slotKey(uid, sid), InterruptSource.USER, msg);
     }
 
     /**
@@ -975,7 +961,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * associated user message.
      */
     public void interrupt(String userId, String sessionId, Msg msg) {
-        getAgentState(userId, sessionId).interruptControl().trigger(InterruptSource.USER, msg);
+        interruptRunning(slotKey(userId, sessionId), InterruptSource.USER, msg);
     }
 
     /**
@@ -1109,6 +1095,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 FluxSink.OverflowStrategy.BUFFER);
         return MiddlewareChain.build(middlewares, this, context, MiddlewareBase::onAgent, core)
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
+    }
+
+    /**
+     * Prepare a single-use event execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
+    public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext context) {
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(
+                getAgentId(), effective.getRunId(), () -> streamEvents(msgs, effective));
+    }
+
+    /**
+     * Prepare a single-use reply execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
+    public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext context) {
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), effective.getRunId(), () -> call(msgs, effective));
     }
 
     // ==================== streamEvents public API ====================
@@ -1269,25 +1278,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 targetClass != null
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
                         : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
-        boolean hasTools = !toolkit.getToolSchemas().isEmpty();
-        boolean useNative =
-                hasTools
-                        ? model.supportsNativeStructuredOutputWithTools()
-                        : model.supportsNativeStructuredOutput();
-        if (useNative) {
-            return doNativeStructuredCall(msgs, jsonSchema)
-                    .onErrorResume(
-                            e -> {
-                                log.warn(
-                                        "Native structured output failed ({}) — falling back to"
-                                                + " synthetic tool path",
-                                        e.getMessage() != null
-                                                ? e.getMessage()
-                                                : e.getClass().getSimpleName());
-                                return doFallbackStructuredCall(msgs, jsonSchema);
-                            });
-        }
-        return doFallbackStructuredCall(msgs, jsonSchema);
+        return Mono.deferContextual(
+                cv -> {
+                    CallExecution scope = scopeFrom(cv);
+                    List<String> activeGroups = scope.state.getToolContext().getActivatedGroups();
+                    boolean hasTools =
+                            !scope.activeToolkit
+                                    .getToolSchemas(activeGroups, scope.toolRequestConfig)
+                                    .isEmpty();
+                    boolean useNative =
+                            hasTools
+                                    ? model.supportsNativeStructuredOutputWithTools()
+                                    : model.supportsNativeStructuredOutput();
+                    if (useNative) {
+                        return doNativeStructuredCall(msgs, jsonSchema)
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "Native structured output failed ({}) — falling"
+                                                            + " back to synthetic tool path",
+                                                    e.getMessage() != null
+                                                            ? e.getMessage()
+                                                            : e.getClass().getSimpleName());
+                                            return doFallbackStructuredCall(msgs, jsonSchema);
+                                        });
+                    }
+                    return doFallbackStructuredCall(msgs, jsonSchema);
+                });
     }
 
     /**
@@ -1703,6 +1720,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
 
+        InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
         String slotKey;
@@ -1748,6 +1766,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         RuntimeContext rc;
 
         /**
+         * Stable per-call reference to the agent's shared {@code toolkit}, resolved once in
+         * {@code beforeAgentExecution}. The toolkit is never copied and never mutated per call;
+         * per-call tool differences live on {@link #toolRequestConfig} and are composed with this
+         * toolkit on demand, so concurrent calls on the same agent never observe each other's
+         * differences. All toolkit access in this scope reads {@code activeToolkit} for uniformity.
+         */
+        Toolkit activeToolkit;
+
+        /**
+         * Per-call tool request config ({@link ToolRequestConfig#NONE} = use the shared toolkit
+         * as-is). Carries the immutable per-call tool difference (external tools + merge mode);
+         * the shared {@link #activeToolkit} is never copied or mutated.
+         */
+        ToolRequestConfig toolRequestConfig = ToolRequestConfig.NONE;
+
+        /**
          * Per-call structured-output tool (the {@code generate_response} tool). Non-null only for
          * fallback structured-output calls (when the model does not support native structured
          * output). Lives on this scope rather than the shared toolkit so concurrent
@@ -1786,14 +1820,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Per-call interrupt checkpoint: reads this call's session-scoped {@link InterruptControl}
-         * (on its {@link AgentState}) so a targeted {@code interrupt(userId, sessionId)} only aborts
-         * the matching session's in-flight call, not other concurrent calls on the same agent.
+         * Reads this execution's own signal; queued calls never share cancellation state.
          */
         private Mono<Void> checkInterrupted() {
             return Mono.defer(
                     () ->
-                            state.interruptControl().isInterrupted()
+                            interruption.isInterrupted()
                                     ? Mono.error(
                                             new InterruptedException("Agent execution interrupted"))
                                     : Mono.empty());
@@ -2418,8 +2450,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         MessageUtils.prependSystemMessage(
                                                 event.getInputMessages(), event.getSystemMessage());
                                 List<ToolSchema> tools =
-                                        toolkit.getToolSchemas(
-                                                state.getToolContext().getActivatedGroups());
+                                        activeToolkit.getToolSchemas(
+                                                state.getToolContext().getActivatedGroups(),
+                                                toolRequestConfig);
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
                                 if (soTool != null) {
@@ -2491,8 +2524,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 Msg msg = context.buildFinalMessage();
                                 if (msg != null) {
                                     boolean discard =
-                                            state.interruptControl().getSource()
-                                                            == InterruptSource.SYSTEM
+                                            interruption.getSource() == InterruptSource.SYSTEM
                                                     && shutdownManager
                                                                     .getConfig()
                                                                     .partialReasoningPolicy()
@@ -2963,7 +2995,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 buildSuspendedMsg(pendingPairs));
                                                     }
 
-                                                    syncToolkitToState(state);
                                                     return executeIteration(iter + 1);
                                                 });
                             });
@@ -3136,56 +3167,62 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Set<String> chunkedToolIds =
                                                         ConcurrentHashMap.newKeySet();
 
-                                                toolkit.setInternalChunkCallback(
-                                                        (toolUse, chunk) -> {
-                                                            if (chunk.getOutput() != null
-                                                                    && !chunk.getOutput()
-                                                                            .isEmpty()) {
-                                                                chunkedToolIds.add(toolUse.getId());
-                                                                for (ContentBlock block :
-                                                                        chunk.getOutput()) {
-                                                                    if (block
-                                                                            instanceof
-                                                                            TextBlock tb) {
-                                                                        sink.next(
-                                                                                new ToolResultTextDeltaEvent(
-                                                                                                replyId,
-                                                                                                toolUse
-                                                                                                        .getId(),
-                                                                                                toolUse
-                                                                                                        .getName(),
-                                                                                                tb
-                                                                                                        .getText())
-                                                                                        .withMetadata(
-                                                                                                chunk
-                                                                                                        .getMetadata()));
-                                                                    } else {
-                                                                        sink.next(
-                                                                                new ToolResultDataDeltaEvent(
-                                                                                                replyId,
-                                                                                                toolUse
-                                                                                                        .getId(),
-                                                                                                toolUse
-                                                                                                        .getName(),
-                                                                                                block)
-                                                                                        .withMetadata(
-                                                                                                chunk
-                                                                                                        .getMetadata()));
+                                                BiConsumer<ToolUseBlock, ToolResultBlock>
+                                                        internalChunkCallback =
+                                                                (toolUse, chunk) -> {
+                                                                    if (chunk.getOutput() != null
+                                                                            && !chunk.getOutput()
+                                                                                    .isEmpty()) {
+                                                                        chunkedToolIds.add(
+                                                                                toolUse.getId());
+                                                                        for (ContentBlock block :
+                                                                                chunk.getOutput()) {
+                                                                            if (block
+                                                                                    instanceof
+                                                                                    TextBlock tb) {
+                                                                                sink.next(
+                                                                                        new ToolResultTextDeltaEvent(
+                                                                                                        replyId,
+                                                                                                        toolUse
+                                                                                                                .getId(),
+                                                                                                        toolUse
+                                                                                                                .getName(),
+                                                                                                        tb
+                                                                                                                .getText())
+                                                                                                .withMetadata(
+                                                                                                        chunk
+                                                                                                                .getMetadata()));
+                                                                            } else {
+                                                                                sink.next(
+                                                                                        new ToolResultDataDeltaEvent(
+                                                                                                        replyId,
+                                                                                                        toolUse
+                                                                                                                .getId(),
+                                                                                                        toolUse
+                                                                                                                .getName(),
+                                                                                                        block)
+                                                                                                .withMetadata(
+                                                                                                        chunk
+                                                                                                                .getMetadata()));
+                                                                            }
+                                                                        }
                                                                     }
-                                                                }
-                                                            }
-                                                            hookDispatcher
-                                                                    .fireActingChunk(
-                                                                            toolUse, chunk, toolkit)
-                                                                    .contextWrite(
-                                                                            ctx ->
-                                                                                    ctx.putAll(
-                                                                                            parentCtx))
-                                                                    .subscribe();
-                                                        });
+                                                                    hookDispatcher
+                                                                            .fireActingChunk(
+                                                                                    toolUse, chunk,
+                                                                                    toolkit)
+                                                                            .contextWrite(
+                                                                                    ctx ->
+                                                                                            ctx
+                                                                                                    .putAll(
+                                                                                                            parentCtx))
+                                                                            .subscribe();
+                                                                };
 
                                                 Disposable toolCallsDisposable =
-                                                        executeToolCalls(approved)
+                                                        executeToolCalls(
+                                                                        approved,
+                                                                        internalChunkCallback)
                                                                 .contextWrite(
                                                                         ctx -> {
                                                                             Context merged =
@@ -3335,7 +3372,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (use.getState() == ToolCallState.ALLOWED) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
-            AgentTool tool = toolkit.getTool(use.getName());
+            AgentTool tool = activeToolkit.getTool(use.getName(), toolRequestConfig);
             if (!(tool instanceof ToolBase tb)) {
                 return Mono.just(new PermissionVerdict(use, PermissionBehavior.ALLOW));
             }
@@ -3484,8 +3521,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
          */
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
-                List<ToolUseBlock> toolCalls) {
-            return dispatchToolCalls(toolCalls)
+                List<ToolUseBlock> toolCalls,
+                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+            return dispatchToolCalls(toolCalls, internalChunkCallback)
                     .map(
                             results ->
                                     IntStream.range(0, toolCalls.size())
@@ -3534,17 +3572,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * the per-call {@link #soTool} (never registered on the shared toolkit); all other tools go
          * through {@link Toolkit#callTools}.
          */
-        private Mono<List<ToolResultBlock>> dispatchToolCalls(List<ToolUseBlock> toolCalls) {
+        private Mono<List<ToolResultBlock>> dispatchToolCalls(
+                List<ToolUseBlock> toolCalls,
+                BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
             boolean hasStructured =
                     soTool != null
                             && toolCalls.stream()
                                     .anyMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()));
             if (!hasStructured) {
-                return toolkit.callTools(
+                return activeToolkit.callTools(
                         toolCalls,
                         toolExecutionConfig,
                         ReActAgent.this,
-                        buildMergedRuntimeContext(rc));
+                        buildMergedRuntimeContext(rc),
+                        toolRequestConfig,
+                        internalChunkCallback);
             }
 
             List<ToolUseBlock> regular =
@@ -3554,11 +3596,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             Mono<Map<String, ToolResultBlock>> regularResults =
                     regular.isEmpty()
                             ? Mono.just(Map.of())
-                            : toolkit.callTools(
+                            : activeToolkit
+                                    .callTools(
                                             regular,
                                             toolExecutionConfig,
                                             ReActAgent.this,
-                                            buildMergedRuntimeContext(rc))
+                                            buildMergedRuntimeContext(rc),
+                                            toolRequestConfig,
+                                            internalChunkCallback)
                                     .map(
                                             list -> {
                                                 Map<String, ToolResultBlock> byId = new HashMap<>();
@@ -4309,10 +4354,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return Mono.deferContextual(
                 cv -> {
                     CallExecution scope = scopeFrom(cv);
-                    // Resolve the source from this call's session-scoped control (the
-                    // context passed by AgentBase is derived from the instance-level signal,
-                    // which is not call-scoped under concurrency).
-                    InterruptSource source = scope.state.interruptControl().getSource();
+                    // Resolve the source from this execution's own interrupt signal.
+                    InterruptSource source = scope.interruption.getSource();
                     if (source == InterruptSource.SYSTEM) {
                         String requestId =
                                 (String) cv.getOrDefault(AgentBase.SHUTDOWN_REQUEST_ID_KEY, null);
@@ -4354,7 +4397,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     // ==================== Getters ====================
 
-    /** Returns this agent's toolkit (a per-instance deep copy made at build time). */
+    /** Returns this agent's toolkit; request-specific views do not mutate its registry. */
     public Toolkit getToolkit() {
         return toolkit;
     }
@@ -4389,11 +4432,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     public AgentState getAgentState() {
         return getAgentState(null, defaultSessionId);
-    }
-
-    @Override
-    public RuntimeContext getRuntimeContext() {
-        return activeRc;
     }
 
     /**
@@ -4699,12 +4737,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return defaultSessionId;
     }
 
-    private void syncToolkitToState(AgentState state) {
-        if (toolkit != null && state != null) {
-            state.getToolContext().setActivatedGroups(toolkit.getActiveGroups());
-        }
-    }
-
     /** Returns the model-call configuration (retries, timeouts). */
     public ModelConfig getModelConfig() {
         return modelConfig;
@@ -4923,6 +4955,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Sets the toolkit containing available tools for this agent.
+         *
+         * <p>The registry is copied at build time before hook/meta tools are registered.
+         * Existing tool instances are shared by reference and must support concurrent use.
          *
          * @param toolkit The toolkit with available tools, must not be null
          * @return This builder instance for method chaining
@@ -5546,13 +5581,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * skill files when auto-upload is enabled, and adding the SkillHook to the chain.
          */
         @SuppressWarnings("deprecation")
-        private void configureSkillBox(Toolkit agentToolkit) {
-            skillBox.bindToolkit(agentToolkit);
+        private Hook configureSkillBox(Toolkit agentToolkit) {
+            SkillBox skillBox = this.skillBox.copyForToolkit(agentToolkit);
             skillBox.registerSkillLoadTool();
             if (skillBox.isAutoUploadSkill()) {
                 skillBox.uploadSkillFiles();
             }
-            hooks.add(new io.agentscope.core.skill.SkillHook(skillBox));
+            return new io.agentscope.core.skill.SkillHook(skillBox);
         }
 
         /**
@@ -5562,16 +5597,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
-            // Deep copy toolkit to avoid state interference between agents
+            // Isolate registrations added by this agent while sharing existing tool instances.
+            // Request-specific visibility is composed at execution time, without copying.
             Toolkit agentToolkit = this.toolkit.copy();
-
-            // Rebind externally-constructed middleware that holds a reference to the
-            // original (pre-copy) toolkit so it uses the agent's actual instance.
-            for (MiddlewareBase mw : middlewares) {
-                if (mw instanceof io.agentscope.core.tool.ToolkitAware aware) {
-                    aware.rebindToolkit(agentToolkit);
-                }
-            }
 
             registerToolsFromHooks(agentToolkit);
 
@@ -5592,9 +5620,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (taskListEnabled) {
                 configureTodoTools(agentToolkit);
             }
-            if (skillBox != null) {
-                configureSkillBox(agentToolkit);
-            }
+            Hook skillHook = skillBox != null ? configureSkillBox(agentToolkit) : null;
             if (!skillRepositories.isEmpty() && dynamicSkillsEnabled) {
                 middlewares.add(
                         new DynamicSkillMiddleware(
@@ -5608,17 +5634,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // List.sort is stable: middlewares with equal order retain their registration order.
             middlewares.sort(Comparator.comparingInt(MiddlewareBase::order).reversed());
 
-            ReActAgent agent = new ReActAgent(this, agentToolkit);
-            selfRef.set(agent);
-
-            return agent;
+            if (skillHook != null) {
+                hooks.add(skillHook);
+            }
+            try {
+                ReActAgent agent = new ReActAgent(this, agentToolkit);
+                selfRef.set(agent);
+                return agent;
+            } finally {
+                // Generated hooks belong only to this agent, not subsequent builder uses.
+                if (skillHook != null) {
+                    hooks.remove(skillHook);
+                }
+            }
         }
 
         /**
          * Registers tool objects declared by hooks ({@link Hook#tools()}) on the agent toolkit.
          *
-         * <p>Runs after {@link Toolkit#copy()} so hook-supplied tools are scoped to this agent
-         * instance without modifying the builder's original toolkit.
+         * <p>The agent owns a build-time registry copy, so hook-supplied registrations cannot
+         * overwrite tools in other agents built from the same source toolkit.
          */
         private void registerToolsFromHooks(Toolkit agentToolkit) {
             for (Hook hook : hooks) {

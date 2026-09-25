@@ -1,5 +1,6 @@
 ---
 title: Jev
+en_link: /v2/en/jev/index
 ---
 
 `agentscope-extensions-jev` 模块位于 `agentscope-extensions-judge` 父模块下，为 [TypeSafe System One](https://docs.typesafe.ai/) 和 Jev 提供 Java HTTP client。Jev 不是聊天模型，也不会注册成 AgentScope 的 `Model` provider；它适合在应用代码里做路由、评分、分类这类需要快速、类型安全、带置信度判断的决策。

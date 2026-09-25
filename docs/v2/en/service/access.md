@@ -1,5 +1,6 @@
 ---
 title: Accounts, Namespaces and permissions
+zh_link: /v2/zh/service/access
 ---
 
 <Note>

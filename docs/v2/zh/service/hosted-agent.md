@@ -1,5 +1,6 @@
 ---
 title: "Hosted Agent：概览与用法"
+en_link: /v2/en/service/hosted-agent
 ---
 
 <Note>

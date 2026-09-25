@@ -1,5 +1,6 @@
 ---
 title: Jev
+zh_link: /v2/zh/jev/index
 ---
 
 The `agentscope-extensions-jev` module, grouped under the `agentscope-extensions-judge` parent, provides a Java HTTP client for [TypeSafe System One](https://docs.typesafe.ai/) and Jev. Jev is not a chat model and is not registered as an AgentScope `Model` provider; use it when application code needs a fast, typed, calibrated decision such as routing, scoring, or classification.

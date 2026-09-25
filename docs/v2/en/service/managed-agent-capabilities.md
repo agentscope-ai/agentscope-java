@@ -1,5 +1,6 @@
 ---
 title: "Managed capabilities and integration types"
+zh_link: /v2/zh/service/managed-agent-capabilities
 ---
 
 <Note>

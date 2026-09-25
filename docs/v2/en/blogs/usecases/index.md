@@ -1,5 +1,6 @@
 ---
 title: Customer Use Cases
+zh_link: /v2/zh/blogs/usecases/index
 ---
 
 Real-world AgentScope deployments: complete experiences from financial and logistics business-finance teams building enterprise-grade agent platforms on AgentScope Java.
