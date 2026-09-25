@@ -537,12 +537,20 @@ public class Toolkit {
      *
      * <p><b>Execution semantics</b>: This method routes through the same
      * infrastructure as {@code callTools}, so it inherits the toolkit's
-     * {@link ExecutionConfig} (timeout, retry, shutdown guard). Previously
-     * this overload had no timeout or retry — callers that depend on
-     * exactly-once execution should note that non-idempotent tools may be
-     * re-invoked on timeout when a custom {@code ToolkitConfig.executionConfig()}
-     * sets {@code maxAttempts > 1}. The default {@code TOOL_DEFAULTS} uses
-     * {@code maxAttempts(1)}, which is a no-op for retry.
+     * {@link ExecutionConfig} (timeout and retry) and participates in the
+     * global {@code GracefulShutdownManager} shutdown guard. Previously
+     * this overload had no timeout, retry, or shutdown participation.
+     * Callers that depend on exactly-once execution should note that
+     * non-idempotent tools may be re-invoked on timeout when a custom
+     * {@code ToolkitConfig.executionConfig()} sets {@code maxAttempts > 1}.
+     * The default {@code TOOL_DEFAULTS} uses {@code maxAttempts(1)}, which
+     * is a no-op for retry.
+     *
+     * <p><b>Exception-as-result contract</b>: Any exception thrown by the
+     * tool, timeouts after retry is exhausted, or the shutdown guard
+     * firing — all are caught and materialised as a normal
+     * {@link ToolResultBlock} with {@link ToolResultBlock#error(String)},
+     * never propagated upstream.
      *
      * <p>Example usage:
      *
