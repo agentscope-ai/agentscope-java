@@ -254,15 +254,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools And Merge Mode
 
-An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter injects those tools into the agent toolkit at the start of one run and cleans them up after the run completes or is cancelled.
+An AG-UI front end can pass tool schemas through `RunAgentInput.tools`. The adapter converts them into a run-scoped `ToolRequestConfig` carried by RuntimeContext. It never mutates the agent toolkit, so completion and cancellation require no registry restoration.
 
 | `ToolMergeMode` | Behavior |
 | --- | --- |
-| `FRONTEND_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
+| `EXTERNAL_ONLY` | Use only frontend-provided tools and temporarily hide existing agent tools |
 | `AGENT_ONLY` | Ignore frontend-provided tools and use only the agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
+| `MERGE_EXTERNAL_PRIORITY` | Merge both sides; frontend tools win on name conflicts |
 
-The default is `MERGE_FRONTEND_PRIORITY`. Injection is run scoped and does not permanently mutate the agent toolkit.
+The default is `MERGE_EXTERNAL_PRIORITY`. Import the enum from `io.agentscope.core.tool.ToolMergeMode`. `EXTERNAL_ONLY` exposes no tools when the external list is empty, regardless of the Toolkit deletion policy: it controls request visibility only.
 
 ## HITL Interrupts
 

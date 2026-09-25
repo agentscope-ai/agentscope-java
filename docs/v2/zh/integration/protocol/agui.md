@@ -253,15 +253,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools 与合并模式
 
-AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会在单次 run 开始时把这些工具注入 agent toolkit，并在 run 结束或取消后清理。
+AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将它们转换成单次 run 的 `ToolRequestConfig` 并放入 RuntimeContext，不修改 agent toolkit，因此结束或取消时无需恢复注册表。
 
 | `ToolMergeMode` | 行为 |
 | --- | --- |
-| `FRONTEND_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
+| `EXTERNAL_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
 | `AGENT_ONLY` | 忽略前端传入工具，只使用 agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
+| `MERGE_EXTERNAL_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
 
-默认值是 `MERGE_FRONTEND_PRIORITY`。注入是 run scoped，不会永久修改 agent toolkit。
+默认值是 `MERGE_EXTERNAL_PRIORITY`。枚举位于 `io.agentscope.core.tool.ToolMergeMode`。`EXTERNAL_ONLY` 在外部工具为空时不暴露任何工具，且不受 Toolkit 的删除开关影响；它只控制请求可见性。
 
 ## HITL Interrupt
 

@@ -46,7 +46,7 @@ en_link: /v2/en/docs/building-blocks/context
 | `getTasksContext()` | `todo_write` 维护的任务清单 |
 | `getToolContext()` | 工具组激活状态(`activatedGroups`) |
 
-`AgentState` 还携带一个瞬态的、不序列化的 `InterruptControl`,用于 per-session 中断信号——详见下方[Per-session 中断](#per-session-中断)。
+执行控制与 `AgentState` 分离，每次调用拥有独立中断信号，详见下方[Per-session 中断](#per-session-中断)。
 
 一次 `call()` 结束,框架自动把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——**只要状态存储是分布式的(例如 Redis),不同进程、不同物理机上的 agent 实例都能拿到完全一致的状态**。
 
@@ -218,27 +218,18 @@ agent.clearContext(RuntimeContext.builder()
 
 ### Per-session 中断
 
-每份 `AgentState` 都携带一个瞬态的 `InterruptControl`(`io.agentscope.core.interruption.InterruptControl`)——per-session 的中断信号,**永远不会被序列化**到状态存储(`AgentState` 上标记为 `@JsonIgnore transient`)。这使得可以精确中断某个 session 正在进行的 call,而不影响同一 agent 实例上的其他并发 call。
+每次执行拥有独立、仅在运行时存在的 `InterruptControl`，不存放在 `AgentState` 上，也不随会话历史持久化。按 session 中断时，框架定位该 session 当前已获得执行位置的调用：
 
 ```java
-// 中断指定 session —— 只有该 session 的 call 会收到信号
 agent.interrupt("alice", "session-001");
-
-// 带注入用户消息的中断
-agent.interrupt("alice", "session-001", Msg.userMsg("请停下来做个总结。"));
+agent.interrupt("alice", "session-001", new UserMessage("请停止。"));
 ```
 
-推理循环在每次迭代前检查 `state.interruptControl().isInterrupted()`。被触发后,循环进入 `handleInterrupt` 路径,保存状态并返回部分结果。
+空闲 session 不受影响。需要选择某次排队中或运行中的调用时，使用 `prepareRun` / `prepareCall` 返回的 `AgentRun`，见[单次执行控制](/v2/zh/docs/building-blocks/agent#控制单次执行)。即使属于同一 session，排队中的 B 与运行中的 A 也拥有独立控制信号。
 
-旧的无参 `interrupt()` 在单 session 场景下仍然有效——它会路由到当前活跃会话的 `InterruptControl`。
+推理循环在协作检查点读取本次执行的信号。用户中断会生成带中断标记的恢复回复并保存会话状态。已废弃的无参 `interrupt()` 定位默认 session 的当前执行，不读取最近一次调用的上下文。
 
-
-<Note>
-
-`InterruptControl` 是纯运行时信号,不会被持久化。如果某个 session 在故障转移后恢复到另一台机器,中断标志从清零状态开始。另一个 `AgentState.shutdownInterrupted` 标志(是**会被持久化**的)记录了该 session 是否被优雅停机中断——agent 可以在下次加载时检测并恢复。
-
-</Note>
-
+`AgentState.shutdownInterrupted` 是单独持久化的恢复标记。优雅停机会绑定本次执行控制以及该次调用解析出的状态；排队调用没有待保存的会话状态。中断信号不会传给后续执行，也不会被另一节点加载。
 
 ### 并发使用
 
@@ -307,12 +298,39 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | 方法 | 说明 |
 |------|------|
 | `getSessionId()` / `getUserId()` | 内置字段,用于路由状态槽位与租户 |
+| `getRunId()` | 每次调用的稳定关联 ID(见下方[runId 关联](#runid-关联)),恒非 null |
 | `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`,由框架在 call 入口注入。中间件和工具应从这里读状态,而非 `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。中间件/工具中使用此方法保证并发安全 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
+
+### runId 关联
+
+`RuntimeContext` 上有一个恒非 null 的 `runId`:`builder().runId(x)` 显式传入非空白值时原样保留,否则(未设置或为空白)在 `build()` 时自动生成(32 位 hex)。它的用途是把**一次执行**在执行层和产品层串起来:
+
+- 中间件、工具、日志、tracing 都能用 `ctx.getRunId()` 关联同一次调用——多会话并发时,grep 一个 runId 即可还原某次调用的完整链路;
+- `prepareRun` / `prepareCall` 创建的 `AgentRun` 句柄直接采纳 ctx 的 runId,因此 `run.runId() == ctx.getRunId()`,与 `AgentRunRegistry` 注册键、SSE 的 `SESSION_RUN_STARTED` 事件、前端取消运行所用的 id 天然同源;
+- 子代理上下文经 `RuntimeContext.builder(parentRc)` 派生时拷贝 runId,`agent_spawn` 触发的子代理自动继承父调用的 id——即使子代理有独立 sessionId,链路 id 也能把整条执行串起来。
+
+```java
+// 编排层显式贯穿业务链路 id(唯一性由调用方负责):
+RuntimeContext ctx = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("s-001")
+    .runId("trace-2026-09-25-0001")   // 贯穿整个多 agent 流程
+    .build();
+
+// 中间件 / 工具中关联本次执行:
+log.info("[runId={}] tool executed", ctx.getRunId());
+
+// 句柄与执行层同 id:
+AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
+assert run.runId().equals(ctx.getRunId());
+```
+
+> 一个执行一个 runId 靠调用方纪律保证:同一个 ctx(或从它派生的 ctx)顺序用在多次调用上时,这些执行会共享同一个 runId,框架不报错;并发的重复 runId 只在 service 层被 `AgentRunRegistry` 拒绝。需要严格隔离时,每次调用新建 ctx 或显式传新 runId 即可。
 
 
 <Tip>
