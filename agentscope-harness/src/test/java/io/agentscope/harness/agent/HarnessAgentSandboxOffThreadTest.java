@@ -119,6 +119,7 @@ class HarnessAgentSandboxOffThreadTest {
         CountDownLatch acquireStarted = new CountDownLatch(1);
         CountDownLatch letAcquireFinish = new CountDownLatch(1);
         AtomicReference<RuntimeContext> compensated = new AtomicReference<>();
+        AtomicReference<String> compensationThread = new AtomicReference<>();
         CountDownLatch compensationRan = new CountDownLatch(1);
 
         Mono<RuntimeContext> mono =
@@ -136,6 +137,7 @@ class HarnessAgentSandboxOffThreadTest {
                         },
                         orphaned -> {
                             compensated.set(orphaned);
+                            compensationThread.set(Thread.currentThread().getName());
                             compensationRan.countDown();
                         });
 
@@ -151,6 +153,10 @@ class HarnessAgentSandboxOffThreadTest {
         assertTrue(
                 compensated.get() == ctx,
                 "compensation must receive the exact acquired context so it can release its lease");
+        assertTrue(
+                compensationThread.get().contains("boundedElastic"),
+                "compensation must not block the cancelling thread, but ran on "
+                        + compensationThread.get());
     }
 
     @Test

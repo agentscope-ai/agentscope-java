@@ -93,8 +93,9 @@ public interface SandboxExecutionGuard {
      * <p>Each call returns an independent guard holding its own per-key state, so callers that need
      * isolated coordination (e.g. one guard per agent) get it without sharing across agents.
      *
-     * <p>This variant waits indefinitely for a busy slot. Use {@link #inProcess(Duration)} to add a
-     * backstop timeout against a wedged holder.
+     * <p>This variant waits up to {@link InProcessSandboxExecutionGuard#DEFAULT_WAIT_TIMEOUT} for a
+     * busy slot. Use {@link #inProcess(Duration)} to tune that backstop for the application's
+     * maximum realistic call duration.
      */
     static SandboxExecutionGuard inProcess() {
         return new InProcessSandboxExecutionGuard();

@@ -144,7 +144,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
-| `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
+| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发执行守卫 | `inProcess()`（最长等待 30 分钟） |
 | `workspaceProjectionEnabled(boolean)` | 是否启用宿主→沙箱的静态资产投影 | `true` |
 | `workspaceProjectionRoots(List)` | 投影包含的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -236,7 +236,7 @@ HarnessAgent agent = HarnessAgent.builder()
 |------|------|-------|
 | `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（通常 `SESSION`） |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
-| `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
+| `executionGuard(SandboxExecutionGuard)` | 同 slot 并发串行化守卫 | `inProcess()`（最长等待 30 分钟） |
 | `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
 | `workspaceProjectionRoots(List)` | 投影的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -405,7 +405,7 @@ agent 可以读写 `/Users/alice/my-project` 和 `/Users/alice/.config` 下的�
 
 ### 沙箱模式下的并发行为
 
-`IsolationScope` 在沙箱模式下是**顺序复用**的共享，不是实时的实例共享。同一 scope key 的并发调用各自启动独立容器；每次调用结束时，最后写入的快照胜出。对 `AGENT` / `GLOBAL` 这种多用户共享 scope，如果需要串行化，使用 `executionGuard(SandboxExecutionGuard)` 做并发守卫。
+`IsolationScope` 在沙箱模式下是**顺序复用**的共享，不是实时的实例共享。默认的 JVM 本地 `SandboxExecutionGuard.inProcess()` 会串行化 `SESSION`、`USER`、`AGENT` 和 `GLOBAL` 下落到同一 scope key 的并发调用；前一个调用释放并持久化沙箱后，下一个调用才会恢复其状态。不同 key 仍可并行。多副本部署必须提供分布式 guard；显式设置 `SandboxExecutionGuard.noop()` 则会恢复旧的并行、最后写入覆盖行为。
 
 ### 示例：用 Scope 组合实现不同业务需求
 

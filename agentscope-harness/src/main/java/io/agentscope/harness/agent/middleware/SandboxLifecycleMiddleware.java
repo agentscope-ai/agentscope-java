@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionInterruptedException;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -146,8 +147,12 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
             // Throwing InterruptedException clears the thread's interrupt flag; restore it so
             // callers up the stack can still observe the interrupt (the guard's tryEnter blocks
             // interruptibly while waiting for a busy slot — issue #2800).
-            if (e instanceof InterruptedException) {
+            if (e instanceof InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
+                throw new SandboxExecutionInterruptedException(interrupted);
+            }
+            if (e instanceof RuntimeException runtimeException) {
+                throw runtimeException;
             }
             throw new RuntimeException(e);
         }

@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +41,14 @@ class InProcessSandboxExecutionGuardTest {
                         RuntimeContext.builder().sessionId(sessionId).build(),
                         "agent");
         return k.orElseThrow();
+    }
+
+    @Test
+    void defaultWaitIsBoundedAndUnboundedWaitRequiresExplicitNull() {
+        assertEquals(
+                InProcessSandboxExecutionGuard.DEFAULT_WAIT_TIMEOUT,
+                new InProcessSandboxExecutionGuard().waitTimeout());
+        assertNull(new InProcessSandboxExecutionGuard(null).waitTimeout());
     }
 
     @Test

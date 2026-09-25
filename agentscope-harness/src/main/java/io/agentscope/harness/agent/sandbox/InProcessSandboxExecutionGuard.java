@@ -49,22 +49,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * one thread may be closed on another. This matters because the harness acquires in a reactive
  * resource supplier and releases in the corresponding cleanup, which may run on a different thread.
  *
- * <p>Wait timeout: by default {@link #tryEnter} waits indefinitely for a busy slot, since a healthy
- * holder legitimately keeps it for a full (potentially many-minute) agent call and a shorter wait
- * would spuriously fail calls queued behind it. Supply a positive {@code waitTimeout} only as a
- * backstop against a wedged holder; on expiry {@link #tryEnter} throws
- * {@link SandboxExecutionTimeoutException}. Set it well above the maximum realistic call duration.
+ * <p>Wait timeout: by default {@link #tryEnter} waits up to {@link #DEFAULT_WAIT_TIMEOUT} for a busy
+ * slot. The bound prevents a wedged holder from parking every worker in the sandbox-acquire
+ * scheduler indefinitely and eventually stalling unrelated keys. On expiry {@link #tryEnter}
+ * throws {@link SandboxExecutionTimeoutException}. Supply a different positive timeout when calls
+ * can legitimately run longer; pass {@code null} to the duration constructor only when the caller
+ * deliberately accepts an unbounded wait.
  */
 public final class InProcessSandboxExecutionGuard implements SandboxExecutionGuard {
+
+    /** Default upper bound for waiting behind a busy slot. */
+    public static final Duration DEFAULT_WAIT_TIMEOUT = Duration.ofMinutes(30);
 
     private final ConcurrentHashMap<SandboxIsolationKey, Slot> slots = new ConcurrentHashMap<>();
 
     /** Maximum time to wait for a busy slot, or {@code null} to wait indefinitely. */
     private final Duration waitTimeout;
 
-    /** Creates a guard that waits indefinitely for a busy slot. */
+    /** Creates a guard that waits up to {@link #DEFAULT_WAIT_TIMEOUT} for a busy slot. */
     public InProcessSandboxExecutionGuard() {
-        this(null);
+        this(DEFAULT_WAIT_TIMEOUT);
     }
 
     /**
@@ -127,6 +131,11 @@ public final class InProcessSandboxExecutionGuard implements SandboxExecutionGua
     /** Number of slots currently tracked; exposed for tests to assert no leak after release. */
     int trackedSlots() {
         return slots.size();
+    }
+
+    /** Configured wait timeout; exposed for tests. A null value means an unbounded wait. */
+    Duration waitTimeout() {
+        return waitTimeout;
     }
 
     /** Per-key mutual-exclusion permit plus a reference count guarding slot recycling. */

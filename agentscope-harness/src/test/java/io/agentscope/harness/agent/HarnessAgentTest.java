@@ -63,6 +63,7 @@ import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -78,6 +79,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -633,8 +636,18 @@ class HarnessAgentTest {
     void executionHandleCancelsTheHarnessAndReleasesItsSandboxBinding() throws Exception {
         Files.createDirectories(workspace);
         InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        CountDownLatch guardEntered = new CountDownLatch(1);
+        CountDownLatch allowAcquire = new CountDownLatch(1);
+        spec.executionGuard(
+                key -> {
+                    guardEntered.countDown();
+                    allowAcquire.await();
+                    return () -> {};
+                });
         AtomicReference<RuntimeContext> active = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch agentStarted = new CountDownLatch(1);
+        CountDownLatch terminated = new CountDownLatch(1);
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("run-control")
@@ -647,6 +660,7 @@ class HarnessAgentTest {
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
                                         active.set(ctx);
+                                        agentStarted.countDown();
                                         return Mono.never();
                                     }
                                 })
@@ -662,8 +676,22 @@ class HarnessAgentTest {
                     agent.prepareRun(
                             List.of(userText("hello")),
                             RuntimeContext.builder().sessionId("active-run").build());
-            var subscription = run.stream().subscribe(event -> {}, failure::set);
+            var subscription =
+                    run.stream()
+                            .subscribe(
+                                    event -> {},
+                                    error -> {
+                                        failure.set(error);
+                                        terminated.countDown();
+                                    });
             try {
+                assertTrue(guardEntered.await(2, TimeUnit.SECONDS));
+                assertEquals(
+                        io.agentscope.core.agent.AgentRun.Status.QUEUED,
+                        run.status(),
+                        "sandbox acquisition is asynchronous and remains part of queued setup");
+                allowAcquire.countDown();
+                assertTrue(agentStarted.await(2, TimeUnit.SECONDS));
                 assertEquals(io.agentscope.core.agent.AgentRun.Status.RUNNING, run.status());
                 assertNotNull(
                         active.get()
@@ -671,6 +699,7 @@ class HarnessAgentTest {
                                         io.agentscope.harness.agent.sandbox.SandboxAcquireResult
                                                 .class));
                 assertTrue(run.cancel());
+                assertTrue(terminated.await(2, TimeUnit.SECONDS));
                 assertNull(
                         active.get()
                                 .get(
@@ -678,6 +707,7 @@ class HarnessAgentTest {
                                                 .class));
                 assertTrue(failure.get() instanceof java.util.concurrent.CancellationException);
             } finally {
+                allowAcquire.countDown();
                 subscription.dispose();
             }
         }
@@ -719,6 +749,29 @@ class HarnessAgentTest {
         assertNotNull(effective);
         assertNotNull(effective.get(SandboxContext.class));
         assertEquals(1, client.getCreateCount());
+    }
+
+    @Test
+    void distributedStoreExecutionGuardIsResolvedOnce() throws Exception {
+        Files.createDirectories(workspace);
+        DistributedStore store = mock(DistributedStore.class);
+        when(store.agentStateStore()).thenReturn(mock(AgentStateStore.class));
+        when(store.baseStore()).thenReturn(new InMemoryStore());
+        SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
+        when(store.sandboxExecutionGuard()).thenReturn(guard);
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+
+        try (HarnessAgent ignored =
+                HarnessAgent.builder()
+                        .name("single-guard-access")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .distributedStore(store)
+                        .filesystem(spec)
+                        .build()) {
+            assertSame(guard, spec.getExecutionGuard());
+            verify(store, times(1)).sandboxExecutionGuard();
+        }
     }
 
     @Test

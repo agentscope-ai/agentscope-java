@@ -8,6 +8,14 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Changed
+
+- **Same-slot sandbox calls are serialized by default** — when no execution guard is configured, Harness now installs the JVM-local `SandboxExecutionGuard.inProcess()` guard with a 30-minute acquisition limit. This prevents concurrent calls with the same `SandboxIsolationKey` from restoring and overwriting the same persisted state. Same-key calls now queue and may take longer under contention; different keys still run in parallel. Multi-replica deployments must provide a distributed guard. Applications that deliberately rely on the previous parallel, last-writer-wins behavior can opt out with `.executionGuard(SandboxExecutionGuard.noop())` ([#2846](https://github.com/agentscope-ai/agentscope-java/pull/2846))
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05

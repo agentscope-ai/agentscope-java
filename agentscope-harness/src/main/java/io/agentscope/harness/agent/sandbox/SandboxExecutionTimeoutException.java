@@ -24,8 +24,9 @@ import java.time.Duration;
  * <p>This is a backstop against a <em>wedged</em> permit holder (a call that acquired the slot but
  * never releases it — e.g. a stuck container). It is <em>not</em> a lock-contention timeout: a
  * healthy holder legitimately keeps the slot for a full agent call, so the timeout must be set well
- * above the realistic maximum call duration. The default guard waits indefinitely; a timeout only
- * applies when one is explicitly configured via {@link SandboxExecutionGuard#inProcess(Duration)}.
+ * above the realistic maximum call duration. The default guard uses {@link
+ * InProcessSandboxExecutionGuard#DEFAULT_WAIT_TIMEOUT}; configure a different bound through {@link
+ * SandboxExecutionGuard#inProcess(Duration)} when necessary.
  */
 public class SandboxExecutionTimeoutException extends RuntimeException {
 

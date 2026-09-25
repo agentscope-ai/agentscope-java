@@ -145,7 +145,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
-| `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
+| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency guard | `inProcess()` (30-minute wait limit) |
 | `workspaceProjectionEnabled(boolean)` | Enable host → sandbox static asset projection | `true` |
 | `workspaceProjectionRoots(List)` | Root paths included in projection | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -237,7 +237,7 @@ HarnessAgent agent = HarnessAgent.builder()
 |--------|-------------|---------|
 | `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
-| `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
+| `executionGuard(SandboxExecutionGuard)` | Same-slot concurrency serialization guard | `inProcess()` (30-minute wait limit) |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
 | `workspaceProjectionRoots(List)` | Root paths to include in projection | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
 
@@ -406,7 +406,7 @@ Both mode 1 (shared store) and mode 2 (sandbox) use the same `IsolationScope` co
 
 ### Concurrency in sandbox mode
 
-`IsolationScope` in sandbox mode is **sequential-reuse** sharing, not live-instance sharing. Concurrent calls at the same scope key each get their own running container; at call end, the last-written snapshot wins. For `AGENT` / `GLOBAL` scopes where multiple users share state, use `executionGuard(SandboxExecutionGuard)` to serialize concurrent access.
+`IsolationScope` in sandbox mode is **sequential-reuse** sharing, not live-instance sharing. By default, the JVM-local `SandboxExecutionGuard.inProcess()` serializes concurrent calls at the same scope key across `SESSION`, `USER`, `AGENT`, and `GLOBAL`; the next call resumes only after the previous call has released and persisted its sandbox. Different keys still run in parallel. Multi-replica deployments must supply a distributed guard, while `SandboxExecutionGuard.noop()` explicitly restores the old parallel, last-writer-wins behavior.
 
 ### Example: scope combinations for different business needs
 

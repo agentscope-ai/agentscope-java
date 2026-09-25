@@ -846,12 +846,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
     }
 
-    /** Prepare a cancellable execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle.
+     *
+     * <p>Sandbox acquisition is blocking work scheduled off the subscriber thread. The returned
+     * run therefore remains {@link AgentRun.Status#QUEUED} while it acquires a sandbox and changes
+     * to {@link AgentRun.Status#RUNNING} when the delegate lifecycle is admitted.
+     */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
         return AgentRun.create(getAgentId(), () -> streamEvents(msgs, ctx));
     }
 
-    /** Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle. */
+    /**
+     * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
+     * Sandbox acquisition follows the same {@code QUEUED → RUNNING} transition documented by
+     * {@link #prepareRun(List, RuntimeContext)}.
+     */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
         return AgentRun.create(getAgentId(), () -> call(msgs, ctx));
     }
@@ -972,9 +982,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * permit and started the container but before the value reaches {@code usingWhen}, that value
      * is dropped unconsumed and cleanup never runs — leaking the permit and container forever
      * (issue #2800). {@link #acquireOffThread} closes that window by releasing whenever a cancel
-     * and a finished acquire coincide; {@code releaseForCall} is idempotent (it no-ops once the
-     * per-call binding is cleared), so it stays safe even though the normal path releases via
-     * {@code usingWhen}.
+     * and a finished acquire coincide. The compensating release is scheduled on {@code
+     * boundedElastic}, just like normal cleanup, so cancellation never blocks the caller's thread;
+     * {@code releaseForCall} is idempotent (it no-ops once the per-call binding is cleared), so it
+     * stays safe even though the normal path releases via {@code usingWhen}.
      */
     private Mono<RuntimeContext> acquireSandboxOffThread(RuntimeContext effective) {
         return acquireOffThread(
@@ -1012,14 +1023,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * different threads (the cancelling subscriber vs. {@link #SANDBOX_ACQUIRE_SCHEDULER}), so the
      * two events are reconciled through a 2-bit state: bit 0 = acquire finished (permit taken,
      * result bound), bit 1 = cancelled. Whichever side sets its bit <em>second</em> observes the
-     * other's bit already set and runs the release, so it fires exactly once and never while the
-     * acquire is still binding its result. On the normal path the supplier completes rather than
-     * cancels, so bit 1 is never set and cleanup flows through {@code usingWhen} as usual.
+     * other's bit already set and schedules the release exactly once, after acquire has finished
+     * binding its result. On the normal path the supplier completes rather than cancels, so bit 1
+     * is never set and cleanup flows through {@code usingWhen} as usual.
      */
     static Mono<RuntimeContext> acquireOffThread(
             RuntimeContext ctx, Runnable acquire, Consumer<RuntimeContext> releaseOnCancel) {
         AtomicInteger state = new AtomicInteger(0);
-        Runnable compensate = () -> releaseOnCancel.accept(ctx);
+        Runnable compensate =
+                () ->
+                        releaseOffThread(() -> releaseOnCancel.accept(ctx))
+                                .subscribe(
+                                        ignored -> {},
+                                        error ->
+                                                log.warn(
+                                                        "[harness] Failed to release sandbox after"
+                                                                + " cancelled acquire: {}",
+                                                        error.getMessage(),
+                                                        error));
         return Mono.fromCallable(
                         () -> {
                             acquire.run();
@@ -2498,10 +2519,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     // returns null is opting out, NOT requesting a no-op guard — leaving the spec
                     // null lets the inProcess() default below still serialise same-key calls
                     // (issue #2800). Injecting a noop here would silently suppress that default.
-                    if (sandboxFilesystemSpec.getExecutionGuard() == null
-                            && distributedStore.sandboxExecutionGuard() != null) {
-                        sandboxFilesystemSpec.executionGuard(
-                                distributedStore.sandboxExecutionGuard());
+                    SandboxExecutionGuard storeGuard = distributedStore.sandboxExecutionGuard();
+                    if (sandboxFilesystemSpec.getExecutionGuard() == null && storeGuard != null) {
+                        sandboxFilesystemSpec.executionGuard(storeGuard);
                     }
                 }
                 if (messageBus == null) {

@@ -33,12 +33,15 @@ import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionInterruptedException;
+import io.agentscope.harness.agent.sandbox.SandboxExecutionTimeoutException;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -138,8 +141,9 @@ class SandboxSameSessionSerializationTest {
     /**
      * When the guard is interrupted while waiting for a busy slot, {@code tryEnter} throws
      * {@link InterruptedException} — which clears the thread's interrupt flag. {@code acquireForCall}
-     * rethrows it wrapped in a {@link RuntimeException}, and must first restore the interrupt flag so
-     * callers up the stack can still observe the cancellation instead of it being silently swallowed.
+     * rethrows it as a typed {@link SandboxExecutionInterruptedException}, and must first restore
+     * the interrupt flag so callers up the stack can still observe the cancellation instead of it
+     * being silently swallowed.
      */
     @Test
     @Timeout(10)
@@ -163,8 +167,10 @@ class SandboxSameSessionSerializationTest {
                 "precondition: the test thread starts without the interrupt flag set");
 
         try {
-            RuntimeException ex =
-                    assertThrows(RuntimeException.class, () -> mw.acquireForCall(ctx));
+            SandboxExecutionInterruptedException ex =
+                    assertThrows(
+                            SandboxExecutionInterruptedException.class,
+                            () -> mw.acquireForCall(ctx));
             assertInstanceOf(
                     InterruptedException.class,
                     ex.getCause(),
@@ -179,6 +185,31 @@ class SandboxSameSessionSerializationTest {
             // Clear the flag so it does not leak into other tests sharing this thread.
             Thread.interrupted();
         }
+    }
+
+    @Test
+    void acquirePreservesTypedGuardTimeout() {
+        Duration waitTimeout = Duration.ofMillis(25);
+        SandboxExecutionGuard timingOutGuard =
+                key -> {
+                    throw new SandboxExecutionTimeoutException(key, waitTimeout);
+                };
+        SandboxManager manager =
+                new SandboxManager(
+                        new FakeSandboxClient(),
+                        new SessionSandboxStateStore(
+                                new InMemoryAgentStateStore(), "timeout-agent"),
+                        "timeout-agent",
+                        timingOutGuard);
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(manager, new SandboxBackedFilesystem());
+
+        SandboxExecutionTimeoutException ex =
+                assertThrows(
+                        SandboxExecutionTimeoutException.class,
+                        () -> mw.acquireForCall(callContext("timed-out")));
+
+        assertEquals(waitTimeout, ex.getWaited());
     }
 
     private static RuntimeContext callContext(String sessionId) {
