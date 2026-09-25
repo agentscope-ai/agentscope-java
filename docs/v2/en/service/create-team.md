@@ -1,5 +1,6 @@
 ---
 title: "Team: create and dispatch collaborative work"
+zh_link: /v2/zh/service/create-team
 ---
 
 <Note>

@@ -1,6 +1,7 @@
 ---
 title: 快速开始
 description: 快速上手 AgentScope Java 2.0 —— 用 HarnessAgent 跑通第一个长期运行的智能体
+en_link: /v2/en/docs/quickstart
 ---
 
 ## 安装

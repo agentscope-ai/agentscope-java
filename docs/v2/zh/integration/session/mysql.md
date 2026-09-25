@@ -1,5 +1,6 @@
 ---
 title: MySQL 状态存储
+en_link: /v2/en/integration/session/mysql
 ---
 
 <Note>

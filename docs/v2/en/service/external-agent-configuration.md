@@ -1,5 +1,6 @@
 ---
 title: "External registration and connection settings"
+zh_link: /v2/zh/service/external-agent-configuration
 ---
 
 <Note>

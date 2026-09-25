@@ -1,5 +1,6 @@
 ---
 title: Backup, upgrade and recovery
+zh_link: /v2/zh/service/operations
 ---
 
 <Note>

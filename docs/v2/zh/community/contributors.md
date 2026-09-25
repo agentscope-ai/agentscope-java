@@ -1,5 +1,6 @@
 ---
 title: 核心贡献者
+en_link: /v2/en/community/contributors
 ---
 
 感谢所有为 AgentScope Java 提交代码、文档与反馈的贡献者。本页列出仓库中**近期提交较活跃**的核心贡献者（数据来自 GitHub，会随时间变化；机器人账号已排除）。

@@ -1,5 +1,6 @@
 ---
 title: Model Integration
+zh_link: /v1/zh/docs/task/model
 ---
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.

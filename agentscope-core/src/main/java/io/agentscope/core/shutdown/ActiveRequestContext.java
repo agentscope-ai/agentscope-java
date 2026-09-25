@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.state.AgentState;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,15 +28,15 @@ import org.slf4j.LoggerFactory;
  * <p>When the owning {@code call()} resolves its per-(userId, sessionId) {@link AgentState} slot,
  * it is bound here via {@link #bindState(AgentState)} so shutdown interruption and state-saving
  * target that exact session — concurrency-safe even when an agent instance serves multiple
- * sessions. Until a session is bound (or for agents that keep no per-session state), the context
- * falls back to the agent's no-arg interrupt / {@link AgentBase#getAgentState()} accessors.
+ * sessions. Queued executions have no bound state and are cancelled without reading or saving
+ * another execution's state.
  */
 final class ActiveRequestContext {
 
     private static final Logger log = LoggerFactory.getLogger(ActiveRequestContext.class);
 
     private final String requestId;
-    private final AgentBase agent;
+    private final RunControl control;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
 
     private record SaverBinding(ShutdownStateSaver saver, boolean requestScoped) {}
@@ -45,15 +45,14 @@ final class ActiveRequestContext {
 
     /**
      * The per-call session state this request is running against, bound once {@code call()} has
-     * resolved its slot. {@code null} until bound, in which case the no-arg agent accessors are
-     * used as a fallback.
+     * resolved its slot. Null while queued: no conversation state is saved for that request.
      */
     private volatile AgentState boundState;
 
-    ActiveRequestContext(String requestId, AgentBase agent, ShutdownStateSaver saver) {
+    ActiveRequestContext(String requestId, ShutdownStateSaver saver, RunControl control) {
         this.requestId = requestId;
-        this.agent = agent;
         this.saverBinding = new SaverBinding(saver, false);
+        this.control = control;
     }
 
     String getRequestId() {
@@ -78,8 +77,7 @@ final class ActiveRequestContext {
     }
 
     private AgentState resolveState() {
-        AgentState bound = boundState;
-        return bound != null ? bound : agent.getAgentState();
+        return boundState;
     }
 
     void saveState() {
@@ -104,14 +102,7 @@ final class ActiveRequestContext {
         if (!shutdownInterruptIssued.compareAndSet(false, true)) {
             return false;
         }
-        AgentState bound = boundState;
-        if (bound != null) {
-            // Precise per-session interrupt: signal exactly this session's in-flight call so other
-            // concurrent calls on the same agent instance are unaffected.
-            bound.interruptControl().trigger(InterruptSource.SYSTEM, null);
-        } else {
-            agent.interrupt(InterruptSource.SYSTEM);
-        }
+        control.interrupt(InterruptSource.SYSTEM, null);
         return true;
     }
 }
