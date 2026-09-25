@@ -157,14 +157,27 @@ public class MysqlDialect extends AbstractJdbcDialect {
 
     @Override
     public List<String> snapshotCreateTableDdls() {
+        // snapshot_id is the primary key and a caller-supplied identifier, so it pins the same
+        // binary collation as the other key columns: the table default is case-insensitive, and
+        // two snapshot ids differing only in letter case would otherwise share a row.
         return List.of(
                 "CREATE TABLE IF NOT EXISTS "
                         + snapshotTableName()
                         + " ("
-                        + "  snapshot_id VARCHAR(512) NOT NULL PRIMARY KEY, "
+                        + "  snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, "
                         + "  data LONGBLOB NOT NULL, "
                         + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
                         + ")");
+    }
+
+    @Override
+    protected List<BinaryCollationColumn> binaryCollationColumns() {
+        return List.of(
+                new BinaryCollationColumn(storeTableName(), "namespace_path"),
+                new BinaryCollationColumn(storeTableName(), "item_key"),
+                new BinaryCollationColumn(sessionStateTableName(), "session_id"),
+                new BinaryCollationColumn(sessionStateTableName(), "state_key"),
+                new BinaryCollationColumn(snapshotTableName(), "snapshot_id"));
     }
 
     @Override

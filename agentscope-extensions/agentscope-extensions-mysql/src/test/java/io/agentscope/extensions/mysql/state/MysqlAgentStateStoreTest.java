@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +33,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +54,9 @@ import org.mockito.MockitoAnnotations;
 @DisplayName("MysqlAgentStateStore versioning")
 class MysqlAgentStateStoreTest {
 
+    /** Must match the collation the generated DDL pins on the key columns. */
+    private static final String BINARY_COLLATION_FOR_TEST = "utf8mb4_bin";
+
     record TestState(String value) implements State {}
 
     @Mock private DataSource dataSource;
@@ -69,10 +74,17 @@ class MysqlAgentStateStoreTest {
         when(preparedStatement.executeQuery()).thenReturn(resultSet);
         when(preparedStatement.executeUpdate()).thenReturn(1);
         // Constructor verification calls: verifyDatabaseExists, verifyTableExists,
-        // ensureVersionColumn. All three need resultSet.next() → true.
-        when(resultSet.next()).thenReturn(true, true, true);
+        // ensureVersionColumn — the first three need resultSet.next() → true. The sequence must be
+        // finite: a trailing false also ends the ensureKeyColumnCollation row loop, whose
+        // "while (rs.next())" would otherwise never terminate on a mock that always says true.
+        when(resultSet.next()).thenReturn(true, true, true, false);
         // ensureVersionColumn: COUNT(*) returns 1 (column exists, no ALTER needed)
         when(resultSet.getInt(1)).thenReturn(1);
+        // ensureKeyColumnCollation reads (column name, collation) rows. lenient() because most
+        // tests
+        // here never reach it; a null column name means "no row to report".
+        lenient().when(resultSet.getString(1)).thenReturn(null);
+        lenient().when(resultSet.getString(2)).thenReturn(BINARY_COLLATION_FOR_TEST);
     }
 
     @AfterEach
@@ -255,5 +267,56 @@ class MysqlAgentStateStoreTest {
         assertTrue(ddl.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
         assertTrue(ddl.contains("state_data LONGTEXT NOT NULL"));
         assertFalse(ddl.contains("LONGTEXT COLLATE"));
+    }
+
+    // ------------------------------------------------------------------
+    //  Key-column collation drift detection
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("reports the key columns whose collation is not utf8mb4_bin")
+    void reportsKeyColumnsWithNonBinaryCollation() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+
+        // The constructor has already consumed the default stub sequence, so start a fresh one for
+        // the explicit detection call; ending with false terminates the row-read loop.
+        reset(resultSet);
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+        when(resultSet.getString(1)).thenReturn("session_id", "state_key");
+        when(resultSet.getString(2)).thenReturn("utf8mb4_unicode_ci", BINARY_COLLATION_FOR_TEST);
+
+        // Only the column that still carries the case-insensitive collation is reported: the
+        // already
+        // migrated one is left alone.
+        assertEquals(List.of("session_id"), store.findKeyColumnsWithNonBinaryCollation());
+    }
+
+    @Test
+    @DisplayName("reports nothing when every key column already uses utf8mb4_bin")
+    void reportsNothingWhenKeyColumnsAreBinary() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+
+        reset(resultSet);
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+        when(resultSet.getString(1)).thenReturn("session_id", "state_key");
+        when(resultSet.getString(2)).thenReturn(BINARY_COLLATION_FOR_TEST);
+
+        assertTrue(store.findKeyColumnsWithNonBinaryCollation().isEmpty());
+    }
+
+    @Test
+    @DisplayName("collation drift detection does not fail the store when the catalog is unreadable")
+    void collationProbeFailureIsNotFatal() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+
+        // Simulate a server that rejects the INFORMATION_SCHEMA query. Detection must degrade to
+        // "nothing to report" instead of failing the caller.
+        reset(resultSet, preparedStatement);
+        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+        when(preparedStatement.executeQuery()).thenThrow(new SQLException("INFORMATION_SCHEMA"));
+
+        assertTrue(store.findKeyColumnsWithNonBinaryCollation().isEmpty());
     }
 }

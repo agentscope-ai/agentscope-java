@@ -130,6 +130,103 @@ public abstract class AbstractJdbcDialect
     }
 
     // ------------------------------------------------------------------
+    //  Binary-collation drift detection
+    // ------------------------------------------------------------------
+
+    /**
+     * Key columns that must be compared case-sensitively, as table-name → column-name pairs.
+     *
+     * <p>Vendors whose default collation is case-insensitive declare their key columns here so
+     * {@link #verifyBinaryCollation()} can warn when an existing table still carries the
+     * case-insensitive default. The returned names are used as prepared-statement parameters, not
+     * interpolated into SQL. Default is empty: a vendor that compares keys case-sensitively by
+     * default (PostgreSQL, H2, SQLite) needs no drift check.
+     *
+     * @return table-name → key-column-name pairs to check, never {@code null}
+     */
+    protected List<BinaryCollationColumn> binaryCollationColumns() {
+        return List.of();
+    }
+
+    /**
+     * Warns once for every declared key column whose actual collation is not
+     * {@value #BINARY_COLLATION}.
+     *
+     * <p>{@code CREATE TABLE IF NOT EXISTS} is a silent no-op on a table that already exists, so a
+     * deployment created before the key columns pinned a binary collation keeps the
+     * case-insensitive default and stays exposed without any signal. This turns that silence into
+     * one actionable warning: case-variant keys keep colliding until an operator runs the
+     * {@code ALTER TABLE ... MODIFY ... COLLATE} shown in the message.
+     *
+     * <p>Detection only — it never alters a table, because changing a column's collation rewrites
+     * the index and also changes read semantics ({@code =} and {@code LIKE 'prefix%'} become
+     * case-sensitive), which is an operator decision. Failures are logged at debug level and never
+     * fail the caller's build.
+     *
+     * @return the key columns still missing {@value #BINARY_COLLATION}; empty when everything agrees
+     *     or when the dialect declares no key columns
+     */
+    public List<BinaryCollationColumn> verifyBinaryCollation() {
+        List<BinaryCollationColumn> mismatched = new ArrayList<>();
+        for (BinaryCollationColumn each : binaryCollationColumns()) {
+            String collation = findCollation(each);
+            if (collation != null && !BINARY_COLLATION.equalsIgnoreCase(collation)) {
+                mismatched.add(each);
+            }
+        }
+        for (BinaryCollationColumn each : mismatched) {
+            LOG.warn(
+                    "Column {}.{} is not {}.{} — keys that differ only in letter case still collide"
+                        + " on this existing table, so one write silently overwrites the other."
+                        + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {} (this also makes '='"
+                        + " and 'LIKE prefix%' case-sensitive on that column).",
+                    each.table(),
+                    each.column(),
+                    BINARY_COLLATION,
+                    each.column(),
+                    each.table(),
+                    each.column(),
+                    BINARY_COLLATION,
+                    each.table(),
+                    each.column(),
+                    BINARY_COLLATION);
+        }
+        return mismatched;
+    }
+
+    private String findCollation(BinaryCollationColumn column) {
+        String sql =
+                "SELECT COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?";
+        try (Connection conn = getDataSource().getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, column.table());
+            stmt.setString(2, column.column());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            LOG.debug(
+                    "Could not read the collation of {}.{}: {}",
+                    column.table(),
+                    column.column(),
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /** The binary collation the schema DDL pins on key columns. */
+    public static final String BINARY_COLLATION = "utf8mb4_bin";
+
+    /**
+     * A key column expected to use {@value #BINARY_COLLATION}.
+     *
+     * @param table table name, used as a query parameter
+     * @param column column name, used as a query parameter
+     */
+    public record BinaryCollationColumn(String table, String column) {}
+
+    // ------------------------------------------------------------------
     //  Package-private setters (builder assembly only)
     // ------------------------------------------------------------------
 

@@ -25,6 +25,7 @@ import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -132,21 +133,80 @@ class DialectSqlTests {
     void mysqlKeyColumnsUseBinaryCollation() {
         var d = new MysqlDialect();
 
-        String store = d.storeCreateTableDdls().get(0);
-        assertTrue(store.contains("namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL"));
-        assertTrue(store.contains("item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL"));
+        // Compared against whitespace-normalised DDL: the column layout is cosmetic, only the
+        // column/collation pairing is contractual.
+        assertTrue(
+                normalise(d.storeCreateTableDdls().get(0))
+                        .contains("namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(
+                normalise(d.storeCreateTableDdls().get(0))
+                        .contains("item_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
 
-        String session = d.sessionStateCreateTableDdls().get(0);
-        assertTrue(session.contains("session_id  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
-        assertTrue(session.contains("state_key   VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        String session = normalise(d.sessionStateCreateTableDdls().get(0));
+        assertTrue(session.contains("session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(session.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+
+        // snapshot_id is a primary key too, so it gets the same treatment.
+        assertTrue(
+                normalise(d.snapshotCreateTableDdls().get(0))
+                        .contains(
+                                "snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY"
+                                        + " KEY"));
+    }
+
+    @Test
+    @DisplayName("MysqlDialect declares every key column it pins a binary collation on")
+    void mysqlDeclaresTheKeyColumnsItPins() throws Exception {
+        var d = new MysqlDialect();
+
+        assertEquals(
+                List.of(
+                        new AbstractJdbcDialect.BinaryCollationColumn(
+                                d.storeTableName(), "namespace_path"),
+                        new AbstractJdbcDialect.BinaryCollationColumn(
+                                d.storeTableName(), "item_key"),
+                        new AbstractJdbcDialect.BinaryCollationColumn(
+                                d.sessionStateTableName(), "session_id"),
+                        new AbstractJdbcDialect.BinaryCollationColumn(
+                                d.sessionStateTableName(), "state_key"),
+                        new AbstractJdbcDialect.BinaryCollationColumn(
+                                d.snapshotTableName(), "snapshot_id")),
+                declaredBinaryCollationColumns(d));
+    }
+
+    @Test
+    @DisplayName(
+            "other dialects declare no binary-collation columns: they are already case-sensitive")
+    void otherDialectsDeclareNoBinaryCollationColumns() throws Exception {
+        for (AbstractJdbcDialect d :
+                List.of(new PostgresDialect(), new H2Dialect(), new SqliteDialect())) {
+            assertTrue(declaredBinaryCollationColumns(d).isEmpty());
+        }
+    }
+
+    /**
+     * Reads {@code binaryCollationColumns()} without widening its visibility: the method is
+     * {@code protected} on a class in this package but is invoked on a {@code vendor} subclass, which
+     * Java's protected rule does not permit from here.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<AbstractJdbcDialect.BinaryCollationColumn> declaredBinaryCollationColumns(
+            final AbstractJdbcDialect dialect) throws Exception {
+        Method method = AbstractJdbcDialect.class.getDeclaredMethod("binaryCollationColumns");
+        method.setAccessible(true);
+        return (List<AbstractJdbcDialect.BinaryCollationColumn>) method.invoke(dialect);
+    }
+
+    private static String normalise(final String ddl) {
+        return ddl.replaceAll("\\s+", " ").trim();
     }
 
     @Test
     @DisplayName("only MysqlDialect key columns are case-sensitive; payload columns are untouched")
     void mysqlPayloadColumnsKeepDefaultCollation() {
-        String store = new MysqlDialect().storeCreateTableDdls().get(0);
-        assertTrue(store.contains("value_json     LONGTEXT      NOT NULL"));
-        assertFalse(store.contains("LONGTEXT      COLLATE"));
+        String store = normalise(new MysqlDialect().storeCreateTableDdls().get(0));
+        assertTrue(store.contains("value_json LONGTEXT NOT NULL"));
+        assertFalse(store.contains("LONGTEXT COLLATE"));
 
         // The other dialects compare keys case-sensitively by default, so no explicit
         // collation must leak into their DDL.

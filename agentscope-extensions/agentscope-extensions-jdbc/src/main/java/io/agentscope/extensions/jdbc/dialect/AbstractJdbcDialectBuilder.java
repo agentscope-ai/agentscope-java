@@ -159,6 +159,10 @@ public class AbstractJdbcDialectBuilder {
             throw new IllegalStateException(
                     "Auto-create table(s) failed during dialect assembly: " + e.getMessage(), e);
         }
+        // CREATE TABLE IF NOT EXISTS is a no-op on an existing table, so the DDL above cannot fix
+        // a deployment whose key columns still carry a case-insensitive collation. Report the
+        // drift instead of leaving it silent; detection never alters a table.
+        dialect.verifyBinaryCollation();
     }
 
     /** Inheritance depth relative to {@link AbstractJdbcDialect} (direct subclass = 1). */

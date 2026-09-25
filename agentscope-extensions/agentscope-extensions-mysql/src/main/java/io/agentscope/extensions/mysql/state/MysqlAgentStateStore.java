@@ -31,6 +31,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * MySQL database-based session implementation.
@@ -73,8 +75,17 @@ import javax.sql.DataSource;
  */
 public class MysqlAgentStateStore implements AgentStateStore {
 
+    private static final Logger LOG = LoggerFactory.getLogger(MysqlAgentStateStore.class);
+
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
+
+    /**
+     * Collation pinned on the key columns ({@code session_id}, {@code state_key}). Mirrors the
+     * constant of the same name on {@code AbstractJdbcDialect}, which this module does not depend
+     * on; both name the same collation that the generated DDL pins.
+     */
+    private static final String BINARY_COLLATION = "utf8mb4_bin";
 
     /** Suffix for hash storage keys. */
     private static final String HASH_KEY_SUFFIX = ":_hash";
@@ -181,6 +192,77 @@ public class MysqlAgentStateStore implements AgentStateStore {
             verifyTableExists();
         }
         ensureVersionColumn();
+        ensureKeyColumnCollation();
+    }
+
+    /**
+     * Warns when this deployment's {@code session_id} / {@code state_key} still carry the
+     * case-insensitive table default instead of {@code utf8mb4_bin}.
+     *
+     * <p>{@code CREATE TABLE IF NOT EXISTS} is a silent no-op on an existing table, so a deployment
+     * created before the key columns pinned the binary collation — including tables created from
+     * the schema in the docs — keeps the case-insensitive default: session ids or state keys
+     * differing only in letter case collide on the primary key and share a row. This is the same
+     * "check then act" shape as {@link #ensureVersionColumn()}, but detection only: it never alters
+     * the table, because {@code ALTER TABLE ... MODIFY ... COLLATE} rewrites the index and also
+     * makes {@code =} and {@code LIKE 'prefix%'} case-sensitive on those columns, which is an
+     * operator decision. A table that is missing (or a database that does not expose
+     * {@code INFORMATION_SCHEMA}) is skipped quietly.
+     */
+    private void ensureKeyColumnCollation() {
+        findKeyColumnsWithNonBinaryCollation();
+    }
+
+    /**
+     * Reads the collations of the key columns and returns those that are not
+     * {@value #BINARY_COLLATION}, warning once for each. Package-private so a unit test can drive it
+     * with a mocked {@code INFORMATION_SCHEMA} result instead of a live MySQL server.
+     *
+     * @return names of the key columns still not using {@value #BINARY_COLLATION}, in the order the
+     *     database reports them; empty when they all agree
+     */
+    List<String> findKeyColumnsWithNonBinaryCollation() {
+        String checkSql =
+                "SELECT COLUMN_NAME, COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                        + " AND COLUMN_NAME IN ('session_id', 'state_key')";
+        List<String> stale = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+            stmt.setString(1, databaseName);
+            stmt.setString(2, tableName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String column = rs.getString(1);
+                    String collation = rs.getString(2);
+                    if (collation != null && !BINARY_COLLATION.equalsIgnoreCase(collation)) {
+                        stale.add(column);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOG.debug(
+                    "Could not read key-column collations from {}: {}", tableName, e.getMessage());
+            return stale;
+        }
+        for (String column : stale) {
+            LOG.warn(
+                    "Column {}.{} is not {}.{}. Keys that differ only in letter case still collide"
+                            + " on this existing table, so one write silently overwrites the other."
+                            + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {} (this also makes"
+                            + " '=' and 'LIKE prefix%' case-sensitive on that column).",
+                    tableName,
+                    column,
+                    BINARY_COLLATION,
+                    column,
+                    tableName,
+                    column,
+                    BINARY_COLLATION,
+                    tableName,
+                    column,
+                    BINARY_COLLATION);
+        }
+        return stale;
     }
 
     private void ensureVersionColumn() {
