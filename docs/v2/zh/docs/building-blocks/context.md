@@ -298,7 +298,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | 方法 | 说明 |
 |------|------|
 | `getSessionId()` / `getUserId()` | 内置字段,用于路由状态槽位与租户 |
-| `getRunId()` | 每次调用的稳定关联 ID(见下方[runId 关联](#runid关联)),恒非 null |
+| `getRunId()` | 每次调用的稳定关联 ID(见下方[runId 关联](#runid-关联)),恒非 null |
 | `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`,由框架在 call 入口注入。中间件和工具应从这里读状态,而非 `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。中间件/工具中使用此方法保证并发安全 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
