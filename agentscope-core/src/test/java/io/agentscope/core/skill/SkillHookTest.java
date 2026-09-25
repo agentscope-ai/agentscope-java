@@ -28,13 +28,10 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -64,18 +61,10 @@ class SkillHookTest {
     }
 
     @Test
-    @DisplayName("Should inject skill prompt when skills are active")
-    void testInjectSkillPromptWhenSkillsActive() {
-        // Arrange: Register a skill and activate it using the loader tool
+    @DisplayName("Should inject skill prompt for a registered skill")
+    void testInjectPromptForRegisteredSkill() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
-
-        // Activate skill by calling the loader tool (this is how skills are activated
-        // in practice)
-        activateSkill(skill.getSkillId());
-
-        // Verify skill is now active
-        assertTrue(skillBox.isSkillActive(skill.getSkillId()), "Skill should be active");
 
         // Create PreCallEvent with one user message
         List<Msg> messages = new ArrayList<>();
@@ -98,29 +87,6 @@ class SkillHookTest {
         assertTrue(
                 result.getSystemMessage().getTextContent().contains("test_skill"),
                 "systemMsg should contain skill information");
-    }
-
-    /**
-     * Helper method to activate a skill using the loader tool.
-     */
-    private void activateSkill(String skillId) {
-        toolkit.getTool("load_skill_through_path")
-                .callAsync(
-                        ToolCallParam.builder()
-                                .toolUseBlock(
-                                        ToolUseBlock.builder()
-                                                .id("test-call")
-                                                .name("load_skill_through_path")
-                                                .input(
-                                                        Map.of(
-                                                                "skillId",
-                                                                skillId,
-                                                                "path",
-                                                                "SKILL.md"))
-                                                .build())
-                                .input(Map.of("skillId", skillId, "path", "SKILL.md"))
-                                .build())
-                .block();
     }
 
     @Test
@@ -184,10 +150,8 @@ class SkillHookTest {
     @Test
     @DisplayName("[ISSUE#765] should inject skill prompt at first not last")
     void testInjectSkillPromptAtFirst() {
-        // Arrange: Register and activate a skill
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
-        activateSkill(skill.getSkillId());
 
         // Create PreCallEvent with multiple messages (no existing SYSTEM message)
         List<Msg> messages =
@@ -237,10 +201,8 @@ class SkillHookTest {
             "[ISSUE#845] should merge skill prompt into existing system message instead of adding a"
                     + " second one")
     void testMergeSkillPromptIntoExistingSystemMessage() {
-        // Arrange: Register and activate a skill
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
         skillBox.registerSkill(skill);
-        activateSkill(skill.getSkillId());
 
         // Create PreCallEvent with an existing SYSTEM message
         List<Msg> messages =

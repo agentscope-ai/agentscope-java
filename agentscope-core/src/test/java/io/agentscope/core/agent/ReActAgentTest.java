@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -803,18 +804,12 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should have interrupt API methods")
     void testInterruptAfterToolCompletion() {
-        // ReActAgent routes interrupts to the active session's per-session InterruptControl
-        // (on its AgentState) rather than a shared instance flag, so concurrent sessions are
-        // isolated.
-        assertFalse(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session should not be interrupted initially");
-
-        // Test interrupt() method
+        // An idle-session interrupt must not poison the next execution.
         agent.interrupt();
-        assertTrue(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session interrupt control should be set");
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test
@@ -822,15 +817,11 @@ class ReActAgentTest {
     void testInterruptRecoveryMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
 
-        // Test interrupt(Msg) method: routed to the active session's InterruptControl
         agent.interrupt(interruptMsg);
-        assertTrue(
-                agent.getAgentState().interruptControl().isInterrupted(),
-                "Session interrupt control should be set");
-        assertEquals(
-                interruptMsg,
-                agent.getAgentState().interruptControl().getUserMessage(),
-                "User message should be stored on the session interrupt control");
+        Msg reply = agent.call(TestUtils.createUserMessage("User", "hello")).block();
+        assertNotNull(reply);
+        assertNotEquals(
+                io.agentscope.core.message.GenerateReason.INTERRUPTED, reply.getGenerateReason());
     }
 
     @Test

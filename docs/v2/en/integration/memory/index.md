@@ -1,5 +1,6 @@
 ---
 title: Memory
+zh_link: /v2/zh/integration/memory/index
 ---
 
 Choose a guide below to configure and use memory.

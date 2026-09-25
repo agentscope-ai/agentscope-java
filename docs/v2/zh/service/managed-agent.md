@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent：概览与用法"
+en_link: /v2/en/service/managed-agent
 ---
 
 <Note>

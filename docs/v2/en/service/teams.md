@@ -1,5 +1,6 @@
 ---
 title: "Team: overview and creation"
+zh_link: /v2/zh/service/teams
 ---
 
 <Note>
