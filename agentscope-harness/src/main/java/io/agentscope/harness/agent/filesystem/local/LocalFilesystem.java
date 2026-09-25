@@ -72,6 +72,10 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link LocalFsMode#UNRESTRICTED} — absolute paths pass through; relative paths anchor
  *       to {@code rootDir}. Equivalent to legacy {@code virtualMode=false}.
  * </ul>
+ *
+ * <p>In {@link LocalFsMode#ROOTED} mode an optional namespace boundary
+ * ({@link #namespaceBoundary(boolean)}) further confines every key resolving under the root to
+ * the caller's own namespace, compared on the physical (symlink-resolved) location.
  */
 public class LocalFilesystem implements AbstractFilesystem {
 
@@ -86,8 +90,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final NamespaceFactory namespaceFactory;
 
     /**
-     * When {@code true}, absolute paths that resolve under {@link #cwd} but outside the caller's
-     * own namespace directory are rejected with a {@link SecurityException} in
+     * When {@code true}, paths that resolve under {@link #cwd} but outside the caller's own
+     * namespace directory are rejected with a {@link SecurityException} in
      * {@link LocalFsMode#ROOTED} mode. Off by default; see {@link #namespaceBoundary(boolean)}.
      */
     private boolean namespaceBoundary = false;
@@ -242,19 +246,28 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Restricts absolute paths to the caller's own namespace directory in
+     * Restricts paths to the caller's own namespace directory in
      * {@link LocalFsMode#ROOTED} mode.
      *
      * <p>The namespace factory scopes <em>relative</em> keys by prepending the namespace prefix
-     * (e.g. {@code sessionId}), but absolute keys bypass that prefix entirely, so with a
-     * per-session namespace any session could address another session's directory under the
-     * shared workspace root by absolute path. When the boundary is enabled, an absolute path
-     * that resolves under {@link #getCwd() cwd} must instead resolve under
-     * {@code cwd/<namespace>} to be accepted; anything else is rejected with a
-     * {@link SecurityException}. Paths under the {@link PathPolicy} roots that lie outside
-     * {@link #getCwd() cwd} (e.g. the read-only project layer) are unaffected, and with no
-     * namespace active (AGENT/GLOBAL scope, or missing user/session identifiers) the check is
-     * a no-op.
+     * (e.g. {@code sessionId}), but other key forms bypass that prefix: absolute keys pass
+     * through untouched, and the leading-slash virtual form ({@code /foo}) resolves against the
+     * workspace root — so with a per-session namespace any session could address another
+     * session's directory under the shared workspace root. When the boundary is enabled, every
+     * key that resolves under {@link #getCwd() cwd} must resolve under {@code cwd/<namespace>}
+     * to be accepted; anything else is rejected with a {@link SecurityException}. Paths under
+     * the {@link PathPolicy} roots that lie outside {@link #getCwd() cwd} (e.g. the read-only
+     * project layer) are unaffected, and with no namespace active (AGENT/GLOBAL scope, or
+     * missing user/session identifiers) the check is a no-op.
+     *
+     * <p>The check runs on the physical location of the path, with symbolic links resolved: a
+     * link planted inside the own namespace that leads to a sibling namespace or a shared
+     * directory is rejected like a direct path, and casing is normalized on case-insensitive
+     * hosts. This adds a small amount of filesystem I/O per resolved path while the boundary is
+     * active. Two limitations remain: the check runs before the file operation, so a component
+     * swapped in between (TOCTOU) is not covered; and the namespace directories themselves are
+     * assumed to be framework-managed — a link swapped in for one of them fails closed (all
+     * access through it is rejected) rather than re-anchoring the boundary.
      *
      * <p>Must be configured before the filesystem is exposed to agent calls.
      *
@@ -701,6 +714,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (!full.startsWith(cwd)) {
             throw new SecurityException("Path " + full + " outside root directory: " + cwd);
         }
+        // Relative keys are namespace-prefixed into the own namespace, but a link inside it
+        // could still lead out; the physical check applies to them like any other key form.
+        requireOwnNamespace(rc, full);
         return full;
     }
 
@@ -715,11 +731,20 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Rejects absolute paths that resolve under {@link #cwd} but outside the caller's own
-     * namespace directory when {@link #namespaceBoundary} is enabled and a namespace is active.
-     * Relative keys never reach this check with a foreign namespace: they are prefixed into the
-     * own namespace by {@link #applyNamespacePrefix}, and {@code ..} segments are rejected by
-     * {@link AbstractFilesystem#validatePath}.
+     * Rejects paths that resolve under {@link #cwd} but outside the caller's own namespace
+     * directory when {@link #namespaceBoundary} is enabled and a namespace is active.
+     *
+     * <p>The comparison runs on physical paths: the candidate is resolved through
+     * {@link #physicalPath}, which follows symbolic links (broken ones included, via their link
+     * target) and normalizes casing to the on-disk form, so a link planted inside the own
+     * namespace cannot lead the check past the boundary and case-insensitive hosts compare
+     * consistently. The namespace root is anchored at the physical cwd with the namespace
+     * components kept lexical: those directories are framework-managed, and a link swapped in
+     * for one of them must fail closed instead of re-anchoring the boundary. Relative keys do
+     * reach this check — they arrive namespace-prefixed from {@link #applyNamespacePrefix}, but
+     * a link inside the own namespace could still lead out of it, which the physical resolution
+     * catches. The check runs before the actual file operation, so a component swapped in
+     * between (TOCTOU) is out of scope.
      */
     private void requireOwnNamespace(RuntimeContext rc, Path resolved) {
         if (!namespaceBoundary || namespaceFactory == null) {
@@ -729,20 +754,87 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (ns == null || ns.isEmpty()) {
             return;
         }
-        Path nsRoot = cwd.resolve(String.join("/", ns)).normalize();
-        if (resolved.startsWith(nsRoot)) {
+        Path nsRoot = physicalCwd().resolve(String.join("/", ns)).normalize();
+        if (physicalPath(resolved).startsWith(nsRoot)) {
             return;
         }
         throw new SecurityException(
-                "Absolute path "
+                "Path "
                         + resolved
                         + " is outside the isolated namespace '"
                         + String.join("/", ns)
                         + "' of the workspace root "
                         + cwd
-                        + ". Absolute paths may only address paths inside "
+                        + ". Paths under the workspace root may only address paths inside "
                         + nsRoot
                         + "; use workspace-relative paths for shared content.");
+    }
+
+    /**
+     * Returns the physical location of {@code path} on disk: symbolic links are followed and
+     * casing matches the on-disk form, so comparisons against the result cannot be bypassed by
+     * a link planted along the path and stay consistent on case-insensitive filesystems.
+     *
+     * <p>Components that do not exist yet cannot hide a link, so the nearest existing ancestor
+     * is resolved and the remaining components are appended lexically. Broken links are
+     * followed lexically through their target ({@link Files#readSymbolicLink}), so the
+     * eventual location of an operation through such a link is what gets compared. When the
+     * path cannot be fully resolved (a link chain longer than the iteration guard), the
+     * lexical form is returned as a floor: no resolvable outside location can slip through,
+     * and the subsequent file operation fails on its own for the unresolvable remainder.
+     */
+    private static Path physicalPath(Path path) {
+        Path p = path.normalize();
+        Path tail = null;
+        for (int hops = 0; hops < 64; hops++) {
+            try {
+                Path real = p.toRealPath();
+                return tail == null ? real : real.resolve(tail);
+            } catch (IOException e) {
+                Path link = linkTarget(p);
+                if (link != null) {
+                    p = link;
+                    continue;
+                }
+                Path name = p.getFileName();
+                if (name == null || p.getParent() == null) {
+                    break;
+                }
+                tail = tail == null ? name : name.resolve(tail);
+                p = p.getParent();
+            }
+        }
+        return tail == null ? p : p.resolve(tail);
+    }
+
+    /**
+     * Returns the absolute, normalized target of the symbolic link {@code p}, or {@code null}
+     * when {@code p} is not a link or its target cannot be read.
+     */
+    private static Path linkTarget(Path p) {
+        if (!Files.isSymbolicLink(p)) {
+            return null;
+        }
+        try {
+            Path target = Files.readSymbolicLink(p);
+            Path parent = p.getParent();
+            return (parent == null ? target : parent.resolve(target)).normalize();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns {@link #cwd} in its on-disk form so that both sides of the namespace comparison
+     * share the same casing and link resolution (e.g. {@code /tmp} vs {@code /private/tmp} on
+     * macOS). Falls back to the lexical form when the workspace directory is unreachable.
+     */
+    private Path physicalCwd() {
+        try {
+            return cwd.toRealPath();
+        } catch (IOException e) {
+            return cwd;
+        }
     }
 
     private Path resolveUnrestricted(String effectiveKey) {

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
@@ -375,6 +376,113 @@ class LocalFilesystemModeTest {
 
         ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
         assertTrue(r.isSuccess(), () -> "no factory should keep access open: " + r.error());
+    }
+
+    @Test
+    void rooted_symlinkIntoSiblingNamespaceRejected(@TempDir Path workspace) throws IOException {
+        // A link planted inside the own namespace must not become an escape hatch: the boundary
+        // check compares the physical location, so every route through the link — absolute,
+        // namespace-prefixed relative, and leading-slash virtual — is rejected.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Files.createDirectories(workspace.resolve("user-1"));
+        Path sibling = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(sibling.getParent());
+        Files.writeString(sibling, "user-2 private memory", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("../user-2"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink = workspace.resolve("user-1/link/MEMORY.md").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "link/MEMORY.md", 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "/user-1/link/MEMORY.md", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkOutsideWorkspaceRejected(@TempDir Path workspace, @TempDir Path outside)
+            throws IOException {
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path secret = outside.resolve("secret.txt");
+        Files.writeString(secret, "host secret", StandardCharsets.UTF_8);
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createSymbolicLink(workspace.resolve("user-1/escape"), outside);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink =
+                workspace.resolve("user-1/escape/secret.txt").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "escape/secret.txt", 0, 0));
+    }
+
+    @Test
+    void rooted_brokenSymlinkToSiblingRejected(@TempDir Path workspace) throws IOException {
+        // The link target does not exist yet, so real-path resolution alone cannot place it:
+        // the fallback follows the link lexically and compares the eventual target location.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Files.createDirectories(workspace.resolve("user-1"));
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("../user-2/secret.md"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughLink = workspace.resolve("user-1/link").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughLink, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "link", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkWithinOwnNamespaceAllowed(@TempDir Path workspace) throws IOException {
+        // Links that stay inside the own namespace keep working — no false positive from the
+        // physical resolution.
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path real = workspace.resolve("user-1/real/notes.md");
+        Files.createDirectories(real.getParent());
+        Files.writeString(real, "my notes", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1/link"), Path.of("real"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r =
+                fs.read(
+                        rc,
+                        workspace.resolve("user-1/link/notes.md").toAbsolutePath().toString(),
+                        0,
+                        0);
+        assertTrue(r.isSuccess(), () -> "link within the own namespace should pass: " + r.error());
+        assertEquals("my notes", r.fileData().content());
+
+        ReadResult viaRelative = fs.read(rc, "link/notes.md", 0, 0);
+        assertTrue(
+                viaRelative.isSuccess(),
+                () -> "relative access through the link should pass: " + viaRelative.error());
+        assertEquals("my notes", viaRelative.fileData().content());
+    }
+
+    /**
+     * Returns {@code true} when a symbolic link can be created inside {@code dir}: Windows
+     * runners and some CI sandboxes lack the privilege, and the affected tests skip then.
+     */
+    private static boolean symlinksSupported(Path dir) {
+        try {
+            Path probe = dir.resolve("symlink-probe-" + System.nanoTime());
+            Files.createSymbolicLink(probe, Path.of("probe-target"));
+            Files.deleteIfExists(probe);
+            return true;
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            return false;
+        }
     }
 
     @Test
