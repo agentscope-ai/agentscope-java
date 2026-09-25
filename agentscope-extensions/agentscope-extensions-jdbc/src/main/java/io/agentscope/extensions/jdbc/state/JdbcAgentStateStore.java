@@ -125,6 +125,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
      * Saves a single value unconditionally. Versioned writes use the same SQL helper but
      * do not invoke this public method; subclasses intercepting writes should override
      * both this method and {@link #saveIfVersion}.
+     *
+     * <p>JSON serialization runs before the transaction opens, so a codec failure propagates
+     * directly instead of wrapped in the {@code "Failed to save state"} RuntimeException
+     * that JDBC failures carry.
      */
     @Override
     public void save(String userId, String sessionId, String key, State value) {
@@ -237,6 +241,13 @@ public class JdbcAgentStateStore implements AgentStateStore {
      * always captured before the write lock is released, so it belongs to the row this
      * call just wrote. {@code UNVERSIONED} is an unconditional write — not a CAS — but it
      * still returns the assigned version.
+     *
+     * <p>{@code expectedVersion} must be {@link AgentStateStore#UNVERSIONED}, {@code 0}, or
+     * a positive version; any other negative value is rejected with {@link
+     * IllegalArgumentException} before any database work. Both this check and the JSON
+     * serialization run outside the transaction, so they propagate raw instead of wrapped
+     * in the {@code "Failed to save state if version"} RuntimeException that JDBC failures
+     * carry.
      */
     @Override
     public long saveIfVersion(
@@ -244,6 +255,11 @@ public class JdbcAgentStateStore implements AgentStateStore {
         String slotId = slotId(userId, sessionId);
         validateSlotId(slotId);
         validateStateKey(key);
+        if (expectedVersion != UNVERSIONED && expectedVersion < 0L) {
+            throw new IllegalArgumentException(
+                    "expectedVersion must be UNVERSIONED, 0, or a positive version; got "
+                            + expectedVersion);
+        }
         String json = JsonUtils.getJsonCodec().toJson(value);
 
         if (expectedVersion == UNVERSIONED) {
@@ -266,7 +282,9 @@ public class JdbcAgentStateStore implements AgentStateStore {
      * CAS write body: {@code expectedVersion == 0} inserts if absent (savepoint-guarded,
      * with the 0 -> 1 backfill bump), any higher version takes the versioned UPDATE.
      * Returns the new version, or {@link AgentStateStore#UNVERSIONED} when the compare
-     * fails and nothing was written.
+     * fails and nothing was written. {@code saveIfVersion} validates {@code expectedVersion}
+     * before dispatch — never negative and never the sentinel — so only {@code 0} and
+     * positive values reach here.
      */
     private long executeCasWrite(
             Connection conn, String slotId, String key, String json, long expectedVersion)
