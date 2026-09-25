@@ -1213,14 +1213,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 .apply(new AgentInput(msgs == null ? List.of() : msgs));
     }
 
-    /** Prepare a single-use event execution handle without starting the call. */
+    /**
+     * Prepare a single-use event execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext context) {
-        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, context));
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(
+                getAgentId(), effective.getRunId(), () -> streamEvents(msgs, effective));
     }
 
-    /** Prepare a single-use reply execution handle without starting the call. */
+    /**
+     * Prepare a single-use reply execution handle without starting the call. Adopts the context's
+     * runId ({@code run.runId() == ctx.getRunId()}). A null context is equivalent to {@link
+     * RuntimeContext#empty()} for the whole call chain — the reactive context always carries a
+     * (possibly empty) context.
+     */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext context) {
-        return AgentRun.create(getAgentId(), () -> call(msgs, context));
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), effective.getRunId(), () -> call(msgs, effective));
     }
 
     // ==================== streamEvents public API ====================
