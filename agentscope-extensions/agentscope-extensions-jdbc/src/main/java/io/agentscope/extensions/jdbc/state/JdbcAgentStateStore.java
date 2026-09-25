@@ -25,6 +25,7 @@ import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Savepoint;
@@ -32,6 +33,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -53,6 +55,13 @@ public class JdbcAgentStateStore implements AgentStateStore {
     private static final String HASH_KEY_SUFFIX = ":_hash";
     private static final int SINGLE_STATE_INDEX = 0;
 
+    /**
+     * Columns the store's SQL reads and writes on the sessions table. Extras such as {@code
+     * created_at} are vendor embellishments and deliberately not required.
+     */
+    private static final List<String> REQUIRED_COLUMNS =
+            List.of("session_id", "state_key", "item_index", "state_data", "version");
+
     private final DataSource dataSource;
     private final SessionStateDialect dialect;
 
@@ -71,7 +80,9 @@ public class JdbcAgentStateStore implements AgentStateStore {
      *
      * @param dataSource the JDBC data source
      * @param dialect the session-state dialect
-     * @param createIfNotExist when true, auto-creates the sessions table
+     * @param createIfNotExist when true, auto-creates the sessions table when absent; an
+     *     existing table is never altered either way — a schema mismatch fails the store at
+     *     startup
      */
     public JdbcAgentStateStore(
             DataSource dataSource, SessionStateDialect dialect, boolean createIfNotExist) {
@@ -79,11 +90,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
         this.dialect = requireNonNull(dialect, "dialect");
         if (createIfNotExist) {
             createTableIfNotExist();
-            ensureVersionColumn();
         } else {
             verifyTableExists();
-            verifyVersionColumnExists();
         }
+        verifyRequiredColumns();
     }
 
     // -------------------------------------------------------------------------
@@ -102,63 +112,54 @@ public class JdbcAgentStateStore implements AgentStateStore {
     }
 
     /**
-     * Migrates a legacy sessions table (created by the deprecated mysql/postgresql store,
-     * whose default table name this module reuses) by adding the missing {@code version}
-     * column. No-op for vendors without a migration DDL and for tables that already have the
-     * column.
+     * The single schema-compatibility gate, run once at startup for both the auto-create and
+     * verify paths: {@code SELECT * FROM <table> WHERE 1 = 0} costs no rows and its {@code
+     * ResultSetMetaData} carries the actual column set, which is compared against the columns
+     * the store's SQL reads and writes. A missing column is a blocking startup error naming
+     * the table and the columns — with the current version's reference CREATE TABLE DDL
+     * logged for the operator to align the schema by hand. The store itself never executes
+     * schema changes beyond {@code CREATE TABLE IF NOT EXISTS} on a fresh table, so no
+     * vendor-specific migration DDL is needed anywhere.
+     *
+     * <p>Column names compare case-insensitively: vendors such as H2 store unquoted
+     * identifiers uppercase while the expected names are lowercase.
      */
-    private void ensureVersionColumn() {
-        String ddl = migrationDdlOrNull();
-        if (ddl == null || versionColumnExists()) {
-            return;
-        }
+    private void verifyRequiredColumns() {
+        String table = dialect.sessionStateTableName();
+        List<String> missing = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
-                Statement stmt = conn.createStatement()) {
-            stmt.execute(ddl);
+                PreparedStatement stmt =
+                        conn.prepareStatement("SELECT * FROM " + table + " WHERE 1 = 0");
+                // Empty result — only the shape matters here.
+                ResultSet rs = stmt.executeQuery()) {
+            ResultSetMetaData meta = rs.getMetaData();
+            Set<String> actual = new HashSet<>();
+            for (int i = 1; i <= meta.getColumnCount(); i++) {
+                actual.add(meta.getColumnLabel(i).toLowerCase(Locale.ROOT));
+            }
+            for (String column : REQUIRED_COLUMNS) {
+                if (!actual.contains(column)) {
+                    missing.add(column);
+                }
+            }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to add version column to session table", e);
+            throw new RuntimeException("Failed to inspect schema of table " + table, e);
         }
-    }
-
-    /**
-     * Read-only counterpart of {@link #ensureVersionColumn()} for the {@code
-     * createIfNotExist=false} path: fails fast at startup with the exact migration DDL to run,
-     * instead of an opaque "Unknown column 'version'" on the first write (#3216).
-     */
-    private void verifyVersionColumnExists() {
-        String ddl = migrationDdlOrNull();
-        if (ddl == null || versionColumnExists()) {
+        if (missing.isEmpty()) {
             return;
+        }
+        for (String ddl : dialect.sessionStateCreateTableDdls()) {
+            LOG.error("Reference CREATE TABLE DDL for table {}: {}", table, ddl);
         }
         throw new IllegalStateException(
                 "Table "
-                        + dialect.sessionStateTableName()
-                        + " exists but is missing the 'version' column (legacy schema from the"
-                        + " deprecated mysql/postgresql store). Apply the migration DDL via your"
-                        + " database migration process: "
-                        + ddl
-                        + ", or use createIfNotExist=true to auto-migrate.");
-    }
-
-    private String migrationDdlOrNull() {
-        // DEFAULT 1 (not 0): the ALTER backfills pre-existing rows with the default, and 0 is
-        // the sentinel getVersioned() reports for "row absent". Backfilling 0 would make every
-        // pre-existing row look absent to saveIfVersion(..., 0) CAS writes.
-        return dialect.sessionStateEnsureVersionColumnDdl().orElse(null);
-    }
-
-    private boolean versionColumnExists() {
-        BoundSql boundSql =
-                dialect.sessionStateCheckVersionColumnExists(dialect.sessionStateTableName());
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(boundSql.sql())) {
-            bindParams(stmt, boundSql.params());
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to check version column existence", e);
-        }
+                        + table
+                        + " is missing required column(s) "
+                        + missing
+                        + " (legacy schema from the deprecated mysql/postgresql store). Align"
+                        + " the table with the reference CREATE TABLE DDL just logged, via your"
+                        + " database migration process — the store never alters an existing"
+                        + " table.");
     }
 
     private void verifyTableExists() {

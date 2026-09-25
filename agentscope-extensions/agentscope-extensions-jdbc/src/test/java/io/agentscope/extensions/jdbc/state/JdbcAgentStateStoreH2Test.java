@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.jdbc.state;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -26,12 +25,8 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.BoundSql;
 import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
-import io.agentscope.extensions.jdbc.dialect.vendor.MysqlDialect;
-import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
-import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -435,22 +430,8 @@ class JdbcAgentStateStoreH2Test {
     }
 
     // ------------------------------------------------------------------
-    //  Legacy-table migration: the version column (#3216)
+    //  Startup schema gate: missing columns block construction (#3216)
     // ------------------------------------------------------------------
-
-    /**
-     * H2 executes the same {@code ALTER TABLE ... ADD COLUMN} MySQL needs; stands in for a
-     * vendor whose tables can pre-date this module.
-     */
-    private static class LegacyMigratingH2Dialect extends H2Dialect {
-
-        @Override
-        public Optional<String> sessionStateEnsureVersionColumnDdl() {
-            return Optional.of(
-                    "ALTER TABLE %s ADD COLUMN version BIGINT NOT NULL DEFAULT 1"
-                            .formatted(sessionStateTableName()));
-        }
-    }
 
     /** Creates the table shape the deprecated mysql/postgresql stores left behind. */
     private static void createLegacySessionsTable(DataSource ds) throws SQLException {
@@ -472,153 +453,99 @@ class JdbcAgentStateStoreH2Test {
     }
 
     @Test
-    @DisplayName("legacy table without version column is migrated on construction")
-    void migratesLegacyTableWithoutVersionColumn() throws SQLException {
-        DataSource legacy = H2TestSupport.createDataSource("legacy_migration_test");
+    @DisplayName("legacy table without version column blocks the auto-create path at startup")
+    void legacyTableBlocksAutoCreatePath() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("legacy_autocreate_test");
         createLegacySessionsTable(legacy);
 
-        JdbcAgentStateStore migrated =
-                new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), true);
+        // CREATE TABLE IF NOT EXISTS is a no-op on the legacy table, so the startup check
+        // is what surfaces the gap — the store never ALTERs an existing table on its own.
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), true));
 
-        // Before the migration this write failed with "Unknown column 'version'".
-        migrated.save("user1", "s1", "agent_state", new TestState("first"));
-        VersionedState<TestState> loaded =
-                migrated.getVersioned("user1", "s1", "agent_state", TestState.class);
-        assertEquals("first", loaded.value().value());
-        assertEquals(1L, loaded.version());
+        assertTrue(
+                exception.getMessage().contains("agentscope_sessions"),
+                "the failure must name the table: " + exception.getMessage());
+        assertTrue(
+                exception.getMessage().contains("[version]"),
+                "the failure must name the missing column: " + exception.getMessage());
     }
 
     @Test
-    @DisplayName("second construction on the migrated table issues no ALTER")
-    void secondConstructionIsIdempotent() throws SQLException {
-        DataSource legacy = H2TestSupport.createDataSource("legacy_idempotency_test");
-        createLegacySessionsTable(legacy);
-        new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), true);
-
-        // A second ALTER on the now-present column would fail on H2 ("column already
-        // exists"), so successful re-construction proves the probe suppressed the DDL.
-        JdbcAgentStateStore second =
-                new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), true);
-        second.save("user1", "s1", "k", new TestState("v"));
-    }
-
-    @Test
-    @DisplayName("createIfNotExist=false on a legacy table fails fast quoting the migration DDL")
-    void verifyPathFailsFastWithMigrationDdl() throws SQLException {
+    @DisplayName("legacy table without version column blocks the verify path too")
+    void legacyTableBlocksVerifyPath() throws SQLException {
         DataSource legacy = H2TestSupport.createDataSource("legacy_verify_test");
         createLegacySessionsTable(legacy);
 
         IllegalStateException exception =
                 assertThrows(
                         IllegalStateException.class,
-                        () ->
-                                new JdbcAgentStateStore(
-                                        legacy, new LegacyMigratingH2Dialect(), false));
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), false));
 
-        assertTrue(exception.getMessage().contains("'version'"));
         assertTrue(
-                exception.getMessage().contains("ADD COLUMN version BIGINT NOT NULL DEFAULT 1"),
-                "the failure must quote the exact migration DDL to run");
+                exception.getMessage().contains("agentscope_sessions")
+                        && exception.getMessage().contains("[version]"),
+                "the failure must name table and missing column: " + exception.getMessage());
     }
 
     @Test
-    @DisplayName("dialects without a migration DDL skip the column check entirely")
-    void freshSchemaVendorsSkipColumnCheck() throws SQLException {
-        DataSource legacy = H2TestSupport.createDataSource("fresh_vendor_test");
-        createLegacySessionsTable(legacy);
+    @DisplayName("the gate is generic: every missing required column is named, not just version")
+    void allMissingColumnsAreNamed() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("multi_missing_test");
+        try (Connection conn = legacy.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(
+                    "CREATE TABLE agentscope_sessions (session_id VARCHAR(255) NOT NULL,"
+                            + " PRIMARY KEY (session_id))");
+        }
 
-        // H2 tables can only originate from this module's CREATE TABLE (which includes
-        // version), so the empty default migration DDL makes both paths no-ops.
-        assertDoesNotThrow(() -> new JdbcAgentStateStore(legacy, new H2Dialect(), false));
-    }
-
-    @Test
-    @DisplayName("a failing version-column probe surfaces as RuntimeException")
-    void versionColumnProbeFailureThrows() {
-        DataSource empty = H2TestSupport.createDataSource("probe_failure_test");
-        SessionStateDialect broken =
-                new LegacyMigratingH2Dialect() {
-                    @Override
-                    public List<String> sessionStateCreateTableDdls() {
-                        return List.of();
-                    }
-
-                    @Override
-                    public BoundSql sessionStateCheckVersionColumnExists(String tableName) {
-                        return new BoundSql("SELECT 1 FROM no_such_meta_table WHERE x = ?", "y");
-                    }
-                };
-
-        RuntimeException exception =
+        IllegalStateException exception =
                 assertThrows(
-                        RuntimeException.class, () -> new JdbcAgentStateStore(empty, broken, true));
+                        IllegalStateException.class,
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), true));
 
+        // H2 stores unquoted identifiers uppercase, so finding session_id but naming
+        // state_key/item_index/state_data/version also proves the case-insensitive match.
         assertTrue(
-                exception.getMessage().contains("version column existence"),
-                "failure must point at the version-column probe: " + exception.getMessage());
+                exception.getMessage().contains("[state_key, item_index, state_data, version]"),
+                "all missing columns must be listed in order: " + exception.getMessage());
     }
 
     @Test
-    @DisplayName("a failing migration DDL execution surfaces as RuntimeException")
-    void migrationDdlFailureThrows() {
-        DataSource empty = H2TestSupport.createDataSource("ddl_failure_test");
-        SessionStateDialect broken =
-                new LegacyMigratingH2Dialect() {
-                    @Override
-                    public List<String> sessionStateCreateTableDdls() {
-                        return List.of();
-                    }
+    @DisplayName("createIfNotExist=false passes on a complete table and stays writable")
+    void verifyPathPassesOnCompleteTable() throws SQLException {
+        DataSource ds = H2TestSupport.createDataSource("complete_verify_test");
+        new JdbcAgentStateStore(ds, new H2Dialect(), true);
 
-                    @Override
-                    public Optional<String> sessionStateEnsureVersionColumnDdl() {
-                        // Syntactically invalid: the probe finds no column, the ALTER fails.
-                        return Optional.of("ALTER TABLE agentscope_sessions ADD COLUMN ((");
-                    }
-                };
-
-        RuntimeException exception =
-                assertThrows(
-                        RuntimeException.class, () -> new JdbcAgentStateStore(empty, broken, true));
-
-        assertTrue(
-                exception.getMessage().contains("add version column"),
-                "failure must point at the migration DDL: " + exception.getMessage());
-    }
-
-    @Test
-    @DisplayName("createIfNotExist=false passes on a table that already has the column")
-    void verifyPathPassesOnMigratedTable() throws SQLException {
-        DataSource legacy = H2TestSupport.createDataSource("migrated_verify_test");
-        createLegacySessionsTable(legacy);
-        new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), true);
-
-        JdbcAgentStateStore verified =
-                new JdbcAgentStateStore(legacy, new LegacyMigratingH2Dialect(), false);
-
+        JdbcAgentStateStore verified = new JdbcAgentStateStore(ds, new H2Dialect(), false);
         verified.save("user1", "s1", "k", new TestState("v"));
         assertEquals("v", verified.get("user1", "s1", "k", TestState.class).orElseThrow().value());
     }
 
     @Test
-    @DisplayName("vendor dialects expose the expected migration DDL")
-    void vendorMigrationDdls() {
-        assertEquals(
-                Optional.of(
-                        "ALTER TABLE agentscope_sessions ADD COLUMN version BIGINT NOT NULL"
-                                + " DEFAULT 1"),
-                new MysqlDialect().sessionStateEnsureVersionColumnDdl());
-        assertEquals(
-                Optional.of(
-                        "ALTER TABLE agentscope_sessions ADD COLUMN IF NOT EXISTS version BIGINT"
-                                + " NOT NULL DEFAULT 1"),
-                new PostgresDialect().sessionStateEnsureVersionColumnDdl());
-        assertEquals(Optional.empty(), new H2Dialect().sessionStateEnsureVersionColumnDdl());
-        assertEquals(Optional.empty(), new SqliteDialect().sessionStateEnsureVersionColumnDdl());
+    @DisplayName("a failing schema probe surfaces as RuntimeException pointing at the table")
+    void schemaProbeFailureThrows() {
+        DataSource empty = H2TestSupport.createDataSource("probe_failure_test");
+        SessionStateDialect noCreateDdl =
+                new H2Dialect() {
+                    @Override
+                    public List<String> sessionStateCreateTableDdls() {
+                        return List.of();
+                    }
+                };
 
-        BoundSql postgresProbe = new PostgresDialect().sessionStateCheckVersionColumnExists("t");
-        assertTrue(postgresProbe.sql().contains("current_schema()"));
-        BoundSql mysqlProbe = new MysqlDialect().sessionStateCheckVersionColumnExists("t");
-        assertTrue(mysqlProbe.sql().contains("UPPER(COLUMN_NAME)"));
+        // No CREATE ran, so the WHERE 1=0 probe cannot resolve the table.
+        RuntimeException exception =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> new JdbcAgentStateStore(empty, noCreateDdl, true));
+
+        assertTrue(
+                exception.getMessage().contains("Failed to inspect schema")
+                        && exception.getMessage().contains("agentscope_sessions"),
+                "failure must point at the schema inspection: " + exception.getMessage());
     }
 
     @Test

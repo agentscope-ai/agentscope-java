@@ -30,7 +30,6 @@ import java.sql.SQLException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -142,29 +141,6 @@ public class MysqlDialect extends AbstractJdbcDialect {
         return new BoundSql(
                 "SELECT 1 FROM INFORMATION_SCHEMA.TABLES"
                         + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                tableName);
-    }
-
-    /**
-     * Legacy tables from the deprecated mysql store lack {@code version}, and MySQL has no
-     * {@code ADD COLUMN IF NOT EXISTS}, so the store probes the column first via {@link
-     * #sessionStateCheckVersionColumnExists(String)}.
-     */
-    @Override
-    public Optional<String> sessionStateEnsureVersionColumnDdl() {
-        return Optional.of(
-                "ALTER TABLE %s ADD COLUMN version BIGINT NOT NULL DEFAULT 1"
-                        .formatted(sessionStateTableName()));
-    }
-
-    @Override
-    public BoundSql sessionStateCheckVersionColumnExists(String tableName) {
-        // SCHEMA() (a DATABASE() synonym on MySQL) also works on H2's MySQL compatibility
-        // mode, where DATABASE() returns the catalog while INFORMATION_SCHEMA uses schemas.
-        return new BoundSql(
-                "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS"
-                        + " WHERE TABLE_SCHEMA = SCHEMA() AND UPPER(TABLE_NAME) = UPPER(?)"
-                        + " AND UPPER(COLUMN_NAME) = 'VERSION'",
                 tableName);
     }
 
