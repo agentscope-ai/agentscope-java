@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -32,6 +33,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -264,6 +266,269 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
+
+        @Test
+        void edit_native_success_uploadsParamsAndRunsInlineScript() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(result.isSuccess());
+            assertEquals("/workspace/f.txt", result.path());
+            assertEquals(1, result.occurrences());
+            // old/new cross the boundary as files, never in the command string
+            assertEquals(2, fs.uploadedFiles.size());
+            assertEquals(
+                    "World",
+                    new String(fs.uploadedFiles.get(0).getValue(), StandardCharsets.UTF_8));
+            assertEquals(
+                    "Java", new String(fs.uploadedFiles.get(1).getValue(), StandardCharsets.UTF_8));
+            assertTrue(fs.lastCommand.contains("python3 - "));
+            assertTrue(fs.lastCommand.contains("'/workspace/f.txt'"));
+            assertTrue(fs.lastCommand.contains("__AGENTSCOPE_EDIT_PY__"));
+            // param tmp dir is cleaned up in the chained command
+            assertTrue(fs.lastCommand.contains("rm -rf "));
+            // python's exit status must survive the trailing rm (else 127 never reaches Java)
+            assertTrue(
+                    fs.lastCommand.contains("exit $__ec"),
+                    "exit code passthrough required: " + fs.lastCommand);
+        }
+
+        @Test
+        void edit_native_writeFailedDetailWithErrorLikePath_notMisclassified() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse(
+                            "__RESULT__{\"error\": \"write_failed\", \"detail\": \"[Errno 13]"
+                                    + " '/ws/string_not_found/x'\"}\n",
+                            0,
+                            false));
+
+            EditResult result = fs.edit(RT, "/ws/string_not_found/x", "a", "b", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("Error editing file"));
+            assertFalse(result.error().contains("String not found in file"));
+        }
+
+        @Test
+        void edit_native_multilineParams_notInCommandString() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
+            String oldStr = "line2\"quote\\backslash\nline2b";
+            String newStr = "replaced\"line\\here\nnewline";
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", oldStr, newStr, false);
+
+            assertTrue(result.isSuccess());
+            assertEquals(oldStr, new String(fs.uploadedFiles.get(0).getValue()));
+            assertEquals(newStr, new String(fs.uploadedFiles.get(1).getValue()));
+            assertFalse(
+                    fs.lastCommand.contains(oldStr),
+                    "user content must not leak into the command string");
+        }
+
+        @Test
+        void edit_native_stringNotFound_mapsError() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse("__RESULT__{\"error\": \"string_not_found\"}\n", 0, false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "nonexistent", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+        }
+
+        @Test
+        void edit_native_multipleOccurrences_mapsCount() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse(
+                            "__RESULT__{\"error\": \"multiple_occurrences\", \"count\": 3}\n",
+                            0,
+                            false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "foo", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("3 times"));
+        }
+
+        @Test
+        void edit_native_paramUploadFails_fallsBackToTransfer() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withParamUploadFailure("/tmp not writable");
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "param upload failure should degrade to transfer path: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
+            // cleanup ran before fallback download
+            assertTrue(fs.lastCommand.contains("rm -rf "));
+        }
+
+        @Test
+        void edit_emptyOldString_failsFast() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+            assertTrue(fs.uploadedFiles.isEmpty());
+        }
+
+        @Test
+        void edit_pythonMissing_fallsBackToTransfer() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "fallback should succeed: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
+            // 2 param uploads + 1 re-upload of edited content
+            assertEquals(3, fs.uploadedFiles.size());
+            assertEquals(
+                    "Hello Java!",
+                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void edit_pythonMissing_transferDownloadFails_returnsFileNotFound() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("python3: command not found", 127, false));
+            fs.withDownloadResult(List.of());
+
+            EditResult result = fs.edit(RT, "/workspace/missing.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not found"));
+        }
+
+        @Test
+        void edit_pythonMissing_transferStringNotFound() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "hello world".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "nonexistent", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+            // params uploaded, then transfer downloaded without re-upload
+            assertEquals(2, fs.uploadedFiles.size());
+        }
+
+        @Test
+        void edit_pythonMissing_transferMultipleOccurrences() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("python3: command not found", 127, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "foo bar foo".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "foo", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("appears"));
+        }
+
+        @Test
+        void edit_pythonMissing_transferReplaceAll() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "a b a b a".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "a", "x", true);
+
+            assertTrue(result.isSuccess());
+            assertEquals(3, result.occurrences());
+            assertEquals(
+                    "x b x b x",
+                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void edit_pythonMissing_transferEmptyFile() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.success("/workspace/f.txt", new byte[0])));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("empty"));
+        }
+
+        @Test
+        void edit_pythonMissing_transferUploadFails() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "hello world".getBytes())));
+            fs.withTransferUploadFailure("disk full");
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "world", "Java", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("disk full"));
+        }
+
+        @Test
+        void edit_pythonMissing_stderrOnly_exitZero_fallsBack() {
+            // Backends that report "python3: not found" on stderr while the trailing
+            // shell commands keep the overall exit code at 0 (before exit passthrough,
+            // or when stderr is the only signal available).
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 0, false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "stderr-based detection should fall back: " + result.error());
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_nullNewString_nativeTreatsAsDeletion() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", null, false);
+
+            assertTrue(result.isSuccess());
+            assertEquals(0, fs.uploadedFiles.get(1).getValue().length);
+        }
     }
 
     // ================================================================
@@ -358,11 +623,166 @@ class BaseSandboxFilesystemTest {
             LsResult r = fs.ls(RT, file.toAbsolutePath().toString());
             assertFalse(r.isSuccess(), "ls on a file path should fail");
         }
+
+        @Test
+        void edit_simpleReplacement() throws IOException {
+            Path file = tmpDir.resolve("test.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("Hello Java", Files.readString(file));
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_withSpecialCharacters() throws IOException {
+            Path file = tmpDir.resolve("special.txt");
+            Files.writeString(file, "line1\nline2\"quote\\backslash\nline3");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result =
+                    fs.edit(
+                            RT,
+                            file.toString(),
+                            "line2\"quote\\backslash",
+                            "replaced\"line\\here",
+                            false);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("line1\nreplaced\"line\\here\nline3", Files.readString(file));
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_replaceAll() throws IOException {
+            Path file = tmpDir.resolve("replace.txt");
+            Files.writeString(file, "a b a b a");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "a", "x", true);
+
+            assertTrue(result.isSuccess(), "edit should succeed: " + result.error());
+            assertEquals("x b x b x", Files.readString(file));
+            assertEquals(3, result.occurrences());
+        }
+
+        @Test
+        void edit_fileNotFound() {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result =
+                    fs.edit(RT, tmpDir.resolve("nonexistent.txt").toString(), "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not found"));
+        }
+
+        @Test
+        void edit_stringNotFound() throws IOException {
+            Path file = tmpDir.resolve("missing.txt");
+            Files.writeString(file, "Hello World");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "Goodbye", "Hi", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("String not found"));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll() throws IOException {
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "foo bar foo baz foo");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, file.toString(), "foo", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("appears"));
+        }
     }
 
     // ================================================================
     // Test helpers
     // ================================================================
+
+    private static final class EditSpyFilesystem extends BaseSandboxFilesystem {
+
+        final List<String> downloadedPaths = new ArrayList<>();
+        final List<Map.Entry<String, byte[]>> uploadedFiles = new ArrayList<>();
+        String lastCommand;
+        int executeCalls;
+        private List<FileDownloadResponse> cannedDownload = List.of();
+        private ExecuteResponse cannedExecute =
+                new ExecuteResponse("__RESULT__{\"count\": 1}\n", 0, false);
+        private String uploadFailure;
+        private String paramUploadFailure;
+        private String transferUploadFailure;
+
+        void withDownloadResult(List<FileDownloadResponse> responses) {
+            this.cannedDownload = responses;
+        }
+
+        void withExecuteResult(ExecuteResponse response) {
+            this.cannedExecute = response;
+        }
+
+        void withUploadFailure(String error) {
+            this.uploadFailure = error;
+        }
+
+        /** Fail only param uploads (paths under {@code /tmp/agentscope-edit-}). */
+        void withParamUploadFailure(String error) {
+            this.paramUploadFailure = error;
+        }
+
+        /** Fail only non-param uploads (i.e. the transfer-phase re-upload, not old.bin/new.bin). */
+        void withTransferUploadFailure(String error) {
+            this.transferUploadFailure = error;
+        }
+
+        @Override
+        public String id() {
+            return "edit-spy";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            executeCalls++;
+            lastCommand = command;
+            return cannedExecute;
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            uploadedFiles.addAll(files);
+            List<FileUploadResponse> results = new ArrayList<>();
+            for (Map.Entry<String, byte[]> entry : files) {
+                boolean isParam = entry.getKey().startsWith("/tmp/agentscope-edit-");
+                if (uploadFailure != null) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), uploadFailure));
+                } else if (paramUploadFailure != null && isParam) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), paramUploadFailure));
+                } else if (transferUploadFailure != null && !isParam) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), transferUploadFailure));
+                } else {
+                    results.add(FileUploadResponse.success(entry.getKey()));
+                }
+            }
+            return results;
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            downloadedPaths.addAll(paths);
+            return cannedDownload;
+        }
+    }
 
     private static final class FakeSandboxFilesystem extends BaseSandboxFilesystem {
 
@@ -468,13 +888,35 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-            return List.of();
+            List<FileUploadResponse> results = new ArrayList<>();
+            for (Map.Entry<String, byte[]> entry : files) {
+                try {
+                    Path dest = Path.of(entry.getKey());
+                    if (dest.getParent() != null) {
+                        Files.createDirectories(dest.getParent());
+                    }
+                    Files.write(dest, entry.getValue());
+                    results.add(FileUploadResponse.success(entry.getKey()));
+                } catch (IOException e) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), e.getMessage()));
+                }
+            }
+            return results;
         }
 
         @Override
         public List<FileDownloadResponse> downloadFiles(
                 RuntimeContext runtimeContext, List<String> paths) {
-            return List.of();
+            List<FileDownloadResponse> results = new ArrayList<>();
+            for (String path : paths) {
+                try {
+                    byte[] content = Files.readAllBytes(Path.of(path));
+                    results.add(FileDownloadResponse.success(path, content));
+                } catch (IOException e) {
+                    results.add(FileDownloadResponse.fail(path, e.getMessage()));
+                }
+            }
+            return results;
         }
     }
 }

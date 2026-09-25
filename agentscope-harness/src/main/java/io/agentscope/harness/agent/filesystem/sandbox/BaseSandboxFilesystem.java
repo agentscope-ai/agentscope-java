@@ -30,10 +30,13 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Abstract base sandbox implementation with {@link #execute} as the core abstract method.
@@ -42,7 +45,11 @@ import java.util.Map;
  * delegating
  * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
  * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * transfer to {@link #uploadFiles}. Edit runs a static inline Python script inside the sandbox
+ * ({@code old}/{@code new} cross the boundary as files, the command line carries paths only),
+ * falling back to download via {@link #downloadFiles}, Java replacement via
+ * {@link io.agentscope.harness.agent.filesystem.util.FilesystemUtils}, and re-upload via
+ * {@link #uploadFiles} when {@code python3} is unavailable.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -53,6 +60,8 @@ import java.util.Map;
  * </ul>
  */
 public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem {
+
+    private static final Logger log = LoggerFactory.getLogger(BaseSandboxFilesystem.class);
 
     @Override
     public abstract String id();
@@ -217,11 +226,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         List<FileUploadResponse> responses =
                 uploadFiles(
                         runtimeContext,
-                        List.of(
-                                Map.entry(
-                                        filePath,
-                                        content.getBytes(
-                                                java.nio.charset.StandardCharsets.UTF_8))));
+                        List.of(Map.entry(filePath, content.getBytes(StandardCharsets.UTF_8))));
         if (responses.isEmpty() || !responses.get(0).isSuccess()) {
             String err =
                     responses.isEmpty() ? "upload returned no response" : responses.get(0).error();
@@ -231,6 +236,94 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         return WriteResult.ok(filePath);
     }
 
+    /**
+     * Static Python helper executed via heredoc. User content never enters the command string:
+     * {@code old}/{@code new} arrive as files, {@code sys.argv} carries paths only. Output is a
+     * single {@code __RESULT__{json}} line so parsing never touches user content.
+     */
+    private static final String EDIT_SCRIPT =
+            """
+            import os, sys, json
+            target, old_file, new_file = sys.argv[1], sys.argv[2], sys.argv[3]
+            replace_all = sys.argv[4] == "true"
+            def result(obj):
+                print("__RESULT__" + json.dumps(obj))
+            if not os.path.isfile(target):
+                result({"error": "file_not_found"})
+                sys.exit(0)
+            try:
+                with open(old_file, "rb") as f:
+                    old = f.read().decode("utf-8")
+                with open(new_file, "rb") as f:
+                    new = f.read().decode("utf-8")
+            except Exception as e:
+                result({"error": "read_failed", "detail": str(e)})
+                sys.exit(0)
+            if old == "":
+                result({"error": "string_not_found"})
+                sys.exit(0)
+            try:
+                with open(target, "rb") as f:
+                    text = f.read().decode("utf-8")
+            except Exception as e:
+                result({"error": "read_failed", "detail": str(e)})
+                sys.exit(0)
+            if len(text) == 0:
+                result({"error": "empty"})
+                sys.exit(0)
+            count = text.count(old)
+            if count == 0:
+                result({"error": "string_not_found"})
+                sys.exit(0)
+            if count > 1 and not replace_all:
+                result({"error": "multiple_occurrences", "count": count})
+                sys.exit(0)
+            out = text.replace(old, new) if replace_all else text.replace(old, new, 1)
+            out_bytes = out.encode("utf-8")
+            # realpath so os.replace writes through symlinks (replacing the link
+            # itself would break workspace symlinks) and stays on target's mount.
+            real = os.path.realpath(target)
+            st = os.stat(real)
+            tmp_out = real + ".agentscope-edit-tmp-" + str(os.getpid())
+            try:
+                with open(tmp_out, "wb") as f:
+                    f.write(out_bytes)
+                os.chmod(tmp_out, st.st_mode)
+                try:
+                    os.replace(tmp_out, real)
+                except OSError:
+                    import shutil
+                    shutil.copyfile(tmp_out, real)
+                    os.remove(tmp_out)
+            except OSError:
+                # Directory not writable for a new temp file — fall back to
+                # writing the existing file in place (previous behavior).
+                try:
+                    if os.path.exists(tmp_out):
+                        os.remove(tmp_out)
+                except Exception:
+                    pass
+                try:
+                    with open(real, "wb") as f:
+                        f.write(out_bytes)
+                except Exception as e:
+                    result({"error": "write_failed", "detail": str(e)})
+                    sys.exit(0)
+            except Exception as e:
+                try:
+                    if os.path.exists(tmp_out):
+                        os.remove(tmp_out)
+                except Exception:
+                    pass
+                result({"error": "write_failed", "detail": str(e)})
+                sys.exit(0)
+            result({"count": count})
+            """;
+
+    private static final String EDIT_HEREDOC_DELIMITER = "__AGENTSCOPE_EDIT_PY__";
+
+    private static final String EDIT_RESULT_MARKER = "__RESULT__";
+
     @Override
     public EditResult edit(
             RuntimeContext runtimeContext,
@@ -238,84 +331,230 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             String oldString,
             String newString,
             boolean replaceAll) {
-        String payload =
-                "{\"path\":\""
-                        + jsonEscape(filePath)
-                        + "\","
-                        + "\"old\":\""
-                        + jsonEscape(oldString)
-                        + "\","
-                        + "\"new\":\""
-                        + jsonEscape(newString)
-                        + "\","
-                        + "\"replace_all\":"
-                        + replaceAll
-                        + "}";
-        String payloadB64 =
-                Base64.getEncoder()
-                        .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (oldString == null || oldString.isEmpty()) {
+            return EditResult.fail("Error: String not found in file: '" + oldString + "'");
+        }
+        // A null newString means deletion: fallback path inserts "" (previously replaceAll
+        // threw NPE and non-replaceAll inserted the literal "null"). Documented behavior.
+        String safeNew = newString == null ? "" : newString;
+
+        String tmpDir = "/tmp/agentscope-edit-" + UUID.randomUUID().toString().substring(0, 8);
+        String oldPath = tmpDir + "/old.bin";
+        String newPath = tmpDir + "/new.bin";
+
+        List<FileUploadResponse> params =
+                uploadFiles(
+                        runtimeContext,
+                        List.of(
+                                Map.entry(oldPath, oldString.getBytes(StandardCharsets.UTF_8)),
+                                Map.entry(newPath, safeNew.getBytes(StandardCharsets.UTF_8))));
+        if (params.size() < 2 || !params.get(0).isSuccess() || !params.get(1).isSuccess()) {
+            String err = "upload returned no response";
+            for (FileUploadResponse r : params) {
+                if (!r.isSuccess()) {
+                    err = r.error();
+                    break;
+                }
+            }
+            log.warn("[sandbox-fs] edit param upload failed ({}), falling back to transfer", err);
+            executeCleanup(runtimeContext, tmpDir);
+            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+        }
 
         String cmd =
-                "python3 -c \"import sys, os, base64, json\\n"
-                    + "payload ="
-                    + " json.loads(base64.b64decode(sys.stdin.read().strip()).decode('utf-8'))\\n"
-                    + "path, old, new = payload['path'], payload['old'], payload['new']\\n"
-                    + "replace_all = payload.get('replace_all', False)\\n"
-                    + "if not os.path.isfile(path):\\n"
-                    + "    print(json.dumps({'error': 'file_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "with open(path, 'rb') as f: text = f.read().decode('utf-8')\\n"
-                    + "count = text.count(old)\\n"
-                    + "if count == 0:\\n"
-                    + "    print(json.dumps({'error': 'string_not_found'}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "if count > 1 and not replace_all:\\n"
-                    + "    print(json.dumps({'error': 'multiple_occurrences', 'count': count}))\\n"
-                    + "    sys.exit(0)\\n"
-                    + "result = text.replace(old, new) if replace_all else text.replace(old, new,"
-                    + " 1)\\n"
-                    + "with open(path, 'wb') as f: f.write(result.encode('utf-8'))\\n"
-                    + "print(json.dumps({'count': count}))\\n"
-                    + "\" 2>&1 <<'__EDIT_EOF__'\n"
-                        + payloadB64
-                        + "\n__EDIT_EOF__\n";
+                "python3 - "
+                        + FilesystemUtils.shellQuote(filePath)
+                        + " "
+                        + FilesystemUtils.shellQuote(oldPath)
+                        + " "
+                        + FilesystemUtils.shellQuote(newPath)
+                        + " "
+                        + (replaceAll ? "true" : "false")
+                        + " <<'"
+                        + EDIT_HEREDOC_DELIMITER
+                        + "'\n"
+                        + EDIT_SCRIPT
+                        + EDIT_HEREDOC_DELIMITER
+                        + "\n__ec=$?; rm -rf "
+                        + FilesystemUtils.shellQuote(tmpDir)
+                        + "; exit $__ec";
 
-        ExecuteResponse result = execute(runtimeContext, cmd, null);
-        String output = result.output() != null ? result.output().strip() : "";
-
-        if (output.contains("\"error\"")) {
-            if (output.contains("file_not_found")) {
-                return EditResult.fail("Error: File '" + filePath + "' not found");
-            }
-            if (output.contains("string_not_found")) {
-                return EditResult.fail("Error: String not found in file: '" + oldString + "'");
-            }
-            if (output.contains("multiple_occurrences")) {
-                return EditResult.fail(
-                        "Error: String '"
-                                + oldString
-                                + "' appears multiple times. Use replaceAll=true to replace all"
-                                + " occurrences.");
-            }
-            return EditResult.fail("Error editing file '" + filePath + "': " + output);
+        ExecuteResponse execResult;
+        try {
+            execResult = execute(runtimeContext, cmd, null);
+        } catch (Exception e) {
+            log.warn("[sandbox-fs] native edit execute failed, falling back to transfer", e);
+            executeCleanup(runtimeContext, tmpDir);
+            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
         }
-
-        if (output.contains("\"count\"")) {
-            try {
-                int countIdx = output.indexOf("\"count\":") + 8;
-                int endIdx = output.indexOf('}', countIdx);
-                int count = Integer.parseInt(output.substring(countIdx, endIdx).trim());
-                return EditResult.ok(filePath, count);
-            } catch (NumberFormatException e) {
-                return EditResult.ok(filePath, 1);
-            }
+        String output = execResult.output() != null ? execResult.output() : "";
+        int marker = output.indexOf(EDIT_RESULT_MARKER);
+        if (marker >= 0) {
+            return mapNativeResult(
+                    filePath, oldString, output.substring(marker + EDIT_RESULT_MARKER.length()));
         }
-
+        if (isPythonMissing(execResult)) {
+            executeCleanup(runtimeContext, tmpDir);
+            return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+        }
+        executeCleanup(runtimeContext, tmpDir);
+        String stripped = output.strip();
+        String excerpt = stripped.substring(0, Math.min(200, stripped.length()));
         return EditResult.fail(
                 "Error editing file '"
                         + filePath
-                        + "': unexpected server response: "
-                        + output.substring(0, Math.min(200, output.length())));
+                        + "' (exitCode="
+                        + execResult.exitCode()
+                        + "): unexpected server response: "
+                        + excerpt);
+    }
+
+    private void executeCleanup(RuntimeContext runtimeContext, String tmpDir) {
+        try {
+            execute(runtimeContext, "rm -rf " + FilesystemUtils.shellQuote(tmpDir), null);
+        } catch (Exception ignored) {
+            // best effort only
+        }
+    }
+
+    private static boolean isPythonMissing(ExecuteResponse response) {
+        if (response.exitCode() != null && response.exitCode() == 127) {
+            return true;
+        }
+        String out = response.output() != null ? response.output().toLowerCase() : "";
+        return out.contains("python3") && (out.contains("not found") || out.contains("no such"));
+    }
+
+    private static EditResult mapNativeResult(String filePath, String oldString, String json) {
+        // Parse the "error" field exactly: the "detail" value embeds exception text that may
+        // itself contain user-controlled paths, so substring matching on the whole payload can
+        // misclassify (e.g. a path containing "string_not_found").
+        String error = parseErrorToken(json);
+        if ("multiple_occurrences".equals(error)) {
+            int count = parseCount(json);
+            if (count > 1) {
+                return EditResult.fail(
+                        "Error: String '"
+                                + oldString
+                                + "' appears "
+                                + count
+                                + " times in file. "
+                                + "Use replaceAll=true to replace all instances, or provide a more"
+                                + " specific string with surrounding context.");
+            }
+            return EditResult.fail(
+                    "Error: String '"
+                            + oldString
+                            + "' appears multiple times. Use replaceAll=true to replace all"
+                            + " occurrences.");
+        }
+        if ("string_not_found".equals(error)) {
+            return EditResult.fail("Error: String not found in file: '" + oldString + "'");
+        }
+        if ("file_not_found".equals(error)) {
+            return EditResult.fail("Error: File '" + filePath + "' not found");
+        }
+        if ("empty".equals(error)) {
+            return EditResult.fail("Error: File '" + filePath + "' is empty");
+        }
+        if ("read_failed".equals(error) || "write_failed".equals(error)) {
+            return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
+        }
+        if (error != null) {
+            return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
+        }
+        if (json.contains("\"count\"")) {
+            return EditResult.ok(filePath, parseCount(json));
+        }
+        return EditResult.fail("Error editing file '" + filePath + "': " + json.trim());
+    }
+
+    /** Extract the value of the top-level {@code "error"} field, or {@code null} if absent. */
+    private static String parseErrorToken(String json) {
+        int key = json.indexOf("\"error\"");
+        if (key < 0) {
+            return null;
+        }
+        int colon = json.indexOf(':', key);
+        if (colon < 0) {
+            return null;
+        }
+        int open = json.indexOf('"', colon);
+        if (open < 0) {
+            return null;
+        }
+        int close = json.indexOf('"', open + 1);
+        if (close < 0) {
+            return null;
+        }
+        return json.substring(open + 1, close);
+    }
+
+    private static int parseCount(String json) {
+        int idx = json.indexOf("\"count\"");
+        if (idx < 0) {
+            return 1;
+        }
+        int colon = json.indexOf(':', idx);
+        if (colon < 0) {
+            return 1;
+        }
+        int start = colon + 1;
+        while (start < json.length() && !Character.isDigit(json.charAt(start))) {
+            start++;
+        }
+        int end = start;
+        while (end < json.length() && Character.isDigit(json.charAt(end))) {
+            end++;
+        }
+        if (start >= end) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(json.substring(start, end));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    /** Fallback when {@code python3} is unavailable: download, replace in Java, re-upload. */
+    private EditResult editViaTransfer(
+            RuntimeContext runtimeContext,
+            String filePath,
+            String oldString,
+            String newString,
+            boolean replaceAll) {
+        List<FileDownloadResponse> downloaded = downloadFiles(runtimeContext, List.of(filePath));
+        if (downloaded.isEmpty() || !downloaded.get(0).isSuccess()) {
+            return EditResult.fail("Error: File '" + filePath + "' not found");
+        }
+        byte[] contentBytes = downloaded.get(0).content();
+        if (contentBytes == null || contentBytes.length == 0) {
+            return EditResult.fail("Error: File '" + filePath + "' is empty");
+        }
+        String content = new String(contentBytes, StandardCharsets.UTF_8);
+
+        FilesystemUtils.ReplacementResult result =
+                FilesystemUtils.performStringReplacement(content, oldString, newString, replaceAll);
+
+        if (!result.isSuccess()) {
+            return EditResult.fail(result.error());
+        }
+
+        String newContent = result.content();
+        int occurrences = result.occurrences();
+
+        List<FileUploadResponse> uploaded =
+                uploadFiles(
+                        runtimeContext,
+                        List.of(Map.entry(filePath, newContent.getBytes(StandardCharsets.UTF_8))));
+        if (uploaded.isEmpty() || !uploaded.get(0).isSuccess()) {
+            String err =
+                    uploaded.isEmpty() ? "upload returned no response" : uploaded.get(0).error();
+            return EditResult.fail("Error writing edited file '" + filePath + "': " + err);
+        }
+
+        return EditResult.ok(filePath, occurrences);
     }
 
     @Override
@@ -490,16 +729,5 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     private static long parseEpochSeconds(String s) {
         long epochSec = parseLongSafe(s);
         return epochSec * 1000;
-    }
-
-    private static String jsonEscape(String s) {
-        if (s == null) {
-            return "";
-        }
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 }

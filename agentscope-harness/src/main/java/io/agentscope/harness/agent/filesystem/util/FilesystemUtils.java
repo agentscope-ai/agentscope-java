@@ -47,30 +47,45 @@ public final class FilesystemUtils {
         return BINARY_EXTENSIONS.contains(ext) ? "binary" : "text";
     }
 
+    /** Result of a string replacement operation. */
+    public record ReplacementResult(String content, int occurrences, String error) {
+
+        public static ReplacementResult success(String content, int occurrences) {
+            return new ReplacementResult(content, occurrences, null);
+        }
+
+        public static ReplacementResult error(String message) {
+            return new ReplacementResult(null, 0, message);
+        }
+
+        public boolean isSuccess() {
+            return error == null;
+        }
+    }
+
     /**
      * Perform string replacement with occurrence validation.
      *
-     * @return a two-element array {@code [newContent, occurrenceCount]} on success,
-     *         or a single-element array {@code [errorMessage]} on failure
+     * @return {@link ReplacementResult#success(String, int)} on success, or
+     *         {@link ReplacementResult#error(String)} on failure
      */
-    public static Object[] performStringReplacement(
+    public static ReplacementResult performStringReplacement(
             String content, String oldString, String newString, boolean replaceAll) {
         int occurrences = countOccurrences(content, oldString);
 
         if (occurrences == 0) {
-            return new Object[] {"Error: String not found in file: '" + oldString + "'"};
+            return ReplacementResult.error("Error: String not found in file: '" + oldString + "'");
         }
 
         if (occurrences > 1 && !replaceAll) {
-            return new Object[] {
-                "Error: String '"
-                        + oldString
-                        + "' appears "
-                        + occurrences
-                        + " times in file. "
-                        + "Use replaceAll=true to replace all instances, or provide a more specific"
-                        + " string with surrounding context."
-            };
+            return ReplacementResult.error(
+                    "Error: String '"
+                            + oldString
+                            + "' appears "
+                            + occurrences
+                            + " times in file. "
+                            + "Use replaceAll=true to replace all instances, or provide a more"
+                            + " specific string with surrounding context.");
         }
 
         String newContent;
@@ -83,7 +98,7 @@ public final class FilesystemUtils {
                             + newString
                             + content.substring(idx + oldString.length());
         }
-        return new Object[] {newContent, occurrences};
+        return ReplacementResult.success(newContent, occurrences);
     }
 
     /** Count non-overlapping occurrences of a substring. */
