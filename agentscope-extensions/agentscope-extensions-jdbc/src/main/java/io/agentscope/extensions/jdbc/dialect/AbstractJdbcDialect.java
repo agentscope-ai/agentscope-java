@@ -149,6 +149,20 @@ public abstract class AbstractJdbcDialect
     }
 
     /**
+     * The key columns this dialect declares, exposed for package-local assertions.
+     *
+     * <p>{@code binaryCollationColumns()} is {@code protected} and declared here, so Java's protected
+     * rule lets only this package read it on a {@code vendor} subclass instance; this accessor keeps
+     * that reachable in tests without reflection and without widening the vendor API.
+     *
+     * @param dialect the dialect to read
+     * @return the declared key columns, in declaration order
+     */
+    static List<BinaryCollationColumn> keyColumnsOf(final AbstractJdbcDialect dialect) {
+        return dialect.binaryCollationColumns();
+    }
+
+    /**
      * Warns once for every declared key column whose actual collation is not
      * {@value #BINARY_COLLATION}.
      *
@@ -169,23 +183,20 @@ public abstract class AbstractJdbcDialect
     public List<BinaryCollationColumn> verifyBinaryCollation() {
         List<BinaryCollationColumn> mismatched = new ArrayList<>();
         for (BinaryCollationColumn each : binaryCollationColumns()) {
-            String collation = findCollation(each);
+            String collation = attachedCollation(each);
             if (collation != null && !BINARY_COLLATION.equalsIgnoreCase(collation)) {
                 mismatched.add(each);
             }
         }
         for (BinaryCollationColumn each : mismatched) {
             LOG.warn(
-                    "Column {}.{} is not {}.{} — keys that differ only in letter case still collide"
-                        + " on this existing table, so one write silently overwrites the other."
-                        + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {} (this also makes '='"
-                        + " and 'LIKE prefix%' case-sensitive on that column).",
-                    each.table(),
-                    each.column(),
-                    BINARY_COLLATION,
+                    "Column {}.{} is not {}. Keys that differ only in letter case still collide on"
+                        + " this existing table, so one write silently overwrites the other."
+                        + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {}. That also makes '='"
+                        + " and 'LIKE prefix%' case-sensitive on the column, so run it outside a"
+                        + " busy window.",
                     each.column(),
                     each.table(),
-                    each.column(),
                     BINARY_COLLATION,
                     each.table(),
                     each.column(),
@@ -194,29 +205,26 @@ public abstract class AbstractJdbcDialect
         return mismatched;
     }
 
-    private String findCollation(BinaryCollationColumn column) {
-        String sql =
-                "SELECT COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS"
-                        + " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?";
-        try (Connection conn = getDataSource().getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, column.table());
-            stmt.setString(2, column.column());
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() ? rs.getString(1) : null;
-            }
-        } catch (SQLException e) {
-            LOG.debug(
-                    "Could not read the collation of {}.{}: {}",
-                    column.table(),
-                    column.column(),
-                    e.getMessage());
-            return null;
-        }
+    /**
+     * Reads the collation currently attached to {@code column}, or {@code null} when it cannot be
+     * determined: no matching row (a fresh install, or a table that does not exist yet) or a query
+     * failure, logged at debug level.
+     *
+     * <p>The base implementation returns {@code null} without querying. The catalog lookup is
+     * vendor-specific — MySQL reads {@code INFORMATION_SCHEMA.COLUMNS}, but that schema, its
+     * {@code COLLATION_NAME} column and {@code DATABASE()} are not portable — so a default here
+     * would have to invent one. Vendors declare columns via {@link #binaryCollationColumns()} and
+     * override this with their own query.
+     *
+     * @param column the column to look up
+     * @return the attached collation, or {@code null} when unknown
+     */
+    protected String attachedCollation(BinaryCollationColumn column) {
+        return null;
     }
 
     /** The binary collation the schema DDL pins on key columns. */
-    public static final String BINARY_COLLATION = "utf8mb4_bin";
+    static final String BINARY_COLLATION = "utf8mb4_bin";
 
     /**
      * A key column expected to use {@value #BINARY_COLLATION}.

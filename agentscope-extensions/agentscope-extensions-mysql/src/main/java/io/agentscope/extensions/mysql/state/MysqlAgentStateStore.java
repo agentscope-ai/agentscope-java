@@ -218,6 +218,10 @@ public class MysqlAgentStateStore implements AgentStateStore {
      * {@value #BINARY_COLLATION}, warning once for each. Package-private so a unit test can drive it
      * with a mocked {@code INFORMATION_SCHEMA} result instead of a live MySQL server.
      *
+     * <p>Any failure is reported as "nothing to warn about" rather than propagated — including
+     * unchecked exceptions from the driver or pool, because a probe that cannot run must not stop the
+     * store from being constructed.
+     *
      * @return names of the key columns still not using {@value #BINARY_COLLATION}, in the order the
      *     database reports them; empty when they all agree
      */
@@ -240,27 +244,19 @@ public class MysqlAgentStateStore implements AgentStateStore {
                     }
                 }
             }
-        } catch (SQLException e) {
+        } catch (SQLException | RuntimeException e) {
             LOG.debug(
                     "Could not read key-column collations from {}: {}", tableName, e.getMessage());
             return stale;
         }
         for (String column : stale) {
             LOG.warn(
-                    "Column {}.{} is not {}.{}. Keys that differ only in letter case still collide"
-                            + " on this existing table, so one write silently overwrites the other."
-                            + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {} (this also makes"
-                            + " '=' and 'LIKE prefix%' case-sensitive on that column).",
-                    tableName,
-                    column,
-                    BINARY_COLLATION,
-                    column,
-                    tableName,
-                    column,
-                    BINARY_COLLATION,
-                    tableName,
-                    column,
-                    BINARY_COLLATION);
+                    "Column {}.{} is not {}. Keys that differ only in letter case still collide on"
+                            + " this existing table, so one write silently overwrites the other."
+                            + " Migrate with: ALTER TABLE {} MODIFY {} COLLATE {}. That also makes"
+                            + " '=' and 'LIKE prefix%' case-sensitive on the column, so run it"
+                            + " outside a busy window.",
+                    column, tableName, BINARY_COLLATION, tableName, column, BINARY_COLLATION);
         }
         return stale;
     }

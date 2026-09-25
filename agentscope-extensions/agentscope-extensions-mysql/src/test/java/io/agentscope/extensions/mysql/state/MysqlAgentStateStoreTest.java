@@ -41,7 +41,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
 /**
@@ -73,16 +72,16 @@ class MysqlAgentStateStoreTest {
         when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         when(preparedStatement.executeQuery()).thenReturn(resultSet);
         when(preparedStatement.executeUpdate()).thenReturn(1);
-        // Constructor verification calls: verifyDatabaseExists, verifyTableExists,
-        // ensureVersionColumn — the first three need resultSet.next() → true. The sequence must be
-        // finite: a trailing false also ends the ensureKeyColumnCollation row loop, whose
-        // "while (rs.next())" would otherwise never terminate on a mock that always says true.
+        // The constructor runs, in order for the createIfNotExist=false path used by newStore():
+        // verifyDatabaseExists (true), verifyTableExists (true), ensureVersionColumn (true), and
+        // ensureKeyColumnCollation, whose row loop must see false so it terminates. The trailing
+        // default false therefore serves the last one and any further query, instead of the loop
+        // spinning on a mock that always answers true.
         when(resultSet.next()).thenReturn(true, true, true, false);
         // ensureVersionColumn: COUNT(*) returns 1 (column exists, no ALTER needed)
         when(resultSet.getInt(1)).thenReturn(1);
-        // ensureKeyColumnCollation reads (column name, collation) rows. lenient() because most
-        // tests
-        // here never reach it; a null column name means "no row to report".
+        // ensureKeyColumnCollation reads (column name, collation) rows; a null column name means
+        // "no row to report". lenient() because the constructor may not reach that probe.
         lenient().when(resultSet.getString(1)).thenReturn(null);
         lenient().when(resultSet.getString(2)).thenReturn(BINARY_COLLATION_FOR_TEST);
     }
@@ -241,13 +240,12 @@ class MysqlAgentStateStoreTest {
         // The table default is utf8mb4_unicode_ci (case-insensitive), so two users whose ids
         // differ only in case would otherwise share session state.
         //
-        // The constructor issues several statements (schema check, CREATE TABLE, table check,
-        // version column check). Pin resultSet.next() to true so none of them throws, then pick
-        // the DDL out of the captured statements instead of relying on their exact order, which
-        // keeps this test stable if the constructor changes.
-        if (Mockito.mockingDetails(resultSet).getStubbings().isEmpty()) {
-            lenient().when(resultSet.next()).thenReturn(true);
-        }
+        // With createIfNotExist=true the constructor verifies existence after creating (next ->
+        // true), then checks the version column (next -> true) and finally probes the key-column
+        // collations, whose row loop needs false to stop. The DDL itself is picked out of the
+        // captured statements rather than by position, so the assertion does not depend on how many
+        // statements the constructor issues.
+        when(resultSet.next()).thenReturn(true, true, false);
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
 
         new MysqlAgentStateStore(dataSource, "agentscope", "agentscope_sessions", true);
