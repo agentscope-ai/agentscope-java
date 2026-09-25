@@ -86,6 +86,13 @@ public class LocalFilesystem implements AbstractFilesystem {
     private final NamespaceFactory namespaceFactory;
 
     /**
+     * When {@code true}, absolute paths that resolve under {@link #cwd} but outside the caller's
+     * own namespace directory are rejected with a {@link SecurityException} in
+     * {@link LocalFsMode#ROOTED} mode. Off by default; see {@link #namespaceBoundary(boolean)}.
+     */
+    private boolean namespaceBoundary = false;
+
+    /**
      * Per-path locks for the read-modify-write cycle inside {@link #edit}.
      * Keyed by the absolute, normalized path string so that two callers operating on
      * the same file (even with different input paths) always share the same lock.
@@ -232,6 +239,31 @@ public class LocalFilesystem implements AbstractFilesystem {
      */
     public PathPolicy getPathPolicy() {
         return pathPolicy;
+    }
+
+    /**
+     * Restricts absolute paths to the caller's own namespace directory in
+     * {@link LocalFsMode#ROOTED} mode.
+     *
+     * <p>The namespace factory scopes <em>relative</em> keys by prepending the namespace prefix
+     * (e.g. {@code sessionId}), but absolute keys bypass that prefix entirely, so with a
+     * per-session namespace any session could address another session's directory under the
+     * shared workspace root by absolute path. When the boundary is enabled, an absolute path
+     * that resolves under {@link #getCwd() cwd} must instead resolve under
+     * {@code cwd/<namespace>} to be accepted; anything else is rejected with a
+     * {@link SecurityException}. Paths under the {@link PathPolicy} roots that lie outside
+     * {@link #getCwd() cwd} (e.g. the read-only project layer) are unaffected, and with no
+     * namespace active (AGENT/GLOBAL scope, or missing user/session identifiers) the check is
+     * a no-op.
+     *
+     * <p>Must be configured before the filesystem is exposed to agent calls.
+     *
+     * @param enabled whether the namespace boundary is enforced
+     * @return this filesystem
+     */
+    public LocalFilesystem namespaceBoundary(boolean enabled) {
+        this.namespaceBoundary = enabled;
+        return this;
     }
 
     @Override
@@ -601,7 +633,7 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         return switch (mode) {
             case SANDBOXED -> resolveSandboxed(effectiveKey);
-            case ROOTED -> resolveRooted(effectiveKey);
+            case ROOTED -> resolveRooted(rc, effectiveKey);
             case UNRESTRICTED -> resolveUnrestricted(effectiveKey);
         };
     }
@@ -630,12 +662,16 @@ public class LocalFilesystem implements AbstractFilesystem {
         return key;
     }
 
-    private Path resolveRooted(String effectiveKey) {
+    private Path resolveRooted(RuntimeContext rc, String effectiveKey) {
         AbstractFilesystem.validatePath(effectiveKey);
         Path target = Path.of(effectiveKey);
         if (target.isAbsolute()) {
             Path normalized = target.normalize();
-            if (normalized.startsWith(cwd) || pathPolicy.isAllowed(normalized)) {
+            if (normalized.startsWith(cwd)) {
+                requireOwnNamespace(rc, normalized);
+                return normalized;
+            }
+            if (pathPolicy.isAllowed(normalized)) {
                 return normalized;
             }
             if (Files.exists(normalized)) {
@@ -649,6 +685,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (effectiveKey.startsWith("/")) {
             String stripped = effectiveKey.substring(1);
             if (stripped.isEmpty()) {
+                requireOwnNamespace(rc, cwd);
                 return cwd;
             }
             if (stripped.startsWith("~")) {
@@ -658,6 +695,7 @@ public class LocalFilesystem implements AbstractFilesystem {
             if (!full.startsWith(cwd)) {
                 throw new SecurityException("Path " + full + " outside root directory: " + cwd);
             }
+            requireOwnNamespace(rc, full);
             return full;
         }
 
@@ -676,6 +714,37 @@ public class LocalFilesystem implements AbstractFilesystem {
                         + cwd
                         + "; additional roots: "
                         + pathPolicy.roots());
+    }
+
+    /**
+     * Rejects absolute paths that resolve under {@link #cwd} but outside the caller's own
+     * namespace directory when {@link #namespaceBoundary} is enabled and a namespace is active.
+     * Relative keys never reach this check with a foreign namespace: they are prefixed into the
+     * own namespace by {@link #applyNamespacePrefix}, and {@code ..} segments are rejected by
+     * {@link AbstractFilesystem#validatePath}.
+     */
+    private void requireOwnNamespace(RuntimeContext rc, Path resolved) {
+        if (!namespaceBoundary || namespaceFactory == null) {
+            return;
+        }
+        List<String> ns = namespaceFactory.getNamespace(rc);
+        if (ns == null || ns.isEmpty()) {
+            return;
+        }
+        Path nsRoot = cwd.resolve(String.join("/", ns)).normalize();
+        if (resolved.startsWith(nsRoot)) {
+            return;
+        }
+        throw new SecurityException(
+                "Absolute path "
+                        + resolved
+                        + " is outside the isolated namespace '"
+                        + String.join("/", ns)
+                        + "' of the workspace root "
+                        + cwd
+                        + ". Absolute paths may only address paths inside "
+                        + nsRoot
+                        + "; use workspace-relative paths for shared content.");
     }
 
     private Path resolveUnrestricted(String effectiveKey) {

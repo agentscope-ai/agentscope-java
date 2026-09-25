@@ -338,6 +338,13 @@ public class LocalFilesystemSpec {
                         inheritEnv,
                         effectiveNamespaceFactory,
                         effectiveProject);
+        if (mode == LocalFsMode.ROOTED) {
+            // The namespace prefix only scopes relative keys; without the boundary, an absolute
+            // path would let one session/user address another session's directory under the
+            // shared workspace root (#3261). SANDBOXED re-roots absolute paths under the
+            // workspace already, and UNRESTRICTED is documented to pass absolute paths through.
+            upper.namespaceBoundary(true);
+        }
         LocalFilesystem lower = new LocalFilesystem(effectiveProject, true, 10, null);
         if (projectWritable) {
             LocalFilesystem projectFs =

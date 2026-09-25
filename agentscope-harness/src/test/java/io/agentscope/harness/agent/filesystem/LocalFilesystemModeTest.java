@@ -247,21 +247,118 @@ class LocalFilesystemModeTest {
     }
 
     @Test
-    void rooted_leadingSlashWithNamespace(@TempDir Path workspace) throws IOException {
-        // With namespace, "/skills" should still resolve to <workspace>/skills (not namespaced)
-        Path skillsDir = workspace.resolve("skills");
-        Files.createDirectories(skillsDir);
-        Files.writeString(skillsDir.resolve("tool.md"), "global skill", StandardCharsets.UTF_8);
+    void rooted_leadingSlashSharedDirRejectedWithNamespace(@TempDir Path workspace) {
+        // With the namespace boundary active, the leading-slash virtual form ("/skills/tool.md"
+        // → <workspace>/skills/...) must not reach a directory outside the own namespace either.
+        // Shared content is reachable via workspace-relative paths, which the overlay resolves
+        // against the read-only project layer.
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        assertThrows(SecurityException.class, () -> fs.read(rc, "/skills/tool.md", 0, 0));
+    }
+
+    @Test
+    void rooted_namespaceBlocksAbsolutePathIntoSiblingNamespace(
+            @TempDir Path workspace, @TempDir Path project) throws IOException {
+        Files.createDirectories(workspace.resolve("user-1"));
+        Path siblingFile = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(siblingFile.getParent());
+        Files.writeString(siblingFile, "user-2 private memory", StandardCharsets.UTF_8);
+
+        PathPolicy policy = PathPolicy.of(project, workspace);
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, policy, 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        Throwable t =
+                assertThrows(
+                        SecurityException.class,
+                        () -> fs.read(rc, siblingFile.toAbsolutePath().toString(), 0, 0));
+        assertTrue(
+                t.getMessage().contains("outside the isolated namespace"),
+                () -> "expected namespace-boundary error, got: " + t.getMessage());
+    }
+
+    @Test
+    void rooted_namespaceAllowsAbsolutePathWithinOwnNamespace(@TempDir Path workspace)
+            throws IOException {
+        Path ownFile = workspace.resolve("user-1/notes.md");
+        Files.createDirectories(ownFile.getParent());
+        Files.writeString(ownFile, "my notes", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, ownFile.toAbsolutePath().toString(), 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "own-namespace absolute path should pass, got: " + r.error());
+        assertEquals("my notes", r.fileData().content());
+    }
+
+    @Test
+    void rooted_namespaceBlocksWorkspaceRootAbsoluteAccess(@TempDir Path workspace)
+            throws IOException {
+        Files.writeString(workspace.resolve("shared.txt"), "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        assertThrows(
+                SecurityException.class, () -> fs.ls(rc, workspace.toAbsolutePath().toString()));
+    }
+
+    @Test
+    void rooted_namespaceBoundaryOffByDefault(@TempDir Path workspace) throws IOException {
+        // Direct LocalFilesystem users keep the legacy behaviour; the boundary is opt-in via
+        // namespaceBoundary(true) (LocalFilesystemSpec enables it for the workspace layer).
+        Path siblingFile = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(siblingFile.getParent());
+        Files.writeString(siblingFile, "user-2 private memory", StandardCharsets.UTF_8);
 
         LocalFilesystem fs =
                 new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS);
         RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
 
-        // Absolute paths (starting with "/") should NOT be namespace-scoped
-        ReadResult r = fs.read(rc, "/skills/tool.md", 0, 0);
+        ReadResult r = fs.read(rc, siblingFile.toAbsolutePath().toString(), 0, 0);
         assertTrue(
-                r.isSuccess(), () -> "absolute path should not be namespaced, got: " + r.error());
-        assertEquals("global skill", r.fileData().content());
+                r.isSuccess(),
+                () -> "without the boundary the legacy behaviour holds: " + r.error());
+    }
+
+    @Test
+    void rooted_namespaceBoundaryNoopWithoutActiveNamespace(@TempDir Path workspace)
+            throws IOException {
+        // With no namespace resolved for the call (AGENT/GLOBAL scope or missing identifiers)
+        // the boundary is a no-op, even when enabled. The factory mirrors IsolationScope.USER,
+        // which derives the namespace from the RuntimeContext instead of returning a constant.
+        NamespaceFactory contextDerivedNs =
+                rc -> {
+                    String uid = rc == null ? null : rc.getUserId();
+                    return (uid == null || uid.isBlank()) ? List.<String>of() : List.of(uid);
+                };
+        Path file = workspace.resolve("shared.txt");
+        Files.writeString(file, "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                                workspace,
+                                LocalFsMode.ROOTED,
+                                PathPolicy.empty(),
+                                10,
+                                contextDerivedNs)
+                        .namespaceBoundary(true);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
+        assertTrue(
+                r.isSuccess(), () -> "no active namespace should keep access open: " + r.error());
     }
 
     @Test
