@@ -178,7 +178,6 @@ class DataPartParserTest {
         rawTextBlock.put("type", "text");
         rawTextBlock.put("text", "hello");
 
-
         DataPart part = toolResultPartWithOutput(List.of(rawTextBlock));
 
         ToolResultBlock result = (ToolResultBlock) parser.parse(part);
