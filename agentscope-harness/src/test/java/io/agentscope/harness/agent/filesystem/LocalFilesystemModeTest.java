@@ -338,11 +338,12 @@ class LocalFilesystemModeTest {
             throws IOException {
         // With no namespace resolved for the call (AGENT/GLOBAL scope or missing identifiers)
         // the boundary is a no-op, even when enabled. The factory mirrors IsolationScope.USER,
-        // which derives the namespace from the RuntimeContext instead of returning a constant.
+        // which derives the namespace from the RuntimeContext and yields nothing (null) when
+        // the identifier is absent.
         NamespaceFactory contextDerivedNs =
                 rc -> {
                     String uid = rc == null ? null : rc.getUserId();
-                    return (uid == null || uid.isBlank()) ? List.<String>of() : List.of(uid);
+                    return (uid == null || uid.isBlank()) ? null : List.of(uid);
                 };
         Path file = workspace.resolve("shared.txt");
         Files.writeString(file, "shared", StandardCharsets.UTF_8);
@@ -359,6 +360,21 @@ class LocalFilesystemModeTest {
         ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
         assertTrue(
                 r.isSuccess(), () -> "no active namespace should keep access open: " + r.error());
+    }
+
+    @Test
+    void rooted_namespaceBoundaryNoopWithoutNamespaceFactory(@TempDir Path workspace)
+            throws IOException {
+        // Boundary enabled but no namespace factory configured — nothing to enforce.
+        Path file = workspace.resolve("shared.txt");
+        Files.writeString(file, "shared", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null)
+                        .namespaceBoundary(true);
+
+        ReadResult r = fs.read(RuntimeContext.empty(), file.toAbsolutePath().toString(), 0, 0);
+        assertTrue(r.isSuccess(), () -> "no factory should keep access open: " + r.error());
     }
 
     @Test

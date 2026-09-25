@@ -683,11 +683,9 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
 
         if (effectiveKey.startsWith("/")) {
+            // "/" resolves to the workspace root itself via Path.resolve(""), so the boundary
+            // check below applies to it like any other virtual path.
             String stripped = effectiveKey.substring(1);
-            if (stripped.isEmpty()) {
-                requireOwnNamespace(rc, cwd);
-                return cwd;
-            }
             if (stripped.startsWith("~")) {
                 throw new SecurityException("Path traversal not allowed: " + effectiveKey);
             }
