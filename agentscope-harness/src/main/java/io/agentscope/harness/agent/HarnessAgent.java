@@ -847,23 +847,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle.
+     * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
+     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
+     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
+     * RuntimeContext#empty()} so derived defaults inherit this runId.
      *
      * <p>Sandbox acquisition is blocking work scheduled off the subscriber thread. The returned
      * run therefore remains {@link AgentRun.Status#QUEUED} while it acquires a sandbox and changes
      * to {@link AgentRun.Status#RUNNING} when the delegate lifecycle is admitted.
      */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> streamEvents(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> streamEvents(msgs, source));
     }
 
     /**
      * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
-     * Sandbox acquisition follows the same {@code QUEUED → RUNNING} transition documented by
-     * {@link #prepareRun(List, RuntimeContext)}.
+     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()}); {@code
+     * ensureSessionDefaults} still runs at subscribe time and never alters it. A null context uses
+     * a fresh {@link RuntimeContext#empty()} so derived defaults inherit this runId. Sandbox
+     * acquisition follows the same {@code QUEUED → RUNNING} transition documented by {@link
+     * #prepareRun(List, RuntimeContext)}.
      */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
-        return AgentRun.create(getAgentId(), () -> call(msgs, ctx));
+        RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        return AgentRun.create(getAgentId(), source.getRunId(), () -> call(msgs, source));
     }
 
     // ==================== streamEvents (AgentEvent — v2 aligned) ====================
