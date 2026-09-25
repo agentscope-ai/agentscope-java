@@ -74,8 +74,8 @@ AgentStateStore stateStore = new MysqlAgentStateStore(
 
 ```sql
 CREATE TABLE IF NOT EXISTS agentscope_sessions (
-    session_id VARCHAR(255) NOT NULL,
-    state_key  VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     item_index INT NOT NULL DEFAULT 0,
     state_data LONGTEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
     PRIMARY KEY (session_id, state_key, item_index)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是精确标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。在此排序规则引入之前创建的表仍保持大小写不敏感，需通过 `ALTER TABLE ... MODIFY ... COLLATE utf8mb4_bin` 迁移。
 
 - `(userId, sessionId)` 二元组会被打包进 `session_id` 列，形如 `{userSegment}:{sessionId}`（`userSegment` 为 `userId`，匿名 session 用 `__anon__`）。
 - 单值：`item_index = 0`

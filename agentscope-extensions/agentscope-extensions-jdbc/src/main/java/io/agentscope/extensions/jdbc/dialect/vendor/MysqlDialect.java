@@ -66,12 +66,17 @@ public class MysqlDialect extends AbstractJdbcDialect {
     public List<String> storeCreateTableDdls() {
         // Keep composite PK under InnoDB utf8mb4 3072-byte limit:
         // (512 + 255) * 4 = 3068 bytes. idx_namespace (512 * 4 = 2048 bytes) also fits.
+        // The key columns pin a binary collation: utf8mb4's default collation is
+        // case-insensitive (utf8mb4_0900_ai_ci on MySQL 8.0+, utf8mb4_general_ci on 5.7
+        // and MariaDB), which makes "README.md" and "readme.md" collide on the primary
+        // key so that the second put silently overwrites the first. Payload columns keep
+        // the table default.
         return List.of(
                 "CREATE TABLE IF NOT EXISTS "
                         + storeTableName()
                         + " ("
-                        + "  namespace_path VARCHAR(512)  NOT NULL,"
-                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL,"
+                        + "  item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL,"
                         + "  value_json     LONGTEXT      NOT NULL,"
                         + "  version        BIGINT        NOT NULL,"
                         + "  updated_at     BIGINT        NOT NULL,"
@@ -103,11 +108,13 @@ public class MysqlDialect extends AbstractJdbcDialect {
 
     @Override
     public List<String> sessionStateCreateTableDdls() {
+        // Same reasoning as storeCreateTableDdls(): session ids and state keys are exact
+        // identifiers and must not collide under case-insensitive comparison.
         return List.of(
                 """
                 CREATE TABLE IF NOT EXISTS %s (
-                  session_id  VARCHAR(255) NOT NULL,
-                  state_key   VARCHAR(255) NOT NULL,
+                  session_id  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+                  state_key   VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
                   item_index  INT          NOT NULL DEFAULT 0,
                   state_data  LONGTEXT     NOT NULL,
                   version     BIGINT       NOT NULL DEFAULT 0,

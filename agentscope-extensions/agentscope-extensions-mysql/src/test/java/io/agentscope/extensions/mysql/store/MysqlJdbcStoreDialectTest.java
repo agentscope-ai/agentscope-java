@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.mysql.store;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.regex.Matcher;
@@ -42,6 +43,19 @@ class MysqlJdbcStoreDialectTest {
                                 "Composite PK is %d bytes, over the InnoDB utf8mb4 limit of %d"
                                         + " bytes",
                                 compositePkBytes, INNODB_UTF8MB4_INDEX_LIMIT_BYTES));
+    }
+
+    @Test
+    void createTablePinsBinaryCollationOnKeyColumnsOnly() {
+        // The table default is case-insensitive utf8mb4, so without an explicit binary collation
+        // "README.md" and "readme.md" collide on the primary key and the second put silently
+        // overwrites the first.
+        String ddl = new MysqlJdbcStoreDialect().getCreateTableSql();
+
+        assertTrue(ddl.contains("namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("value_json     LONGTEXT      NOT NULL"));
+        assertFalse(ddl.contains("LONGTEXT      COLLATE"));
     }
 
     private static int varcharLength(String ddl, String columnName) {

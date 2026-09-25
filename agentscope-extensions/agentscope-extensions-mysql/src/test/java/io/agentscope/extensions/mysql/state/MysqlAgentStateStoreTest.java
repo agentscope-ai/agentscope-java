@@ -16,8 +16,12 @@
 package io.agentscope.extensions.mysql.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,7 +37,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
 /**
@@ -215,5 +221,39 @@ class MysqlAgentStateStoreTest {
         long result = store.saveIfVersion("user", "session", "agent_state", new TestState("v"), 0L);
 
         assertEquals(AgentStateStore.UNVERSIONED, result);
+    }
+
+    @Test
+    @DisplayName("auto-created sessions table pins a binary collation on session_id and state_key")
+    void createTablePinsBinaryCollationOnKeyColumnsOnly() throws Exception {
+        // The table default is utf8mb4_unicode_ci (case-insensitive), so two users whose ids
+        // differ only in case would otherwise share session state.
+        //
+        // The constructor issues several statements (schema check, CREATE TABLE, table check,
+        // version column check). Pin resultSet.next() to true so none of them throws, then pick
+        // the DDL out of the captured statements instead of relying on their exact order, which
+        // keeps this test stable if the constructor changes.
+        if (Mockito.mockingDetails(resultSet).getStubbings().isEmpty()) {
+            lenient().when(resultSet.next()).thenReturn(true);
+        }
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+
+        new MysqlAgentStateStore(dataSource, "agentscope", "agentscope_sessions", true);
+
+        verify(connection, atLeastOnce()).prepareStatement(sqlCaptor.capture());
+        String ddl =
+                sqlCaptor.getAllValues().stream()
+                        .filter(sql -> sql.startsWith("CREATE TABLE"))
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "No CREATE TABLE was issued: "
+                                                        + sqlCaptor.getAllValues()));
+
+        assertTrue(ddl.contains("session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(ddl.contains("state_data LONGTEXT NOT NULL"));
+        assertFalse(ddl.contains("LONGTEXT COLLATE"));
     }
 }

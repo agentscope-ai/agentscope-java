@@ -74,8 +74,8 @@ When `createIfNotExist=true`, the table is created automatically:
 
 ```sql
 CREATE TABLE IF NOT EXISTS agentscope_sessions (
-    session_id VARCHAR(255) NOT NULL,
-    state_key  VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     item_index INT NOT NULL DEFAULT 0,
     state_data LONGTEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
     PRIMARY KEY (session_id, state_key, item_index)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+The two key columns pin `utf8mb4_bin` while the table default stays `utf8mb4_unicode_ci`: `session_id` and `state_key` are exact identifiers, and the table default is case-insensitive, so without the binary collation two ids differing only in letter case would collide on the primary key and share a row. Tables created before this collation was introduced keep the case-insensitive default until they are migrated with `ALTER TABLE ... MODIFY ... COLLATE utf8mb4_bin`.
 
 - The `(userId, sessionId)` pair is packed into the `session_id` column as `{userSegment}:{sessionId}` (`userSegment` = `userId`, or `__anon__` for anonymous sessions).
 - Single value: `item_index = 0`

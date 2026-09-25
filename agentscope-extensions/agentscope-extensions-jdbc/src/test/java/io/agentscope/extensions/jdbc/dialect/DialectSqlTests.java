@@ -16,6 +16,7 @@
 package io.agentscope.extensions.jdbc.dialect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -124,6 +125,36 @@ class DialectSqlTests {
         assertTrue(ddl.contains("LONGTEXT"));
         assertTrue(ddl.contains("ENGINE=InnoDB"));
         assertTrue(ddl.contains("utf8mb4"));
+    }
+
+    @Test
+    @DisplayName("MysqlDialect key columns pin a binary collation so keys stay case-sensitive")
+    void mysqlKeyColumnsUseBinaryCollation() {
+        var d = new MysqlDialect();
+
+        String store = d.storeCreateTableDdls().get(0);
+        assertTrue(store.contains("namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(store.contains("item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL"));
+
+        String session = d.sessionStateCreateTableDdls().get(0);
+        assertTrue(session.contains("session_id  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(session.contains("state_key   VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+    }
+
+    @Test
+    @DisplayName("only MysqlDialect key columns are case-sensitive; payload columns are untouched")
+    void mysqlPayloadColumnsKeepDefaultCollation() {
+        String store = new MysqlDialect().storeCreateTableDdls().get(0);
+        assertTrue(store.contains("value_json     LONGTEXT      NOT NULL"));
+        assertFalse(store.contains("LONGTEXT      COLLATE"));
+
+        // The other dialects compare keys case-sensitively by default, so no explicit
+        // collation must leak into their DDL.
+        for (AbstractJdbcDialect d :
+                List.of(new PostgresDialect(), new H2Dialect(), new SqliteDialect())) {
+            assertFalse(d.storeCreateTableDdls().get(0).contains("COLLATE"));
+            assertFalse(d.sessionStateCreateTableDdls().get(0).contains("COLLATE"));
+        }
     }
 
     @Test

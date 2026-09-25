@@ -47,8 +47,8 @@ import javax.sql.DataSource;
  *
  * <pre>
  * CREATE TABLE IF NOT EXISTS agentscope_sessions (
- *     session_id VARCHAR(255) NOT NULL,
- *     state_key VARCHAR(255) NOT NULL,
+ *     session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+ *     state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
  *     item_index INT NOT NULL DEFAULT 0,
  *     state_data LONGTEXT NOT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -56,6 +56,11 @@ import javax.sql.DataSource;
  *     PRIMARY KEY (session_id, state_key, item_index)
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
+ *
+ * <p>Only the two key columns pin {@code utf8mb4_bin}: {@code session_id} and {@code state_key}
+ * are exact identifiers, and the table default ({@code utf8mb4_unicode_ci}) is case-insensitive,
+ * so without a binary collation two ids differing only in letter case collide on the primary key
+ * and share a row. Payload columns keep the table default.
  *
  * <p>Features:
  *
@@ -236,10 +241,14 @@ public class MysqlAgentStateStore implements AgentStateStore {
      * characters like hyphens.
      */
     private void createTableIfNotExist() {
+        // session_id and state_key are exact identifiers, so they pin a binary collation: the
+        // table default (utf8mb4_unicode_ci) is case-insensitive, which would make session ids
+        // or state keys differing only in case share a row. Payload columns keep the default.
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
                         + getFullTableName()
-                        + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
+                        + " (session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,"
+                        + " state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
                         + " version BIGINT NOT NULL DEFAULT 0, created_at DATETIME DEFAULT"
                         + " CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON"
