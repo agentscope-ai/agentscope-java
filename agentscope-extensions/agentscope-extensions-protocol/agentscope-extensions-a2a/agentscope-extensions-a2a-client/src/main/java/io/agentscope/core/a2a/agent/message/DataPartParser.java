@@ -22,6 +22,8 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,14 +88,31 @@ public class DataPartParser implements PartParser<DataPart> {
             // Adapter Python Agentscope ToolResultBlock define, python tool result output spec is
             // `str | List[TextBlock | ImageBlock | AudioBlock | VideoBlock]`
             builder.output(TextBlock.builder().text(output.toString()).build());
-        } else if (output instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<ContentBlock> outputList = (List<ContentBlock>) output;
-            builder.output(outputList);
+        } else if (output instanceof List<?> rawList) {
+            builder.output(toContentBlocks(rawList));
         } else {
             builder.output(List.of());
         }
         return builder.build();
+    }
+
+    /**
+     * Converts the raw output list to content blocks.
+     *
+     * <p>After an A2A round trip the items arrive as JSON maps (e.g. {@code {"type": "text", ...}})
+     * rather than {@link ContentBlock} instances, so each map is converted through Jackson's
+     * polymorphic deserialization based on its {@code type} field.
+     */
+    private List<ContentBlock> toContentBlocks(List<?> rawList) {
+        List<ContentBlock> contentBlocks = new ArrayList<>(rawList.size());
+        for (Object item : rawList) {
+            if (item instanceof ContentBlock contentBlock) {
+                contentBlocks.add(contentBlock);
+            } else if (item != null) {
+                contentBlocks.add(JsonUtils.getJsonCodec().convertValue(item, ContentBlock.class));
+            }
+        }
+        return contentBlocks;
     }
 
     private String getToolCallId(DataPart part) {

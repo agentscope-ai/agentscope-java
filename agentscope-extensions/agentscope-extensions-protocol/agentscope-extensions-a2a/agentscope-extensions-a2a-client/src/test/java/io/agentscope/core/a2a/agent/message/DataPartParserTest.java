@@ -16,8 +16,11 @@
 package io.agentscope.core.a2a.agent.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.a2a.spec.DataPart;
@@ -25,6 +28,9 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -162,5 +168,78 @@ class DataPartParserTest {
         assertEquals("123", toolResultBlock.getId());
         // Should default to empty list when output is neither String nor List<ContentBlock>
         assertTrue(toolResultBlock.getOutput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should convert raw map items in ToolResultBlock output to ContentBlock")
+    void testParseToolResultBlockWithRawMapListOutput() {
+        // After an A2A round trip the output items arrive as JSON maps, not ContentBlock
+        Map<String, Object> rawTextBlock = new LinkedHashMap<>();
+        rawTextBlock.put("type", "text");
+        rawTextBlock.put("text", "hello");
+
+
+        DataPart part = toolResultPartWithOutput(List.of(rawTextBlock));
+
+        ToolResultBlock result = (ToolResultBlock) parser.parse(part);
+
+        assertEquals(1, result.getOutput().size());
+        ContentBlock first = result.getOutput().get(0);
+        TextBlock text = assertInstanceOf(TextBlock.class, first);
+        assertEquals("hello", text.getText());
+    }
+
+    @Test
+    @DisplayName("Should keep ContentBlock items and convert map items in a mixed output list")
+    void testParseToolResultBlockWithMixedListOutput() {
+        TextBlock typedBlock = TextBlock.builder().text("already typed").build();
+        Map<String, Object> rawTextBlock = new LinkedHashMap<>();
+        rawTextBlock.put("type", "text");
+        rawTextBlock.put("text", "from map");
+
+        ToolResultBlock result =
+                (ToolResultBlock)
+                        parser.parse(toolResultPartWithOutput(List.of(typedBlock, rawTextBlock)));
+
+        assertEquals(2, result.getOutput().size());
+        assertSame(typedBlock, result.getOutput().get(0));
+        TextBlock converted = assertInstanceOf(TextBlock.class, result.getOutput().get(1));
+        assertEquals("from map", converted.getText());
+    }
+
+    @Test
+    @DisplayName("Should skip null items in ToolResultBlock output")
+    void testParseToolResultBlockWithNullItemInOutput() {
+        Map<String, Object> rawTextBlock = new LinkedHashMap<>();
+        rawTextBlock.put("type", "text");
+        rawTextBlock.put("text", "hello");
+
+        ToolResultBlock result =
+                (ToolResultBlock)
+                        parser.parse(toolResultPartWithOutput(Arrays.asList(null, rawTextBlock)));
+
+        assertEquals(1, result.getOutput().size());
+        TextBlock text = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("hello", text.getText());
+    }
+
+    @Test
+    @DisplayName("Should throw JsonException when an output item has an unknown type")
+    void testParseToolResultBlockWithUnknownTypeInOutput() {
+        Map<String, Object> rawUnknownBlock = new LinkedHashMap<>();
+        rawUnknownBlock.put("type", "unknown_type");
+
+        DataPart part = toolResultPartWithOutput(List.of(rawUnknownBlock));
+
+        assertThrows(JsonException.class, () -> parser.parse(part));
+    }
+
+    private DataPart toolResultPartWithOutput(List<?> output) {
+        Map<String, Object> metadata =
+                Map.of(
+                        "_agentscope_block_type", "tool_result",
+                        "_agentscope_tool_name", "calculator",
+                        "_agentscope_tool_call_id", "123");
+        return new DataPart(Map.of("_agentscope_tool_output", output), metadata);
     }
 }
