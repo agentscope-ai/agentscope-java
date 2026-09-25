@@ -103,7 +103,7 @@ ALTER TABLE agentscope_snapshots
     MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
 ```
 
-若配置过表前缀或逐表名称覆盖，请相应替换表名。另需注意：`agentscope_snapshots` 由 legacy 的 `agentscope-extensions-mysql` 快照客户端创建时**不带**二进制排序规则，由 `agentscope-extensions-jdbc` 方言创建时才带；混用两条路径的部署只有在执行过上面 `ALTER` 的地方才具备该行为。
+若配置过表前缀或逐表名称覆盖，请相应替换表名。创建 `agentscope_snapshots` 的两条路径——`agentscope-extensions-jdbc` 方言与 legacy 的 `agentscope-extensions-mysql` 快照客户端——现在钉的是同一个排序规则，因此更早部署的实例只需执行上面的语句。
 
 有两点需要提前考虑：
 

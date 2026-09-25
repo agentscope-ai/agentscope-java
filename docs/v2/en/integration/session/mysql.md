@@ -103,7 +103,7 @@ ALTER TABLE agentscope_snapshots
     MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
 ```
 
-Adjust the table names if a prefix or per-table name override was configured. Note that `agentscope_snapshots` is created without the binary collation by the legacy `agentscope-extensions-mysql` snapshot client, and with it by the `agentscope-extensions-jdbc` dialect, so a deployment mixing the two paths only has the migrated behaviour where the ALTER above was applied.
+Adjust the table names if a prefix or per-table name override was configured. Both paths that create `agentscope_snapshots` — the `agentscope-extensions-jdbc` dialect and the legacy `agentscope-extensions-mysql` snapshot client — now pin the same collation, so the statement above is the only thing a deployment created earlier needs.
 
 Two things to plan for:
 

@@ -159,7 +159,8 @@ public class MysqlDialect extends AbstractJdbcDialect {
     public List<String> snapshotCreateTableDdls() {
         // snapshot_id is the primary key and a caller-supplied identifier, so it pins the same
         // binary collation as the other key columns: the table default is case-insensitive, and
-        // two snapshot ids differing only in letter case would otherwise share a row.
+        // two snapshot ids differing only in letter case would otherwise share a row. The table
+        // states its charset and engine explicitly, like the store table.
         return List.of(
                 "CREATE TABLE IF NOT EXISTS "
                         + snapshotTableName()
@@ -167,7 +168,7 @@ public class MysqlDialect extends AbstractJdbcDialect {
                         + "  snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, "
                         + "  data LONGBLOB NOT NULL, "
                         + "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                        + ")");
+                        + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
     @Override
