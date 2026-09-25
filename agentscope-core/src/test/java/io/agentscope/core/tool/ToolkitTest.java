@@ -1378,11 +1378,13 @@ class ToolkitTest {
     void testCallToolSinglePopulatesIdAndName() {
         toolkit.registerTool(sampleTools);
 
+        Map<String, Object> input = Map.of("a", 2, "b", 3);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-single-001")
                         .name("add")
-                        .input(Map.of("a", 2, "b", 3))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock result =
@@ -1398,11 +1400,13 @@ class ToolkitTest {
     void testCallToolSingleErrorResultAlsoHasIdAndName() {
         toolkit.registerTool(sampleTools);
 
+        Map<String, Object> errorInput = Map.of("message", "boom");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-single-err")
                         .name("error_tool")
-                        .input(Map.of("message", "boom"))
+                        .input(errorInput)
+                        .content(JsonUtils.getJsonCodec().toJson(errorInput))
                         .build();
 
         ToolResultBlock result =
@@ -1420,11 +1424,13 @@ class ToolkitTest {
     void testCallToolSingleParamInputPrecedenceOverToolUseBlock() {
         toolkit.registerTool(sampleTools);
 
+        Map<String, Object> toolUseInput = Map.of("a", 2, "b", 3);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-single-param-priority")
                         .name("add")
-                        .input(Map.of("a", 2, "b", 3))
+                        .input(toolUseInput)
+                        .content(JsonUtils.getJsonCodec().toJson(toolUseInput))
                         .build();
 
         ToolCallParam param =
