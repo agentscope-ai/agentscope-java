@@ -66,12 +66,10 @@ sequenceDiagram
     A->>A: enter execution phase: all tools allowed
 ```
 
-Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately with something like:
+Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately. The tool result the model sees is exactly the `PlanModeMiddleware.DENY_MESSAGE` constant:
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write /
-agent_spawn / agent_send / agent_list / task_output / task_list are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 Seeing the denial, the model naturally switches back to "write the plan first".

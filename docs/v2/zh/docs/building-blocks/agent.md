@@ -353,7 +353,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` 为 `call` 和 `streamEvents` 提供 `RuntimeContext` 重载。事件流使用 `streamEvents(msgs, ctx)` 显式传入上下文。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
+`ReActAgent` 为 `call` 和 `streamEvents` 提供 `RuntimeContext` 重载（另有为兼容保留的已弃用 `stream` 重载）。事件流使用 `streamEvents(msgs, ctx)` 显式传入上下文。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
 
 ### 谁能读到
 

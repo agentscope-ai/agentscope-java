@@ -65,12 +65,10 @@ sequenceDiagram
     A->>A: 进入执行阶段，所有工具解禁
 ```
 
-中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝并返回类似这样的结果给模型：
+中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝。模型看到的工具结果就是 `PlanModeMiddleware.DENY_MESSAGE` 常量的原文：
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write /
-agent_spawn / agent_send / agent_list / task_output / task_list are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 模型看到拒绝信息会自然地切回"先写计划"。

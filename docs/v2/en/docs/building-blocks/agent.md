@@ -353,7 +353,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` provides `RuntimeContext` overloads for `call` and `streamEvents`. For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
+`ReActAgent` provides `RuntimeContext` overloads for `call` and `streamEvents` (plus deprecated `stream` overloads kept for compatibility). For event streams, pass the context explicitly with `streamEvents(msgs, ctx)`. When no context is passed the framework substitutes `RuntimeContext.empty()` (null session fields, empty attribute maps), and the agent falls back to its builder-time `defaultSessionId`.
 
 ### Who reads it
 
