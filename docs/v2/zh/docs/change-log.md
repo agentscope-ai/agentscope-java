@@ -222,7 +222,7 @@ Python 2.0 的 `agent.reply_stream()` 只返回一种事件流签名（`AsyncGen
   - 这些类目前仍被 harness（子 agent 事件转发：`SubAgentTool` / `SubagentEventBus` / `DefaultAgentManager` / `AgentSpawnTool`）、AGUI、A2A、chat-completions-web、kotlin extension 等内部模块作为事件总线 / 适配器的输入消费。等这些模块完成迁移到 `AgentEvent` 后再翻成 `forRemoval = true`，避免一次性把下游全打成警告
   - `HarnessAgent.streamEvents(...)` 会转发子 agent 事件（`source` 非空路径），远程 Agent Protocol 子 agent 在 `remoteStreaming` 开启时同样支持
 
-A2A server 会将权限 HITL 的 `RequireUserConfirmEvent` 映射为 `TaskState.INPUT_REQUIRED`，并保持 task 未完成。状态消息包含 `DataPart`，其 `type` 为 `"agentscope.confirmation_request"`，并带有 `replyId` 和 `toolCalls`。客户端可在同一 task 上发送 `type: "agentscope.confirmation_response"` 的 `DataPart`，携带匹配的 `replyId`，以及非空 `results` 数组（每项包含 `toolCallId` 和 `confirmed`）。结果可携带 id 和 name 相同的修改后 `toolCall`；仅其中的 `input` 会覆盖原请求。确认通过的结果可附带 `rules`（`tool_name`、`rule_content`、`behavior`、`source`），拒绝结果可附带 `reason`。
+A2A server 会将权限 HITL 的 `RequireUserConfirmEvent` 映射为 `TaskState.INPUT_REQUIRED`，并保持 task 未完成。状态消息包含 `DataPart`，其 `type` 为 `"agentscope.confirmation_request"`，并带有 `replyId` 和 `toolCalls`；task store 必须保留该状态消息才能恢复 agent。客户端可在同一 task 上发送 `type: "agentscope.confirmation_response"` 的 `DataPart`，携带匹配的 `replyId`，并且每个待处理的 `toolCallId` 都必须恰好有一项 `results`（拒绝的调用也要提交结果），不完整批次会被拒绝，因此一次恢复只处理一整个确认批次；agent 可在收到该响应后再请求下一批。结果可携带 id 和 name 相同的修改后 `toolCall`；其 `input` 会替换原参数，空对象可清除参数。确认通过的结果可附带 `rules`（`tool_name`、`rule_content`、`behavior`、`source`），拒绝结果可附带 `reason`。无效恢复数据会将 task 标记为失败。暂停中的 agent 默认保留 30 分钟，可通过 `ReActAgentWithBuilderRunner.newInstance(builder, duration)` 配置；过期后恢复会失败，需要创建新 task。
 
 新代码统一改用：
 

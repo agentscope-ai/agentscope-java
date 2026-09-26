@@ -121,7 +121,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     @Override
     public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         try {
-            List<Msg> inputMessages = convertInputMessage(context);
+            List<Msg> inputMessages;
+            try {
+                inputMessages = convertInputMessage(context);
+            } catch (IllegalArgumentException e) {
+                handleExecutionFailure(context, eventQueue, e);
+                return;
+            }
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
             Flux<AgentEvent> resultFlux = agentRunner.streamEvents(inputMessages, requestOptions);
 
@@ -146,6 +152,32 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             context.getContextId(),
                             context.getTaskId()));
         }
+    }
+
+    private void handleExecutionFailure(
+            RequestContext context, EventQueue eventQueue, Exception error) {
+        Task task = context.getTask();
+        if (task != null
+                && task.getStatus() != null
+                && task.getStatus().state() == TaskState.INPUT_REQUIRED) {
+            TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
+            try {
+                taskUpdater.fail(
+                        taskUpdater.newAgentMessage(
+                                List.of(
+                                        new TextPart(
+                                                "Agent execution failed: " + error.getMessage())),
+                                Map.of()));
+            } finally {
+                agentRunner.stop(task.getId());
+            }
+            return;
+        }
+        eventQueue.enqueueEvent(
+                A2A.createAgentTextMessage(
+                        "Agent execution failed: " + error.getMessage(),
+                        context.getContextId(),
+                        context.getTaskId()));
     }
 
     private List<Msg> convertInputMessage(RequestContext context) {
@@ -306,6 +338,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                     new ConfirmResult(
                             confirmed, toToolUseBlock(toolCall, toolCallId), rules, reason));
         }
+        if (!resultIds.equals(pending.toolCallsById().keySet())) {
+            Set<String> missingToolCallIds =
+                    new java.util.HashSet<>(pending.toolCallsById().keySet());
+            missingToolCallIds.removeAll(resultIds);
+            throw new IllegalArgumentException(
+                    "Confirmation response is missing results for toolCallIds: "
+                            + missingToolCallIds);
+        }
         return confirmationResults;
     }
 
@@ -390,6 +430,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         requestOptions.setTaskId(context.getTaskId());
         requestOptions.setUserId(getUserId(message));
         requestOptions.setSessionId(getSessionId(message));
+        Task task = context.getTask();
+        requestOptions.setResume(
+                task != null
+                        && task.getStatus() != null
+                        && task.getStatus().state() == TaskState.INPUT_REQUIRED);
         return requestOptions;
     }
 
@@ -754,7 +799,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void sendErrorMessage(Message errorMessage) {
-            eventQueue.enqueueEvent(errorMessage);
+            if (isWaitingForInput()) {
+                taskUpdater.fail(errorMessage);
+            } else {
+                eventQueue.enqueueEvent(errorMessage);
+            }
         }
     }
 

@@ -81,6 +81,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -469,9 +472,13 @@ class AgentScopeAgentExecutorTest {
                                                     status.getStatus().state())));
         }
 
-        @Test
+        @ParameterizedTest
+        @ValueSource(booleans = {false, true})
         @DisplayName("Should convert a confirmation response into validated AgentScope metadata")
-        void testStreamingRequestConvertsConfirmationResponse() throws JSONRPCError {
+        void testStreamingRequestConvertsConfirmationResponse(boolean clearInput)
+                throws JSONRPCError {
+            Map<String, Object> approvedInput =
+                    clearInput ? Map.of() : Map.of("path", "approved.txt");
             String taskId = doMockForContext(false, false, true);
             String contextId = mockContext.getContextId();
             String replyId = "reply-1";
@@ -546,9 +553,7 @@ class AgentScopeAgentExecutorTest {
                                                                             "name",
                                                                             "delete_file",
                                                                             "input",
-                                                                            Map.of(
-                                                                                    "path",
-                                                                                    "approved.txt")),
+                                                                            approvedInput),
                                                                     "rules",
                                                                     List.of(
                                                                             Map.of(
@@ -580,6 +585,10 @@ class AgentScopeAgentExecutorTest {
                             (Answer<Flux<AgentEvent>>)
                                     invocation -> {
                                         agentInput.set(invocation.getArgument(0));
+                                        assertTrue(
+                                                invocation
+                                                        .<AgentRequestOptions>getArgument(1)
+                                                        .isResume());
                                         return Flux.empty();
                                     })
                     .when(mockAgentRunner)
@@ -603,7 +612,7 @@ class AgentScopeAgentExecutorTest {
             assertTrue(confirmedResult.isConfirmed());
             assertEquals("tool-call-1", confirmedResult.getToolCall().getId());
             assertEquals("delete_file", confirmedResult.getToolCall().getName());
-            assertEquals(Map.of("path", "approved.txt"), confirmedResult.getToolCall().getInput());
+            assertEquals(approvedInput, confirmedResult.getToolCall().getInput());
             assertEquals(Map.of("provider", "value"), confirmedResult.getToolCall().getMetadata());
             assertEquals(
                     List.of(
@@ -612,6 +621,7 @@ class AgentScopeAgentExecutorTest {
                     confirmedResult.getRules());
             assertFalse(deniedResult.isConfirmed());
             assertEquals("tool-call-2", deniedResult.getToolCall().getId());
+            assertEquals(Map.of("command", "rm -rf /tmp/x"), deniedResult.getToolCall().getInput());
             assertEquals("The path is outside the approved directory.", deniedResult.getReason());
         }
 
@@ -693,6 +703,96 @@ class AgentScopeAgentExecutorTest {
 
             verify(mockAgentRunner, never())
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
+            assertFailedInputRequiredTask(taskId);
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+                strings = {
+                    "partial",
+                    "missing",
+                    "duplicate",
+                    "nonBoolean",
+                    "unknown",
+                    "missingStatus"
+                })
+        @DisplayName("Should reject partial confirmation replies and fail the waiting task")
+        void testStreamingRequestRejectsInvalidConfirmationReply(String invalidCase)
+                throws JSONRPCError {
+            String taskId = doMockForContext(true, false, false);
+            String contextId = mockContext.getContextId();
+            String replyId = "reply-current";
+            Message pendingMessage =
+                    new Message.Builder()
+                            .role(Message.Role.AGENT)
+                            .parts(
+                                    new DataPart(
+                                            Map.of(
+                                                    "type",
+                                                    AgentScopeAgentExecutor
+                                                            .CONFIRMATION_REQUEST_TYPE,
+                                                    "replyId",
+                                                    replyId,
+                                                    "toolCalls",
+                                                    List.of(
+                                                            Map.of(
+                                                                    "id",
+                                                                    "tool-call-1",
+                                                                    "name",
+                                                                    "delete_file"),
+                                                            Map.of(
+                                                                    "id",
+                                                                    "tool-call-2",
+                                                                    "name",
+                                                                    "send_email")))))
+                            .build();
+            Task task =
+                    new Task(
+                            taskId,
+                            contextId,
+                            new TaskStatus(
+                                    TaskState.INPUT_REQUIRED,
+                                    invalidCase.equals("missingStatus") ? null : pendingMessage,
+                                    OffsetDateTime.now()),
+                            null,
+                            List.of(),
+                            null);
+            Map<String, Object> result =
+                    Map.of(
+                            "toolCallId",
+                                    invalidCase.equals("unknown") ? "unknown-tool" : "tool-call-1",
+                            "confirmed", invalidCase.equals("nonBoolean") ? "true" : true);
+            DataPart response =
+                    new DataPart(
+                            Map.of(
+                                    "type",
+                                    AgentScopeAgentExecutor.CONFIRMATION_RESPONSE_TYPE,
+                                    "replyId",
+                                    replyId,
+                                    "results",
+                                    List.of(result)));
+            List<io.a2a.spec.Part<?>> responseParts =
+                    switch (invalidCase) {
+                        case "missing" -> List.of(new TextPart("Proceed"));
+                        case "duplicate" -> List.of(response, response);
+                        default -> List.of(response);
+                    };
+            Message partialRequest =
+                    new Message.Builder()
+                            .role(Message.Role.USER)
+                            .parts(responseParts)
+                            .taskId(taskId)
+                            .contextId(contextId)
+                            .build();
+            when(mockContext.getTask()).thenReturn(task);
+            when(mockContext.getMessage()).thenReturn(partialRequest);
+            when(mockContext.getParams().message()).thenReturn(partialRequest);
+
+            executor.execute(mockContext, mockEventQueue);
+
+            verify(mockAgentRunner, never())
+                    .streamEvents(anyList(), any(AgentRequestOptions.class));
+            assertFailedInputRequiredTask(taskId);
         }
 
         @Test
@@ -761,6 +861,17 @@ class AgentScopeAgentExecutorTest {
 
             verify(mockAgentRunner, never())
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
+            assertFailedInputRequiredTask(taskId);
+        }
+
+        private void assertFailedInputRequiredTask(String taskId) {
+            ArgumentCaptor<TaskStatusUpdateEvent> eventCaptor =
+                    ArgumentCaptor.forClass(TaskStatusUpdateEvent.class);
+            verify(mockEventQueue).enqueueEvent(eventCaptor.capture());
+            TaskStatusUpdateEvent statusUpdate = eventCaptor.getValue();
+            assertEquals(TaskState.FAILED, statusUpdate.getStatus().state());
+            assertTrue(statusUpdate.isFinal());
+            verify(mockAgentRunner).stop(taskId);
         }
 
         @Test
