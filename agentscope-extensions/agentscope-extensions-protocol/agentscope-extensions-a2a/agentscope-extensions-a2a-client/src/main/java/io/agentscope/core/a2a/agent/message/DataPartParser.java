@@ -22,9 +22,14 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Parser for {@link DataPart} to {@link ContentBlock}.
@@ -37,6 +42,8 @@ import java.util.Map;
  * </ul>
  */
 public class DataPartParser implements PartParser<DataPart> {
+
+    private static final Logger log = LoggerFactory.getLogger(DataPartParser.class);
 
     @Override
     public ContentBlock parse(DataPart part) {
@@ -86,14 +93,57 @@ public class DataPartParser implements PartParser<DataPart> {
             // Adapter Python Agentscope ToolResultBlock define, python tool result output spec is
             // `str | List[TextBlock | ImageBlock | AudioBlock | VideoBlock]`
             builder.output(TextBlock.builder().text(output.toString()).build());
-        } else if (output instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<ContentBlock> outputList = (List<ContentBlock>) output;
-            builder.output(outputList);
+        } else if (output instanceof List<?> rawList) {
+            builder.output(toContentBlocks(rawList));
         } else {
             builder.output(List.of());
         }
         return builder.build();
+    }
+
+    /**
+     * Converts the raw output list to content blocks.
+     *
+     * <p>After an A2A round trip the items arrive as JSON maps (e.g. {@code {"type": "text", ...}})
+     * rather than {@link ContentBlock} instances, so each map is converted through Jackson's
+     * polymorphic deserialization based on its {@code type} field. Plain strings are wrapped as
+     * {@link TextBlock}s.
+     *
+     * <p>An item that cannot be converted (e.g. an unknown or missing {@code type}) does not fail
+     * the whole tool result: it is kept as a {@link TextBlock} with its raw JSON, and a warning is
+     * logged. This is intentional, so that one unexpected block from a remote agent does not
+     * discard an otherwise valid result.
+     */
+    private List<ContentBlock> toContentBlocks(List<?> rawList) {
+        List<ContentBlock> contentBlocks = new ArrayList<>(rawList.size());
+        for (Object item : rawList) {
+            if (item == null) {
+                continue;
+            }
+            if (item instanceof ContentBlock contentBlock) {
+                contentBlocks.add(contentBlock);
+            } else if (item instanceof CharSequence text) {
+                contentBlocks.add(TextBlock.builder().text(text.toString()).build());
+            } else {
+                contentBlocks.add(convertOnFallBackToText(item));
+            }
+        }
+        return contentBlocks;
+    }
+
+    private ContentBlock convertOnFallBackToText(Object item) {
+        try {
+            return JsonUtils.getJsonCodec().convertValue(item, ContentBlock.class);
+        } catch (JsonException e) {
+            Object type =
+                    item instanceof Map<?, ?> map ? map.get("type") : item.getClass().getName();
+            log.warn(
+                    "Cannot convert tool result output item with type '{}' to ContentBlock,"
+                            + " keeping it as raw JSON text: {}",
+                    type,
+                    e.getMessage());
+            return TextBlock.builder().text(Utils.toJsonString(item)).build();
+        }
     }
 
     private String getToolCallId(DataPart part) {
