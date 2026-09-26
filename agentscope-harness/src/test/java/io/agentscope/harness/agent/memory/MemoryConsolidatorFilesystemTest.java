@@ -20,16 +20,24 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import reactor.core.publisher.Flux;
 
 /**
  * Verifies that {@link MemoryConsolidator} reads daily ledgers and writes watermark / MEMORY.md
@@ -148,5 +156,175 @@ class MemoryConsolidatorFilesystemTest {
         assertTrue(
                 Files.exists(localState),
                 "state file should be written to local disk when no filesystem is configured");
+    }
+
+    // ======================================================================
+    // consolidate: a blank MEMORY.md with an advanced watermark must rebuild
+    // from ALL daily ledgers instead of merging only post-watermark entries
+    // into "(empty)" — which silently drops every older day from the file
+    // ======================================================================
+
+    @Test
+    void consolidate_rebuildsFromAllLedgersWhenMemoryMdBlank(@TempDir Path tmp) throws Exception {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        RecordingModel model = new RecordingModel("# rebuilt curated memory");
+        Instant watermark = Instant.parse("2025-06-15T12:00:00Z");
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-14.md",
+                    "older day facts",
+                    watermark.minusSeconds(3600));
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-16.md",
+                    "fresh day facts",
+                    watermark.plusSeconds(3600));
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(),
+                    MemoryConsolidator.STATE_REL_PATH,
+                    watermark.toString());
+
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, model);
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            String userPrompt = model.userPrompt(0);
+            assertTrue(userPrompt.contains("### 2025-06-14.md"), "older ledger must be included");
+            assertTrue(userPrompt.contains("### 2025-06-16.md"));
+            assertTrue(userPrompt.contains("(empty)"));
+            // a full rebuild must not label the input as an incremental merge
+            assertFalse(userPrompt.contains("(since "));
+
+            assertEquals("# rebuilt curated memory", wsm.readMemoryMd(RuntimeContext.empty()));
+            assertTrue(consolidator.readWatermark(RuntimeContext.empty()).isAfter(watermark));
+        }
+    }
+
+    @Test
+    void consolidate_rebuildsEvenWithoutFreshLedgersWhenMemoryMdBlank(@TempDir Path tmp)
+            throws Exception {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        RecordingModel model = new RecordingModel("# rebuilt");
+        Instant watermark = Instant.parse("2025-06-15T12:00:00Z");
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-14.md",
+                    "older day facts",
+                    watermark.minusSeconds(3600));
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(),
+                    MemoryConsolidator.STATE_REL_PATH,
+                    watermark.toString());
+
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, model);
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            assertEquals(1, model.inputs.size());
+            assertTrue(model.userPrompt(0).contains("### 2025-06-14.md"));
+        }
+    }
+
+    @Test
+    void consolidate_keepsIncrementalMergeWhenMemoryMdPresent(@TempDir Path tmp) throws Exception {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        RecordingModel model = new RecordingModel("# merged");
+        Instant watermark = Instant.parse("2025-06-15T12:00:00Z");
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-14.md",
+                    "older day facts",
+                    watermark.minusSeconds(3600));
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-16.md",
+                    "fresh day facts",
+                    watermark.plusSeconds(3600));
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), "MEMORY.md", "existing curated view");
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(),
+                    MemoryConsolidator.STATE_REL_PATH,
+                    watermark.toString());
+
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, model);
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            String userPrompt = model.userPrompt(0);
+            assertTrue(userPrompt.contains("existing curated view"));
+            assertTrue(userPrompt.contains("### 2025-06-16.md"));
+            assertFalse(userPrompt.contains("### 2025-06-14.md"));
+            assertTrue(userPrompt.contains("(since " + watermark));
+        }
+    }
+
+    @Test
+    void consolidate_skipsWhenViewPresentAndNoFreshLedgers(@TempDir Path tmp) throws Exception {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+        RecordingModel model = new RecordingModel("# merged");
+        Instant watermark = Instant.parse("2025-06-15T12:00:00Z");
+        try (WorkspaceManager wsm = new WorkspaceManager(tmp, fs)) {
+            seedStoreFile(
+                    store,
+                    ns,
+                    "memory/2025-06-14.md",
+                    "older day facts",
+                    watermark.minusSeconds(3600));
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(), "MEMORY.md", "existing curated view");
+            wsm.writeUtf8WorkspaceRelative(
+                    RuntimeContext.empty(),
+                    MemoryConsolidator.STATE_REL_PATH,
+                    watermark.toString());
+
+            MemoryConsolidator consolidator = new MemoryConsolidator(wsm, model);
+            consolidator.consolidate(RuntimeContext.empty()).block();
+
+            assertEquals(0, model.inputs.size());
+        }
+    }
+
+    private static final class RecordingModel implements Model {
+
+        private final List<List<Msg>> inputs = new ArrayList<>();
+        private final String response;
+
+        RecordingModel(String response) {
+            this.response = response;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            inputs.add(List.copyOf(messages));
+            return Flux.just(
+                    ChatResponse.builder()
+                            .id("consolidation-response")
+                            .content(List.of(TextBlock.builder().text(response).build()))
+                            .build());
+        }
+
+        @Override
+        public String getModelName() {
+            return "recording-model";
+        }
+
+        String userPrompt(int index) {
+            return ((TextBlock) inputs.get(index).get(1).getContent().get(0)).getText();
+        }
     }
 }
