@@ -17,23 +17,37 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import okhttp3.Interceptor;
 import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
 
 class E2bEnvdProcessClientTest {
@@ -306,5 +320,283 @@ class E2bEnvdProcessClientTest {
         E2bSandboxClientOptions options = new E2bSandboxClientOptions();
         options.setCodec(codec);
         return options;
+    }
+
+    @Test
+    void requestCarriesConnectTimeoutMsHeader() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("timeout");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 3));
+        assertEquals("3000", header.get());
+    }
+
+    @Test
+    void interruptionIsRethrownNotWrappedAsTimeout() throws Exception {
+        Interceptor interrupting =
+                chain -> {
+                    Thread.currentThread().interrupt();
+                    throw new SocketTimeoutException("read timed out");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(interrupting);
+        try {
+            SocketTimeoutException thrown =
+                    assertThrows(
+                            SocketTimeoutException.class,
+                            () -> client.runShell(state(), "/workspace", "sleep 1000", 3));
+            assertEquals("read timed out", thrown.getMessage());
+            assertTrue(Thread.currentThread().isInterrupted(), "interrupt bit must be restored");
+        } finally {
+            // Do not leak the interrupt bit into other tests.
+            Thread.interrupted();
+        }
+        assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    void nonPositiveTimeoutFailsFastWithoutRequest() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("must not be called");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+
+        IllegalArgumentException zero =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> client.runShell(state(), "/workspace", "echo hi", 0));
+        assertTrue(zero.getMessage().contains("must be positive"));
+        assertTrue(zero.getMessage().contains("caller bug"));
+        IllegalArgumentException negative =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> client.runShell(state(), "/workspace", "echo hi", -5));
+        assertTrue(negative.getMessage().contains("-5"));
+        assertNull(header.get(), "no HTTP request must be issued for invalid timeout");
+    }
+
+    @Test
+    void jsonDeadlineExceededEndFrameMapsToExecTimeout() throws Exception {
+        byte[] payload =
+                ("{\"error\":{\"code\":\"deadline_exceeded\","
+                                + "\"message\":\"context deadline exceeded\"}}")
+                        .getBytes(StandardCharsets.UTF_8);
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.JSON), endStreamFrame(payload));
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+    }
+
+    @Test
+    void jsonNonTimeoutErrorFrameKeepsStreamError() throws Exception {
+        byte[] payload =
+                "{\"error\":{\"code\":\"unavailable\",\"message\":\"sandbox gone\"}}"
+                        .getBytes(StandardCharsets.UTF_8);
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.JSON), endStreamFrame(payload));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(e.getMessage().contains("unavailable"), "code must survive: " + e.getMessage());
+    }
+
+    @Test
+    void protoDeadlineExceededEndFrameMapsToExecTimeout() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(
+                        options(E2bCodec.PROTO),
+                        endStreamFrame(
+                                protoEndStreamError(
+                                        "deadline_exceeded", "context deadline exceeded")));
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+    }
+
+    @Test
+    void cleanEndFrameWithoutExitStaysStreamError() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(
+                        options(E2bCodec.JSON),
+                        endStreamFrame("{}".getBytes(StandardCharsets.UTF_8)));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(
+                e.getMessage().contains("before receiving a process exit code"),
+                "clean end without exit keeps #2828 semantics: " + e.getMessage());
+    }
+
+    @Test
+    void alreadyCancelledCallFailsFastWithoutBlocking() throws Exception {
+        AtomicReference<String> header = new AtomicReference<>();
+        Interceptor capture =
+                chain -> {
+                    header.set(chain.request().header("Connect-Timeout-Ms"));
+                    throw new SocketTimeoutException("must not be called");
+                };
+        E2bEnvdProcessClient client = clientWithInterceptor(capture);
+        Thread.currentThread().interrupt();
+        try {
+            long start = System.nanoTime();
+            InterruptedIOException e =
+                    assertThrows(
+                            InterruptedIOException.class,
+                            () -> client.runShell(state(), "/workspace", "echo hi", 30));
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertTrue(elapsedMs < 5000, "must fail fast, took " + elapsedMs + "ms");
+            assertTrue(Thread.currentThread().isInterrupted(), "interrupt bit must be restored");
+            assertTrue(
+                    e.getMessage().contains("cancelled before start"),
+                    "must not look like a timeout: " + e.getMessage());
+        } finally {
+            Thread.interrupted();
+        }
+        assertNull(header.get(), "no HTTP request must be issued for a cancelled call");
+    }
+
+    @Test
+    void malformedEndFrameFallsThroughToStreamError() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(
+                        options(E2bCodec.JSON),
+                        endStreamFrame("%%%not-json%%%".getBytes(StandardCharsets.UTF_8)));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(
+                e.getMessage().contains("before receiving a process exit code"),
+                "unparsable end frame keeps #2828 semantics: " + e.getMessage());
+    }
+
+    @Test
+    void protoEndFrameWithUnknownFieldsStillMaps() throws Exception {
+        byte[] error = protoEndStreamError("deadline_exceeded", "context deadline exceeded");
+        ByteArrayOutputStream frame = new ByteArrayOutputStream();
+        frame.write(0x48);
+        writeVarint(frame, 123);
+        frame.writeBytes(error);
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.PROTO), endStreamFrame(frame.toByteArray()));
+
+        assertThrows(
+                SandboxException.ExecTimeoutException.class,
+                () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+    }
+
+    @Test
+    void protoEmptyEndFrameStaysStreamError() throws Exception {
+        E2bEnvdProcessClient client =
+                clientWithBody(options(E2bCodec.PROTO), endStreamFrame(new byte[0]));
+
+        IOException e =
+                assertThrows(
+                        IOException.class,
+                        () -> client.runShell(state(), "/workspace", "sleep 1000", 30));
+        assertTrue(
+                e.getMessage().contains("before receiving a process exit code"),
+                "clean proto end without exit keeps #2828 semantics: " + e.getMessage());
+    }
+
+    @Test
+    void prematureEndAfterDeadlineMapsToExecTimeout() {
+        E2bEnvdProcessClient.MissingExitCodeException e =
+                new E2bEnvdProcessClient.MissingExitCodeException();
+
+        Exception mapped =
+                E2bEnvdProcessClient.mapPrematureEnd(
+                        e, "sleep 1000", 5, System.nanoTime() - 6_000_000_000L);
+
+        assertInstanceOf(SandboxException.ExecTimeoutException.class, mapped);
+    }
+
+    @Test
+    void prematureEndBeforeDeadlineStaysStreamError() {
+        E2bEnvdProcessClient.MissingExitCodeException e =
+                new E2bEnvdProcessClient.MissingExitCodeException();
+
+        assertSame(e, E2bEnvdProcessClient.mapPrematureEnd(e, "sleep 1000", 30, System.nanoTime()));
+    }
+
+    private static E2bEnvdProcessClient clientWithInterceptor(Interceptor interceptor)
+            throws Exception {
+        E2bSandboxClientOptions opt = options(E2bCodec.PROTO);
+        opt.setHttpClient(new OkHttpClient.Builder().addInterceptor(interceptor).build());
+        return new E2bEnvdProcessClient(opt);
+    }
+
+    private static E2bEnvdProcessClient clientWithBody(E2bSandboxClientOptions opt, byte[] body)
+            throws Exception {
+        Interceptor canned = chain -> cannedResponse(chain, body);
+        opt.setHttpClient(new OkHttpClient.Builder().addInterceptor(canned).build());
+        return new E2bEnvdProcessClient(opt);
+    }
+
+    private static Response cannedResponse(Interceptor.Chain chain, byte[] body) {
+        return new Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(ResponseBody.create(body, null))
+                .build();
+    }
+
+    private static byte[] endStreamFrame(byte[] payload) {
+        byte[] out = new byte[5 + payload.length];
+        out[0] = 0x02;
+        ByteBuffer.wrap(out, 1, 4).order(ByteOrder.BIG_ENDIAN).putInt(payload.length);
+        System.arraycopy(payload, 0, out, 5, payload.length);
+        return out;
+    }
+
+    private static byte[] protoEndStreamError(String code, String message) {
+        byte[] codeBytes = code.getBytes(StandardCharsets.UTF_8);
+        byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(0x0A);
+        writeVarint(inner, codeBytes.length);
+        inner.writeBytes(codeBytes);
+        inner.write(0x12);
+        writeVarint(inner, messageBytes.length);
+        inner.writeBytes(messageBytes);
+        byte[] innerBytes = inner.toByteArray();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(0x0A);
+        writeVarint(out, innerBytes.length);
+        out.writeBytes(innerBytes);
+        return out.toByteArray();
+    }
+
+    private static void writeVarint(ByteArrayOutputStream out, int value) {
+        while ((value & ~0x7F) != 0) {
+            out.write((value & 0x7F) | 0x80);
+            value >>>= 7;
+        }
+        out.write(value);
+    }
+
+    private static E2bSandboxState state() {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setSandboxId("test-sandbox");
+        return state;
     }
 }
