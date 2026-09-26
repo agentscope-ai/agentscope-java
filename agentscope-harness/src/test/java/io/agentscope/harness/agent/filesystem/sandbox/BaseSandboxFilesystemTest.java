@@ -766,6 +766,66 @@ class BaseSandboxFilesystemTest {
             // and the content landed in the real target
             assertEquals("Hello Java", Files.readString(real));
         }
+
+        @Test
+        void edit_fallback_writeThroughUploadPreservesSymlink() throws IOException {
+            // Forced transfer fallback (python3 "missing"): an exec-style backend whose
+            // upload opens the path (shell redirection semantics) writes through the link.
+            Path real = tmpDir.resolve("real2.txt");
+            Files.writeString(real, "Hello World");
+            Path link = tmpDir.resolve("link2.txt");
+            Files.createSymbolicLink(link, real.getFileName());
+
+            LocalShellFallbackFilesystem fs = new LocalShellFallbackFilesystem(false);
+            EditResult result = fs.edit(RT, link.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "fallback should succeed: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertTrue(Files.isSymbolicLink(link), "write-through upload preserves the link");
+            assertEquals("Hello Java", Files.readString(real));
+        }
+
+        @Test
+        void edit_fallback_replacingUploadReplacesSymlink() throws IOException {
+            // A backend whose upload replaces the path (temp+rename at filePath) breaks the
+            // link — the documented divergence from the native path, owned by the backend.
+            Path real = tmpDir.resolve("real3.txt");
+            Files.writeString(real, "Hello World");
+            Path link = tmpDir.resolve("link3.txt");
+            Files.createSymbolicLink(link, real.getFileName());
+
+            LocalShellFallbackFilesystem fs = new LocalShellFallbackFilesystem(true);
+            EditResult result = fs.edit(RT, link.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "fallback should succeed: " + result.error());
+            assertFalse(Files.isSymbolicLink(link), "replacing upload replaces the link");
+            assertEquals("Hello Java", Files.readString(link));
+            assertEquals("Hello World", Files.readString(real), "original target untouched");
+        }
+
+        @Test
+        void edit_replaceAll_occurrencesParityBetweenNativeAndFallback() throws IOException {
+            // Same input through both paths must report the same count and final content,
+            // so the two implementations cannot drift.
+            Path nativeFile = tmpDir.resolve("parity-native.txt");
+            Files.writeString(nativeFile, "a b a b a");
+            EditResult nativeResult =
+                    new LocalShellSandboxFilesystem()
+                            .edit(RT, nativeFile.toString(), "a", "x", true);
+
+            Path fallbackFile = tmpDir.resolve("parity-fallback.txt");
+            Files.writeString(fallbackFile, "a b a b a");
+            EditResult fallbackResult =
+                    new LocalShellFallbackFilesystem(false)
+                            .edit(RT, fallbackFile.toString(), "a", "x", true);
+
+            assertTrue(nativeResult.isSuccess(), "native: " + nativeResult.error());
+            assertTrue(fallbackResult.isSuccess(), "fallback: " + fallbackResult.error());
+            assertEquals(nativeResult.occurrences(), fallbackResult.occurrences());
+            assertEquals(3, fallbackResult.occurrences());
+            assertEquals(Files.readString(nativeFile), Files.readString(fallbackFile));
+            assertEquals("x b x b x", Files.readString(fallbackFile));
+        }
     }
 
     // ================================================================
@@ -976,6 +1036,79 @@ class BaseSandboxFilesystemTest {
                 try {
                     byte[] content = Files.readAllBytes(Path.of(path));
                     results.add(FileDownloadResponse.success(path, content));
+                } catch (IOException e) {
+                    results.add(FileDownloadResponse.fail(path, e.getMessage()));
+                }
+            }
+            return results;
+        }
+    }
+
+    /**
+     * Real-file backend that forces the transfer fallback (python3 "missing") and lets the test
+     * choose the upload semantics: write-through (open the path, following a symlink) or
+     * replace (remove the path first, breaking a symlink).
+     */
+    private static final class LocalShellFallbackFilesystem extends BaseSandboxFilesystem {
+
+        private final boolean replaceOnUpload;
+
+        LocalShellFallbackFilesystem(boolean replaceOnUpload) {
+            this.replaceOnUpload = replaceOnUpload;
+        }
+
+        @Override
+        public String id() {
+            return "local-shell-no-python";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            if (command.startsWith("python3 ")) {
+                return new ExecuteResponse("python3: command not found", 127, false);
+            }
+            try {
+                Process p =
+                        new ProcessBuilder("sh", "-c", command).redirectErrorStream(true).start();
+                String output =
+                        new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                return new ExecuteResponse(output, p.waitFor(), false);
+            } catch (Exception e) {
+                return new ExecuteResponse("execute failed: " + e.getMessage(), 1, false);
+            }
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            List<FileUploadResponse> results = new ArrayList<>();
+            for (Map.Entry<String, byte[]> entry : files) {
+                try {
+                    Path dest = Path.of(entry.getKey());
+                    if (dest.getParent() != null) {
+                        Files.createDirectories(dest.getParent());
+                    }
+                    if (replaceOnUpload) {
+                        Files.deleteIfExists(dest);
+                    }
+                    Files.write(dest, entry.getValue());
+                    results.add(FileUploadResponse.success(entry.getKey()));
+                } catch (IOException e) {
+                    results.add(FileUploadResponse.fail(entry.getKey(), e.getMessage()));
+                }
+            }
+            return results;
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            List<FileDownloadResponse> results = new ArrayList<>();
+            for (String path : paths) {
+                try {
+                    results.add(
+                            FileDownloadResponse.success(path, Files.readAllBytes(Path.of(path))));
                 } catch (IOException e) {
                     results.add(FileDownloadResponse.fail(path, e.getMessage()));
                 }
