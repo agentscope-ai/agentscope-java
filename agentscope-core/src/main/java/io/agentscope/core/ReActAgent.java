@@ -153,7 +153,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -3524,29 +3523,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
                 List<ToolUseBlock> toolCalls,
                 BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-            if (toolCalls.stream().anyMatch(t -> t.getState() == ToolCallState.PARSE_FAILED)) {
-                return Mono.just(
-                        toolCalls.stream()
-                                .map(
-                                        toolCall ->
-                                                Map.entry(
-                                                        toolCall,
-                                                        ToolResultBlock.error(
-                                                                toolCall.getId(),
-                                                                "Tool execution rejected: malformed"
-                                                                        + " tool arguments")))
-                                .toList());
+            List<ToolUseBlock> executableCalls =
+                    toolCalls.stream().filter(t -> !hasParseFailure(t)).toList();
+            Map<String, ToolResultBlock> resultsById = new HashMap<>();
+            for (ToolUseBlock toolCall : toolCalls) {
+                if (hasParseFailure(toolCall)) {
+                    resultsById.put(
+                            toolCall.getId(),
+                            ToolResultBlock.error(
+                                    toolCall.getId(),
+                                    "Tool execution rejected: malformed arguments for '"
+                                            + toolCall.getName()
+                                            + "' ("
+                                            + toolCall.getId()
+                                            + ")"));
+                }
             }
-            return dispatchToolCalls(toolCalls, internalChunkCallback)
+            Mono<List<ToolResultBlock>> executedResults =
+                    executableCalls.isEmpty()
+                            ? Mono.just(List.of())
+                            : dispatchToolCalls(executableCalls, internalChunkCallback);
+            return executedResults
                     .map(
-                            results ->
-                                    IntStream.range(0, toolCalls.size())
-                                            .mapToObj(
-                                                    i ->
-                                                            Map.entry(
-                                                                    toolCalls.get(i),
-                                                                    results.get(i)))
-                                            .toList())
+                            results -> {
+                                for (int i = 0; i < executableCalls.size(); i++) {
+                                    resultsById.put(executableCalls.get(i).getId(), results.get(i));
+                                }
+                                return toolCalls.stream()
+                                        .map(
+                                                toolCall ->
+                                                        Map.entry(
+                                                                toolCall,
+                                                                resultsById.get(toolCall.getId())))
+                                        .toList();
+                            })
                     .onErrorResume(
                             Exception.class,
                             error -> {
@@ -3578,6 +3588,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 .toList();
                                 return Mono.just(errorResults);
                             });
+        }
+
+        private boolean hasParseFailure(ToolUseBlock toolCall) {
+            return toolCall.getMetadata() != null
+                    && Boolean.TRUE.equals(
+                            toolCall.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
         }
 
         /**

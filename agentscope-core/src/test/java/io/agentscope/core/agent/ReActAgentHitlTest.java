@@ -33,6 +33,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -832,6 +833,76 @@ class ReActAgentHitlTest {
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
+    }
+
+    @Test
+    void malformedToolCallDoesNotPreventValidSiblingFromExecuting() {
+        ToolUseBlock malformed =
+                ToolUseBlock.builder()
+                        .id("tc-bad")
+                        .name("bad")
+                        .input(Map.of("query", "stale"))
+                        .content("{\"query\": \"unterminated}")
+                        .build();
+        ToolUseBlock valid =
+                ToolUseBlock.builder()
+                        .id("tc-good")
+                        .name("good")
+                        .input(Map.of("query", "works"))
+                        .build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(malformed, valid))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                buildAgent(model, toolkitWith(new AllowingTool("bad"), new AllowingTool("good")));
+
+        agent.call(List.of()).block();
+
+        Map<String, ToolResultBlock> results =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .collect(java.util.stream.Collectors.toMap(ToolResultBlock::getId, r -> r));
+        assertEquals(ToolResultState.ERROR, results.get("tc-bad").getState());
+        assertTrue(toolResultText(results.get("tc-bad")).contains("tc-bad"));
+        assertEquals(ToolResultState.SUCCESS, results.get("tc-good").getState());
+        assertEquals("allowed:works", toolResultText(results.get("tc-good")));
+    }
+
+    @Test
+    void malformedToolCallRemainsRejectedAfterHitlApproval() {
+        ToolUseBlock malformed =
+                ToolUseBlock.builder()
+                        .id("tc-malformed-ask")
+                        .name("ask")
+                        .input(Map.of("query", "stale"))
+                        .content("{\"query\": \"unterminated}")
+                        .build();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse(List.of(malformed))),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+        assertEquals(true, pending.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+
+        agent.call(List.of(confirmMsg(true, pending))).block();
+
+        ToolResultBlock result =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(r -> "tc-malformed-ask".equals(r.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(result);
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(toolResultText(result).contains("malformed arguments"));
     }
 
     @Test

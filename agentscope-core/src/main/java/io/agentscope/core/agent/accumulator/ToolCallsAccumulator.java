@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
@@ -98,9 +99,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             }
         }
 
-        ToolUseBlock build() {
+        ToolUseBlock build(boolean finalBuild) {
             Map<String, Object> finalArgs = new HashMap<>(args);
             ToolCallState state = ToolCallState.PENDING;
+            Map<String, Object> finalMetadata = new HashMap<>(metadata);
             String rawContentStr = this.rawContent.toString();
 
             // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
@@ -123,21 +125,23 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                         }
                     }
                 } catch (Exception e) {
-                    state = ToolCallState.PARSE_FAILED;
-                    // Do not leave stale or partial arguments executable after final parsing
-                    // fails. The PARSE_FAILED state prevents dispatch through ReActAgent, and
-                    // clearing the map keeps the block fail-closed for other consumers too.
-                    finalArgs.clear();
-                    log.warn(
-                            "Failed to parse accumulated tool call arguments: "
-                                    + "toolId={}, toolName={}, byteLength={}, sha256={}, "
-                                    + "exceptionType={}, message={}",
-                            toolId,
-                            name,
-                            rawContentStr.getBytes(StandardCharsets.UTF_8).length,
-                            sha256(rawContentStr),
-                            e.getClass().getName(),
-                            e.getMessage());
+                    if (finalBuild) {
+                        finalMetadata.put(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true);
+                        finalArgs.clear();
+                        Throwable rootCause = e;
+                        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                            rootCause = rootCause.getCause();
+                        }
+                        log.warn(
+                                "Failed to parse accumulated tool call arguments: "
+                                        + "toolId={}, toolName={}, byteLength={}, sha256={}, "
+                                        + "causeType={}",
+                                toolId,
+                                name,
+                                rawContentStr.getBytes(StandardCharsets.UTF_8).length,
+                                sha256(rawContentStr),
+                                rootCause.getClass().getName());
+                    }
                 }
             }
 
@@ -159,7 +163,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .input(finalArgs)
                     .content(contentStr)
                     .state(state)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .build();
         }
 
@@ -285,7 +289,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
-        return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+        return builders.values().stream()
+                .map(builder -> builder.build(true))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -302,7 +308,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // First try to find by ID directly
             ToolCallBuilder builder = builders.get(id);
             if (builder != null) {
-                return builder.build();
+                return builder.build(false);
             }
         }
 
@@ -310,7 +316,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         if (lastToolCallKey != null) {
             ToolCallBuilder builder = builders.get(lastToolCallKey);
             if (builder != null) {
-                return builder.build();
+                return builder.build(false);
             }
         }
 

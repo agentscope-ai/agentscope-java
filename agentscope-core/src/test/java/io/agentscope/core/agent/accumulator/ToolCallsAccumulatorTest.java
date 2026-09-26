@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
@@ -120,7 +121,41 @@ class ToolCallsAccumulatorTest {
         // Partial arguments must not remain executable after final JSON parsing fails.
         assertTrue(toolCall.getInput().isEmpty());
         assertEquals("{}", toolCall.getContent());
-        assertEquals(ToolCallState.PARSE_FAILED, toolCall.getState());
+        assertEquals(ToolCallState.PENDING, toolCall.getState());
+        assertEquals(true, toolCall.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+    }
+
+    @Test
+    @DisplayName("Should not mark malformed intermediate snapshots as parse failures")
+    void testIntermediateSnapshotDoesNotFailBeforeStreamCompletes() {
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_streaming")
+                        .name("search")
+                        .content("{\"query\":")
+                        .build());
+
+        ToolUseBlock snapshot = accumulator.getAccumulatedToolCall("call_streaming");
+        assertEquals(ToolCallState.PENDING, snapshot.getState());
+        assertTrue(
+                snapshot.getMetadata() == null
+                        || !snapshot.getMetadata()
+                                .containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+
+        accumulator.add(
+                ToolUseBlock.builder()
+                        .id("call_streaming")
+                        .name("__fragment__")
+                        .content("\"ready\"}")
+                        .build());
+
+        ToolUseBlock completed = accumulator.buildAllToolCalls().get(0);
+        assertEquals("ready", completed.getInput().get("query"));
+        assertTrue(
+                completed.getMetadata() == null
+                        || !completed
+                                .getMetadata()
+                                .containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
     }
 
     @Test
