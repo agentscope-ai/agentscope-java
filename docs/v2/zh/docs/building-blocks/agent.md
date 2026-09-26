@@ -126,10 +126,12 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // 通过反射注册带 @Tool 的方法
 toolkit.registerTool(new MyCustomTools());      // 自定义工具类（带 @Tool 注解的方法）
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap =
+        McpClientBuilder.create("amap")
+                .streamableHttpTransport(
+                        "https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+                .buildAsync()
+                .block();
 toolkit.registerMcpClient(amap).block();
 
 ReActAgent agent =
@@ -166,9 +168,7 @@ ReActAgent agent =
 | `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
 | `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
 | `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
-| `modelConfig` | `ModelConfig` | 默认值 | 模型重试次数和备用模型 |
-| `reactConfig` | `ReactConfig` | 默认值 | 最大迭代次数和拒绝处理方式 |
-| `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数（也可放在 `reactConfig` 中） |
+| `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
 
 ## 多用户 / 多会话并发
 
@@ -353,7 +353,7 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` 为 `call`、`streamEvents` 和旧版 `stream` API 提供 `RuntimeContext` 重载。事件流使用 `streamEvents(msgs, ctx)` 显式传入上下文。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
+`ReActAgent` 为 `call` 和 `streamEvents` 提供 `RuntimeContext` 重载（另有为兼容保留的已弃用 `stream` 重载）。事件流使用 `streamEvents(msgs, ctx)` 显式传入上下文。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
 
 ### 谁能读到
 
@@ -384,7 +384,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 当权限系统判断某个工具调用需要用户批准时，智能体会发出 `RequireUserConfirmEvent` 并暂停。
 
-**1. 接收 `RequireUserConfirmEvent`** —— 用 `streamEvents` 监听暂停。事件携带 `getReplyId()`（用于恢复）和 `getToolCalls()` —— 一组 `ToolUseBlock`，每个暴露 `getId()` / `getName()` / `getInput()` / `getSuggestedRules()`。
+**1. 接收 `RequireUserConfirmEvent`** —— 用 `streamEvents` 监听暂停。事件携带 `getReplyId()`（用于恢复）和 `getToolCalls()` —— 一组 `ToolUseBlock`，每个暴露 `getId()` / `getName()` / `getInput()`。
 
 ```java
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -392,16 +392,17 @@ import io.agentscope.core.event.RequireUserConfirmEvent;
 agent.streamEvents(msg)
         .doOnNext(event -> {
             if (event instanceof RequireUserConfirmEvent confirm) {
-                confirm.getToolCalls().forEach(tc -> {
-                    System.out.println("工具: " + tc.getName() + ", 输入: " + tc.getInput());
-                    System.out.println("建议规则: " + tc.getSuggestedRules());
-                });
+                confirm.getToolCalls()
+                        .forEach(
+                                tc ->
+                                        System.out.println(
+                                                "工具: " + tc.getName() + ", 输入: " + tc.getInput()));
             }
         })
         .blockLast();
 ```
 
-**2. 构建确认结果** —— 为每个待处理工具调用构造一个 `ConfirmResult`。可以在传回前修改工具输入，或接受 suggested rules 让今后相同的调用自动放行：
+**2. 构建确认结果** —— 为每个待处理工具调用构造一个 `ConfirmResult`。可以在传回前修改工具输入；如果想让今后相同的调用自动放行，在 `rules` 参数里显式传入 `PermissionRule`（建议规则挂在权限引擎的 `PermissionDecision` 上，而不是工具调用上）：
 
 ```java
 import io.agentscope.core.event.ConfirmResult;
@@ -412,10 +413,8 @@ List<ConfirmResult> confirmResults = new ArrayList<>();
 for (var tc : confirmEvent.getToolCalls()) {
     confirmResults.add(
             new ConfirmResult(
-                    /* confirmed = */ true,                  // false 表示拒绝
-                    /* toolCall  = */ tc,                    // 传回（可选择修改）
-                    /* rules     = */ tc.getSuggestedRules() // 接受规则 → 未来调用自动放行
-                    ));
+                    /* confirmed = */ true, // false 表示拒绝
+                    /* toolCall  = */ tc)); // 传回（可选择修改）
 }
 ```
 
