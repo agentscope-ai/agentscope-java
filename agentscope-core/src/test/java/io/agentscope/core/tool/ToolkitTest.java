@@ -1299,7 +1299,6 @@ class ToolkitTest {
         McpClientWrapper mcpClientWrapper =
                 McpClientWrapperTestSupport.mockWrapper("external-mcp-client", true);
         when(mcpClientWrapper.initialize()).thenReturn(Mono.empty());
-        // Wrapper explicitly allows propagation; registration-level setting must win
 
         McpSchema.Tool mcpTool = mock(McpSchema.Tool.class);
         when(mcpTool.name()).thenReturn("external_tool");
@@ -1309,6 +1308,7 @@ class ToolkitTest {
                         new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
         when(mcpClientWrapper.listTools()).thenReturn(Mono.just(List.of(mcpTool)));
 
+        // Wrapper explicitly allows propagation; registration-level setting must win
         toolkit.registration().mcpClient(mcpClientWrapper).propagateMeta(false).apply();
 
         AgentTool tool = toolkit.getTool("external_tool");
@@ -1370,5 +1370,80 @@ class ToolkitTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> toolkit.registration().propagateMeta(null, false));
+    }
+
+    @Test
+    @DisplayName(
+            "callTool single should populate id and name on ToolResultBlock (was null before fix)")
+    void testCallToolSinglePopulatesIdAndName() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> input = Map.of("a", 2, "b", 3);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-001")
+                        .name("add")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-001", result.getId());
+        assertEquals("add", result.getName());
+    }
+
+    @Test
+    @DisplayName("callTool single should propagate id and name on error results too")
+    void testCallToolSingleErrorResultAlsoHasIdAndName() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> errorInput = Map.of("message", "boom");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-err")
+                        .name("error_tool")
+                        .input(errorInput)
+                        .content(JsonUtils.getJsonCodec().toJson(errorInput))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-err", result.getId());
+        assertEquals("error_tool", result.getName());
+    }
+
+    @Test
+    @DisplayName(
+            "callTool single should prefer ToolCallParam.input over ToolUseBlock.input when both"
+                    + " are set")
+    void testCallToolSingleParamInputPrecedenceOverToolUseBlock() {
+        toolkit.registerTool(sampleTools);
+
+        Map<String, Object> toolUseInput = Map.of("a", 2, "b", 3);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-single-param-priority")
+                        .name("add")
+                        .input(toolUseInput)
+                        .content(JsonUtils.getJsonCodec().toJson(toolUseInput))
+                        .build();
+
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolCall)
+                        .input(Map.of("a", 100, "b", 200))
+                        .build();
+
+        ToolResultBlock result = toolkit.callTool(param).block();
+
+        assertNotNull(result);
+        assertEquals("call-single-param-priority", result.getId());
+        assertEquals("add", result.getName());
+        assertEquals("300", ToolTestUtils.extractContent(result));
     }
 }

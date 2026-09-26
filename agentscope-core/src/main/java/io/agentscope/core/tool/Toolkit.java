@@ -535,6 +535,32 @@ public class Toolkit {
     /**
      * Execute a tool with the given parameters.
      *
+     * <p><b>Execution semantics</b>: This method routes through the same
+     * infrastructure as {@code callTools}, so it inherits the toolkit's
+     * {@link ExecutionConfig} (timeout and retry) and participates in the
+     * global {@code GracefulShutdownManager} shutdown guard. Previously
+     * this overload had no timeout, retry, or shutdown participation.
+     * Callers that depend on exactly-once execution should note that
+     * non-idempotent tools may be re-invoked on timeout when a custom
+     * {@code ToolkitConfig.executionConfig()} sets {@code maxAttempts > 1}.
+     * The default {@code TOOL_DEFAULTS} uses {@code maxAttempts(1)}, which
+     * is a no-op for retry.
+     *
+     * <p><b>Scheduling hop</b>: Execution now subscribes on the toolkit's
+     * executor (or {@code Schedulers.boundedElastic()} when none is
+     * configured) via {@code subscribeOn}. The previous implementation ran
+     * directly on the caller's thread. Callers that rely on
+     * thread-local state or security context propagated from the calling
+     * thread should migrate those values into the {@code ToolCallParam}
+     * or toolkit configuration, as they will no longer be visible on the
+     * execution thread.
+     *
+     * <p><b>Exception-as-result contract</b>: Any exception thrown by the
+     * tool, timeouts after retry is exhausted, or the shutdown guard
+     * firing — all are caught and materialised as a normal
+     * {@link ToolResultBlock} with {@link ToolResultBlock#error(String)},
+     * never propagated upstream.
+     *
      * <p>Example usage:
      *
      * <pre>{@code
@@ -557,7 +583,11 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executor.execute(param);
+        ExecutionConfig effectiveConfig =
+                ExecutionConfig.mergeConfigs(
+                        config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS);
+
+        return executor.executeWithInfrastructure(param, effectiveConfig);
     }
 
     /**
