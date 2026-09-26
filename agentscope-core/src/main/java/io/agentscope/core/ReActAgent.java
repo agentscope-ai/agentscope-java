@@ -1795,6 +1795,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
 
+        /**
+         * User messages that arrived in the same request as a permission-HITL resume. They cannot
+         * enter the context before the resumed tool calls have their results, so they wait here
+         * until the ReAct loop reaches its next reasoning step. If the resumed tool calls raise a
+         * second permission prompt, the messages stay here and are placed after the next resume.
+         *
+         * <p>The list is touched from the caller thread and from reactive callbacks, so every
+         * access goes through a {@code synchronized} method. The messages are kept in memory only.
+         */
+        private final List<Msg> deferredResumeMsgs = new ArrayList<>();
+
         /** Placeholder sentence written to the tool_result of a returnDirect tool. */
         private static final String RETURN_DIRECT_PLACEHOLDER =
                 "Tool call completed. The result has been presented to the user as the final output"
@@ -1857,7 +1868,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
                 validateAndAcceptConfirmResults(msgs, asking);
-                return resumeAgent();
+                deferResumeMsgs(nonConfirmMessages(msgs));
+                return resumeAgent().doOnNext(reply -> flushDeferredResumeMsgs());
             }
 
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
@@ -1926,6 +1938,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             + "Enable enablePendingToolRecovery or provide tool results. "
                             + "Pending IDs: "
                             + pendingIds);
+        }
+
+        /**
+         * The messages of a resume request that do not carry {@link ConfirmResult}s, i.e. the
+         * user input sent together with the approval.
+         */
+        private List<Msg> nonConfirmMessages(List<Msg> msgs) {
+            if (msgs == null || msgs.isEmpty()) {
+                return List.of();
+            }
+            return msgs.stream()
+                    .filter(
+                            m ->
+                                    m.getMetadata() == null
+                                            || !m.getMetadata()
+                                                    .containsKey(Msg.METADATA_CONFIRM_RESULTS))
+                    .toList();
+        }
+
+        /**
+         * Move the deferred resume messages into the context once no tool call is waiting for a
+         * result, so a user turn never sits between a {@code tool_use} and its {@code tool_result}.
+         */
+        private synchronized void flushDeferredResumeMsgs() {
+            if (deferredResumeMsgs.isEmpty()
+                    || !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()) {
+                return;
+            }
+            state.contextMutable().addAll(deferredResumeMsgs);
+            deferredResumeMsgs.clear();
+        }
+
+        private synchronized void deferResumeMsgs(List<Msg> msgs) {
+            deferredResumeMsgs.addAll(msgs);
         }
 
         /**
@@ -2427,6 +2473,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             ReasoningContext context = new ReasoningContext(getName());
+            flushDeferredResumeMsgs();
 
             return checkInterrupted()
                     .then(
