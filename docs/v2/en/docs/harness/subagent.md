@@ -104,6 +104,33 @@ results, including calls loaded from a failed session. Pending permission confir
 require confirmation; empty-input resume and caller-supplied tool results retain their existing
 behavior. Remote agents and custom factories configure recovery themselves.
 
+### Per-subagent compaction
+
+Local declarations inherit the parent's compaction configuration and enabled state by default.
+Set `compaction: false` in a workspace spec to disable it for one subagent, or `compaction: true`
+to use the default configuration even when the parent disables compaction. A mapping selects an
+independent configuration; omitted fields use `CompactionConfig` defaults:
+
+```yaml
+compaction:
+  triggerMessages: 20
+  keepMessages: 5
+  keepTokens: 0
+  flushBeforeCompact: false
+```
+
+Supported mapping fields are `triggerMessages`, `triggerTokens`, `reserved`, `keepMessages`,
+`keepTokens`, `keepTokensMin`, `keepTokensMax`, `keepTokensRatio`, `summaryPrompt`,
+`flushBeforeCompact`, and `offloadBeforeCompact`. Field names are case-sensitive. Invalid types
+or unknown fields produce a warning; the subagent remains available and inherits the parent's
+compaction settings. An absent or null `compaction` also inherits the parent.
+
+In Java, use `.compaction(config)` or `.disableCompaction()` on `SubagentDeclaration.Builder`.
+The last call wins; `.compaction(null)` restores inheritance. Java configurations also support
+custom models, pruning, and argument truncation. These settings apply only to local subagents;
+remote subagents manage their own compaction, so a `compaction` value on a remote declaration is
+ignored.
+
 ### Built-in `general-purpose`
 
 No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.

@@ -16,8 +16,10 @@
 package io.agentscope.harness.agent.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +28,104 @@ import org.junit.jupiter.api.Test;
  * {@code variant}, {@code steps} (renamed from {@code maxIters}).
  */
 class SubagentDeclarationPhaseATest {
+
+    @Test
+    void loader_parsesCompactionConfiguration() {
+        SubagentDeclaration decl =
+                AgentSpecLoader.parse(
+                        """
+                        ---
+                        description: Custom compaction
+                        compaction:
+                          triggerMessages: 9
+                          triggerTokens: 12000
+                          reserved: 1000
+                          keepMessages: 3
+                          keepTokens: 0
+                          keepTokensMin: 500
+                          keepTokensMax: 1500
+                          keepTokensRatio: 0.2
+                          summaryPrompt: 'Summarize {messages}'
+                          flushBeforeCompact: false
+                          offloadBeforeCompact: false
+                        ---
+                        body
+                        """,
+                        "worker",
+                        null);
+        assertNotNull(decl);
+        var config = decl.getCompactionConfig();
+        assertNotNull(config);
+        assertEquals(9, config.getTriggerMessages());
+        assertEquals(12000, config.getTriggerTokens());
+        assertEquals(1000, config.getReserved());
+        assertEquals(3, config.getKeepMessages());
+        assertEquals(0, config.getKeepTokens());
+        assertEquals(500, config.getKeepTokensMin());
+        assertEquals(1500, config.getKeepTokensMax());
+        assertEquals(0.2, config.getKeepTokensRatio());
+        assertEquals("Summarize {messages}", config.getSummaryPrompt());
+        assertFalse(config.isFlushBeforeCompact());
+        assertFalse(config.isOffloadBeforeCompact());
+        assertFalse(decl.isCompactionDisabled());
+    }
+
+    @Test
+    void loader_distinguishesInheritedEnabledAndDisabledCompaction() {
+        for (String value : new String[] {"null", "true", "false", "{}"}) {
+            SubagentDeclaration decl =
+                    AgentSpecLoader.parse(
+                            "---\ndescription: worker\ncompaction: " + value + "\n---\nbody",
+                            "worker",
+                            null);
+            assertNotNull(decl);
+            assertEquals("false".equals(value), decl.isCompactionDisabled());
+            assertEquals(
+                    "true".equals(value) || "{}".equals(value), decl.getCompactionConfig() != null);
+        }
+    }
+
+    @Test
+    void loader_ignoresMalformedCompactionWithoutDroppingAgent() {
+        for (String value :
+                new String[] {
+                    "oops",
+                    "[]",
+                    "{unknown: 1}",
+                    "{keepTokens: 1.5}",
+                    "{keepTokens: 4294967296}",
+                    "{flushBeforeCompact: nope}",
+                    "{summaryPrompt: 42}"
+                }) {
+            SubagentDeclaration decl =
+                    AgentSpecLoader.parse(
+                            "---\ndescription: worker\ncompaction: " + value + "\n---\nbody",
+                            "worker",
+                            null);
+            assertNotNull(decl, value);
+            assertEquals("worker", decl.getName());
+            assertNull(decl.getCompactionConfig(), value);
+            assertFalse(decl.isCompactionDisabled(), value);
+        }
+        // SnakeYAML rejects non-finite numbers before compaction validation runs.
+        assertNull(
+                AgentSpecLoader.parse(
+                        "---\ndescription: worker\ncompaction: {keepTokensRatio: .nan}\n---\nbody",
+                        "worker",
+                        null));
+    }
+
+    @Test
+    void builder_compactionCallsUseLastSetting() {
+        var config =
+                io.agentscope.harness.agent.memory.compaction.CompactionConfig.builder().build();
+        var builder = SubagentDeclaration.builder().name("worker").description("worker");
+        assertTrue(builder.compaction(config).disableCompaction().build().isCompactionDisabled());
+        assertFalse(builder.compaction(config).build().isCompactionDisabled());
+        var inherited = builder.disableCompaction().compaction(null).build();
+        assertFalse(inherited.isCompactionDisabled());
+        assertNull(inherited.getCompactionConfig());
+    }
 
     @Test
     void builderDefaults_areInheritSemantics() {
