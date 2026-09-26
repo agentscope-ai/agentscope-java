@@ -224,6 +224,38 @@ class GeminiMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should group tool results from one message into one user Content")
+    void testConvertMultipleToolResultBlocks() {
+        ToolResultBlock firstResult =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("search")
+                        .output(List.of(TextBlock.builder().text("First result").build()))
+                        .build();
+        ToolResultBlock secondResult =
+                ToolResultBlock.builder()
+                        .id("call_456")
+                        .name("lookup")
+                        .output(List.of(TextBlock.builder().text("Second result").build()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("system")
+                        .content(List.of(firstResult, secondResult))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Content content = result.get(0);
+        assertEquals("user", content.role().get());
+        assertEquals(2, content.parts().get().size());
+        assertEquals("call_123", content.parts().get().get(0).functionResponse().get().id().get());
+        assertEquals("call_456", content.parts().get().get(1).functionResponse().get().id().get());
+    }
+
+    @Test
     @DisplayName("Should format tool result with single output")
     void testToolResultSingleOutput() {
         ToolResultBlock toolResultBlock =
