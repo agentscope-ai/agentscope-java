@@ -21,6 +21,7 @@ _Avoid_: Channel extension, external account
 An individual Weixin account that a platform user authorizes for Agent conversations through Tencent's official ClawBot service.
 _Avoid_: WeCom, enterprise WeChat, unofficial WeChat protocol
 
+
 **iLink**:
 The official Weixin ClawBot service through which an authorized Personal Weixin account exchanges bot messages.
 _Avoid_: webhook protocol, iPad protocol
