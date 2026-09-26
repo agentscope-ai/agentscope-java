@@ -25,6 +25,9 @@ import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
+import java.time.DateTimeException;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -273,7 +276,20 @@ public class QuartzAgentScheduler implements AgentScheduler {
                 CronScheduleBuilder csb =
                         CronScheduleBuilder.cronSchedule(scheduleConfig.getCronExpression());
                 if (scheduleConfig.getZoneId() != null) {
-                    csb = csb.inTimeZone(TimeZone.getTimeZone(scheduleConfig.getZoneId()));
+                    String zoneId = scheduleConfig.getZoneId();
+                    TimeZone timeZone = TimeZone.getTimeZone(zoneId);
+                    try {
+                        ZoneId normalizedZoneId = ZoneId.of(zoneId).normalized();
+                        if (normalizedZoneId instanceof ZoneOffset offset
+                                && timeZone.getRawOffset() != offset.getTotalSeconds() * 1000) {
+                            // TimeZone's String overload silently maps bare/prefixed offsets to
+                            // GMT.
+                            timeZone = TimeZone.getTimeZone(offset);
+                        }
+                    } catch (DateTimeException e) {
+                        // Keep legacy TimeZone IDs (e.g. PST) and their original IDs intact.
+                    }
+                    csb = csb.inTimeZone(timeZone);
                 }
                 Trigger trigger =
                         TriggerBuilder.newTrigger()
@@ -574,14 +590,28 @@ public class QuartzAgentScheduler implements AgentScheduler {
             if (triggers != null && !triggers.isEmpty()) {
                 Trigger trigger = triggers.get(0);
                 if (trigger instanceof CronTrigger ct) {
-                    scheduleConfig =
-                            ScheduleConfig.builder()
-                                    .cron(ct.getCronExpression())
-                                    .zoneId(
-                                            ct.getTimeZone() != null
-                                                    ? ct.getTimeZone().getID()
-                                                    : null)
-                                    .build();
+                    String zoneId = ct.getTimeZone() != null ? ct.getTimeZone().getID() : null;
+                    try {
+                        scheduleConfig =
+                                ScheduleConfig.builder()
+                                        .cron(ct.getCronExpression())
+                                        .zoneId(zoneId)
+                                        .build();
+                    } catch (IllegalArgumentException e) {
+                        if (zoneId == null) {
+                            throw e;
+                        }
+                        // Revalidate the cron expression without the zone so other invalid config
+                        // errors are not mistaken for an unsupported persisted time zone.
+                        scheduleConfig =
+                                ScheduleConfig.builder().cron(ct.getCronExpression()).build();
+                        logger.warn(
+                                "Quartz task '{}' has an unsupported persisted time zone ID '{}'; "
+                                        + "reconstructing it without a configured zone",
+                                name,
+                                zoneId,
+                                e);
+                    }
                 } else if (trigger instanceof SimpleTrigger st) {
                     scheduleConfig =
                             ScheduleConfig.builder().fixedRate(st.getRepeatInterval()).build();
