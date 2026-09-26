@@ -164,7 +164,10 @@ public class JdbcAgentStateStore implements AgentStateStore {
                                 + " ADD COLUMN version BIGINT NOT NULL DEFAULT 1;"
                                 + " (DEFAULT 1, not the reference DDL's DEFAULT 0 — an ALTER"
                                 + " backfills existing rows, and 0 is the 'row absent'"
-                                + " sentinel)."
+                                + " sentinel). The column DEFAULT stays 1 afterwards, unlike"
+                                + " the reference DDL's 0 — harmless through the store, which"
+                                + " always writes version explicitly, but keep it in mind if"
+                                + " your own SQL omits the column."
                         : "";
         String otherRemedy =
                 missing.stream().anyMatch(c -> !"version".equals(c))
