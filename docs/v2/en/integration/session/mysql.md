@@ -74,8 +74,8 @@ When `createIfNotExist=true`, the table is created automatically:
 
 ```sql
 CREATE TABLE IF NOT EXISTS agentscope_sessions (
-    session_id VARCHAR(255) NOT NULL,
-    state_key  VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     item_index INT NOT NULL DEFAULT 0,
     state_data LONGTEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -83,6 +83,32 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
     PRIMARY KEY (session_id, state_key, item_index)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+The two key columns pin `utf8mb4_bin` while the table default stays `utf8mb4_unicode_ci`: `session_id` and `state_key` are case-sensitive identifiers, and the table default is case-insensitive, so without the binary collation two ids differing only in letter case would collide on the primary key and share a row. Note that `utf8mb4_bin` is PAD SPACE — values differing only in trailing spaces still compare equal.
+
+### Migrating tables created before this change
+
+`CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so a deployment created earlier keeps the case-insensitive default and needs an operator to migrate it. `agentscope_store`, `agentscope_sessions` and `agentscope_snapshots` all key on a caller-supplied identifier, so the same reasoning applies to each:
+
+```sql
+ALTER TABLE agentscope_store
+    MODIFY namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY item_key       VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_sessions
+    MODIFY session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_snapshots
+    MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
+```
+
+Adjust the table names if a prefix or per-table name override was configured. Both paths that create `agentscope_snapshots` — the `agentscope-extensions-jdbc` dialect and the legacy `agentscope-extensions-mysql` snapshot client — now pin the same collation, so the statement above is the only thing a deployment created earlier needs.
+
+Two things to plan for:
+
+- **Read semantics change with the collation.** Comparisons and prefix lookups (`session_id = ?`, `LIKE 'prefix%'`) become case-sensitive, so a lookup that previously matched `SESS-1` for `sess-1` will no longer match. Migrate at a point where no session is mid-flight.
+- **Rows may already be gone.** If two keys differing only in case were written before the migration, the second write overwrote the first through `ON DUPLICATE KEY UPDATE`; that lost row cannot be recovered from the table.
 
 - The `(userId, sessionId)` pair is packed into the `session_id` column as `{userSegment}:{sessionId}` (`userSegment` = `userId`, or `__anon__` for anonymous sessions).
 - Single value: `item_index = 0`
