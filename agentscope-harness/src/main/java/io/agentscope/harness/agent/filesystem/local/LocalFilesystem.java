@@ -99,12 +99,16 @@ public class LocalFilesystem implements AbstractFilesystem {
     private volatile boolean namespaceBoundary = false;
 
     /**
-     * Physical form of {@link #cwd}, computed on the first boundary check and reused for the
-     * instance's lifetime: {@code cwd} is immutable, and the nearest-existing-ancestor walk is
-     * the expensive half of every guarded resolution. When {@code cwd} does not exist yet (cold
-     * workspace), the cached anchor sits above it and the namespace suffix is joined onto that
-     * same anchor per call, so later comparisons stay consistent (Windows 8.3 short names,
-     * macOS {@code /var} vs {@code /private/var}).
+     * Physical form of {@link #cwd}, filled once and reused for the instance's lifetime. Only
+     * an <em>existing</em> workspace root is cached: a cold anchor would sit above {@code cwd}
+     * and keep a stale lexical form, so if the root later materialised as a symbolic link the
+     * namespace resolution would follow it from that stale form and silently re-anchor the
+     * boundary onto the link's target. A cache that goes stale after the fact (workspace root
+     * swapped or removed) can only make the candidate and the namespace root disagree, which
+     * fails closed. When {@code cwd} does not exist, every guarded call resolves from scratch
+     * until it does; a root that materialises as a link is then followed the same way as a
+     * pre-existing path alias (Windows 8.3 short names, macOS {@code /var} vs
+     * {@code /private/var}), which is operator-level, outside tenant reach.
      */
     private volatile Path physicalCwdCache;
 
@@ -285,6 +289,9 @@ public class LocalFilesystem implements AbstractFilesystem {
      * (TOCTOU) is not covered; and the boundary is a filesystem-API control only — the
      * shell-bearing variant runs {@code execute()} commands without filtering, so
      * configurations that expose the shell rely on the sandbox layer, not on this check.
+     * Likewise, a workspace root that materialises as a symbolic link after deployment anchors
+     * the boundary at its target, the same way as a pre-existing path alias — an operator-level
+     * concern outside tenant reach.
      *
      * <p>Must be configured before the filesystem is exposed to agent calls.
      *
@@ -814,16 +821,19 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Returns the cached physical form of {@link #cwd}, resolving it on first use; see
-     * {@link #physicalCwdCache}.
+     * Returns the cached physical form of {@link #cwd}, filling the cache only once
+     * {@code cwd} exists; see {@link #physicalCwdCache} for why a cold anchor is never cached.
      */
     private Path physicalCwd() {
         Path cached = physicalCwdCache;
-        if (cached == null) {
-            cached = physicalPath(cwd);
-            physicalCwdCache = cached;
+        if (cached != null) {
+            return cached;
         }
-        return cached;
+        Path resolved = physicalPath(cwd);
+        if (Files.exists(cwd)) {
+            physicalCwdCache = resolved;
+        }
+        return resolved;
     }
 
     /**
