@@ -132,12 +132,15 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     private static final String DEFAULT_RESOURCES_TABLE_NAME = "agentscope_skill_resources";
 
     /**
-     * Pattern for validating database and table names.
-     * Only allows alphanumeric characters and underscores, must start with letter
-     * or underscore.
-     * This prevents SQL injection attacks through malicious database/table names.
+     * Pattern for validating database and table names. Only allows alphanumeric characters,
+     * underscores, and hyphens, must start with letter or underscore. This prevents SQL injection
+     * attacks through malicious database/table names.
+     *
+     * <p>Note: Identifiers containing hyphens require backtick escaping in SQL queries, which
+     * {@link #quoteIdentifier(String)} applies unconditionally. This matches the identifier set
+     * accepted by {@code MysqlAgentStateStore}, so the same database name can configure both.
      */
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_-]*$");
 
     /** MySQL identifier length limit. */
     private static final int MAX_IDENTIFIER_LENGTH = 64;
@@ -270,12 +273,13 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      *
      * <p>
      * Creates the database with UTF-8 (utf8mb4) character set and unicode collation
-     * for proper internationalization support.
+     * for proper internationalization support. The database name is backtick-escaped so that
+     * hyphens and reserved words are handled correctly.
      */
     private void createDatabaseIfNotExist() {
         String createDatabaseSql =
                 "CREATE DATABASE IF NOT EXISTS "
-                        + databaseName
+                        + quoteIdentifier(databaseName)
                         + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
@@ -402,13 +406,26 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Get the full table name with database prefix.
+     * Get the full table name with database prefix, properly escaped with backticks.
+     *
+     * <p>Uses backticks to escape identifiers that may contain special characters like hyphens, or
+     * that collide with MySQL reserved words, both of which are otherwise syntax errors.
      *
      * @param tableName the table name
-     * @return The full table name (database.table)
+     * @return The full table name with backtick escaping (`database`.`table`)
      */
     private String getFullTableName(String tableName) {
-        return databaseName + "." + tableName;
+        return quoteIdentifier(databaseName) + "." + quoteIdentifier(tableName);
+    }
+
+    /**
+     * Wrap an already-validated identifier in backticks.
+     *
+     * <p>{@link #validateIdentifier(String, String)} rejects backticks, so no inner escaping is
+     * required here.
+     */
+    private String quoteIdentifier(String identifier) {
+        return "`" + identifier + "`";
     }
 
     /**
@@ -1147,10 +1164,10 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      *
      * <p>
      * This method ensures that identifiers only contain safe characters
-     * (alphanumeric and
-     * underscores) and start with a letter or underscore. This is critical for
-     * security since
-     * database and table names cannot be parameterized in prepared statements.
+     * (alphanumeric, underscores, and hyphens) and start with a letter or underscore. This is
+     * critical for security since database and table names cannot be parameterized in prepared
+     * statements. Generated SQL additionally backtick-escapes every identifier, see
+     * {@link #quoteIdentifier(String)}.
      *
      * @param identifier     The identifier to validate (database name or table
      *                       name)
@@ -1169,9 +1186,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException(
                     identifierType
-                            + " contains invalid characters. Only alphanumeric characters and"
-                            + " underscores are allowed, and it must start with a letter or"
-                            + " underscore. Invalid value: "
+                            + " contains invalid characters. Only alphanumeric characters,"
+                            + " underscores, and hyphens are allowed, and it must start with a"
+                            + " letter or underscore. Invalid value: "
                             + identifier);
         }
     }
