@@ -71,13 +71,61 @@ class TextChunkerTest {
     }
 
     @Test
-    @DisplayName("Should handle empty text")
+    @DisplayName("Should drop empty text")
     void testChunkEmptyText() {
         String text = "";
         List<String> chunks = TextChunker.chunkText(text, 10, SplitStrategy.CHARACTER, 0);
 
-        assertEquals(1, chunks.size());
-        assertEquals("", chunks.get(0));
+        assertTrue(chunks.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should drop whitespace-only text for every split strategy")
+    void testChunkWhitespaceOnlyText() {
+        for (SplitStrategy strategy : SplitStrategy.values()) {
+            List<String> chunks = TextChunker.chunkText("  \n ", 10, strategy, 0);
+
+            assertTrue(chunks.isEmpty(), () -> strategy + " returned a blank chunk");
+        }
+    }
+
+    @Test
+    @DisplayName("Should drop Unicode whitespace-only text")
+    void testChunkUnicodeWhitespaceOnlyText() {
+        String text = "\u00A0\u2007\u202F\u0085";
+
+        for (SplitStrategy strategy : SplitStrategy.values()) {
+            List<String> chunks = TextChunker.chunkText(text, 10, strategy, 0);
+
+            assertTrue(chunks.isEmpty(), () -> strategy + " returned a Unicode blank chunk");
+        }
+    }
+
+    @Test
+    @DisplayName("Should preserve non-whitespace control characters for paragraph strategies")
+    void testParagraphStrategiesPreserveNullCharacter() {
+        for (SplitStrategy strategy : List.of(SplitStrategy.PARAGRAPH, SplitStrategy.SEMANTIC)) {
+            List<String> chunks = TextChunker.chunkText("\u0000", 10, strategy, 0);
+
+            assertEquals(List.of("\u0000"), chunks);
+        }
+    }
+
+    @Test
+    @DisplayName("Should drop whitespace-only chunks between text chunks")
+    void testDropWhitespaceOnlyChunks() {
+        List<String> chunks = TextChunker.chunkText("abc   def", 3, SplitStrategy.CHARACTER, 0);
+
+        assertEquals(List.of("abc", "def"), chunks);
+    }
+
+    @Test
+    @DisplayName("Should drop Unicode whitespace-only chunks between text chunks")
+    void testDropUnicodeWhitespaceOnlyChunks() {
+        List<String> chunks =
+                TextChunker.chunkText("abc\u00A0\u00A0\u00A0def", 3, SplitStrategy.CHARACTER, 0);
+
+        assertEquals(List.of("abc", "def"), chunks);
     }
 
     @Test
