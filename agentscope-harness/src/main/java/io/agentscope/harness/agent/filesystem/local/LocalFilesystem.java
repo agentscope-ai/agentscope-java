@@ -93,8 +93,20 @@ public class LocalFilesystem implements AbstractFilesystem {
      * When {@code true}, paths that resolve under {@link #cwd} but outside the caller's own
      * namespace directory are rejected with a {@link SecurityException} in
      * {@link LocalFsMode#ROOTED} mode. Off by default; see {@link #namespaceBoundary(boolean)}.
+     * Volatile so a configuration change on a shared instance is safely published to concurrent
+     * readers — the contract remains to configure before exposing the filesystem.
      */
-    private boolean namespaceBoundary = false;
+    private volatile boolean namespaceBoundary = false;
+
+    /**
+     * Physical form of {@link #cwd}, computed on the first boundary check and reused for the
+     * instance's lifetime: {@code cwd} is immutable, and the nearest-existing-ancestor walk is
+     * the expensive half of every guarded resolution. When {@code cwd} does not exist yet (cold
+     * workspace), the cached anchor sits above it and the namespace suffix is joined onto that
+     * same anchor per call, so later comparisons stay consistent (Windows 8.3 short names,
+     * macOS {@code /var} vs {@code /private/var}).
+     */
+    private volatile Path physicalCwdCache;
 
     /**
      * Per-path locks for the read-modify-write cycle inside {@link #edit}.
@@ -265,12 +277,14 @@ public class LocalFilesystem implements AbstractFilesystem {
      * directory is rejected like a direct path, and casing is normalized on case-insensitive
      * hosts. The namespace root is resolved the same way, so the comparison stays consistent
      * when the workspace root does not exist yet or is reached through a path alias (Windows
-     * 8.3 short names, macOS {@code /var} vs {@code /private/var}). This adds a small amount
-     * of filesystem I/O per resolved path while the boundary is active. Two limitations
+     * 8.3 short names, macOS {@code /var} vs {@code /private/var}). Namespace directories
+     * themselves are framework-managed and never links, so a link swapped in for one of them is
+     * rejected outright rather than re-anchoring the boundary to its target. This adds a small
+     * amount of filesystem I/O per resolved path while the boundary is active. Two limitations
      * remain: the check runs before the file operation, so a component swapped in between
-     * (TOCTOU) is not covered; and the namespace directories themselves are assumed to be
-     * framework-managed — a link swapped in for one of them re-anchors the boundary to its
-     * target rather than being detectable from here.
+     * (TOCTOU) is not covered; and the boundary is a filesystem-API control only — the
+     * shell-bearing variant runs {@code execute()} commands without filtering, so
+     * configurations that expose the shell rely on the sandbox layer, not on this check.
      *
      * <p>Must be configured before the filesystem is exposed to agent calls.
      *
@@ -745,11 +759,13 @@ public class LocalFilesystem implements AbstractFilesystem {
      * then walk up to the same nearest existing ancestor and real-path it. Symbolic links are
      * followed (broken ones included, via their link target) and casing is normalized to the
      * on-disk form, so a link planted inside the own namespace cannot lead the check past the
-     * boundary and case-insensitive hosts compare consistently. Relative keys do reach this
-     * check — they arrive namespace-prefixed from {@link #applyNamespacePrefix}, but a link
-     * inside the own namespace could still lead out of it, which the physical resolution
-     * catches. The check runs before the actual file operation, so a component swapped in
-     * between (TOCTOU) is out of scope.
+     * boundary and case-insensitive hosts compare consistently. Namespace directories
+     * themselves are framework-managed and never links, so a link swapped in for one of them is
+     * rejected outright (fail closed) instead of re-anchoring the boundary to its target.
+     * Relative keys do reach this check — they arrive namespace-prefixed from
+     * {@link #applyNamespacePrefix}, but a link inside the own namespace could still lead out
+     * of it, which the physical resolution catches. The check runs before the actual file
+     * operation, so a component swapped in between (TOCTOU) is out of scope.
      */
     private void requireOwnNamespace(RuntimeContext rc, Path resolved) {
         if (!namespaceBoundary || namespaceFactory == null) {
@@ -759,8 +775,30 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (ns == null || ns.isEmpty()) {
             return;
         }
-        Path nsRoot = physicalPath(cwd.resolve(String.join("/", ns)));
-        if (physicalPath(resolved).startsWith(nsRoot)) {
+        Path nsDir = physicalCwd();
+        for (String segment : ns) {
+            nsDir = nsDir.resolve(segment);
+            if (Files.isSymbolicLink(nsDir)) {
+                throw new SecurityException(
+                        "Namespace directory "
+                                + nsDir
+                                + " has been replaced by a symbolic link; refusing access to "
+                                + resolved);
+            }
+        }
+        Path nsRoot = physicalPath(nsDir);
+        Path physical = physicalPath(resolved);
+        if (!physical.isAbsolute()) {
+            // physicalPath only floors to a relative lexical path when the resolution failed
+            // outright (e.g. an unresolvable link chain); say so instead of a confusing
+            // namespace error.
+            throw new SecurityException(
+                    "Path "
+                            + resolved
+                            + " could not be resolved to a physical location on disk"
+                            + " (unresolvable symbolic-link chain); refusing access.");
+        }
+        if (physical.startsWith(nsRoot)) {
             return;
         }
         throw new SecurityException(
@@ -773,6 +811,19 @@ public class LocalFilesystem implements AbstractFilesystem {
                         + ". Paths under the workspace root may only address paths inside "
                         + nsRoot
                         + "; use workspace-relative paths for shared content.");
+    }
+
+    /**
+     * Returns the cached physical form of {@link #cwd}, resolving it on first use; see
+     * {@link #physicalCwdCache}.
+     */
+    private Path physicalCwd() {
+        Path cached = physicalCwdCache;
+        if (cached == null) {
+            cached = physicalPath(cwd);
+            physicalCwdCache = cached;
+        }
+        return cached;
     }
 
     /**

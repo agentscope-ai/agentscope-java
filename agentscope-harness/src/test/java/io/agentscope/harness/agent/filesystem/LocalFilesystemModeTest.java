@@ -511,6 +511,66 @@ class LocalFilesystemModeTest {
     }
 
     @Test
+    void rooted_symlinkedNamespaceDirectoryRejected(@TempDir Path workspace) throws IOException {
+        // Namespace directories are framework-managed and never links: one swapped in for the
+        // own-namespace directory must fail closed instead of re-anchoring the boundary to its
+        // target (which would accept cross-namespace access).
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path sibling = workspace.resolve("user-2/MEMORY.md");
+        Files.createDirectories(sibling.getParent());
+        Files.writeString(sibling, "user-2 private memory", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(workspace.resolve("user-1"), Path.of("user-2"));
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        String throughNsRoot = workspace.resolve("user-1/MEMORY.md").toAbsolutePath().toString();
+        assertThrows(SecurityException.class, () -> fs.read(rc, throughNsRoot, 0, 0));
+        assertThrows(SecurityException.class, () -> fs.read(rc, "MEMORY.md", 0, 0));
+    }
+
+    @Test
+    void rooted_symlinkedWorkspaceAliasTolerated(@TempDir Path temp) throws IOException {
+        // The workspace root may be reached through a path alias (macOS /var -> /private/var,
+        // Windows 8.3 short names): the boundary normalizes both sides instead of rejecting
+        // legitimate own-namespace access. Only namespace directories themselves are guarded.
+        assumeTrue(symlinksSupported(temp), "symlink creation not supported on this platform");
+        Path real = temp.resolve("real-workspace");
+        Files.createDirectories(real.resolve("user-1"));
+        Files.writeString(real.resolve("user-1/notes.md"), "my notes", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(temp.resolve("alias-workspace"), real.getFileName());
+
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                                temp.resolve("alias-workspace"),
+                                LocalFsMode.ROOTED,
+                                PathPolicy.empty(),
+                                10,
+                                USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult viaRelative = fs.read(rc, "notes.md", 0, 0);
+        assertTrue(
+                viaRelative.isSuccess(),
+                () ->
+                        "relative access through an aliased root should pass: "
+                                + viaRelative.error());
+        assertEquals("my notes", viaRelative.fileData().content());
+
+        ReadResult viaAbsolute =
+                fs.read(rc, temp.resolve("alias-workspace/user-1/notes.md").toString(), 0, 0);
+        assertTrue(
+                viaAbsolute.isSuccess(),
+                () ->
+                        "absolute access through an aliased root should pass: "
+                                + viaAbsolute.error());
+        assertEquals("my notes", viaAbsolute.fileData().content());
+    }
+
+    @Test
     void rooted_leadingSlashAllowsLiteralDotDotInPathName(@TempDir Path workspace)
             throws IOException {
         Path dir = workspace.resolve("some..dir");
