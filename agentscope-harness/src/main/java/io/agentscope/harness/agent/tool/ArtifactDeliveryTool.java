@@ -20,15 +20,17 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryRequest;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
+import io.agentscope.harness.agent.artifact.ArtifactDeliverySource;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.artifact.DirectArtifactDeliveryTarget;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.util.List;
 
 /**
- * Agent-callable {@code deliver_artifact} tool: downloads a file from the agent filesystem (e.g. a
- * sandbox workspace) and delegates the transport to a configured {@link ArtifactDeliveryTarget}.
+ * Agent-callable {@code deliver_artifact} tool: delegates delivery of a file from the agent filesystem
+ * (e.g. a sandbox workspace) to a configured {@link ArtifactDeliveryTarget}.
  *
  * <p>This is the supported way for a sandboxed agent to hand an artifact it produced (report,
  * document, image, archive) to a destination outside the sandbox. It is only registered when an
@@ -122,27 +124,37 @@ public class ArtifactDeliveryTool {
         }
         boolean effectiveForce = Boolean.TRUE.equals(force);
 
-        List<FileDownloadResponse> responses =
-                filesystem.downloadFiles(runtimeContext, List.of(normalized));
-        if (responses.isEmpty()) {
-            return "Error: no download response for " + filePath;
-        }
-        FileDownloadResponse response = responses.get(0);
-        if (!response.isSuccess()) {
-            return "Error: failed to read '"
-                    + filePath
-                    + "' from the workspace: "
-                    + response.error();
-        }
+        ArtifactDeliveryResult result;
+        if (target instanceof DirectArtifactDeliveryTarget directTarget) {
+            result =
+                    directTarget.deliverFromFilesystem(
+                            runtimeContext,
+                            filesystem,
+                            new ArtifactDeliverySource(
+                                    normalized, effectiveFileName, description, effectiveForce));
+        } else {
+            List<FileDownloadResponse> responses =
+                    filesystem.downloadFiles(runtimeContext, List.of(normalized));
+            if (responses.isEmpty()) {
+                return "Error: no download response for " + filePath;
+            }
+            FileDownloadResponse response = responses.get(0);
+            if (!response.isSuccess()) {
+                return "Error: failed to read '"
+                        + filePath
+                        + "' from the workspace: "
+                        + response.error();
+            }
 
-        ArtifactDeliveryRequest request =
-                new ArtifactDeliveryRequest(
-                        normalized,
-                        response.content(),
-                        effectiveFileName,
-                        description,
-                        effectiveForce);
-        ArtifactDeliveryResult result = target.deliver(runtimeContext, request);
+            ArtifactDeliveryRequest request =
+                    new ArtifactDeliveryRequest(
+                            normalized,
+                            response.content(),
+                            effectiveFileName,
+                            description,
+                            effectiveForce);
+            result = target.deliver(runtimeContext, request);
+        }
         if (result == null) {
             return "Error: artifact delivery target returned no result";
         }
