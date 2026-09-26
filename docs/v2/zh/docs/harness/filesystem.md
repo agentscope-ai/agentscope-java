@@ -305,6 +305,12 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+本机 shell 的进程清理是尽力而为的：会尝试终止直接启动的 shell，以及等待 shell 前
+或清理时 shell 仍存活期间发现的后代进程。已记录的后代会在 shell 退出后继续被清理。
+但在首次快照之后创建、又在清理前被重新收养的子进程可能无法被发现。
+命令需要自行管理脱离父进程或在后台运行的进程；`execute` 返回或报告输出捕获错误，
+并不保证这些进程全部停止。
+
 #### 所有配置项
 
 ```java
@@ -321,7 +327,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `executeTimeoutSeconds(int)` | 单条 shell 命令超时（秒） | 120 |
-| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
+| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数；设为 `0` 时禁用捕获并返回 `<output capture disabled>` | 100,000 |
 | `env(String, String)` | 添加 shell 环境变量 | 无 |
 | `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
 | `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |
