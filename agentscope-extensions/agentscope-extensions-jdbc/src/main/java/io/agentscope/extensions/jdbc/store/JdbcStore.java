@@ -26,7 +26,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,25 +59,11 @@ public class JdbcStore implements BaseStore {
         this.dataSource = b.dataSource;
         this.dialect = b.dialect;
         this.objectMapper = b.objectMapper != null ? b.objectMapper : new ObjectMapper();
-        if (b.initializeSchema) {
-            initializeSchema();
-        }
     }
 
     /** Creates a builder for {@link JdbcStore}. */
     public static Builder builder(DataSource dataSource) {
         return new Builder(dataSource);
-    }
-
-    private void initializeSchema() {
-        try (Connection c = dataSource.getConnection();
-                Statement st = c.createStatement()) {
-            for (String ddl : dialect.storeCreateTableDdls()) {
-                st.execute(ddl);
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to initialize JdbcStore schema", e);
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -283,7 +268,6 @@ public class JdbcStore implements BaseStore {
         private final DataSource dataSource;
         private StoreDialect dialect;
         private ObjectMapper objectMapper;
-        private boolean initializeSchema;
 
         private Builder(DataSource dataSource) {
             this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
@@ -298,12 +282,6 @@ public class JdbcStore implements BaseStore {
         /** Sets a custom Jackson ObjectMapper. */
         public Builder objectMapper(ObjectMapper objectMapper) {
             this.objectMapper = objectMapper;
-            return this;
-        }
-
-        /** When true, runs the dialect's CREATE TABLE during construction. */
-        public Builder initializeSchema(boolean initializeSchema) {
-            this.initializeSchema = initializeSchema;
             return this;
         }
 

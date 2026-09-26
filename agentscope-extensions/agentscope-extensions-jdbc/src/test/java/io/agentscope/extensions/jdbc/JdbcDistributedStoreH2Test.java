@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.state.State;
-import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
@@ -55,7 +54,9 @@ class JdbcDistributedStoreH2Test {
     @BeforeAll
     static void setUp() {
         DataSource ds = H2TestSupport.createDataSource("distributed_store_test");
-        distributedStore = JdbcDistributedStore.create(ds, new H2Dialect());
+        // create(dataSource) auto-detects the dialect; the builder creates and validates
+        // all tables in one pass.
+        distributedStore = JdbcDistributedStore.create(ds);
     }
 
     @Test
@@ -110,9 +111,9 @@ class JdbcDistributedStoreH2Test {
     @Test
     @DisplayName("snapshot upload/download via JdbcSnapshotSpec client")
     void snapshotUploadDownload() throws Exception {
-        var spec =
-                new io.agentscope.extensions.jdbc.snapshot.JdbcSnapshotSpec(
-                        H2TestSupport.createDataSource("snapshot_facade_test"), new H2Dialect());
+        var ds = H2TestSupport.createDataSource("snapshot_facade_test");
+        var dialect = io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect.from(ds).build();
+        var spec = new io.agentscope.extensions.jdbc.snapshot.JdbcSnapshotSpec(ds, dialect);
         RemoteSnapshotClient client = spec.getClient();
 
         byte[] data = "test archive".getBytes();

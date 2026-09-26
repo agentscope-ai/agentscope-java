@@ -35,8 +35,9 @@ import io.agentscope.builder.web.share.JpaAgentVisibilityResolver;
 import io.agentscope.builder.web.workspace.SharedWorkspacePaths;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
+import io.agentscope.extensions.jdbc.store.JdbcStore;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
-import io.agentscope.extensions.mysql.store.JdbcStore;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -120,7 +121,9 @@ public class DataPlaneConfig {
     @ConditionalOnMissingBean(BaseStore.class)
     public BaseStore baseStore(DataSource dataSource) {
         log.info("Wiring default JdbcStore-backed BaseStore on the Spring DataSource");
-        return JdbcStore.builder(dataSource).initializeSchema(true).build();
+        // The dialect builder creates and validates the schema in one pass.
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(dataSource).build();
+        return JdbcStore.builder(dataSource).dialect(dialect).build();
     }
 
     /** JPA-backed {@link AgentStateStore} shared by every agent built on this node. */

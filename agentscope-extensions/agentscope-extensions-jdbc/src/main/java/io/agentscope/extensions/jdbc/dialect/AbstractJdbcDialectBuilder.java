@@ -21,6 +21,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
@@ -28,9 +29,14 @@ import javax.sql.DataSource;
 /**
  * Builder for {@link AbstractJdbcDialect} — chainable configuration then {@link #build()}.
  *
- * <p>{@code build()} performs three steps: detect DB type via SPI → assemble table
- * names → optionally auto-create tables via {@link AbstractJdbcDialect#createTableDdls()}.
- * The returned dialect instance does not hold a connection reference.
+ * <p>{@code build()} performs three steps: detect DB type via SPI → assemble table names →
+ * initialize and validate the schema of all three tables in one connection; schema work
+ * happens here and only here. With {@code autoCreateTable = true} (default) it executes
+ * {@link AbstractJdbcDialect#createTableDdls()} first ({@code IF NOT EXISTS} is a no-op on
+ * existing tables) and validates columns afterwards, catching a pre-existing table silently
+ * adopted under the same name; with {@code false} it runs no DDL and goes straight to the
+ * same validation. Either way, on normal return the three tables carry exactly the declared
+ * columns and no component constructor touches the schema afterwards.
  *
  * <p>Detection uses JDK {@link ServiceLoader} to discover all {@link AbstractJdbcDialect}
  * implementations on the classpath. Candidates are sorted by
@@ -96,7 +102,7 @@ public class AbstractJdbcDialectBuilder {
         return this;
     }
 
-    /** Detects the dialect, assembles table names, optionally creates tables. */
+    /** Detects the dialect, assembles table names, then creates and validates the schema. */
     public AbstractJdbcDialect build() {
         AbstractJdbcDialect dialect = detectDialect();
         dialect.tablePrefix(this.tablePrefix);
@@ -110,10 +116,15 @@ public class AbstractJdbcDialectBuilder {
             dialect.snapshotTableName(this.snapshotTableName);
         }
         dialect.bindDataSource(this.dataSource);
-        createTablesIfNeeded(dialect);
+        initializeAndValidateSchema(dialect);
         return dialect;
     }
 
+    /**
+     * SPI detection: the first candidate whose {@code supports()} accepts the database wins.
+     *
+     * @return the matching dialect instance
+     */
     private AbstractJdbcDialect detectDialect() {
         try (Connection conn = dataSource.getConnection()) {
             DatabaseMetaData metaData = conn.getMetaData();
@@ -145,15 +156,45 @@ public class AbstractJdbcDialectBuilder {
         }
     }
 
-    private void createTablesIfNeeded(AbstractJdbcDialect dialect) {
+    /**
+     * Runs all schema work on one connection: optional DDL execution, then column validation
+     * of each table against its own DDLs — both from {@link
+     * AbstractJdbcDialect#createTableDdls()}, the single source pairing tables with their
+     * statements.
+     *
+     * @param dialect the assembled dialect
+     * @throws IllegalStateException when a table is missing or lacks declared columns
+     */
+    private void initializeAndValidateSchema(AbstractJdbcDialect dialect) {
+        Map<String, List<String>> ddlsByTable = dialect.createTableDdls();
+        try (Connection conn = dataSource.getConnection()) {
+            createTablesIfNeeded(conn, ddlsByTable);
+            for (Map.Entry<String, List<String>> table : ddlsByTable.entrySet()) {
+                TableSchemaValidator.validate(conn, table.getKey(), table.getValue());
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                    "Failed to obtain a connection for schema initialization during dialect"
+                            + " assembly",
+                    e);
+        }
+    }
+
+    /**
+     * Executes every CREATE DDL on {@code conn}; a no-op unless {@code autoCreateTable} is set.
+     *
+     * @param conn the assembly connection
+     * @param ddlsByTable each table's DDL statements, keyed by resolved table name
+     */
+    private void createTablesIfNeeded(Connection conn, Map<String, List<String>> ddlsByTable) {
         if (!this.autoCreateTable) {
             return;
         }
-        List<String> ddls = dialect.createTableDdls();
-        try (Connection conn = dataSource.getConnection();
-                Statement stmt = conn.createStatement()) {
-            for (String ddl : ddls) {
-                stmt.execute(ddl);
+        try (Statement stmt = conn.createStatement()) {
+            for (List<String> ddls : ddlsByTable.values()) {
+                for (String ddl : ddls) {
+                    stmt.execute(ddl);
+                }
             }
         } catch (SQLException e) {
             throw new IllegalStateException(
@@ -161,7 +202,12 @@ public class AbstractJdbcDialectBuilder {
         }
     }
 
-    /** Inheritance depth relative to {@link AbstractJdbcDialect} (direct subclass = 1). */
+    /**
+     * Inheritance depth relative to {@link AbstractJdbcDialect} (direct subclass = 1).
+     *
+     * @param clazz the dialect class
+     * @return the number of classes between {@code clazz} and {@code AbstractJdbcDialect}
+     */
     private static int dialectDepth(Class<?> clazz) {
         int depth = 0;
         for (Class<?> c = clazz;
@@ -177,6 +223,10 @@ public class AbstractJdbcDialectBuilder {
      * prefixes cannot be parameterised in prepared statements, so this regex is the only
      * injection guard. Accepts {@code [A-Za-z_][A-Za-z0-9_]*} — no hyphens, spaces, or
      * special characters.
+     *
+     * @param identifier the caller-supplied identifier
+     * @param paramName the identifier's parameter name, for the error message
+     * @return the validated identifier
      */
     private static String validateIdentifier(String identifier, String paramName) {
         if (identifier == null

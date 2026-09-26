@@ -25,6 +25,7 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.extensions.jdbc.H2TestSupport;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -57,16 +58,9 @@ class JdbcAgentStateStoreH2Test {
     @BeforeEach
     void setUp() {
         ds = H2TestSupport.createDataSource("state_store_test");
-        store = new JdbcAgentStateStore(ds, new H2Dialect(), true);
-    }
-
-    @Test
-    @DisplayName("constructor with createIfNotExist=false throws when table is missing")
-    void constructorVerifiesTableExists() {
-        DataSource ds = H2TestSupport.createDataSource("state_verify_test");
-        assertThrows(
-                IllegalStateException.class,
-                () -> new JdbcAgentStateStore(ds, new H2Dialect(), false));
+        // Tables are created and validated by the dialect builder in one pass.
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).build();
+        store = new JdbcAgentStateStore(ds, dialect);
     }
 
     @Test
