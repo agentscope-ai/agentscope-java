@@ -2960,25 +2960,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             })
                     .flatMap(
                             results -> {
-                                // Middleware requested stop during acting — return immediately with
-                                // the requested GenerateReason, preserving any results already
-                                // collected.
-                                RequestStopEvent rs = actingStopRequested.get();
-                                if (rs != null) {
-                                    if (rs.getGenerateReason()
-                                            == GenerateReason.PERMISSION_ASKING) {
-                                        Msg lastAssistant =
-                                                MessageUtils.lastAssistantMessage(
-                                                        state.contextMutable());
-                                        if (lastAssistant != null) {
-                                            return Mono.just(
-                                                    lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
-                                        }
-                                    }
-                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                    return Mono.just(stopMsg);
-                                }
                                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                         results.stream()
                                                 .filter(e -> !e.getValue().isSuspended())
@@ -2987,6 +2968,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         results.stream()
                                                 .filter(e -> e.getValue().isSuspended())
                                                 .toList();
+
+                                // Middleware requested stop during acting — return immediately with
+                                // the requested GenerateReason. Persist completed tool results
+                                // through the same post-acting path as a normal iteration first,
+                                // otherwise the preceding tool_use remains orphaned in history.
+                                RequestStopEvent rs = actingStopRequested.get();
+                                if (rs != null) {
+                                    Mono<Void> persistResults =
+                                            successPairs.isEmpty()
+                                                    ? Mono.empty()
+                                                    : Flux.fromIterable(successPairs)
+                                                            .concatMap(
+                                                                    entry ->
+                                                                            notifyPostActingHook(
+                                                                                    entry, false))
+                                                            .then();
+                                    return persistResults.then(
+                                            Mono.fromSupplier(
+                                                    () -> {
+                                                        syncToolkitToState(state);
+                                                        if (rs.getGenerateReason()
+                                                                == GenerateReason
+                                                                        .PERMISSION_ASKING) {
+                                                            Msg lastAssistant =
+                                                                    MessageUtils
+                                                                            .lastAssistantMessage(
+                                                                                    state
+                                                                                            .contextMutable());
+                                                            if (lastAssistant != null) {
+                                                                return lastAssistant
+                                                                        .withGenerateReason(
+                                                                                GenerateReason
+                                                                                        .PERMISSION_ASKING);
+                                                            }
+                                                        }
+                                                        // The acting stop reason takes precedence
+                                                        // over a stop requested by a post-acting
+                                                        // hook.
+                                                        return buildStopMsg(
+                                                                results, rs.getGenerateReason());
+                                                    }));
+                                }
 
                                 if (successPairs.isEmpty()) {
                                     if (!pendingPairs.isEmpty()) {
