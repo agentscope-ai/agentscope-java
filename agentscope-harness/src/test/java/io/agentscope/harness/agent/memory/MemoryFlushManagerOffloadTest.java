@@ -16,11 +16,17 @@
 package io.agentscope.harness.agent.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.session.SessionEntry;
 import io.agentscope.harness.agent.memory.session.SessionTree;
@@ -29,12 +35,59 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class MemoryFlushManagerOffloadTest {
 
     @TempDir Path workspace;
+
+    @Test
+    void resolveOffloadPath_omitsHostPathForSandboxFilesystem() {
+        SandboxBackedFilesystem filesystem = mock(SandboxBackedFilesystem.class);
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace, filesystem)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            assertEquals(
+                    "",
+                    flushManager.resolveOffloadPath(
+                            RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveOffloadPath_omitsHostPathForRoutedSandboxFilesystem() {
+        RoutedSandboxFilesystem filesystem =
+                new RoutedSandboxFilesystem(
+                        mock(SandboxBackedFilesystem.class),
+                        Map.of("memory-stores/", new LocalFilesystem(workspace)));
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace, filesystem)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            assertEquals(
+                    "",
+                    flushManager.resolveOffloadPath(
+                            RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
+
+    @Test
+    void resolveOffloadPath_keepsReachablePathForLocalFilesystem() {
+        try (WorkspaceManager workspaceManager =
+                new WorkspaceManager(
+                        workspace,
+                        OverlayFilesystem.of(
+                                new LocalFilesystemWithShell(workspace),
+                                new LocalFilesystem(workspace)))) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, null);
+
+            assertEquals(
+                    "agents/agent-a/sessions/session-1.jsonl",
+                    flushManager.resolveOffloadPath(
+                            RuntimeContext.empty(), "agent-a", "session-1"));
+        }
+    }
 
     @Test
     void offloadMessages_skipsAlreadyPersistedPrefix_andKeepsChain() throws Exception {
