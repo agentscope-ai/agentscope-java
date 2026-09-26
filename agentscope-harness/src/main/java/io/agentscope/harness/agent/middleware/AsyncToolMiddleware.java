@@ -98,12 +98,17 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         return Flux.create(
                 sink -> {
+                    log.debug(
+                            "异步工具订阅继承调用上下文：session={}，contextKeys={}",
+                            ctx != null ? ctx.getSessionId() : null,
+                            sink.contextView().size());
                     AtomicBoolean completed = new AtomicBoolean(false);
                     AtomicBoolean timedOut = new AtomicBoolean(false);
                     List<AgentEvent> backgroundBuffer = new CopyOnWriteArrayList<>();
 
                     Disposable sub =
                             next.apply(input)
+                                    .contextWrite(context -> context.putAll(sink.contextView()))
                                     .subscribe(
                                             event -> {
                                                 if (!timedOut.get()) {

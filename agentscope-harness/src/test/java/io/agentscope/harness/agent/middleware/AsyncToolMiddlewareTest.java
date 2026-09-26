@@ -17,10 +17,12 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -34,10 +36,13 @@ import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.util.context.Context;
 
 class AsyncToolMiddlewareTest {
 
@@ -54,6 +59,125 @@ class AsyncToolMiddlewareTest {
         agentState = AgentState.builder().build();
         agentState.setReplyId("reply-1");
         ctx = RuntimeContext.builder().sessionId("session-1").agentState(agentState).build();
+    }
+
+    @Test
+    void downstreamReceivesSubscriberContextForEachSubscription() {
+        AsyncToolMiddleware middleware = new AsyncToolMiddleware(bus, Duration.ofSeconds(5));
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        List<AgentEvent> firstForwarded = new CopyOnWriteArrayList<>();
+        List<AgentEvent> secondForwarded = new CopyOnWriteArrayList<>();
+        AgentEventEmitter firstEmitter = firstForwarded::add;
+        AgentEventEmitter secondEmitter = secondForwarded::add;
+
+        Flux<AgentEvent> acting =
+                middleware.onActing(
+                        stubAgent(),
+                        ctx,
+                        input,
+                        next ->
+                                Flux.deferContextual(
+                                        context -> {
+                                            AgentEventEmitter emitter =
+                                                    AgentEventEmitter.fromContext(context)
+                                                            .orElseThrow();
+                                            assertSame(
+                                                    emitter,
+                                                    AgentEventEmitter.fromForwardingContext(context)
+                                                            .orElseThrow());
+                                            AgentEvent event =
+                                                    new ToolResultTextDeltaEvent(
+                                                            "r1",
+                                                            "t1",
+                                                            "context_tool",
+                                                            context.get("request-id"));
+                                            emitter.emit(event);
+                                            return Flux.just(event);
+                                        }));
+
+        List<AgentEvent> firstEvents =
+                acting.contextWrite(
+                                Context.of(
+                                        AgentEventEmitter.CONTEXT_KEY,
+                                        firstEmitter,
+                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                        firstEmitter,
+                                        "request-id",
+                                        "request-1"))
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+        List<AgentEvent> secondEvents =
+                acting.contextWrite(
+                                Context.of(
+                                        AgentEventEmitter.CONTEXT_KEY,
+                                        secondEmitter,
+                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                        secondEmitter,
+                                        "request-id",
+                                        "request-2"))
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertEquals(1, firstForwarded.size());
+        assertEquals(1, secondForwarded.size());
+        assertEquals(firstEvents, firstForwarded);
+        assertEquals(secondEvents, secondForwarded);
+        assertEquals("request-1", ((ToolResultTextDeltaEvent) firstForwarded.get(0)).getDelta());
+        assertEquals("request-2", ((ToolResultTextDeltaEvent) secondForwarded.get(0)).getDelta());
+    }
+
+    @Test
+    void backgroundExecutionRetainsContextAfterOffload() {
+        AsyncToolMiddleware middleware = new AsyncToolMiddleware(bus, Duration.ofMillis(50));
+        ToolUseBlock tool = ToolUseBlock.builder().id("t1").name("context_tool").build();
+        ActingInput input = new ActingInput(List.of(tool));
+        Sinks.One<String> release = Sinks.one();
+        Sinks.One<String> observed = Sinks.one();
+        List<AgentEvent> forwarded = new CopyOnWriteArrayList<>();
+        AgentEventEmitter emitter = forwarded::add;
+        Flux<AgentEvent> downstream =
+                release.asMono()
+                        .thenMany(
+                                Flux.deferContextual(
+                                        context -> {
+                                            AgentEventEmitter current =
+                                                    AgentEventEmitter.fromContext(context)
+                                                            .orElseThrow();
+                                            assertSame(emitter, current);
+                                            AgentEvent event =
+                                                    new ToolResultTextDeltaEvent(
+                                                            "r1",
+                                                            "t1",
+                                                            "context_tool",
+                                                            "background result");
+                                            current.emit(event);
+                                            observed.tryEmitValue(context.get("request-id"));
+                                            return Flux.just(event);
+                                        }));
+
+        List<AgentEvent> events =
+                middleware
+                        .onActing(stubAgent(), ctx, input, next -> downstream)
+                        .contextWrite(
+                                Context.of(
+                                        AgentEventEmitter.CONTEXT_KEY,
+                                        emitter,
+                                        "request-id",
+                                        "background-request"))
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                event ->
+                                        event instanceof ToolResultTextDeltaEvent delta
+                                                && delta.getDelta()
+                                                        .contains("running in background")));
+        assertEquals(Sinks.EmitResult.OK, release.tryEmitValue("continue"));
+        assertEquals("background-request", observed.asMono().block(Duration.ofSeconds(5)));
+        assertEquals(1, forwarded.size());
     }
 
     @Test
