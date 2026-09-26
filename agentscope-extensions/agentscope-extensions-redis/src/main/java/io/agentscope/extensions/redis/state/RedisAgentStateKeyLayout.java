@@ -20,15 +20,11 @@ import java.util.Optional;
 /**
  * Builds Redis keys for agent state sessions.
  *
- * <p>v0 is the original layout, where all session keys use the plain session segment
- * {@code {userId}/{sessionId}}. v1 is the Redis Cluster-safe layout, where versioned state keys use
- * the same segment wrapped in a Redis hash tag: {@code {{userId}/{sessionId}}}. Keeping the tag
+ * <p>V0 is the original layout, where all session keys use the plain session segment
+ * {@code userId/sessionId}. V1 is the Redis Cluster-safe layout, where versioned state keys use the
+ * same segment wrapped in a Redis hash tag: {@code {userId/sessionId}}. Keeping the tag
  * content equal to the v0 segment lets the state key, version key, and session marker share one hash
  * slot for Lua CAS operations.
- *
- * <p>The store keeps existing v0 sessions on v0 and creates new sessions on v1. Scalar and list
- * state use the same resolved layout so one session does not create markers in both layouts during
- * normal operation.
  */
 final class RedisAgentStateKeyLayout {
 
@@ -48,28 +44,6 @@ final class RedisAgentStateKeyLayout {
     }
 
     /**
-     * Resolve the layout for session state reads and writes.
-     *
-     * <p>Existing v0 sessions stay on v0 so old data remains readable and writable. New sessions
-     * use v1 so the state key, version key, list keys, and session marker share one Redis Cluster
-     * hash slot.
-     *
-     * @param client Redis client used to test whether the v0 marker exists
-     * @param keyPrefix Redis key prefix configured for the state store
-     * @param userId original user id, nullable
-     * @param sessionId session id, required
-     * @return resolved layout for the session
-     */
-    static RedisAgentStateKeyLayout resolve(
-            RedisClientAdapter client, String keyPrefix, String userId, String sessionId) {
-        RedisAgentStateKeyLayout v0 = v0(keyPrefix, userId, sessionId);
-        if (client.keyExists(v0.getKeysKey())) {
-            return v0;
-        }
-        return v1(keyPrefix, userId, sessionId);
-    }
-
-    /**
      * Build a v1 layout using a Redis hash tag around the normalized session segment.
      *
      * <p>Example: {@code agentscope:session:{user/session}:state}.
@@ -80,6 +54,9 @@ final class RedisAgentStateKeyLayout {
      * @return v1 cluster-safe key layout
      */
     static RedisAgentStateKeyLayout v1(String keyPrefix, String userId, String sessionId) {
+        validateV1KeyPrefix(keyPrefix);
+        validateV1UserId(normalizeUser(userId));
+        validateV1SessionId(sessionId);
         return new RedisAgentStateKeyLayout(
                 keyPrefix, "{" + sessionSegment(userId, sessionId) + "}");
     }
@@ -92,7 +69,7 @@ final class RedisAgentStateKeyLayout {
      * @param keyPrefix Redis key prefix configured for the state store
      * @param userId original user id, nullable
      * @param sessionId session id, required
-     * @return v0 legacy key layout
+     * @return original v0 key layout
      */
     static RedisAgentStateKeyLayout v0(String keyPrefix, String userId, String sessionId) {
         return new RedisAgentStateKeyLayout(keyPrefix, sessionSegment(userId, sessionId));
@@ -116,7 +93,11 @@ final class RedisAgentStateKeyLayout {
      * @return Redis scan pattern for v1 session marker keys
      */
     static String v1KeysPattern(String keyPrefix, String userSegment) {
-        return keyPrefix + "{" + userSegment + "/*}" + KEYS_SUFFIX;
+        return escapeRedisGlobLiteral(keyPrefix)
+                + "{"
+                + escapeRedisGlobLiteral(userSegment)
+                + "/*}"
+                + KEYS_SUFFIX;
     }
 
     /**
@@ -127,7 +108,71 @@ final class RedisAgentStateKeyLayout {
      * @return Redis scan pattern for v0 session marker keys
      */
     static String v0KeysPattern(String keyPrefix, String userSegment) {
-        return keyPrefix + userSegment + "/*" + KEYS_SUFFIX;
+        return escapeRedisGlobLiteral(keyPrefix)
+                + escapeRedisGlobLiteral(userSegment)
+                + "/*"
+                + KEYS_SUFFIX;
+    }
+
+    /**
+     * Validate that a v1 prefix cannot alter the Redis hash tag added around a session segment.
+     *
+     * @param keyPrefix Redis key prefix configured for the state store
+     * @throws IllegalArgumentException when the prefix contains a hash-tag brace
+     */
+    static void validateV1KeyPrefix(String keyPrefix) {
+        rejectCharacters(keyPrefix, "keyPrefix", false);
+    }
+
+    /**
+     * Validate that a normalized v1 user id is unambiguous inside {@code {userId/sessionId}}.
+     *
+     * @param userId normalized user id
+     * @throws IllegalArgumentException when the id contains a brace or path separator
+     */
+    static void validateV1UserId(String userId) {
+        rejectCharacters(userId, "userId", true);
+    }
+
+    private static void validateV1SessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        rejectCharacters(sessionId, "sessionId", true);
+    }
+
+    private static void rejectCharacters(String value, String name, boolean rejectSlash) {
+        if (value.indexOf('{') >= 0
+                || value.indexOf('}') >= 0
+                || (rejectSlash && value.indexOf('/') >= 0)) {
+            throw new IllegalArgumentException(
+                    name + ": " + value + " contains a character that is not supported by V1");
+        }
+    }
+
+    /**
+     * Escape Redis glob metacharacters so a value is matched literally by {@code SCAN MATCH}.
+     *
+     * <p>This transforms only the temporary scan pattern. It does not modify the caller's value or
+     * the Redis key stored for that value.
+     *
+     * @param value literal key segment to embed in a Redis glob pattern
+     * @return the segment encoded for literal matching in a Redis glob pattern
+     */
+    private static String escapeRedisGlobLiteral(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (character == '\\'
+                    || character == '*'
+                    || character == '?'
+                    || character == '['
+                    || character == ']') {
+                escaped.append('\\');
+            }
+            escaped.append(character);
+        }
+        return escaped.toString();
     }
 
     /**
@@ -138,7 +183,7 @@ final class RedisAgentStateKeyLayout {
      * @param userSegment normalized user segment
      * @return parsed session id, or empty when the key does not match v0 layout
      */
-    static Optional<String> parseV0SessionIdKeysKey(
+    static Optional<String> parseV0SessionIdFromKeysKey(
             String keysKey, String keyPrefix, String userSegment) {
         String userPrefix = keyPrefix + userSegment + "/";
         if (!keysKey.startsWith(userPrefix) || !keysKey.endsWith(KEYS_SUFFIX)) {
@@ -168,10 +213,10 @@ final class RedisAgentStateKeyLayout {
     }
 
     /**
-     * Build the Redis string key for a scalar state value in this layout.
+     * Build the Redis string key for a single state value in this layout.
      *
      * @param key state key within the session
-     * @return Redis key for the scalar state value
+     * @return Redis key for the single state value
      */
     String getStateKey(String key) {
         return keyPrefix + slotId + ":" + key;

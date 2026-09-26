@@ -47,11 +47,11 @@ import redis.clients.jedis.UnifiedJedis;
  *   <li>Redisson - Standalone, Cluster, Sentinel, Master/Slave</li>
  * </ul>
  *
- * <p>The session state is stored in Redis with following key structure. The session segment is
- * {@code {userId}/{sessionId}} (or {@code __anon__/{sessionId}} when user id is absent). Sessions
- * with an existing v0 marker keep their non-hash-tagged session segment. New sessions use a Redis
- * Cluster-safe hash-tagged session segment, where {@code {userId}/{sessionId}} is wrapped in braces.
- * Scalar and list state use the same resolved layout for a session.
+ * <p>The session state is stored in Redis with the following key structure. The session segment is
+ * {@code userId/sessionId} (or {@code __anon__/sessionId} when user id is absent). By default the
+ * store uses the original V0 layout. V1 is an explicit, Redis Cluster-safe alternative that wraps
+ * the session segment in a Redis hash tag. Configure the same layout on every store sharing a key
+ * prefix.
  *
  * <ul>
  *   <li>Single state: {@code {prefix}{sessionSegment}:{stateKey}} - Redis String containing JSON
@@ -64,9 +64,8 @@ import redis.clients.jedis.UnifiedJedis;
  *       state keys
  * </ul>
  *
- * <p>For all state, {@code {sessionSegment}} is either v0 {@code {userId}/{sessionId}} or hash-tagged
- * {@code {{userId}/{sessionId}}}. Public builder usage is unchanged; the layout is selected
- * internally from session metadata.
+ * <p>For all state, {@code {sessionSegment}} is either V0 {@code userId/sessionId} or V1
+ * {@code {userId/sessionId}}, according to the configured key layout version.
  *
  * <p><strong>Jedis Usage Examples:</strong></p>
  *
@@ -95,6 +94,7 @@ import redis.clients.jedis.UnifiedJedis;
  * // Build RedisAgentStateStore
  * AgentStateStore stateStore = RedisAgentStateStore.builder()
  *     .jedisClient(redisClusterClient)
+ *     .keyLayoutVersion(RedisAgentStateStore.KeyLayoutVersion.V1)
  *     .build();
  * }</pre>
  *
@@ -137,6 +137,7 @@ import redis.clients.jedis.UnifiedJedis;
  * // Build RedisAgentStateStore
  * AgentStateStore stateStore = RedisAgentStateStore.builder()
  *     .lettuceClusterClient(clusterClient)
+ *     .keyLayoutVersion(RedisAgentStateStore.KeyLayoutVersion.V1)
  *     .build();
  * }</pre>
  *
@@ -189,6 +190,14 @@ import redis.clients.jedis.UnifiedJedis;
  */
 public class RedisAgentStateStore implements AgentStateStore {
 
+    /** Redis key layout used by this store instance. */
+    public enum KeyLayoutVersion {
+        /** Default, original key layout without a Redis Cluster hash tag. */
+        V0,
+        /** Cluster-safe key layout with the session segment in a Redis hash tag. */
+        V1
+    }
+
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
 
     private static final String HASH_SUFFIX = ":_hash";
@@ -197,6 +206,8 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     private final String keyPrefix;
 
+    private final KeyLayoutVersion keyLayoutVersion;
+
     private RedisAgentStateStore(Builder builder) {
         if (builder.client == null) {
             throw new IllegalArgumentException("Redis client cannot be null");
@@ -204,8 +215,15 @@ public class RedisAgentStateStore implements AgentStateStore {
         if (builder.keyPrefix == null || builder.keyPrefix.trim().isEmpty()) {
             throw new IllegalArgumentException("Key prefix cannot be null or empty");
         }
+        if (builder.keyLayoutVersion == null) {
+            throw new IllegalArgumentException("Key layout version cannot be null");
+        }
+        if (builder.keyLayoutVersion == KeyLayoutVersion.V1) {
+            RedisAgentStateKeyLayout.validateV1KeyPrefix(builder.keyPrefix);
+        }
         this.client = builder.client;
         this.keyPrefix = builder.keyPrefix;
+        this.keyLayoutVersion = builder.keyLayoutVersion;
     }
 
     /**
@@ -380,8 +398,8 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public boolean exists(String userId, String sessionId) {
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
         try {
-            RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
             return client.getSetSize(keyLayout.getKeysKey()) > 0;
         } catch (Exception e) {
             throw new RuntimeException(
@@ -395,9 +413,34 @@ public class RedisAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId) {
+        RedisAgentStateKeyLayout keyLayout = resolveKeyLayout(userId, sessionId);
         try {
-            deleteUserSession(v0KeyLayout(userId, sessionId));
-            deleteUserSession(v1KeyLayout(userId, sessionId));
+            String keysKey = keyLayout.getKeysKey();
+            Set<String> trackedKeys = client.getSetMembers(keysKey);
+
+            if (trackedKeys != null && !trackedKeys.isEmpty()) {
+                Set<String> keysToDelete = new HashSet<>();
+                keysToDelete.add(keysKey);
+
+                for (String trackedKey : trackedKeys) {
+                    if (RedisAgentStateKeyLayout.isListTrackKey(trackedKey)) {
+                        String baseKey =
+                                RedisAgentStateKeyLayout.baseKeyFromListTrackKey(trackedKey);
+                        keysToDelete.add(keyLayout.getListKey(baseKey));
+                        keysToDelete.add(keyLayout.getListKey(baseKey) + HASH_SUFFIX);
+                    } else {
+                        keysToDelete.add(keyLayout.getStateKey(trackedKey));
+                        keysToDelete.add(
+                                RedisStateVersionSupport.versionKey(
+                                        keyLayout.getStateKey(trackedKey)));
+                    }
+                }
+
+                // Delete one key per command to avoid crossing unknown Cluster slots.
+                for (String keyToDelete : keysToDelete) {
+                    client.deleteKeys(keyToDelete);
+                }
+            }
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to delete session: "
@@ -408,45 +451,28 @@ public class RedisAgentStateStore implements AgentStateStore {
         }
     }
 
-    private void deleteUserSession(RedisAgentStateKeyLayout keyLayout) {
-        String keysKey = keyLayout.getKeysKey();
-        Set<String> trackedKeys = client.getSetMembers(keysKey);
-
-        if (trackedKeys != null && !trackedKeys.isEmpty()) {
-            Set<String> keysToDelete = new HashSet<>();
-            keysToDelete.add(keysKey);
-
-            for (String trackedKey : trackedKeys) {
-                if (RedisAgentStateKeyLayout.isListTrackKey(trackedKey)) {
-                    String baseKey = RedisAgentStateKeyLayout.baseKeyFromListTrackKey(trackedKey);
-                    keysToDelete.add(keyLayout.getListKey(baseKey));
-                    keysToDelete.add(keyLayout.getListKey(baseKey) + HASH_SUFFIX);
-                } else {
-                    keysToDelete.add(keyLayout.getStateKey(trackedKey));
-                    keysToDelete.add(
-                            RedisStateVersionSupport.versionKey(keyLayout.getStateKey(trackedKey)));
-                }
-            }
-
-            client.deleteKeys(keysToDelete.toArray(new String[0]));
-        }
-    }
-
     @Override
     public Set<String> listSessionIds(String userId) {
         String userSegment = RedisAgentStateKeyLayout.normalizeUser(userId);
+        if (keyLayoutVersion == KeyLayoutVersion.V1) {
+            RedisAgentStateKeyLayout.validateV1UserId(userSegment);
+        }
         try {
             Set<String> sessionIds = new HashSet<>();
-            String v1KeysPattern = RedisAgentStateKeyLayout.v1KeysPattern(keyPrefix, userSegment);
-            for (String keysKey : client.findKeysByPattern(v1KeysPattern)) {
-                RedisAgentStateKeyLayout.parseV1SessionIdFromKeysKey(
-                                keysKey, keyPrefix, userSegment)
-                        .ifPresent(sessionIds::add);
-            }
-            String v0Pattern = RedisAgentStateKeyLayout.v0KeysPattern(keyPrefix, userSegment);
-            for (String keysKey : client.findKeysByPattern(v0Pattern)) {
-                RedisAgentStateKeyLayout.parseV0SessionIdKeysKey(keysKey, keyPrefix, userSegment)
-                        .ifPresent(sessionIds::add);
+            if (keyLayoutVersion == KeyLayoutVersion.V1) {
+                String pattern = RedisAgentStateKeyLayout.v1KeysPattern(keyPrefix, userSegment);
+                for (String keysKey : client.findKeysByPattern(pattern)) {
+                    RedisAgentStateKeyLayout.parseV1SessionIdFromKeysKey(
+                                    keysKey, keyPrefix, userSegment)
+                            .ifPresent(sessionIds::add);
+                }
+            } else {
+                String pattern = RedisAgentStateKeyLayout.v0KeysPattern(keyPrefix, userSegment);
+                for (String keysKey : client.findKeysByPattern(pattern)) {
+                    RedisAgentStateKeyLayout.parseV0SessionIdFromKeysKey(
+                                    keysKey, keyPrefix, userSegment)
+                            .ifPresent(sessionIds::add);
+                }
             }
             return sessionIds;
         } catch (Exception e) {
@@ -454,16 +480,12 @@ public class RedisAgentStateStore implements AgentStateStore {
         }
     }
 
+    /** Resolve keys in the configured layout. */
     private RedisAgentStateKeyLayout resolveKeyLayout(String userId, String sessionId) {
-        return RedisAgentStateKeyLayout.resolve(client, keyPrefix, userId, sessionId);
-    }
-
-    private RedisAgentStateKeyLayout v1KeyLayout(String userId, String sessionId) {
-        return RedisAgentStateKeyLayout.v1(keyPrefix, userId, sessionId);
-    }
-
-    private RedisAgentStateKeyLayout v0KeyLayout(String userId, String sessionId) {
-        return RedisAgentStateKeyLayout.v0(keyPrefix, userId, sessionId);
+        return switch (keyLayoutVersion) {
+            case V0 -> RedisAgentStateKeyLayout.v0(keyPrefix, userId, sessionId);
+            case V1 -> RedisAgentStateKeyLayout.v1(keyPrefix, userId, sessionId);
+        };
     }
 
     @Override
@@ -481,8 +503,8 @@ public class RedisAgentStateStore implements AgentStateStore {
                         () -> {
                             try {
                                 Set<String> keys = client.findKeysByPattern(keyPrefix + "*");
-                                if (!keys.isEmpty()) {
-                                    client.deleteKeys(keys.toArray(new String[0]));
+                                for (String key : keys) {
+                                    client.deleteKeys(key);
                                 }
                                 return keys.size();
                             } catch (Exception e) {
@@ -512,8 +534,24 @@ public class RedisAgentStateStore implements AgentStateStore {
 
         private RedisClientAdapter client;
 
+        private KeyLayoutVersion keyLayoutVersion = KeyLayoutVersion.V0;
+
         public Builder keyPrefix(String keyPrefix) {
             this.keyPrefix = keyPrefix;
+            return this;
+        }
+
+        /**
+         * Select the key layout for this store.
+         *
+         * <p>V0 is the default for compatibility. V1 must be selected explicitly and used
+         * consistently by every store instance sharing the Redis namespace.
+         *
+         * @param keyLayoutVersion key layout version, never {@code null}
+         * @return this builder
+         */
+        public Builder keyLayoutVersion(KeyLayoutVersion keyLayoutVersion) {
+            this.keyLayoutVersion = keyLayoutVersion;
             return this;
         }
 
