@@ -552,7 +552,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         return decoder.decode(ByteBuffer.wrap(bytes)).toString();
     }
 
-    /** Fallback when {@code python3} is unavailable: download, replace in Java, re-upload. */
+    /**
+     * Fallback when {@code python3} is unavailable: download, replace in Java, re-upload.
+     *
+     * <p>Unlike the native path, symlink handling here is delegated to {@link #uploadFiles}:
+     * this method re-uploads against {@code filePath} as given (it does not resolve
+     * {@code realpath}), so a backend whose upload writes through the link preserves it, while
+     * a backend that replaces the path may replace the symlink itself. The native path
+     * guarantees preservation; this fallback does not.
+     */
     private EditResult editViaTransfer(
             RuntimeContext runtimeContext,
             String filePath,

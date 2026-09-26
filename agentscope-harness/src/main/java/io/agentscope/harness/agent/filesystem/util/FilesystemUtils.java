@@ -68,6 +68,10 @@ public final class FilesystemUtils {
      *
      * @return {@link ReplacementResult#success(String, int)} on success, or
      *         {@link ReplacementResult#error(String)} on failure
+     * @apiNote Return type changed from {@code Object[]} to {@link ReplacementResult} for
+     *     type safety. This utility is internal to this repository (all callers live in
+     *     {@code agentscope-harness}); no compatibility bridge is provided and downstream
+     *     forks should adapt call sites directly.
      */
     public static ReplacementResult performStringReplacement(
             String content, String oldString, String newString, boolean replaceAll) {
