@@ -18,6 +18,8 @@ package io.agentscope.extensions.model.gemini;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.genai.Client;
 import com.google.genai.ResponseStream;
+import com.google.genai.errors.ApiException;
+import com.google.genai.errors.GenAiIOException;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
@@ -33,6 +35,7 @@ import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import java.time.Instant;
@@ -234,7 +237,16 @@ public class GeminiChatModel extends ChatModelBase {
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return ModelUtils.applyTimeoutAndRetry(
-                doStream0(messages, tools, options), options, defaultOptions, modelName, "gemini");
+                // Adapt genai SDK HTTP exceptions (ApiException/ClientException/ServerException
+                // expose the status only via code()) so the default RETRYABLE_ERRORS predicate
+                // classifies real 429/5xx as retryable. Non-retryable SDK errors and transport
+                // failures keep their original type/behaviour (see adaptSdkException).
+                doStream0(messages, tools, options)
+                        .onErrorResume(e -> Flux.error(adaptSdkException(e))),
+                options,
+                defaultOptions,
+                modelName,
+                "gemini");
     }
 
     protected Flux<ChatResponse> doStream0(
@@ -323,6 +335,54 @@ public class GeminiChatModel extends ChatModelBase {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Adapts a genai SDK exception to the provider-neutral {@link HttpTransportException}
+     * contract so the default retry predicate ({@link io.agentscope.core.model.ExecutionConfig
+     * #RETRYABLE_ERRORS}) can classify it correctly (429 / 5xx retryable, other 4xx not).
+     *
+     * <p>The genai SDK's {@link ApiException} (and its {@code ClientException} /
+     * {@code ServerException} subclasses) carry the HTTP status but do not implement
+     * {@link io.agentscope.core.model.ModelHttpException}; without this adaptation a real Gemini
+     * 429 or 5xx would be classified as non-retryable and the retry/fallback machinery would
+     * stop after the first attempt.
+     *
+     * <p>Only retryable statuses (429 / 5xx) are rewritten to {@link HttpTransportException};
+     * any other SDK error flows through unchanged so the exception type callers observe (a
+     * {@link ModelException}) stays stable, and the provider error body is deliberately not
+     * carried into the log path. {@link GenAiIOException} (transport-level failure without an
+     * HTTP status) is adapted to a status-less {@link HttpTransportException}, which the
+     * retry predicate treats as retryable (network failure). The original SDK exception is
+     * preserved as the cause for diagnostics.
+     *
+     * @param error the raw SDK exception (may be wrapped by the synchronous catch
+     *     {@link ModelException})
+     * @return an {@link HttpTransportException} when the cause chain carries a retryable
+     *     genai SDK exception, otherwise the original error unchanged
+     */
+    static Throwable adaptSdkException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ApiException apie) {
+                int status = apie.code();
+                if (status == 429 || (status >= 500 && status < 600)) {
+                    return new HttpTransportException(
+                            "Gemini API request failed with status " + status, status, null, error);
+                }
+                return error;
+            }
+            if (current instanceof GenAiIOException) {
+                // Transport-level failure without an HTTP status: classify as retryable.
+                return new HttpTransportException(
+                        error.getMessage() != null
+                                ? error.getMessage()
+                                : "Gemini API transport failure",
+                        error);
+            }
+            current = current.getCause();
+        }
+        return error;
     }
 
     @Override

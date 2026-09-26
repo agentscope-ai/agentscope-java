@@ -8,6 +8,18 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+### Compatibility
+
+- `ModelUtils.applyTimeoutAndRetry` now defaults `retryOn` to `RETRYABLE_ERRORS` when the
+  execution config leaves it unset: auth/request-side errors (401/403/400/422) are no longer
+  retried (previously every error was retried), while 429 / 5xx / timeouts / network errors
+  still are. Callers that relied on the old retry-everything behaviour should set `retryOn`
+  explicitly.
+
+---
+
 ## 2.0.1
 
 > Released: 2026-08-05
