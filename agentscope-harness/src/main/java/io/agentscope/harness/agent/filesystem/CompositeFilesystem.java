@@ -182,10 +182,11 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        // Mirror grep: only a non-null path participates in route resolution, so a null root
-        // scan is never captured by a configured "/" route and stays on the aggregated root
-        // below, exactly like grep(null) (review follow-up, #3253).
-        if (path != null) {
+        // All root spellings are equivalent and take the aggregated root — checked BEFORE
+        // route resolution so a configured "/" route cannot capture ls("/") and make the
+        // spellings diverge (review follow-up, #3253). Non-root paths route as usual; null
+        // matches no route and falls through to the aggregate below.
+        if (!isRootSpelling(path)) {
             RouteResult route = routeForPath(path);
 
             if (route.routePrefix() != null) {
@@ -270,7 +271,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        if (path != null) {
+        // Same ordering as ls: root spellings are checked before routing so a configured
+        // "/" route cannot capture them (review follow-up, #3253).
+        if (!isRootSpelling(path)) {
             RouteResult route = routeForPath(path);
             if (route.routePrefix() != null) {
                 GrepResult result =
@@ -338,9 +341,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        // Mirror ls/grep: null never participates in route resolution, so glob(null) is not
-        // captured by a configured "/" route (review follow-up, #3253).
-        if (path != null) {
+        // Same ordering as ls/grep: root spellings are checked before routing (review
+        // follow-up, #3253).
+        if (!isRootSpelling(path)) {
             RouteResult route = routeForPath(path);
 
             if (route.routePrefix() != null) {

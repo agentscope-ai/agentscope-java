@@ -46,6 +46,14 @@ public interface AbstractFilesystem {
     /**
      * List all files in a directory with metadata.
      *
+     * <p>Root-spelling contract: {@code null}, blank, {@code "/"} and {@code "."} all mean
+     * "this filesystem's own root" for the <em>enumeration</em> surfaces ({@link #ls}, {@link
+     * #grep}, {@link #glob}) — implementations must anchor them inside their workspace (or
+     * store namespace) and never let them reach the OS root. {@link CompositeFilesystem}
+     * forwards the contract spelling {@code "/"} to its default backend. Mutation surfaces
+     * ({@code read/write/edit/delete/exists}) make no such promise for blank/null — callers
+     * pass real paths there.
+     *
      * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
      * @param path absolute path to the directory to list (must start with '/')
      * @return LsResult with directory entries or error

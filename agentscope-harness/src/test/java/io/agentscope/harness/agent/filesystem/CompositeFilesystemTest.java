@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -250,6 +251,17 @@ class CompositeFilesystemTest {
         composite.ls(CTX, "   ");
         verify(defaultBackend, times(5)).ls(any(), eq("/"));
 
+        // Root spellings bypass routing entirely, so a configured "/" route cannot capture
+        // them: all four spellings aggregate over the default backend (review follow-up).
+        AbstractFilesystem routedBackend = mock(AbstractFilesystem.class);
+        CompositeFilesystem withRootRoute =
+                new CompositeFilesystem(defaultBackend, Map.of("/", routedBackend));
+        for (String root : new String[] {"/", ".", "", "  "}) {
+            withRootRoute.ls(CTX, root);
+        }
+        verify(defaultBackend, times(9)).ls(any(), eq("/"));
+        verify(routedBackend, never()).ls(any(), any());
+
         // "/" and "." canonicalize to the contract spelling; null is grep's documented
         // working-directory form and is forwarded as-is for the backend to interpret.
         composite.grep(CTX, "needle", "/", null);
@@ -299,8 +311,21 @@ class CompositeFilesystemTest {
                 paths.contains("default-file.md"),
                 "ls(null) must aggregate the default backend: " + paths);
         assertTrue(paths.contains("/"), "ls(null) must surface the '/' route entry: " + paths);
-        verify(defaultBackend).ls(any(), eq("/"));
+        verify(defaultBackend, times(1)).ls(any(), eq("/"));
         verify(rootRouteBackend, org.mockito.Mockito.never()).ls(any(), any());
+
+        // Anchor equivalence with a "/" route configured: every root spelling takes the same
+        // aggregated view (default + route), never the route backend alone (review follow-up).
+        List<String> expected = paths;
+        for (String root : new String[] {"/", ".", "", "  "}) {
+            LsResult result = composite.ls(CTX, root);
+            assertTrue(result.isSuccess(), () -> "ls('" + root + "') failed: " + result.error());
+            assertEquals(
+                    expected,
+                    result.entries().stream().map(FileInfo::path).sorted().toList(),
+                    "ls('" + root + "') must match ls(null) entry-for-entry");
+        }
+        verify(defaultBackend, times(5)).ls(any(), eq("/"));
 
         // grep(null): same aggregation shape — default backend root scan plus the route.
         GrepResult grep = composite.grep(CTX, "needle", null, null);
