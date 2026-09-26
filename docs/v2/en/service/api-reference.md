@@ -1,8 +1,11 @@
 ---
 title: "API reference: identity, resources and invocation"
+zh_link: /v2/zh/service/api-reference
 ---
 
-[简体中文](/v2/zh/service/api-reference)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
 Use Gateway as the API base URL. Product management uses user identity; applications should generally invoke published capabilities through [Endpoints](/v2/en/service/endpoints).
 
@@ -81,3 +84,17 @@ See the [Endpoint guide](/v2/en/service/endpoints) for jobs, conversations, cred
 | 5xx / network timeout | Query already-submitted work before retrying |
 
 Record correlation/resource IDs, time, status code and a redacted error. See [External Agents](/v2/en/service/external-agent) for SDK adapters and [execution reference](/v2/en/service/sessions) for states.
+
+## SDK execution cancellation
+
+For the data-plane session event API, `session.run_started` includes a `run_id` identifying one SDK invocation. This ID is distinct from an orchestration Run or managed Attempt ID. Use the same authorized session to request precise cancellation:
+
+```http
+POST /api/sessions/{id}/events
+Authorization: Bearer TOKEN
+Content-Type: application/json
+
+{"events":[{"type":"user.interrupt","payload":{"run_id":"<id from session.run_started>"}}]}
+```
+
+The service checks session access and local run ownership. A remote request is fenced by this run ID; if the run has ended or been replaced, it never cancels a newer run. Omitting `run_id` retains the explicit session-wide “interrupt current turn” operation. Local run registrations are removed on completion, failure and cancellation; diagnostic history remains in session events.

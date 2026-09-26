@@ -1,5 +1,6 @@
 ---
 title: Agent Protocols
+zh_link: /v2/zh/integration/protocol/index
 ---
 
 Choose a guide below to configure and use agent protocols.

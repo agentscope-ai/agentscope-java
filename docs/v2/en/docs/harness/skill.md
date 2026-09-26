@@ -1,6 +1,7 @@
 ---
 title: Skill
 description: Four-layer skill composition, skill marketplaces, the self-learning loop
+zh_link: /v2/zh/docs/harness/skill
 ---
 
 A skill is a packaged capability: a directory with a `SKILL.md` (purpose + instructions the agent reads), optional reference docs, scripts, samples. Hand it to the agent and it will use it when relevant.
@@ -307,7 +308,7 @@ The agent doesn't see this difference — `load_skill_through_path` always works
 
 ### `<files-root>` and shell execution
 
-When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute_shell_command`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
@@ -315,7 +316,7 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 | Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
-So the agent's shell call is always `execute_shell_command("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
+So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
 
 ### Where marketplace files actually live
 
@@ -381,7 +382,7 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 So the agent simply issues:
 
 ```
-execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
+execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
 ```
 
 That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.

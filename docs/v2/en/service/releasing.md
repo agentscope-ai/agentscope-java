@@ -1,10 +1,13 @@
 ---
 title: Publishing components
+zh_link: /v2/zh/service/releasing
 ---
 
-[简体中文](/v2/zh/service/releasing)
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Installation starts with the [quickstart](/v2/en/service/quickstart).
+This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Start with [local installation](/v2/en/service/quickstart).
 
 ## Artifacts
 

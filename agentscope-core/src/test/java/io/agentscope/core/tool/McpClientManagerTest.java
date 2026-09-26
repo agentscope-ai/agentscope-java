@@ -451,4 +451,212 @@ class McpClientManagerTest {
         verify(clientWrapper).initialize();
         verify(clientWrapper).listTools();
     }
+
+    // ==================== Tests for metadata propagation ====================
+
+    private McpClientManager newCapturingManager(AgentTool[] registeredTool) {
+        ToolRegistry toolRegistry = mock(ToolRegistry.class);
+        ToolGroupManager groupManager = mock(ToolGroupManager.class);
+        return new McpClientManager(
+                toolRegistry,
+                groupManager,
+                (tool, groupName, mcpClientName, presetParams) -> registeredTool[0] = tool);
+    }
+
+    private McpClientWrapper newMetaMockWrapper() {
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        when(clientWrapper.getName()).thenReturn("meta-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool mockMcpTool = mock(McpSchema.Tool.class);
+        when(mockMcpTool.name()).thenReturn("meta-tool");
+        when(mockMcpTool.description()).thenReturn("Tool for meta propagation tests");
+        when(mockMcpTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
+        return clientWrapper;
+    }
+
+    @Test
+    void testRegisterMcpClient_ToolFlagDefaultsTrueRegardlessOfWrapper() {
+        // The wrapper's isPropagateMeta() is unstubbed (Mockito default: false). The manager
+        // must NOT read it: the per-tool flag only carries registration configuration and
+        // defaults to true; the connection-level switch applies live at call time instead.
+        AgentTool[] registeredTool = new AgentTool[1];
+        McpClientManager metaManager = newCapturingManager(registeredTool);
+        McpClientWrapper clientWrapper = newMetaMockWrapper();
+
+        metaManager.registerMcpClient(clientWrapper).block();
+
+        assertNotNull(registeredTool[0]);
+        assertTrue(registeredTool[0] instanceof McpTool);
+        assertTrue(((McpTool) registeredTool[0]).isPropagateMeta());
+        verify(clientWrapper, never()).isPropagateMeta();
+    }
+
+    @Test
+    void testRegisterMcpClient_PropagateMetaOverrideAppliedToTool() {
+        McpClientWrapper clientWrapper = newMetaMockWrapper();
+
+        AgentTool[] offTool = new AgentTool[1];
+        McpClientManager offManager = newCapturingManager(offTool);
+        offManager
+                .registerMcpClient(clientWrapper, null, null, null, null, null, Boolean.FALSE)
+                .block();
+        assertNotNull(offTool[0]);
+        assertFalse(((McpTool) offTool[0]).isPropagateMeta());
+
+        AgentTool[] onTool = new AgentTool[1];
+        McpClientManager onManager = newCapturingManager(onTool);
+        onManager
+                .registerMcpClient(clientWrapper, null, null, null, null, null, Boolean.TRUE)
+                .block();
+        assertNotNull(onTool[0]);
+        assertTrue(((McpTool) onTool[0]).isPropagateMeta());
+    }
+
+    @Test
+    void testRegisterMcpClient_PerToolOverrideWinsOverRegistrationDefault() {
+        McpClientWrapper clientWrapper = newMetaMockWrapper();
+
+        // Per-tool entry (false) wins over the registration-level default (true)
+        AgentTool[] restricted = new AgentTool[1];
+        McpClientManager restrictedManager = newCapturingManager(restricted);
+        restrictedManager
+                .registerMcpClient(
+                        clientWrapper,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Boolean.TRUE,
+                        Map.of("meta-tool", false))
+                .block();
+        assertNotNull(restricted[0]);
+        assertFalse(((McpTool) restricted[0]).isPropagateMeta());
+
+        // Entries for other tool names do not affect this tool
+        AgentTool[] unaffected = new AgentTool[1];
+        McpClientManager unaffectedManager = newCapturingManager(unaffected);
+        unaffectedManager
+                .registerMcpClient(
+                        clientWrapper,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Boolean.TRUE,
+                        Map.of("meta-tool", true))
+                .block();
+        assertNotNull(unaffected[0]);
+        assertTrue(((McpTool) unaffected[0]).isPropagateMeta());
+        // A successful registration keeps the wrapper open (and managed via mcpClients).
+        verify(clientWrapper, never()).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_UnknownPerToolOverrideNameFailsRegistration() {
+        // A silencing override for a tool the server does not expose must fail loudly at
+        // registration instead of being silently dropped: the tool would otherwise keep
+        // propagating metadata, exactly the leak this switch is meant to prevent.
+        McpClientWrapper clientWrapper = newMetaMockWrapper();
+
+        McpClientManager metaManager = newCapturingManager(new AgentTool[1]);
+        IllegalArgumentException thrown =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                metaManager
+                                        .registerMcpClient(
+                                                clientWrapper,
+                                                null,
+                                                null,
+                                                null,
+                                                null,
+                                                null,
+                                                Boolean.TRUE,
+                                                Map.of("some-other-tool", false))
+                                        .block());
+        assertTrue(thrown.getMessage().contains("some-other-tool"));
+        // The client was initialized before the check failed; nobody else can close it.
+        verify(clientWrapper).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_OverrideForFilteredOutToolFailsRegistration() {
+        // An override for a tool excluded by the enable/disable filter is equally dead
+        // configuration and must fail loudly at registration.
+        McpClientWrapper clientWrapper = newMetaMockWrapper();
+
+        McpClientManager metaManager = newCapturingManager(new AgentTool[1]);
+        IllegalArgumentException thrown =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                metaManager
+                                        .registerMcpClient(
+                                                clientWrapper,
+                                                null,
+                                                List.of("meta-tool"),
+                                                null,
+                                                null,
+                                                null,
+                                                Boolean.TRUE,
+                                                Map.of("meta-tool", false))
+                                        .block());
+        assertTrue(thrown.getMessage().contains("meta-tool"));
+        // The client was initialized before the check failed; nobody else can close it.
+        verify(clientWrapper).close();
+    }
+
+    @Test
+    void testRegisterMcpClient_ReadOnlyHintAppliedToTool() {
+        // The MCP server's annotations.readOnlyHint drives ToolBase.readOnly, which in turn
+        // controls whether the tool may run without explicit permission (McpTool).
+        McpClientWrapper clientWrapper = mock(McpClientWrapper.class);
+        when(clientWrapper.getName()).thenReturn("annotated-client");
+        when(clientWrapper.initialize()).thenReturn(Mono.empty());
+
+        McpSchema.Tool readOnlyTool = mock(McpSchema.Tool.class);
+        when(readOnlyTool.name()).thenReturn("readonly_tool");
+        when(readOnlyTool.description()).thenReturn("Read-only tool");
+        when(readOnlyTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(readOnlyTool.annotations())
+                .thenReturn(new McpSchema.ToolAnnotations(null, true, null, null, null, null));
+
+        McpSchema.Tool writableTool = mock(McpSchema.Tool.class);
+        when(writableTool.name()).thenReturn("writable_tool");
+        when(writableTool.description()).thenReturn("Writable tool");
+        when(writableTool.inputSchema())
+                .thenReturn(
+                        new McpSchema.JsonSchema("object", Map.of(), List.of(), null, null, null));
+        when(writableTool.annotations())
+                .thenReturn(new McpSchema.ToolAnnotations(null, false, null, null, null, null));
+
+        when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(readOnlyTool, writableTool)));
+
+        AgentTool[] registered = new AgentTool[2];
+        McpClientManager annotatedManager =
+                new McpClientManager(
+                        mock(ToolRegistry.class),
+                        mock(ToolGroupManager.class),
+                        (tool, groupName, mcpClientName, presetParams) -> {
+                            if ("readonly_tool".equals(tool.getName())) {
+                                registered[0] = tool;
+                            } else {
+                                registered[1] = tool;
+                            }
+                        });
+        annotatedManager.registerMcpClient(clientWrapper).block();
+
+        assertTrue(registered[0] instanceof McpTool);
+        assertTrue(((McpTool) registered[0]).isReadOnly());
+        assertTrue(registered[1] instanceof McpTool);
+        assertFalse(((McpTool) registered[1]).isReadOnly());
+    }
 }

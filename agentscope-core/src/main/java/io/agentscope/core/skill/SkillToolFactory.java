@@ -17,6 +17,8 @@ package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -44,8 +46,25 @@ class SkillToolFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
+    static final String LOAD_TOOL_NAME = "load_skill_through_path";
+    private static final String LOAD_TOOL_DESCRIPTION =
+            "Load and activate a skill resource by its ID and resource path.\n\n"
+                + "**Functionality:**\n"
+                + "1. Activates the specified skill for this session (adding its tool groups to"
+                + " this session's active set)\n"
+                + "2. Returns the requested resource content\n"
+                + "\n"
+                + "**Path rules:**\n"
+                + "- Use path=\"SKILL.md\" to load the skill's markdown documentation (name,"
+                + " description, usage instructions).\n"
+                + "- Use exact resource paths listed by the skill, such as \"references/guide.md\""
+                + " or \"scripts/run.py\".\n"
+                + "- Set reload=true on a SKILL.md load to receive the full document again, e.g."
+                + " after context compaction removed it from the conversation.\n"
+                + "- Do not use '.', './', the skill directory, or an absolute path.";
+
     private final SkillRegistry skillRegistry;
-    private Toolkit toolkit;
+    private volatile Toolkit toolkit;
 
     /**
      * Entry-delivery tracking, scoped per conversation (see {@link EntryDeliveryTracker}).
@@ -71,19 +90,121 @@ class SkillToolFactory {
     }
 
     /**
-     * Binds a toolkit to the skill tool factory.
-     *
-     * <p>
-     * This method binds the toolkit to skill tool factory.
-     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
-     * ensure the
-     * skill tool factory references the correct toolkit instance.
+     * Binds the shared toolkit to this skill tool factory (read-only reference).
      *
      * @param toolkit The toolkit to bind to the skill tool factory
      * @throws IllegalArgumentException if the toolkit is null
      */
     void bindToolkit(Toolkit toolkit) {
         this.toolkit = toolkit;
+    }
+
+    /**
+     * Registers the shared, runtime-resolving {@code load_skill_through_path} tool on the given
+     * toolkit. Used by the dynamic-skill path: the tool is registered once at build time and
+     * resolves the current per-call {@link SkillBox} from the {@link RuntimeContext} at invocation
+     * time, so the shared toolkit is never mutated per call.
+     *
+     * @param toolkit the shared toolkit to register the load tool on
+     */
+    static void registerRuntimeLoadTool(Toolkit toolkit) {
+        if (toolkit.getTool(LOAD_TOOL_NAME) != null) {
+            // Already registered by another path (e.g. the static skillBox); never overwrite.
+            // Mixing static and dynamic skill configuration is unsupported, so surface it.
+            logger.warn(
+                    "load_skill_through_path already registered; skipping (a same-named tool is"
+                            + " already present on this toolkit)");
+            return;
+        }
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement (like reset_equipped_tools itself).
+        toolkit.registration().agentTool(createRuntimeLoadTool()).apply();
+    }
+
+    /**
+     * Creates the shared {@code load_skill_through_path} tool that resolves the current per-call
+     * {@link SkillBox} at invocation time. Unlike {@link #createSkillAccessToolAgentTool()}, this
+     * tool carries no per-box state, so a single instance is safe to share across concurrent
+     * sessions.
+     */
+    static AgentTool createRuntimeLoadTool() {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return LOAD_TOOL_NAME;
+            }
+
+            @Override
+            public String getDescription() {
+                return LOAD_TOOL_DESCRIPTION;
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                // Dynamic skills are not known at build time, so the parameter enum is omitted;
+                // the skill catalog is advertised via the system prompt instead.
+                return Map.of(
+                        "type", "object",
+                        "properties",
+                                Map.of(
+                                        "skillId",
+                                                Map.of(
+                                                        "type",
+                                                        "string",
+                                                        "description",
+                                                        "The unique identifier of the skill."),
+                                        "path",
+                                                Map.of(
+                                                        "type",
+                                                        "string",
+                                                        "description",
+                                                        "The exact resource path within the"
+                                                                + " skill. Use 'SKILL.md' to load"
+                                                                + " the skill instructions. Do not"
+                                                                + " use '.', './', directories, or"
+                                                                + " absolute paths."),
+                                        "reload",
+                                                Map.of(
+                                                        "type",
+                                                        "boolean",
+                                                        "description",
+                                                        "Optional. Set true to re-receive the"
+                                                                + " full SKILL.md even if it was"
+                                                                + " already delivered to this"
+                                                                + " session (e.g. after context"
+                                                                + " compaction removed it).")),
+                        "required", List.of("skillId", "path"));
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                try {
+                    SkillBox box = resolveSkillBox(param);
+                    if (box == null) {
+                        return Mono.just(
+                                ToolResultBlock.error(
+                                        "load_skill_through_path: no skill context for this"
+                                                + " call"));
+                    }
+                    return Mono.just(ToolResultBlock.text(box.loadSkillResource(param)));
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Error loading skill resource: {}", e.getMessage());
+                    return Mono.just(ToolResultBlock.error(e.getMessage()));
+                } catch (Exception e) {
+                    logger.error("Unexpected error loading skill resource", e);
+                    return Mono.just(
+                            ToolResultBlock.error(
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : "Unexpected error: " + e.getClass().getSimpleName()));
+                }
+            }
+        };
+    }
+
+    private static SkillBox resolveSkillBox(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        return rc != null ? rc.get(SkillBox.class) : null;
     }
 
     /**
@@ -99,32 +220,18 @@ class SkillToolFactory {
         return new AgentTool() {
             @Override
             public String getName() {
-                return "load_skill_through_path";
+                return LOAD_TOOL_NAME;
             }
 
             @Override
             public String getDescription() {
-                return "Load and activate a skill resource by its ID and resource path.\n\n"
-                        + "**Functionality:**\n"
-                        + "1. Activates the specified skill (making its tools available)\n"
-                        + "2. Returns the requested resource content\n"
-                        + "\n"
-                        + "**Path rules:**\n"
-                        + "- Use path=\"SKILL.md\" to load the skill's markdown documentation"
-                        + " (name, description, usage instructions).\n"
-                        + "- Use exact resource paths listed by the skill, such as"
-                        + " \"references/guide.md\" or \"scripts/run.py\".\n"
-                        + "- Set reload=true on a SKILL.md load to receive the full document"
-                        + " again, e.g. after context compaction removed it from the"
-                        + " conversation.\n"
-                        + "- Do not use '.', './', the skill directory, or an absolute path.";
+                return LOAD_TOOL_DESCRIPTION;
             }
 
             @Override
             public Map<String, Object> getParameters() {
                 // Get all available skill IDs
-                List<String> availableSkillIds =
-                        new ArrayList<>(skillRegistry.getAllRegisteredSkills().keySet());
+                List<String> availableSkillIds = new ArrayList<>(skillRegistry.getSkillIds());
 
                 return Map.of(
                         "type", "object",
@@ -181,14 +288,24 @@ class SkillToolFactory {
                     }
 
                     boolean reload = lenientBoolean(input.get("reload"));
-                    String result = loadSkillResourceImpl(skillId, path, scopeOf(param), reload);
+                    String result =
+                            loadSkillResourceImpl(
+                                    skillId,
+                                    path,
+                                    resolveToolContext(param),
+                                    scopeOf(param),
+                                    reload);
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
-                    logger.error("Error loading skill resource", e);
+                    logger.warn("Error loading skill resource: {}", e.getMessage());
                     return Mono.just(ToolResultBlock.error(e.getMessage()));
                 } catch (Exception e) {
                     logger.error("Unexpected error loading skill resource", e);
-                    return Mono.just(ToolResultBlock.error(e.getMessage()));
+                    return Mono.just(
+                            ToolResultBlock.error(
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : "Unexpected error: " + e.getClass().getSimpleName()));
                 }
             }
         };
@@ -201,7 +318,7 @@ class SkillToolFactory {
      * a parameter is optional; a strict {@code Boolean.TRUE.equals} would silently drop the
      * reload lever exactly when the model asked for it.
      */
-    private static boolean lenientBoolean(Object value) {
+    static boolean lenientBoolean(Object value) {
         if (value instanceof Boolean b) {
             return b;
         }
@@ -223,7 +340,7 @@ class SkillToolFactory {
      *       stable scope per shared conversation, matching the state-slot identity.
      * </ul>
      */
-    private static String scopeOf(ToolCallParam param) {
+    static String scopeOf(ToolCallParam param) {
         RuntimeContext context = param.getRuntimeContext();
         if (context == null) {
             return NO_CONTEXT_SCOPE;
@@ -241,13 +358,17 @@ class SkillToolFactory {
      *
      * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
+     * @param tcs the per-call tool context state; skill activation targets this session's
+     *     activation set instead of the shared group manager
      * @param scope the per-call (userId, sessionId) scope of this load, used to track entry
      *     delivery without leaking state across sessions
+     * @param reload whether the caller explicitly asked to re-receive an already-delivered
+     *     SKILL.md (e.g. after context compaction removed it)
      * @return The formatted resource content or error message with available resources
      * @throws IllegalArgumentException if skill doesn't exist or resource not found
      */
-    private String loadSkillResourceImpl(
-            String skillId, String path, String scope, boolean reload) {
+    String loadSkillResourceImpl(
+            String skillId, String path, ToolContextState tcs, String scope, boolean reload) {
         AgentSkill skill = validateSkillExists(skillId);
 
         // Special handling for SKILL.md - return the skill's markdown content
@@ -269,23 +390,21 @@ class SkillToolFactory {
                     // Explicit in-session recovery lever for content lost to compaction.
                     entryDelivery.mark(scope, skillId);
                 } else if (!entryDelivery.tryClaim(scope, skillId)) {
-                    // Still reconcile tool-group state: the registry flag and the toolkit's
-                    // group state are separate, and a host can disable groups via the public
-                    // Toolkit API (or work through a deep copy). A plain re-load used to be
-                    // the idempotent way to re-sync; keep that self-healing behavior while
+                    // Still reconcile activation: a repeat load must keep this session's
+                    // tool-group state in sync (a host can disable groups independently),
                     // skipping only the re-send of the markdown.
-                    ensureSkillToolGroupsActive(skillId);
+                    activateSkill(skillId, tcs);
                     return buildAlreadyLoadedNotice(skillId, skill);
                 }
             }
-            activateSkill(skillId);
+            activateSkill(skillId, tcs);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
         // 1. In-memory map (eager FS repos, classpath repos, marketplace prefetch).
         Map<String, String> resources = skill.getResources();
         if (resources != null && resources.containsKey(path)) {
-            activateSkill(skillId);
+            activateSkill(skillId, tcs);
             return buildResourceResponse(skillId, path, resources.get(path));
         }
 
@@ -297,7 +416,7 @@ class SkillToolFactory {
             Optional<String> diskContent =
                     readFromOriginDir(skill.getOriginDir().get(), sanitized.get());
             if (diskContent.isPresent()) {
-                activateSkill(skillId);
+                activateSkill(skillId, tcs);
                 return buildResourceResponse(skillId, path, diskContent.get());
             }
         }
@@ -500,48 +619,48 @@ class SkillToolFactory {
         return skill;
     }
 
-    private void activateSkill(String skillId) {
-        skillRegistry.setSkillActive(skillId, true);
-        logger.info("Activated skill: {}", skillId);
-        ensureSkillToolGroupsActive(skillId);
+    /**
+     * Resolves the per-call {@link ToolContextState} from the tool call's runtime context, so
+     * skill activation targets the active session's activation set instead of the shared group
+     * manager.
+     *
+     * @param param the tool call parameters
+     * @return the resolved tool context state, or {@code null} when unavailable
+     */
+    ToolContextState resolveToolContext(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        AgentState state = rc != null ? rc.getAgentState() : null;
+        return state != null ? state.getToolContext() : null;
     }
 
-    /**
-     * Re-enables the skill's own tool group and any {@code SkillToolGroup} bound via {@code
-     * activateOnSkill}.
-     *
-     * <p>Called on every {@code SKILL.md} load path — including the deduplicated repeat — because
-     * the registry's active flag and the toolkit's group state are two separate pieces of state:
-     * a host can disable a group through the public {@code Toolkit.updateToolGroups(..., false)}
-     * API (or operate on a deep copy of the toolkit) without touching {@code SkillRegistry}, and
-     * re-loading {@code SKILL.md} is the self-healing way for the model to reconcile them.
-     */
-    private void ensureSkillToolGroupsActive(String skillId) {
-        String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
-        if (toolkit.getToolGroup(toolsGroupName) != null) {
-            toolkit.updateToolGroups(List.of(toolsGroupName), true);
-            logger.info(
-                    "Activated skill tool group: {} and its tools: {}",
-                    toolsGroupName,
-                    toolkit.getToolGroup(toolsGroupName).getTools());
+    private void activateSkill(String skillId, ToolContextState tcs) {
+        // No per-session context: skip the tool-group gate without mutating shared state.
+        if (tcs == null) {
+            logger.warn(
+                    "load_skill_through_path: no per-session runtime context; tool-group activation"
+                            + " skipped");
+            return;
         }
 
-        // Also activate any SkillToolGroup bound to this skill via activateOnSkill
+        // Read-only discovery of the groups owned by this skill: the name-convention group
+        // (skillId_skill_tools) plus any SkillToolGroup bound via activateOnSkill. Shared group
+        // definitions are never mutated.
+        List<String> groups = new ArrayList<>();
+        String toolsGroupName = skillId + "_skill_tools";
+        if (toolkit != null && toolkit.getToolGroup(toolsGroupName) != null) {
+            groups.add(toolsGroupName);
+        }
         AgentSkill agentSkill = skillRegistry.getSkill(skillId);
-        if (agentSkill != null) {
-            List<String> boundGroups =
-                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-            for (String group : boundGroups) {
-                if (!group.equals(toolsGroupName)
-                        && toolkit.getToolGroup(group) != null
-                        && !toolkit.getToolGroup(group).isActive()) {
-                    toolkit.updateToolGroups(List.of(group), true);
-                    logger.info(
-                            "Activated skill-bound tool group: {} for skill: {}",
-                            group,
-                            agentSkill.getName());
+        if (agentSkill != null && toolkit != null) {
+            for (String group :
+                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName())) {
+                if (!groups.contains(group)) {
+                    groups.add(group);
                 }
             }
         }
+
+        // Atomic union, so parallel loads within a session cannot lose one another's activation.
+        tcs.addActivatedGroups(groups);
     }
 }

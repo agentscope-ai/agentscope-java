@@ -1,5 +1,6 @@
 ---
 title: RAG
+en_link: /v1/en/docs/task/rag
 ---
 
 AgentScope 提供内置 RAG 支持，使 Agent 能够访问外部知识库。

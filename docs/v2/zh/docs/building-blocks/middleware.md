@@ -1,6 +1,7 @@
 ---
 title: Middleware
 description: 在 agent 生命周期的关键位置拦截并扩展行为
+en_link: /v2/en/docs/building-blocks/middleware
 ---
 
 ## 概述
@@ -476,7 +477,7 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
 <Tip>
 
-若只是简单的「主→备」回退，`ReActAgent.Builder` 直接暴露了 `fallbackModel(...)` 与 `maxRetries(...)`，无需自己写 middleware。
+若只是简单的「主→备」回退，`ReActAgent.Builder` 直接暴露了 `fallbackModel(...)` 与 `maxRetries(...)`，无需自己写 middleware。观察切换同理：切换发生在 `onModelCall` 接缝之下，用 `ReActAgent.Builder.failoverListener(...)`，而不是写 middleware。
 
 </Tip>
 

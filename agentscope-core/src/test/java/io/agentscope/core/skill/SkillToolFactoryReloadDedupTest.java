@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -154,7 +156,7 @@ class SkillToolFactoryReloadDedupTest {
     }
 
     @Test
-    @DisplayName("The dedup path still re-enables a tool group disabled behind its back")
+    @DisplayName("The dedup path still re-syncs a session activation set cleared behind its back")
     void dedupPathResyncsExternallyDisabledToolGroup() {
         AgentSkill skill =
                 AgentSkill.builder()
@@ -171,20 +173,28 @@ class SkillToolFactoryReloadDedupTest {
         String groupName = skill.getSkillId() + "_skill_tools";
         assertNotNull(toolkit.getToolGroup(groupName), "Skill tool group should exist");
 
-        callLoadTool(toolkit, skill.getSkillId(), "SKILL.md");
-        assertTrue(toolkit.getToolGroup(groupName).isActive());
+        ToolContextState tcs = ToolContextState.builder().build();
+        RuntimeContext rc =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(tcs).build())
+                        .build();
+        callInSession(toolkit, skill.getSkillId(), "SKILL.md", rc);
+        assertTrue(
+                tcs.getActivatedGroups().contains(groupName),
+                "The first load activates the session's group");
 
-        // A host can disable the group through the public Toolkit API without touching
-        // SkillRegistry — the scenario the registry flag alone cannot see.
-        toolkit.updateToolGroups(java.util.List.of(groupName), false);
-        assertFalse(toolkit.getToolGroup(groupName).isActive());
+        // A host (or reset_equipped_tools) can drop groups from the session's activation
+        // set without going through SkillBox — state the registry flag alone cannot see.
+        tcs.removeActivatedGroups(java.util.List.of(groupName));
+        assertFalse(tcs.getActivatedGroups().contains(groupName));
 
-        // The deduplicated repeat load must reconcile the group, not just return the notice.
-        String repeat = textOf(callLoadTool(toolkit, skill.getSkillId(), "SKILL.md"));
+        // The deduplicated repeat load must reconcile the session's activation set, not
+        // just return the notice. The shared toolkit group is never mutated per call.
+        String repeat = textOf(callInSession(toolkit, skill.getSkillId(), "SKILL.md", rc));
         assertTrue(repeat.contains("is already loaded and active"));
         assertTrue(
-                toolkit.getToolGroup(groupName).isActive(),
-                "The dedup path re-enables the externally disabled tool group");
+                tcs.getActivatedGroups().contains(groupName),
+                "The dedup path re-syncs the externally cleared session activation set");
     }
 
     @Test

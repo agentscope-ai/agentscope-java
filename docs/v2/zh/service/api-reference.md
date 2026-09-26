@@ -1,8 +1,11 @@
 ---
 title: "API 参考：认证、资源与调用"
+en_link: /v2/en/service/api-reference
 ---
 
-[English](/v2/en/service/api-reference)
+<Note>
+此为预览文档，正式版本尚未发布。
+</Note>
 
 使用 Gateway 作为 API base URL。产品管理调用使用用户身份；业务系统调用已发布能力优先使用 [Endpoint](/v2/zh/service/endpoints)。
 
@@ -81,3 +84,17 @@ job 和 conversation 的详细请求、凭据、状态与 SSE 示例见 [Endpoin
 | 5xx / 网络超时 | 先查询已提交工作的状态，再决定重试 |
 
 记录请求关联 ID、资源 ID、发生时间、状态码和脱敏错误。SDK 自定义适配器参考 [External Agent](/v2/zh/service/external-agent)，执行状态见 [Sessions 与 Runs](/v2/zh/service/sessions)。
+
+## SDK 单次执行取消
+
+数据面 session 事件 API 的 `session.run_started` 事件包含 `run_id`，标识一次 SDK 调用。它不同于编排 Run 或托管 Attempt 的 ID。对同一个已授权 session 发起精确取消：
+
+```http
+POST /api/sessions/{id}/events
+Authorization: Bearer TOKEN
+Content-Type: application/json
+
+{"events":[{"type":"user.interrupt","payload":{"run_id":"<session.run_started 中的 ID>"}}]}
+```
+
+服务会检查 session 访问权限和本地执行归属。跨实例请求携带该 run ID 作为匹配条件；执行已结束或被替换时，不会取消更新的执行。不提供 `run_id` 时仍表示“中断 session 当前 turn”。本地执行登记在完成、失败和取消时清理，诊断历史保留在 session 事件中。

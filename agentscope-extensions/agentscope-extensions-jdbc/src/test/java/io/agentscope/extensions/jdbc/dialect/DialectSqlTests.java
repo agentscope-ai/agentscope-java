@@ -16,6 +16,7 @@
 package io.agentscope.extensions.jdbc.dialect;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -127,6 +128,52 @@ class DialectSqlTests {
     }
 
     @Test
+    @DisplayName("MysqlDialect key columns pin a binary collation so keys stay case-sensitive")
+    void mysqlKeyColumnsUseBinaryCollation() {
+        var d = new MysqlDialect();
+
+        // Compared against whitespace-normalised DDL: the column layout is cosmetic, only the
+        // column/collation pairing is contractual.
+        assertTrue(
+                normalise(d.storeCreateTableDdls().get(0))
+                        .contains("namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(
+                normalise(d.storeCreateTableDdls().get(0))
+                        .contains("item_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+
+        String session = normalise(d.sessionStateCreateTableDdls().get(0));
+        assertTrue(session.contains("session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+        assertTrue(session.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+
+        // snapshot_id is a primary key too, so it gets the same treatment.
+        assertTrue(
+                normalise(d.snapshotCreateTableDdls().get(0))
+                        .contains(
+                                "snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL PRIMARY"
+                                        + " KEY"));
+    }
+
+    private static String normalise(final String ddl) {
+        return ddl.replaceAll("\\s+", " ").trim();
+    }
+
+    @Test
+    @DisplayName("only MysqlDialect key columns are case-sensitive; payload columns are untouched")
+    void mysqlPayloadColumnsKeepDefaultCollation() {
+        String store = normalise(new MysqlDialect().storeCreateTableDdls().get(0));
+        assertTrue(store.contains("value_json LONGTEXT NOT NULL"));
+        assertFalse(store.contains("LONGTEXT COLLATE"));
+
+        // The other dialects compare keys case-sensitively by default, so no explicit
+        // collation must leak into their DDL.
+        for (AbstractJdbcDialect d :
+                List.of(new PostgresDialect(), new H2Dialect(), new SqliteDialect())) {
+            assertFalse(d.storeCreateTableDdls().get(0).contains("COLLATE"));
+            assertFalse(d.sessionStateCreateTableDdls().get(0).contains("COLLATE"));
+        }
+    }
+
+    @Test
     @DisplayName("SqliteDialect store DDL uses TEXT and INTEGER")
     void sqliteStoreDdlUsesTextInteger() {
         String ddl = new SqliteDialect().storeCreateTableDdls().get(0);
@@ -199,8 +246,23 @@ class DialectSqlTests {
         BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
         assertTrue(upsert.sql().contains("ON DUPLICATE KEY UPDATE"));
 
+        assertTrue(upsert.sql().replaceAll("\\s+", " ").contains("version = version + 1"));
+
         BoundSql check = d.sessionStateCheckTableExists("my_table");
         assertTrue(check.sql().contains("DATABASE()"));
+    }
+
+    @Test
+    @DisplayName("PostgresDialect state UPSERT increments the stored version on conflict")
+    void postgresStateUpsertIncrementsVersion() {
+        var d = new PostgresDialect();
+        BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
+        assertTrue(
+                upsert.sql().contains("ON CONFLICT (session_id, state_key, item_index) DO UPDATE"));
+        assertTrue(
+                upsert.sql()
+                        .replaceAll("\\s+", " ")
+                        .contains("version = " + d.sessionStateTableName() + ".version + 1"));
     }
 
     @Test

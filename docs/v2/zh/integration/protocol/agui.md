@@ -1,5 +1,6 @@
 ---
 title: AG-UI
+en_link: /v2/en/integration/protocol/agui
 ---
 
 ## 兼容性说明
@@ -252,15 +253,15 @@ AguiRuntimeContextResolver runtimeContextResolver() {
 
 ## Frontend Tools 与合并模式
 
-AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会在单次 run 开始时把这些工具注入 agent toolkit，并在 run 结束或取消后清理。
+AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将它们转换成单次 run 的 `ToolRequestConfig` 并放入 RuntimeContext，不修改 agent toolkit，因此结束或取消时无需恢复注册表。
 
 | `ToolMergeMode` | 行为 |
 | --- | --- |
-| `FRONTEND_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
+| `EXTERNAL_ONLY` | 只使用前端传入工具，临时隐藏 agent 原有工具 |
 | `AGENT_ONLY` | 忽略前端传入工具，只使用 agent toolkit |
-| `MERGE_FRONTEND_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
+| `MERGE_EXTERNAL_PRIORITY` | 合并两侧工具；同名时前端工具优先 |
 
-默认值是 `MERGE_FRONTEND_PRIORITY`。注入是 run scoped，不会永久修改 agent toolkit。
+默认值是 `MERGE_EXTERNAL_PRIORITY`。枚举位于 `io.agentscope.core.tool.ToolMergeMode`。`EXTERNAL_ONLY` 在外部工具为空时不暴露任何工具，且不受 Toolkit 的删除开关影响；它只控制请求可见性。
 
 ## HITL Interrupt
 
@@ -289,6 +290,10 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
             "editedArgs": {
               "type": "object",
               "description": "Full replacement of the tool args. Not merged."
+            },
+            "reason": {
+              "type": "string",
+              "description": "拒绝该工具调用时可选的说明。"
             }
           },
           "required": ["approved"]
@@ -331,6 +336,8 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 会
 `status` 支持官方的 `resolved` 和 `cancelled`。对于用户拒绝某个工具请求的常见审批场景，建议仍使用 `resolved`，并在 `payload` 中表达业务决策，例如 `{ "approved": false }`；`cancelled` 更适合表示该 interrupt 本身被取消。
 
 对于权限确认，只有 `payload.approved` 是布尔值 `true` 时才会批准工具；缺失、非布尔值或 `false` 都会视为拒绝。`payload.editedArgs` 如果存在，必须是 JSON object，并且是对原始工具参数的**完整替换**，不是局部 merge。AgentScope Java 会根据 `editedArgs` 同时重建 `ToolUseBlock.input` 和原始 JSON `ToolUseBlock.content`，因此被批准的工具会使用修改后的参数执行。
+
+`payload.reason` 是可选字符串。拒绝时会写入 `ConfirmResult.reason`，并作为 DENIED tool-result 文本返回给模型；缺失或为空白时，AgentScope 保持默认的 `Permission denied by user` 文案。
 
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
