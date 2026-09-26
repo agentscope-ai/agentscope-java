@@ -20,6 +20,7 @@ import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TimeZone;
 
 /**
@@ -61,6 +62,9 @@ import java.util.TimeZone;
  */
 public class ScheduleConfig {
 
+    private static final Set<String> LEGACY_TIME_ZONE_IDS =
+            Set.copyOf(Arrays.asList(TimeZone.getAvailableIDs()));
+
     private final ScheduleMode scheduleMode;
     private final String cronExpression;
     private final Long fixedRate;
@@ -97,7 +101,7 @@ public class ScheduleConfig {
                         ZoneId.of(zoneId);
                     } catch (DateTimeException e) {
                         // Keep accepting IDs used by existing Quartz triggers (e.g. PST).
-                        if (!Arrays.asList(TimeZone.getAvailableIDs()).contains(zoneId)) {
+                        if (!LEGACY_TIME_ZONE_IDS.contains(zoneId)) {
                             throw new IllegalArgumentException(
                                     "Invalid time zone ID: " + zoneId, e);
                         }
