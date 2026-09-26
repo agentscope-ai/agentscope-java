@@ -38,6 +38,7 @@ public class AguiAdapterConfig {
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;
+    private final boolean textOutputDispositionEnabled;
     private final boolean emitRunFinishedAfterError;
     private final Duration runTimeout;
     private final String defaultAgentId;
@@ -52,6 +53,7 @@ public class AguiAdapterConfig {
         this.emitToolCallArgs = builder.emitToolCallArgs;
         this.emitTokenUsage = builder.emitTokenUsage;
         this.enableReasoning = builder.enableReasoning;
+        this.textOutputDispositionEnabled = builder.textOutputDispositionEnabled;
         this.emitRunFinishedAfterError = builder.emitRunFinishedAfterError;
         this.runTimeout = builder.runTimeout;
         this.defaultAgentId = builder.defaultAgentId;
@@ -114,6 +116,18 @@ public class AguiAdapterConfig {
     }
 
     /**
+     * Check whether streamed text output disposition and final message snapshots are enabled.
+     *
+     * <p>Default is {@code false} so existing AG-UI event sequences and message IDs remain
+     * unchanged.
+     *
+     * @return true to derive text output disposition events
+     */
+    public boolean isTextOutputDispositionEnabled() {
+        return textOutputDispositionEnabled;
+    }
+
+    /**
      * Check whether {@code RUN_FINISHED} should be emitted after {@code RUN_ERROR}.
      *
      * <p>AG-UI treats {@code RUN_ERROR} and {@code RUN_FINISHED} as mutually exclusive terminal
@@ -173,9 +187,9 @@ public class AguiAdapterConfig {
     }
 
     /**
-     * When {@code false} (default), AgentEvents with a non-null {@code source} (subagent events)
-     * are emitted as AG-UI {@code CUSTOM} events under the {@code subagent.*} namespace instead of
-     * native {@code TEXT_MESSAGE_*} / run lifecycle events.
+     * When {@code false} (default), AgentEvents with a non-blank {@code source} or task id (subagent
+     * events) are emitted as AG-UI {@code CUSTOM} events under the {@code subagent.*} namespace
+     * instead of native {@code TEXT_MESSAGE_*} / run lifecycle events.
      *
      * @return true to keep the legacy native presentation for subagent events
      */
@@ -220,6 +234,7 @@ public class AguiAdapterConfig {
         private boolean emitToolCallArgs = true;
         private boolean emitTokenUsage = false;
         private boolean enableReasoning = false;
+        private boolean textOutputDispositionEnabled = false;
         private boolean emitRunFinishedAfterError = false;
         private Duration runTimeout = Duration.ofMinutes(10);
         private String defaultAgentId;
@@ -287,6 +302,19 @@ public class AguiAdapterConfig {
          */
         public Builder enableReasoning(boolean enableReasoning) {
             this.enableReasoning = enableReasoning;
+            return this;
+        }
+
+        /**
+         * Set whether to derive text output disposition events and final message snapshots.
+         *
+         * <p>Default is {@code false} for backward compatibility.
+         *
+         * @param textOutputDispositionEnabled true to enable disposition conversion
+         * @return This builder
+         */
+        public Builder textOutputDispositionEnabled(boolean textOutputDispositionEnabled) {
+            this.textOutputDispositionEnabled = textOutputDispositionEnabled;
             return this;
         }
 
@@ -396,9 +424,9 @@ public class AguiAdapterConfig {
         /**
          * Set whether subagent-sourced events should use native AG-UI event types.
          *
-         * <p>Default is {@code false}: subagent events become {@code CUSTOM} events named {@code
-         * subagent.*}. Set {@code true} to restore the previous behavior where child text and
-         * lifecycle events map to the same AG-UI types as the parent.
+         * <p>Default is {@code false}: events with a non-blank source or task id become {@code
+         * CUSTOM} events named {@code subagent.*}. Set {@code true} to restore the previous behavior
+         * where child text and lifecycle events map to the same AG-UI types as the parent.
          *
          * @param emitSubagentEventsAsNative true for legacy native presentation
          * @return This builder

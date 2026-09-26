@@ -59,8 +59,8 @@ public class AgentEventConverterRegistry {
      * @param customConverters converters registered after built-in converters
      * @param enrichers enrichers applied after each conversion
      * @param emitSubagentEventsAsNative when {@code true}, child events use the same converters as
-     *     the parent; when {@code false} (default), {@code source != null} events become {@code
-     *     subagent.*} CUSTOM / RAW events
+     *     the parent; when {@code false} (default), events with a non-blank source or task id become
+     *     {@code subagent.*} CUSTOM / RAW events
      */
     public AgentEventConverterRegistry(
             List<AgentEventConverter> customConverters,
@@ -97,9 +97,7 @@ public class AgentEventConverterRegistry {
         Objects.requireNonNull(event, "event cannot be null");
         Objects.requireNonNull(context, "context cannot be null");
         context.beginEvent();
-        if (!emitSubagentEventsAsNative
-                && event.getSource() != null
-                && !event.getSource().isBlank()) {
+        if (!emitSubagentEventsAsNative && !context.isTopLevelEvent(event)) {
             subagentConverter.convert(event, context);
         } else {
             converters.getOrDefault(event.getClass(), rawConverter).convert(event, context);

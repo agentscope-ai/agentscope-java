@@ -23,6 +23,22 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class AgentEndEvent extends AgentEvent {
 
+    /**
+     * Metadata key describing whether a synthesized invocation end succeeded, failed, or cancelled.
+     *
+     * <p>It is written by the producer that synthesizes an end on behalf of a forwarded invocation —
+     * for example the harness spawn tool, which tags every subagent end with {@link #OUTCOME_SUCCESS},
+     * {@link #OUTCOME_ERROR} or {@link #OUTCOME_CANCELLED}. {@link
+     * AgentEventStreams#withTextOutputDisposition} only treats a subagent end as a normal completion
+     * when this key is present and set to {@link #OUTCOME_SUCCESS}, so a producer that synthesizes
+     * subagent ends should set it to keep those replies classifiable.
+     */
+    public static final String METADATA_INVOCATION_OUTCOME = "invocationOutcome";
+
+    public static final String OUTCOME_SUCCESS = "success";
+    public static final String OUTCOME_ERROR = "error";
+    public static final String OUTCOME_CANCELLED = "cancelled";
+
     private final String replyId;
 
     @JsonCreator

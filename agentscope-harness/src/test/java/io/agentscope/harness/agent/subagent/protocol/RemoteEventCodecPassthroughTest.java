@@ -44,6 +44,8 @@ import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.TextOutputDisposition;
+import io.agentscope.core.event.TextOutputDispositionEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
@@ -107,6 +109,9 @@ class RemoteEventCodecPassthroughTest {
         events.put(AgentEventType.TEXT_BLOCK_START, new TextBlockStartEvent("reply", "b1"));
         events.put(AgentEventType.TEXT_BLOCK_DELTA, new TextBlockDeltaEvent("reply", "b1", "hi"));
         events.put(AgentEventType.TEXT_BLOCK_END, new TextBlockEndEvent("reply", "b1"));
+        events.put(
+                AgentEventType.TEXT_OUTPUT_DISPOSITION,
+                new TextOutputDispositionEvent("reply", TextOutputDisposition.TERMINAL, null));
         events.put(AgentEventType.THINKING_BLOCK_START, new ThinkingBlockStartEvent("reply", "b2"));
         events.put(
                 AgentEventType.THINKING_BLOCK_DELTA,

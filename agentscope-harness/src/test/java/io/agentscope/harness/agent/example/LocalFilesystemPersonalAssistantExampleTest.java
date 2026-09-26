@@ -85,6 +85,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
+                        .disableMemoryHooks()
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build()) {
