@@ -16,7 +16,9 @@
 package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -102,6 +104,121 @@ class AgentStateTest {
         s.contextMutable().add(Msg.builder().role(MsgRole.USER).textContent("first").build());
         s.contextMutable().add(Msg.builder().role(MsgRole.ASSISTANT).textContent("reply").build());
         assertEquals(2, s.getContext().size());
+    }
+
+    @Test
+    void replaceContextPreservesMutableHandleAndReplacesContents() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        Msg replacement = Msg.builder().role(MsgRole.ASSISTANT).textContent("replacement").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> mutableHandle = s.contextMutable();
+
+        s.replaceContext(List.of(replacement));
+
+        assertSame(mutableHandle, s.contextMutable());
+        assertEquals(List.of(replacement), s.getContext());
+        assertEquals(List.of(replacement), mutableHandle);
+    }
+
+    @Test
+    void replaceContextPreservingAppendsKeepsMessagesAppendedAfterSnapshot() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        Msg appended = Msg.builder().role(MsgRole.USER).textContent("appended").build();
+        Msg replacement = Msg.builder().role(MsgRole.ASSISTANT).textContent("replacement").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> snapshot = s.getContext();
+        s.contextMutable().add(appended);
+
+        assertTrue(s.replaceContextPreservingAppends(snapshot, List.of(replacement)));
+        assertEquals(List.of(replacement, appended), s.getContext());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsAcceptsPrefixRehydratedFromState() {
+        Msg first = Msg.builder().role(MsgRole.USER).textContent("first").build();
+        Msg second = Msg.builder().role(MsgRole.ASSISTANT).textContent("second").build();
+        AgentState s =
+                AgentState.builder()
+                        .sessionId("rehydrated")
+                        .context(List.of(first, second))
+                        .build();
+        List<Msg> snapshot = s.getContext();
+
+        // A store round trip or snapshot restore brings the same conversation back as new
+        // instances that only share their ids; nothing about the conversation changed.
+        s.replaceContext(AgentState.fromJsonString(s.toJson()).getContext());
+        Msg appended = Msg.builder().role(MsgRole.USER).textContent("appended").build();
+        s.contextMutable().add(appended);
+
+        Msg summary = Msg.builder().role(MsgRole.ASSISTANT).textContent("summary").build();
+        assertTrue(
+                s.replaceContextPreservingAppends(snapshot, List.of(summary)),
+                "an equivalent rebuild of the prefix must not be reported as a conflict");
+        assertEquals(List.of(summary, appended), s.getContext());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsRejectsRewrittenPrefixWithoutSharedIds() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> snapshot = s.getContext();
+        Msg rewritten = Msg.builder().role(MsgRole.USER).textContent("original").build();
+
+        // Same text, but a different message: the guard compares ids, not content.
+        s.replaceContext(List.of(rewritten));
+
+        assertFalse(s.replaceContextPreservingAppends(snapshot, List.of()));
+        assertEquals(List.of(rewritten), s.getContext());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsRejectsPrefixWithoutIds() {
+        // Msg does not validate its id, so a message restored from externally authored JSON can
+        // carry none. Entries without ids cannot be matched to a snapshot, so the guard must stay
+        // closed rather than treat any two id-less messages as the same one.
+        Msg original = Msg.builder().id(null).role(MsgRole.USER).textContent("original").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> snapshot = s.getContext();
+        Msg rewritten = Msg.builder().id(null).role(MsgRole.USER).textContent("rewritten").build();
+        s.replaceContext(List.of(rewritten));
+
+        assertFalse(
+                s.replaceContextPreservingAppends(snapshot, List.of()),
+                "an id-less prefix that was replaced must not be treated as unchanged");
+        assertEquals("rewritten", s.getContext().get(0).getTextContent());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsRejectsChangedPrefix() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        Msg replacement = Msg.builder().role(MsgRole.ASSISTANT).textContent("replacement").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+        List<Msg> snapshot = s.getContext();
+        s.contextMutable().clear();
+        s.contextMutable().add(Msg.builder().role(MsgRole.USER).textContent("changed").build());
+
+        assertFalse(s.replaceContextPreservingAppends(snapshot, List.of(replacement)));
+        assertEquals(1, s.getContext().size());
+        assertEquals("changed", s.getContext().get(0).getTextContent());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsHandlesNullInputs() {
+        Msg original = Msg.builder().role(MsgRole.USER).textContent("original").build();
+        AgentState s = AgentState.builder().context(List.of(original)).build();
+
+        assertTrue(s.replaceContextPreservingAppends(null, null));
+        assertEquals(List.of(original), s.getContext());
+    }
+
+    @Test
+    void replaceContextPreservingAppendsRejectsShorterContext() {
+        Msg first = Msg.builder().role(MsgRole.USER).textContent("first").build();
+        Msg second = Msg.builder().role(MsgRole.USER).textContent("second").build();
+        AgentState s = AgentState.builder().context(List.of(first)).build();
+
+        assertFalse(s.replaceContextPreservingAppends(List.of(first, second), List.of()));
+        assertEquals(List.of(first), s.getContext());
     }
 
     @Test

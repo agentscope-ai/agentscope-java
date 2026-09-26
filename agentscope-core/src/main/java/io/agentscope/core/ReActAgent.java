@@ -152,6 +152,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -734,6 +735,24 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         String uid = rc != null ? rc.getUserId() : null;
         return slotKey(uid, sid);
+    }
+
+    /**
+     * Serializes a session-scoped action with calls for the same runtime context.
+     *
+     * <p>This is intended for operations that mutate and persist session state outside a normal
+     * agent invocation, such as overflow recovery. The action is created only after it has been
+     * admitted by the session gate.
+     *
+     * @param context runtime context identifying the session
+     * @param action deferred session-scoped action
+     * @param <T> action result type
+     * @return the serialized action result
+     */
+    public <T> Mono<T> serializeForSession(
+            RuntimeContext context, Supplier<? extends Mono<T>> action) {
+        RuntimeContext effective = context != null ? context : RuntimeContext.empty();
+        return serializeOnKey(callSerializationKey(effective), Mono.defer(action));
     }
 
     @Override
@@ -1452,15 +1471,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Remove structured-output-related messages from the conversation context and append
      * the final response.
+     *
+     * <p>The replacement is built from a {@link AgentState#getContext()} snapshot and applied with
+     * {@link AgentState#replaceContextPreservingAppends}, so a message appended between the read
+     * and the write is kept instead of being overwritten. A rejected replacement leaves the
+     * structured-output scaffolding in the context and is reported at {@code WARN}: the
+     * conversation is still usable, it just keeps the synthetic tool exchange.
      */
     private void compressStructuredOutputContext(AgentState agentState) {
-        List<Msg> contextMutable = agentState.contextMutable();
-        List<Msg> original = new ArrayList<>(contextMutable);
-        contextMutable.clear();
+        List<Msg> original = agentState.getContext();
+        List<Msg> retained = new ArrayList<>(original.size());
         for (Msg msg : original) {
             if (!isStructuredOutputRelated(msg)) {
-                contextMutable.add(msg);
+                retained.add(msg);
             }
+        }
+        if (!agentState.replaceContextPreservingAppends(original, retained)) {
+            log.warn(
+                    "Structured-output context was not compressed: the context changed while the"
+                        + " final response was being prepared (snapshot={} messages, retained={}"
+                        + " messages). The synthetic tool exchange stays in the context.",
+                    original.size(),
+                    retained.size());
         }
     }
 
@@ -4065,7 +4097,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private List<Msg> prepareSummaryMessages() {
-            List<Msg> messageList = new ArrayList<>(state.contextMutable());
+            List<Msg> messageList = new ArrayList<>(state.getContext());
             messageList.add(
                     UserMessage.builder()
                             .name("user")
@@ -4594,7 +4626,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return;
             }
         }
-        state.contextMutable().clear();
+        state.replaceContext(List.of());
         state.setSummary("");
         saveAgentState(userId, sid);
     }
