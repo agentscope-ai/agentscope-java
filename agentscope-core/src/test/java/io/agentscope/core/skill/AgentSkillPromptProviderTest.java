@@ -385,4 +385,15 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("<skill-id>visible_custom</skill-id>"));
         assertFalse(prompt.contains("<skill-id>hidden_custom</skill-id>"));
     }
+
+    @Test
+    @DisplayName("Should not match SkillFilter against composite skill id")
+    void testFilterDoesNotMatchCompositeId() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("visible_custom"));
+
+        assertFalse(prompt.contains("<skill-id>visible_custom</skill-id>"));
+    }
 }
