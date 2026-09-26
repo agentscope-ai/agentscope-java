@@ -330,11 +330,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -351,14 +350,17 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
+
+// ... 使用 agent；结束后关闭 MCP 会话（wrapper 实现了 AutoCloseable）
+weather.close();
 ```
 
 </Tab>
@@ -371,10 +373,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();

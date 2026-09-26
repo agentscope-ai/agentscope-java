@@ -126,10 +126,10 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new TodoTools());          // reflectively register @Tool methods
 toolkit.registerTool(new MyCustomTools());      // custom tool class
 
-McpClientWrapper amap = McpClientBuilder.streamableHttp()
-        .name("amap")
-        .url("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
-        .build();
+McpClientWrapper amap = McpClientBuilder.create("amap")
+        .streamableHttpTransport("https://mcp.amap.com/mcp?key=" + System.getenv("AMAP_API_KEY"))
+        .buildAsync()
+        .block();
 toolkit.registerMcpClient(amap).block();
 
 ReActAgent agent =
