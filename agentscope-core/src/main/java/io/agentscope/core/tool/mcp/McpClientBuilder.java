@@ -28,6 +28,7 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.TypeRef;
+import io.modelcontextprotocol.json.schema.JsonSchemaValidator;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.ElicitRequest;
@@ -501,7 +502,9 @@ public class McpClientBuilder {
 
         return Mono.fromCallable(
                 () -> {
-                    McpClientTransport transport = transportConfig.createTransport();
+                    McpJsonMapper jsonMapper = McpJsonDefaults.jsonMapper();
+                    JsonSchemaValidator jsonSchemaValidator = McpJsonDefaults.jsonSchemaValidator();
+                    McpClientTransport transport = transportConfig.createTransport(jsonMapper);
 
                     if (protocolVersions != null) {
                         transport =
@@ -520,7 +523,8 @@ public class McpClientBuilder {
                                     .requestTimeout(requestTimeout)
                                     .initializationTimeout(initializationTimeout)
                                     .clientInfo(clientInfo)
-                                    .capabilities(clientCapabilities);
+                                    .capabilities(clientCapabilities)
+                                    .jsonSchemaValidator(jsonSchemaValidator);
 
                     if (asyncElicitationHandler != null) {
                         clientBuilder = clientBuilder.elicitation(asyncElicitationHandler);
@@ -544,7 +548,9 @@ public class McpClientBuilder {
             throw new IllegalStateException("Transport must be configured");
         }
 
-        McpClientTransport transport = transportConfig.createTransport();
+        McpJsonMapper jsonMapper = McpJsonDefaults.jsonMapper();
+        JsonSchemaValidator jsonSchemaValidator = McpJsonDefaults.jsonSchemaValidator();
+        McpClientTransport transport = transportConfig.createTransport(jsonMapper);
 
         if (protocolVersions != null) {
             transport = new ProtocolVersionOverrideTransport(transport, protocolVersions);
@@ -562,7 +568,8 @@ public class McpClientBuilder {
                         .requestTimeout(requestTimeout)
                         .initializationTimeout(initializationTimeout)
                         .clientInfo(clientInfo)
-                        .capabilities(clientCapabilities);
+                        .capabilities(clientCapabilities)
+                        .jsonSchemaValidator(jsonSchemaValidator);
 
         if (syncElicitationHandler != null) {
             clientBuilder = clientBuilder.elicitation(syncElicitationHandler);
@@ -592,7 +599,7 @@ public class McpClientBuilder {
     // ==================== Internal Transport Configuration Classes ====================
 
     private interface TransportConfig {
-        McpClientTransport createTransport();
+        McpClientTransport createTransport(McpJsonMapper jsonMapper);
     }
 
     /**
@@ -669,7 +676,7 @@ public class McpClientBuilder {
         }
 
         @Override
-        public McpClientTransport createTransport() {
+        public McpClientTransport createTransport(McpJsonMapper jsonMapper) {
             ServerParameters.Builder paramsBuilder = ServerParameters.builder(command);
 
             if (!args.isEmpty()) {
@@ -681,7 +688,7 @@ public class McpClientBuilder {
             }
 
             ServerParameters params = paramsBuilder.build();
-            return new StdioClientTransport(params, McpJsonMapper.getDefault());
+            return new StdioClientTransport(params, jsonMapper);
         }
     }
 
@@ -809,7 +816,7 @@ public class McpClientBuilder {
         }
 
         @Override
-        public McpClientTransport createTransport() {
+        public McpClientTransport createTransport(McpJsonMapper jsonMapper) {
             if (clientTransportBuilder == null) {
                 clientTransportBuilder = HttpClientSseClientTransport.builder(url);
             }
@@ -819,7 +826,7 @@ public class McpClientBuilder {
                 clientTransportBuilder.customizeClient(httpClientCustomizer);
             }
 
-            clientTransportBuilder.sseEndpoint(extractEndpoint());
+            clientTransportBuilder.jsonMapper(jsonMapper).sseEndpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
                 clientTransportBuilder.customizeRequest(
@@ -855,7 +862,7 @@ public class McpClientBuilder {
         }
 
         @Override
-        public McpClientTransport createTransport() {
+        public McpClientTransport createTransport(McpJsonMapper jsonMapper) {
             if (clientTransportBuilder == null) {
                 clientTransportBuilder = HttpClientStreamableHttpTransport.builder(url);
             }
@@ -865,7 +872,7 @@ public class McpClientBuilder {
                 clientTransportBuilder.customizeClient(httpClientCustomizer);
             }
 
-            clientTransportBuilder.endpoint(extractEndpoint());
+            clientTransportBuilder.jsonMapper(jsonMapper).endpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
                 clientTransportBuilder.customizeRequest(
