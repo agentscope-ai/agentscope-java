@@ -34,6 +34,7 @@ import io.agentscope.dataagent.web.share.AgentAccessGuard;
 import io.agentscope.dataagent.web.share.AgentAclService.Tier;
 import io.agentscope.dataagent.web.toolbus.ToolEventBus;
 import io.agentscope.dataagent.web.usage.UsageStore;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.Peer;
@@ -364,17 +365,42 @@ public class ChatController {
      */
     private String resolveGateKey(String userId, String agentId, String conversationId) {
         if (agentId == null || agentId.isBlank()) return null;
+        if (conversationId == null || conversationId.isBlank()) return null;
         try {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
             InboundMessage probe =
-                    InboundMessage.builder(ChatUiChannel.CHANNEL_ID, Peer.direct(userId), List.of())
-                            .preferredAgentId(gatewayAgentId)
-                            .accountId(conversationId)
-                            .build();
+                    buildConversationInbound(userId, gatewayAgentId, conversationId, List.of());
             return chatUiChannel.previewRoute(probe).context().canonicalKey();
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Builds an inbound message whose routing key carries {@code conversationId} in the {@code |t:}
+     * segment via a thread peer. {@code senderId} must be set because thread peers are not DM peers
+     * and the router would otherwise lose the authenticated user id.
+     *
+     * <p>{@code conversationId} must be non-blank — HTTP stream/send mint a UUID before dispatch;
+     * callers must not fall back to a DM-shaped key.
+     */
+    static InboundMessage buildConversationInbound(
+            String userId, String gatewayAgentId, String conversationId, List<Msg> messages) {
+        Objects.requireNonNull(userId, "userId");
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "conversationId is required; stream/send must mint a UUID before dispatch");
+        }
+        List<Msg> payload = messages != null ? List.copyOf(messages) : List.of();
+        InboundMessage.Builder builder =
+                InboundMessage.builder(
+                                ChatUiChannel.CHANNEL_ID, Peer.thread(conversationId), payload)
+                        .senderId(userId)
+                        .parentPeer(Peer.direct(userId));
+        if (gatewayAgentId != null && !gatewayAgentId.isBlank()) {
+            builder.preferredAgentId(gatewayAgentId);
+        }
+        return builder.build();
     }
 
     /**
@@ -537,28 +563,44 @@ public class ChatController {
      *
      * <p>When {@code agentId} is blank (defensive — controller always supplies one), falls back to
      * pure binding-driven routing: the chatui channel's default agent or matching binding wins.
+     *
+     * <p>{@code conversationId} must already be pinned (stream/send mint a UUID when the client
+     * omits {@code sessionKey}). A blank id is rejected so probe ({@link #resolveGateKey}) and
+     * dispatch never diverge on session identity.
      */
     private Mono<Msg> executeChat(
             String userId, String agentId, String message, String conversationId) {
         long startMs = System.currentTimeMillis();
+
+        if (agentId != null && !agentId.isBlank()) {
+            HarnessAgent ha = catalogService.getRunningAgent(userId, agentId);
+            if (ha != null && ha.getModel() == null) {
+                return Mono.error(
+                        new IllegalStateException(
+                                "No LLM model configured for agent '"
+                                        + agentId
+                                        + "'. Provide a Model Spring bean or configure model"
+                                        + " options under dataagent.* in application.yml."));
+            }
+        }
+
+        String pinnedConversationId = normalizedConversationId(conversationId);
+        if (pinnedConversationId == null) {
+            return Mono.error(
+                    new IllegalArgumentException(
+                            "conversationId is required; stream/send must mint a UUID before"
+                                    + " executeChat"));
+        }
 
         List<Msg> msgs =
                 shapeInboundMessages(userBindings.list(userId), ChatUiChannel.CHANNEL_ID, message);
 
         InboundMessage inbound;
         if (agentId == null || agentId.isBlank()) {
-            // No agent override and no conversation scoping — pure binding-driven routing.
-            inbound = InboundMessage.dm(ChatUiChannel.CHANNEL_ID, userId, List.copyOf(msgs));
+            inbound = buildConversationInbound(userId, null, pinnedConversationId, msgs);
         } else {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
-            inbound =
-                    InboundMessage.builder(
-                                    ChatUiChannel.CHANNEL_ID,
-                                    Peer.direct(userId),
-                                    List.copyOf(msgs))
-                            .preferredAgentId(gatewayAgentId)
-                            .accountId(conversationId)
-                            .build();
+            inbound = buildConversationInbound(userId, gatewayAgentId, pinnedConversationId, msgs);
         }
         Mono<Msg> call = chatUiChannel.dispatch(inbound);
 
