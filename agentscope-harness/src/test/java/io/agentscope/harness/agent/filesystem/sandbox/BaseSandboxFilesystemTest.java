@@ -304,12 +304,40 @@ class BaseSandboxFilesystemTest {
                                     + " '/ws/string_not_found/x'\"}\n",
                             0,
                             false));
+            // write_failed now degrades to transfer; the path name must not be mistaken
+            // for a string_not_found error, so the fallback must still run and report
+            // its own (transfer) outcome.
+            fs.withDownloadResult(
+                    List.of(FileDownloadResponse.fail("/ws/string_not_found/x", "nope")));
 
             EditResult result = fs.edit(RT, "/ws/string_not_found/x", "a", "b", false);
 
             assertFalse(result.isSuccess());
-            assertTrue(result.error().contains("Error editing file"));
             assertFalse(result.error().contains("String not found in file"));
+            assertTrue(fs.downloadedPaths.contains("/ws/string_not_found/x"));
+        }
+
+        @Test
+        void edit_native_writeFailed_fallsBackToTransfer() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(
+                    new ExecuteResponse(
+                            "__RESULT__{\"error\": \"write_failed\", \"detail\": \"[Errno 13]\"}\n",
+                            0,
+                            false));
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", "Hello World!".getBytes())));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "write_failed should degrade: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertTrue(fs.downloadedPaths.contains("/workspace/f.txt"));
+            assertEquals(
+                    "Hello Java!",
+                    new String(fs.uploadedFiles.get(2).getValue(), StandardCharsets.UTF_8));
         }
 
         @Test
@@ -497,6 +525,25 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("disk full"));
+        }
+
+        @Test
+        void edit_pythonMissing_transferInvalidUtf8_failsInsteadOfReencoding() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+            fs.withExecuteResult(new ExecuteResponse("sh: 1: python3: not found\n", 127, false));
+            // 0xFF is never valid UTF-8 (a legacy-encoding byte); the fallback must
+            // refuse rather than replace it and silently rewrite the file.
+            fs.withDownloadResult(
+                    List.of(
+                            FileDownloadResponse.success(
+                                    "/workspace/f.txt", new byte[] {'a', (byte) 0xFF, 'b'})));
+
+            EditResult result = fs.edit(RT, "/workspace/f.txt", "a", "x", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("not valid UTF-8"));
+            // nothing was re-uploaded
+            assertEquals(2, fs.uploadedFiles.size());
         }
 
         @Test
@@ -701,6 +748,23 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("appears"));
+        }
+
+        @Test
+        void edit_symlinkTarget_preservesLinkAndWritesThrough() throws IOException {
+            Path real = tmpDir.resolve("real.txt");
+            Files.writeString(real, "Hello World");
+            Path link = tmpDir.resolve("link.txt");
+            Files.createSymbolicLink(link, real.getFileName());
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            EditResult result = fs.edit(RT, link.toString(), "World", "Java", false);
+
+            assertTrue(result.isSuccess(), "edit through link should succeed: " + result.error());
+            // the link itself is still a symlink (os.replace must not replace the link)
+            assertTrue(Files.isSymbolicLink(link), "symlink must survive the edit");
+            // and the content landed in the real target
+            assertEquals("Hello Java", Files.readString(real));
         }
     }
 

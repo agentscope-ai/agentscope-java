@@ -30,6 +30,10 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -243,7 +247,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
      */
     private static final String EDIT_SCRIPT =
             """
-            import os, sys, json
+            import os, sys, json, uuid
             target, old_file, new_file = sys.argv[1], sys.argv[2], sys.argv[3]
             replace_all = sys.argv[4] == "true"
             def result(obj):
@@ -282,10 +286,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             out_bytes = out.encode("utf-8")
             # realpath so os.replace writes through symlinks (replacing the link
             # itself would break workspace symlinks) and stays on target's mount.
+            # uuid4 keeps the temp name unique per edit even when concurrent edits
+            # share a long-lived shell process (os.getpid() would not be unique).
             real = os.path.realpath(target)
             st = os.stat(real)
-            tmp_out = real + ".agentscope-edit-tmp-" + str(os.getpid())
+            tmp_out = real + ".agentscope-edit-tmp-" + uuid.uuid4().hex
             try:
+                # Failure here (including a read-only directory that forbids creating
+                # the temp file) leaves the target untouched: nothing is written to
+                # `real` until os.replace succeeds. Java then retries via the transfer
+                # path, whose shell redirection needs only file write permission.
                 with open(tmp_out, "wb") as f:
                     f.write(out_bytes)
                 os.chmod(tmp_out, st.st_mode)
@@ -295,20 +305,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                     import shutil
                     shutil.copyfile(tmp_out, real)
                     os.remove(tmp_out)
-            except OSError:
-                # Directory not writable for a new temp file — fall back to
-                # writing the existing file in place (previous behavior).
-                try:
-                    if os.path.exists(tmp_out):
-                        os.remove(tmp_out)
-                except Exception:
-                    pass
-                try:
-                    with open(real, "wb") as f:
-                        f.write(out_bytes)
-                except Exception as e:
-                    result({"error": "write_failed", "detail": str(e)})
-                    sys.exit(0)
             except Exception as e:
                 try:
                     if os.path.exists(tmp_out):
@@ -390,8 +386,19 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         String output = execResult.output() != null ? execResult.output() : "";
         int marker = output.indexOf(EDIT_RESULT_MARKER);
         if (marker >= 0) {
-            return mapNativeResult(
-                    filePath, oldString, output.substring(marker + EDIT_RESULT_MARKER.length()));
+            String payload = output.substring(marker + EDIT_RESULT_MARKER.length());
+            if ("write_failed".equals(parseErrorToken(payload))) {
+                // The native path writes target only via a same-directory temp + rename,
+                // so a failure here means target is untouched. Retry through the transfer
+                // path, whose shell redirection needs only file write permission and can
+                // succeed where a read-only directory blocked the temp file.
+                log.warn(
+                        "[sandbox-fs] native edit write failed ({}), falling back to transfer",
+                        payload.trim());
+                executeCleanup(runtimeContext, tmpDir);
+                return editViaTransfer(runtimeContext, filePath, oldString, safeNew, replaceAll);
+            }
+            return mapNativeResult(filePath, oldString, payload);
         }
         if (isPythonMissing(execResult)) {
             executeCleanup(runtimeContext, tmpDir);
@@ -517,6 +524,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         }
     }
 
+    /** Decode bytes as UTF-8, failing on malformed input instead of substituting. */
+    private static String decodeUtf8Strict(byte[] bytes) throws CharacterCodingException {
+        CharsetDecoder decoder =
+                StandardCharsets.UTF_8
+                        .newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT);
+        return decoder.decode(ByteBuffer.wrap(bytes)).toString();
+    }
+
     /** Fallback when {@code python3} is unavailable: download, replace in Java, re-upload. */
     private EditResult editViaTransfer(
             RuntimeContext runtimeContext,
@@ -532,7 +549,16 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (contentBytes == null || contentBytes.length == 0) {
             return EditResult.fail("Error: File '" + filePath + "' is empty");
         }
-        String content = new String(contentBytes, StandardCharsets.UTF_8);
+        // Fail on malformed UTF-8 instead of silently replacing bytes: the native Python
+        // path decodes strictly, so the fallback must not quietly re-encode a legacy-encoding
+        // file it cannot represent.
+        String content;
+        try {
+            content = decodeUtf8Strict(contentBytes);
+        } catch (CharacterCodingException e) {
+            return EditResult.fail(
+                    "Error editing file '" + filePath + "': file is not valid UTF-8");
+        }
 
         FilesystemUtils.ReplacementResult result =
                 FilesystemUtils.performStringReplacement(content, oldString, newString, replaceAll);
