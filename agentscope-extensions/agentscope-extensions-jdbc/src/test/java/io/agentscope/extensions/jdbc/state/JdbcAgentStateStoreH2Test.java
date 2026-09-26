@@ -471,6 +471,15 @@ class JdbcAgentStateStoreH2Test {
         assertTrue(
                 exception.getMessage().contains("[version]"),
                 "the failure must name the missing column: " + exception.getMessage());
+        // The remedy must be an ALTER that works on the existing table — the reference
+        // CREATE TABLE IF NOT EXISTS is a silent no-op there — and must backfill DEFAULT 1.
+        assertTrue(
+                exception
+                        .getMessage()
+                        .contains(
+                                "ALTER TABLE agentscope_sessions ADD COLUMN version BIGINT NOT"
+                                        + " NULL DEFAULT 1"),
+                "the failure must quote the actionable ALTER: " + exception.getMessage());
     }
 
     @Test
@@ -486,7 +495,12 @@ class JdbcAgentStateStoreH2Test {
 
         assertTrue(
                 exception.getMessage().contains("agentscope_sessions")
-                        && exception.getMessage().contains("[version]"),
+                        && exception.getMessage().contains("[version]")
+                        && exception
+                                .getMessage()
+                                .contains(
+                                        "ALTER TABLE agentscope_sessions ADD COLUMN version"
+                                                + " BIGINT NOT NULL DEFAULT 1"),
                 "the failure must name table and missing column: " + exception.getMessage());
     }
 

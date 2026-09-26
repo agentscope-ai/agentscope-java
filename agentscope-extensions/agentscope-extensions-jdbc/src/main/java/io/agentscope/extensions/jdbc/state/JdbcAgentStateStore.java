@@ -151,15 +151,37 @@ public class JdbcAgentStateStore implements AgentStateStore {
         for (String ddl : dialect.sessionStateCreateTableDdls()) {
             LOG.error("Reference CREATE TABLE DDL for table {}: {}", table, ddl);
         }
+        // The reference CREATE TABLE IF NOT EXISTS is a silent no-op on the very legacy table
+        // being reported, so spell out the ALTER that actually repairs it. `version` is the
+        // only realistic legacy gap (the deprecated stores' shape has every other column),
+        // and its type is vendor-uniform, so one statement serves all four dialects.
+        // DEFAULT 1 deliberately, not the reference DDL's DEFAULT 0: an ALTER backfills
+        // pre-existing rows with the default, and 0 is the "row absent" CAS sentinel.
+        String versionRemedy =
+                missing.contains("version")
+                        ? " To add the version column: ALTER TABLE "
+                                + table
+                                + " ADD COLUMN version BIGINT NOT NULL DEFAULT 1;"
+                                + " (DEFAULT 1, not the reference DDL's DEFAULT 0 — an ALTER"
+                                + " backfills existing rows, and 0 is the 'row absent'"
+                                + " sentinel)."
+                        : "";
+        String otherRemedy =
+                missing.stream().anyMatch(c -> !"version".equals(c))
+                        ? " For the remaining columns align the table with the reference"
+                                + " CREATE TABLE DDL just logged — a table missing those did"
+                                + " not originate from the deprecated stores."
+                        : "";
         throw new IllegalStateException(
                 "Table "
                         + table
                         + " is missing required column(s) "
                         + missing
-                        + " (legacy schema from the deprecated mysql/postgresql store). Align"
-                        + " the table with the reference CREATE TABLE DDL just logged, via your"
-                        + " database migration process — the store never alters an existing"
-                        + " table.");
+                        + " (legacy schema from the deprecated mysql/postgresql store). The"
+                        + " store never alters an existing table; apply the migration via your"
+                        + " database migration process."
+                        + versionRemedy
+                        + otherRemedy);
     }
 
     private void verifyTableExists() {
