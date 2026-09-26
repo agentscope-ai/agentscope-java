@@ -228,10 +228,11 @@ public class SubAgentTool implements AgentTool {
         if (agent instanceof ReActAgent ra) {
             ra.interrupt(ctx);
             logger.warn(
-                    "Sub-agent '{}' (id={}) was interrupted because its tool call subscription "
-                            + "was cancelled.",
+                    "Sub-agent '{}' (agentId={}, id={}) was interrupted because its tool call "
+                            + "subscription was cancelled.",
                     ra.getName(),
-                    ra.getAgentId());
+                    ra.getAgentId(),
+                    ra.getId());
         }
     }
 
@@ -402,7 +403,7 @@ public class SubAgentTool implements AgentTool {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("subagent_event", event == null ? "" : event);
             metadata.put("subagent_name", agent.getName() == null ? "" : agent.getName());
-            metadata.put("subagent_id", agent.getAgentId() == null ? "" : agent.getAgentId());
+            metadata.put("subagent_id", agent.getId() == null ? "" : agent.getId());
             metadata.put("subagent_session_id", sessionId == null ? "" : sessionId);
             emitter.emit(
                     new ToolResultBlock(
