@@ -30,8 +30,17 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.mime.MediaType;
@@ -41,14 +50,17 @@ import org.apache.tika.mime.MimeTypeException;
 import org.apache.tika.mime.MimeTypes;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
+import org.apache.tika.sax.BodyContentHandler;
 import org.apache.tika.sax.ToXMLContentHandler;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.xml.sax.ContentHandler;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 /**
@@ -85,6 +97,25 @@ class TikaReaderTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new TikaReader(512, SplitStrategy.PARAGRAPH, 50, null));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when per-read handler factory is null")
+    void testNullPerReadHandlerFactory() {
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> TikaReader.perReadHandler(512, SplitStrategy.PARAGRAPH, 50, null));
+        assertEquals("handler factory cannot be null", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("A factory that returns null must surface as a configuration error")
+    void testNullFromPerReadHandlerFactory() {
+        TikaReader reader = TikaReader.perReadHandler(512, SplitStrategy.PARAGRAPH, 50, () -> null);
+        ReaderInput input = ReaderInput.fromPath("src/test/resources/rag-test.docx");
+
+        StepVerifier.create(reader.read(input)).expectError(IllegalStateException.class).verify();
     }
 
     @Test
@@ -187,5 +218,126 @@ class TikaReaderTest {
         assertFalse(supportedFormats.contains("error_type"));
 
         mockStatic.close();
+    }
+
+    @Test
+    @DisplayName("A reused reader must not see content from earlier reads")
+    void testReusedReaderDoesNotAccumulateEarlierContent(@TempDir Path tempDir) throws Exception {
+        Path first = Files.writeString(tempDir.resolve("first.txt"), "ALPHA");
+        Path second = Files.writeString(tempDir.resolve("second.txt"), "BETA");
+
+        TikaReader reader = new TikaReader();
+
+        assertEquals("first read must return the first document", "ALPHA", readAll(reader, first));
+        assertEquals(
+                "reading the same document twice must be idempotent",
+                "ALPHA",
+                readAll(reader, first));
+        assertEquals(
+                "the second document must not carry over text from the first",
+                "BETA",
+                readAll(reader, second));
+    }
+
+    @Test
+    @DisplayName("A caller-supplied content handler is still honoured")
+    void testCallerSuppliedHandlerIsUsed(@TempDir Path tempDir) throws Exception {
+        Path file = Files.writeString(tempDir.resolve("document.txt"), "GAMMA");
+        TikaReader reader =
+                new TikaReader(1024, SplitStrategy.PARAGRAPH, 50, new ToXMLContentHandler());
+
+        String text = readAll(reader, file);
+
+        assertTrue(
+                "expected markup from the supplied XHTML handler, got: " + text,
+                text.contains("<"));
+        assertTrue("expected the document text, got: " + text, text.contains("GAMMA"));
+    }
+
+    @Test
+    @DisplayName("The per-read handler factory is consulted once per read subscription")
+    void testPerReadHandlerFactoryIsConsultedPerSubscription(@TempDir Path tempDir)
+            throws Exception {
+        Path file = Files.writeString(tempDir.resolve("document.txt"), "DELTA");
+        AtomicInteger handlerCount = new AtomicInteger();
+        TikaReader reader =
+                TikaReader.perReadHandler(
+                        512,
+                        SplitStrategy.PARAGRAPH,
+                        50,
+                        () -> {
+                            handlerCount.incrementAndGet();
+                            return new BodyContentHandler(-1);
+                        });
+
+        assertEquals("DELTA", readAll(reader, file));
+        assertEquals("DELTA", readAll(reader, file));
+        assertEquals("DELTA", readAll(reader, file));
+        assertEquals(
+                "the factory must be consulted once per read subscription", 3, handlerCount.get());
+    }
+
+    @Test
+    @DisplayName("The per-read handler factory is consulted again on resubscription")
+    void testPerReadHandlerFactoryIsConsultedOnResubscription(@TempDir Path tempDir)
+            throws Exception {
+        Path file = Files.writeString(tempDir.resolve("document.txt"), "DELTA");
+        AtomicInteger handlerCount = new AtomicInteger();
+        TikaReader reader =
+                TikaReader.perReadHandler(
+                        512,
+                        SplitStrategy.PARAGRAPH,
+                        50,
+                        () -> {
+                            handlerCount.incrementAndGet();
+                            return new BodyContentHandler(-1);
+                        });
+        Mono<List<Document>> read = reader.read(ReaderInput.fromPath(file));
+
+        assertEquals("DELTA", joinDocumentText(read.block()));
+        assertEquals("DELTA", joinDocumentText(read.block()));
+        assertEquals(
+                "the factory must be consulted again for a second subscription",
+                2,
+                handlerCount.get());
+    }
+
+    @Test
+    @DisplayName("Concurrent reads of one reader must not share handler state")
+    void testConcurrentReadsStayIsolated(@TempDir Path tempDir) throws Exception {
+        Path first = Files.writeString(tempDir.resolve("first.txt"), "ALPHA");
+        Path second = Files.writeString(tempDir.resolve("second.txt"), "BETA");
+        TikaReader reader = new TikaReader();
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<String>> futures =
+                    IntStream.range(0, 8)
+                            .mapToObj(
+                                    i ->
+                                            executor.submit(
+                                                    () ->
+                                                            readAll(
+                                                                    reader,
+                                                                    i % 2 == 0 ? first : second)))
+                            .collect(Collectors.toList());
+            for (int i = 0; i < futures.size(); i++) {
+                String expected = i % 2 == 0 ? "ALPHA" : "BETA";
+                assertEquals(expected, futures.get(i).get(30, TimeUnit.SECONDS));
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    /** Reads a document and joins every chunk so assertions see the whole extracted text. */
+    private static String readAll(TikaReader reader, Path path) {
+        return joinDocumentText(reader.read(ReaderInput.fromPath(path)).block());
+    }
+
+    private static String joinDocumentText(List<Document> documents) {
+        assertNotNull(documents);
+        return documents.stream()
+                .map(document -> document.getMetadata().getContentText())
+                .collect(Collectors.joining("\n"));
     }
 }
