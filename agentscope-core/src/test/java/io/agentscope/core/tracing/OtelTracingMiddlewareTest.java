@@ -17,6 +17,8 @@ package io.agentscope.core.tracing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,7 +37,13 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatUsage;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.TracerProvider;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
@@ -46,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,22 +66,23 @@ import reactor.core.scheduler.Schedulers;
 class OtelTracingMiddlewareTest {
 
     private InMemorySpanExporter spanExporter;
+    private OpenTelemetrySdk openTelemetrySdk;
     private OtelTracingMiddleware middleware;
 
     @BeforeEach
     void setUp() {
         GlobalOpenTelemetry.resetForTest();
         spanExporter = InMemorySpanExporter.create();
-        SdkTracerProvider tracerProvider =
-                SdkTracerProvider.builder()
-                        .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
-                        .build();
-        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).buildAndRegisterGlobal();
+        openTelemetrySdk = registerGlobalSdk(spanExporter);
         middleware = new OtelTracingMiddleware();
     }
 
     @AfterEach
     void tearDown() {
+        if (openTelemetrySdk != null) {
+            openTelemetrySdk.close();
+            openTelemetrySdk = null;
+        }
         GlobalOpenTelemetry.resetForTest();
     }
 
@@ -524,9 +534,386 @@ class OtelTracingMiddlewareTest {
         assertEquals("execute_tool myTool", spans.get(0).getName());
     }
 
+    @Test
+    void injectedSdk_recordsHooksOnSdkBAndLeavesGlobalSdkAUntouched() {
+        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
+        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
+        try {
+            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
+            Agent agent = stubAgent("injected-agent", "agent-b");
+            AgentStartEvent start = new AgentStartEvent("sess-b", "reply-b", "injected-agent");
+            ModelCallEndEvent modelEnd = new ModelCallEndEvent("reply-b", new ChatUsage(1, 1, 0.1));
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder().id("call-b").name("search").input(Map.of()).build();
+            ToolResultEndEvent toolEnd =
+                    new ToolResultEndEvent("reply-b", "call-b", "search", ToolResultState.SUCCESS);
+
+            injected.onAgent(agent, null, new AgentInput(List.of()), in -> Flux.just(start))
+                    .collectList()
+                    .block();
+            injected.onModelCall(
+                            agent,
+                            null,
+                            new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
+                            in -> Flux.just(modelEnd))
+                    .collectList()
+                    .block();
+            injected.onActing(
+                            agent,
+                            null,
+                            new ActingInput(List.of(toolCall)),
+                            in -> Flux.just(toolEnd))
+                    .collectList()
+                    .block();
+
+            List<SpanData> spansB = exporterB.getFinishedSpanItems();
+            assertEquals(3, spansB.size());
+            assertNotNull(spanNamed(spansB, "invoke_agent"));
+            assertNotNull(spanNamed(spansB, "chat"));
+            assertNotNull(spanNamed(spansB, "execute_tool"));
+            for (SpanData span : spansB) {
+                assertEquals("io.agentscope", span.getInstrumentationScopeInfo().getName());
+                assertTrue(span.hasEnded());
+            }
+            assertEquals(0, spanExporter.getFinishedSpanItems().size());
+            assertGlobalStillExports(openTelemetrySdk, spanExporter, exporterB);
+        } finally {
+            sdkB.close();
+        }
+    }
+
+    @Test
+    void injectedSdk_preservesNestedParentsAcrossSchedulerHopsAndUpstreamContext() {
+        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
+        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
+        Span upstream = sdkB.getTracer("io.agentscope").spanBuilder("upstream").startSpan();
+        Context upstreamContext = Context.root().with(upstream);
+        try {
+            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
+            Agent agent = stubAgent("hop-agent", "agent-hop");
+            ModelCallInput modelIn =
+                    new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o"));
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder().id("call-hop").name("search").input(Map.of()).build();
+            ActingInput actingIn = new ActingInput(List.of(toolCall));
+
+            injected.onAgent(
+                            agent,
+                            null,
+                            new AgentInput(List.of()),
+                            in ->
+                                    injected.onModelCall(
+                                                    agent,
+                                                    null,
+                                                    modelIn,
+                                                    m ->
+                                                            Flux.just(
+                                                                    new ModelCallEndEvent(
+                                                                            "reply-hop",
+                                                                            new ChatUsage(
+                                                                                    1, 1, 0.1))))
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .publishOn(Schedulers.parallel())
+                                            .thenMany(
+                                                    injected.onActing(
+                                                                    agent,
+                                                                    null,
+                                                                    actingIn,
+                                                                    a ->
+                                                                            Flux.just(
+                                                                                    new ToolResultEndEvent(
+                                                                                            "reply-hop",
+                                                                                            "call-hop",
+                                                                                            "search",
+                                                                                            ToolResultState
+                                                                                                    .SUCCESS)))
+                                                            .subscribeOn(
+                                                                    Schedulers.boundedElastic())
+                                                            .publishOn(Schedulers.parallel())))
+                    .contextWrite(
+                            reactorCtx ->
+                                    ContextPropagationOperator.storeOpenTelemetryContext(
+                                            reactorCtx, upstreamContext))
+                    .collectList()
+                    .block(Duration.ofSeconds(5));
+
+            List<SpanData> spans = exporterB.getFinishedSpanItems();
+            assertEquals(3, spans.size());
+            SpanData invoke = spanNamed(spans, "invoke_agent");
+            SpanData chat = spanNamed(spans, "chat");
+            SpanData exec = spanNamed(spans, "execute_tool");
+
+            assertEquals(upstream.getSpanContext().getTraceId(), invoke.getTraceId());
+            assertEquals(upstream.getSpanContext().getSpanId(), invoke.getParentSpanId());
+            assertEquals(invoke.getTraceId(), chat.getTraceId());
+            assertEquals(invoke.getTraceId(), exec.getTraceId());
+            assertEquals(invoke.getSpanId(), chat.getParentSpanId());
+            assertEquals(invoke.getSpanId(), exec.getParentSpanId());
+            assertEquals(0, spanExporter.getFinishedSpanItems().size());
+            assertGlobalStillExports(openTelemetrySdk, spanExporter, exporterB);
+        } finally {
+            upstream.end();
+            sdkB.close();
+        }
+    }
+
+    @Test
+    void defaultConstructor_resolvesGlobalSdkRegisteredAfterConstruction() {
+        openTelemetrySdk.close();
+        openTelemetrySdk = null;
+        GlobalOpenTelemetry.resetForTest();
+
+        OtelTracingMiddleware early = new OtelTracingMiddleware();
+        InMemorySpanExporter lateExporter = InMemorySpanExporter.create();
+        OpenTelemetrySdk lateSdk = registerGlobalSdk(lateExporter);
+        try {
+            early.onAgent(
+                            stubAgent("late-agent", "agent-late"),
+                            null,
+                            new AgentInput(List.of()),
+                            in ->
+                                    Flux.just(
+                                            new AgentStartEvent(
+                                                    "sess", "reply-late", "late-agent")))
+                    .collectList()
+                    .block();
+
+            List<SpanData> spans = lateExporter.getFinishedSpanItems();
+            assertEquals(1, spans.size());
+            assertEquals("invoke_agent late-agent", spans.get(0).getName());
+            assertEquals("io.agentscope", spans.get(0).getInstrumentationScopeInfo().getName());
+            assertEquals(StatusCode.OK, spans.get(0).getStatus().getStatusCode());
+            assertGlobalStillExports(lateSdk, lateExporter, null);
+        } finally {
+            lateSdk.close();
+        }
+    }
+
+    @Test
+    void injectedSdk_rejectsNullAndNoopRunsDownstreamWithoutSpans() {
+        NullPointerException rejected =
+                assertThrows(NullPointerException.class, () -> new OtelTracingMiddleware(null));
+        assertEquals("openTelemetry must not be null", rejected.getMessage());
+
+        OtelTracingMiddleware noopMiddleware = new OtelTracingMiddleware(OpenTelemetry.noop());
+        Agent agent = stubAgent("noop-agent", "agent-noop");
+        AgentStartEvent start = new AgentStartEvent("sess-n", "reply-n", "noop-agent");
+        ModelCallEndEvent modelEnd = new ModelCallEndEvent("reply-n", new ChatUsage(2, 3, 0.2));
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder().id("call-n").name("search").input(Map.of()).build();
+        ToolResultEndEvent toolEnd =
+                new ToolResultEndEvent("reply-n", "call-n", "search", ToolResultState.SUCCESS);
+
+        List<AgentEvent> agentEvents =
+                noopMiddleware
+                        .onAgent(agent, null, new AgentInput(List.of()), in -> Flux.just(start))
+                        .collectList()
+                        .block();
+        List<AgentEvent> modelEvents =
+                noopMiddleware
+                        .onModelCall(
+                                agent,
+                                null,
+                                new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
+                                in -> Flux.just(modelEnd))
+                        .collectList()
+                        .block();
+        List<AgentEvent> toolEvents =
+                noopMiddleware
+                        .onActing(
+                                agent,
+                                null,
+                                new ActingInput(List.of(toolCall)),
+                                in -> Flux.just(toolEnd))
+                        .collectList()
+                        .block();
+
+        assertEquals(List.of(start), agentEvents);
+        assertEquals(List.of(modelEnd), modelEvents);
+        assertEquals(List.of(toolEnd), toolEvents);
+        assertEquals(0, spanExporter.getFinishedSpanItems().size());
+        assertGlobalStillExports(openTelemetrySdk, spanExporter, null);
+    }
+
+    @Test
+    void injectedSdk_resolvesTracerOnceAndReusesItOnEachHook() {
+        AtomicInteger lookups = new AtomicInteger();
+        OpenTelemetry counting =
+                new OpenTelemetry() {
+                    @Override
+                    public TracerProvider getTracerProvider() {
+                        lookups.incrementAndGet();
+                        return OpenTelemetry.noop().getTracerProvider();
+                    }
+
+                    @Override
+                    public ContextPropagators getPropagators() {
+                        return OpenTelemetry.noop().getPropagators();
+                    }
+                };
+        OtelTracingMiddleware cached = new OtelTracingMiddleware(counting);
+        assertEquals(1, lookups.get(), "app-owned tracer is resolved once at construction");
+
+        Agent agent = stubAgent("cache-agent", "agent-cache");
+        AgentStartEvent start = new AgentStartEvent("sess-c", "reply-c", "cache-agent");
+        assertEquals(
+                List.of(start),
+                cached.onAgent(agent, null, new AgentInput(List.of()), in -> Flux.just(start))
+                        .collectList()
+                        .block());
+        ModelCallEndEvent modelEnd = new ModelCallEndEvent("reply-c", new ChatUsage(1, 1, 0.1));
+        assertEquals(
+                List.of(modelEnd),
+                cached.onModelCall(
+                                agent,
+                                null,
+                                new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
+                                in -> Flux.just(modelEnd))
+                        .collectList()
+                        .block());
+        assertEquals(
+                List.of(),
+                cached.onActing(agent, null, new ActingInput(List.of()), in -> Flux.empty())
+                        .collectList()
+                        .block());
+        assertEquals(1, lookups.get(), "hooks reuse the tracer cached for this OpenTelemetry");
+        assertEquals(0, spanExporter.getFinishedSpanItems().size());
+    }
+
+    @Test
+    void injectedSdk_retainsErrorStatus() {
+        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
+        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
+        try {
+            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
+            Agent agent = stubAgent("err-injected", "agent-err-b");
+            runExpectingError(
+                    injected.onAgent(
+                            agent,
+                            null,
+                            new AgentInput(List.of()),
+                            in -> Flux.error(new RuntimeException("agent-boom"))));
+            runExpectingError(
+                    injected.onModelCall(
+                            agent,
+                            null,
+                            new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o")),
+                            in -> Flux.error(new RuntimeException("model-boom"))));
+            runExpectingError(
+                    injected.onActing(
+                            agent,
+                            null,
+                            new ActingInput(List.of()),
+                            in -> Flux.error(new RuntimeException("tool-boom"))));
+
+            List<SpanData> spans = exporterB.getFinishedSpanItems();
+            assertEquals(3, spans.size());
+            assertError(spanNamed(spans, "invoke_agent"), "agent-boom");
+            assertError(spanNamed(spans, "chat"), "model-boom");
+            assertError(spanNamed(spans, "execute_tool"), "tool-boom");
+            assertEquals(0, spanExporter.getFinishedSpanItems().size());
+        } finally {
+            sdkB.close();
+        }
+    }
+
+    @Test
+    void injectedSdk_endsSpanOnCancel() throws InterruptedException {
+        InMemorySpanExporter exporterB = InMemorySpanExporter.create();
+        OpenTelemetrySdk sdkB = buildSdk(exporterB, false);
+        try {
+            OtelTracingMiddleware injected = new OtelTracingMiddleware(sdkB);
+            CountDownLatch subscribed = new CountDownLatch(1);
+            Flux<AgentEvent> upstream =
+                    Flux.<AgentEvent>never().doOnSubscribe(s -> subscribed.countDown());
+
+            AtomicReference<reactor.core.Disposable> disposableRef = new AtomicReference<>();
+            disposableRef.set(
+                    injected.onAgent(
+                                    stubAgent("cancel-injected", "agent-cancel-b"),
+                                    null,
+                                    new AgentInput(List.of()),
+                                    in -> upstream)
+                            .subscribe());
+
+            assertTrue(subscribed.await(2, TimeUnit.SECONDS), "subscription should occur");
+            disposableRef.get().dispose();
+            Thread.sleep(50);
+
+            List<SpanData> spans = exporterB.getFinishedSpanItems();
+            assertEquals(1, spans.size(), "cancelled stream must still end the span");
+            assertTrue(spans.get(0).hasEnded());
+            assertEquals(StatusCode.ERROR, spans.get(0).getStatus().getStatusCode());
+            assertEquals("cancelled", spans.get(0).getStatus().getDescription());
+            assertEquals("io.agentscope", spans.get(0).getInstrumentationScopeInfo().getName());
+            assertEquals(0, spanExporter.getFinishedSpanItems().size());
+        } finally {
+            sdkB.close();
+        }
+    }
+
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    private static OpenTelemetrySdk registerGlobalSdk(InMemorySpanExporter exporter) {
+        return buildSdk(exporter, true);
+    }
+
+    private static OpenTelemetrySdk buildSdk(
+            InMemorySpanExporter exporter, boolean registerGlobal) {
+        SdkTracerProvider tracerProvider =
+                SdkTracerProvider.builder()
+                        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                        .build();
+        var builder = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider);
+        return registerGlobal ? builder.buildAndRegisterGlobal() : builder.build();
+    }
+
+    private static SpanData spanNamed(List<SpanData> spans, String prefix) {
+        return spans.stream()
+                .filter(span -> span.getName().startsWith(prefix))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static void runExpectingError(Flux<AgentEvent> flux) {
+        try {
+            flux.collectList().block();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void assertError(SpanData span, String description) {
+        assertTrue(span.hasEnded());
+        assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
+        assertTrue(span.getStatus().getDescription().contains(description));
+    }
+
+    /**
+     * GlobalOpenTelemetry.get() wraps the registered SDK, so identity is the tracer provider plus a
+     * span that only the global exporter receives.
+     */
+    private static void assertGlobalStillExports(
+            OpenTelemetrySdk sdk,
+            InMemorySpanExporter globalExporter,
+            InMemorySpanExporter otherExporter) {
+        assertSame(sdk.getTracerProvider(), GlobalOpenTelemetry.get().getTracerProvider());
+        int globalBefore = globalExporter.getFinishedSpanItems().size();
+        int otherBefore = otherExporter == null ? 0 : otherExporter.getFinishedSpanItems().size();
+        GlobalOpenTelemetry.getTracer("io.agentscope")
+                .spanBuilder("global-probe")
+                .startSpan()
+                .end();
+        List<SpanData> globalSpans = globalExporter.getFinishedSpanItems();
+        assertEquals(globalBefore + 1, globalSpans.size());
+        SpanData probe = globalSpans.get(globalSpans.size() - 1);
+        assertEquals("global-probe", probe.getName());
+        assertEquals("io.agentscope", probe.getInstrumentationScopeInfo().getName());
+        if (otherExporter != null) {
+            assertEquals(otherBefore, otherExporter.getFinishedSpanItems().size());
+        }
+    }
 
     private static Agent stubAgent(String name, String agentId) {
         return new StubAgent(name, agentId);
