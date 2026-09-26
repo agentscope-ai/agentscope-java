@@ -1,5 +1,6 @@
 ---
 title: RAG Knowledge Base
+zh_link: /v2/zh/integration/rag/index
 ---
 
 Choose a guide below to configure and use rag knowledge base.

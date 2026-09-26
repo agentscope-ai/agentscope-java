@@ -1,5 +1,6 @@
 ---
 title: Gemini
+en_link: /v2/en/integration/model/gemini
 ---
 
 `agentscope-extensions-model-gemini` 接入 Google Gemini 模型。它支持 Gemini API，也可以通过显式配置走 Vertex AI 路径。

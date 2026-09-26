@@ -1,5 +1,6 @@
 ---
 title: "Use cases"
+zh_link: /v2/zh/service/usecases
 ---
 
 <Note>

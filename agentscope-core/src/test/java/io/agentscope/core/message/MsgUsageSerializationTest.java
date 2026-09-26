@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.JsonUtils;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MsgUsageSerializationTest {
@@ -68,6 +69,88 @@ class MsgUsageSerializationTest {
         assertEquals(100, deserialized.getUsage().getInputTokens());
         assertEquals(50, deserialized.getUsage().getOutputTokens());
         assertEquals(30, deserialized.getUsage().getCachedTokens());
+    }
+
+    @Test
+    void reasoningTokensRoundTripViaJson() {
+        ChatUsage usage =
+                ChatUsage.builder().inputTokens(100).outputTokens(50).reasoningTokens(20).build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("hello")
+                        .usage(usage)
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(msg);
+        Msg deserialized = JsonUtils.getJsonCodec().fromJson(json, Msg.class);
+
+        assertNotNull(deserialized.getUsage());
+        assertEquals(20, deserialized.getUsage().getReasoningTokens());
+    }
+
+    @Test
+    void detailedInputBreakdownRoundTripsViaJson() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(30)
+                        .cacheCreationTokens(10)
+                        .toolUsePromptTokens(15)
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("hello")
+                        .usage(usage)
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(msg);
+        Msg deserialized = JsonUtils.getJsonCodec().fromJson(json, Msg.class);
+
+        assertNotNull(deserialized.getUsage());
+        assertEquals(10, deserialized.getUsage().getCacheCreationTokens());
+        assertEquals(15, deserialized.getUsage().getToolUsePromptTokens());
+    }
+
+    @Test
+    void getChatUsagePreservesDetailedTokensFromMetadataMap() {
+        Map<String, Object> metadata =
+                Map.of(
+                        MessageMetadataKeys.CHAT_USAGE,
+                        Map.of(
+                                "inputTokens",
+                                100,
+                                "outputTokens",
+                                50,
+                                "cachedTokens",
+                                30,
+                                "cacheCreationTokens",
+                                10,
+                                "reasoningTokens",
+                                20,
+                                "toolUsePromptTokens",
+                                15));
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .textContent("reply")
+                        .metadata(metadata)
+                        .build();
+
+        ChatUsage usage = msg.getChatUsage();
+
+        assertNotNull(usage);
+        assertEquals(100, usage.getInputTokens());
+        assertEquals(50, usage.getOutputTokens());
+        assertEquals(30, usage.getCachedTokens());
+        assertEquals(10, usage.getCacheCreationTokens());
+        assertEquals(20, usage.getReasoningTokens());
+        assertEquals(15, usage.getToolUsePromptTokens());
     }
 
     @Test

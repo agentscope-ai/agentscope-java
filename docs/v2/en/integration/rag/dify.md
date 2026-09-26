@@ -1,5 +1,6 @@
 ---
 title: Dify
+zh_link: /v2/zh/integration/rag/dify
 ---
 
 `agentscope-extensions-rag-dify` integrates with [Dify](https://dify.ai/) datasets, reusing knowledge bases you already maintain in Dify.

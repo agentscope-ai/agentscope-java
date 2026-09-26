@@ -17,7 +17,6 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,16 +24,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Tool;
@@ -48,7 +44,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -86,12 +81,12 @@ class ReActAgentRuntimeContextTest {
     }
 
     @Test
-    @DisplayName("RuntimeContextAware + tools see the same per-call context")
-    void awareHookAndToolContext() {
-        AtomicReference<RuntimeContext> fromSetter = new AtomicReference<>();
+    @DisplayName("Middleware + tools see the same per-call context")
+    void middlewareAndToolContext() {
+        AtomicReference<RuntimeContext> fromMiddleware = new AtomicReference<>();
         final int[] modelRound = {0};
 
-        Hook hook = new CtxHook(fromSetter);
+        MiddlewareBase middleware = new CtxMiddleware(fromMiddleware);
         MockModel model =
                 new MockModel(
                         messages -> {
@@ -117,7 +112,7 @@ class ReActAgentRuntimeContextTest {
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
                         .model(model)
                         .toolkit(toolkit)
-                        .hooks(List.of(hook))
+                        .middlewares(List.of(middleware))
                         .build();
 
         RuntimeContext run =
@@ -137,8 +132,8 @@ class ReActAgentRuntimeContextTest {
                 toolOut.contains("per-call-uid|from-pre|tool-q"),
                 "unexpected tool output: " + toolOut);
 
-        RuntimeContext r = fromSetter.get();
-        assertNull(r, "unbind should clear setRuntimeContext(null)");
+        RuntimeContext r = fromMiddleware.get();
+        assertSame(run, r, "middleware receives the explicit call context");
 
         assertTrue(
                 agent
@@ -184,6 +179,68 @@ class ReActAgentRuntimeContextTest {
         assertSame(agent.getToolExecutionContext(), mergedFromNull.getToolExecutionContext());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"complete", "error", "cancel"})
+    void concurrentCallKeepsItsContextAfterAnotherCallTerminates(String termination) {
+        RuntimeContext alice = RuntimeContext.builder().userId("alice").sessionId("s").build();
+        RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s").build();
+        var aliceRelease = reactor.core.publisher.Sinks.<String>one();
+        var bobRelease = reactor.core.publisher.Sinks.<String>one();
+        Map<String, RuntimeContext> entered = new java.util.concurrent.ConcurrentHashMap<>();
+        Map<String, RuntimeContext> resumed = new java.util.concurrent.ConcurrentHashMap<>();
+        MiddlewareBase middleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Mono<String> onSystemPrompt(
+                            Agent agent, RuntimeContext ctx, String prompt) {
+                        entered.put(ctx.getUserId(), ctx);
+                        var release = ctx.getUserId().equals("alice") ? aliceRelease : bobRelease;
+                        return release.asMono()
+                                .map(
+                                        value -> {
+                                            resumed.put(ctx.getUserId(), ctx);
+                                            assertEquals(
+                                                    ctx.getUserId(),
+                                                    ctx.getAgentState().getUserId());
+                                            return value;
+                                        });
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("context-isolation")
+                        .model(new MockModel("done"))
+                        .middlewares(List.of(middleware))
+                        .build()) {
+            AtomicReference<Throwable> aliceError = new AtomicReference<>();
+            AtomicReference<Msg> aliceResult = new AtomicReference<>();
+            var callA = agent.call("a", alice).subscribe(aliceResult::set, aliceError::set);
+            var callB = agent.call("b", bob).toFuture();
+            try {
+                assertSame(alice, entered.get("alice"));
+                assertSame(bob, entered.get("bob"));
+                if (termination.equals("cancel")) {
+                    callA.dispose();
+                } else if (termination.equals("error")) {
+                    aliceRelease.tryEmitError(new IllegalStateException("expected failure"));
+                    assertNotNull(aliceError.get());
+                } else {
+                    aliceRelease.tryEmitValue("system");
+                    assertNotNull(aliceResult.get());
+                }
+                bobRelease.tryEmitValue("system");
+                assertNotNull(callB.get(10, java.util.concurrent.TimeUnit.SECONDS));
+                assertSame(bob, resumed.get("bob"));
+                assertEquals("bob", bob.getAgentState().getUserId());
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            } finally {
+                callA.dispose();
+                callB.cancel(true);
+            }
+        }
+    }
+
     private static String lastToolText(ReActAgent agent, String userId, String sessionId) {
         String sid = sessionId != null ? sessionId : agent.getDefaultSessionId();
         List<Msg> list = new ArrayList<>(agent.getAgentState(userId, sid).getContext());
@@ -220,36 +277,20 @@ class ReActAgentRuntimeContextTest {
                 .build();
     }
 
-    private static final class CtxHook implements Hook, RuntimeContextAware {
-        private final AtomicReference<RuntimeContext> fromSetter;
-        private final AtomicInteger preCount = new AtomicInteger();
+    private static final class CtxMiddleware implements MiddlewareBase {
+        private final AtomicReference<RuntimeContext> observed;
 
-        CtxHook(AtomicReference<RuntimeContext> fromSetter) {
-            this.fromSetter = fromSetter;
+        CtxMiddleware(AtomicReference<RuntimeContext> observed) {
+            this.observed = observed;
         }
 
         @Override
-        public void setRuntimeContext(RuntimeContext ctx) {
-            fromSetter.set(ctx);
-        }
-
-        @Override
-        public <T extends HookEvent> Mono<T> onEvent(T event) {
-            if (event instanceof PreReasoningEvent) {
-                return Mono.defer(
-                        () -> {
-                            if (preCount.getAndIncrement() == 0) {
-                                AgentBase a = (AgentBase) ((PreReasoningEvent) event).getAgent();
-                                RuntimeContext rc = a.getRuntimeContext();
-                                assertNotNull(rc);
-                                assertEquals("per-call-uid", rc.getUserId());
-                                assertEquals("from-initial-put", rc.get(SharedPojo.class).value);
-                                rc.put(SharedPojo.class, new SharedPojo("from-pre"));
-                            }
-                            return Mono.just(event);
-                        });
-            }
-            return Mono.just(event);
+        public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String prompt) {
+            observed.set(ctx);
+            assertEquals("per-call-uid", ctx.getUserId());
+            assertEquals("from-initial-put", ctx.get(SharedPojo.class).value);
+            ctx.put(SharedPojo.class, new SharedPojo("from-pre"));
+            return Mono.just(prompt);
         }
     }
 }

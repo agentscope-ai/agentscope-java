@@ -29,8 +29,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.aistio.model.AgentTaskAssignment;
 import io.agentscope.extensions.aistio.transport.CollaborationClient;
@@ -39,9 +43,11 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 
 class HarnessAgentTaskOutcomeTest {
@@ -76,6 +82,60 @@ class HarnessAgentTaskOutcomeTest {
         when(agent.getTaskRepository()).thenReturn(repo);
         when(repo.listTasks(any(), any(), isNull())).thenReturn(List.of());
         return new HarnessAgentTaskStarter(() -> agent, client);
+    }
+
+    @Test
+    void runtimeDenyMessageBecomesConfirmResultReason() throws Exception {
+        var starter = starter();
+        var calls = new AtomicInteger();
+        ToolUseBlock pending =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("shell")
+                        .input(Map.of("command", "date"))
+                        .state(ToolCallState.ASKING)
+                        .build();
+        when(agent.call(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        invocation -> {
+                            if (calls.getAndIncrement() == 0) {
+                                return Mono.just(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(pending)
+                                                .generateReason(GenerateReason.PERMISSION_ASKING)
+                                                .build());
+                            }
+                            RuntimeContext context = invocation.getArgument(1);
+                            context.get(AgentTaskOutcome.State.class).markTerminalCommitted();
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .textContent("denied")
+                                            .generateReason(GenerateReason.MODEL_STOP)
+                                            .build());
+                        });
+        when(client.awaitRuntimeToolApproval(
+                        eq("task"),
+                        eq("secret-token"),
+                        eq("call-1"),
+                        eq("shell"),
+                        eq(Map.of("command", "date"))))
+                .thenReturn(
+                        new CollaborationClient.RuntimeApprovalDecision(
+                                "approval-1", 1, false, "production command is not allowed"));
+
+        starter.start(assignment).block();
+
+        ArgumentCaptor<Msg> messages = ArgumentCaptor.forClass(Msg.class);
+        verify(agent, times(2)).call(messages.capture(), any(RuntimeContext.class));
+        Object raw = messages.getAllValues().get(1).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS);
+        assertTrue(raw instanceof List);
+        List<?> results = (List<?>) raw;
+        assertEquals(1, results.size());
+        ConfirmResult result = (ConfirmResult) results.get(0);
+        assertFalse(result.isConfirmed());
+        assertEquals("production command is not allowed", result.getReason());
     }
 
     @Test

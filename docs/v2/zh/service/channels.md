@@ -1,5 +1,6 @@
 ---
 title: "消息事件：Channel 接入与路由"
+en_link: /v2/en/service/channels
 ---
 
 <Note>

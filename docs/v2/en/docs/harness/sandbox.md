@@ -1,6 +1,7 @@
 ---
 title: Sandbox
 description: Isolated execution + cross-call recovery + multi-replica deployment
+zh_link: /v2/zh/docs/harness/sandbox
 ---
 
 > For the three filesystem-mode comparison see [Filesystem](/v2/en/docs/harness/filesystem). This page focuses on sandbox mode usage.

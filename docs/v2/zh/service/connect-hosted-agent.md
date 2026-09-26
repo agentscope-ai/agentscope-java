@@ -1,5 +1,6 @@
 ---
 title: "Hosted：连接并创建 Agent"
+en_link: /v2/en/service/connect-hosted-agent
 ---
 
 <Note>

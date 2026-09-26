@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -107,7 +110,7 @@ class MetaToolFactory {
                                 ToolResultBlock.error("Missing required parameter: to_activate"));
                     }
 
-                    String result = resetEquippedToolsImpl(toActivate);
+                    String result = resetEquippedToolsImpl(toActivate, resolveToolContext(param));
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (Exception e) {
                     return Mono.just(ToolResultBlock.error(e.getMessage()));
@@ -117,16 +120,33 @@ class MetaToolFactory {
     }
 
     /**
+     * Resolves the per-call {@link ToolContextState} from the tool call's runtime context, so the
+     * meta tool targets the active session's activation set instead of the shared group manager.
+     *
+     * @param param the tool call parameters
+     * @return the resolved tool context state, or {@code null} when unavailable
+     */
+    private ToolContextState resolveToolContext(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        AgentState state = rc != null ? rc.getAgentState() : null;
+        return state != null ? state.getToolContext() : null;
+    }
+
+    /**
      * Implementation of reset_equipped_tools logic.
      *
      * <p>Uses <b>replacement semantics</b>: all META-scoped groups not in the input list are
-     * deactivated. EXTERNAL-scoped groups are unaffected.
+     * deactivated. EXTERNAL-scoped groups are unaffected. The activation set is always written to
+     * the per-call {@link ToolContextState} (the single source of truth for the session); the
+     * shared group manager is never mutated. When no per-session context is available the tool
+     * fails fast without touching shared state.
      *
      * @param toActivate List of tool group names to activate (must all be META scope)
+     * @param tcs the per-call tool context state (must be non-null)
      * @return Response message describing the resulting state
      * @throws IllegalArgumentException if any group doesn't exist
      */
-    private String resetEquippedToolsImpl(List<String> toActivate) {
+    private String resetEquippedToolsImpl(List<String> toActivate, ToolContextState tcs) {
         // Validate: all groups must exist and be META scope
         for (String groupName : toActivate) {
             groupManager.validateGroupExists(groupName);
@@ -136,12 +156,22 @@ class MetaToolFactory {
             }
         }
 
-        // Replace: deactivate all META groups, then activate specified ones
-        groupManager.replaceMetaActiveGroups(toActivate);
+        // No per-session context: never fall back to mutating the shared group manager. A missing
+        // runtime context is an integration fault, and touching shared state here would be
+        // destructive — fail fast instead.
+        if (tcs == null) {
+            return "Error: reset_equipped_tools requires a per-session runtime context";
+        }
+
+        // Single source of truth: atomically keep EXTERNAL-scoped groups and replace META-scoped
+        // ones,
+        // so a concurrent additive tool (skill activation) is not lost by this replace.
+        tcs.replaceActivatedGroups(groupManager.getMetaGroupNames(), toActivate);
 
         // Build response (aligned with Python format)
         if (toActivate.isEmpty()) {
-            return "All tool groups are currently deactivated.";
+            // Only META groups are deactivated here; EXTERNAL-scoped groups are preserved.
+            return "All META tool groups are currently deactivated.";
         }
 
         String groupNames = toActivate.stream().collect(Collectors.joining(", "));

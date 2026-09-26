@@ -1,5 +1,6 @@
 ---
 title: AgentScope Service 技术解读：控制面、数据面与可恢复的 Agent 运行时
+en_link: /v2/en/blogs/agentscope-service-release-tech
 ---
 
 如果把发布通告看作「AgentScope Service 能做什么」，这篇更关注「它是怎么做成的」。我们将沿着产品资源模型、平面边界、Turn 生命周期、Brain / Hands 拆分、Session 事件契约，以及多框架接入路径，把平台背后的系统设计讲清楚。

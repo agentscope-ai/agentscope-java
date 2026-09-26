@@ -36,6 +36,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -150,6 +151,55 @@ public class DashScopeChatModel extends ChatModelBase {
             HttpTransport httpTransport,
             String publicKeyId,
             String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                endpointType,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey,
+                null);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type and additional
+     * multimodal model patterns.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param multimodalModelPatterns case-insensitive substring patterns that extend the
+     *     built-in multimodal model detection when endpointType is AUTO (null to disable)
+     */
+    public DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey,
+            Collection<String> multimodalModelPatterns) {
         this.modelName = modelName;
         // DashScope only rejects the non-streaming + thinking combination for some open-source
         // thinking models.
@@ -171,6 +221,7 @@ public class DashScopeChatModel extends ChatModelBase {
                         .baseUrl(baseUrl)
                         .publicKeyId(publicKeyId)
                         .publicKey(publicKey)
+                        .multimodalModelPatterns(multimodalModelPatterns)
                         .build();
     }
 
@@ -237,9 +288,10 @@ public class DashScopeChatModel extends ChatModelBase {
         List<DashScopeMessage> dashScopeMessages;
         if (useMultimodal) {
             if (formatter instanceof DashScopeChatFormatter chatFormatter) {
-                dashScopeMessages = chatFormatter.formatMultiModal(messages);
+                dashScopeMessages = chatFormatter.formatMultiModal(messages, effectiveOptions);
             } else if (formatter instanceof DashScopeMultiAgentFormatter multiAgentFormatter) {
-                dashScopeMessages = multiAgentFormatter.formatMultiModal(messages);
+                dashScopeMessages =
+                        multiAgentFormatter.formatMultiModal(messages, effectiveOptions);
             } else {
                 throw new IllegalStateException(
                         "DashScope vision models require DashScopeChatFormatter or"
@@ -247,7 +299,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                 + formatter.getClass().getName());
             }
         } else {
-            dashScopeMessages = formatter.format(messages);
+            dashScopeMessages = formatter.format(messages, effectiveOptions);
         }
 
         // Build request using formatter
@@ -275,15 +327,6 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
-
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
-            if (formatter instanceof DashScopeChatFormatter chatFmt) {
-                chatFmt.applyCacheControl(request.getInput().getMessages());
-            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
-                multiFmt.applyCacheControl(request.getInput().getMessages());
-            }
-        }
 
         // Set endpoint type for endpoint selection
         request.setEndpointType(endpointType);
@@ -410,6 +453,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private int contextWindowSize = -1;
         private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
+        private Collection<String> multimodalModelPatterns;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -670,6 +714,34 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets additional case-insensitive substring patterns for multimodal model detection.
+         *
+         * <p>When {@link EndpointType#AUTO} is used, a model name matching any of these
+         * patterns (as a substring, case-insensitively) is routed to the multimodal
+         * generation API, in addition to the built-in model-name rules of
+         * {@link DashScopeHttpClient#isMultimodalModel(String)}. This lets you use
+         * multimodal models not yet covered by the built-in whitelist (e.g.
+         * {@code "deepseek-v4.1"}) without waiting for a framework update.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("deepseek-v4.1")
+         *     .multimodalModelPatterns(List.of("deepseek-v4"))
+         *     .build();
+         * }</pre>
+         *
+         * @param multimodalModelPatterns case-insensitive substring patterns (may be null)
+         * @return this builder instance
+         * @see DashScopeHttpClient.Builder#multimodalModelPatterns(Collection)
+         */
+        public Builder multimodalModelPatterns(Collection<String> multimodalModelPatterns) {
+            this.multimodalModelPatterns = multimodalModelPatterns;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -716,7 +788,8 @@ public class DashScopeChatModel extends ChatModelBase {
                             formatter,
                             transport,
                             finalPublicKeyId,
-                            finalPublicKey);
+                            finalPublicKey,
+                            multimodalModelPatterns);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize

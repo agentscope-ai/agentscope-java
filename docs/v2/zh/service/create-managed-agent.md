@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent：创建与测试"
+en_link: /v2/en/service/create-managed-agent
 ---
 
 <Note>

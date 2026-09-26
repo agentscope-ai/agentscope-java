@@ -1,5 +1,6 @@
 ---
 title: MiniMax
+en_link: /v2/en/integration/model/minimax
 ---
 
 `agentscope-extensions-model-openai` 通过 OpenAI 兼容模型栈提供 MiniMax 的一等支持。引入 OpenAI 模型扩展模块后，可以通过 `ModelRegistry` 使用 `minimax:<model>`。
