@@ -36,6 +36,29 @@ public class MemorySearchTool {
 
     private static final Logger log = LoggerFactory.getLogger(MemorySearchTool.class);
 
+    /** Default number of matching lines returned, matching the documented "up to 30 hits". */
+    static final int DEFAULT_MAX_RESULTS = 30;
+
+    /**
+     * Hard ceiling for the model-supplied {@code maxResults}. The parameter is model-controlled,
+     * so without a ceiling a {@code maxResults=100000} call re-opens the context-overflow path
+     * this tool's bounding exists to close.
+     *
+     * <p>The value keeps the worst case under the project's tool-result budget: a hit is at most
+     * {@link #MAX_LINE_CHARS} (500) plus the {@code Source: <path>#<line>: } prefix and the
+     * truncation suffix (~550 chars), and {@code memory_search} is excluded from tool-result
+     * eviction, so nothing downstream trims an oversized result. 100 x ~550 = ~55K chars stays
+     * under {@code ToolResultEvictionConfig.DEFAULT_MAX_RESULT_CHARS} (80K).
+     */
+    static final int MAX_RESULTS_CEILING = 100;
+
+    /**
+     * Maximum length of a single returned match line (the {@code Source: <file>#<line>: } prefix
+     * excluded). Longer lines are truncated; {@code memory_get} remains the way to read the full
+     * context around a hit.
+     */
+    static final int MAX_LINE_CHARS = 500;
+
     private final WorkspaceManager workspaceManager;
 
     public MemorySearchTool(WorkspaceManager workspaceManager) {
@@ -52,18 +75,33 @@ public class MemorySearchTool {
     public String memorySearch(
             RuntimeContext runtimeContext,
             @ToolParam(name = "query", description = "Keywords to search for in memory files")
-                    String query) {
+                    String query,
+            @ToolParam(
+                            name = "maxResults",
+                            description =
+                                    "Maximum number of matching lines to return (default: 30,"
+                                            + " max: 100). Use memory_get to read full context"
+                                            + " around a match.",
+                            required = false)
+                    Integer maxResults) {
         if (query == null || query.isBlank()) {
             return "No query provided";
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        return keywordSearch(rc, query);
+        int limit =
+                maxResults != null && maxResults > 0
+                        ? Math.min(maxResults, MAX_RESULTS_CEILING)
+                        : DEFAULT_MAX_RESULTS;
+        return keywordSearch(rc, query, limit);
     }
 
-    private String keywordSearch(RuntimeContext rc, String query) {
+    private String keywordSearch(RuntimeContext rc, String query, int maxResults) {
         StringJoiner results = new StringJoiner("\n");
         int matchCount = 0;
+        // Set only when an actual extra match exists beyond the cap — not from loop position,
+        // so the model is never told to "refine the query" when refining would change nothing.
+        boolean hasMoreMatches = false;
 
         List<String> memoryPaths = workspaceManager.listMemoryFilePaths(rc);
         Pattern pattern = Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
@@ -75,16 +113,53 @@ public class MemorySearchTool {
             }
             String[] lines = content.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
-                if (pattern.matcher(lines[i]).find()) {
-                    results.add(String.format("Source: %s#%d: %s", relativePath, i + 1, lines[i]));
-                    matchCount++;
+                if (!pattern.matcher(lines[i]).find()) {
+                    continue;
                 }
+                if (matchCount >= maxResults) {
+                    // Real extra hit past the cap — stop scanning; the flag is now accurate.
+                    hasMoreMatches = true;
+                    break;
+                }
+                results.add(
+                        String.format(
+                                "Source: %s#%d: %s", relativePath, i + 1, truncateLine(lines[i])));
+                matchCount++;
+            }
+            if (hasMoreMatches) {
+                break;
             }
         }
 
         if (matchCount == 0) {
             return "No matching memories found for: " + query;
         }
-        return "Found " + matchCount + " matches:\n\n" + results;
+        String header =
+                "Found "
+                        + (hasMoreMatches ? matchCount + "+" : String.valueOf(matchCount))
+                        + (matchCount == 1 && !hasMoreMatches ? " match" : " matches")
+                        + ":\n\n"
+                        + results;
+        if (hasMoreMatches) {
+            header +=
+                    "\n\n[Results truncated at "
+                            + matchCount
+                            + " matches — refine the query or"
+                            + " use memory_get to read specific files]";
+        }
+        return header;
+    }
+
+    private static String truncateLine(String line) {
+        if (line.length() <= MAX_LINE_CHARS) {
+            return line;
+        }
+        int cut = MAX_LINE_CHARS;
+        // Do not split a UTF-16 surrogate pair (emoji, CJK Extension B+ ideographs): a lone
+        // surrogate surfaces as mojibake once the tool result is JSON-encoded for the model.
+        if (Character.isHighSurrogate(line.charAt(cut - 1))) {
+            cut--;
+        }
+        return line.substring(0, cut) + "... [line truncated, use memory_get]";
     }
 }

@@ -233,7 +233,9 @@ HarnessAgent.builder()
 
 启用记忆能力时，agent 自动获得四个工具：
 
-- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`
+- `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`，最多返回 30 条命中
+  （可用 `maxResults` 调整；超过 500 字符的命中行会被截断——需要完整上下文时用
+  `memory_get` 读取）
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
 - `memory_save content="..."` —— 通过 `MEMORY.md` 与每日台账持久化记忆
 - `session_search query="..."` —— 搜索过往会话记录
