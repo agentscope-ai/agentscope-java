@@ -53,7 +53,7 @@ agent.call(msg, RuntimeContext.builder()
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` 是天然并发安全（每个 session 自己一份）；`USER` / `AGENT` / `GLOBAL` 多副本部署时建议配并发互斥（见下面的"并发控制"）。
+在单个 JVM 内，默认的 `SandboxExecutionGuard.inProcess()` 会自动串行化落到同一 slot key 的并发调用；这也包括 `SESSION` scope 下两个使用相同 `sessionId` 的调用。不同 slot key 仍可并行执行。多副本部署必须使用分布式 guard，因为内置 guard 无法跨进程协调（见下面的“并发控制”）。
 
 **USER 降级逻辑：** 当 `IsolationScope.USER` 生效（不管是默认还是显式设置），但 `RuntimeContext.userId` 缺失时，框架自动降级为按 `sessionId` 隔离。不需要额外处理 userId 为空的情况——沙箱会优雅降级。
 
@@ -90,6 +90,7 @@ agent.call(msg, RuntimeContext.builder()
 1. 一个分布式 `AgentStateStore`（例如基于 Redis 的实现）—— 通过 builder 的 `.stateStore(...)` 传入
 2. 一个非 `NoopSnapshotSpec` 的快照（OSS / Redis 等远端存储）—— 直接配在 filesystem spec 上的 `.snapshotSpec(...)`
 3. `IsolationScope` 选合适的（默认 `USER` 通常就够用）
+4. 当多个副本可能竞争同一 slot 时，配置分布式 `SandboxExecutionGuard`
 
 所有配置集中在一处：
 
@@ -110,7 +111,19 @@ HarnessAgent.builder()
 
 如果你使用的是本地 `AgentStateStore`（默认的 `JsonFileAgentStateStore`），开启沙箱模式时框架会在构建阶段打一条 warn 日志提醒你：沙箱状态不能跨 JVM 恢复、也不能跨实例共享。
 
-## 并发控制（多副本场景）
+## 并发控制
+
+未显式配置 guard 时，Harness 会安装 `SandboxExecutionGuard.inProcess()`。它在单个 JVM 内串行化具有相同 `SandboxIsolationKey` 的调用，并最多等待 30 分钟获取繁忙 slot；超时会抛出 `SandboxExecutionTimeoutException`。如果正常调用可能超过 30 分钟，请通过 `inProcess(Duration)` 配置一个高于实际最长调用时长的上限。
+
+这个默认值可防止两个同 key 调用从同一持久化状态恢复，并在释放时互相覆盖。它改变了之前无 guard 的默认行为：同 key 调用现在会排队，因此单次调用的耗时可能随前方排队数量增长。如需有意保留旧的并行、最后写入覆盖行为，必须显式关闭串行化：
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .image("ubuntu:24.04")
+    .executionGuard(SandboxExecutionGuard.noop()))
+```
+
+只有当其他层已保证同一 slot 不会并发使用时才应选择 `noop()`；同 key 调用一旦重叠，它会重新引入持久化状态竞态。
 
 `USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
 

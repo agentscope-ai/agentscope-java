@@ -53,7 +53,7 @@ All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFile
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` is naturally concurrency-safe (each session has its own slot). `USER` / `AGENT` / `GLOBAL` in multi-replica deployments should pair with a mutex (see "Concurrency control" below).
+Within one JVM, concurrent calls that resolve to the same slot key are serialized automatically by the default `SandboxExecutionGuard.inProcess()` guard. That includes two calls with the same `sessionId` under `SESSION` scope. Different slot keys still run in parallel. Multi-replica deployments need a distributed guard because the built-in guard cannot coordinate across processes (see "Concurrency control" below).
 
 **USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
 
@@ -90,6 +90,7 @@ When multiple replicas run the same agent and any replica must be able to pick u
 1. A distributed `AgentStateStore` (e.g. Redis-backed) — passed via `.stateStore(...)` on the builder
 2. A non-`Noop` snapshot (OSS / Redis / remote store) — configured directly on the filesystem spec via `.snapshotSpec(...)`
 3. An appropriate `IsolationScope` (default `USER` is usually correct)
+4. A distributed `SandboxExecutionGuard` when two replicas can contend for the same slot
 
 Everything is configured in one place:
 
@@ -110,7 +111,19 @@ The framework stores sandbox metadata (container ID, snapshot pointers, workspac
 
 If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`) with sandbox mode, the framework logs a warning at build time reminding you that sandbox state won't survive JVM restarts and can't be shared across instances.
 
-## Concurrency control (multi-replica)
+## Concurrency control
+
+When no guard is configured, the harness installs `SandboxExecutionGuard.inProcess()`. It serializes calls with the same `SandboxIsolationKey` inside one JVM and waits up to 30 minutes to acquire a busy slot. A timeout raises `SandboxExecutionTimeoutException`; configure `inProcess(Duration)` with a bound above your maximum realistic call duration if 30 minutes is too short.
+
+This default prevents two same-key calls from restoring the same persisted state and overwriting each other on release. It is a behavior change from the previous unguarded default: same-key calls now queue, so their wall-clock latency can grow with the number of peers ahead of them. To deliberately preserve the old parallel, last-writer-wins behavior, opt out explicitly:
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .image("ubuntu:24.04")
+    .executionGuard(SandboxExecutionGuard.noop()))
+```
+
+Only use `noop()` when another layer guarantees that the same slot cannot be used concurrently. It reopens the persisted-state race if same-key calls overlap.
 
 In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, you need a distributed lock.
 
