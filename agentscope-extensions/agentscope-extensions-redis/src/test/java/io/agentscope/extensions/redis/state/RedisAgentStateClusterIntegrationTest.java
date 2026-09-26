@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.github.dockerjava.api.model.PortBinding;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import java.io.IOException;
@@ -77,18 +76,18 @@ class RedisAgentStateClusterIntegrationTest {
         }
 
         int[] ports = new int[NODE_COUNT];
-        PortBinding[] bindings = new PortBinding[NODE_COUNT];
+        List<String> portBindings = new ArrayList<>(NODE_COUNT);
         for (int i = 0; i < NODE_COUNT; i++) {
             ports[i] = basePort + i;
-            bindings[i] = PortBinding.parse(ports[i] + ":" + ports[i]);
+            portBindings.add(ports[i] + ":" + ports[i]);
         }
 
         container =
                 new GenericContainer<>(DockerImageName.parse(IMAGE))
-                        .withCreateContainerCmdModifier(cmd -> cmd.withPortBindings(bindings))
                         .withCommand("sh", "-c", buildBootScript())
                         .withStartupTimeout(Duration.ofSeconds(90))
                         .waitingFor(Wait.forListeningPorts(ports));
+        container.setPortBindings(portBindings);
         try {
             container.start();
             awaitClusterReady();
