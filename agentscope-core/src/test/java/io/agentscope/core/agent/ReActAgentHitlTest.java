@@ -376,6 +376,37 @@ class ReActAgentHitlTest {
         assertUserMessageAfterToolResult(agent.getAgentState().getContext(), "second message");
     }
 
+    @Test
+    void userMessageIsPlacedBeforeTheSecondPromptWhenTheResumedCallAsksAgain() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg firstAsk = agent.call(List.of()).block();
+        assertNotNull(firstAsk);
+        ToolUseBlock firstCall = firstAsk.getContentBlocks(ToolUseBlock.class).get(0);
+
+        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("second message").build();
+        Msg secondAsk = agent.call(List.of(userMsg, confirmMsg(true, firstCall))).block();
+        assertNotNull(secondAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, secondAsk.getGenerateReason());
+        ToolUseBlock secondCall = secondAsk.getContentBlocks(ToolUseBlock.class).get(0);
+
+        agent.call(List.of(confirmMsg(true, secondCall))).block();
+
+        // The user message follows the first resumed result and precedes the second tool call,
+        // so it is in every later model request and never sits between a tool_use and its result.
+        assertUserMessageAfterToolResult(model.requests.get(1), "second message");
+        assertTrue(
+                model.requests.get(2).stream()
+                        .anyMatch(m -> "second message".equals(m.getTextContent())),
+                "user message must still be present after the second resume");
+    }
+
     /**
      * The user text must be present and must come after the resumed tool's result, never between
      * the assistant {@code tool_use} and its {@code tool_result}.

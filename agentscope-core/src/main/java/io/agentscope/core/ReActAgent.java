@@ -1798,7 +1798,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * User messages that arrived in the same request as a permission-HITL resume. They cannot
          * enter the context before the resumed tool calls have their results, so they wait here
-         * until the ReAct loop reaches its next reasoning step.
+         * until the ReAct loop reaches its next reasoning step. If the resumed tool calls raise a
+         * second permission prompt, the messages stay here and are placed after the next resume.
+         *
+         * <p>The list is touched from the caller thread and from reactive callbacks, so every
+         * access goes through a {@code synchronized} method. The messages are kept in memory only.
          */
         private final List<Msg> deferredResumeMsgs = new ArrayList<>();
 
@@ -1864,10 +1868,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<ToolUseBlock> asking = askingToolCalls();
             if (!asking.isEmpty()) {
                 validateAndAcceptConfirmResults(msgs, asking);
-                deferredResumeMsgs.addAll(nonConfirmMessages(msgs));
-                return resumeAgent()
-                        .doOnNext(reply -> flushDeferredResumeMsgs())
-                        .doOnSuccess(reply -> discardDeferredResumeMsgs());
+                deferResumeMsgs(nonConfirmMessages(msgs));
+                return resumeAgent().doOnNext(reply -> flushDeferredResumeMsgs());
             }
 
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
@@ -1959,7 +1961,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Move the deferred resume messages into the context once no tool call is waiting for a
          * result, so a user turn never sits between a {@code tool_use} and its {@code tool_result}.
          */
-        private void flushDeferredResumeMsgs() {
+        private synchronized void flushDeferredResumeMsgs() {
             if (deferredResumeMsgs.isEmpty()
                     || !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()) {
                 return;
@@ -1968,19 +1970,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             deferredResumeMsgs.clear();
         }
 
-        /**
-         * Log and drop deferred resume messages that could not be placed because tool calls were
-         * still pending when the turn ended (for example, a second permission prompt).
-         */
-        private void discardDeferredResumeMsgs() {
-            if (!deferredResumeMsgs.isEmpty()) {
-                log.warn(
-                        "Agent {} discarded {} user message(s) sent with a permission resume: tool"
-                                + " calls were still pending when the turn ended",
-                        getName(),
-                        deferredResumeMsgs.size());
-                deferredResumeMsgs.clear();
-            }
+        private synchronized void deferResumeMsgs(List<Msg> msgs) {
+            deferredResumeMsgs.addAll(msgs);
         }
 
         /**
