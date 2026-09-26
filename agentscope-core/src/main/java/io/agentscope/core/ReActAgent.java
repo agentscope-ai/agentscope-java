@@ -2919,6 +2919,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
             if (pendingToolCalls.isEmpty()) {
                 List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
@@ -2995,7 +2996,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 boolean returnDirect =
-                                        pendingPairs.isEmpty()
+                                        pendingToolCalls.size() == roundToolCalls.size()
+                                                && pendingPairs.isEmpty()
                                                 && !successPairs.isEmpty()
                                                 && successPairs.stream()
                                                         .allMatch(this::isReturnDirectToolCall);

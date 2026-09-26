@@ -38,6 +38,8 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +48,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.publisher.Mono;
 
 /**
  * Tests for handling provider server tools (e.g. Anthropic web_search) in the ReAct loop.
@@ -312,5 +315,178 @@ class ReActAgentServerToolTest {
         assertEquals("Done", TestUtils.extractTextContent(response));
         assertEquals(2, model.getCallCount());
         assertEquals(List.of(TestConstants.TEST_TOOL_NAME), toolkit.getToolCallHistory());
+    }
+
+    @Test
+    @DisplayName(
+            "Should not short-circuit returnDirect when a completed server tool is in the round")
+    void testReturnDirectDoesNotShortCircuitWithCompletedServerTool() {
+        List<String> directToolCalls = new ArrayList<>();
+        MockToolkit toolkit = returnDirectToolkit(directToolCalls);
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            if (callCount[0]++ == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("mixed_return_direct")
+                                                .content(
+                                                        List.of(
+                                                                serverToolUse("srvtoolu_direct"),
+                                                                serverToolResult("srvtoolu_direct"),
+                                                                localReturnDirectToolUse()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("final")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Done after both tools")
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build();
+
+        Msg response =
+                agent.call(TestUtils.createUserMessage("User", "Use both tools"))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response);
+        assertEquals("Done after both tools", TestUtils.extractTextContent(response));
+        assertEquals(2, model.getCallCount());
+        assertEquals(List.of("direct_tool"), directToolCalls);
+    }
+
+    @Test
+    @DisplayName("Should not short-circuit returnDirect while a server tool is unresolved")
+    void testReturnDirectDoesNotShortCircuitWithUnresolvedServerTool() {
+        List<String> directToolCalls = new ArrayList<>();
+        MockToolkit toolkit = returnDirectToolkit(directToolCalls);
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            if (callCount[0]++ == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("mixed_return_direct_unresolved")
+                                                .content(
+                                                        List.of(
+                                                                serverToolUse(
+                                                                        "srvtoolu_unresolved"),
+                                                                localReturnDirectToolUse()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .id("final")
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Done after continuation")
+                                                                    .build()))
+                                            .build());
+                        });
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build();
+
+        Msg response =
+                agent.call(TestUtils.createUserMessage("User", "Use both tools"))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response);
+        assertEquals("Done after continuation", TestUtils.extractTextContent(response));
+        assertEquals(2, model.getCallCount());
+        assertEquals(List.of("direct_tool"), directToolCalls);
+    }
+
+    @Test
+    @DisplayName("Should still short-circuit returnDirect for an all-local tool round")
+    void testReturnDirectStillShortCircuitsWithoutServerTools() {
+        List<String> directToolCalls = new ArrayList<>();
+        MockToolkit toolkit = returnDirectToolkit(directToolCalls);
+        MockModel model =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("local_return_direct")
+                                                .content(List.of(localReturnDirectToolUse()))
+                                                .build()));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(2)
+                        .build();
+
+        Msg response =
+                agent.call(TestUtils.createUserMessage("User", "Use the direct tool"))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response);
+        assertEquals("Direct tool result", TestUtils.extractTextContent(response));
+        assertEquals(1, model.getCallCount());
+        assertEquals(List.of("direct_tool"), directToolCalls);
+    }
+
+    private static ToolUseBlock localReturnDirectToolUse() {
+        return ToolUseBlock.builder()
+                .id("direct_tool_call")
+                .name("direct_tool")
+                .input(Map.of())
+                .build();
+    }
+
+    private static MockToolkit returnDirectToolkit(List<String> directToolCalls) {
+        MockToolkit toolkit = new MockToolkit();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "direct_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Returns its result directly";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public boolean isReturnDirect() {
+                        return true;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.fromCallable(
+                                () -> {
+                                    directToolCalls.add("direct_tool");
+                                    return ToolResultBlock.of(
+                                            TextBlock.builder().text("Direct tool result").build());
+                                });
+                    }
+                });
+        return toolkit;
     }
 }
