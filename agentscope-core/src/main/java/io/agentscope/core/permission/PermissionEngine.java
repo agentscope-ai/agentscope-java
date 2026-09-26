@@ -263,7 +263,7 @@ public final class PermissionEngine {
     }
 
     private PermissionDecision checkDenyRules(ToolBase tool, Map<String, Object> input) {
-        for (PermissionRule rule : rulesFor(denyRules, tool.getName())) {
+        for (PermissionRule rule : rulesFor(denyRules, tool)) {
             if (ruleMatches(tool, rule, input)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.DENY)
@@ -276,7 +276,7 @@ public final class PermissionEngine {
     }
 
     private PermissionDecision checkAskRules(ToolBase tool, Map<String, Object> input) {
-        for (PermissionRule rule : rulesFor(askRules, tool.getName())) {
+        for (PermissionRule rule : rulesFor(askRules, tool)) {
             if (ruleMatches(tool, rule, input)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.ASK)
@@ -289,7 +289,7 @@ public final class PermissionEngine {
     }
 
     private PermissionDecision checkAllowRules(ToolBase tool, Map<String, Object> input) {
-        for (PermissionRule rule : rulesFor(allowRules, tool.getName())) {
+        for (PermissionRule rule : rulesFor(allowRules, tool)) {
             if (ruleMatches(tool, rule, input)) {
                 return PermissionDecision.builder()
                         .behavior(PermissionBehavior.ALLOW)
@@ -301,10 +301,39 @@ public final class PermissionEngine {
         return null;
     }
 
+    /**
+     * Looks up rules for {@code tool}, merging entries stored under {@link ToolBase#getName()}
+     * with any names the tool itself declares via {@link ToolBase#nameAliases()}.
+     *
+     * <p>Tools with no aliases pay a single map hit (O(1)). Alias merge is opt-in only — string
+     * shape alone never couples unrelated dotted/underscore tool names.
+     */
     private static List<PermissionRule> rulesFor(
-            Map<String, List<PermissionRule>> table, String toolName) {
-        List<PermissionRule> rules = table.get(toolName);
-        return rules == null ? List.of() : rules;
+            Map<String, List<PermissionRule>> table, ToolBase tool) {
+        String toolName = tool.getName();
+        List<String> aliases = tool.nameAliases();
+        if (aliases == null || aliases.isEmpty()) {
+            List<PermissionRule> primary = table.get(toolName);
+            return primary == null ? List.of() : primary;
+        }
+        List<PermissionRule> primary = table.get(toolName);
+        List<PermissionRule> merged =
+                primary == null ? new ArrayList<>() : new ArrayList<>(primary);
+        for (String alias : aliases) {
+            if (alias == null || alias.equals(toolName)) {
+                continue;
+            }
+            List<PermissionRule> extra = table.get(alias);
+            if (extra == null || extra.isEmpty()) {
+                continue;
+            }
+            for (PermissionRule rule : extra) {
+                if (!merged.contains(rule)) {
+                    merged.add(rule);
+                }
+            }
+        }
+        return merged;
     }
 
     private boolean ruleMatches(ToolBase tool, PermissionRule rule, Map<String, Object> input) {
