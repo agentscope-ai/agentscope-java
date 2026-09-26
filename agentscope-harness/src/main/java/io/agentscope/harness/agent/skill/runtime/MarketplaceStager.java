@@ -116,6 +116,10 @@ public final class MarketplaceStager {
      * {@link WorkspaceSkillRepository} are returned as {@link StageResult.WorkspaceNative}
      * — they need no staging because the workspace tree already contains them.
      *
+     * <p>Staged skill names and source namespaces must each identify a single directory.
+     * Unsafe path components are rejected before any files are created or cleaned up; the
+     * affected skill receives {@link StageResult#NONE} and other skills are still staged.
+     *
      * <p>The white-list of staged directories is rebuilt every call; any pre-existing
      * directory under {@code .skills-cache/<source-ns>/} not in the white-list is removed
      * (cheap orphan GC: marketplace repos that no longer publish a given skill leave no
@@ -161,7 +165,12 @@ public final class MarketplaceStager {
             return roots;
         }
 
-        Path scopeRoot = workspaceRoot.resolve(CACHE_DIR).resolve(scopeSegment(scope));
+        Path scopeRoot =
+                workspaceRoot
+                        .toAbsolutePath()
+                        .normalize()
+                        .resolve(CACHE_DIR)
+                        .resolve(scopeSegment(scope));
         Set<Path> retained = new HashSet<>();
 
         stageAll(visible, sourceNs, scopeRoot, retained, roots);
@@ -233,8 +242,10 @@ public final class MarketplaceStager {
                 }
             }
 
-            Path stagedDir = scopeRoot.resolve(ns).resolve(name);
             try {
+                // Validate both components before materialisation: cleanup also trusts this root.
+                Path namespaceDir = resolveStagingDirectory(scopeRoot, ns);
+                Path stagedDir = resolveStagingDirectory(namespaceDir, name);
                 materializeIfChanged(stagedDir, skill.getResources());
                 // Mark as live before GC runs: this is what stops a concurrent call — or
                 // another replica sharing the volume — from treating it as an orphan.
@@ -247,6 +258,23 @@ public final class MarketplaceStager {
                 roots.put(name, StageResult.NONE);
             }
         }
+    }
+
+    /** Resolves one directory component without allowing aliases of its parent or siblings. */
+    private static Path resolveStagingDirectory(Path parent, String name) {
+        Path resolved = parent.resolve(name).normalize();
+        // Check both separator styles and drive syntax even on Unix, since the cache may be
+        // projected onto another filesystem. Windows also aliases trailing dots and spaces.
+        if (!parent.equals(resolved.getParent())
+                || name.indexOf('/') >= 0
+                || name.indexOf('\\') >= 0
+                || name.indexOf(':') >= 0
+                || name.endsWith(".")
+                || name.endsWith(" ")) {
+            throw new IllegalArgumentException(
+                    "Staging path component must be a single directory name");
+        }
+        return resolved;
     }
 
     /** Convenience for callers that don't care about return values. */

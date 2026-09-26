@@ -326,6 +326,8 @@ Marketplace skill resources start as in-memory bytes. For shell execution to wor
 - Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
 - In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
 
+For staging, the skill name and source namespace must each be a single directory name. Absolute paths, `/` or `\` separators, drive/stream syntax (`:`), `.`/`..`, and names ending in a dot or space are rejected before files are created or cleaned up. The affected skill has no staged `<files-root>`; other skills continue staging normally. This check does not impose a lowercase-only naming convention or a 64-character limit.
+
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
 If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.

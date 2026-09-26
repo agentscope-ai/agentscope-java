@@ -326,6 +326,8 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 - 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，会在同一轮顺手清掉
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
+进行 stage 时，技能名称和来源命名空间都必须是单个目录名。绝对路径、`/` 或 `\` 分隔符、盘符或数据流语法（`:`）、`.`/`..`，以及以点或空格结尾的名称，会在创建文件或清理文件前被拒绝。受影响的技能不会获得暂存的 `<files-root>`，其他技能仍会正常 stage。此检查不要求名称仅使用小写，也不增加 64 字符的长度限制。
+
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
 如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skill-id 不会撞。
