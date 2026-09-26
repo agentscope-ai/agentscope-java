@@ -18,23 +18,48 @@ package io.agentscope.core.a2a.server.executor.runner;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.Msg;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract Implementation for {@link AgentRunner} by {@link ReActAgent}.
  *
- * <p>Use {@link ReActAgent} directly to handler request from A2A client. In this implementation, {@link ReActAgent}
- * should be created for each request and be cached to intercept when the request is stopped.
+ * <p>Use {@link ReActAgent} directly to handle requests from A2A clients. An agent is created per task and retained
+ * while the task is paused for user confirmation; it is removed when execution completes, the task is stopped, or the
+ * configured pause retention expires.
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final Map<String, ReActAgent> agentCache;
+    private static final Duration DEFAULT_PAUSED_AGENT_RETENTION = Duration.ofMinutes(30);
+
+    private final Map<String, CachedAgent> agentCache;
+
+    private final Duration pausedAgentRetention;
 
     protected BaseReActAgentRunner() {
+        this(DEFAULT_PAUSED_AGENT_RETENTION);
+    }
+
+    protected BaseReActAgentRunner(Duration pausedAgentRetention) {
+        this.pausedAgentRetention =
+                Objects.requireNonNull(pausedAgentRetention, "pausedAgentRetention");
+        if (pausedAgentRetention.isNegative() || pausedAgentRetention.toMillis() == 0) {
+            throw new IllegalArgumentException(
+                    "pausedAgentRetention must be at least one millisecond.");
+        }
         this.agentCache = new ConcurrentHashMap<>();
     }
 
@@ -50,21 +75,143 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
-        if (agentCache.containsKey(options.getTaskId())) {
-            throw new IllegalStateException(
-                    "Agent already exists for taskId: " + options.getTaskId());
-        }
-        ReActAgent agent = buildReActAgent();
-        agentCache.put(options.getTaskId(), agent);
-        return agent.streamEvents(requestMessages)
-                .doFinally(signal -> agentCache.remove(options.getTaskId()));
+        String taskId = options.getTaskId();
+        return Flux.defer(
+                () -> {
+                    CachedAgent cachedAgent =
+                            agentCache.compute(
+                                    taskId,
+                                    (id, existing) -> {
+                                        if (existing == null) {
+                                            if (options.isResume()) {
+                                                throw new IllegalStateException(
+                                                        "No paused agent is available for taskId: "
+                                                                + taskId);
+                                            }
+                                            return new CachedAgent(buildReActAgent());
+                                        }
+                                        if (!existing.paused) {
+                                            throw new IllegalStateException(
+                                                    "Agent already exists for taskId: " + taskId);
+                                        }
+                                        existing.cancelExpiry();
+                                        // A new registration owns each execution, so a late expiry
+                                        // or terminal signal cannot remove a subsequent resume.
+                                        return new CachedAgent(existing.agent);
+                                    });
+                    AtomicReference<RequireUserConfirmEvent> confirmationRequest =
+                            new AtomicReference<>();
+                    try {
+                        return cachedAgent
+                                .agent
+                                .streamEvents(requestMessages)
+                                .concatMap(
+                                        event -> {
+                                            if (event instanceof RequireUserConfirmEvent request) {
+                                                if (!confirmationRequest.compareAndSet(
+                                                        null, request)) {
+                                                    return Mono.error(
+                                                            new IllegalStateException(
+                                                                    "An agent stream requested"
+                                                                            + " user confirmation"
+                                                                            + " more than once."));
+                                                }
+                                                return Mono.empty();
+                                            }
+                                            return Mono.just(event);
+                                        })
+                                // Let the agent finish pausing before exposing the request to the
+                                // client.
+                                .concatWith(
+                                        Flux.defer(
+                                                () -> {
+                                                    RequireUserConfirmEvent request =
+                                                            confirmationRequest.get();
+                                                    if (request == null) {
+                                                        return Flux.empty();
+                                                    }
+                                                    AtomicBoolean retained = new AtomicBoolean();
+                                                    agentCache.computeIfPresent(
+                                                            taskId,
+                                                            (id, current) -> {
+                                                                if (current == cachedAgent) {
+                                                                    current.paused = true;
+                                                                    current.scheduleExpiry(
+                                                                            Schedulers.parallel()
+                                                                                    .schedule(
+                                                                                            () ->
+                                                                                                    expirePausedAgent(
+                                                                                                            taskId,
+                                                                                                            cachedAgent),
+                                                                                            pausedAgentRetention
+                                                                                                    .toMillis(),
+                                                                                            TimeUnit
+                                                                                                    .MILLISECONDS));
+                                                                    retained.set(true);
+                                                                }
+                                                                return current;
+                                                            });
+                                                    if (!retained.get()) {
+                                                        return Flux.error(
+                                                                new IllegalStateException(
+                                                                        "Agent was stopped before"
+                                                                            + " confirmation could"
+                                                                            + " be requested."));
+                                                    }
+                                                    return Flux.just(request);
+                                                }))
+                                .doFinally(
+                                        signal -> {
+                                            if (signal != SignalType.ON_COMPLETE
+                                                    || confirmationRequest.get() == null) {
+                                                removeAgent(taskId, cachedAgent);
+                                            }
+                                        });
+                    } catch (RuntimeException | Error error) {
+                        removeAgent(taskId, cachedAgent);
+                        return Flux.error(error);
+                    }
+                });
     }
 
     @Override
     public void stop(String taskId) {
-        ReActAgent agent = agentCache.remove(taskId);
-        if (null != agent) {
-            agent.interrupt();
+        CachedAgent cachedAgent = agentCache.remove(taskId);
+        if (cachedAgent != null) {
+            cachedAgent.cancelExpiry();
+            try {
+                cachedAgent.agent.interrupt();
+            } finally {
+                cachedAgent.agent.close();
+            }
+        }
+    }
+
+    private void expirePausedAgent(String taskId, CachedAgent cachedAgent) {
+        AtomicBoolean expired = new AtomicBoolean();
+        agentCache.computeIfPresent(
+                taskId,
+                (id, current) -> {
+                    if (current == cachedAgent && current.paused) {
+                        current.expiry = null;
+                        expired.set(true);
+                        return null;
+                    }
+                    return current;
+                });
+        if (expired.get()) {
+            try {
+                cachedAgent.agent.interrupt();
+            } finally {
+                cachedAgent.agent.close();
+            }
+        }
+    }
+
+    private void removeAgent(String taskId, CachedAgent cachedAgent) {
+        if (agentCache.remove(taskId, cachedAgent)) {
+            cachedAgent.cancelExpiry();
+            cachedAgent.agent.close();
         }
     }
 
@@ -74,4 +221,29 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
      * @return {@link ReActAgent} instance
      */
     protected abstract ReActAgent buildReActAgent();
+
+    private static final class CachedAgent {
+
+        private final ReActAgent agent;
+
+        private volatile boolean paused;
+
+        private volatile Disposable expiry;
+
+        private CachedAgent(ReActAgent agent) {
+            this.agent = agent;
+        }
+
+        private void scheduleExpiry(Disposable expiry) {
+            this.expiry = expiry;
+        }
+
+        private void cancelExpiry() {
+            Disposable currentExpiry = expiry;
+            if (currentExpiry != null) {
+                currentExpiry.dispose();
+                expiry = null;
+            }
+        }
+    }
 }

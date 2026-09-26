@@ -22,6 +22,7 @@ import io.a2a.server.agentexecution.AgentExecutor;
 import io.a2a.server.agentexecution.RequestContext;
 import io.a2a.server.events.EventQueue;
 import io.a2a.server.tasks.TaskUpdater;
+import io.a2a.spec.DataPart;
 import io.a2a.spec.JSONRPCError;
 import io.a2a.spec.Message;
 import io.a2a.spec.Part;
@@ -37,7 +38,9 @@ import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
@@ -49,6 +52,12 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionRule;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +80,12 @@ import reactor.core.publisher.SignalType;
 public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentExecutor.class);
+
+    static final String CONFIRMATION_REQUEST_TYPE = "agentscope.confirmation_request";
+
+    static final String CONFIRMATION_RESPONSE_TYPE = "agentscope.confirmation_response";
+
+    private static final String CONFIRMATION_TYPE_KEY = "type";
 
     private final Map<String, Subscription> subscriptions;
 
@@ -106,8 +121,13 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     @Override
     public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         try {
-            List<Msg> inputMessages =
-                    MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
+            List<Msg> inputMessages;
+            try {
+                inputMessages = convertInputMessage(context);
+            } catch (IllegalArgumentException e) {
+                handleExecutionFailure(context, eventQueue, e);
+                return;
+            }
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
             Flux<AgentEvent> resultFlux = agentRunner.streamEvents(inputMessages, requestOptions);
 
@@ -134,12 +154,287 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
     }
 
+    private void handleExecutionFailure(
+            RequestContext context, EventQueue eventQueue, Exception error) {
+        Task task = context.getTask();
+        if (task != null
+                && task.getStatus() != null
+                && task.getStatus().state() == TaskState.INPUT_REQUIRED) {
+            TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
+            try {
+                taskUpdater.fail(
+                        taskUpdater.newAgentMessage(
+                                List.of(
+                                        new TextPart(
+                                                "Agent execution failed: " + error.getMessage())),
+                                Map.of()));
+            } finally {
+                agentRunner.stop(task.getId());
+            }
+            return;
+        }
+        eventQueue.enqueueEvent(
+                A2A.createAgentTextMessage(
+                        "Agent execution failed: " + error.getMessage(),
+                        context.getContextId(),
+                        context.getTaskId()));
+    }
+
+    private List<Msg> convertInputMessage(RequestContext context) {
+        Message request = context.getMessage();
+        DataPart confirmationResponse = findControlPart(request, CONFIRMATION_RESPONSE_TYPE);
+        Task task = context.getTask();
+        boolean taskRequiresInput =
+                task != null
+                        && task.getStatus() != null
+                        && task.getStatus().state() == TaskState.INPUT_REQUIRED;
+
+        if (taskRequiresInput && confirmationResponse == null) {
+            throw new IllegalArgumentException(
+                    "This task requires an AgentScope confirmation_response DataPart.");
+        }
+        if (confirmationResponse != null && !taskRequiresInput) {
+            throw new IllegalArgumentException(
+                    "AgentScope confirmation responses are only valid for INPUT_REQUIRED tasks.");
+        }
+        if (confirmationResponse == null) {
+            return MessageConvertUtil.convertFromMessageToMsgs(request);
+        }
+
+        PendingConfirmation pending = findPendingConfirmation(task);
+        List<ConfirmResult> confirmationResults =
+                parseConfirmationResults(confirmationResponse, pending);
+        List<Part<?>> userParts =
+                request.getParts().stream()
+                        .filter(
+                                part ->
+                                        !(part instanceof DataPart dataPart
+                                                && isControlPart(
+                                                        dataPart, CONFIRMATION_RESPONSE_TYPE)))
+                        .toList();
+        Message userMessage = new Message.Builder(request).parts(userParts).build();
+        List<Msg> inputMessages =
+                new ArrayList<>(MessageConvertUtil.convertFromMessageToMsgs(userMessage));
+        if (inputMessages.isEmpty()) {
+            inputMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmationResults))
+                            .build());
+        } else {
+            int lastIndex = inputMessages.size() - 1;
+            Msg lastMessage = inputMessages.get(lastIndex);
+            Map<String, Object> metadata =
+                    lastMessage.getMetadata() == null
+                            ? new HashMap<>()
+                            : new HashMap<>(lastMessage.getMetadata());
+            metadata.put(Msg.METADATA_CONFIRM_RESULTS, confirmationResults);
+            inputMessages.set(lastIndex, lastMessage.withMetadata(metadata));
+        }
+        return inputMessages;
+    }
+
+    private static DataPart findControlPart(Message message, String expectedType) {
+        if (message == null || message.getParts() == null) {
+            return null;
+        }
+        List<DataPart> matchingParts =
+                message.getParts().stream()
+                        .filter(DataPart.class::isInstance)
+                        .map(DataPart.class::cast)
+                        .filter(part -> isControlPart(part, expectedType))
+                        .toList();
+        if (matchingParts.size() > 1) {
+            throw new IllegalArgumentException(
+                    "An A2A message must contain at most one " + expectedType + " DataPart.");
+        }
+        return matchingParts.isEmpty() ? null : matchingParts.get(0);
+    }
+
+    private static boolean isControlPart(DataPart dataPart, String expectedType) {
+        return dataPart.getData() != null
+                && expectedType.equals(dataPart.getData().get(CONFIRMATION_TYPE_KEY));
+    }
+
+    private static PendingConfirmation findPendingConfirmation(Task task) {
+        Message statusMessage = task.getStatus().message();
+        DataPart requestPart = findControlPart(statusMessage, CONFIRMATION_REQUEST_TYPE);
+        if (requestPart == null) {
+            throw new IllegalArgumentException(
+                    "The INPUT_REQUIRED task does not contain an AgentScope confirmation request.");
+        }
+        Map<String, Object> requestData = requestPart.getData();
+        String replyId = requiredString(requestData.get("replyId"), "replyId");
+        Object rawToolCalls = requestData.get("toolCalls");
+        if (!(rawToolCalls instanceof List<?> toolCalls) || toolCalls.isEmpty()) {
+            throw new IllegalArgumentException("The confirmation request has no toolCalls.");
+        }
+        Map<String, Map<String, Object>> toolCallsById = new LinkedHashMap<>();
+        for (Object rawToolCall : toolCalls) {
+            Map<String, Object> toolCall = toStringMap(rawToolCall, "toolCall");
+            String id = requiredString(toolCall.get("id"), "toolCall.id");
+            if (toolCallsById.putIfAbsent(id, toolCall) != null) {
+                throw new IllegalArgumentException("Duplicate toolCall id in request: " + id);
+            }
+        }
+        return new PendingConfirmation(replyId, toolCallsById);
+    }
+
+    private static List<ConfirmResult> parseConfirmationResults(
+            DataPart responsePart, PendingConfirmation pending) {
+        Map<String, Object> responseData = responsePart.getData();
+        if (!pending.replyId().equals(responseData.get("replyId"))) {
+            throw new IllegalArgumentException(
+                    "Confirmation replyId does not match the pending request.");
+        }
+        Object rawResults = responseData.get("results");
+        if (!(rawResults instanceof List<?> results) || results.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Confirmation response must include non-empty results.");
+        }
+
+        Set<String> resultIds = new java.util.HashSet<>();
+        List<ConfirmResult> confirmationResults = new ArrayList<>();
+        for (Object rawResult : results) {
+            Map<String, Object> result = toStringMap(rawResult, "result");
+            String toolCallId = requiredString(result.get("toolCallId"), "result.toolCallId");
+            Object rawConfirmed = result.get("confirmed");
+            if (!(rawConfirmed instanceof Boolean confirmed)) {
+                throw new IllegalArgumentException("result.confirmed must be a boolean.");
+            }
+            if (!resultIds.add(toolCallId)) {
+                throw new IllegalArgumentException(
+                        "Duplicate confirmation result for toolCallId: " + toolCallId);
+            }
+            Map<String, Object> requestedToolCall = pending.toolCallsById().get(toolCallId);
+            if (requestedToolCall == null) {
+                throw new IllegalArgumentException(
+                        "Confirmation result references an unknown toolCallId: " + toolCallId);
+            }
+
+            Map<String, Object> toolCall = new LinkedHashMap<>(requestedToolCall);
+            Object rawModifiedToolCall = result.get("toolCall");
+            if (rawModifiedToolCall != null) {
+                Map<String, Object> modifiedToolCall = toStringMap(rawModifiedToolCall, "toolCall");
+                if (!toolCallId.equals(modifiedToolCall.get("id"))) {
+                    throw new IllegalArgumentException(
+                            "result.toolCall.id must match result.toolCallId.");
+                }
+                String requestedToolName =
+                        requiredString(requestedToolCall.get("name"), "toolCall.name");
+                String modifiedToolName =
+                        requiredString(modifiedToolCall.get("name"), "toolCall.name");
+                if (!requestedToolName.equals(modifiedToolName)) {
+                    throw new IllegalArgumentException(
+                            "result.toolCall.name must match the requested tool call.");
+                }
+                if (modifiedToolCall.containsKey("input")) {
+                    toolCall.put("input", modifiedToolCall.get("input"));
+                }
+            }
+            String reason = optionalString(result.get("reason"), "result.reason");
+            List<PermissionRule> rules = parsePermissionRules(result.get("rules"));
+            confirmationResults.add(
+                    new ConfirmResult(
+                            confirmed, toToolUseBlock(toolCall, toolCallId), rules, reason));
+        }
+        if (!resultIds.equals(pending.toolCallsById().keySet())) {
+            Set<String> missingToolCallIds =
+                    new java.util.HashSet<>(pending.toolCallsById().keySet());
+            missingToolCallIds.removeAll(resultIds);
+            throw new IllegalArgumentException(
+                    "Confirmation response is missing results for toolCallIds: "
+                            + missingToolCallIds);
+        }
+        return confirmationResults;
+    }
+
+    private static List<PermissionRule> parsePermissionRules(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof List<?> rules)) {
+            throw new IllegalArgumentException("result.rules must be an array.");
+        }
+        List<PermissionRule> parsedRules = new ArrayList<>();
+        for (Object rawRule : rules) {
+            Map<String, Object> rule = toStringMap(rawRule, "result.rules entry");
+            String behavior = requiredString(rule.get("behavior"), "rule.behavior");
+            parsedRules.add(
+                    new PermissionRule(
+                            requiredString(rule.get("tool_name"), "rule.tool_name"),
+                            optionalString(rule.get("rule_content"), "rule.rule_content"),
+                            PermissionBehavior.fromString(behavior),
+                            requiredString(rule.get("source"), "rule.source")));
+        }
+        return parsedRules;
+    }
+
+    private static ToolUseBlock toToolUseBlock(Map<String, Object> data, String expectedId) {
+        String id = requiredString(data.get("id"), "toolCall.id");
+        if (!expectedId.equals(id)) {
+            throw new IllegalArgumentException("toolCall.id does not match the pending request.");
+        }
+        String name = requiredString(data.get("name"), "toolCall.name");
+        return ToolUseBlock.builder()
+                .id(id)
+                .name(name)
+                .input(optionalStringMap(data.get("input"), "toolCall.input"))
+                .content(optionalString(data.get("content"), "toolCall.content"))
+                .metadata(optionalStringMap(data.get("metadata"), "toolCall.metadata"))
+                .build();
+    }
+
+    private static Map<String, Object> optionalStringMap(Object value, String field) {
+        return value == null ? Map.of() : toStringMap(value, field);
+    }
+
+    private static Map<String, Object> toStringMap(Object value, String field) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            throw new IllegalArgumentException(field + " must be an object.");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException(field + " keys must be strings.");
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private static String optionalString(Object value, String field) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String string) {
+            return string;
+        }
+        throw new IllegalArgumentException(field + " must be a string.");
+    }
+
+    private static String requiredString(Object value, String field) {
+        String string = optionalString(value, field);
+        if (string == null || string.isBlank()) {
+            throw new IllegalArgumentException(field + " must not be blank.");
+        }
+        return string;
+    }
+
+    private record PendingConfirmation(
+            String replyId, Map<String, Map<String, Object>> toolCallsById) {}
+
     private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
         Message message = context.getParams().message();
         AgentRequestOptions requestOptions = new AgentRequestOptions();
         requestOptions.setTaskId(context.getTaskId());
         requestOptions.setUserId(getUserId(message));
         requestOptions.setSessionId(getSessionId(message));
+        Task task = context.getTask();
+        requestOptions.setResume(
+                task != null
+                        && task.getStatus() != null
+                        && task.getStatus().state() == TaskState.INPUT_REQUIRED);
         return requestOptions;
     }
 
@@ -188,7 +483,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private void processTaskBlocking(
             RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         BlockingFluxEventHandler eventHandler =
-                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+                new BlockingFluxEventHandler(context, agentExecuteProperties, task, eventQueue);
         log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
@@ -203,7 +498,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             RequestContext context, EventQueue eventQueue, Task task, Flux<AgentEvent> resultFlux) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
         try {
-            eventQueue.enqueueEvent(task);
+            if (context.getTask() == null) {
+                eventQueue.enqueueEvent(task);
+            }
             log.info("[{}] Starting streaming request processing", context.getTaskId());
             processStreamingOutput(resultFlux, taskUpdater, context);
         } catch (Exception e) {
@@ -262,12 +559,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final Set<AgentEventType> requiredEventTypes;
 
+        private final AtomicBoolean waitingForInput;
+
         private BaseFluxEventHandler(
                 RequestContext context, AgentExecuteProperties executeProperties) {
             this.context = context;
             this.executeProperties = executeProperties;
             this.accumulatedOutput = new LinkedList<>();
             this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
+            this.waitingForInput = new AtomicBoolean();
         }
 
         private Set<AgentEventType> generateRequiredEventTypes(
@@ -291,12 +591,26 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         void doOnNext(AgentEvent output) {
             LoggerUtil.debug(
                     log, "[{}] Handle Agent execute output event: {}", context.getTaskId(), output);
+            if (output instanceof RequireUserConfirmEvent request) {
+                if (!waitingForInput.compareAndSet(false, true)) {
+                    throw new IllegalStateException(
+                            "An agent stream requested user confirmation more than once.");
+                }
+                handleInputRequired(request);
+                return;
+            }
             Msg responseMessage = convertToResponseMessage(output);
             if (responseMessage != null) {
                 accumulatedOutput.add(responseMessage);
             }
             handleEvent(output, responseMessage);
         }
+
+        protected final boolean isWaitingForInput() {
+            return waitingForInput.get();
+        }
+
+        protected abstract void handleInputRequired(RequireUserConfirmEvent request);
 
         /**
          * Handle agent execute complete with Flux doOnComplete.
@@ -426,17 +740,27 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         private final EventQueue eventQueue;
 
+        private final Task task;
+
+        private final TaskUpdater taskUpdater;
+
         private BlockingFluxEventHandler(
                 RequestContext context,
                 AgentExecuteProperties executeProperties,
+                Task task,
                 EventQueue eventQueue) {
             super(context, executeProperties);
             this.eventQueue = eventQueue;
+            this.task = task;
+            this.taskUpdater = new TaskUpdater(context, eventQueue);
             this.resultMessageRef = new AtomicReference<>();
         }
 
         @Override
         void doOnComplete() {
+            if (isWaitingForInput()) {
+                return;
+            }
             log.info(
                     "[{}] Process agent output for blocking request completed.",
                     context.getTaskId());
@@ -448,6 +772,15 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                     context.getTaskId(),
                                     context.getContextId());
             eventQueue.enqueueEvent(resultMessage);
+        }
+
+        @Override
+        protected void handleInputRequired(RequireUserConfirmEvent request) {
+            if (context.getTask() == null) {
+                eventQueue.enqueueEvent(task);
+            }
+            taskUpdater.startWork();
+            taskUpdater.requiresInput(confirmationRequestMessage(taskUpdater, request));
         }
 
         @Override
@@ -466,7 +799,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         protected void sendErrorMessage(Message errorMessage) {
-            eventQueue.enqueueEvent(errorMessage);
+            if (isWaitingForInput()) {
+                taskUpdater.fail(errorMessage);
+            } else {
+                eventQueue.enqueueEvent(errorMessage);
+            }
         }
     }
 
@@ -490,6 +827,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
         @Override
         void doOnComplete() {
+            if (isWaitingForInput()) {
+                return;
+            }
             log.info(
                     "[{}] Process agent output for non-blocking request completed.",
                     taskUpdater.getTaskId());
@@ -501,6 +841,11 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                     taskUpdater.getContextId())
                             : null;
             taskUpdater.complete(completeMessage);
+        }
+
+        @Override
+        protected void handleInputRequired(RequireUserConfirmEvent request) {
+            taskUpdater.requiresInput(confirmationRequestMessage(taskUpdater, request));
         }
 
         @Override
@@ -531,5 +876,44 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         protected void sendErrorMessage(Message errorMessage) {
             taskUpdater.fail(errorMessage);
         }
+    }
+
+    private static Message confirmationRequestMessage(
+            TaskUpdater taskUpdater, RequireUserConfirmEvent request) {
+        String replyId = requiredString(request.getReplyId(), "RequireUserConfirmEvent.replyId");
+        if (request.getToolCalls().isEmpty()) {
+            throw new IllegalStateException("RequireUserConfirmEvent did not include tool calls.");
+        }
+        List<Map<String, Object>> toolCalls =
+                request.getToolCalls().stream()
+                        .map(AgentScopeAgentExecutor::confirmationToolCallData)
+                        .toList();
+        Map<String, Object> data =
+                Map.of(
+                        CONFIRMATION_TYPE_KEY,
+                        CONFIRMATION_REQUEST_TYPE,
+                        "replyId",
+                        replyId,
+                        "toolCalls",
+                        toolCalls);
+        return taskUpdater.newAgentMessage(
+                List.of(
+                        new TextPart("User confirmation is required before these tool calls run."),
+                        new DataPart(data)),
+                Map.of());
+    }
+
+    private static Map<String, Object> confirmationToolCallData(ToolUseBlock toolCall) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", requiredString(toolCall.getId(), "toolCall.id"));
+        data.put("name", requiredString(toolCall.getName(), "toolCall.name"));
+        data.put("input", toolCall.getInput());
+        if (toolCall.getContent() != null) {
+            data.put("content", toolCall.getContent());
+        }
+        if (!toolCall.getMetadata().isEmpty()) {
+            data.put("metadata", toolCall.getMetadata());
+        }
+        return data;
     }
 }

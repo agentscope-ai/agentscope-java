@@ -51,6 +51,10 @@ public interface AgentRunner {
     /**
      * Start to handle agent request with streaming output.
      *
+     * <p>Each stream may emit at most one user-confirmation request and must complete
+     * after pausing. A confirmation response must cover every tool call in that request.
+     * A later resume creates a new stream and may pause for another complete batch.
+     *
      * @param requestMessages the messages from a2a client
      * @param options the options for agent request, such as `taskId`, `sessionId` or `userId` of this request
      * @return Flux of events emitted during execution
