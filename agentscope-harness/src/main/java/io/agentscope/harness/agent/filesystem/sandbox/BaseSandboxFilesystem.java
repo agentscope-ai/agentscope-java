@@ -69,9 +69,18 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     public abstract List<FileDownloadResponse> downloadFiles(
             RuntimeContext runtimeContext, List<String> paths);
 
-    @Override
+    /**
+     * Anchors enumeration root spellings at the sandbox working directory: the composite
+     * forwards the contract spelling {@code "/"} for a root scan, but shelling {@code ls} /
+     * {@code grep -r} / {@code find} against {@code "/"} would target the container root —
+     * "." is the sandbox workspace root (#3253 review).
+     */
+    private static String rootAnchor(String path) {
+        return AbstractFilesystem.denotesRootPath(path) ? "." : path;
+    }
+
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        String escapedPath = FilesystemUtils.shellQuote(path);
+        String escapedPath = FilesystemUtils.shellQuote(rootAnchor(path));
         String cmd =
                 "if [ ! -e "
                         + escapedPath
@@ -321,7 +330,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        String searchPath = FilesystemUtils.shellQuote(path != null ? path : ".");
+        String searchPath = FilesystemUtils.shellQuote(rootAnchor(path));
         String grepOpts = "-rHnF";
         String globPattern = "";
         if (glob != null && !glob.isBlank()) {
@@ -368,7 +377,7 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        String escapedPath = FilesystemUtils.shellQuote(path != null ? path : "/");
+        String escapedPath = FilesystemUtils.shellQuote(rootAnchor(path));
         String escapedPattern = FilesystemUtils.shellQuote(stripRecursivePrefix(pattern));
 
         String cmd =
