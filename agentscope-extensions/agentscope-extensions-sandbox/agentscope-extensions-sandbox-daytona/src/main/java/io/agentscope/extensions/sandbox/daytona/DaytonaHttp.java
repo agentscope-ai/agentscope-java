@@ -54,19 +54,24 @@ final class DaytonaHttp {
 
     String createSandbox() throws IOException {
         ObjectNode body = json.createObjectNode();
-        if (opt.getSnapshotId() != null && !opt.getSnapshotId().isBlank()) {
+        boolean useSnapshot = opt.getSnapshotId() != null && !opt.getSnapshotId().isBlank();
+        if (useSnapshot) {
             body.put("snapshot", opt.getSnapshotId());
         } else {
             body.put("image", opt.getImage());
         }
-        if (opt.getCpu() != null) {
-            body.put("cpu", opt.getCpu());
-        }
-        if (opt.getMemory() != null) {
-            body.put("memory", opt.getMemory());
-        }
-        if (opt.getDisk() != null) {
-            body.put("disk", opt.getDisk());
+        // Daytona API rejects resource fields (cpu/memory/disk) when using a
+        // snapshot, so only include them for image-based sandbox creation.
+        if (!useSnapshot) {
+            if (opt.getCpu() != null) {
+                body.put("cpu", opt.getCpu());
+            }
+            if (opt.getMemory() != null) {
+                body.put("memory", opt.getMemory());
+            }
+            if (opt.getDisk() != null) {
+                body.put("disk", opt.getDisk());
+            }
         }
         JsonNode root =
                 DaytonaRetry.withRetries(
