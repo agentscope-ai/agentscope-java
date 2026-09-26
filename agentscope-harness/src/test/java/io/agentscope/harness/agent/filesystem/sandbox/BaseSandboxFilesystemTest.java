@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
@@ -264,6 +265,228 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
+
+        @Test
+        void edit_usesBase64PipedScript() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+
+            // edit() constructs the command and calls execute().
+            // FakeSandboxFilesystem.execute() returns empty output, so edit() will
+            // return an error result, but we only care about verifying the command shape.
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            // Verify command uses a unique mktemp file + printf + base64 pipe (not echo/argv,
+            // not a predictable $$ name)
+            assertTrue(
+                    fs.lastCommand.contains(".agentscope-edit.XXXXXX"),
+                    "edit should create a unique temp file via mktemp, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("${TMPDIR:-/tmp}"),
+                    "edit should honor TMPDIR with a /tmp fallback, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("trap 'rm -f \"$T\"' EXIT"),
+                    "edit should clean the payload via an EXIT trap, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("trap 'exit 130' INT")
+                            && fs.lastCommand.contains("trap 'exit 143' TERM"),
+                    "edit should exit (not just unlink) on INT/TERM so a timeout interrupts the run"
+                            + " and triggers EXIT cleanup, got: "
+                            + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("cat > \"$T\""),
+                    "edit should write payload to the mktemp file, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("printf '%s\\n'"),
+                    "edit should use printf for script base64, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("base64 -d | python3 - \"$T\""),
+                    "edit should pipe script and pass temp file as argv, got: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("/tmp/.agentscope-edit-$$"),
+                    "edit should NOT use a predictable $$ temp name, got: " + fs.lastCommand);
+            assertTrue(
+                    fs.lastCommand.contains("<<'__EDIT_EOF__'"),
+                    "edit should use heredoc to write payload, got: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("python3 -c"),
+                    "edit should NOT use python3 -c inline form");
+            assertFalse(
+                    fs.lastCommand.startsWith("echo ") || fs.lastCommand.contains("| echo "),
+                    "edit should NOT pipe base64 through echo (may wrap long lines), got: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void edit_largePayloadUsesHeredocNotArgv() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+
+            // Simulate a large edit (multi-KB payload) to verify it goes through
+            // temp file (via heredoc), not argv[1] (which would hit ARG_MAX limits).
+            String largeString = "x".repeat(100_000);
+            fs.edit(RT, "/workspace/large.txt", "old", largeString, false);
+
+            // Payload must NOT appear directly as argv[1]
+            // It should be written to temp file via heredoc
+            assertTrue(
+                    fs.lastCommand.contains("<<'__EDIT_EOF__'"),
+                    "large payload should use heredoc to write temp file, got command length: "
+                            + fs.lastCommand.length());
+            // Verify the payload is after the heredoc marker, not before it (i.e., not in argv)
+            int heredocPos = fs.lastCommand.indexOf("<<'__EDIT_EOF__'");
+            int editEofPos = fs.lastCommand.indexOf("__EDIT_EOF__", heredocPos + 1);
+            assertTrue(editEofPos > heredocPos, "payload should be between heredoc markers");
+        }
+
+        // The edit script only ever prints a JSON object on stdout. If the captured output looks
+        // like a Python traceback, a SyntaxError, or a missing-file error, the command failed to
+        // run at all — edit() must surface that as an execution failure instead of falling through
+        // to the opaque "unexpected server response" branch.
+        @Test
+        void edit_pythonTraceback_reportedAsExecutionFailure() {
+            String traceback =
+                    "Traceback (most recent call last):\n"
+                            + "  File \"<stdin>\", line 3, in <module>\n"
+                            + "binascii.Error: Invalid base64-encoded string";
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse(traceback, 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "traceback should be reported as an execution failure, got: " + result.error());
+            assertFalse(
+                    result.error().contains("unexpected server response"),
+                    "should not fall through to the opaque branch, got: " + result.error());
+        }
+
+        @Test
+        void edit_syntaxError_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "  File \"<stdin>\"\nSyntaxError: invalid syntax", 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "SyntaxError should be reported as an execution failure, got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_missingInterpreter_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "/bin/sh: python3: No such file or directory", 127, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "missing interpreter should be reported as an execution failure, got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_nonZeroExitWithEmptyOutput_reportedWithExitCode() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("", 1, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "non-zero exit should be reported as an execution failure, got: "
+                            + result.error());
+            assertTrue(
+                    result.error().contains("exit code 1"),
+                    "empty output should surface the exit code, got: " + result.error());
+        }
+
+        @Test
+        void edit_tracebackWithZeroExit_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "Traceback (most recent call last):\n"
+                                            + "  File \"<stdin>\", line 1\n"
+                                            + "SyntaxError: unexpected EOF",
+                                    0,
+                                    false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "a python traceback must be treated as a failure even with a zero exit code,"
+                            + " got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_interpreterNotFoundPattern_reportedAsExecutionFailure() {
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse("sh: 1: python3: not found", 0, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("edit command failed to execute"),
+                    "a 'not found' interpreter error must be treated as a failure even with a zero"
+                            + " exit code, got: "
+                            + result.error());
+        }
+
+        @Test
+        void edit_nullExitCode_withResultPayload_treatedAsSuccess() {
+            // A backend that cannot report an exit code (exitCode == null) means "unknown", not
+            // "failed" — the rest of this class guards with exitCode() != null for exactly this
+            // reason. When the script still printed a valid {"count":...}, the edit demonstrably
+            // succeeded and must be reported as such; turning it into "edit command failed to
+            // execute" would make the model retry and double-apply the replacement. This is the
+            // assertion that would regress if the guard were re-tightened to !result.isSuccess().
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("{\"count\": 1}", null, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "a null (unknown) exit code with a valid result payload must be a success,"
+                            + " got: "
+                            + result.error());
+            assertEquals(1, result.occurrences());
+        }
+
+        @Test
+        void edit_nullExitCode_emptyOutput_reportedWithClearMessage() {
+            // Null code AND no output at all: the script printed neither a result nor an error, so
+            // there is no evidence the edit ran. Surface an explicit, actionable message rather
+            // than falling through to the opaque "unexpected server response" branch with a blank
+            // tail — the exact opacity the exit-code guard exists to remove.
+            FixedResponseFilesystem fs =
+                    new FixedResponseFilesystem(new ExecuteResponse("", null, false));
+
+            var result = fs.edit(RT, "/workspace/test.txt", "old", "new", false);
+
+            assertFalse(result.isSuccess());
+            assertTrue(
+                    result.error().contains("neither an exit code nor any output"),
+                    "null code + empty output should get a clear message, got: " + result.error());
+            assertFalse(
+                    result.error().contains("unexpected server response"),
+                    "should not fall through to the opaque branch, got: " + result.error());
+        }
     }
 
     // ================================================================
@@ -357,6 +580,151 @@ class BaseSandboxFilesystemTest {
             LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
             LsResult r = fs.ls(RT, file.toAbsolutePath().toString());
             assertFalse(r.isSuccess(), "ls on a file path should fail");
+        }
+
+        // ==================== edit() end-to-end through a real shell (#3084) ====================
+        // String-shape assertions cannot tell a working command from one that eats its own
+        // stdin — that ambiguity broke this method twice. These run the assembled command
+        // through a real shell and assert the file content actually changes.
+
+        @Test
+        void edit_singleOccurrence_appliesToRealFile() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("edit.txt");
+            Files.writeString(file, "line one\nUNIQUE_TOKEN here\nline three\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "UNIQUE_TOKEN", "REPLACED", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals(1, result.occurrences());
+            assertEquals("line one\nREPLACED here\nline three\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multiLineReplacement_survivesShell() throws IOException {
+            // The original bug: a multi-line payload collapsed to one line under bash -lc.
+            // A newline-containing replacement must land intact.
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("multi.txt");
+            Files.writeString(file, "start\nPLACEHOLDER\nend\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "PLACEHOLDER", "a\nb\nc", false);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals("start\na\nb\nc\nend\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_largePayload_appliesToRealFile() throws IOException {
+            // Multi-KB payload: proves the temp-file transport avoids ARG_MAX end to end,
+            // which a command-string assertion cannot demonstrate.
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("large.txt");
+            Files.writeString(file, "BEGIN\nMARK\nEND\n");
+            String large = "L".repeat(50_000);
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "MARK", large, false);
+
+            assertTrue(result.isSuccess(), "large edit should succeed, got: " + result.error());
+            assertEquals("BEGIN\n" + large + "\nEND\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_multipleOccurrencesWithoutReplaceAll_failsCleanly() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("dup.txt");
+            Files.writeString(file, "dup\ndup\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "dup", "x", false);
+
+            assertFalse(result.isSuccess(), "ambiguous edit should fail");
+            assertTrue(
+                    result.error().contains("multiple times"),
+                    "should report multiple occurrences, got: " + result.error());
+            assertEquals("dup\ndup\n", Files.readString(file), "file must be untouched on failure");
+        }
+
+        @Test
+        void edit_replaceAll_appliesToRealFile() throws IOException {
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("all.txt");
+            Files.writeString(file, "dup\ndup\ndup\n");
+
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "dup", "x", true);
+
+            assertTrue(result.isSuccess(), "edit should succeed, got: " + result.error());
+            assertEquals(3, result.occurrences());
+            assertEquals("x\nx\nx\n", Files.readString(file));
+        }
+
+        // The original #3084 breakage was specific to `bash -lc`: `\n` inside a double-quoted
+        // `python3 -c "...\n..."` is a literal backslash+n there, collapsing the script to one
+        // line. The LocalShell cases above run `sh -c`, so they never exercised the shell that
+        // actually broke. This drives the assembled command through `bash -lc` and asserts a
+        // newline-containing replacement lands intact — the behaviour no string assertion can
+        // prove and the one that regressed twice.
+        @Test
+        void edit_multiLineReplacement_survivesBashLoginShell() throws IOException {
+            assumeTrue(bashAvailable(), "bash required for this reproduction");
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("bash-multi.txt");
+            Files.writeString(file, "start\nPLACEHOLDER\nend\n");
+
+            BashLoginShellSandboxFilesystem fs = new BashLoginShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "PLACEHOLDER", "a\nb\nc", false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "edit should succeed under bash -lc, got: " + result.error());
+            assertEquals("start\na\nb\nc\nend\n", Files.readString(file));
+        }
+
+        @Test
+        void edit_largePayload_survivesBashLoginShell() throws IOException {
+            // ARG_MAX guard under the exact shell that broke: a multi-KB payload must ride the
+            // temp file, not argv, through bash -lc.
+            assumeTrue(bashAvailable(), "bash required for this reproduction");
+            assumeTrue(python3Available(), "python3 required for edit()");
+            Path file = tmpDir.resolve("bash-large.txt");
+            Files.writeString(file, "BEGIN\nMARK\nEND\n");
+            String large = "L".repeat(50_000);
+
+            BashLoginShellSandboxFilesystem fs = new BashLoginShellSandboxFilesystem();
+            var result = fs.edit(RT, file.toString(), "MARK", large, false);
+
+            assertTrue(
+                    result.isSuccess(),
+                    "large edit should succeed under bash -lc, got: " + result.error());
+            assertEquals("BEGIN\n" + large + "\nEND\n", Files.readString(file));
+        }
+
+        private static boolean python3Available() {
+            try {
+                Process p =
+                        new ProcessBuilder("sh", "-c", "command -v python3")
+                                .redirectErrorStream(true)
+                                .start();
+                return p.waitFor() == 0;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        private static boolean bashAvailable() {
+            try {
+                Process p =
+                        new ProcessBuilder("sh", "-c", "command -v bash")
+                                .redirectErrorStream(true)
+                                .start();
+                return p.waitFor() == 0;
+            } catch (Exception e) {
+                return false;
+            }
         }
     }
 
@@ -456,6 +824,48 @@ class BaseSandboxFilesystemTest {
             try {
                 Process p =
                         new ProcessBuilder("sh", "-c", command).redirectErrorStream(true).start();
+                String output =
+                        new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                int exitCode = p.waitFor();
+                return new ExecuteResponse(output, exitCode, false);
+            } catch (Exception e) {
+                return new ExecuteResponse("execute failed: " + e.getMessage(), 1, false);
+            }
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of();
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Runs the assembled command through {@code bash -lc}, the exact shell whose {@code \n}
+     * handling caused the #3084 breakage. Used by the e2e tests to exercise the shell that
+     * {@code sh -c}-based {@link LocalShellSandboxFilesystem} never covered.
+     */
+    private static final class BashLoginShellSandboxFilesystem extends BaseSandboxFilesystem {
+
+        @Override
+        public String id() {
+            return "bash-login-shell";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            try {
+                Process p =
+                        new ProcessBuilder("bash", "-lc", command)
+                                .redirectErrorStream(true)
+                                .start();
                 String output =
                         new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
                 int exitCode = p.waitFor();
