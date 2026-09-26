@@ -117,7 +117,7 @@ Common `@Tool` attributes:
 | `name` | `String` | Tool name (defaults to the method name) |
 | `description` | `String` | Description shown to the agent |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
-| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
+| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `true`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
@@ -330,11 +330,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -351,11 +350,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
@@ -371,10 +370,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
@@ -423,7 +422,7 @@ When skills are present, the `Toolkit` performs a two-phase setup.
 Initialisation:
 
 - The toolkit scans every registered skill source and collects each skill's name, description, and directory.
-- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) into the `skill-build-in-tools` group.
+- It auto-registers the built-in viewer tool `load_skill_through_path` (implemented in `io.agentscope.core.skill.SkillToolFactory`) as an ungrouped, always-visible tool.
 - It assembles a system-prompt fragment listing the available skills (names + descriptions) and instructing the agent to read full content via `load_skill_through_path`.
 
 At runtime, the agent invokes the viewer with two required arguments:
@@ -541,22 +540,24 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        new ToolGroup(
-                "database",
-                "Tools for database operations.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("database")
+                .description("Tools for database operations.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        new ToolGroup(
-                "deployment",
-                "Tools for deploying services.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("deployment")
+                .description("Tools for deploying services.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -570,7 +571,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`ToolGroup` takes a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
+`ToolGroup` is built with `ToolGroup.builder()`: a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
 
 ### Using the meta tool
 
@@ -632,3 +633,26 @@ External execution tools and approval workflows
 
 
 </CardGroup>
+
+
+## Request-scoped tools and session isolation
+
+Agent construction copies tool registries and registration metadata. Existing tool instances remain shared by reference, so custom tools must support concurrent use. Hook and knowledge tools registered while building one agent do not overwrite another agent's registrations.
+
+Use `io.agentscope.core.tool.ToolRequestConfig` instead of mutating a shared Toolkit during a call:
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+External tools contain schemas only. Execution suspends for the caller to execute the tool and submit its result. External tools override backend tools with the same name. `EXTERNAL_ONLY` hides all backend tools, even with an empty external list or when Toolkit disallows deletion: composing a request view does not delete registrations. `AGENT_ONLY` rejects nonempty external tool maps.
+
+`Toolkit.callTool` and `callTools` also read configuration from their explicit RuntimeContext. `getTool(name)` inspects the underlying registry; use `getTool(name, config)` for the request view. Activation groups live in the session's `ToolContextState`; streaming tool callbacks belong to each invocation.
+
+Repositories with user- or session-dependent visibility implement `io.agentscope.core.skill.repository.RuntimeContextSkillRepository` in Core. Both Core and Harness pass the current context to the repository. Dynamic Skill views are cached by content signature. Concurrent cache misses share one completed materialization; rebuilding an evicted view uses a fresh directory so active executions keep their files. Cache eviction bounds retained boxes, not disk usage: generated directories remain until JVM shutdown. Callers own cleanup of explicitly supplied working directories; do not remove resources while executions still reference them.

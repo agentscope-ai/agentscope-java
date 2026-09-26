@@ -25,11 +25,13 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -64,7 +66,7 @@ public final class ToolContextState {
         this.maxCacheFiles = builder.maxCacheFiles;
         this.maxCacheBytes = builder.maxCacheBytes;
         this.activatedGroups = new ArrayList<>(builder.activatedGroups);
-        this.spawnRegistry = new LinkedHashMap<>(builder.spawnRegistry);
+        this.spawnRegistry = new ConcurrentHashMap<>(builder.spawnRegistry);
     }
 
     @JsonCreator
@@ -108,7 +110,7 @@ public final class ToolContextState {
     }
 
     @JsonProperty("activated_groups")
-    public List<String> getActivatedGroups() {
+    public synchronized List<String> getActivatedGroups() {
         return List.copyOf(activatedGroups);
     }
 
@@ -117,10 +119,69 @@ public final class ToolContextState {
      *
      * @param groups the new activated groups; {@code null} clears the list
      */
-    public void setActivatedGroups(List<String> groups) {
+    public synchronized void setActivatedGroups(List<String> groups) {
         this.activatedGroups.clear();
         if (groups != null) {
-            this.activatedGroups.addAll(groups);
+            for (String group : groups) {
+                if (group != null && !activatedGroups.contains(group)) {
+                    this.activatedGroups.add(group);
+                }
+            }
+        }
+    }
+
+    /**
+     * Adds the given tool groups to the activated set, preserving order and ignoring nulls and
+     * duplicates. This is an atomic read-modify-write: concurrent callers (e.g. parallel tool
+     * calls within one session) cannot lose one another's additions.
+     *
+     * @param groups the groups to activate; {@code null} is a no-op
+     */
+    public synchronized void addActivatedGroups(List<String> groups) {
+        if (groups == null) {
+            return;
+        }
+        for (String group : groups) {
+            if (group != null && !activatedGroups.contains(group)) {
+                activatedGroups.add(group);
+            }
+        }
+    }
+
+    /**
+     * Removes the given tool groups from the activated set. Atomic read-modify-write; order of the
+     * remaining groups is preserved.
+     *
+     * @param groups the groups to deactivate; {@code null} is a no-op
+     */
+    public synchronized void removeActivatedGroups(List<String> groups) {
+        if (groups == null) {
+            return;
+        }
+        activatedGroups.removeAll(groups);
+    }
+
+    /**
+     * Atomically drops the groups in {@code toRemove} and then adds {@code toAdd}, preserving
+     * order and ignoring nulls/duplicates. This is a single read-modify-write so an additive tool
+     * (e.g. skill activation) running concurrently cannot be lost by a "replace"-style tool (e.g.
+     * {@code reset_equipped_tools}) that interleaves between its read and write.
+     *
+     * @param toRemove the groups to drop (e.g. META-scoped group names); {@code null} is a removal
+     *     no-op
+     * @param toAdd the groups to add; {@code null} is an addition no-op
+     */
+    public synchronized void replaceActivatedGroups(
+            Collection<String> toRemove, Collection<String> toAdd) {
+        if (toRemove != null) {
+            activatedGroups.removeIf(toRemove::contains);
+        }
+        if (toAdd != null) {
+            for (String group : toAdd) {
+                if (group != null && !activatedGroups.contains(group)) {
+                    activatedGroups.add(group);
+                }
+            }
         }
     }
 
@@ -281,7 +342,9 @@ public final class ToolContextState {
         }
 
         public Builder addActivatedGroup(String groupName) {
-            this.activatedGroups.add(groupName);
+            if (groupName != null) {
+                this.activatedGroups.add(groupName);
+            }
             return this;
         }
 

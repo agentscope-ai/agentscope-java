@@ -117,7 +117,7 @@ toolkit.registerTool(new SimpleTools());
 | `name` | `String` | tool 名（默认取方法名） |
 | `description` | `String` | 面向 agent 的描述 |
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
-| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `false`） |
+| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
@@ -330,11 +330,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -351,11 +350,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
@@ -371,10 +370,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
@@ -423,7 +422,7 @@ ReActAgent agent =
 初始化阶段：
 
 - Toolkit 扫描所有注册的 skill 来源，收集每个 skill 的名称、描述与目录。
-- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）注册到 `skill-build-in-tools` 这个 tool group。
+- 自动把内置查看器工具 `load_skill_through_path`（实现位于 `io.agentscope.core.skill.SkillToolFactory`）作为无分组、始终可见的工具注册。
 - 组装一段 system prompt 片段，列出可用 skill（仅名称与描述），并指示 agent 通过 `load_skill_through_path` 读取完整内容。
 
 运行时阶段，agent 用两个必填参数调用查看器：
@@ -541,22 +540,24 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        new ToolGroup(
-                "database",
-                "Tools for database operations.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("database")
+                .description("Tools for database operations.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        new ToolGroup(
-                "deployment",
-                "Tools for deploying services.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("deployment")
+                .description("Tools for deploying services.")
+                .scope(ToolGroupScope.SESSION)
+                .active(false)
+                .build();
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -632,3 +633,26 @@ Agent 如何在 ReAct 循环中编排 tool 调用
 
 
 </CardGroup>
+
+
+## 请求级工具视图与会话隔离
+
+Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
+
+调用期间不要通过修改共享 Toolkit 注入外部工具或切换会话的工具组。使用 `io.agentscope.core.tool.ToolRequestConfig` 描述本次请求的工具视图：
+
+```java
+ToolRequestConfig tools = new ToolRequestConfig(
+        Map.of(schema.getName(), new SchemaOnlyTool(schema)),
+        ToolMergeMode.MERGE_EXTERNAL_PRIORITY);
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId(userId).sessionId(sessionId)
+        .toolRequestConfig(tools).build();
+agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
+```
+
+外部工具只包含 schema，执行时返回 suspended，由调用方执行后提交结果。同名外部工具覆盖后端工具；`EXTERNAL_ONLY` 隐藏全部后端工具，即使外部列表为空或 Toolkit 禁止删除工具也一样，因为请求视图不会删除注册。`AGENT_ONLY` 不允许同时配置外部工具。
+
+`Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
+
+需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
