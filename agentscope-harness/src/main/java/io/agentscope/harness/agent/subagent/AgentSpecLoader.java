@@ -334,7 +334,7 @@ public final class AgentSpecLoader {
                         .hidden(hidden)
                         .exposeToUser(exposeToUser)
                         .enablePendingToolRecovery(enablePendingToolRecovery)
-                        .tools(tools.isEmpty() ? null : tools)
+                        .tools(fm.containsKey("tools") ? tools : null)
                         .skills(skills.isEmpty() ? null : skills);
 
         if (workspacePath != null) {
