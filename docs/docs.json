@@ -257,6 +257,7 @@
                          "v2/en/integration/model/minimax",
                          "v2/en/integration/model/dashscope",
                          "v2/en/integration/model/gemini",
+                         "v2/en/integration/model/gemini-request-flow",
                          "v2/en/integration/model/anthropic",
                          "v2/en/integration/model/ollama"
                         ]
@@ -764,6 +765,7 @@
                          "v2/zh/integration/model/minimax",
                          "v2/zh/integration/model/dashscope",
                          "v2/zh/integration/model/gemini",
+                         "v2/zh/integration/model/gemini-request-flow",
                          "v2/zh/integration/model/anthropic",
                          "v2/zh/integration/model/ollama"
                         ]

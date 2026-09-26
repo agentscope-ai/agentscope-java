@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ContentBlockMetadataKeys;
 import io.agentscope.core.message.ThinkingBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +29,13 @@ import java.util.Map;
  * <p>This accumulator concatenates all thinking chunks in order to build the complete thinking
  * content.
  *
+ * <p>A chunk carrying a thought signature terminates its provider Part: the accumulated text and
+ * metadata so far are finalized as one block, so distinct signature-bearing Parts can be replayed
+ * without merging their metadata. Use {@link #buildAllThinkingBlocks()} for the Part-accurate
+ * view; the aggregate view returned by {@link #buildAggregated()} drops scalar thought signatures
+ * once multiple Parts were seen, because a single signature would be mis-attributed to the merged
+ * text.
+ *
  * <p>List-valued metadata (e.g. reasoning details) is accumulated in stream order: entries from
  * each chunk are appended rather than replaced. Scalar metadata uses last-write-wins. List values
  * are always copied to prevent caller mutation from affecting accumulator state.
@@ -37,17 +45,34 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
     private final Map<String, Object> metadata = new HashMap<>();
+    private final List<ThinkingBlock> completedBlocks = new ArrayList<>();
+    private final StringBuilder currentBlock = new StringBuilder();
+    private final Map<String, Object> currentMetadata = new HashMap<>();
 
     /**
      * @hidden
      */
     @Override
     public void add(ThinkingBlock block) {
-        if (block != null && block.getThinking() != null) {
-            accumulated.append(block.getThinking());
+        if (block == null) {
+            return;
         }
-        if (block != null && block.getMetadata() != null && !block.getMetadata().isEmpty()) {
-            mergeMetadata(block.getMetadata());
+        if (block.getThinking() != null) {
+            accumulated.append(block.getThinking());
+            currentBlock.append(block.getThinking());
+        }
+
+        Map<String, Object> blockMetadata = block.getMetadata();
+        if (blockMetadata != null && !blockMetadata.isEmpty()) {
+            BlockMetadataMerger.merge(metadata, blockMetadata);
+            BlockMetadataMerger.merge(currentMetadata, blockMetadata);
+        }
+
+        // A thought signature terminates its provider Part. Keep that boundary so distinct
+        // signature-bearing Parts can be replayed without merging their metadata.
+        if (blockMetadata != null
+                && blockMetadata.get(ContentBlockMetadataKeys.THOUGHT_SIGNATURE) != null) {
+            completeCurrentBlock();
         }
     }
 
@@ -60,6 +85,15 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     }
 
     /**
+     * Returns a merged single-block view of the accumulated thinking.
+     *
+     * <p>The only guarantee this view gives is "the full thinking text in stream order". Its
+     * metadata keeps the merged values, but once a Part boundary was crossed the scalar thought
+     * signature is dropped (no single signature covers text from multiple Parts), so consumers
+     * must not infer "signature present means this block is one replayable Part" beyond the
+     * single-Part case. Replay-accurate per-Part blocks are available from {@link
+     * #buildAllThinkingBlocks()}.
+     *
      * @hidden
      */
     @Override
@@ -68,10 +102,26 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
             return null;
         }
         ThinkingBlock.Builder builder = ThinkingBlock.builder().thinking(accumulated.toString());
-        if (!metadata.isEmpty()) {
-            builder.metadata(new HashMap<>(metadata));
-        }
+        builder.metadata(aggregateMetadata());
         return builder.build();
+    }
+
+    /**
+     * Build accumulated thinking blocks while preserving thought-signature Part boundaries.
+     *
+     * @hidden
+     * @return accumulated thinking blocks in their original order
+     */
+    public List<ThinkingBlock> buildAllThinkingBlocks() {
+        if (!hasContent()) {
+            return List.of();
+        }
+
+        List<ThinkingBlock> blocks = new ArrayList<>(completedBlocks);
+        if (currentBlock.length() > 0 || !currentMetadata.isEmpty()) {
+            blocks.add(buildCurrentBlock());
+        }
+        return List.copyOf(blocks);
     }
 
     /**
@@ -81,32 +131,9 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     public void reset() {
         accumulated.setLength(0);
         metadata.clear();
-    }
-
-    /**
-     * Merges incoming metadata into the accumulator's metadata map.
-     *
-     * <p>List values are accumulated in stream order (entries appended, not replaced). Scalar
-     * values use last-write-wins. List values are always copied to prevent caller mutation.
-     */
-    private void mergeMetadata(Map<String, Object> incoming) {
-        for (Map.Entry<String, Object> entry : incoming.entrySet()) {
-            String key = entry.getKey();
-            Object newValue = entry.getValue();
-            Object existing = metadata.get(key);
-            if (existing instanceof List<?> existingList && newValue instanceof List<?> newList) {
-                // Both are lists: concatenate in stream order
-                List<Object> combined = new ArrayList<>(existingList);
-                combined.addAll(newList);
-                metadata.put(key, combined);
-            } else if (newValue instanceof List<?> newList) {
-                // First list for this key: copy to prevent caller mutation
-                metadata.put(key, new ArrayList<>(newList));
-            } else {
-                // Scalar value: last-write-wins
-                metadata.put(key, newValue);
-            }
-        }
+        completedBlocks.clear();
+        currentBlock.setLength(0);
+        currentMetadata.clear();
     }
 
     /**
@@ -117,5 +144,33 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     public String getAccumulated() {
         return accumulated.toString();
+    }
+
+    private void completeCurrentBlock() {
+        completedBlocks.add(buildCurrentBlock());
+        currentBlock.setLength(0);
+        currentMetadata.clear();
+    }
+
+    private ThinkingBlock buildCurrentBlock() {
+        return ThinkingBlock.builder()
+                .thinking(currentBlock.toString())
+                .metadata(currentMetadata.isEmpty() ? null : currentMetadata)
+                .build();
+    }
+
+    /**
+     * Returns the aggregate view metadata: scalar thought signatures are dropped once a Part
+     * boundary was seen, because the merged text no longer corresponds to the signed Part.
+     */
+    private Map<String, Object> aggregateMetadata() {
+        if (metadata.isEmpty()) {
+            return null;
+        }
+        if (completedBlocks.isEmpty()) {
+            return new HashMap<>(metadata);
+        }
+        Map<String, Object> stripped = BlockMetadataMerger.withoutThoughtSignature(metadata);
+        return stripped.isEmpty() ? null : stripped;
     }
 }

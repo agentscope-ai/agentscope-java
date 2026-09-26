@@ -16,7 +16,9 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,7 +55,10 @@ public final class ThinkingBlock extends ContentBlock {
             @JsonProperty("thinking") String text,
             @JsonProperty("metadata") Map<String, Object> metadata) {
         this.thinking = text != null ? text : "";
-        this.metadata = metadata != null ? new HashMap<>(metadata) : null;
+        this.metadata =
+                metadata == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
     /**
@@ -75,8 +80,14 @@ public final class ThinkingBlock extends ContentBlock {
      *       OpenRouter/Gemini
      * </ul>
      *
-     * @return The metadata map, or null if no metadata is set
+     * <p>The returned map is unmodifiable and never null (matching {@link ToolUseBlock}).
+     * Earlier builds returned {@code null} when unset and a mutable map otherwise: callers that
+     * used {@code null} as the "no metadata" signal must switch to {@code isEmpty()}, and callers
+     * that mutated the returned map must build their own copy.
+     *
+     * @return The metadata map, or an empty map if not set
      */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Map<String, Object> getMetadata() {
         return metadata;
     }
