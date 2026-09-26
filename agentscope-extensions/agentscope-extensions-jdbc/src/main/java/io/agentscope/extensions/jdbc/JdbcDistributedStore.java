@@ -87,7 +87,9 @@ public class JdbcDistributedStore implements DistributedStore {
     }
 
     /**
-     * Creates a JDBC distributed store with an explicitly provided dialect.
+     * Creates a JDBC distributed store with an explicitly provided dialect, which must
+     * come from {@code AbstractJdbcDialect.from(dataSource).build()} — schema creation
+     * and validation happen there and only there; this path touches no schema.
      *
      * @param dataSource the JDBC data source
      * @param dialect the pre-built dialect (skips auto-detection)

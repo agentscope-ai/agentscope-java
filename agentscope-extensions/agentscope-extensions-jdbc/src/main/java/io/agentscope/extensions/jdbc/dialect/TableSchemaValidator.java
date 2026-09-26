@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * DML-only permissions. Comparison is by column name only, case-insensitive (H2 stores
  * unquoted identifiers uppercase); extra columns and type differences are not errors — they
  * belong to the user's own migrations. Expected columns come from {@link
- * CreateTableDdlParser}; unparseable DDL skips validation with a debug log, because
+ * CreateTableDdlParser}; unparseable DDL skips validation with an info log, because
  * validation is a safety net, not a gate.
  *
  * <p>Failures are self-contained and report everything at once: table name, missing columns,
@@ -67,6 +67,13 @@ public final class TableSchemaValidator {
     private TableSchemaValidator() {}
 
     /**
+     * Valid SQL identifier pattern — table names reach SQL by concatenation (identifiers
+     * cannot be bound), so this is the guard; {@link AbstractJdbcDialectBuilder} shares
+     * it.
+     */
+    static final Pattern VALID_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    /**
      * Validates one table's columns on an existing connection — the builder reuses its
      * assembly connection for all three tables.
      *
@@ -74,17 +81,19 @@ public final class TableSchemaValidator {
      * @param tableName the table to validate
      * @param createTableDdls the dialect's DDL statements for this table; the first parseable
      *     {@code CREATE TABLE} provides the expected columns
+     * @throws IllegalArgumentException when {@code tableName} is not a plain identifier
      * @throws IllegalStateException when the table is missing or lacks expected columns
      */
     public static void validate(
             Connection connection, String tableName, List<String> createTableDdls) {
         Objects.requireNonNull(connection, "connection");
-        Objects.requireNonNull(tableName, "tableName");
+        requireValidTableName(tableName);
         Objects.requireNonNull(createTableDdls, "createTableDdls");
         Set<String> expected = expectedColumns(createTableDdls);
         if (expected.isEmpty()) {
-            LOG.debug(
-                    "Skipping schema validation for '{}': no parseable CREATE TABLE DDL",
+            LOG.info(
+                    "Skipping schema validation for '{}': no parseable CREATE TABLE DDL —"
+                            + " likely an unrecognized third-party DDL shape",
                     tableName);
             return;
         }
@@ -106,6 +115,19 @@ public final class TableSchemaValidator {
                             + " existing tables; add the missing columns manually (e.g."
                             + " ALTER TABLE ... ADD COLUMN) based on the reference DDL:\n"
                             + referenceDdl(createTableDdls));
+        }
+    }
+
+    /**
+     * Guards the table name before it is concatenated into the probe SQL.
+     *
+     * @param tableName the caller-supplied table name
+     * @throws IllegalArgumentException when the name is null or not a plain identifier
+     */
+    private static void requireValidTableName(String tableName) {
+        if (tableName == null || !VALID_IDENTIFIER.matcher(tableName).matches()) {
+            throw new IllegalArgumentException(
+                    "tableName must match [A-Za-z_][A-Za-z0-9_]*, got: " + tableName);
         }
     }
 

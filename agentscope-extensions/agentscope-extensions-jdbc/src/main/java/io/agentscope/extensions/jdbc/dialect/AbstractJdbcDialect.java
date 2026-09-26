@@ -121,18 +121,36 @@ public abstract class AbstractJdbcDialect
      * or more statements (e.g. {@code CREATE TABLE} plus a secondary {@code CREATE
      * INDEX}), so no vendor is constrained to a single SQL statement per table.
      *
-     * <p>Insertion-ordered in store → sessions → snapshots sequence; overrides should
-     * return an insertion-ordered map (e.g. {@link LinkedHashMap}) to keep DDL execution
-     * deterministic.
+     * <p>Insertion-ordered (store → sessions → snapshots); overrides should preserve that
+     * (e.g. {@link LinkedHashMap}) so DDL execution stays deterministic.
      *
      * @return resolved table name → that table's DDL statements
      */
     protected Map<String, List<String>> createTableDdls() {
         Map<String, List<String>> ddls = new LinkedHashMap<>();
-        ddls.put(storeTableName(), storeCreateTableDdls());
-        ddls.put(sessionStateTableName(), sessionStateCreateTableDdls());
-        ddls.put(snapshotTableName(), snapshotCreateTableDdls());
+        putDdls(ddls, storeTableName(), storeCreateTableDdls());
+        putDdls(ddls, sessionStateTableName(), sessionStateCreateTableDdls());
+        putDdls(ddls, snapshotTableName(), snapshotCreateTableDdls());
         return ddls;
+    }
+
+    /**
+     * Puts one domain's DDL, refusing a table name already claimed by another domain — a
+     * collision would silently drop one domain's creation and validation.
+     *
+     * @param ddls the map under construction
+     * @param tableName the domain's resolved table name
+     * @param statements the domain's DDL statements
+     * @throws IllegalStateException when another domain already uses {@code tableName}
+     */
+    private static void putDdls(
+            Map<String, List<String>> ddls, String tableName, List<String> statements) {
+        if (ddls.put(tableName, statements) != null) {
+            throw new IllegalStateException(
+                    "Duplicate JDBC table name '"
+                            + tableName
+                            + "': each table domain needs a distinct table name");
+        }
     }
 
     // ------------------------------------------------------------------

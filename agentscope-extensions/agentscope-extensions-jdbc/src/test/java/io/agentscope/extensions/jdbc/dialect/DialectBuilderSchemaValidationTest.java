@@ -28,6 +28,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
@@ -169,6 +170,41 @@ class DialectBuilderSchemaValidationTest {
         assertDoesNotThrow(() -> new JdbcAgentStateStore(ds, new H2Dialect()));
 
         assertEquals(0, tableCount(ds), "no table must have been created");
+    }
+
+    // ------------------------------------------------------------------
+    //  Defensive guards
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("colliding table names across domains fail fast at assembly")
+    void duplicateTableNamesFailFast() {
+        DataSource ds = H2TestSupport.createDataSource("schema_duplicate_names");
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                AbstractJdbcDialect.from(ds)
+                                        .storeTableName("agentscope_shared")
+                                        .sessionStateTableName("agentscope_shared")
+                                        .build());
+
+        assertTrue(
+                exception.getMessage().contains("agentscope_shared"),
+                "message must name the colliding table: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("the validator rejects table names that are not plain identifiers")
+    void validatorRejectsNonIdentifierTableName() throws Exception {
+        DataSource ds = H2TestSupport.createDataSource("schema_bad_identifier");
+
+        try (Connection conn = ds.getConnection()) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> TableSchemaValidator.validate(conn, "bad; DROP TABLE x", List.of()));
+        }
     }
 
     // ------------------------------------------------------------------

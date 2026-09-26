@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
-import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
@@ -52,14 +51,6 @@ import javax.sql.DataSource;
  * @author shanhongyu
  */
 public class AbstractJdbcDialectBuilder {
-
-    /**
-     * Valid SQL identifier pattern — table names and prefixes flow into SQL strings verbatim
-     * via string concatenation (no parameterisation possible for DDL identifiers), so this
-     * regex is the SQL-injection guard. Same pattern as the deprecated MySQL module's
-     * {@code JdbcStore.VALID_TABLE_NAME}.
-     */
-    private static final Pattern VALID_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final DataSource dataSource;
     private String tablePrefix = "agentscope_";
@@ -96,7 +87,12 @@ public class AbstractJdbcDialectBuilder {
         return this;
     }
 
-    /** Whether to auto-create tables during {@link #build()} (default true). */
+    /**
+     * Whether to auto-create tables during {@link #build()} (default true). Either way,
+     * all three tables are validated afterwards: {@code true} executes the idempotent DDL
+     * first; {@code false} runs no DDL, so a missing table or column fails assembly with
+     * the reference DDL in the error message.
+     */
     public AbstractJdbcDialectBuilder autoCreateTable(boolean autoCreateTable) {
         this.autoCreateTable = autoCreateTable;
         return this;
@@ -231,7 +227,7 @@ public class AbstractJdbcDialectBuilder {
     private static String validateIdentifier(String identifier, String paramName) {
         if (identifier == null
                 || identifier.isBlank()
-                || !VALID_IDENTIFIER.matcher(identifier).matches()) {
+                || !TableSchemaValidator.VALID_IDENTIFIER.matcher(identifier).matches()) {
             throw new IllegalArgumentException(
                     paramName + " must match [A-Za-z_][A-Za-z0-9_]*, got: " + identifier);
         }
