@@ -2034,7 +2034,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             publishEvent(new UserConfirmResultEvent(replyId, normalized));
             clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
 
-            applyConfirmResults(normalized, replyId);
+            applyConfirmResults(normalized, replyId, asking);
         }
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
@@ -2097,18 +2097,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       tool-result event lifecycle.</li>
          * </ul>
          */
-        private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
+        private void applyConfirmResults(
+                List<ConfirmResult> results, String replyId, List<ToolUseBlock> asking) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
             List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
+            Map<String, ToolUseBlock> askingById = new HashMap<>();
+            for (ToolUseBlock toolCall : asking) {
+                askingById.put(toolCall.getId(), toolCall);
+            }
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
                 if (target == null) {
                     continue;
                 }
                 if (r.isConfirmed()) {
-                    replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
+                    ToolUseBlock replacement = target.withState(ToolCallState.ALLOWED);
+                    ToolUseBlock original = askingById.get(target.getId());
+                    if (original != null && hasParseFailure(original)) {
+                        Map<String, Object> metadata = new HashMap<>();
+                        if (replacement.getMetadata() != null) {
+                            metadata.putAll(replacement.getMetadata());
+                        }
+                        metadata.put(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true);
+                        replacement =
+                                ToolUseBlock.builder()
+                                        .id(replacement.getId())
+                                        .name(replacement.getName())
+                                        .input(replacement.getInput())
+                                        .content(replacement.getContent())
+                                        .metadata(metadata)
+                                        .state(replacement.getState())
+                                        .build();
+                    }
+                    replacements.put(target.getId(), replacement);
                     if (r.getRules() != null) {
                         for (PermissionRule rule : r.getRules()) {
                             if (rule != null) {

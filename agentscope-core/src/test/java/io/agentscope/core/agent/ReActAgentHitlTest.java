@@ -892,7 +892,20 @@ class ReActAgentHitlTest {
         ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
         assertEquals(true, pending.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
 
-        agent.call(List.of(confirmMsg(true, pending))).block();
+        ToolUseBlock adapterRebuilt =
+                ToolUseBlock.builder()
+                        .id(pending.getId())
+                        .name(pending.getName())
+                        .input(pending.getInput())
+                        .content(pending.getContent())
+                        .state(pending.getState())
+                        .build();
+        assertFalse(
+                adapterRebuilt
+                        .getMetadata()
+                        .containsKey(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
+
+        agent.call(List.of(confirmMsg(true, adapterRebuilt))).block();
 
         ToolResultBlock result =
                 agent.getAgentState().getContext().stream()
