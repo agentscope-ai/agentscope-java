@@ -231,8 +231,13 @@ public class SkillBox {
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
+        boolean reload = SkillToolFactory.lenientBoolean(input.get("reload"));
         return skillToolFactory.loadSkillResourceImpl(
-                skillId, path, skillToolFactory.resolveToolContext(param));
+                skillId,
+                path,
+                skillToolFactory.resolveToolContext(param),
+                SkillToolFactory.scopeOf(param),
+                reload);
     }
 
     /**
