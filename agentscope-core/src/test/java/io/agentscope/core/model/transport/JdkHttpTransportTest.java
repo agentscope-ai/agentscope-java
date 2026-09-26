@@ -23,8 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.Authenticator;
 import java.net.CookieHandler;
 import java.net.ProxySelector;
@@ -32,6 +30,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -41,6 +40,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -252,6 +252,130 @@ class JdkHttpTransportTest {
         StepVerifier.create(transport.stream(request))
                 .expectNextMatches(data -> data.contains("\"id\":\"1\""))
                 .verifyComplete();
+    }
+
+    @Test
+    void testStreamDecodesUtf8AndLineEndingsAcrossByteBuffersWithBackpressure() {
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .responseTimeout(Duration.ofSeconds(2))
+                        .streamIdleTimeout(Duration.ofSeconds(2))
+                        .build();
+        AtomicReference<
+                        CompletableFuture<
+                                java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>>
+                futureRef = new AtomicReference<>();
+        JdkHttpTransport customTransport =
+                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef), customConfig);
+
+        byte[] body =
+                "data: \u4F60\u597D\uD83C\uDF0D\r\n\r\ndata: second\ndata: [DONE]\r\n"
+                        .getBytes(StandardCharsets.UTF_8);
+        List<ByteBuffer> oneByteBuffers = new ArrayList<>(body.length);
+        for (byte value : body) {
+            oneByteBuffers.add(ByteBuffer.wrap(new byte[] {value}));
+        }
+        SingleItemBodyPublisher publisher = new SingleItemBodyPublisher(oneByteBuffers);
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url("http://localhost/split-utf8-body")
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            StepVerifier.create(customTransport.stream(request), 0)
+                    .then(() -> futureRef.get().complete(new TestHttpResponse(200, publisher)))
+                    .expectNoEvent(Duration.ofMillis(50))
+                    .thenRequest(1)
+                    .expectNext("\u4F60\u597D\uD83C\uDF0D")
+                    .thenRequest(1)
+                    .expectNext("second")
+                    // Allow the parser to consume the non-emitted [DONE] marker.
+                    .thenRequest(1)
+                    .verifyComplete();
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    @Test
+    void testStreamCancelsResponseBodyAfterDoneMarker() {
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .responseTimeout(Duration.ofSeconds(2))
+                        .streamIdleTimeout(Duration.ofSeconds(2))
+                        .build();
+        AtomicReference<
+                        CompletableFuture<
+                                java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>>
+                futureRef = new AtomicReference<>();
+        JdkHttpTransport customTransport =
+                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef), customConfig);
+        HoldingBodyPublisher publisher =
+                new HoldingBodyPublisher(
+                        List.of(
+                                ByteBuffer.wrap(
+                                        "data: first\n\ndata: [DONE]\n\n"
+                                                .getBytes(StandardCharsets.UTF_8))));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url("http://localhost/holding-body")
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            StepVerifier.create(customTransport.stream(request))
+                    .then(() -> futureRef.get().complete(new TestHttpResponse(200, publisher)))
+                    .expectNext("first")
+                    .verifyComplete();
+            assertTrue(
+                    publisher.awaitCancelled(),
+                    "The response body must be cancelled after the terminal marker");
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    @Test
+    void testStreamFirstChunkTimeoutCancelsSubscribedResponseBody() {
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .responseTimeout(Duration.ofMillis(100))
+                        .streamIdleTimeout(Duration.ofSeconds(1))
+                        .build();
+        AtomicReference<
+                        CompletableFuture<
+                                java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>>
+                futureRef = new AtomicReference<>();
+        JdkHttpTransport customTransport =
+                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef), customConfig);
+        HoldingBodyPublisher publisher = new HoldingBodyPublisher(List.of());
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url("http://localhost/silent-body")
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            StepVerifier.create(customTransport.stream(request))
+                    .then(() -> futureRef.get().complete(new TestHttpResponse(200, publisher)))
+                    .expectErrorMatches(
+                            error ->
+                                    error instanceof HttpTransportException
+                                            && error.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(2));
+            assertTrue(
+                    publisher.awaitCancelled(),
+                    "The response body must be cancelled after the first-chunk timeout");
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test
@@ -1291,17 +1415,19 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    void testStreamTimeoutClosesBodyWhenFutureCompletesAfterCancellation() {
+    void testStreamTimeoutCancelsBodyWhenFutureCompletesAfterCancellation() {
         HttpTransportConfig customConfig =
                 HttpTransportConfig.builder()
                         .responseTimeout(Duration.ofMillis(100))
                         .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
-        BlockingInputStream body = new BlockingInputStream();
-        AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>> futureRef =
-                new AtomicReference<>();
+        CancellableBodyPublisher body = new CancellableBodyPublisher();
+        AtomicReference<
+                        CompletableFuture<
+                                java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>>
+                futureRef = new AtomicReference<>();
         JdkHttpTransport customTransport =
-                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef, body), customConfig);
+                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef), customConfig);
 
         try {
             HttpRequest request =
@@ -1318,12 +1444,14 @@ class JdkHttpTransportTest {
                                             && e.getMessage().contains("Stream timeout"))
                     .verify(Duration.ofSeconds(2));
 
-            CompletableFuture<java.net.http.HttpResponse<InputStream>> future = futureRef.get();
+            CompletableFuture<java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>> future =
+                    futureRef.get();
             assertNotNull(future);
             assertTrue(future.isCancelled(), "Timeout should cancel the pending async request");
 
             future.complete(new TestHttpResponse(200, body));
-            assertTrue(body.awaitClosed(), "Response body must be closed after late completion");
+            assertTrue(
+                    body.awaitCancelled(), "Response body must be cancelled after late completion");
         } finally {
             customTransport.close();
         }
@@ -1481,16 +1609,18 @@ class JdkHttpTransportTest {
     }
 
     private static class DeferredBodyHttpClient extends HttpClient {
-        private final AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
+        private final AtomicReference<
+                        CompletableFuture<
+                                java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>>
                 futureRef;
-        private final InputStream body;
 
         DeferredBodyHttpClient(
-                AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
-                        futureRef,
-                InputStream body) {
+                AtomicReference<
+                                CompletableFuture<
+                                        java.net.http.HttpResponse<
+                                                Flow.Publisher<List<ByteBuffer>>>>>
+                        futureRef) {
             this.futureRef = futureRef;
-            this.body = body;
         }
 
         @Override
@@ -1552,7 +1682,8 @@ class JdkHttpTransportTest {
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
             CompletableFuture<java.net.http.HttpResponse<T>> future = new LateCompletableFuture<>();
             futureRef.set(
-                    (CompletableFuture<java.net.http.HttpResponse<InputStream>>)
+                    (CompletableFuture<
+                                    java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>)
                             (CompletableFuture<?>) future);
             return future;
         }
@@ -1581,11 +1712,12 @@ class JdkHttpTransportTest {
         }
     }
 
-    private static class TestHttpResponse implements java.net.http.HttpResponse<InputStream> {
+    private static class TestHttpResponse
+            implements java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>> {
         private final int statusCode;
-        private final InputStream body;
+        private final Flow.Publisher<List<ByteBuffer>> body;
 
-        TestHttpResponse(int statusCode, InputStream body) {
+        TestHttpResponse(int statusCode, Flow.Publisher<List<ByteBuffer>> body) {
             this.statusCode = statusCode;
             this.body = body;
         }
@@ -1601,7 +1733,8 @@ class JdkHttpTransportTest {
         }
 
         @Override
-        public Optional<java.net.http.HttpResponse<InputStream>> previousResponse() {
+        public Optional<java.net.http.HttpResponse<Flow.Publisher<List<ByteBuffer>>>>
+                previousResponse() {
             return Optional.empty();
         }
 
@@ -1611,7 +1744,7 @@ class JdkHttpTransportTest {
         }
 
         @Override
-        public InputStream body() {
+        public Flow.Publisher<List<ByteBuffer>> body() {
             return body;
         }
 
@@ -1631,28 +1764,99 @@ class JdkHttpTransportTest {
         }
     }
 
-    private static class BlockingInputStream extends InputStream {
-        private final CountDownLatch closed = new CountDownLatch(1);
+    private static class CancellableBodyPublisher implements Flow.Publisher<List<ByteBuffer>> {
+        private final CountDownLatch cancelled = new CountDownLatch(1);
 
         @Override
-        public int read() {
-            return -1;
+        public void subscribe(Flow.Subscriber<? super List<ByteBuffer>> subscriber) {
+            subscriber.onSubscribe(
+                    new Flow.Subscription() {
+                        @Override
+                        public void request(long count) {
+                            // This publisher exists only to verify cancellation.
+                        }
+
+                        @Override
+                        public void cancel() {
+                            cancelled.countDown();
+                        }
+                    });
         }
 
-        @Override
-        public byte[] readAllBytes() {
-            return "closed".getBytes(StandardCharsets.UTF_8);
-        }
-
-        @Override
-        public void close() throws IOException {
-            closed.countDown();
-            super.close();
-        }
-
-        boolean awaitClosed() {
+        boolean awaitCancelled() {
             try {
-                return closed.await(1, TimeUnit.SECONDS);
+                return cancelled.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+
+    private static class SingleItemBodyPublisher implements Flow.Publisher<List<ByteBuffer>> {
+        private final List<ByteBuffer> buffers;
+
+        private SingleItemBodyPublisher(List<ByteBuffer> buffers) {
+            this.buffers = buffers;
+        }
+
+        @Override
+        public void subscribe(Flow.Subscriber<? super List<ByteBuffer>> subscriber) {
+            subscriber.onSubscribe(
+                    new Flow.Subscription() {
+                        private final AtomicBoolean emitted = new AtomicBoolean(false);
+                        private final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+                        @Override
+                        public void request(long count) {
+                            if (count <= 0L || !emitted.compareAndSet(false, true)) {
+                                return;
+                            }
+                            subscriber.onNext(buffers);
+                            if (!cancelled.get()) {
+                                subscriber.onComplete();
+                            }
+                        }
+
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+                    });
+        }
+    }
+
+    private static class HoldingBodyPublisher implements Flow.Publisher<List<ByteBuffer>> {
+        private final List<ByteBuffer> buffers;
+        private final CountDownLatch cancelled = new CountDownLatch(1);
+
+        private HoldingBodyPublisher(List<ByteBuffer> buffers) {
+            this.buffers = buffers;
+        }
+
+        @Override
+        public void subscribe(Flow.Subscriber<? super List<ByteBuffer>> subscriber) {
+            subscriber.onSubscribe(
+                    new Flow.Subscription() {
+                        private final AtomicBoolean emitted = new AtomicBoolean(false);
+
+                        @Override
+                        public void request(long count) {
+                            if (count > 0L && emitted.compareAndSet(false, true)) {
+                                subscriber.onNext(buffers);
+                            }
+                        }
+
+                        @Override
+                        public void cancel() {
+                            cancelled.countDown();
+                        }
+                    });
+        }
+
+        boolean awaitCancelled() {
+            try {
+                return cancelled.await(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
