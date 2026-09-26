@@ -93,6 +93,7 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.FallbackChainModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
@@ -237,6 +238,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private final String sysPrompt;
     private final Model model;
+
+    /**
+     * Ordered fallback chain (may be empty). When non-empty, {@link #modelForCall()} wraps the
+     * primary model in a {@link FallbackChainModel} so a failing candidate transparently falls
+     * back to the next one. Configurable via {@link ReActAgent.Builder#fallbackModels}. This is
+     * independent of the legacy single {@code fallbackModel} on {@link ModelConfig}: the legacy
+     * path keeps its exact pre-existing behaviour when no chain is configured.
+     */
+    private final List<Model> fallbackModels;
+
+    /**
+     * Agent-scoped cooldown table shared by every {@link FallbackChainModel} wrapper created in
+     * {@link #modelForCall()}: cooldown survives across reasoning rounds and successive requests.
+     * Keyed by the candidate {@code Model} instance (identity semantics), so same-named
+     * candidates behind different endpoints/keys stay separate.
+     */
+    private final ConcurrentHashMap<Model, Long> fallbackCoolUntilMillis =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Agent-scoped last-failure table shared alongside {@link #fallbackCoolUntilMillis}: keeps
+     * the triggering failure per candidate so an all-cooling call can still report the real
+     * reason (e.g. an auth error) across wrapper rebuilds. Same identity-keying contract.
+     */
+    private final ConcurrentHashMap<Model, Throwable> fallbackLastFailures =
+            new ConcurrentHashMap<>();
+
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
@@ -332,6 +360,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.initialActiveToolGroups = List.copyOf(this.toolkit.getActiveGroups());
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
+        this.fallbackModels = List.copyOf(builder.flatFallbackModels);
+        for (String warning : validateFallbackChainCapabilities(this.model, this.fallbackModels)) {
+            log.warn(warning);
+        }
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -719,6 +751,109 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         ? b.flatStopOnReject
                         : ReactConfig.DEFAULT_STOP_ON_REJECT;
         return new ReactConfig(b.maxIters, stop);
+    }
+
+    /**
+     * Validates fallback-chain capability compatibility and returns warnings to log at build
+     * time.
+     *
+     * <p>{@link FallbackChainModel} reports the primary's capabilities regardless of which
+     * candidate serves a call (the chain's stable identity under concurrency). A candidate with a
+     * smaller context window than the primary is therefore almost certainly a configuration
+     * mistake: after a switch the agent would keep building requests/compaction on the primary's
+     * capability assumptions.
+     *
+     * <p>Direction of the structured-output check is deliberate: it only fires when a candidate
+     * <b>positively declares</b> support the primary does not have ({@code nativeOut &&
+     * !primaryNative}). The reverse direction — a candidate that supports <i>less</i> than the
+     * primary — is not reported because {@code supportsNativeStructuredOutput()} has no "unknown"
+     * state: the interface default {@code false} is indistinguishable from a genuine lack of
+     * support, and warning on every build of a legitimate mixed-provider chain would be noise.
+     * Unknown context windows ({@code getContextWindowSize() == 0}) are likewise tolerated
+     * silently.
+     *
+     * <p>A throwing capability getter from a third-party {@link Model} implementation is caught
+     * and skipped (including a throwing {@code getModelName()}, on both the primary and the
+     * candidates) — a diagnostic check must never fail agent construction.
+     *
+     * @param model the primary model (may be null)
+     * @param fallbackModels the configured fallback chain (may be empty)
+     * @return warning messages, empty when the chain is capability-clean
+     */
+    static List<String> validateFallbackChainCapabilities(Model model, List<Model> fallbackModels) {
+        List<String> warnings = new ArrayList<>();
+        if (fallbackModels.isEmpty() || model == null) {
+            return warnings;
+        }
+
+        int primaryWindow;
+        boolean primaryNative;
+        boolean primaryNativeWithTools;
+        try {
+            primaryWindow = model.getContextWindowSize();
+            primaryNative = model.supportsNativeStructuredOutput();
+            primaryNativeWithTools = model.supportsNativeStructuredOutputWithTools();
+        } catch (RuntimeException e) {
+            // A throwing *primary* getter must be as harmless as a throwing candidate one.
+            log.debug("Skipping fallback-chain capability check: primary getter threw", e);
+            return warnings;
+        }
+
+        for (Model fallback : fallbackModels) {
+            try {
+                int window = fallback.getContextWindowSize();
+                if (window > 0 && primaryWindow > 0 && window < primaryWindow) {
+                    warnings.add(
+                            "Fallback candidate "
+                                    + safeModelName(fallback)
+                                    + " has a smaller context window ("
+                                    + window
+                                    + ") than the primary model "
+                                    + safeModelName(model)
+                                    + " ("
+                                    + primaryWindow
+                                    + "); the chain reports the primary's capabilities, so"
+                                    + " compaction may trigger on the wrong budget after a switch");
+                }
+
+                boolean nativeOut = fallback.supportsNativeStructuredOutput();
+                boolean nativeWithTools = fallback.supportsNativeStructuredOutputWithTools();
+                // Only compare when the candidate positively declares support; a default false
+                // (no override) means "unknown", which is tolerated silently (see javadoc).
+                if ((nativeOut && !primaryNative) || (nativeWithTools && !primaryNativeWithTools)) {
+                    warnings.add(
+                            "Fallback candidate "
+                                    + safeModelName(fallback)
+                                    + " declares structured-output support (native="
+                                    + nativeOut
+                                    + ", withTools="
+                                    + nativeWithTools
+                                    + ") that the primary model "
+                                    + safeModelName(model)
+                                    + " does not (native="
+                                    + primaryNative
+                                    + ", withTools="
+                                    + primaryNativeWithTools
+                                    + "); the chain reports the primary's capabilities, so the"
+                                    + " candidate's native support may go unused after a switch");
+                }
+            } catch (RuntimeException e) {
+                log.debug(
+                        "Skipping capability check for fallback candidate {}: getter threw",
+                        safeModelName(fallback),
+                        e);
+            }
+        }
+        return warnings;
+    }
+
+    /** Safely resolves a model's name for diagnostics (never throws). */
+    private static String safeModelName(Model model) {
+        try {
+            return model.getModelName();
+        } catch (RuntimeException e) {
+            return "<unknown>";
+        }
     }
 
     // ==================== RuntimeContext ====================
@@ -4284,11 +4419,29 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     private Model modelForCall() {
+        FailoverListener failoverListener = modelConfig.failoverListener();
+
+        // Multi-level fallback chain (the pluggable extension point): when configured, wrap the
+        // primary model so failures transparently try the next candidate. Failure classification
+        // and per-candidate cooldown live in FallbackChainModel. Cooldown state is shared at
+        // agent scope (survives across reasoning rounds and successive requests); capability
+        // queries report the primary model (the chain's stable identity) so concurrent calls
+        // never observe another call's active candidate. Switches are observable through the
+        // same FailoverListener the legacy path uses.
+        if (!fallbackModels.isEmpty()) {
+            return new FallbackChainModel(
+                    model,
+                    fallbackModels,
+                    FallbackChainModel.DEFAULT_COOLDOWN,
+                    fallbackCoolUntilMillis,
+                    fallbackLastFailures,
+                    failoverListener);
+        }
+
         Model fallbackModel = modelConfig.fallbackModel();
         if (fallbackModel == null) {
             return model;
         }
-        FailoverListener failoverListener = modelConfig.failoverListener();
 
         AtomicReference<Model> activeModel = new AtomicReference<>(model);
         return new Model() {
@@ -4834,6 +4987,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Integer flatMaxRetries;
         private Model flatFallbackModel;
         private FailoverListener flatFailoverListener;
+        private List<Model> flatFallbackModels = List.of();
         private Boolean flatStopOnReject;
         private AgentStateStore stateStore;
         private ConflictPolicy conflictPolicy;
@@ -5217,8 +5371,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Sets the fallback model invoked after the primary model exhausts its retry budget.
          * Pass {@code null} to explicitly clear (no fallback).
+         *
+         * <p>Cannot be combined with {@link #fallbackModels(List)}: configuring both would
+         * silently let the chain win and leave the single fallback unused.
+         *
+         * @throws IllegalStateException if a fallback chain was configured first
          */
         public Builder fallbackModel(Model fallbackModel) {
+            if (!flatFallbackModels.isEmpty()) {
+                throw new IllegalStateException(
+                        "fallbackModel(...) cannot be combined with fallbackModels(...); the"
+                                + " configured chain would silently win and the single fallback"
+                                + " would never be used");
+            }
             this.flatFallbackModel = fallbackModel;
             return this;
         }
@@ -5231,6 +5396,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @throws IllegalArgumentException if the id cannot be resolved
          */
         public Builder fallbackModel(String modelId) {
+            if (!flatFallbackModels.isEmpty()) {
+                throw new IllegalStateException(
+                        "fallbackModel(...) cannot be combined with fallbackModels(...); the"
+                                + " configured chain would silently win and the single fallback"
+                                + " would never be used");
+            }
             this.flatFallbackModel = io.agentscope.core.model.ModelRegistry.resolve(modelId);
             return this;
         }
@@ -5243,6 +5414,67 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         public Builder failoverListener(FailoverListener failoverListener) {
             this.flatFailoverListener = failoverListener;
+            return this;
+        }
+
+        /**
+         * Sets the ordered multi-level fallback chain (primary + fallbacks are tried in order).
+         *
+         * <p>This is the extension point for multi-level model failover: when a chain is
+         * configured, a failing candidate transparently falls back to the next one using {@link
+         * FallbackChainModel} (failure classification plus per-candidate cooldown). When no chain
+         * is configured the agent keeps its pre-existing behaviour exactly (including the legacy
+         * single {@link #fallbackModel(Model)} path).
+         *
+         * <p>Passing an empty list (or {@code null} entries, which are ignored) disables the
+         * chain. Candidates are tried in the given order; {@code null} entries are skipped.
+         *
+         * <p>Cannot be combined with {@link #fallbackModel(Model)}/ {@link #fallbackModel(String)}:
+         * configuring both would silently let the chain win and leave the single fallback unused.
+         *
+         * @param fallbacks the ordered fallback models (may be empty or contain nulls)
+         * @return this builder
+         * @throws IllegalStateException if a legacy {@code fallbackModel} was configured first
+         */
+        public Builder fallbackModels(Model... fallbacks) {
+            if (fallbacks == null || fallbacks.length == 0) {
+                this.flatFallbackModels = List.of();
+                return this;
+            }
+            List<Model> cleaned = new ArrayList<>(fallbacks.length);
+            for (Model fallback : fallbacks) {
+                if (fallback != null) {
+                    cleaned.add(fallback);
+                }
+            }
+            return fallbackModels(cleaned);
+        }
+
+        /**
+         * Sets the ordered multi-level fallback chain from a list (see
+         * {@link #fallbackModels(Model...)} for semantics).
+         *
+         * @param fallbacks the ordered fallback models (may be empty or contain nulls; {@code
+         *     null} elements are skipped)
+         * @return this builder
+         * @throws IllegalStateException if a legacy {@code fallbackModel} was configured first
+         */
+        public Builder fallbackModels(List<Model> fallbacks) {
+            if (flatFallbackModel != null) {
+                throw new IllegalStateException(
+                        "fallbackModels(...) cannot be combined with fallbackModel(...); the"
+                                + " configured chain would silently win and the single fallback"
+                                + " would never be used");
+            }
+            List<Model> cleaned = new ArrayList<>();
+            if (fallbacks != null) {
+                for (Model fallback : fallbacks) {
+                    if (fallback != null) {
+                        cleaned.add(fallback);
+                    }
+                }
+            }
+            this.flatFallbackModels = List.copyOf(cleaned);
             return this;
         }
 
@@ -5459,6 +5691,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 b.flatFallbackModel = srcModelConfig.fallbackModel();
                 b.flatFailoverListener = srcModelConfig.failoverListener();
             }
+            b.flatFallbackModels = List.copyOf(agent.fallbackModels);
             b.toolkit = agent.getToolkit().copy();
             return b;
         }
