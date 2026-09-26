@@ -58,7 +58,7 @@ class DialectSqlTests {
         var ds = new org.h2.jdbcx.JdbcDataSource();
         ds.setUrl("jdbc:h2:mem:prefix_test;DB_CLOSE_DELAY=-1");
         ds.setUser("sa");
-        var d = AbstractJdbcDialect.from(ds).tablePrefix("custom_").autoCreateTable(false).build();
+        var d = AbstractJdbcDialect.from(ds).tablePrefix("custom_").build();
         assertEquals("custom_store", d.storeTableName());
         assertEquals("custom_sessions", d.sessionStateTableName());
     }
@@ -73,7 +73,6 @@ class DialectSqlTests {
                 AbstractJdbcDialect.from(ds)
                         .tablePrefix("custom_")
                         .storeTableName("my_kv_table")
-                        .autoCreateTable(false)
                         .build();
         assertEquals("my_kv_table", d.storeTableName());
         assertEquals("custom_sessions", d.sessionStateTableName());
@@ -204,7 +203,7 @@ class DialectSqlTests {
         assertTrue(session.get(0).contains("INDEX idx_session (session_id)"));
 
         // MySQL has no CREATE INDEX IF NOT EXISTS, so the three tables stay three DDLs.
-        assertEquals(3, d.createTableDdls().size());
+        assertEquals(3, d.createTableDdls().values().stream().mapToInt(List::size).sum());
     }
 
     @Test
@@ -240,16 +239,13 @@ class DialectSqlTests {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("MysqlDialect state UPSERT uses ON DUPLICATE KEY and INFORMATION_SCHEMA")
-    void mysqlStateUpsertAndCheck() {
+    @DisplayName("MysqlDialect state UPSERT uses ON DUPLICATE KEY UPDATE")
+    void mysqlStateUpsert() {
         var d = new MysqlDialect();
         BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
         assertTrue(upsert.sql().contains("ON DUPLICATE KEY UPDATE"));
 
         assertTrue(upsert.sql().replaceAll("\\s+", " ").contains("version = version + 1"));
-
-        BoundSql check = d.sessionStateCheckTableExists("my_table");
-        assertTrue(check.sql().contains("DATABASE()"));
     }
 
     @Test
@@ -266,21 +262,11 @@ class DialectSqlTests {
     }
 
     @Test
-    @DisplayName("H2Dialect state UPSERT uses MERGE INTO and INFORMATION_SCHEMA")
-    void h2StateUpsertAndCheck() {
+    @DisplayName("H2Dialect state UPSERT uses MERGE INTO")
+    void h2StateUpsert() {
         var d = new H2Dialect();
         BoundSql upsert = d.sessionStateUpsert("sid", "key", 0, "data");
         assertTrue(upsert.sql().contains("MERGE INTO"));
-
-        BoundSql check = d.sessionStateCheckTableExists("my_table");
-        assertTrue(check.sql().contains("INFORMATION_SCHEMA"));
-    }
-
-    @Test
-    @DisplayName("SqliteDialect state check uses sqlite_master")
-    void sqliteStateCheckUsesSqliteMaster() {
-        BoundSql check = new SqliteDialect().sessionStateCheckTableExists("my_table");
-        assertTrue(check.sql().contains("sqlite_master"));
     }
 
     // ------------------------------------------------------------------
@@ -406,7 +392,6 @@ class DialectSqlTests {
                 AbstractJdbcDialect.from(ds)
                         .tablePrefix("my_app_")
                         .storeTableName("my_store")
-                        .autoCreateTable(false)
                         .build();
         assertEquals("my_store", d.storeTableName());
         assertEquals("my_app_sessions", d.sessionStateTableName());

@@ -120,12 +120,6 @@ public class SqliteDialect extends AbstractJdbcDialect {
                 stateData);
     }
 
-    @Override
-    public BoundSql sessionStateCheckTableExists(String tableName) {
-        return new BoundSql(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", tableName);
-    }
-
     // ------------------------------------------------------------------
     //  SnapshotDialect
     // ------------------------------------------------------------------

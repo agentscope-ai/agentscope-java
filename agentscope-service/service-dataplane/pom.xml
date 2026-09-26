@@ -63,7 +63,7 @@
         <!-- JdbcStore-backed BaseStore for remote filesystem routes -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-mysql</artifactId>
+            <artifactId>agentscope-extensions-jdbc</artifactId>
         </dependency>
 
         <!-- SQLite for FTS5 memory indexing (transitive use via harness extensions) -->

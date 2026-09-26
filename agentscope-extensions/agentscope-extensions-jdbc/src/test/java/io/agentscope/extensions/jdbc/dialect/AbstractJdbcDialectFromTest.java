@@ -17,6 +17,7 @@ package io.agentscope.extensions.jdbc.dialect;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -26,7 +27,12 @@ import io.agentscope.extensions.jdbc.dialect.vendor.PostgresDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.SqliteDialect;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.List;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -94,11 +100,47 @@ class AbstractJdbcDialectFromTest {
         assertThrows(IllegalArgumentException.class, () -> AbstractJdbcDialect.from(null));
     }
 
+    /**
+     * Builds a dialect against a mocked database reporting {@code productName}.
+     *
+     * @param productName the JDBC product name to report
+     * @return the detected dialect
+     */
     private static AbstractJdbcDialect detect(String productName) throws Exception {
         DataSource ds = mockDataSource(productName);
         return AbstractJdbcDialect.from(ds).autoCreateTable(false).build();
     }
 
+    /**
+     * Column sets the three agentscope tables report to build()'s schema validation. Lowercase
+     * is fine — the comparison is case-insensitive.
+     */
+    private static final Map<String, List<String>> VALIDATION_COLUMNS =
+            Map.of(
+                    "agentscope_store",
+                            List.of(
+                                    "namespace_path",
+                                    "item_key",
+                                    "value_json",
+                                    "version",
+                                    "updated_at"),
+                    "agentscope_sessions",
+                            List.of(
+                                    "session_id",
+                                    "state_key",
+                                    "item_index",
+                                    "state_data",
+                                    "version",
+                                    "created_at",
+                                    "updated_at"),
+                    "agentscope_snapshots", List.of("snapshot_id", "data", "created_at"));
+
+    /**
+     * A mocked DataSource reporting {@code productName} and answering validation probes.
+     *
+     * @param productName the JDBC product name to report
+     * @return the mocked DataSource
+     */
     private static DataSource mockDataSource(String productName) throws Exception {
         DataSource ds = mock(DataSource.class);
         Connection conn = mock(Connection.class);
@@ -106,6 +148,31 @@ class AbstractJdbcDialectFromTest {
         when(ds.getConnection()).thenReturn(conn);
         when(conn.getMetaData()).thenReturn(md);
         when(md.getDatabaseProductName()).thenReturn(productName);
+        // build() validates all three tables even with autoCreateTable(false); answer every
+        // "SELECT * FROM <t> WHERE 1=0" probe with that table's full column metadata.
+        Statement stmt = mock(Statement.class);
+        when(conn.createStatement()).thenReturn(stmt);
+        when(stmt.executeQuery(anyString()))
+                .thenAnswer(invocation -> mockColumns(invocation.getArgument(0, String.class)));
         return ds;
+    }
+
+    /**
+     * A ResultSet mock whose metadata reports the probed table's full column set.
+     *
+     * @param probeSql the validation probe, {@code SELECT * FROM <t> WHERE 1=0}
+     * @return the mocked ResultSet
+     */
+    private static ResultSet mockColumns(String probeSql) throws SQLException {
+        String table = probeSql.substring("SELECT * FROM ".length(), probeSql.indexOf(" WHERE"));
+        List<String> columns = VALIDATION_COLUMNS.get(table);
+        ResultSetMetaData md = mock(ResultSetMetaData.class);
+        when(md.getColumnCount()).thenReturn(columns.size());
+        for (int i = 0; i < columns.size(); i++) {
+            when(md.getColumnLabel(i + 1)).thenReturn(columns.get(i));
+        }
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.getMetaData()).thenReturn(md);
+        return rs;
     }
 }

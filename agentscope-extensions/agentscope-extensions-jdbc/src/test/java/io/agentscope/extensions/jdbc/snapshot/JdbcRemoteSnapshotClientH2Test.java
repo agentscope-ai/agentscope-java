@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.extensions.jdbc.H2TestSupport;
-import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
@@ -43,7 +43,9 @@ class JdbcRemoteSnapshotClientH2Test {
     @BeforeEach
     void setUp() {
         DataSource ds = H2TestSupport.createDataSource("snapshot_test");
-        client = new JdbcRemoteSnapshotClient(ds, new H2Dialect());
+        // Tables are created and validated by the dialect builder in one pass.
+        AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).build();
+        client = new JdbcRemoteSnapshotClient(ds, dialect);
     }
 
     @Test

@@ -31,6 +31,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +59,8 @@ class JdbcUnconditionalVersionTest {
     void concurrentStoreInstancesReturnUniqueContiguousVersions(boolean mysql) throws Exception {
         DataSource ds = dataSource("unconditional_contention", mysql);
         SessionStateDialect dialect = mysql ? new MysqlDialect() : new H2Dialect();
-        JdbcAgentStateStore reader = new JdbcAgentStateStore(ds, dialect, true);
+        createSessionsTable(ds, dialect);
+        JdbcAgentStateStore reader = new JdbcAgentStateStore(ds, dialect);
         reader.save("u", "s", "k", new Value("initial"));
         int workers = 4;
         int rounds = 25;
@@ -67,7 +70,7 @@ class JdbcUnconditionalVersionTest {
         try {
             for (int worker = 0; worker < workers; worker++) {
                 int id = worker;
-                JdbcAgentStateStore writer = new JdbcAgentStateStore(ds, dialect, true);
+                JdbcAgentStateStore writer = new JdbcAgentStateStore(ds, dialect);
                 futures.add(
                         executor.submit(
                                 () -> {
@@ -118,7 +121,8 @@ class JdbcUnconditionalVersionTest {
             throws Exception {
         DataSource delegate = dataSource("unconditional_versions", mysql);
         SessionStateDialect dialect = mysql ? new MysqlDialect() : new H2Dialect();
-        new JdbcAgentStateStore(delegate, dialect, true).save("u", "s", "k", new Value("initial"));
+        createSessionsTable(delegate, dialect);
+        new JdbcAgentStateStore(delegate, dialect).save("u", "s", "k", new Value("initial"));
         CyclicBarrier committed = new CyclicBarrier(2);
         AtomicInteger coordinatedCloses = new AtomicInteger();
         AtomicBoolean coordinateWrites = new AtomicBoolean(true);
@@ -168,8 +172,8 @@ class JdbcUnconditionalVersionTest {
                                                 return value;
                                             });
                                 });
-        JdbcAgentStateStore first = new JdbcAgentStateStore(coordinated, dialect, true);
-        JdbcAgentStateStore second = new JdbcAgentStateStore(coordinated, dialect, true);
+        JdbcAgentStateStore first = new JdbcAgentStateStore(coordinated, dialect);
+        JdbcAgentStateStore second = new JdbcAgentStateStore(coordinated, dialect);
         var executor = Executors.newFixedThreadPool(2);
         try {
             var a =
@@ -209,6 +213,13 @@ class JdbcUnconditionalVersionTest {
         }
     }
 
+    /**
+     * A fresh H2 DataSource, optionally in MySQL compatibility mode.
+     *
+     * @param name the database name base
+     * @param mysql whether to enable H2's MySQL compatibility mode
+     * @return the DataSource
+     */
     private static DataSource dataSource(String name, boolean mysql) {
         JdbcDataSource ds = (JdbcDataSource) H2TestSupport.createDataSource(name);
         if (mysql) {
@@ -217,6 +228,31 @@ class JdbcUnconditionalVersionTest {
         return ds;
     }
 
+    /**
+     * Creates the sessions table up front — the store constructor no longer creates it.
+     *
+     * @param ds the target database
+     * @param dialect the dialect providing the DDLs
+     */
+    private static void createSessionsTable(DataSource ds, SessionStateDialect dialect) {
+        try (Connection conn = ds.getConnection();
+                Statement stmt = conn.createStatement()) {
+            for (String ddl : dialect.sessionStateCreateTableDdls()) {
+                stmt.execute(ddl);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create the sessions table", e);
+        }
+    }
+
+    /**
+     * Reflective invocation that unwraps {@code InvocationTargetException}.
+     *
+     * @param target the receiver
+     * @param method the method to call
+     * @param args the call arguments
+     * @return the method's return value
+     */
     private static Object invoke(Object target, Method method, Object[] args) throws Throwable {
         try {
             return method.invoke(target, args);
