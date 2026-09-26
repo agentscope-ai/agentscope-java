@@ -79,6 +79,9 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         assertTrue(prompt.contains("reject absolute paths outside the roots above"));
         // No additionalRoots configured → no "Additional roots:" line
         assertFalse(prompt.contains("Additional roots:"));
+        // Host platform info advertised
+        assertTrue(prompt.contains("My operating system is:"));
+        assertTrue(prompt.contains("The project's temporary directory is:"));
     }
 
     @Test

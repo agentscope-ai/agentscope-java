@@ -22,12 +22,14 @@ import java.util.List;
 /** Serializable state for an E2B-backed sandbox. */
 public class E2bSandboxState extends SandboxState {
 
+    /** Default workspace root inside E2B sandboxes. */
+    public static final String DEFAULT_WORKSPACE_ROOT = "/home/user/workspace";
+
     private String sandboxId;
     private String templateId = "base";
     private String sandboxDomain;
     private String envdAccessToken;
     private String envdVersion = "0.1.5";
-    private String workspaceRoot = "/home/user";
     private boolean sandboxOwned = true;
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
     private E2bCodec codec = E2bCodec.PROTO;
@@ -76,14 +78,6 @@ public class E2bSandboxState extends SandboxState {
 
     public void setEnvdVersion(String envdVersion) {
         this.envdVersion = envdVersion;
-    }
-
-    public String getWorkspaceRoot() {
-        return workspaceRoot;
-    }
-
-    public void setWorkspaceRoot(String workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
     }
 
     public boolean isSandboxOwned() {

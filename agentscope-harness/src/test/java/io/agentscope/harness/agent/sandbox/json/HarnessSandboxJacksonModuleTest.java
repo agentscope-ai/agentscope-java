@@ -59,6 +59,75 @@ class HarnessSandboxJacksonModuleTest {
     }
 
     @Test
+    void legacyWorkspaceRootMigratesIntoManifest() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        // Payload persisted before the workspace-root unification: standalone
+        // workspaceRoot property, no manifest.
+        String legacyJson =
+                """
+                {"type":"docker","sessionId":"sess-legacy","workspaceRoot":"/home/user/workspace"}
+                """;
+        SandboxState parsed = mapper.readValue(legacyJson, SandboxState.class);
+
+        assertInstanceOf(DockerSandboxState.class, parsed);
+        assertNotNull(parsed.getWorkspaceSpec());
+        assertEquals("/home/user/workspace", parsed.getWorkspaceSpec().getRoot());
+    }
+
+    @Test
+    void legacyWorkspaceRootDoesNotOverrideManifest() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        String json =
+                """
+                {"type":"docker","sessionId":"sess-legacy","workspaceRoot":"/stale/root",\
+                "manifest":{"root":"/manifest/root"}}
+                """;
+        SandboxState parsed = mapper.readValue(json, SandboxState.class);
+
+        assertEquals("/manifest/root", parsed.getWorkspaceSpec().getRoot());
+    }
+
+    @Test
+    void legacyWorkspaceRootSurvivesBlankManifestRegardlessOfFieldOrder() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        // workspaceRoot first, blank manifest second.
+        String legacyFirst =
+                """
+                {"type":"docker","sessionId":"sess-legacy","workspaceRoot":"/old/root",\
+                "manifest":{"root":""}}
+                """;
+        assertEquals(
+                "/old/root",
+                ((SandboxState) mapper.readValue(legacyFirst, SandboxState.class))
+                        .getWorkspaceSpec()
+                        .getRoot());
+
+        // Blank manifest first, workspaceRoot second.
+        String manifestFirst =
+                """
+                {"type":"docker","sessionId":"sess-legacy",\
+                "manifest":{"root":""},"workspaceRoot":"/old/root"}
+                """;
+        assertEquals(
+                "/old/root",
+                ((SandboxState) mapper.readValue(manifestFirst, SandboxState.class))
+                        .getWorkspaceSpec()
+                        .getRoot());
+    }
+
+    @Test
     void roundTripsDockerSandboxStateWithLocalSnapshot(@TempDir Path tmp) throws Exception {
         ObjectMapper mapper =
                 new ObjectMapper()

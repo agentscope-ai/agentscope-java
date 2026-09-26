@@ -44,6 +44,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
     private AbstractSandboxFilesystem mockSandboxFilesystem() {
         AbstractSandboxFilesystem fs = mock(AbstractSandboxFilesystem.class);
         when(fs.id()).thenReturn("sandbox-test");
+        when(fs.getWorkspaceRoot()).thenReturn("/workspace");
         when(fs.read(any(), anyString(), anyInt(), anyInt()))
                 .thenReturn(ReadResult.success(new FileData("", "utf-8")));
         when(fs.glob(any(), anyString(), anyString())).thenReturn(GlobResult.success(List.of()));

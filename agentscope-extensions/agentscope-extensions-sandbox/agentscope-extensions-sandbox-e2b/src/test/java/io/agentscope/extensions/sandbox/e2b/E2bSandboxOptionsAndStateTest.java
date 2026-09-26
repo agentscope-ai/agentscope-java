@@ -119,7 +119,7 @@ class E2bSandboxOptionsAndStateTest {
         assertEquals("https://example.com", o.getApiBaseUrl());
         assertEquals("example.com", o.getDomain());
         assertEquals("tpl", o.getTemplateId());
-        assertEquals("/ws", o.getWorkspaceRoot());
+        assertEquals("/ws", spec.workspaceSpec().getRoot());
         assertEquals(60, o.getSandboxTimeoutSeconds());
         assertEquals("u", o.getRunUser());
         assertEquals(E2bPersistenceMode.NATIVE_SNAPSHOT, o.getPersistenceMode());

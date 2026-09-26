@@ -83,4 +83,24 @@ public class WorkspaceSpec {
         copy.environment = new LinkedHashMap<>(this.environment);
         return copy;
     }
+
+    /**
+     * Returns a spec guaranteed to carry an explicit workspace root: a copy of {@code spec}
+     * when it already defines a non-blank root, otherwise a copy (or fresh instance) with
+     * {@code root} set to {@code defaultRoot}. Callers pass their backend default so
+     * option-only configuration and restored legacy state never silently fall back to the
+     * generic {@code /workspace}.
+     *
+     * @param spec spec supplied by the caller; may be {@code null}
+     * @param defaultRoot backend-specific default root; used when {@code spec} is null or
+     *     carries a blank root
+     * @return spec with a non-blank root
+     */
+    public static WorkspaceSpec withDefaultRoot(WorkspaceSpec spec, String defaultRoot) {
+        WorkspaceSpec s = spec != null ? spec.copy() : new WorkspaceSpec();
+        if (s.getRoot() == null || s.getRoot().isBlank()) {
+            s.setRoot(defaultRoot);
+        }
+        return s;
+    }
 }

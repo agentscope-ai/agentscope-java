@@ -90,9 +90,10 @@ public class KubernetesSandboxClient
 
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, KubernetesSandboxState.DEFAULT_WORKSPACE_ROOT));
         state.setNamespace(merged.getNamespace());
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
         state.setFileApiBaseDir(merged.getFileApiBaseDir());
         state.setWarmPoolName(merged.getWarmPoolName());
         state.setClaimOwned(true);
@@ -263,9 +264,6 @@ public class KubernetesSandboxClient
         if (callOptions.getWarmPoolName() != null) {
             o.setWarmPoolName(callOptions.getWarmPoolName());
         }
-        if (callOptions.getWorkspaceRoot() != null) {
-            o.setWorkspaceRoot(callOptions.getWorkspaceRoot());
-        }
         if (callOptions.getFileApiBaseDir() != null) {
             o.setFileApiBaseDir(callOptions.getFileApiBaseDir());
         }
@@ -293,7 +291,6 @@ public class KubernetesSandboxClient
         o.setKubernetesConfig(src.getKubernetesConfig());
         o.setNamespace(src.getNamespace());
         o.setWarmPoolName(src.getWarmPoolName());
-        o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setFileApiBaseDir(src.getFileApiBaseDir());
         o.setApiUrl(src.getApiUrl());
         o.setGatewayName(src.getGatewayName());
