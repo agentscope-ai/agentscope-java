@@ -2750,7 +2750,48 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     toolName,
                                     tub.getContent()));
                 }
+            } else if (withToolEvents
+                    && block instanceof ToolResultBlock trb
+                    && trb.isServerTool()) {
+                blockLifecycle.flushServerToolCall(trb.getId(), events);
+                events.addAll(serverToolResultEvents(trb, blockLifecycle.replyId));
             }
+        }
+
+        /**
+         * Builds the complete tool-result lifecycle for a provider-executed tool result.
+         *
+         * <p>Only the server-tool marker is attached to events; the provider-specific raw result
+         * remains on the final message and is not duplicated into the event stream.
+         */
+        private List<AgentEvent> serverToolResultEvents(ToolResultBlock result, String replyId) {
+            String toolId = result.getId();
+            String toolName = result.getName();
+            Map<String, Object> eventMetadata = Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true);
+
+            List<AgentEvent> events = new ArrayList<>();
+            events.add(
+                    new ToolResultStartEvent(replyId, toolId, toolName)
+                            .withMetadata(eventMetadata));
+
+            for (ContentBlock block : result.getOutput()) {
+                if (block instanceof TextBlock tb) {
+                    events.add(
+                            new ToolResultTextDeltaEvent(replyId, toolId, toolName, tb.getText())
+                                    .withMetadata(eventMetadata));
+                } else {
+                    events.add(
+                            new ToolResultDataDeltaEvent(replyId, toolId, toolName, block)
+                                    .withMetadata(eventMetadata));
+                }
+            }
+
+            events.add(
+                    new ToolResultEndEvent(
+                                    replyId, toolId, toolName, determineToolResultState(result))
+                            .withMetadata(eventMetadata));
+
+            return events;
         }
 
         /**
@@ -2815,6 +2856,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
+            private void flushServerToolCall(String toolId, List<AgentEvent> events) {
+                String toolName = startedToolCalls.remove(toolId);
+                if (toolName != null) {
+                    events.add(new ToolCallEndEvent(replyId, toolId, toolName));
+                }
+            }
+
             private void flushText(List<AgentEvent> events) {
                 if (textStarted.compareAndSet(true, false)) {
                     String blockId = currentTextBlockId.getAndSet(null);
@@ -2871,6 +2919,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
+            List<ToolUseBlock> roundToolCalls = extractRecentToolCalls();
 
             if (pendingToolCalls.isEmpty()) {
                 List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
@@ -2947,7 +2996,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 boolean returnDirect =
-                                        pendingPairs.isEmpty()
+                                        pendingToolCalls.size() == roundToolCalls.size()
+                                                && pendingPairs.isEmpty()
                                                 && !successPairs.isEmpty()
                                                 && successPairs.stream()
                                                         .allMatch(this::isReturnDirectToolCall);
@@ -4109,7 +4159,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Check if the ReAct loop should terminate.
          *
-         * <p>A response with tool calls continues to the acting phase. A tool-free response
+         * <p>A response with unfinished or local tool calls continues to the acting phase.
+         * Completed server tool calls do not require local execution. A tool-free response
          * finishes only when it carries visible content: empty or thinking-only responses (the
          * entire answer in the reasoning channel) loop back to reasoning, bounded by {@code
          * maxIters}, instead of silently ending the agent with an empty reply.
@@ -4121,15 +4172,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (msg == null) {
                 return true;
             }
-
-            if (MessageUtils.hasToolCalls(msg)) {
-                return false;
+            List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+            if (toolCalls.isEmpty()) {
+                return msg.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(
+                                textBlock ->
+                                        textBlock.getText() != null
+                                                && !textBlock.getText().isBlank());
             }
 
-            return msg.getContentBlocks(TextBlock.class).stream()
-                    .anyMatch(
-                            textBlock ->
-                                    textBlock.getText() != null && !textBlock.getText().isBlank());
+            // Server tool calls are executed by the provider and their results arrive in the
+            // same assistant message: if every tool call is a server tool with its result
+            // present, there is nothing left to act on. A server tool call without a result
+            // (e.g. pause_turn) keeps the loop running so the conversation goes back to the
+            // provider to continue.
+            Set<String> inlineResultIds = MessageUtils.inlineServerToolResultIds(msg);
+            return toolCalls.stream()
+                    .allMatch(
+                            toolCall ->
+                                    toolCall.isServerTool()
+                                            && inlineResultIds.contains(toolCall.getId()));
         }
 
         /**
