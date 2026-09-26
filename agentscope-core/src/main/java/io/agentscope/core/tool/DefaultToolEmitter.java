@@ -57,4 +57,14 @@ class DefaultToolEmitter implements ToolEmitter {
             chunkCallback.accept(toolUseBlock, chunk);
         }
     }
+
+    /**
+     * Returns the ID of the tool call associated with this emitter.
+     *
+     * @return The tool call ID, or {@code null} if no tool call is available
+     */
+    @Override
+    public String getToolCallId() {
+        return toolUseBlock != null ? toolUseBlock.getId() : null;
+    }
 }
