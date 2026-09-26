@@ -25,9 +25,12 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.extensions.jdbc.H2TestSupport;
+import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -424,6 +427,139 @@ class JdbcAgentStateStoreH2Test {
         assertEquals(
                 "two",
                 store.get("user1", "s1", "agent_state", TestState.class).orElseThrow().value());
+    }
+
+    // ------------------------------------------------------------------
+    //  Startup schema gate: missing columns block construction (#3216)
+    // ------------------------------------------------------------------
+
+    /** Creates the table shape the deprecated mysql/postgresql stores left behind. */
+    private static void createLegacySessionsTable(DataSource ds) throws SQLException {
+        try (Connection conn = ds.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(
+                    """
+                    CREATE TABLE agentscope_sessions (
+                      session_id  VARCHAR(255) NOT NULL,
+                      state_key   VARCHAR(255) NOT NULL,
+                      item_index  INT          NOT NULL DEFAULT 0,
+                      state_data  TEXT         NOT NULL,
+                      created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+                      updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+                      PRIMARY KEY (session_id, state_key, item_index)
+                    )
+                    """);
+        }
+    }
+
+    @Test
+    @DisplayName("legacy table without version column blocks the auto-create path at startup")
+    void legacyTableBlocksAutoCreatePath() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("legacy_autocreate_test");
+        createLegacySessionsTable(legacy);
+
+        // CREATE TABLE IF NOT EXISTS is a no-op on the legacy table, so the startup check
+        // is what surfaces the gap — the store never ALTERs an existing table on its own.
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), true));
+
+        assertTrue(
+                exception.getMessage().contains("agentscope_sessions"),
+                "the failure must name the table: " + exception.getMessage());
+        assertTrue(
+                exception.getMessage().contains("[version]"),
+                "the failure must name the missing column: " + exception.getMessage());
+        // The remedy must be an ALTER that works on the existing table — the reference
+        // CREATE TABLE IF NOT EXISTS is a silent no-op there — and must backfill DEFAULT 1.
+        assertTrue(
+                exception
+                        .getMessage()
+                        .contains(
+                                "ALTER TABLE agentscope_sessions ADD COLUMN version BIGINT NOT"
+                                        + " NULL DEFAULT 1"),
+                "the failure must quote the actionable ALTER: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("legacy table without version column blocks the verify path too")
+    void legacyTableBlocksVerifyPath() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("legacy_verify_test");
+        createLegacySessionsTable(legacy);
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), false));
+
+        assertTrue(
+                exception.getMessage().contains("agentscope_sessions")
+                        && exception.getMessage().contains("[version]")
+                        && exception
+                                .getMessage()
+                                .contains(
+                                        "ALTER TABLE agentscope_sessions ADD COLUMN version"
+                                                + " BIGINT NOT NULL DEFAULT 1"),
+                "the failure must name table and missing column: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("the gate is generic: every missing required column is named, not just version")
+    void allMissingColumnsAreNamed() throws SQLException {
+        DataSource legacy = H2TestSupport.createDataSource("multi_missing_test");
+        try (Connection conn = legacy.getConnection();
+                Statement stmt = conn.createStatement()) {
+            stmt.execute(
+                    "CREATE TABLE agentscope_sessions (session_id VARCHAR(255) NOT NULL,"
+                            + " PRIMARY KEY (session_id))");
+        }
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> new JdbcAgentStateStore(legacy, new H2Dialect(), true));
+
+        // H2 stores unquoted identifiers uppercase, so finding session_id but naming
+        // state_key/item_index/state_data/version also proves the case-insensitive match.
+        assertTrue(
+                exception.getMessage().contains("[state_key, item_index, state_data, version]"),
+                "all missing columns must be listed in order: " + exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("createIfNotExist=false passes on a complete table and stays writable")
+    void verifyPathPassesOnCompleteTable() throws SQLException {
+        DataSource ds = H2TestSupport.createDataSource("complete_verify_test");
+        new JdbcAgentStateStore(ds, new H2Dialect(), true);
+
+        JdbcAgentStateStore verified = new JdbcAgentStateStore(ds, new H2Dialect(), false);
+        verified.save("user1", "s1", "k", new TestState("v"));
+        assertEquals("v", verified.get("user1", "s1", "k", TestState.class).orElseThrow().value());
+    }
+
+    @Test
+    @DisplayName("a failing schema probe surfaces as RuntimeException pointing at the table")
+    void schemaProbeFailureThrows() {
+        DataSource empty = H2TestSupport.createDataSource("probe_failure_test");
+        SessionStateDialect noCreateDdl =
+                new H2Dialect() {
+                    @Override
+                    public List<String> sessionStateCreateTableDdls() {
+                        return List.of();
+                    }
+                };
+
+        // No CREATE ran, so the WHERE 1=0 probe cannot resolve the table.
+        RuntimeException exception =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> new JdbcAgentStateStore(empty, noCreateDdl, true));
+
+        assertTrue(
+                exception.getMessage().contains("Failed to inspect schema")
+                        && exception.getMessage().contains("agentscope_sessions"),
+                "failure must point at the schema inspection: " + exception.getMessage());
     }
 
     @Test

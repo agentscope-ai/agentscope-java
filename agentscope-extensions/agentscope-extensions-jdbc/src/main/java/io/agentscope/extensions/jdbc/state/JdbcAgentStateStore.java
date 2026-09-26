@@ -25,6 +25,7 @@ import io.agentscope.extensions.jdbc.dialect.table.SessionStateDialect;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Savepoint;
@@ -32,6 +33,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -53,6 +55,13 @@ public class JdbcAgentStateStore implements AgentStateStore {
     private static final String HASH_KEY_SUFFIX = ":_hash";
     private static final int SINGLE_STATE_INDEX = 0;
 
+    /**
+     * Columns the store's SQL reads and writes on the sessions table. Extras such as {@code
+     * created_at} are vendor embellishments and deliberately not required.
+     */
+    private static final List<String> REQUIRED_COLUMNS =
+            List.of("session_id", "state_key", "item_index", "state_data", "version");
+
     private final DataSource dataSource;
     private final SessionStateDialect dialect;
 
@@ -71,7 +80,9 @@ public class JdbcAgentStateStore implements AgentStateStore {
      *
      * @param dataSource the JDBC data source
      * @param dialect the session-state dialect
-     * @param createIfNotExist when true, auto-creates the sessions table
+     * @param createIfNotExist when true, auto-creates the sessions table when absent; an
+     *     existing table is never altered either way — a schema mismatch fails the store at
+     *     startup
      */
     public JdbcAgentStateStore(
             DataSource dataSource, SessionStateDialect dialect, boolean createIfNotExist) {
@@ -82,6 +93,7 @@ public class JdbcAgentStateStore implements AgentStateStore {
         } else {
             verifyTableExists();
         }
+        verifyRequiredColumns();
     }
 
     // -------------------------------------------------------------------------
@@ -97,6 +109,82 @@ public class JdbcAgentStateStore implements AgentStateStore {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to create session table", e);
         }
+    }
+
+    /**
+     * The single schema-compatibility gate, run once at startup for both the auto-create and
+     * verify paths: {@code SELECT * FROM <table> WHERE 1 = 0} costs no rows and its {@code
+     * ResultSetMetaData} carries the actual column set, which is compared against the columns
+     * the store's SQL reads and writes. A missing column is a blocking startup error naming
+     * the table and the columns — with the current version's reference CREATE TABLE DDL
+     * logged for the operator to align the schema by hand. The store itself never executes
+     * schema changes beyond {@code CREATE TABLE IF NOT EXISTS} on a fresh table, so no
+     * vendor-specific migration DDL is needed anywhere.
+     *
+     * <p>Column names compare case-insensitively: vendors such as H2 store unquoted
+     * identifiers uppercase while the expected names are lowercase.
+     */
+    private void verifyRequiredColumns() {
+        String table = dialect.sessionStateTableName();
+        List<String> missing = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt =
+                        conn.prepareStatement("SELECT * FROM " + table + " WHERE 1 = 0");
+                // Empty result — only the shape matters here.
+                ResultSet rs = stmt.executeQuery()) {
+            ResultSetMetaData meta = rs.getMetaData();
+            Set<String> actual = new HashSet<>();
+            for (int i = 1; i <= meta.getColumnCount(); i++) {
+                actual.add(meta.getColumnLabel(i).toLowerCase(Locale.ROOT));
+            }
+            for (String column : REQUIRED_COLUMNS) {
+                if (!actual.contains(column)) {
+                    missing.add(column);
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to inspect schema of table " + table, e);
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+        for (String ddl : dialect.sessionStateCreateTableDdls()) {
+            LOG.error("Reference CREATE TABLE DDL for table {}: {}", table, ddl);
+        }
+        // The reference CREATE TABLE IF NOT EXISTS is a silent no-op on the very legacy table
+        // being reported, so spell out the ALTER that actually repairs it. `version` is the
+        // only realistic legacy gap (the deprecated stores' shape has every other column),
+        // and its type is vendor-uniform, so one statement serves all four dialects.
+        // DEFAULT 1 deliberately, not the reference DDL's DEFAULT 0: an ALTER backfills
+        // pre-existing rows with the default, and 0 is the "row absent" CAS sentinel.
+        String versionRemedy =
+                missing.contains("version")
+                        ? " To add the version column: ALTER TABLE "
+                                + table
+                                + " ADD COLUMN version BIGINT NOT NULL DEFAULT 1;"
+                                + " (DEFAULT 1, not the reference DDL's DEFAULT 0 — an ALTER"
+                                + " backfills existing rows, and 0 is the 'row absent'"
+                                + " sentinel). The column DEFAULT stays 1 afterwards, unlike"
+                                + " the reference DDL's 0 — harmless through the store, which"
+                                + " always writes version explicitly, but keep it in mind if"
+                                + " your own SQL omits the column."
+                        : "";
+        String otherRemedy =
+                missing.stream().anyMatch(c -> !"version".equals(c))
+                        ? " For the remaining columns align the table with the reference"
+                                + " CREATE TABLE DDL just logged — a table missing those did"
+                                + " not originate from the deprecated stores."
+                        : "";
+        throw new IllegalStateException(
+                "Table "
+                        + table
+                        + " is missing required column(s) "
+                        + missing
+                        + " (legacy schema from the deprecated mysql/postgresql store). The"
+                        + " store never alters an existing table; apply the migration via your"
+                        + " database migration process."
+                        + versionRemedy
+                        + otherRemedy);
     }
 
     private void verifyTableExists() {

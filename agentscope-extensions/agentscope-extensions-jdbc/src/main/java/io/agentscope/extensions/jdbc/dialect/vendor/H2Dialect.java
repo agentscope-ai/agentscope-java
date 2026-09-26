@@ -123,8 +123,11 @@ public class H2Dialect extends AbstractJdbcDialect {
 
     @Override
     public BoundSql sessionStateCheckTableExists(String tableName) {
+        // H2 stores unquoted identifiers uppercase while the resolved table name is usually
+        // lowercase, so compare case-insensitively.
         return new BoundSql(
-                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?", tableName);
+                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = UPPER(?)",
+                tableName);
     }
 
     // ------------------------------------------------------------------
