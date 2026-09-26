@@ -155,20 +155,24 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        // Root spellings ("." and blank included) normalize to the store root, matching
-        // grep/glob; this also null-proofs the downstream prefix handling (#3253 review).
-        String normalizedPath = normalizePath(path);
+        // Enumeration root spellings (null, blank, "/", "." and canonical equivalents like
+        // "/.") anchor at the store root; non-root directories keep their trailing
+        // separator — the prefix logic below relies on it to tell direct children apart
+        // from sibling prefixes like /memory-backup when listing /memory (#3253 review).
+        String normalizedPath =
+                AbstractFilesystem.denotesRootPath(path) ? "/" : normalizePath(path);
+        String prefix = "/".equals(normalizedPath) ? "/" : normalizedPath + "/";
 
         // Fast path: index has entries for this prefix
-        if (index != null && index.hasPrefix(normalizedPath)) {
-            List<String> indexPaths = index.listByPrefix(normalizedPath);
+        if (index != null && index.hasPrefix(prefix)) {
+            List<String> indexPaths = index.listByPrefix(prefix);
             List<FileInfo> infos = new ArrayList<>();
             Set<String> subdirs = new LinkedHashSet<>();
             for (String p : indexPaths) {
-                String relative = p.substring(normalizedPath.length());
+                String relative = p.substring(prefix.length());
                 if (relative.contains("/")) {
                     String subdirName = relative.substring(0, relative.indexOf('/'));
-                    subdirs.add(normalizedPath + subdirName + "/");
+                    subdirs.add(prefix + subdirName + "/");
                 } else {
                     infos.add(FileInfo.ofFile(p, 0, ""));
                 }
@@ -186,15 +190,15 @@ public class RemoteFilesystem implements AbstractFilesystem {
         Set<String> subdirs = new LinkedHashSet<>();
 
         for (StoreItem item : items) {
-            if (!item.key().startsWith(normalizedPath)) {
+            if (!item.key().startsWith(prefix)) {
                 continue;
             }
 
-            String relative = item.key().substring(normalizedPath.length());
+            String relative = item.key().substring(prefix.length());
 
             if (relative.contains("/")) {
                 String subdirName = relative.substring(0, relative.indexOf('/'));
-                subdirs.add(normalizedPath + subdirName + "/");
+                subdirs.add(prefix + subdirName + "/");
                 continue;
             }
 
@@ -720,9 +724,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     private static String normalizePath(String path) {
-        // Enumeration root spellings per the AbstractFilesystem contract: null, blank, "/"
-        // and "." all mean the store root (#3253 review).
-        if (path == null || path.isBlank() || "/".equals(path) || ".".equals(path)) {
+        if (path == null || path.isBlank()) {
             return "/";
         }
         String normalized = path.startsWith("/") ? path : "/" + path;

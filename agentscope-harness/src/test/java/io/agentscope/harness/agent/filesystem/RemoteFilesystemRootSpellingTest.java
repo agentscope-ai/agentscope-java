@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
@@ -57,6 +58,30 @@ class RemoteFilesystemRootSpellingTest {
                             .sorted()
                             .collect(Collectors.toList()),
                     "ls('" + root + "') must list the store root");
+        }
+    }
+
+    @Test
+    void nonRootDirectoryListingKeepsTrailingSeparatorSemantics() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("test-ns");
+        store.put(ns, "/memory/notes.md", Map.of("content", "note"));
+        store.put(ns, "/memory/sub/deep.md", Map.of("content", "deep"));
+        // Sibling prefix: must never surface when listing /memory.
+        store.put(ns, "/memory-backup/x.md", Map.of("content", "backup"));
+
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
+
+        for (String dir : new String[] {"/memory", "memory"}) {
+            LsResult ls = fs.ls(RT, dir);
+            assertTrue(ls.isSuccess(), () -> "ls('" + dir + "') failed: " + ls.error());
+            List<String> paths =
+                    ls.entries().stream().map(FileInfo::path).sorted().collect(Collectors.toList());
+
+            assertEquals(
+                    List.of("/memory/notes.md", "/memory/sub/"),
+                    paths,
+                    () -> "ls('" + dir + "') must list direct children only: " + paths);
         }
     }
 }
