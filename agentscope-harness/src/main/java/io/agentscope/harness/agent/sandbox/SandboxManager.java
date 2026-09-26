@@ -66,6 +66,15 @@ public class SandboxManager {
                 executionGuard != null ? executionGuard : SandboxExecutionGuard.noop();
     }
 
+    /**
+     * Agent id used when resolving {@link SandboxIsolationKey} for persist and acquire.
+     *
+     * @return non-null agent id
+     */
+    public String getAgentId() {
+        return agentId;
+    }
+
     public SandboxAcquireResult acquire(
             SandboxContext sandboxContext, RuntimeContext runtimeContext) throws Exception {
         // Priority 1: user-supplied sandbox — guard does not apply
@@ -95,6 +104,14 @@ public class SandboxManager {
         if (scopeKey.isPresent()) {
             log.debug("[sandbox] Acquiring execution guard for scope {}", scopeKey.get());
             lease = executionGuard.tryEnter(scopeKey.get());
+            // Wait for any deferred stop+persist on this slot so resume sees post-stop state
+            // (mirrors may still have delayed teardown after the previous call returned).
+            if (!SandboxMirrorReleaseCoordinator.awaitPendingScopeRelease(scopeKey.get())) {
+                log.warn(
+                        "[sandbox] Proceeding with acquire after deferred release wait timed out"
+                                + " for scope {}",
+                        scopeKey.get());
+            }
         }
 
         try {
