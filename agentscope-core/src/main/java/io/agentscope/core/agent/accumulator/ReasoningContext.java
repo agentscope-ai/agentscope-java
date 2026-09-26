@@ -300,6 +300,18 @@ public class ReasoningContext {
     }
 
     /**
+     * Whether any accumulated tool call has an incomplete argument payload (the provider
+     * errored while the argument JSON was still streaming). The aggregated {@link
+     * ToolUseBlock} content normalizes such calls to an empty argument object, so this
+     * raw-state flag is the only reliable truncation signal.
+     *
+     * @return true when at least one accumulated call has truncated arguments
+     */
+    public boolean hasIncompleteToolCallArguments() {
+        return toolCallsAcc.hasIncompleteArguments();
+    }
+
+    /**
      * Get the accumulated ChatUsage.
      *
      * @return ChatUsage with accumulated tokens, or null if no usage data
