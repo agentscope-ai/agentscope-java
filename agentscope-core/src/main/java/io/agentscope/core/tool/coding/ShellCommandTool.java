@@ -62,9 +62,13 @@ import reactor.core.scheduler.Schedulers;
  * systems that use non-UTF-8 encodings (e.g., GBK, GB2312 for Chinese Windows systems).
  * The charset can be configured at tool construction time or overridden per command execution.
  *
- * <p><b>Security Warning:</b> {@code new ShellCommandTool()} allows arbitrary command execution.
- * For production, ALWAYS use whitelist: {@code new ShellCommandTool(allowedCommands)}
- * or with callback: {@code new ShellCommandTool(allowedCommands, approvalCallback)}
+ * <p><b>Security:</b> The default validators require approval when no whitelist is configured
+ * or when a command uses shell operators or expansions. Without an approving callback, such
+ * commands are rejected. Configure {@code new ShellCommandTool(allowedCommands)} or
+ * {@code new ShellCommandTool(allowedCommands, approvalCallback)} to enable execution.
+ * The whitelist is not a sandbox: allowed programs can still read/write files or execute other
+ * programs through their arguments. Use a sandbox for untrusted workloads and only approve
+ * commands whose full effects are trusted.
  *
  * @see CommandValidator
  * @see UnixCommandValidator
@@ -108,10 +112,22 @@ public class ShellCommandTool implements AgentTool {
      */
     private final Charset charset;
 
+    /**
+     * Creates a tool that rejects commands until its whitelist is configured.
+     *
+     * <p>Since 2.0.4, an empty whitelist no longer permits unrestricted execution.
+     * Configure executables with {@link #addAllowedCommand(String)}, or use
+     * {@link #ShellCommandTool(Set, Function)} to provide an approval callback.
+     */
     public ShellCommandTool() {
         this(null, null, null, createDefaultValidator(), StandardCharsets.UTF_8);
     }
 
+    /**
+     * Creates a tool using the default validator and no approval callback.
+     *
+     * @param allowedCommands allowed executables; null or empty rejects all commands
+     */
     public ShellCommandTool(Set<String> allowedCommands) {
         this(null, allowedCommands, null, createDefaultValidator(), StandardCharsets.UTF_8);
     }
@@ -154,7 +170,7 @@ public class ShellCommandTool implements AgentTool {
     /**
      * Constructor with command whitelist, approval callback, and custom validator.
      *
-     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param allowedCommands Set of allowed command executables (null requires approval with default validators)
      * @param approvalCallback Callback function to request user approval
      * @param commandValidator Custom command validator
      */
@@ -171,7 +187,7 @@ public class ShellCommandTool implements AgentTool {
      * <p>Uses UTF-8 as the default charset for decoding command output.
      *
      * @param baseDir Base directory for command execution (null to use current directory)
-     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param allowedCommands Set of allowed command executables (null requires approval with default validators)
      * @param approvalCallback Callback function to request user approval
      * @param commandValidator Custom command validator
      */
@@ -190,7 +206,7 @@ public class ShellCommandTool implements AgentTool {
      * All other constructors delegate to this one with default values.
      *
      * @param baseDir Base directory for command execution (null to use current directory)
-     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param allowedCommands Set of allowed command executables (null requires approval with default validators)
      * @param approvalCallback Callback function to request user approval
      * @param commandValidator Custom command validator (null to use platform-specific default)
      * @param charset Charset used to decode command output streams (null to use UTF-8)
@@ -381,7 +397,7 @@ public class ShellCommandTool implements AgentTool {
         desc.append(" Commands are validated against the whitelist (if configured).");
         desc.append(" Non-whitelisted commands require user approval via callback.");
         desc.append(
-                " Multiple command separators (&, |, ;) are detected and blocked for security.");
+                " Shell operators and expansions require approval with the default validators.");
         desc.append(" Returns output in format:");
         desc.append(" <returncode>code</returncode><stdout>output</stdout><stderr>error</stderr>.");
         desc.append(" If command is rejected, returncode will be -1 with SecurityError in stderr.");
@@ -454,7 +470,7 @@ public class ShellCommandTool implements AgentTool {
      * <p>Security features:
      * <ul>
      *   <li>Command whitelist validation - only whitelisted commands execute directly</li>
-     *   <li>Multiple command detection - prevents command chaining attacks (&amp;, |, ;)</li>
+     *   <li>Shell syntax detection - requires approval for operators and expansions</li>
      *   <li>User approval callback - requests permission for non-whitelisted commands</li>
      *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
      * </ul>
@@ -474,7 +490,7 @@ public class ShellCommandTool implements AgentTool {
      * <p>Security features:
      * <ul>
      *   <li>Command whitelist validation - only whitelisted commands execute directly</li>
-     *   <li>Multiple command detection - prevents command chaining attacks (&amp;, |, ;)</li>
+     *   <li>Shell syntax detection - requires approval for operators and expansions</li>
      *   <li>User approval callback - requests permission for non-whitelisted commands</li>
      *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
      * </ul>

@@ -466,9 +466,10 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.coding.ShellCommandTool;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import java.util.Set;
 
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ShellCommandTool(Set.of("python3")));
 toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
 toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
 
@@ -481,6 +482,21 @@ ReActAgent agent =
                 .skillRepository(skillRepo)
                 .build();
 ```
+
+使用默认校验器时，只有白名单中且不含 Shell 操作符或展开语法的命令可以直接执行。
+其他命令需要审批回调明确批准；未配置回调时将被拒绝。空白名单（包括
+`new ShellCommandTool()`）现在也需要审批。迁移时，请配置所需的可执行程序，或使用
+`new ShellCommandTool(allowedCommands, approvalCallback)`。清空白名单后，后续命令也需要审批。
+`./script` 等相对路径可执行程序必须同时满足不越出当前目录和匹配白名单两个条件，路径安全
+本身并不代表获得执行权限。自定义 `CommandValidator` 实现仍采用自身的校验策略。
+
+在 Windows 上，任何 `%` 或 `!` 都需要审批，包括 `echo 50% done` 或 `echo "done!"`
+这样的字面量参数。如果可执行程序用双引号包围，命令中任何位置出现 `& | < > ( ) ^`
+也需要审批，因为 `cmd.exe /c` 可能移除最外层的引号。这也包括
+`"C:\Program Files (x86)\tool.exe"` 这样的路径。
+
+白名单不能替代沙箱：例如，
+允许 `python3` 意味着该解释器可以执行任意代码。不可信脚本应在隔离沙箱中运行。
 
 - **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
 
