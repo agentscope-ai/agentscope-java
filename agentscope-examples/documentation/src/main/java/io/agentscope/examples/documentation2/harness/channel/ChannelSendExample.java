@@ -15,11 +15,16 @@
  */
 package io.agentscope.examples.documentation2.harness.channel;
 
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
+import java.util.List;
 
 /**
  * The simplest Channel usage: build a {@link HarnessAgent}, bind a
@@ -33,7 +38,7 @@ import io.agentscope.harness.agent.gateway.channel.chatui.SendOptions;
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
  *   mvn exec:java -pl agentscope-examples/documentation \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.GatewayBasicExample
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.harness.channel.ChannelSendExample
  * </pre>
  */
 public class ChannelSendExample {
@@ -79,9 +84,36 @@ public class ChannelSendExample {
         System.out.println(
                 "Session A: " + (sessionA != null ? sessionA.getTextContent() : "(null)"));
 
+        // Attach application context (attributes / force-sync) via SendOptions.
+        Msg withCtx =
+                chat.send(
+                                SendOptions.userId("user-1").withAttribute("tenant", "demo"),
+                                "Reply with a short hello.")
+                        .block();
+        System.out.println(
+                "With context: " + (withCtx != null ? withCtx.getTextContent() : "(null)"));
+
         Msg sessionB = chat.send(SendOptions.of("user-1", "session-b"), "Topic B").block();
         System.out.println(
                 "Session B: " + (sessionB != null ? sessionB.getTextContent() : "(null)"));
+
+        // Multimodal / structured Msg overload (image URL is illustrative).
+        Msg multimodal =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder().text("What is in this image?").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/photo.png")
+                                                        .build())
+                                        .build())
+                        .build();
+        Msg vision = chat.send(SendOptions.userId("user-1"), multimodal).block();
+        System.out.println("Multimodal: " + (vision != null ? vision.getTextContent() : "(null)"));
+        // Equivalent list form:
+        chat.send(SendOptions.userId("user-1"), List.of(multimodal)).block();
 
         Thread.sleep(10000); // Wait for async processing to complete before exiting
     }

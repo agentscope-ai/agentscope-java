@@ -40,8 +40,6 @@ import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
-import io.agentscope.harness.agent.subagent.task.TaskRepository;
-import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -80,7 +78,7 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link #start()} — initialize and start all pre-registered channel adapters.
  * </ol>
  */
-public final class ClawBootstrap {
+public final class ClawBootstrap implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ClawBootstrap.class);
     private static final String DEFAULT_MAIN_ID = "default";
@@ -200,6 +198,32 @@ public final class ClawBootstrap {
         }
     }
 
+    /**
+     * Stops managed channels and closes all agents created by this bootstrap.
+     *
+     * <p>Closing agents releases background task repositories and workspace indexes associated
+     * with the claw home directory.
+     */
+    @Override
+    public void close() {
+        stop();
+        RuntimeException failure = null;
+        for (HarnessAgent agent : new LinkedHashSet<>(agents.values())) {
+            try {
+                agent.close();
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
     // -----------------------------------------------------------------
     //  Public / package-private accessors
     // -----------------------------------------------------------------
@@ -231,7 +255,8 @@ public final class ClawBootstrap {
         return mainAgentId;
     }
 
-    HarnessAgent mainAgent() {
+    /** The configured main agent instance. */
+    public HarnessAgent mainAgent() {
         HarnessAgent a = agents.get(mainAgentId);
         if (a == null) {
             throw new IllegalStateException("Main agent not registered: " + mainAgentId);
@@ -380,6 +405,8 @@ public final class ClawBootstrap {
                         ? e.getName()
                         : agentId;
         b.name(name);
+        // Stable catalog id — used for session JSONL paths and TranscriptRef agent segment.
+        b.agentId(agentId);
 
         if (e != null) {
             if (e.getDescription() != null) {
@@ -585,8 +612,6 @@ public final class ClawBootstrap {
 
             ChannelManager channelMgr = new ChannelManager();
             HarnessGateway gateway = HarnessGateway.create(sam, channelMgr);
-            TaskRepository taskRepo = new WorkspaceTaskRepository(wsManager, main);
-            SessionsTool sessionsTool = new SessionsTool(sam, taskRepo, null, 0);
             OutboundTool outboundTool = new OutboundTool(channelMgr);
 
             // ---- Phase 2: Build agents with SessionsTool injected ----
@@ -610,7 +635,10 @@ public final class ClawBootstrap {
                 if (model != null) {
                     b.model(model);
                 }
-                b.externalSubagentTool(sessionsTool);
+                java.util.concurrent.atomic.AtomicReference<HarnessAgent> owner =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+                b.externalSubagentTool(
+                        new SessionsTool(sam, () -> owner.get().getTaskRepository()));
 
                 // Pre-populate this agent's toolkit with the outbound-send tool so the agent can
                 // proactively push messages into any registered IM channel. Done before the
@@ -627,7 +655,9 @@ public final class ClawBootstrap {
                     gc.accept(b);
                 }
 
-                built.put(id, b.build());
+                HarnessAgent builtAgent = b.build();
+                owner.set(builtAgent);
+                built.put(id, builtAgent);
             }
 
             if (!built.containsKey(main)) {

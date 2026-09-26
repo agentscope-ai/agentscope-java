@@ -153,7 +153,7 @@ class GeminiResponseParserTest {
         assertEquals("call-123", toolUse.getId());
         assertEquals("get_weather", toolUse.getName());
         assertEquals("Tokyo", toolUse.getInput().get("city"));
-        assertFalse(toolUse.isServer());
+        assertFalse(toolUse.isServerTool());
     }
 
     @Test
@@ -223,9 +223,9 @@ class GeminiResponseParserTest {
         GenerateContentResponseUsageMetadata usageMetadata =
                 GenerateContentResponseUsageMetadata.builder()
                         .promptTokenCount(100)
-                        .candidatesTokenCount(60) // Includes thinking
+                        .candidatesTokenCount(60)
                         .thoughtsTokenCount(10) // Thinking tokens
-                        .totalTokenCount(160)
+                        .totalTokenCount(170)
                         .build();
 
         GenerateContentResponse response =
@@ -244,12 +244,110 @@ class GeminiResponseParserTest {
 
         // Input tokens = promptTokenCount
         assertEquals(100, usage.getInputTokens());
+        assertEquals(0, usage.getToolUsePromptTokens());
 
-        // Output tokens = candidatesTokenCount - thoughtsTokenCount
-        assertEquals(50, usage.getOutputTokens());
+        // Output tokens include candidate and model-generated thinking tokens.
+        assertEquals(70, usage.getOutputTokens());
+        assertEquals(10, usage.getReasoningTokens());
 
         // Time should be > 0
         assertTrue(usage.getTime() >= 0);
+    }
+
+    @Test
+    void testParseUsageMetadataClassifiesToolUseTokensAsInput() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .candidatesTokenCount(120)
+                        .toolUsePromptTokenCount(300)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(300, usage.getToolUsePromptTokens());
+        assertEquals(130, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataIgnoresTotalWhenCandidateCountIsMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .toolUsePromptTokenCount(300)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(930)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(800, usage.getInputTokens());
+        assertEquals(10, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataUsesThinkingWhenCandidateAndTotalCountsAreMissing() {
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(500)
+                        .thoughtsTokenCount(10)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder().usageMetadata(usageMetadata).build();
+
+        ChatUsage usage = parser.parseResponse(response, startTime).getUsage();
+
+        assertNotNull(usage);
+        assertEquals(500, usage.getInputTokens());
+        assertEquals(10, usage.getOutputTokens());
+    }
+
+    @Test
+    void testParseUsageMetadataReadsCachedContentTokenCount() {
+        // Gemini 报告的 cachedContentTokenCount 必须透传到 ChatUsage.cachedTokens,
+        // 否则下游记账无法识别缓存命中、定价会按全量 prompt 估算。
+        Part textPart = Part.builder().text("Response text").build();
+
+        Content content = Content.builder().role("model").parts(List.of(textPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        // cachedContentTokenCount 是 promptTokenCount 的子集(Gemini SDK 文档:
+                        // promptTokenCount 包含 cachedContentTokenCount),故 prompt 必须 > cached
+                        .promptTokenCount(500)
+                        .candidatesTokenCount(60)
+                        .thoughtsTokenCount(10)
+                        .totalTokenCount(560)
+                        .cachedContentTokenCount(300)
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-cached")
+                        .candidates(List.of(candidate))
+                        .usageMetadata(usageMetadata)
+                        .build();
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(300, chatResponse.getUsage().getCachedTokens());
+        assertEquals(10, chatResponse.getUsage().getReasoningTokens());
+        assertEquals(0, chatResponse.getUsage().getToolUsePromptTokens());
     }
 
     @Test
@@ -485,7 +583,7 @@ class GeminiResponseParserTest {
         assertEquals("tool-call-1", toolUse.getId());
         assertEquals("GOOGLE_SEARCH_WEB", toolUse.getName());
         assertEquals(List.of("southernmost city in China"), toolUse.getInput().get("queries"));
-        assertTrue(toolUse.isServer());
+        assertTrue(toolUse.isServerTool());
     }
 
     @Test
@@ -520,7 +618,7 @@ class GeminiResponseParserTest {
         assertNotNull(toolUse.getId());
         assertTrue(toolUse.getId().startsWith("tool_call_"));
         assertEquals("GOOGLE_MAPS", toolUse.getName());
-        assertTrue(toolUse.isServer());
+        assertTrue(toolUse.isServerTool());
     }
 
     @Test
@@ -560,7 +658,7 @@ class GeminiResponseParserTest {
         ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
         assertEquals("tool-call-with-sig", toolUse.getId());
         assertEquals("GOOGLE_SEARCH_WEB", toolUse.getName());
-        assertTrue(toolUse.isServer());
+        assertTrue(toolUse.isServerTool());
 
         // Verify thought signature is stored in metadata
         assertNotNull(toolUse.getMetadata());
@@ -608,7 +706,7 @@ class GeminiResponseParserTest {
         ToolResultBlock toolResult = (ToolResultBlock) block;
         assertEquals("tool-response-1", toolResult.getId());
         assertEquals("GOOGLE_SEARCH_WEB", toolResult.getName());
-        assertTrue(toolResult.isServer());
+        assertTrue(toolResult.isServerTool());
         assertEquals(ToolResultState.SUCCESS, toolResult.getState());
 
         // Verify output is a TextBlock containing the serialized response JSON
@@ -656,7 +754,7 @@ class GeminiResponseParserTest {
 
         ToolResultBlock toolResult = (ToolResultBlock) chatResponse.getContent().get(0);
         assertEquals("tool-response-sig", toolResult.getId());
-        assertTrue(toolResult.isServer());
+        assertTrue(toolResult.isServerTool());
         assertEquals(ToolResultState.SUCCESS, toolResult.getState());
 
         // Verify thought signature is stored in metadata
@@ -726,19 +824,19 @@ class GeminiResponseParserTest {
         ToolUseBlock serverToolUse = (ToolUseBlock) chatResponse.getContent().get(0);
         assertEquals("search-call", serverToolUse.getId());
         assertEquals("GOOGLE_SEARCH_WEB", serverToolUse.getName());
-        assertTrue(serverToolUse.isServer());
+        assertTrue(serverToolUse.isServerTool());
 
         // Second: server-side tool result
         ToolResultBlock serverToolResult = (ToolResultBlock) chatResponse.getContent().get(1);
         assertEquals("search-call", serverToolResult.getId());
         assertEquals("GOOGLE_SEARCH_WEB", serverToolResult.getName());
-        assertTrue(serverToolResult.isServer());
+        assertTrue(serverToolResult.isServerTool());
         assertEquals(ToolResultState.SUCCESS, serverToolResult.getState());
 
         // Third: local function call
         ToolUseBlock localToolUse = (ToolUseBlock) chatResponse.getContent().get(2);
         assertEquals("weather-call", localToolUse.getId());
         assertEquals("getWeather", localToolUse.getName());
-        assertFalse(localToolUse.isServer());
+        assertFalse(localToolUse.isServerTool());
     }
 }

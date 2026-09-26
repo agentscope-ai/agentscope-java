@@ -22,12 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
 import io.agentscope.core.event.TextBlockStartEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
@@ -35,12 +40,17 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.MiddlewareBase;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -53,6 +63,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -112,6 +124,22 @@ class ReActAgentNewLoopReplyTest {
     private static Toolkit toolkitWith(AgentTool tool) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerAgentTool(tool);
+        return toolkit;
+    }
+
+    private static Toolkit toolkitWithExternalSchema() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("query", Map.of("type", "string"))))
+                        .build());
         return toolkit;
     }
 
@@ -223,6 +251,127 @@ class ReActAgentNewLoopReplyTest {
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
         int secondModelStart = indexOfFrom(events, ModelCallStartEvent.class, firstModelStart + 1);
         assertTrue(secondModelStart > iToolResultEnd, "second iteration should follow tool result");
+    }
+
+    @Test
+    void externalToolCallReturnsSuspendedMessage() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        "ext1", "external_api", "/users"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        Msg result = agent.call(List.of()).block();
+
+        assertNotNull(result);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, result.getGenerateReason());
+        assertEquals(1, result.getContentBlocks(ToolUseBlock.class).size());
+
+        List<ToolResultBlock> toolResults = result.getContentBlocks(ToolResultBlock.class);
+        assertEquals(1, toolResults.size());
+        ToolResultBlock toolResult = toolResults.get(0);
+        assertEquals("ext1", toolResult.getId());
+        assertEquals("external_api", toolResult.getName());
+        assertEquals(ToolResultState.RUNNING, toolResult.getState());
+        assertTrue(toolResult.isSuspended());
+    }
+
+    @Test
+    void externalToolCallEmitsRequireExternalExecutionEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        "ext1", "external_api", "/users"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int iToolResultEnd = indexOf(events, ToolResultEndEvent.class);
+        int iRequireExternal = indexOf(events, RequireExternalExecutionEvent.class);
+
+        assertTrue(iToolResultEnd >= 0, "ToolResultEndEvent expected");
+        assertTrue(
+                iRequireExternal > iToolResultEnd,
+                "RequireExternalExecutionEvent must follow suspended tool result");
+
+        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iToolResultEnd);
+        assertEquals(ToolResultState.RUNNING, end.getState());
+
+        RequireExternalExecutionEvent event =
+                (RequireExternalExecutionEvent) events.get(iRequireExternal);
+        assertEquals(1, event.getToolCalls().size());
+        assertEquals("ext1", event.getToolCalls().get(0).getId());
+        assertEquals("external_api", event.getToolCalls().get(0).getName());
+    }
+
+    @Test
+    void externalToolResultResumeEmitsExternalExecutionResultEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("ext1", "external_api", "/users")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWithExternalSchema())
+                        .build();
+
+        List<AgentEvent> firstEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(firstEvents);
+        int iRequireExternal = indexOf(firstEvents, RequireExternalExecutionEvent.class);
+        assertTrue(iRequireExternal >= 0, "RequireExternalExecutionEvent expected");
+
+        RequireExternalExecutionEvent requireEvent =
+                (RequireExternalExecutionEvent) firstEvents.get(iRequireExternal);
+        ToolResultBlock externalResult =
+                ToolResultBlock.builder()
+                        .id("ext1")
+                        .name("external_api")
+                        .output(TextBlock.builder().text("external result").build())
+                        .state(ToolResultState.SUCCESS)
+                        .build();
+        Msg resumeMsg = Msg.builder().role(MsgRole.TOOL).content(externalResult).build();
+
+        List<AgentEvent> resumedEvents =
+                agent.streamEvents(List.of(resumeMsg)).collectList().block();
+        assertNotNull(resumedEvents);
+
+        int iExternalResult = indexOf(resumedEvents, ExternalExecutionResultEvent.class);
+        int iModelStart = indexOf(resumedEvents, ModelCallStartEvent.class);
+        assertTrue(iExternalResult >= 0, "ExternalExecutionResultEvent expected");
+        assertTrue(
+                iModelStart > iExternalResult,
+                "ExternalExecutionResultEvent should be emitted before resumed reasoning");
+
+        ExternalExecutionResultEvent resultEvent =
+                (ExternalExecutionResultEvent) resumedEvents.get(iExternalResult);
+        assertEquals(requireEvent.getReplyId(), resultEvent.getReplyId());
+        assertEquals(1, resultEvent.getToolResults().size());
+        assertEquals("ext1", resultEvent.getToolResults().get(0).getId());
+
+        AgentResultEvent agentResult =
+                (AgentResultEvent)
+                        resumedEvents.get(indexOf(resumedEvents, AgentResultEvent.class));
+        assertEquals("done", agentResult.getResult().getTextContent());
     }
 
     @Test
@@ -372,6 +521,122 @@ class ReActAgentNewLoopReplyTest {
     }
 
     @Test
+    void textSeparatedByToolCallUsesDistinctBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        TextBlock.builder().text("before").build()),
+                                                chatResponse(
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("echo")
+                                                                .input(Map.of("query", "ping"))
+                                                                .build()),
+                                                chatResponse(
+                                                        TextBlock.builder().text("after").build())),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int firstModelEnd = indexOf(events, ModelCallEndEvent.class);
+        List<TextBlockStartEvent> starts =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockStartEvent.class::isInstance)
+                        .map(TextBlockStartEvent.class::cast)
+                        .toList();
+        List<TextBlockEndEvent> ends =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockEndEvent.class::isInstance)
+                        .map(TextBlockEndEvent.class::cast)
+                        .toList();
+        List<TextBlockDeltaEvent> deltas =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(TextBlockDeltaEvent.class::isInstance)
+                        .map(TextBlockDeltaEvent.class::cast)
+                        .toList();
+
+        assertEquals(
+                List.of("text", "text-2"),
+                starts.stream().map(TextBlockStartEvent::getBlockId).toList());
+        assertEquals(
+                List.of("text", "text-2"),
+                deltas.stream().map(TextBlockDeltaEvent::getBlockId).toList());
+        assertEquals(
+                List.of("text", "text-2"),
+                ends.stream().map(TextBlockEndEvent::getBlockId).toList());
+    }
+
+    @Test
+    void thinkingSeparatedByToolCallUsesDistinctBlockIds() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("before")
+                                                                .build()),
+                                                chatResponse(
+                                                        ToolUseBlock.builder()
+                                                                .id("tc1")
+                                                                .name("echo")
+                                                                .input(Map.of("query", "ping"))
+                                                                .build()),
+                                                chatResponse(
+                                                        ThinkingBlock.builder()
+                                                                .thinking("after")
+                                                                .build())),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int firstModelEnd = indexOf(events, ModelCallEndEvent.class);
+        List<ThinkingBlockStartEvent> starts =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockStartEvent.class::isInstance)
+                        .map(ThinkingBlockStartEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockEndEvent> ends =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockEndEvent.class::isInstance)
+                        .map(ThinkingBlockEndEvent.class::cast)
+                        .toList();
+        List<ThinkingBlockDeltaEvent> deltas =
+                events.subList(0, firstModelEnd).stream()
+                        .filter(ThinkingBlockDeltaEvent.class::isInstance)
+                        .map(ThinkingBlockDeltaEvent.class::cast)
+                        .toList();
+
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                starts.stream().map(ThinkingBlockStartEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                deltas.stream().map(ThinkingBlockDeltaEvent::getBlockId).toList());
+        assertEquals(
+                List.of("thinking", "thinking-2"),
+                ends.stream().map(ThinkingBlockEndEvent::getBlockId).toList());
+    }
+
+    @Test
     void summaryModelCallClosesThinkingBeforeTextAndFlushesTextBeforeModelEnd() {
         ChatModelBase model =
                 new ScriptedModel(
@@ -411,6 +676,73 @@ class ReActAgentNewLoopReplyTest {
         assertTrue(summaryTextStart > summaryThinkingEnd);
         assertTrue(summaryTextEnd > summaryTextStart);
         assertTrue(summaryModelEnd > summaryTextEnd);
+    }
+
+    @Test
+    void summaryFailurePreservesMaxIterationsAndMarksFailure() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () -> Flux.error(new RuntimeException("summary failed"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        AgentResultEvent resultEvent =
+                (AgentResultEvent) events.get(indexOf(events, AgentResultEvent.class));
+        Msg result = resultEvent.getResult();
+        assertEquals(GenerateReason.MAX_ITERATIONS, result.getGenerateReason());
+        assertEquals(Boolean.TRUE, result.getMetadata().get(MessageMetadataKeys.SUMMARY_FAILED));
+        assertTrue(result.getTextContent().contains("Error generating summary"));
+    }
+
+    @Test
+    void summaryModelCallExposesEmptyToolsToMiddleware() {
+        AtomicInteger modelCallCount = new AtomicInteger();
+        AtomicReference<List<ToolSchema>> summaryTools = new AtomicReference<>();
+        MiddlewareBase middleware =
+                new MiddlewareBase() {
+                    @Override
+                    public Flux<AgentEvent> onModelCall(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ModelCallInput input,
+                            Function<ModelCallInput, Flux<AgentEvent>> next) {
+                        if (modelCallCount.incrementAndGet() == 2) {
+                            summaryTools.set(List.copyOf(input.tools()));
+                        }
+                        return next.apply(input);
+                    }
+                };
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc", "echo", "x")),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .middlewares(List.of(middleware))
+                        .maxIters(1)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+
+        assertNotNull(events);
+        assertEquals(List.of(), summaryTools.get());
+        AgentResultEvent resultEvent =
+                (AgentResultEvent) events.get(indexOf(events, AgentResultEvent.class));
+        assertEquals("summary", resultEvent.getResult().getTextContent());
     }
 
     private static int indexOf(List<AgentEvent> events, Class<?> type) {

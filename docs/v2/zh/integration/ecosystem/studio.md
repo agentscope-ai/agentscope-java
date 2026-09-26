@@ -1,4 +1,7 @@
-# AgentScope Studio
+---
+title: Studio
+en_link: /v2/en/integration/ecosystem/studio
+---
 
 `agentscope-extensions-studio` 把 Agent 接入 [AgentScope Studio](https://github.com/agentscope-ai/agentscope-studio)：每次 Agent 调用都会被推送到 Studio，用作可视化调试、链路回放、Human-in-the-Loop 输入。
 

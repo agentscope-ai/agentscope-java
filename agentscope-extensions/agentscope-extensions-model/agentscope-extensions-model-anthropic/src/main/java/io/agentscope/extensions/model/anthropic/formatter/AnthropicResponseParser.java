@@ -42,6 +42,8 @@ import reactor.core.publisher.Flux;
 public class AnthropicResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
+    private static final AnthropicServerToolHelper SERVER_TOOL_HELPER =
+            AnthropicServerToolHelper.instance();
 
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
@@ -84,13 +86,35 @@ public class AnthropicResponseParser {
                                             ThinkingBlock.builder()
                                                     .thinking(thinking.thinking())
                                                     .build()));
+
+            // Server tool use block (e.g. web_search executed on Anthropic's side)
+            block.serverToolUse()
+                    .ifPresent(
+                            serverToolUse ->
+                                    contentBlocks.add(SERVER_TOOL_HELPER.decodeUse(serverToolUse)));
+
+            // Server tool result blocks (results of tools executed on Anthropic's side)
+            SERVER_TOOL_HELPER
+                    .toResultParam(block)
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
         // Parse usage
+        long baseInput = message.usage().inputTokens();
+        long cacheRead = message.usage().cacheReadInputTokens().orElse(0L);
+        long cacheCreate = message.usage().cacheCreationInputTokens().orElse(0L);
+        long reasoning =
+                message.usage()
+                        .outputTokensDetails()
+                        .map(details -> details.thinkingTokens())
+                        .orElse(0L);
         ChatUsage usage =
                 ChatUsage.builder()
-                        .inputTokens((int) message.usage().inputTokens())
+                        .inputTokens((int) (baseInput + cacheRead + cacheCreate))
                         .outputTokens((int) message.usage().outputTokens())
+                        .cachedTokens((int) cacheRead)
+                        .cacheCreationTokens((int) cacheCreate)
+                        .reasoningTokens((int) reasoning)
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
@@ -98,34 +122,68 @@ public class AnthropicResponseParser {
     }
 
     /**
+     * Mutable holder for prompt token counts observed on the message_start event, so the final
+     * usage emitted on message_delta can include input and cached token counts.
+     */
+    private static class StreamUsageState {
+        int inputTokens;
+        int cachedTokens;
+        int cacheCreationTokens;
+    }
+
+    /**
      * Parse streaming Anthropic events to ChatResponse Flux.
      */
     public static Flux<ChatResponse> parseStreamEvents(
             Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
-        return eventFlux
-                .flatMap(
-                        event -> {
-                            try {
-                                return Flux.just(parseStreamEvent(event, startTime));
-                            } catch (Exception e) {
-                                log.warn("Error parsing stream event: {}", e.getMessage());
-                                return Flux.empty();
-                            }
-                        })
-                .filter(response -> response != null && !response.getContent().isEmpty());
+        return Flux.defer(
+                () -> {
+                    StreamUsageState usageState = new StreamUsageState();
+                    return eventFlux
+                            .flatMap(
+                                    event -> {
+                                        try {
+                                            return Flux.just(
+                                                    parseStreamEvent(event, startTime, usageState));
+                                        } catch (Exception e) {
+                                            log.warn(
+                                                    "Error parsing stream event: {}",
+                                                    e.getMessage());
+                                            return Flux.empty();
+                                        }
+                                    })
+                            .filter(
+                                    response ->
+                                            response != null
+                                                    && (!response.getContent().isEmpty()
+                                                            || response.getUsage() != null));
+                });
     }
 
     /**
      * Parse single stream event.
      */
-    private static ChatResponse parseStreamEvent(RawMessageStreamEvent event, Instant startTime) {
+    private static ChatResponse parseStreamEvent(
+            RawMessageStreamEvent event, Instant startTime, StreamUsageState usageState) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String messageId = null;
 
-        // Message start
+        // Message start - record prompt usage (input tokens and cache read/creation tokens) so
+        // the final usage emitted on message_delta can include it
         if (event.isMessageStart()) {
-            messageId = event.asMessageStart().message().id();
+            var startMessage = event.asMessageStart().message();
+            messageId = startMessage.id();
+
+            var startUsage = startMessage.usage();
+            long cacheReadTokens = startUsage.cacheReadInputTokens().orElse(0L);
+            long cacheCreationTokens = startUsage.cacheCreationInputTokens().orElse(0L);
+            // Anthropic reports input_tokens excluding cached tokens; add them back so
+            // cachedTokens stays a subset of inputTokens (ChatUsage invariant).
+            usageState.inputTokens =
+                    (int) (startUsage.inputTokens() + cacheReadTokens + cacheCreationTokens);
+            usageState.cachedTokens = (int) cacheReadTokens;
+            usageState.cacheCreationTokens = (int) cacheCreationTokens;
         }
 
         // Content block delta - text
@@ -184,14 +242,59 @@ public class AnthropicResponseParser {
                                                 .content("")
                                                 .build());
                             });
+
+            // Server tool use start (input arrives via subsequent input_json_delta events
+            // which are accumulated through the regular fragment mechanism)
+            startEvent
+                    .contentBlock()
+                    .serverToolUse()
+                    .ifPresent(
+                            serverToolUse -> {
+                                contentBlocks.add(
+                                        ToolUseBlock.builder()
+                                                .id(serverToolUse.id())
+                                                .name(serverToolUse.name().asString())
+                                                .input(Map.of())
+                                                .content("")
+                                                .metadata(
+                                                        Map.of(
+                                                                ToolUseBlock.METADATA_SERVER_TOOL,
+                                                                true))
+                                                .build());
+                            });
+
+            // Server tool results arrive complete in the start event
+            SERVER_TOOL_HELPER
+                    .toResultParam(startEvent.contentBlock())
+                    .ifPresent(param -> contentBlocks.add(SERVER_TOOL_HELPER.decodeResult(param)));
         }
 
-        // Message delta - usage information
+        // Message delta - final usage information; combine the cumulative output tokens with
+        // the prompt usage captured on message_start
         if (event.isMessageDelta()) {
-            var messageDelta = event.asMessageDelta();
+            var deltaUsage = event.asMessageDelta().usage();
+            long cacheReadTokens =
+                    deltaUsage.cacheReadInputTokens().orElse((long) usageState.cachedTokens);
+            long cacheCreationTokens =
+                    deltaUsage
+                            .cacheCreationInputTokens()
+                            .orElse((long) usageState.cacheCreationTokens);
+            long inputTokens =
+                    deltaUsage.inputTokens().isPresent()
+                            ? deltaUsage.inputTokens().get() + cacheReadTokens + cacheCreationTokens
+                            : usageState.inputTokens;
+            long reasoningTokens =
+                    deltaUsage
+                            .outputTokensDetails()
+                            .map(details -> details.thinkingTokens())
+                            .orElse(0L);
             usage =
                     ChatUsage.builder()
-                            .outputTokens((int) messageDelta.usage().outputTokens())
+                            .inputTokens((int) inputTokens)
+                            .cachedTokens((int) cacheReadTokens)
+                            .cacheCreationTokens((int) cacheCreationTokens)
+                            .outputTokens((int) deltaUsage.outputTokens())
+                            .reasoningTokens((int) reasoningTokens)
                             .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                             .build();
         }
@@ -202,7 +305,7 @@ public class AnthropicResponseParser {
     /**
      * Parse JsonValue to Map for tool input.
      */
-    private static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
+    static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
         if (jsonValue == null) {
             return Map.of();
         }

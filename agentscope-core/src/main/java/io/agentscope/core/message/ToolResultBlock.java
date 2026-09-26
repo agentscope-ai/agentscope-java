@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
@@ -31,23 +32,24 @@ import java.util.Map;
  * 2. As a ContentBlock in messages (id and name are required)
  *
  * Supports metadata for passing additional execution information.
- *
- * <p>Results may also originate from a model provider's built-in (server-side) tools,
- * such as Gemini's Google Search grounding, in which case {@link #isServer()} returns
- * {@code true} and the result was produced by the model service rather than a local
- * tool execution.
  */
 public final class ToolResultBlock extends ContentBlock {
 
     /** Metadata key indicating this result is suspended for external execution. */
     public static final String METADATA_SUSPENDED = "agentscope_suspended";
 
+    /**
+     * Metadata key marking this result as produced by a provider server tool (Boolean value).
+     * Such results (e.g. Anthropic's web_search_tool_result) are returned by the provider inside
+     * the assistant message rather than produced by local tool execution.
+     */
+    public static final String METADATA_SERVER_TOOL = ToolUseBlock.METADATA_SERVER_TOOL;
+
     private final String id;
     private final String name;
     private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
     private final ToolResultState state;
-    private final boolean server;
 
     @JsonCreator
     public ToolResultBlock(
@@ -55,37 +57,17 @@ public final class ToolResultBlock extends ContentBlock {
             @JsonProperty("name") String name,
             @JsonProperty("output") List<ContentBlock> output,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("state") ToolResultState state,
-            @JsonProperty("server") boolean server) {
+            @JsonProperty("state") ToolResultState state) {
         this.id = id;
         this.name = name;
         this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
         this.state = state != null ? state : ToolResultState.RUNNING;
-        this.server = server;
-    }
-
-    /**
-     * Creates a local tool result block with an explicit execution state.
-     *
-     * @param id Tool call ID
-     * @param name Tool name
-     * @param output Tool output content blocks
-     * @param metadata Tool execution metadata
-     * @param state Tool execution state
-     */
-    public ToolResultBlock(
-            String id,
-            String name,
-            List<ContentBlock> output,
-            Map<String, Object> metadata,
-            ToolResultState state) {
-        this(id, name, output, metadata, state, false);
     }
 
     public ToolResultBlock(
             String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
-        this(id, name, output, metadata, null, false);
+        this(id, name, output, metadata, null);
     }
 
     /**
@@ -96,7 +78,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output Single content block as output
      */
     public ToolResultBlock(String id, String name, ContentBlock output) {
-        this(id, name, List.of(output), null, null, false);
+        this(id, name, List.of(output), null, null);
     }
 
     /**
@@ -107,7 +89,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output List of content blocks as output
      */
     public ToolResultBlock(String id, String name, List<ContentBlock> output) {
-        this(id, name, output, null, null, false);
+        this(id, name, output, null, null);
     }
 
     /**
@@ -156,27 +138,13 @@ public final class ToolResultBlock extends ContentBlock {
     }
 
     /**
-     * Checks whether this tool result comes from a model provider server-side tool.
-     *
-     * <p>Server-side (built-in) tools, such as Gemini's Google Search grounding, are
-     * executed by the model service itself, so this result must not be treated as the
-     * output of a local tool execution.
-     *
-     * @return true if produced by the model provider server-side, false otherwise
-     */
-    public boolean isServer() {
-        return server;
-    }
-
-    /**
      * Returns a copy of this block with the given state.
      *
      * @param state The new state
      * @return A new ToolResultBlock with the updated state
      */
     public ToolResultBlock withState(ToolResultState state) {
-        return new ToolResultBlock(
-                this.id, this.name, this.output, this.metadata, state, this.server);
+        return new ToolResultBlock(this.id, this.name, this.output, this.metadata, state);
     }
 
     /**
@@ -191,6 +159,16 @@ public final class ToolResultBlock extends ContentBlock {
     @JsonInclude
     public boolean isSuspended() {
         return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+    }
+
+    /**
+     * Checks whether this result was produced by a provider server tool.
+     *
+     * @return true if this result comes from a server-side tool execution
+     */
+    @JsonIgnore
+    public boolean isServerTool() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
     }
 
     /**
@@ -248,8 +226,26 @@ public final class ToolResultBlock extends ContentBlock {
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
                 null,
-                ToolResultState.ERROR,
-                false);
+                ToolResultState.ERROR);
+    }
+
+    /**
+     * Create an error result for a tool call.
+     *
+     * <p>The {@code [ERROR]} prefix is used by the agent runtime to preserve the error marker in
+     * generated tool results.
+     *
+     * @param toolId Tool call ID
+     * @param errorMessage Error message
+     * @return Error ToolResultBlock for use in a message
+     */
+    public static ToolResultBlock error(String toolId, String errorMessage) {
+        return new ToolResultBlock(
+                toolId,
+                null,
+                List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()),
+                null,
+                ToolResultState.ERROR);
     }
 
     /**
@@ -355,7 +351,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return New ToolResultBlock with id and name set
      */
     public ToolResultBlock withIdAndName(String id, String name) {
-        return new ToolResultBlock(id, name, this.output, this.metadata, this.state, this.server);
+        return new ToolResultBlock(id, name, this.output, this.metadata, this.state);
     }
 
     /**
@@ -376,7 +372,6 @@ public final class ToolResultBlock extends ContentBlock {
         private List<ContentBlock> output;
         private Map<String, Object> metadata;
         private ToolResultState state;
-        private boolean server;
 
         /**
          * Sets the tool call ID.
@@ -445,24 +440,12 @@ public final class ToolResultBlock extends ContentBlock {
         }
 
         /**
-         * Marks this result as produced by a model provider server-side tool.
-         *
-         * @param server true if the result comes from the model provider's built-in
-         *     tool execution, {@code false} for local tool results
-         * @return This builder for chaining
-         */
-        public Builder server(boolean server) {
-            this.server = server;
-            return this;
-        }
-
-        /**
          * Builds a new ToolResultBlock with the configured properties.
          *
          * @return A new ToolResultBlock instance
          */
         public ToolResultBlock build() {
-            return new ToolResultBlock(id, name, output, metadata, state, server);
+            return new ToolResultBlock(id, name, output, metadata, state);
         }
     }
 }

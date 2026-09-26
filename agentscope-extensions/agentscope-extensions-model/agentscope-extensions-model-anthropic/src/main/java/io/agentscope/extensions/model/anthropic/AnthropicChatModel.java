@@ -22,6 +22,7 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -33,8 +34,10 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicResponseParser;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.net.Proxy;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,20 +73,43 @@ public class AnthropicChatModel extends ChatModelBase {
     private final AnthropicClient client;
     private final GenerateOptions defaultOptions;
     private final AnthropicBaseFormatter formatter;
+    private final List<AnthropicServerTool> serverTools;
+
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                null,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                null,
+                cacheTtl);
+    }
 
     /**
-     * Creates a new Anthropic chat model instance.
+     * Creates a new Anthropic chat model instance with built-in server tools enabled.
      *
      * @param baseUrl        the base URL for Anthropic API (null for default)
      * @param apiKey         the API key for authentication (null to load from
      *                       ANTHROPIC_API_KEY env var)
-     * @param modelName      the model name to use (e.g.,
-     *                       "claude-sonnet-4-5-20250929")
+     * @param modelName      the model name to use
      * @param streamEnabled  whether streaming should be enabled
      * @param defaultOptions default generation options
-     * @param formatter      the message formatter to use (null for default
-     *                       Anthropic formatter)
+     * @param formatter      the message formatter to use (null for default)
      * @param proxyConfig    the proxy configuration (null for no proxy)
+     * @param serverTools    Anthropic built-in server tools to enable
+     * @param cacheTtl       the TTL for prompt-caching markers (null for default 5m)
      */
     public AnthropicChatModel(
             String baseUrl,
@@ -92,7 +118,93 @@ public class AnthropicChatModel extends ChatModelBase {
             boolean streamEnabled,
             GenerateOptions defaultOptions,
             AnthropicBaseFormatter formatter,
-            ProxyConfig proxyConfig) {
+            ProxyConfig proxyConfig,
+            List<AnthropicServerTool> serverTools,
+            String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                null,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                serverTools,
+                cacheTtl);
+    }
+
+    /**
+     * Creates an Anthropic chat model with optional bearer token authentication.
+     *
+     * <p>{@code apiKey} and {@code authToken} are mutually exclusive.
+     *
+     * @param baseUrl the base URL for the Anthropic API (null for default)
+     * @param apiKey the API key for authentication (null to omit)
+     * @param authToken the bearer token without the {@code Bearer } prefix (null to omit)
+     * @param modelName the model name to use
+     * @param streamEnabled whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter the message formatter to use (null for the default formatter)
+     * @param proxyConfig the proxy configuration (null for no proxy)
+     * @param cacheTtl the TTL for prompt-caching markers (null for default 5m)
+     * @throws IllegalArgumentException if both API key and bearer token are configured
+     */
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String authToken,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            String cacheTtl) {
+        this(
+                baseUrl,
+                apiKey,
+                authToken,
+                modelName,
+                streamEnabled,
+                defaultOptions,
+                formatter,
+                proxyConfig,
+                null,
+                cacheTtl);
+    }
+
+    /**
+     * Creates an Anthropic chat model with optional bearer authentication and built-in server tools.
+     *
+     * <p>{@code apiKey} and {@code authToken} are mutually exclusive.
+     *
+     * @param baseUrl the base URL for the Anthropic API (null for default)
+     * @param apiKey the API key for authentication (null to omit)
+     * @param authToken the bearer token without the {@code Bearer } prefix (null to omit)
+     * @param modelName the model name to use
+     * @param streamEnabled whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter the message formatter to use (null for the default formatter)
+     * @param proxyConfig the proxy configuration (null for no proxy)
+     * @param serverTools Anthropic built-in server tools to enable
+     * @param cacheTtl the TTL for prompt-caching markers (null for default 5m)
+     * @throws IllegalArgumentException if both API key and bearer token are configured
+     */
+    public AnthropicChatModel(
+            String baseUrl,
+            String apiKey,
+            String authToken,
+            String modelName,
+            boolean streamEnabled,
+            GenerateOptions defaultOptions,
+            AnthropicBaseFormatter formatter,
+            ProxyConfig proxyConfig,
+            List<AnthropicServerTool> serverTools,
+            String cacheTtl) {
+        if (apiKey != null && authToken != null) {
+            throw new IllegalArgumentException(
+                    "apiKey and authToken are mutually exclusive; configure only one credential");
+        }
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -100,12 +212,18 @@ public class AnthropicChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new AnthropicChatFormatter();
+        this.serverTools = serverTools != null ? List.copyOf(serverTools) : List.of();
+        this.formatter.cacheTtl(cacheTtl);
 
         // Initialize Anthropic client
         AnthropicOkHttpClient.Builder clientBuilder = AnthropicOkHttpClient.builder();
 
         if (apiKey != null) {
             clientBuilder.apiKey(apiKey);
+        }
+
+        if (authToken != null) {
+            clientBuilder.authToken(authToken);
         }
 
         if (baseUrl != null) {
@@ -158,13 +276,41 @@ public class AnthropicChatModel extends ChatModelBase {
                                                 .model(modelName)
                                                 .maxTokens(4096);
 
+                                GenerateOptions effectiveOptions =
+                                        GenerateOptions.mergeOptions(options, defaultOptions);
+                                boolean cacheControlEnabled =
+                                        effectiveOptions != null
+                                                && Boolean.TRUE.equals(
+                                                        effectiveOptions.getCacheControl());
+
                                 // Extract and apply system message
-                                // (Anthropic-specific requirement)
-                                formatter.applySystemMessage(paramsBuilder, messages);
+                                // (Anthropic-specific requirement);
+                                // adds cache_control when prompt caching is enabled
+                                formatter.applySystemMessage(
+                                        paramsBuilder, messages, cacheControlEnabled);
+
+                                // The leading system message has been applied to the `system`
+                                // field above. Exclude it from the message body so the system
+                                // prompt isn't sent twice.
+                                List<Msg> conversationMessages = messages;
+                                if (messages != null
+                                        && !messages.isEmpty()
+                                        && messages.get(0).getRole() == MsgRole.SYSTEM) {
+                                    conversationMessages = messages.subList(1, messages.size());
+                                }
 
                                 // Use formatter to convert Msg to Anthropic
                                 // MessageParam
-                                List<MessageParam> formattedMessages = formatter.format(messages);
+                                List<MessageParam> formattedMessages =
+                                        formatter.format(conversationMessages);
+
+                                // Apply automatic cache control strategy
+                                // (marks the last message to cache the conversation prefix)
+                                if (cacheControlEnabled) {
+                                    formattedMessages =
+                                            formatter.applyCacheControl(formattedMessages);
+                                }
+
                                 for (MessageParam param : formattedMessages) {
                                     paramsBuilder.addMessage(param);
                                 }
@@ -172,10 +318,9 @@ public class AnthropicChatModel extends ChatModelBase {
                                 // Apply generation options via formatter
                                 formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
+                                // Add client and server tools through one path so name
+                                // validation, tool choice, and parallel tool use cover both.
+                                formatter.applyTools(paramsBuilder, tools, serverTools);
 
                                 // Create the request
                                 MessageCreateParams params = paramsBuilder.build();
@@ -250,12 +395,15 @@ public class AnthropicChatModel extends ChatModelBase {
     public static class Builder {
         private String baseUrl;
         private String apiKey;
+        private String authToken;
         private String modelName = "claude-sonnet-4-5-20250929";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
+        private final List<AnthropicServerTool> serverTools = new ArrayList<>();
+        private String cacheTtl;
 
         /**
          * Sets the base URL for the Anthropic API.
@@ -276,6 +424,20 @@ public class AnthropicChatModel extends ChatModelBase {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the bearer token for authentication with an Anthropic-compatible gateway.
+         *
+         * <p>The SDK adds the {@code Bearer } prefix to the {@code Authorization} header.
+         * Configuring both an API key and a bearer token causes model construction to fail.
+         *
+         * @param authToken the token without the {@code Bearer } prefix (null to omit)
+         * @return this builder
+         */
+        public Builder authToken(String authToken) {
+            this.authToken = authToken;
             return this;
         }
 
@@ -338,8 +500,34 @@ public class AnthropicChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets the TTL for prompt-caching markers (e.g. {@code "1h"}).
+         *
+         * @param cacheTtl the cache TTL string (null for default 5m ephemeral)
+         * @return this builder
+         */
+        public Builder cacheTtl(String cacheTtl) {
+            this.cacheTtl = cacheTtl;
+            return this;
+        }
+
         public Builder contextWindowSize(int contextWindowSize) {
             this.contextWindowSize = contextWindowSize;
+            return this;
+        }
+
+        /**
+         * Adds an Anthropic built-in server tool (e.g. web search) to enable on every request.
+         * Server tools are executed on Anthropic's infrastructure within a single model call,
+         * independently of client tools registered in the toolkit.
+         *
+         * @param serverTool the server tool definition
+         * @return this builder
+         */
+        public Builder addServerTool(AnthropicServerTool serverTool) {
+            if (serverTool != null) {
+                this.serverTools.add(serverTool);
+            }
             return this;
         }
 
@@ -353,11 +541,14 @@ public class AnthropicChatModel extends ChatModelBase {
                     new AnthropicChatModel(
                             baseUrl,
                             apiKey,
+                            authToken,
                             modelName,
                             streamEnabled,
                             defaultOptions,
                             formatter,
-                            proxyConfig);
+                            proxyConfig,
+                            serverTools,
+                            cacheTtl);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize

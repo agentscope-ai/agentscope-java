@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,13 +29,6 @@ import java.util.Map;
  * It contains the tool's unique identifier, name, input parameters, and optionally
  * the raw content for streaming tool calls.
  *
- * <p>By default, a tool call is executed locally by the agent through the registered
- * {@link io.agentscope.core.tool.Toolkit}. When the call originates from a model
- * provider's built-in (server-side) tool, such as Google Search grounding, the
- * {@link #isServer()} flag is set to {@code true}, indicating the tool has been or
- * will be executed by the model service itself and must not be dispatched to the
- * local toolkit.
- *
  * <p>The tool input is stored as a generic map of string keys to object values,
  * allowing for flexible parameter passing to different tool implementations.
  */
@@ -43,32 +37,20 @@ public final class ToolUseBlock extends ContentBlock {
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
+    /**
+     * Metadata key marking this tool call as a provider server tool (Boolean value). Server tools
+     * (e.g. Anthropic's built-in web_search) are executed on the provider's infrastructure and
+     * must not be dispatched to the local toolkit; their results arrive in the same assistant
+     * message as {@link ToolResultBlock}s carrying the same marker.
+     */
+    public static final String METADATA_SERVER_TOOL = "serverTool";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
     private final Map<String, Object> metadata; // Provider-specific metadata
     private final ToolCallState state;
-    private final boolean server; // Whether the tool is executed by the model provider server-side
-
-    /**
-     * Creates a new tool use block for JSON deserialization.
-     *
-     * @param id Unique identifier for this tool call
-     * @param name Name of the tool to execute
-     * @param input Input parameters for the tool (will be defensively copied)
-     * @param metadata Provider-specific metadata (will be defensively copied)
-     * @param server Whether this call is executed by the model provider server-side
-     *     (e.g. Gemini built-in tools); {@code false} for local function calls
-     */
-    public ToolUseBlock(
-            String id,
-            String name,
-            Map<String, Object> input,
-            Map<String, Object> metadata,
-            boolean server) {
-        this(id, name, input, null, metadata, null, server);
-    }
 
     /**
      * Creates a new tool use block with metadata (convenience constructor).
@@ -80,7 +62,7 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolUseBlock(
             String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
-        this(id, name, input, null, metadata, null, false);
+        this(id, name, input, null, metadata, null);
     }
 
     /**
@@ -91,7 +73,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @param input Input parameters for the tool (will be defensively copied)
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input) {
-        this(id, name, input, null, null, null, false);
+        this(id, name, input, null, null, null);
     }
 
     /**
@@ -109,7 +91,7 @@ public final class ToolUseBlock extends ContentBlock {
             Map<String, Object> input,
             String content,
             Map<String, Object> metadata) {
-        this(id, name, input, content, metadata, null, false);
+        this(id, name, input, content, metadata, null);
     }
 
     /**
@@ -121,8 +103,6 @@ public final class ToolUseBlock extends ContentBlock {
      * @param content Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
      * @param state The tool call state, defaults to PENDING if null
-     * @param server Whether this call is executed by the model provider server-side
-     *     (e.g. Gemini built-in tools); {@code false} for local function calls
      */
     @JsonCreator
     public ToolUseBlock(
@@ -131,8 +111,7 @@ public final class ToolUseBlock extends ContentBlock {
             @JsonProperty("input") Map<String, Object> input,
             @JsonProperty("content") String content,
             @JsonProperty("metadata") Map<String, Object> metadata,
-            @JsonProperty("state") ToolCallState state,
-            @JsonProperty("server") boolean server) {
+            @JsonProperty("state") ToolCallState state) {
         this.id = id;
         this.name = name;
         // Defensive copy to prevent external modifications
@@ -146,7 +125,6 @@ public final class ToolUseBlock extends ContentBlock {
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new HashMap<>(metadata));
         this.state = state != null ? state : ToolCallState.PENDING;
-        this.server = server;
     }
 
     /**
@@ -207,16 +185,14 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
-     * Checks whether this tool call is executed by the model provider on the server side.
+     * Checks whether this tool call is executed by the provider on the server side (marked via
+     * {@link #METADATA_SERVER_TOOL}).
      *
-     * <p>Server-side (built-in) tools, such as Gemini's Google Search grounding or Maps
-     * grounding, are executed by the model service itself. Such calls must not be
-     * dispatched to the local {@link io.agentscope.core.tool.Toolkit}.
-     *
-     * @return true if executed by the model provider server-side, false otherwise
+     * @return true if this is a server-side tool call
      */
-    public boolean isServer() {
-        return server;
+    @JsonIgnore
+    public boolean isServerTool() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SERVER_TOOL));
     }
 
     /**
@@ -226,8 +202,7 @@ public final class ToolUseBlock extends ContentBlock {
      * @return A new ToolUseBlock with the updated state
      */
     public ToolUseBlock withState(ToolCallState state) {
-        return new ToolUseBlock(
-                this.id, this.name, this.input, this.content, this.metadata, state, this.server);
+        return new ToolUseBlock(this.id, this.name, this.input, this.content, this.metadata, state);
     }
 
     /**
@@ -249,7 +224,6 @@ public final class ToolUseBlock extends ContentBlock {
         private String content;
         private Map<String, Object> metadata;
         private ToolCallState state;
-        private boolean server = false;
 
         /**
          * Sets the unique identifier for the tool call.
@@ -321,24 +295,12 @@ public final class ToolUseBlock extends ContentBlock {
         }
 
         /**
-         * Marks this tool call as executed by the model provider server-side.
-         *
-         * @param server true if the call is handled by the model provider's built-in
-         *     tool execution, {@code false} for local function calls
-         * @return This builder for chaining
-         */
-        public Builder server(boolean server) {
-            this.server = server;
-            return this;
-        }
-
-        /**
          * Builds a new ToolUseBlock with the configured properties.
          *
          * @return A new ToolUseBlock instance
          */
         public ToolUseBlock build() {
-            return new ToolUseBlock(id, name, input, content, metadata, state, server);
+            return new ToolUseBlock(id, name, input, content, metadata, state);
         }
     }
 }

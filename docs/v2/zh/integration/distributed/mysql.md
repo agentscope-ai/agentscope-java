@@ -1,4 +1,7 @@
-# MySQL / JDBC
+---
+title: MySQL / JDBC
+en_link: /v2/en/integration/distributed/mysql
+---
 
 `agentscope-extensions-mysql` 提供基于 JDBC 的全链路分布式存储实现，适合已有关系型数据库基础设施的场景。
 

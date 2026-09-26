@@ -68,7 +68,62 @@ public final class ModelContextWindows {
                     Map.entry("o3-mini", 200_000),
                     Map.entry("o3", 200_000),
                     Map.entry("o1-mini", 128_000),
-                    Map.entry("o1", 200_000));
+                    Map.entry("o1", 200_000),
+                    Map.entry("gpt-5.4-mini", 400_000),
+                    Map.entry("gpt-5.4", 1_050_000),
+                    Map.entry("gpt-5.5", 1_050_000),
+                    Map.entry("gpt-5.6-luna", 1_050_000),
+                    Map.entry("gpt-5.6-terra", 1_050_000),
+                    Map.entry("gpt-5.6-sol", 1_050_000),
+                    Map.entry("gpt-6-astra", 1_050_000));
+
+    public static final Map<String, Integer> DEEPSEEK =
+            Map.ofEntries(
+                    Map.entry("deepseek-v4-flash", 1_000_000),
+                    Map.entry("deepseek-v4-pro", 1_000_000));
+
+    public static final Map<String, Integer> GLM =
+            Map.ofEntries(
+                    Map.entry("glm-5.3", 1_000_000),
+                    Map.entry("glm-5.2", 1_000_000),
+                    Map.entry("glm-5.1", 200_000),
+                    Map.entry("glm-5-turbo", 200_000),
+                    Map.entry("glm-5", 200_000),
+                    Map.entry("glm-4.7-flashx", 200_000),
+                    Map.entry("glm-4.7-flash", 200_000),
+                    Map.entry("glm-4.7", 200_000),
+                    Map.entry("glm-4.6", 200_000),
+                    Map.entry("glm-4.5-airx", 128_000),
+                    Map.entry("glm-4.5-air", 128_000),
+                    Map.entry("glm-4-flashx-250414", 128_000),
+                    Map.entry("glm-4-flash-250414", 128_000),
+                    Map.entry("glm-4-long", 1_000_000));
+
+    public static final Map<String, Integer> MINIMAX =
+            Map.ofEntries(
+                    Map.entry("minimax-m3", 1_000_000),
+                    Map.entry("minimax-m2.7-highspeed", 204_800),
+                    Map.entry("minimax-m2.7", 204_800),
+                    Map.entry("minimax-m2.5-highspeed", 204_800),
+                    Map.entry("minimax-m2.5", 204_800),
+                    Map.entry("minimax-m2.1-highspeed", 204_800),
+                    Map.entry("minimax-m2.1", 204_800),
+                    Map.entry("minimax-m2", 204_800),
+                    Map.entry("m2-her", 65_536));
+
+    public static final Map<String, Integer> KIMI =
+            Map.ofEntries(
+                    Map.entry("kimi-k3", 1_048_576),
+                    Map.entry("kimi-k2.7-code-highspeed", 262_144),
+                    Map.entry("kimi-k2.7-code", 262_144),
+                    Map.entry("kimi-k2.6", 262_144),
+                    Map.entry("kimi-k2.5", 262_144),
+                    Map.entry("moonshot-v1-128k-vision-preview", 131_072),
+                    Map.entry("moonshot-v1-128k", 131_072),
+                    Map.entry("moonshot-v1-32k-vision-preview", 32_768),
+                    Map.entry("moonshot-v1-32k", 32_768),
+                    Map.entry("moonshot-v1-8k-vision-preview", 8_192),
+                    Map.entry("moonshot-v1-8k", 8_192));
 
     public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolCallState;
@@ -27,7 +28,9 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -104,6 +107,70 @@ class ReasoningContextTest {
         ChatUsage resultUsage = context.getChatUsage();
         assertNotNull(resultUsage);
         assertEquals(80, resultUsage.getCachedTokens());
+    }
+
+    @Test
+    @DisplayName("Should propagate reasoning tokens from chunk usage")
+    void testReasoningTokensPropagation() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .reasoningTokens(20)
+                        .time(1.5)
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        assertNotNull(msg.getChatUsage());
+        assertEquals(20, msg.getChatUsage().getReasoningTokens());
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(20, resultUsage.getReasoningTokens());
+    }
+
+    @Test
+    @DisplayName("Should propagate detailed input token breakdown from chunk usage")
+    void testDetailedInputTokenBreakdownPropagation() {
+        ChatUsage usage =
+                ChatUsage.builder()
+                        .inputTokens(100)
+                        .outputTokens(50)
+                        .cachedTokens(30)
+                        .cacheCreationTokens(10)
+                        .toolUsePromptTokens(15)
+                        .time(1.5)
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .build();
+
+        context.processChunk(chunk);
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+        assertNotNull(msg.getChatUsage());
+        assertEquals(10, msg.getChatUsage().getCacheCreationTokens());
+        assertEquals(15, msg.getChatUsage().getToolUsePromptTokens());
+
+        ChatUsage resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(10, resultUsage.getCacheCreationTokens());
+        assertEquals(15, resultUsage.getToolUsePromptTokens());
     }
 
     @Test
@@ -301,6 +368,92 @@ class ReasoningContextTest {
     }
 
     @Test
+    @DisplayName("Should propagate response metadata to final message")
+    void testResponseMetadataPropagation() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("openai.reasoning.encrypted_content", "enc_12345");
+        metadata.put("openai.response.id", "resp_abc");
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .metadata(metadata)
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        assertEquals("enc_12345", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        assertEquals("resp_abc", msg.getMetadata().get("openai.response.id"));
+    }
+
+    @Test
+    @DisplayName("Should merge metadata from multiple chunks with last-write-wins")
+    void testMultipleChunksMetadataMerge() {
+        Map<String, Object> meta1 = new HashMap<>();
+        meta1.put("openai.response.status", "in_progress");
+        meta1.put("openai.reasoning.encrypted_content", "enc_v1");
+
+        ChatResponse chunk1 =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .metadata(meta1)
+                        .build();
+
+        Map<String, Object> meta2 = new HashMap<>();
+        meta2.put("openai.response.status", "completed");
+
+        ChatResponse chunk2 =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text(" world").build()))
+                        .metadata(meta2)
+                        .build();
+
+        context.processChunk(chunk1);
+        context.processChunk(chunk2);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        // Different keys accumulate
+        assertEquals("enc_v1", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        // Same key: last-write-wins
+        assertEquals("completed", msg.getMetadata().get("openai.response.status"));
+    }
+
+    @Test
+    @DisplayName("Should coexist response metadata with ChatUsage in final message")
+    void testMetadataCoexistsWithChatUsage() {
+        ChatUsage usage = ChatUsage.builder().inputTokens(100).outputTokens(50).time(1.5).build();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("openai.reasoning.encrypted_content", "enc_999");
+
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .usage(usage)
+                        .metadata(metadata)
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertNotNull(msg.getMetadata());
+        // Both metadata keys coexist
+        assertEquals("enc_999", msg.getMetadata().get("openai.reasoning.encrypted_content"));
+        assertNotNull(msg.getMetadata().get(MessageMetadataKeys.CHAT_USAGE));
+        assertNotNull(msg.getChatUsage());
+        assertEquals(100, msg.getChatUsage().getInputTokens());
+    }
+
+    @Test
     @DisplayName("Should not block text emission while streaming tool calls")
     void testToolCallsDoNotBlockTextEmission() {
         // Text chunk
@@ -345,13 +498,13 @@ class ReasoningContextTest {
                         .name("GOOGLE_SEARCH_WEB")
                         .input(java.util.Map.of("queries", List.of("southernmost city in China")))
                         .state(ToolCallState.FINISHED)
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
         ToolResultBlock serverToolResult =
                 ToolResultBlock.builder()
                         .id("search-call")
                         .name("GOOGLE_SEARCH_WEB")
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .output(
                                 TextBlock.builder()
                                         .text("{\"search_suggestions\":\"...\"}")
@@ -376,15 +529,85 @@ class ReasoningContextTest {
 
         ToolUseBlock accumulatedServerCall = (ToolUseBlock) finalMessage.getContent().get(0);
         assertEquals("search-call", accumulatedServerCall.getId());
-        assertTrue(accumulatedServerCall.isServer());
+        assertTrue(accumulatedServerCall.isServerTool());
         assertEquals(ToolCallState.FINISHED, accumulatedServerCall.getState());
 
         ToolResultBlock accumulatedServerResult =
                 (ToolResultBlock) finalMessage.getContent().get(1);
         assertEquals("search-call", accumulatedServerResult.getId());
-        assertTrue(accumulatedServerResult.isServer());
+        assertTrue(accumulatedServerResult.isServerTool());
 
         ToolUseBlock accumulatedLocalCall = (ToolUseBlock) finalMessage.getContent().get(2);
         assertEquals("weather-call", accumulatedLocalCall.getId());
+    }
+
+    @Test
+    @DisplayName("Should keep server tool results and place them after their tool calls")
+    void testServerToolResultPassthrough() {
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("srvtoolu_1")
+                        .name("web_search")
+                        .input(Map.of("query", "AgentScope"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_1")
+                        .name("web_search")
+                        .output(TextBlock.builder().text("Result (https://example.com)").build())
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        TextBlock answer = TextBlock.builder().text("Based on the search...").build();
+
+        List<Msg> emitted1 =
+                context.processChunk(
+                        ChatResponse.builder().id("msg-1").content(List.of(serverToolUse)).build());
+        List<Msg> emitted2 =
+                context.processChunk(
+                        ChatResponse.builder()
+                                .id("msg-1")
+                                .content(List.of(serverToolResult))
+                                .build());
+        context.processChunk(ChatResponse.builder().id("msg-1").content(List.of(answer)).build());
+
+        // Server tool result chunk should be emitted for streaming consumers
+        assertEquals(1, emitted1.size());
+        assertEquals(1, emitted2.size());
+
+        Msg msg = context.buildFinalMessage();
+        assertNotNull(msg);
+
+        List<io.agentscope.core.message.ContentBlock> blocks = msg.getContent();
+        assertEquals(3, blocks.size());
+        // Order: text first (per buildFinalMessage), then tool call, then its result
+        assertEquals("Based on the search...", ((TextBlock) blocks.get(0)).getText());
+        ToolUseBlock toolUse = (ToolUseBlock) blocks.get(1);
+        assertEquals("srvtoolu_1", toolUse.getId());
+        assertTrue(toolUse.isServerTool());
+        ToolResultBlock toolResult = (ToolResultBlock) blocks.get(2);
+        assertEquals("srvtoolu_1", toolResult.getId());
+        assertTrue(toolResult.isServerTool());
+    }
+
+    @Test
+    @DisplayName("Should ignore non-server tool result chunks as before")
+    void testNonServerToolResultChunksIgnored() {
+        ToolResultBlock clientToolResult =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .output(TextBlock.builder().text("Sunny").build())
+                        .build();
+
+        List<Msg> emitted =
+                context.processChunk(
+                        ChatResponse.builder()
+                                .id("msg-1")
+                                .content(List.of(clientToolResult))
+                                .build());
+
+        assertTrue(emitted.isEmpty());
+        assertNull(context.buildFinalMessage());
     }
 }

@@ -21,11 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -46,11 +46,10 @@ class MemoryFlushMiddlewareTriggerTest {
     private static final RuntimeContext RC_SESSION_2 =
             RuntimeContext.builder().userId("userA").sessionId("session2").build();
 
-    /** Clear the static shared throttle map between tests. */
+    /** Clear the shared throttle map between tests. */
     @BeforeEach
     void resetSharedTimerMap() {
-        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.clear();
-        MemoryMaintenanceMiddleware.SHARED_LAST_RUN_AT.clear();
+        LocalPeriodicGate.clearForTests();
     }
 
     /** Creates a USER-scope (default) middleware for trigger-gate tests. */
@@ -224,10 +223,9 @@ class MemoryFlushMiddlewareTriggerTest {
     @Test
     void throttledMode_crossInstanceSharesOneThrottleSlot() {
         // Simulates the real-world scenario: HarnessAgent.Builder.build() creates a new
-        // MemoryFlushMiddleware per request. With the instance-level map the bug was that each
-        // new instance started with an empty map → Instant.EPOCH → throttle always bypassed.
-        // Now the static SHARED_LAST_FLUSH_AT persists across instances so the second instance
-        // correctly sees the flush timestamp from the first instance.
+        // MemoryFlushMiddleware per request. The process-wide LocalPeriodicGate persists
+        // across instances so the second instance correctly sees the flush timestamp from
+        // the first instance.
         Duration gap = Duration.ofHours(1);
         MemoryFlushMiddleware mw1 = make(MemoryConfig.FlushTrigger.throttled(gap));
         MemoryFlushMiddleware mw2 = make(MemoryConfig.FlushTrigger.throttled(gap));
@@ -257,28 +255,25 @@ class MemoryFlushMiddlewareTriggerTest {
 
     @Test
     void cleanupStaleEntries_removesOldEntries() {
-        // Seed the map with a stale entry (timestamp = EPOCH, which is way older than 60min)
-        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
-                "USER:staleUser", new AtomicReference<>(Instant.EPOCH));
-        assertEquals(1, MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.size());
+        LocalPeriodicGate gate = new LocalPeriodicGate();
+        LocalPeriodicGate.seedLastClaimAtForTests("USER:staleUser", Instant.EPOCH);
 
-        MemoryFlushMiddleware.cleanupStaleEntries();
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
 
-        assertTrue(
-                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.isEmpty(),
+        assertFalse(
+                LocalPeriodicGate.hasClaimForTests("USER:staleUser"),
                 "stale entry (EPOCH timestamp) should be removed");
     }
 
     @Test
     void cleanupStaleEntries_preservesRecentEntries() {
-        // Seed with a recent entry (timestamp = now)
-        MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.put(
-                "USER:recentUser", new AtomicReference<>(Instant.now()));
+        LocalPeriodicGate gate = new LocalPeriodicGate();
+        gate.tryClaim("USER:recentUser", Duration.ZERO);
 
-        MemoryFlushMiddleware.cleanupStaleEntries();
+        gate.cleanupStaleEntries(Duration.ofMinutes(60));
 
         assertTrue(
-                MemoryFlushMiddleware.SHARED_LAST_FLUSH_AT.containsKey("USER:recentUser"),
+                LocalPeriodicGate.hasClaimForTests("USER:recentUser"),
                 "recent entry should survive cleanup");
     }
 }

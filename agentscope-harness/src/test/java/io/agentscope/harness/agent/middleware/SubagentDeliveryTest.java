@@ -94,12 +94,6 @@ class SubagentDeliveryTest {
         }
 
         @Override
-        public void removeTask(RuntimeContext rc, String sessionId, String taskId) {}
-
-        @Override
-        public void clear() {}
-
-        @Override
         public Collection<BackgroundTask> listTasks(
                 RuntimeContext rc, String sessionId, TaskStatus filter) {
             return List.of();
@@ -303,5 +297,33 @@ class SubagentDeliveryTest {
         assertTrue(text.contains("\"b\""));
         assertTrue(text.contains("\"c\""));
         assertEquals(List.of("a", "b", "c"), repo.markCalls);
+    }
+
+    @Test
+    void deliveryCapDoesNotAcknowledgeUnseenResultsAndWorksWithoutDeclaredSubagents() {
+        StubRepo repo = new StubRepo();
+        for (int i = 0; i < 12; i++)
+            repo.queue.add(delivery("t" + i, TaskStatus.COMPLETED, "result " + i, null));
+        SubagentsMiddleware mw =
+                new SubagentsMiddleware(
+                        List.of(),
+                        repo,
+                        (io.agentscope.harness.agent.workspace.WorkspaceManager) null);
+        var agent = newReActAgent();
+        mw.onReasoning(
+                        agent,
+                        null,
+                        new ReasoningInput(List.of(), List.of(), null),
+                        in -> Flux.empty())
+                .blockLast();
+        assertEquals(10, repo.markCalls.size());
+        assertEquals(2, repo.findPendingDeliveries(null, null).size());
+        mw.onReasoning(
+                        agent,
+                        null,
+                        new ReasoningInput(List.of(), List.of(), null),
+                        in -> Flux.empty())
+                .blockLast();
+        assertEquals(12, repo.markCalls.size());
     }
 }

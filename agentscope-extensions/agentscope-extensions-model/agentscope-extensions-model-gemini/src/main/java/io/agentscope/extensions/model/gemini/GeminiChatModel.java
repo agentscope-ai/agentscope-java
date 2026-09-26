@@ -31,6 +31,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
@@ -262,6 +263,12 @@ public class GeminiChatModel extends ChatModelBase {
      */
     @Override
     protected Flux<ChatResponse> doStream(
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        return ModelUtils.applyTimeoutAndRetry(
+                doStream0(messages, tools, options), options, defaultOptions, modelName, "gemini");
+    }
+
+    protected Flux<ChatResponse> doStream0(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -598,7 +605,7 @@ public class GeminiChatModel extends ChatModelBase {
                             httpOptions,
                             credentials,
                             resolvedClientOptions,
-                            defaultOptions,
+                            ModelUtils.ensureDefaultExecutionConfig(defaultOptions),
                             formatter,
                             serverTools);
             model.setContextWindowSize(

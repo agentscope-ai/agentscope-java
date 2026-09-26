@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -31,27 +30,12 @@ class ToolResultBlockTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void legacyStateConstructorDefaultsToLocalResult() {
-        ToolResultBlock result =
-                new ToolResultBlock(
-                        "tool-call-0",
-                        "local-tool",
-                        List.of(TextBlock.builder().text("ok").build()),
-                        Map.of(),
-                        ToolResultState.SUCCESS);
-
-        assertFalse(result.isServer());
-        assertEquals(ToolResultState.SUCCESS, result.getState());
-    }
-
-    @Test
     void errorFactoryCreatesStructuredErrorState() {
         ToolResultBlock result = ToolResultBlock.error("probe failed");
 
         assertEquals(ToolResultState.ERROR, result.getState());
         TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
         assertEquals("Error: probe failed", output.getText());
-        assertFalse(result.isServer());
     }
 
     @Test
@@ -61,10 +45,10 @@ class ToolResultBlockTest {
                         .id("tool-call-1")
                         .name("GOOGLE_SEARCH_WEB")
                         .output(TextBlock.builder().text("response").build())
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
-        assertTrue(serverResult.isServer());
+        assertTrue(serverResult.isServerTool());
         assertEquals("tool-call-1", serverResult.getId());
         assertEquals("GOOGLE_SEARCH_WEB", serverResult.getName());
 
@@ -74,7 +58,7 @@ class ToolResultBlockTest {
                         .name("local-tool")
                         .output(TextBlock.builder().text("ok").build())
                         .build();
-        assertFalse(localResult.isServer());
+        assertFalse(localResult.isServerTool());
     }
 
     @Test
@@ -84,14 +68,15 @@ class ToolResultBlockTest {
                         .id("tool-call-3")
                         .name("GOOGLE_SEARCH_WEB")
                         .output(TextBlock.builder().text("response").build())
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         String json = objectMapper.writeValueAsString(result);
-        assertTrue(json.contains("\"server\":true"), "Expected server field in JSON: " + json);
+        assertTrue(
+                json.contains("\"serverTool\":true"), "Expected server metadata in JSON: " + json);
 
         ToolResultBlock deserialized = objectMapper.readValue(json, ToolResultBlock.class);
-        assertTrue(deserialized.isServer());
+        assertTrue(deserialized.isServerTool());
     }
 
     @Test
@@ -107,7 +92,7 @@ class ToolResultBlockTest {
                 """;
 
         ToolResultBlock result = objectMapper.readValue(json, ToolResultBlock.class);
-        assertFalse(result.isServer());
+        assertFalse(result.isServerTool());
     }
 
     @Test
@@ -117,12 +102,12 @@ class ToolResultBlockTest {
                         .id("tool-call-5")
                         .name("GOOGLE_SEARCH_WEB")
                         .output(TextBlock.builder().text("response").build())
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         ToolResultBlock updated = result.withState(ToolResultState.SUCCESS);
 
-        assertTrue(updated.isServer());
+        assertTrue(updated.isServerTool());
         assertEquals(ToolResultState.SUCCESS, updated.getState());
     }
 
@@ -131,13 +116,23 @@ class ToolResultBlockTest {
         ToolResultBlock result =
                 ToolResultBlock.builder()
                         .output(TextBlock.builder().text("response").build())
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         ToolResultBlock updated = result.withIdAndName("tool-call-6", "GOOGLE_SEARCH_WEB");
 
-        assertTrue(updated.isServer());
+        assertTrue(updated.isServerTool());
         assertEquals("tool-call-6", updated.getId());
         assertEquals("GOOGLE_SEARCH_WEB", updated.getName());
+    }
+
+    @Test
+    void toolCallErrorFactoryPreservesToolIdAndRuntimeErrorMarker() {
+        ToolResultBlock result = ToolResultBlock.error("tool-1", "probe failed");
+
+        assertEquals("tool-1", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("[ERROR] probe failed", output.getText());
     }
 }

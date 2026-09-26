@@ -1,0 +1,14 @@
+{{- if .Values.metrics.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: aistio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    grafana_dashboard: "1"
+data:
+  aistio-overview.json: |-
+    {{ .Files.Get "dashboards/aistio-overview.json" | nindent 4 }}
+{{- end }}

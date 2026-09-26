@@ -122,8 +122,11 @@ public final class AgentSpecLoader {
     }
 
     /**
-     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting namespace
-     * isolation. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
+     * Loads subagent declarations via the {@link AbstractFilesystem} using an empty runtime
+     * context. Scans {@code subagents/} for {@code *.md} files using filesystem glob.
+     *
+     * <p>Use {@link #loadFromFilesystem(AbstractFilesystem, RuntimeContext, Path)} when
+     * declarations are scoped to a calling user's namespace.
      *
      * @param filesystem the filesystem layer (applies namespace transparently)
      * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
@@ -132,10 +135,25 @@ public final class AgentSpecLoader {
      */
     public static List<SubagentDeclaration> loadFromFilesystem(
             AbstractFilesystem filesystem, Path mainWorkspace) {
+        return loadFromFilesystem(filesystem, RuntimeContext.empty(), mainWorkspace);
+    }
+
+    /**
+     * Loads subagent declarations via the {@link AbstractFilesystem}, respecting the supplied
+     * runtime context's namespace isolation.
+     *
+     * @param filesystem the filesystem layer (applies namespace transparently)
+     * @param runtimeContext the call context used to resolve namespace-scoped declarations
+     * @param mainWorkspace the parent workspace for resolving relative workspace paths; may be
+     *     {@code null}
+     * @return list of parsed declarations; never {@code null}
+     */
+    public static List<SubagentDeclaration> loadFromFilesystem(
+            AbstractFilesystem filesystem, RuntimeContext runtimeContext, Path mainWorkspace) {
         if (filesystem == null) {
             return Collections.emptyList();
         }
-        RuntimeContext ctx = RuntimeContext.empty();
+        RuntimeContext ctx = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
         GlobResult glob = filesystem.glob(ctx, "*.md", "subagents");
         if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
             return Collections.emptyList();
@@ -293,6 +311,11 @@ public final class AgentSpecLoader {
         if (exposeToUser == null) {
             exposeToUser = asNullableBoolean(fm.get("exposeToUser"));
         }
+        Boolean enablePendingToolRecovery =
+                asNullableBoolean(fm.get("enable_pending_tool_recovery"));
+        if (enablePendingToolRecovery == null) {
+            enablePendingToolRecovery = asNullableBoolean(fm.get("enablePendingToolRecovery"));
+        }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
         List<String> skills = parseToolNames(asString(fm.get("skills")));
@@ -310,6 +333,7 @@ public final class AgentSpecLoader {
                         .mode(declMode)
                         .hidden(hidden)
                         .exposeToUser(exposeToUser)
+                        .enablePendingToolRecovery(enablePendingToolRecovery)
                         .tools(tools.isEmpty() ? null : tools)
                         .skills(skills.isEmpty() ? null : skills);
 

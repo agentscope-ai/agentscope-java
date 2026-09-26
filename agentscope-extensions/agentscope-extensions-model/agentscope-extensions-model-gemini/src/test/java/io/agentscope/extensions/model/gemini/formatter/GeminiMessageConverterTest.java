@@ -1034,16 +1034,17 @@ class GeminiMessageConverterTest {
                         .id("call_277215")
                         .name("GOOGLE_SEARCH_WEB")
                         .input(Map.of("queries", List.of("southernmost city in China")))
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         ToolResultBlock serverToolResult =
                 ToolResultBlock.builder()
                         .id("call_277215")
                         .name("GOOGLE_SEARCH_WEB")
-                        .server(true)
                         .metadata(
                                 Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
                                         ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                         "server-result-signature".getBytes()))
                         .output(
@@ -1148,7 +1149,7 @@ class GeminiMessageConverterTest {
                 ToolResultBlock.builder()
                         .id("call_1")
                         .name("GOOGLE_SEARCH_WEB")
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .output(TextBlock.builder().text("plain text result").build())
                         .build();
 
@@ -1184,7 +1185,7 @@ class GeminiMessageConverterTest {
                 ToolResultBlock.builder()
                         .id("call_2")
                         .name("GOOGLE_SEARCH_WEB")
-                        .server(true)
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
                         .output(TextBlock.builder().text(json).build())
                         .build();
 

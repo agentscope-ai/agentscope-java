@@ -1,6 +1,9 @@
 ---
-title: "Going to Production"
-description: "From single-node prototype to multi-replica deployment: component selection and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot, and Observability"
+title: Going to Production
+description: 'From single-node prototype to multi-replica deployment: component selection
+  and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot,
+  and Observability'
+zh_link: /v2/zh/docs/others/going-to-production
 ---
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
@@ -28,6 +31,20 @@ DistributedStore store = DistributedStore.builder()
     .sandboxExecutionGuard(RedisDistributedStore.fromJedis(jedis).sandboxExecutionGuard())
     .build();
 ```
+
+### Alternative: aistio hosted store
+
+If you run an aistio control plane, it can host BaseStore / sandbox lock & snapshot / MessageBus / AsyncToolRegistry / **TaskRepository** / optional **SessionTurnGate**. You still supply **one** `AgentStateStore` (Redis/MySQL/Postgres/OSS); core provides `getVersioned` / `saveIfVersion`, but storage stays off the control plane:
+
+```java
+ControlPlaneStores cp = ControlPlaneStores.fromEnv();
+HarnessAgent.builder()
+    .distributedStore(cp.withAgentStateStore(redis.agentStateStore()))
+    .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+    .build();
+```
+
+Enable with `--enable-hosted-store` on the control plane (Postgres recommended). `withAgentStateStore` includes hosted TaskRepository; **subagent background tasks in SandboxFilesystem mode** need this path. Redis/Postgres/MySQL/InMemory AgentStateStore backends support versioning CAS; others remain LWW. Turn gate + `ConflictPolicy.FAIL` are optional for multi-replica duplicate-turn reduction; correctness comes from CAS. Auth is a shared internal token with tenant from the request body — not for mutually untrusted multi-tenant agents on one CP. `queueDrain` is destructive (ack-on-read). See [Distributed Storage — aistio Hosted Store](/v2/en/integration/distributed/index#aistio-hosted-store).
 
 ## At a glance: single-node defaults vs. distributed production
 
@@ -67,7 +84,7 @@ Each component solves a different production problem:
 
 > **Recommended**: use `distributedStore(...)` for one-line setup. The detailed table below is for advanced users who need individual control over `AgentStateStore`.
 
-`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](../../integration/session/index.md).
+`AgentState` (conversation context, compaction summary, permission rules, Plan Mode state, tool state) only survives across processes through an [`AgentStateStore`](/v2/en/integration/session/index).
 
 | Implementation | Module | When to use |
 |----------------|--------|-------------|
@@ -105,11 +122,11 @@ agent.call(msg, RuntimeContext.builder()
         .build()).block();
 ```
 
-Full mechanics in [Context & AgentState](../building-blocks/context.md).
+Full mechanics in [Context & AgentState](/v2/en/docs/building-blocks/context).
 
 ## 2. Filesystem mode & `IsolationScope`: deciding "who shares files with whom"
 
-Three modes recap (details in [Filesystem](../harness/filesystem.md)):
+Three modes recap (details in [Filesystem](/v2/en/docs/harness/filesystem)):
 
 | Mode | Config | Shell? | Use it when |
 |------|--------|--------|-------------|
@@ -200,7 +217,7 @@ Each segment is then bucketed by `IsolationScope` (`USER` → `agents/<agentId>/
 
 `RemoteFilesystemSpec.toFilesystem(...)` actually produces a `CompositeFilesystem`: a base `LocalFilesystem` without shell (fallback for local templates) plus one `OverlayFilesystem` per route (upper = `RemoteFilesystem`, lower = read-only `LocalFilesystem` template).
 
-Effect: **writes always go to Remote; reads check Remote first, fall back to the local template**. That is the "two-layer read architecture" described in [Workspace](../harness/workspace.md) instantiated for Remote mode — the local `<workspace>/AGENTS.md` is a seed (synced via team git), and Remote takes over as soon as it has been written to.
+Effect: **writes always go to Remote; reads check Remote first, fall back to the local template**. That is the "two-layer read architecture" described in [Workspace](/v2/en/docs/harness/workspace) instantiated for Remote mode — the local `<workspace>/AGENTS.md` is a seed (synced via team git), and Remote takes over as soon as it has been written to.
 
 ### `WorkspaceIndex`: optional SQLite index
 
@@ -212,7 +229,7 @@ Speeds up `ls` / `glob` / `exists` / `grep` under Remote mode — without it eve
 
 ## 4. Skill marketplaces: which `SkillRepository` to pick
 
-Skills compose from low to high priority (details in [Skill](../harness/skill.md)):
+Skills compose from low to high priority (details in [Skill](/v2/en/docs/harness/skill)):
 
 | Layer | Source | Configured by | Use it for |
 |-------|--------|---------------|------------|
@@ -397,7 +414,7 @@ Pulling the single-component picks above into one table:
 | Exposed subagents (user talks to a subagent directly) | registry auto-wired by `distributedStore` — the `subagentId` resolves and the subagent recovers on any replica / after restart; route a `subagentId`'s messages back to the same node (sticky) so recovery is only the failover path. For `GatewayBootstrap`, pass `.distributedStore(...)` |
 | Graceful shutdown | `GracefulShutdownManager` (auto-registers JVM hook); handle SIGTERM; tune in-flight wait via `setConfig(...)` |
 | Observability | `OtelTracingMiddleware` + OpenTelemetry SDK + OTLP exporter |
-| Rate limiting | custom `MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](../building-blocks/middleware.md#rate-limit-middleware) |
+| Rate limiting | custom `MiddlewareBase` (onModelCall); see [Middleware — Rate-limit middleware](/v2/en/docs/building-blocks/middleware#rate-limit-middleware) |
 
 ## 7. A complete production builder template
 
@@ -458,7 +475,7 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 8. Common pitfalls
 
-- **Forgetting to pass `RuntimeContext`** — without a `sessionId`, all requests share the `defaultSessionId` state, causing cross-talk. In multi-user scenarios, **always pass `RuntimeContext.builder().userId(...).sessionId(...).build()` to every `call()`** to ensure state isolation. See [Agent — Multi-user Concurrency](../building-blocks/agent.md#multi-user--multi-session-concurrency).
+- **Forgetting to pass `RuntimeContext`** — without a `sessionId`, all requests share the `defaultSessionId` state, causing cross-talk. In multi-user scenarios, **always pass `RuntimeContext.builder().userId(...).sessionId(...).build()` to every `call()`** to ensure state isolation. See [Agent — Multi-user Concurrency](/v2/en/docs/building-blocks/agent#multi-user--multi-session-concurrency).
 - **`java.nio.Files` for workspace writes** — under sandbox / Remote mode this lands in the wrong place. Always go through `agent.getWorkspaceManager()`. **Exception**: builder-time seed files (`initWorkspaceIfAbsent`-style code) — no runtime context yet, `java.nio.Files` is correct because you're seeding the local template.
 - **`tools.json`'s `allow` filters built-in tools too** — when whitelisting, keep `read_file` / `memory_search` / `agent_spawn` and friends in the list, or every built-in gets stripped.
 - **`IsolationScope` changes do not migrate existing data** — pin it before launch. Changing it post-launch is equivalent to switching to a new namespace.
@@ -469,12 +486,12 @@ agent.call(msg, RuntimeContext.builder()
 
 ## Related pages
 
-- [Quickstart](../quickstart.md) — end-to-end first `HarnessAgent`
-- [Harness Architecture](../harness/architecture.md) — how capabilities cooperate
-- [Context & AgentState](../building-blocks/context.md) — `AgentState` / `AgentStateStore` / cross-node recovery
-- [Compaction](../harness/compaction.md) — conversation summarization, tool-result eviction, overflow recovery
-- [Workspace](../harness/workspace.md) — directory layout, two-layer reads, `tools.json`
-- [Filesystem](../harness/filesystem.md) — three deployment modes, `IsolationScope`
-- [Sandbox](../harness/sandbox.md) — sandbox details, five implementations, snapshot mechanics
-- [Skill](../harness/skill.md) — four-layer composition, marketplace stores, self-learning loop
-- [Middleware](../building-blocks/middleware.md) — custom observability / rate-limit / fallback middleware
+- [Quickstart](/v2/en/docs/quickstart) — end-to-end first `HarnessAgent`
+- [Harness Architecture](/v2/en/docs/harness/architecture) — how capabilities cooperate
+- [Context & AgentState](/v2/en/docs/building-blocks/context) — `AgentState` / `AgentStateStore` / cross-node recovery
+- [Compaction](/v2/en/docs/harness/compaction) — conversation summarization, tool-result eviction, overflow recovery
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, two-layer reads, `tools.json`
+- [Filesystem](/v2/en/docs/harness/filesystem) — three deployment modes, `IsolationScope`
+- [Sandbox](/v2/en/docs/harness/sandbox) — sandbox details, five implementations, snapshot mechanics
+- [Skill](/v2/en/docs/harness/skill) — four-layer composition, marketplace stores, self-learning loop
+- [Middleware](/v2/en/docs/building-blocks/middleware) — custom observability / rate-limit / fallback middleware

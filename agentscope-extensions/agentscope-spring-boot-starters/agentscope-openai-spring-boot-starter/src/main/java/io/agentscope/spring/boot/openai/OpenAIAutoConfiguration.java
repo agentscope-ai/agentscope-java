@@ -46,11 +46,6 @@ public class OpenAIAutoConfiguration {
             OpenAIProperties properties,
             ObjectProvider<OpenAIChatModelBuilderCustomizer> customizerObjectProvider) {
         String apiKey = trimToNull(properties.getApiKey());
-        if (apiKey == null) {
-            throw new IllegalStateException(
-                    "agentscope.openai.api-key must be configured when OpenAI provider is"
-                            + " selected");
-        }
 
         String modelName = trimToNull(properties.getModelName());
         if (modelName == null) {

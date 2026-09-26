@@ -23,6 +23,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -171,6 +172,133 @@ class ToolExecutorTest {
         assertEquals(
                 "Error: Tool execution failed: Tool completed without returning a result",
                 extractFirstText(responses.get(0)));
+    }
+
+    @Test
+    @DisplayName("Should return suspended result for external tools")
+    void shouldReturnSuspendedResultForExternalTools() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string"))))
+                        .build());
+
+        Map<String, Object> input = Map.of("endpoint", "/users");
+        ToolUseBlock externalCall =
+                ToolUseBlock.builder()
+                        .id("call-external")
+                        .name("external_api")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return a suspended response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals("call-external", response.getId(), "Response should keep tool call id");
+        assertEquals("external_api", response.getName(), "Response should keep tool name");
+        assertTrue(response.isSuspended(), "External tool should surface as suspended");
+        assertEquals("[Awaiting external execution]", extractFirstText(response));
+    }
+
+    @Test
+    @DisplayName("Should validate external tool input before suspension")
+    void shouldValidateExternalToolInputBeforeSuspension() {
+        toolkit.registerSchema(
+                ToolSchema.builder()
+                        .name("external_api")
+                        .description("Execute API outside the agent runtime")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("endpoint", Map.of("type", "string")),
+                                        "required",
+                                        List.of("endpoint")))
+                        .build());
+
+        Map<String, Object> input = Map.of("endpoint", 42);
+        ToolUseBlock invalidExternalCall =
+                ToolUseBlock.builder()
+                        .id("call-invalid-external")
+                        .name("external_api")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(invalidExternalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return a validation response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals(
+                "call-invalid-external", response.getId(), "Response should keep tool call id");
+        assertEquals("external_api", response.getName(), "Response should keep tool name");
+        assertTrue(!response.isSuspended(), "Invalid external input must not suspend");
+
+        String errorText = extractFirstText(response);
+        assertTrue(
+                errorText.startsWith("Error: Parameter validation failed for tool 'external_api'"),
+                "External tool should fail validation before suspension: " + errorText);
+    }
+
+    @Test
+    @DisplayName("Should reject inactive grouped external tools before suspension")
+    void shouldRejectInactiveGroupedExternalToolsBeforeSuspension() {
+        toolkit.createToolGroup("inactiveExternal", "Inactive external tools", false);
+        toolkit.registration()
+                .agentTool(
+                        new SchemaOnlyTool(
+                                ToolSchema.builder()
+                                        .name("external_inactive")
+                                        .description("Inactive external API")
+                                        .parameters(
+                                                Map.of(
+                                                        "type",
+                                                        "object",
+                                                        "properties",
+                                                        Map.of(
+                                                                "endpoint",
+                                                                Map.of("type", "string"))))
+                                        .build()))
+                .group("inactiveExternal")
+                .apply();
+
+        Map<String, Object> input = Map.of("endpoint", "/users");
+        ToolUseBlock externalCall =
+                ToolUseBlock.builder()
+                        .id("call-inactive-external")
+                        .name("external_inactive")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+
+        assertNotNull(responses, "Executor should return an authorization response");
+        assertEquals(1, responses.size(), "Single external call should yield one response");
+
+        ToolResultBlock response = responses.get(0);
+        assertEquals("call-inactive-external", response.getId(), "Response should keep call id");
+        assertEquals("external_inactive", response.getName(), "Response should keep tool name");
+        assertTrue(!response.isSuspended(), "Inactive external tool must not suspend");
+        assertEquals(
+                "Error: Unauthorized tool call: 'external_inactive' is not available",
+                extractFirstText(response));
     }
 
     @Test
@@ -548,134 +676,5 @@ class ToolExecutorTest {
         List<ContentBlock> outputs = response.getOutput();
         if (outputs.isEmpty()) return "";
         return ((TextBlock) outputs.get(0)).getText();
-    }
-
-    @Test
-    @DisplayName(
-            "Should never execute server-side tool calls locally even when a same-name tool is"
-                    + " registered")
-    void shouldNotExecuteServerToolLocally() {
-        // Register a local tool sharing the server tool's name to prove it is never invoked
-        AtomicInteger invocationCount = new AtomicInteger();
-        toolkit.registerTool(
-                new AgentTool() {
-                    @Override
-                    public String getName() {
-                        return "GOOGLE_SEARCH_WEB";
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return "Local tool that must never run for server tool calls";
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        return Map.of("type", "object", "properties", Map.of());
-                    }
-
-                    @Override
-                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        invocationCount.incrementAndGet();
-                        return Mono.just(ToolResultBlock.text("SHOULD NOT RUN"));
-                    }
-                });
-
-        ToolUseBlock serverCall =
-                ToolUseBlock.builder()
-                        .id("call-server")
-                        .name("GOOGLE_SEARCH_WEB")
-                        .input(Map.of("queries", "test query"))
-                        .server(true)
-                        .build();
-
-        List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(serverCall), null, null, null).block(TIMEOUT);
-
-        assertNotNull(responses, "Should return a response for the server tool call");
-        assertEquals(1, responses.size());
-        ToolResultBlock result = responses.get(0);
-        assertEquals("call-server", result.getId(), "Response should keep tool call id");
-        assertEquals("GOOGLE_SEARCH_WEB", result.getName(), "Response should keep tool name");
-        assertTrue(result.isSuspended(), "Server tool calls should be suspended, not executed");
-        assertEquals(0, invocationCount.get(), "Local tool must never be invoked");
-    }
-
-    @Test
-    @DisplayName("Should suspend server-side tool calls via the single-call API")
-    void shouldSuspendServerToolViaSingleCall() {
-        ToolUseBlock serverCall =
-                ToolUseBlock.builder()
-                        .id("call-server-single")
-                        .name("GOOGLE_MAPS")
-                        .input(Map.of("query", "test"))
-                        .server(true)
-                        .build();
-
-        ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(serverCall).build())
-                        .block(TIMEOUT);
-
-        assertNotNull(result, "Should return a response");
-        assertEquals("call-server-single", result.getId());
-        assertEquals("GOOGLE_MAPS", result.getName());
-        assertTrue(result.isSuspended(), "Server tool calls should be suspended, not executed");
-    }
-
-    @Test
-    @DisplayName("Should skip server-side tool calls when mixed with local tool calls in a batch")
-    void shouldSkipServerToolInMixedBatch() {
-        AtomicInteger localInvocationCount = new AtomicInteger();
-        toolkit.registerTool(
-                new AgentTool() {
-                    @Override
-                    public String getName() {
-                        return "local_tool";
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return "Local tool";
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        return Map.of("type", "object", "properties", Map.of());
-                    }
-
-                    @Override
-                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        localInvocationCount.incrementAndGet();
-                        return Mono.just(ToolResultBlock.text("local result"));
-                    }
-                });
-
-        ToolUseBlock serverCall =
-                ToolUseBlock.builder()
-                        .id("call-server-1")
-                        .name("GOOGLE_SEARCH_WEB")
-                        .input(Map.of("queries", "test"))
-                        .server(true)
-                        .build();
-        ToolUseBlock localCall =
-                ToolUseBlock.builder()
-                        .id("call-local-1")
-                        .name("local_tool")
-                        .input(Map.of())
-                        .content(JsonUtils.getJsonCodec().toJson(Map.of()))
-                        .build();
-
-        List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(serverCall, localCall), null, null, null).block(TIMEOUT);
-
-        assertNotNull(responses, "Should return responses for both calls");
-        assertEquals(2, responses.size(), "One result per input call (order preserved)");
-
-        ToolResultBlock serverResult = responses.get(0);
-        assertTrue(serverResult.isSuspended(), "Server tool call must not be executed");
-
-        ToolResultBlock localResult = responses.get(1);
-        assertEquals(1, localInvocationCount.get(), "Only the local tool should be invoked");
-        assertEquals("local result", extractFirstText(localResult));
     }
 }

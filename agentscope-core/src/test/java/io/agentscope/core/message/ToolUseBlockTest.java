@@ -246,7 +246,6 @@ class ToolUseBlockTest {
         assertEquals("value", toolUseBlock.getInput().get("key"));
         assertEquals("metaValue", toolUseBlock.getMetadata().get("metaKey"));
         assertEquals(null, toolUseBlock.getContent());
-        assertFalse(toolUseBlock.isServer());
     }
 
     @Test
@@ -282,27 +281,30 @@ class ToolUseBlockTest {
         assertEquals("value1", toolUseBlock.getInput().get("param1"));
         assertEquals("builder content", toolUseBlock.getContent());
         assertEquals("data1", toolUseBlock.getMetadata().get("meta1"));
-        assertFalse(toolUseBlock.isServer());
     }
 
     @Test
     void testConstructorWithServerFlag() {
         ToolUseBlock serverTool =
-                new ToolUseBlock(
-                        "tool-1001",
-                        "GOOGLE_SEARCH_WEB",
-                        Map.of("queries", "test query"),
-                        null,
-                        true);
+                ToolUseBlock.builder()
+                        .id("tool-1001")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
 
         assertEquals("tool-1001", serverTool.getId());
         assertEquals("GOOGLE_SEARCH_WEB", serverTool.getName());
         assertEquals("test query", serverTool.getInput().get("queries"));
-        assertTrue(serverTool.isServer());
+        assertTrue(serverTool.isServerTool());
 
         ToolUseBlock localTool =
-                new ToolUseBlock("tool-1002", "local-tool", Map.of("key", "value"), null, false);
-        assertFalse(localTool.isServer());
+                ToolUseBlock.builder()
+                        .id("tool-1002")
+                        .name("local-tool")
+                        .input(Map.of("key", "value"))
+                        .build();
+        assertFalse(localTool.isServerTool());
     }
 
     @Test
@@ -312,13 +314,13 @@ class ToolUseBlockTest {
                         .id("tool-1003")
                         .name("GOOGLE_SEARCH_WEB")
                         .input(Map.of("queries", "test query"))
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
-        assertTrue(serverToolUse.isServer());
+        assertTrue(serverToolUse.isServerTool());
 
         ToolUseBlock localTool =
                 ToolUseBlock.builder().id("tool-1004").name("local-tool").input(Map.of()).build();
-        assertFalse(localTool.isServer());
+        assertFalse(localTool.isServerTool());
     }
 
     @Test
@@ -328,17 +330,18 @@ class ToolUseBlockTest {
                         .id("tool-1005")
                         .name("GOOGLE_SEARCH_WEB")
                         .input(Map.of("queries", "test query"))
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         String json = objectMapper.writeValueAsString(serverTool);
         assertNotNull(json);
-        assertTrue(json.contains("\"server\":true"), "Expected server field in JSON: " + json);
+        assertTrue(
+                json.contains("\"serverTool\":true"), "Expected server metadata in JSON: " + json);
 
         ToolUseBlock localTool =
                 ToolUseBlock.builder().id("tool-1006").name("local-tool").input(Map.of()).build();
         String localJson = objectMapper.writeValueAsString(localTool);
-        assertTrue(localJson.contains("\"server\":false"));
+        assertFalse(localJson.contains("\"serverTool\":true"));
     }
 
     @Test
@@ -350,14 +353,14 @@ class ToolUseBlockTest {
                     "id": "tool-1007",
                     "name": "GOOGLE_SEARCH_WEB",
                     "input": {"queries": "test query"},
-                    "server": true
+                    "metadata": {"serverTool": true}
                 }
                 """;
 
         ToolUseBlock serverTool = objectMapper.readValue(json, ToolUseBlock.class);
         assertEquals("tool-1007", serverTool.getId());
         assertEquals("GOOGLE_SEARCH_WEB", serverTool.getName());
-        assertTrue(serverTool.isServer());
+        assertTrue(serverTool.isServerTool());
     }
 
     @Test
@@ -373,7 +376,7 @@ class ToolUseBlockTest {
                 """;
 
         ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
-        assertFalse(toolUseBlock.isServer());
+        assertFalse(toolUseBlock.isServerTool());
     }
 
     @Test
@@ -383,14 +386,14 @@ class ToolUseBlockTest {
                         .id("tool-1009")
                         .name("GOOGLE_SEARCH_WEB")
                         .input(Map.of("queries", "test query"))
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         String json = objectMapper.writeValueAsString(original);
         ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
 
-        assertEquals(original.isServer(), deserialized.isServer());
-        assertTrue(deserialized.isServer());
+        assertEquals(original.isServerTool(), deserialized.isServerTool());
+        assertTrue(deserialized.isServerTool());
     }
 
     @Test
@@ -400,12 +403,12 @@ class ToolUseBlockTest {
                         .id("tool-1010")
                         .name("GOOGLE_SEARCH_WEB")
                         .input(Map.of())
-                        .server(true)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
                         .build();
 
         ToolUseBlock updated = serverTool.withState(ToolCallState.ALLOWED);
 
-        assertTrue(updated.isServer());
+        assertTrue(updated.isServerTool());
         assertEquals(ToolCallState.ALLOWED, updated.getState());
     }
 

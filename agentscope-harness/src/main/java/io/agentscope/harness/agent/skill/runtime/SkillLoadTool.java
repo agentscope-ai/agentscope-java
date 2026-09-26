@@ -46,9 +46,10 @@ import reactor.core.publisher.Mono;
  *       lazy listing
  * </ol>
  *
- * <p>The tool's catalog reference is held via an {@link AtomicReference} supplied by
- * {@link SkillRuntime} so the registered tool instance can be reused across {@code call()}
- * rounds without re-registering, while the catalog itself is rebuilt every round.
+ * <p>The registered tool resolves the filtered catalog from each {@link
+ * ToolCallParam#getRuntimeContext() tool call's RuntimeContext}, keeping concurrent calls and
+ * sessions isolated without re-registering the tool. A legacy catalog reference is consulted only
+ * for deprecated callers that invoke the tool without any RuntimeContext.
  */
 @SuppressWarnings("deprecation")
 public final class SkillLoadTool implements AgentTool {
@@ -58,13 +59,37 @@ public final class SkillLoadTool implements AgentTool {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLoadTool.class);
 
-    private final AtomicReference<SkillCatalog> catalogRef;
+    private final AtomicReference<SkillCatalog> legacyCatalogRef;
+    private final boolean exposeLegacyCatalogInSchema;
 
+    /** Creates a context-scoped loader with an empty context-free compatibility catalog. */
+    public SkillLoadTool() {
+        this(new AtomicReference<>(SkillCatalog.empty()), false);
+    }
+
+    /**
+     * Creates a loader backed by a legacy context-free catalog reference.
+     *
+     * <p>This constructor is retained for source and binary compatibility. The supplied reference
+     * is never used when a tool call carries a RuntimeContext, preventing it from bypassing the
+     * request-scoped skill filter.
+     *
+     * @deprecated Prefer {@link #SkillLoadTool()} and bind catalogs through {@link
+     *     SkillRuntime#install(SkillCatalog, io.agentscope.core.agent.RuntimeContext,
+     *     io.agentscope.core.tool.Toolkit)}.
+     */
+    @Deprecated(since = "2.2.0")
     public SkillLoadTool(AtomicReference<SkillCatalog> catalogRef) {
-        if (catalogRef == null) {
+        this(catalogRef, true);
+    }
+
+    SkillLoadTool(
+            AtomicReference<SkillCatalog> legacyCatalogRef, boolean exposeLegacyCatalogInSchema) {
+        if (legacyCatalogRef == null) {
             throw new IllegalArgumentException("catalogRef must not be null");
         }
-        this.catalogRef = catalogRef;
+        this.legacyCatalogRef = legacyCatalogRef;
+        this.exposeLegacyCatalogInSchema = exposeLegacyCatalogInSchema;
     }
 
     @Override
@@ -90,27 +115,40 @@ public final class SkillLoadTool implements AgentTool {
 
     @Override
     public Map<String, Object> getParameters() {
-        SkillCatalog snapshot = catalogRef.get();
-        List<String> ids = snapshot == null ? List.of() : snapshot.ids();
+        Map<String, Object> skillIdSchema;
+        if (exposeLegacyCatalogInSchema) {
+            SkillCatalog snapshot = legacyCatalogRef.get();
+            List<String> ids = snapshot != null ? snapshot.ids() : List.of();
+            skillIdSchema =
+                    Map.of(
+                            "type", "string",
+                            "description", "Unique skill identifier.",
+                            "enum", ids);
+        } else {
+            skillIdSchema =
+                    Map.of(
+                            "type",
+                            "string",
+                            "description",
+                            "Unique skill identifier listed in the current <available_skills>"
+                                    + " block.");
+        }
         return Map.of(
                 "type", "object",
                 "properties",
                         Map.of(
                                 "skillId",
-                                        Map.of(
-                                                "type", "string",
-                                                "description", "Unique skill identifier.",
-                                                "enum", ids),
+                                skillIdSchema,
                                 "path",
-                                        Map.of(
-                                                "type",
-                                                "string",
-                                                "description",
-                                                "Exact resource path within the skill."
-                                                        + " Use 'SKILL.md' for the skill's"
-                                                        + " instructions; do not use '.',"
-                                                        + " './', directories, or absolute"
-                                                        + " paths.")),
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "description",
+                                        "Exact resource path within the skill."
+                                                + " Use 'SKILL.md' for the skill's"
+                                                + " instructions; do not use '.',"
+                                                + " './', directories, or absolute"
+                                                + " paths.")),
                 "required", List.of("skillId", "path"));
     }
 
@@ -129,8 +167,8 @@ public final class SkillLoadTool implements AgentTool {
                         ToolResultBlock.error("Missing or empty required parameter: path"));
             }
 
-            SkillCatalog catalog = catalogRef.get();
-            HarnessSkillEntry entry = catalog == null ? null : catalog.get(skillId);
+            SkillCatalog catalog = catalogFor(param);
+            HarnessSkillEntry entry = catalog.get(skillId);
             if (entry == null) {
                 return Mono.just(
                         ToolResultBlock.error(
@@ -144,6 +182,14 @@ public final class SkillLoadTool implements AgentTool {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
+    }
+
+    private SkillCatalog catalogFor(ToolCallParam param) {
+        if (param.getRuntimeContext() != null) {
+            return SkillRuntime.catalogFor(param.getRuntimeContext());
+        }
+        SkillCatalog legacy = legacyCatalogRef.get();
+        return legacy != null ? legacy : SkillCatalog.empty();
     }
 
     private ToolResultBlock loadOne(HarnessSkillEntry entry, String path) {

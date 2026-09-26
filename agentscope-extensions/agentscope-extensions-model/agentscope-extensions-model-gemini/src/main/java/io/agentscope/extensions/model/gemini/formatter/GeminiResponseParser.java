@@ -102,18 +102,21 @@ public class GeminiResponseParser {
             if (response.usageMetadata().isPresent()) {
                 GenerateContentResponseUsageMetadata metadata = response.usageMetadata().get();
 
-                int inputTokens = metadata.promptTokenCount().orElse(0);
-                int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
+                int inputTokens =
+                        metadata.promptTokenCount().orElse(0)
+                                + metadata.toolUsePromptTokenCount().orElse(0);
+                int cachedTokens = metadata.cachedContentTokenCount().orElse(0);
                 int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
-
-                // Output tokens exclude thinking tokens (following DashScope behavior)
-                // In Gemini, candidatesTokenCount includes thinking, so we subtract it
-                int outputTokens = totalOutputTokens - thinkingTokens;
+                int toolUsePromptTokens = metadata.toolUsePromptTokenCount().orElse(0);
+                int outputTokens = metadata.candidatesTokenCount().orElse(0) + thinkingTokens;
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .cachedTokens(cachedTokens)
+                                .toolUsePromptTokens(toolUsePromptTokens)
+                                .reasoningTokens(thinkingTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -274,20 +277,21 @@ public class GeminiResponseParser {
             }
         }
 
-        // Build metadata with thought signature if present
-        Map<String, Object> metadata = null;
+        // Build metadata with provider flags and optional thought signature
+        Map<String, Object> metadata = new HashMap<>();
+        if (server) {
+            metadata.put(ToolUseBlock.METADATA_SERVER_TOOL, true);
+        }
         if (thoughtSignature != null) {
-            metadata = new HashMap<>();
             metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
         }
 
         return ToolUseBlock.builder()
                 .id(id)
-                .server(server)
                 .name(name)
                 .input(argsMap)
                 .content(rawContent)
-                .metadata(metadata)
+                .metadata(metadata.isEmpty() ? null : metadata)
                 .state(state)
                 .build();
     }
@@ -310,10 +314,9 @@ public class GeminiResponseParser {
                 return;
             }
 
-            // Build metadata with thought signature if present
-            Map<String, Object> metadata = null;
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(ToolResultBlock.METADATA_SERVER_TOOL, true);
             if (thoughtSignature != null) {
-                metadata = new HashMap<>();
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
 
@@ -321,7 +324,6 @@ public class GeminiResponseParser {
                     ToolResultBlock.builder()
                             .id(id)
                             .name(name)
-                            .server(true)
                             .state(ToolResultState.SUCCESS)
                             .metadata(metadata);
 

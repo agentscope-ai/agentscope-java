@@ -24,17 +24,14 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.harness.agent.memory.session.SessionEntry;
-import io.agentscope.harness.agent.memory.session.SessionTree;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -190,125 +187,32 @@ public class MemoryFlushManager {
      * Returns the string path of the session JSONL file where messages for the given agent and
      * session are offloaded. Used by the compaction layer to embed the archive location in the
      * summary message so the agent can retrieve full history if needed.
+     *
+     * @deprecated Prefer {@link SessionTranscriptWriter#resolveContextPath}.
      */
+    @Deprecated
     public String resolveOffloadPath(RuntimeContext rc, String agentId, String sessionId) {
-        try {
-            Path p = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
-            return p != null ? p.toString() : "";
-        } catch (Exception e) {
-            log.debug(
-                    "Could not resolve offload path for agent={}, session={}: {}",
-                    agentId,
-                    sessionId,
-                    e.getMessage());
-            return "";
-        }
+        return new SessionTranscriptWriter(workspaceManager)
+                .resolveContextPath(rc, agentId, sessionId);
     }
 
     /**
      * Offloads raw messages to the JSONL session tree.
+     *
+     * @deprecated Prefer {@link SessionTranscriptWriter#appendMessages}. Kept as a thin
+     *     delegate so compaction / overflow-recovery call sites keep compiling during the
+     *     migration; new code should use {@link SessionTranscriptWriter} directly.
      */
+    @Deprecated
     public void offloadMessages(
             RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
-        offloadToSessionTree(rc, messages, agentId, sessionId);
-
+        new SessionTranscriptWriter(workspaceManager)
+                .appendMessages(rc, messages, agentId, sessionId);
         log.debug(
                 "Offloaded {} messages for agent={}, session={}",
                 messages.size(),
                 agentId,
                 sessionId);
-        workspaceManager.updateSessionIndex(rc, agentId, sessionId, "conversation offloaded");
-    }
-
-    private void offloadToSessionTree(
-            RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
-        try {
-            Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
-            String contextRelPath =
-                    WorkspaceConstants.AGENTS_DIR
-                            + "/"
-                            + agentId
-                            + "/"
-                            + WorkspaceConstants.SESSIONS_DIR
-                            + "/"
-                            + sessionId
-                            + WorkspaceConstants.SESSION_CONTEXT_EXT;
-            SessionTree tree =
-                    new SessionTree(
-                                    contextFile,
-                                    workspaceManager.getWorkspace(),
-                                    workspaceManager.getFilesystem(),
-                                    workspaceManager.getIndex(),
-                                    contextRelPath)
-                            .setRuntimeContext(rc);
-            tree.load();
-            // Sync from remote before appending so that entries written by a previous replica
-            // (cross-machine handoff) are included in the merged file pushed to remote.
-            tree.syncFromRemote();
-
-            List<SessionEntry> existingEntries = new ArrayList<>(tree.getAllEntries());
-            Set<String> existingIds =
-                    existingEntries.stream()
-                            .map(SessionEntry::getId)
-                            .collect(Collectors.toCollection(HashSet::new));
-            String lastId =
-                    existingEntries.isEmpty()
-                            ? null
-                            : existingEntries.get(existingEntries.size() - 1).getId();
-
-            // The caller passes the full conversation on every turn. Use the stable Msg IDs
-            // to keep the session JSONL append-only and idempotent across repeated offloads.
-            for (Msg msg : messages) {
-                if (msg.getRole() == null || isSessionContextMessage(msg)) {
-                    continue;
-                }
-                String rendered = renderContentBlocks(msg);
-                if (rendered == null || rendered.isBlank()) {
-                    continue;
-                }
-                String entryId = normalizeEntryId(msg.getId());
-                if (entryId == null) {
-                    log.warn(
-                            "Msg without stable ID encountered (role={}); dedup skipped",
-                            msg.getRole());
-                }
-                if (entryId != null && existingIds.contains(entryId)) {
-                    continue;
-                }
-                String toolCallId = extractToolCallId(msg);
-                SessionEntry.MessageEntry entry =
-                        new SessionEntry.MessageEntry(
-                                entryId, lastId, null, msg.getRole().name(), rendered, toolCallId);
-                tree.append(entry);
-                existingIds.add(entry.getId());
-                lastId = entry.getId();
-            }
-
-            tree.flush();
-        } catch (Exception e) {
-            log.warn("Failed to offload to JSONL session tree: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Extracts a representative tool call ID from a message, if present.
-     * For TOOL messages, returns the first ToolResultBlock's id.
-     * For ASSISTANT messages with tool calls, returns the first ToolUseBlock's id.
-     */
-    private static String extractToolCallId(Msg msg) {
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof ToolResultBlock tr && tr.getId() != null) {
-                return tr.getId();
-            }
-            if (block instanceof ToolUseBlock tu && tu.getId() != null) {
-                return tu.getId();
-            }
-        }
-        return null;
-    }
-
-    private static String normalizeEntryId(String id) {
-        return id != null && !id.isBlank() ? id : null;
     }
 
     /**
@@ -346,16 +250,24 @@ public class MemoryFlushManager {
      * Serializes all messages into a textual representation for the memory extraction model.
      * Includes USER, ASSISTANT, and TOOL messages. Assistant tool-call blocks and tool-result
      * blocks are rendered as concise text so the model can extract memories from tool interactions.
-     * The injected {@code <session_context>} user message is skipped as it contains only
-     * environment metadata, not real conversation content.
+     * Internal context messages are skipped because they are generated from existing context,
+     * not new user/assistant/tool facts.
      */
     private String serializeMessages(List<Msg> messages) {
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
-                .filter(m -> !isSessionContextMessage(m))
+                .filter(m -> !isInternalContextMessage(m))
                 .map(this::renderMessage)
                 .filter(s -> s != null && !s.isBlank())
                 .collect(Collectors.joining("\n"));
+    }
+
+    private static boolean isInternalContextMessage(Msg msg) {
+        return isSessionContextMessage(msg) || isCompactionSummaryMessage(msg);
+    }
+
+    private static boolean isCompactionSummaryMessage(Msg msg) {
+        return msg != null && ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName());
     }
 
     private static boolean isSessionContextMessage(Msg msg) {

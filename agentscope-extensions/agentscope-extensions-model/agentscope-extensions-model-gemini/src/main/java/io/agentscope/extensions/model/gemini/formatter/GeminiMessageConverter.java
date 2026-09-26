@@ -118,7 +118,7 @@ public class GeminiMessageConverter {
 
                     // Build Part with FunctionCall or ToolCall and optional thought signature
                     Part.Builder partBuilder = null;
-                    if (tub.isServer()) {
+                    if (tub.isServerTool()) {
                         // Create ToolCall for server-side (built-in) tools
                         ToolCall toolCall =
                                 ToolCall.builder()
@@ -143,8 +143,19 @@ public class GeminiMessageConverter {
                     if (metadata != null
                             && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
+                        if (signature instanceof byte[] bytes) {
+                            // In-memory: signature is already byte[]
+                            partBuilder.thoughtSignature(bytes);
+                        } else if (signature instanceof String base64 && !base64.isEmpty()) {
+                            // Persistence: the codec restores byte[] as a String
+                            try {
+                                partBuilder.thoughtSignature(Base64.getDecoder().decode(base64));
+                            } catch (IllegalArgumentException e) {
+                                log.warn(
+                                        "Skipping invalid thought signature on tool call '{}'",
+                                        tub.getName(),
+                                        e);
+                            }
                         }
                     }
 
@@ -154,7 +165,7 @@ public class GeminiMessageConverter {
                     // Server results stay inline in the model Content; local results are queued
                     // for an independent user Content after the current message.
                     String textOutput = convertToolResultToString(trb.getOutput());
-                    if (trb.isServer()) {
+                    if (trb.isServerTool()) {
                         // Create ToolResponse for server-side (built-in) tools, the output is
                         // placed under the "response" key
                         Map<String, Object> responseMap;
