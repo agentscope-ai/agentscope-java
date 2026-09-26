@@ -19,6 +19,7 @@ import io.agentscope.core.tool.ToolBase;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,7 +32,11 @@ import reactor.core.publisher.Mono;
  * <p>Evaluation order:
  *
  * <ol>
- *   <li>Tool-level deny rules (highest priority).
+ *   <li>Tool-level deny rules (highest priority — an escalation request can never override
+ *       them).
+ *   <li>Model-requested escalation, when the call carries {@code sandbox_permissions} /
+ *       {@code justification} arguments (see {@link PermissionEscalation}); rejected requests
+ *       deny fail-closed, valid strictly-wider requests become ASK with the justification.
  *   <li>Tool-level ask rules.
  *   <li>Tool-specific checks (bypass-immune): EXPLORE/ACCEPT_EDITS read-only handling, dangerous
  *       path checks, plus whatever the tool's own {@link ToolBase#checkPermissions} returns.
@@ -132,6 +137,10 @@ public final class PermissionEngine {
     /**
      * Resolves a permission decision for the given tool invocation.
      *
+     * <p>When the call carries escalation arguments ({@code sandbox_permissions} / {@code
+     * justification}), they are resolved after deny rules (a hard integrator ceiling that
+     * escalation cannot override) and before everything else; see {@link PermissionEscalation}.
+     *
      * @param tool the tool being called
      * @param toolInput the input map the tool will receive
      * @return a Mono emitting the resolved {@link PermissionDecision}
@@ -140,19 +149,87 @@ public final class PermissionEngine {
         Objects.requireNonNull(tool, "tool must not be null");
         Map<String, Object> input = toolInput == null ? Map.of() : toolInput;
 
-        // 1. Deny rules (highest priority)
+        // 1. Deny rules (highest priority — escalation can never override a deny rule)
         PermissionDecision denyDecision = checkDenyRules(tool, input);
         if (denyDecision != null) {
             return Mono.just(denyDecision);
         }
 
-        // 2. Ask rules
+        // 2. Model-requested escalation — but ONLY for tools that advertise the escalation
+        // arguments in their schema. A `justification` parameter on an ordinary business tool
+        // is that tool's own business argument, not escalation intent, and must keep its
+        // previous evaluation whether or not the feature is enabled.
+        boolean toolAdvertisesEscalation = PermissionEscalation.advertisesEscalation(tool);
+        if (toolAdvertisesEscalation) {
+            PermissionEscalation.Outcome escalation =
+                    PermissionEscalation.resolve(
+                            input, context.getMode(), context.isEscalationEnabled());
+            if (escalation.type() == PermissionEscalation.Outcome.Type.DENY) {
+                return Mono.just(
+                        PermissionDecision.builder()
+                                .behavior(PermissionBehavior.DENY)
+                                .message(escalation.denialReason())
+                                .decisionReason("Escalation request rejected")
+                                .build());
+            }
+            if (escalation.type() == PermissionEscalation.Outcome.Type.ASK) {
+                // Note: the ASK message does NOT travel into RequireUserConfirmEvent — the
+                // event carries the pending ToolUseBlock, and the confirmation UI renders the
+                // request (target + justification) from the tool-call input. The decision
+                // message serves logs and tests; do not "fix" it into the event. When the
+                // tool's self-check returns an ASK of its own (e.g. a safety question), it is
+                // intentionally absorbed into this escalation ASK — both paths end at the same
+                // human approver either way.
+                // The truncated justification is written back into the decision's updatedInput
+                // so the gate can rewrite the pending tool call BEFORE it reaches the
+                // confirmation event — the 500-char cap must bind what the approver actually
+                // sees, not just the log text.
+                Map<String, Object> cappedInput = new LinkedHashMap<>(input);
+                cappedInput.put(PermissionEscalation.ARG_JUSTIFICATION, escalation.justification());
+                PermissionDecision escalationAsk =
+                        PermissionDecision.builder()
+                                .behavior(PermissionBehavior.ASK)
+                                .updatedInput(cappedInput)
+                                .message(
+                                        "Escalation to '"
+                                                + escalation.target()
+                                                + "' requested for "
+                                                + tool.getName()
+                                                + " — justification: "
+                                                + escalation.justification())
+                                .decisionReason(
+                                        "Model-requested escalation from mode "
+                                                + context.getMode().name().toLowerCase(Locale.ROOT))
+                                .build();
+                // A tool's own hard DENY (its business check) can never be overridden by an
+                // approved escalation — only mode-induced restrictions are escalatable. The
+                // mode-based part of the tool-specific check is deliberately skipped here:
+                // lifting it is exactly what the request asks the user to approve. An EMPTY
+                // self-check falls back to the escalation ASK — the same defensive posture as
+                // the normal path's switchIfEmpty, and fail-closed: an empty stream must
+                // never silently drop the call out of the gate (which would execute it
+                // unapproved).
+                return tool.checkPermissions(input, context)
+                        .flatMap(
+                                toolDecision -> {
+                                    if (toolDecision != null
+                                            && toolDecision.getBehavior()
+                                                    == PermissionBehavior.DENY) {
+                                        return Mono.just(toolDecision);
+                                    }
+                                    return Mono.just(escalationAsk);
+                                })
+                        .switchIfEmpty(Mono.just(escalationAsk));
+            }
+        }
+
+        // 3. Ask rules
         PermissionDecision askDecision = checkAskRules(tool, input);
         if (askDecision != null) {
             return Mono.just(askDecision.withSuggestedRules(tool.generateSuggestions(input)));
         }
 
-        // 3. Tool-specific check (bypass-immune)
+        // 4. Tool-specific check (bypass-immune)
         return toolCheckPermissions(tool, input)
                 .flatMap(
                         toolDecision -> {
@@ -179,13 +256,13 @@ public final class PermissionEngine {
 
     private Mono<PermissionDecision> continueAfterToolCheck(
             ToolBase tool, Map<String, Object> input) {
-        // 4. Allow rules
+        // 5. Allow rules
         PermissionDecision allowDecision = checkAllowRules(tool, input);
         if (allowDecision != null) {
             return Mono.just(allowDecision);
         }
 
-        // 5. BYPASS fallback
+        // 6. BYPASS fallback
         if (context.getMode() == PermissionMode.BYPASS) {
             return Mono.just(
                     PermissionDecision.builder()
@@ -195,7 +272,7 @@ public final class PermissionEngine {
                             .build());
         }
 
-        // 6. Default (ASK, or DENY under DONT_ASK)
+        // 7. Default (ASK, or DENY under DONT_ASK)
         return Mono.just(
                 defaultDecisionAsk(tool.getName())
                         .withSuggestedRules(tool.generateSuggestions(input)));
