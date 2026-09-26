@@ -48,6 +48,7 @@ import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
@@ -1115,6 +1116,56 @@ class HarnessAgentTest {
                 2,
                 userMiddlewareHits.get(),
                 "fromAgent should still propagate user middleware into subagents");
+    }
+
+    @Test
+    void builder_conflictPolicy_defaultsToOverwrite() {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("policy-default")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals(ConflictPolicy.OVERWRITE, agent.getConflictPolicy());
+    }
+
+    @Test
+    void builder_conflictPolicy_isForwardedToDelegate() {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("policy-fail")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .conflictPolicy(ConflictPolicy.FAIL)
+                        .build();
+
+        assertEquals(ConflictPolicy.FAIL, agent.getConflictPolicy());
+        assertEquals(ConflictPolicy.FAIL, agent.getDelegate().getConflictPolicy());
+    }
+
+    @Test
+    void fromAgent_inheritsSourceConflictPolicy() {
+        ReActAgent source =
+                ReActAgent.builder()
+                        .name("source")
+                        .model(stubModel("done"))
+                        .toolkit(new Toolkit())
+                        .conflictPolicy(ConflictPolicy.APPEND_MERGE)
+                        .build();
+
+        HarnessAgent wrapped =
+                HarnessAgent.Builder.fromAgent(source)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        assertEquals(
+                ConflictPolicy.APPEND_MERGE,
+                wrapped.getDelegate().getConflictPolicy(),
+                "a conflict policy set on the source agent must survive being wrapped");
     }
 
     @Test
