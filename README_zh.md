@@ -93,11 +93,12 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 #### Maven
 
+<!-- AGENTSCOPE_QUICKSTART_VERSION:start -->
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
@@ -107,9 +108,10 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
+<!-- AGENTSCOPE_QUICKSTART_VERSION:end -->
 
 其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
 

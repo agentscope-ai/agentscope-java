@@ -93,11 +93,12 @@ Welcome to join our community on
 
 #### Maven
 
+<!-- AGENTSCOPE_QUICKSTART_VERSION:start -->
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
@@ -107,9 +108,10 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
+<!-- AGENTSCOPE_QUICKSTART_VERSION:end -->
 
 Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
 

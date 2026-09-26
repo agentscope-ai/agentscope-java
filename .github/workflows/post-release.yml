@@ -1,0 +1,306 @@
+name: Post-release version alignment
+
+# ---------------------------------------------------------------------------
+# Post-release housekeeping for official (GA) releases.
+#
+# Job order (serial by design):
+#   gate           resolve the release version from the triggering event and
+#                  reject anything that is not an official release
+#   bump-revision  advance every <revision> property on main from the released
+#                  version to the next development version
+#                  (release v2.0.4 → revision 2.0.5-SNAPSHOT)
+#   update-readme  point the quick-start dependency examples in the root
+#                  README.md / README_zh.md at the released version
+#
+# Bump rule is PATCH-only: <revision> always advances to X.Y.(Z+1)-SNAPSHOT
+# of the released version. Upstream history is the rationale — v2.0.0 was
+# followed by 2.0.1 → 2.0.2 → 2.0.3 → 2.0.4, i.e. a minor line continues with
+# patch releases, so a "Z == 0 ⇒ bump minor" heuristic would have produced
+# the wrong 2.1.0-SNAPSHOT. For a minor/major release: set <revision> to
+# <X.Y.Z>-SNAPSHOT manually, then use "Run workflow" (workflow_dispatch) to
+# finish the alignment — no tag re-push needed. The cross-check below emits
+# exactly this instruction when a tag lands on a revision from another line.
+#
+# Version semantics are intentionally independent:
+#   README examples = latest official release (what users should consume)
+#   <revision>      = next development version (SNAPSHOT)
+#
+# Triggers (all funnel through the same gate):
+#   release published  GitHub Releases — the official act of publishing.
+#                      A bare tag push is intentionally NOT a trigger: the
+#                      README examples must only point at versions that are
+#                      actually released and consumable.
+#   workflow_dispatch  manual entry / recovery — pass the released version;
+#                      also the way to finish alignment after a minor/major
+#                      line change (see the bump rule above)
+#
+# Releases marked as prerelease, or Releases whose tag is not a plain
+# X.Y.Z (e.g. v2.0.0-RC5), never run the alignment. Running the alignment
+# twice for one version (a Release publish plus a manual dispatch) is safe —
+# the idempotency checks make the second run a no-op.
+#
+# Pushes use the workflow GITHUB_TOKEN, which by GitHub design does not
+# trigger other workflows (no CI loop for version-literal commits).
+# NOTE for maintainers: if main is protected by rulesets / required checks,
+# configure a PAT (Contents: R/W, added to the ruleset bypass list) as the
+# RELEASE_BOT_TOKEN secret and pass it to both checkout steps via
+# token: ${{ secrets.RELEASE_BOT_TOKEN }} — same pattern as a release bot.
+# ---------------------------------------------------------------------------
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Released version, e.g. 2.2.1 or v2.2.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One run per version string: the pushing jobs serialize on a job-level
+# concurrency group keyed on the gate-normalized version (no optional `v`),
+# so a Release publish (v2.0.4) and a manual dispatch (2.0.4) cannot race
+# their pushes to main — the later run queues and its idempotency checks
+# turn it into a no-op. Job-level (not workflow-level) because the
+# normalized key is only available as `needs.gate.outputs.version`.
+
+jobs:
+  gate:
+    name: "Gate: official release check"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-run: ${{ steps.version.outputs.should-run }}
+    steps:
+      - name: "Resolve release version"
+        id: version
+        env:
+          # dispatch carries the version as a human-typed input; Release
+          # events carry it in the release payload. The optional `v` prefix
+          # is normalized away below.
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          # A prerelease Release must never advance the development version.
+          if [ "${PRERELEASE}" = "true" ]; then
+            echo "::notice::Release ${TAG_NAME} is a prerelease, skipping version alignment"
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Official releases only: strict semver, optional `v` prefix.
+          # A Release can still be created on a suffixed tag like
+          # v2.0.0-RC5 (its prerelease flag then protects it only if set),
+          # and workflow_dispatch accepts anything a human typed — so the
+          # suffix must be rejected here for every event type.
+          if [[ ! "${TAG_NAME}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::'${TAG_NAME}' is not an official X.Y.Z release, skipping version alignment"
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "should-run=true" >> "$GITHUB_OUTPUT"
+
+  bump-revision:
+    name: "Bump revision on main"
+    needs: [gate]
+    if: needs.gate.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # Dedupe concurrent triggers of the same release (Release publish v2.0.4
+    # vs manual dispatch 2.0.4): the key is the gate-normalized version, so
+    # both land in one group and the later run queues here instead of
+    # racing this job's push to main.
+    concurrency:
+      group: post-release-${{ needs.gate.outputs.version }}
+      cancel-in-progress: false
+    # Single source of truth for the next version: computed once in the
+    # advance step and exported as a job output, so the pom edit and the
+    # commit message can never drift apart if the bump rule changes.
+    outputs:
+      next-revision: ${{ steps.advance.outputs.next-revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: "Advance <revision> to the next development version"
+        id: advance
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          # PATCH-only bump rule (see file header). Exported first so even the
+          # idempotent no-op path below leaves a defined output.
+          NEXT="$(echo "${VERSION}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')-SNAPSHOT"
+          echo "next-revision=${NEXT}" >> "$GITHUB_OUTPUT"
+
+          CURRENT="$(sed -n 's:.*<revision>\(.*\)</revision>.*:\1:p' pom.xml | head -1 | tr -d '[:space:]')"
+          # Explicit diagnostic instead of an opaque `set -e` exit when the
+          # property is missing from the root pom or wrapped across lines.
+          if [ -z "${CURRENT}" ]; then
+            echo "::error::No single-line <revision> property found in pom.xml"
+            exit 1
+          fi
+          # Idempotency: a repeated trigger for the same release is a no-op.
+          # Must run BEFORE the cross-check, otherwise the already-bumped
+          # state would fail it.
+          if [ "${CURRENT}" = "${NEXT}" ]; then
+            echo "::notice::Revision already ${NEXT}, nothing to do"
+            exit 0
+          fi
+          # Cross-check: the tag must match the root pom <revision> (either
+          # the plain X.Y.Z form or the X.Y.Z-SNAPSHOT dev form). Without
+          # this, any tag combined with any main state could bump a
+          # misplaced version.
+          if [ "${CURRENT}" != "${VERSION}" ] && [ "${CURRENT}" != "${VERSION}-SNAPSHOT" ]; then
+            if [[ "${CURRENT}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$ ]]; then
+              # Different release line — typical after a minor/major release
+              # where this PATCH-only workflow left <revision> behind. Give
+              # the operator the exact recovery path instead of a message
+              # that reads like a mis-tagged version.
+              echo "::error::This workflow only advances PATCH versions. <revision>${CURRENT}</revision> is on a different release line than v${VERSION}. Set <revision>${VERSION}-SNAPSHOT</revision> manually, then re-run this workflow (Actions → Post-release version alignment → Run workflow, version=${VERSION})."
+            else
+              echo "::error::Release v${VERSION} does not match root pom <revision>${CURRENT}</revision> (expected ${VERSION} or ${VERSION}-SNAPSHOT); refusing to bump"
+            fi
+            exit 1
+          fi
+
+          echo "Bumping ${CURRENT} -> ${NEXT} (from release v${VERSION})"
+          # Replace every pom that declares its own <revision> property: the
+          # root aggregator plus the independently buildable BOM poms
+          # (agentscope-dependencies-bom, agentscope-distribution/agentscope-bom).
+          # Only the literal <revision> tag is touched — dependencyManagement
+          # references to the ${revision} property are left alone.
+          # mapfile + quoted array keeps paths with spaces/globs intact;
+          # `|| true` prevents `set -e` from aborting before the explicit
+          # empty-list diagnostic below can explain what happened.
+          CURRENT_PATTERN="$(printf '%s' "${CURRENT}" | sed 's/\./\\./g')"
+          mapfile -t POMS < <(grep -rl --include='pom.xml' '<revision>' . || true)
+          if [ "${#POMS[@]}" -eq 0 ]; then
+            echo "::error::No pom declares a <revision> property; refusing to run on an unexpected repository layout"
+            exit 1
+          fi
+          for f in "${POMS[@]}"; do
+            sed -i "s|<revision>${CURRENT_PATTERN}</revision>|<revision>${NEXT}</revision>|g" "${f}"
+          done
+          # Fail loudly if any pom still carries the old revision literal.
+          if grep -rqs --include='pom.xml' "<revision>${CURRENT}</revision>" .; then
+            echo "::error::Some poms still declare <revision>${CURRENT}</revision> after the bump"
+            grep -rn --include='pom.xml' "<revision>${CURRENT}" . || true
+            exit 1
+          fi
+          echo "Revisions after bump:"
+          grep -rn --include='pom.xml' '<revision>' . || true
+
+      - name: "Commit and push"
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          # From the advance step output — edit and message cannot drift.
+          NEXT: ${{ steps.advance.outputs.next-revision }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "::notice::No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): bump revision to ${NEXT} after v${VERSION} release"
+          git push origin main
+
+  # Runs after bump-revision (not in parallel): both jobs push directly to
+  # main, serializing them avoids push races between the two bot commits.
+  update-readme:
+    name: "Update README quick-start versions"
+    needs: [gate, bump-revision]
+    if: needs.gate.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # Same group as bump-revision: a queued duplicate run stays serialized
+    # behind the whole first alignment (bump + README), never interleaves.
+    concurrency:
+      group: post-release-${{ needs.gate.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: "Point README examples at the released version"
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Only the block between the AGENTSCOPE_QUICKSTART_VERSION markers
+          # is rewritten. Future README content that intentionally pins a
+          # different version (BOM-vs-artifact comparisons, 1.x migration
+          # guides, troubleshooting snippets) lives outside the markers and
+          # is never touched. A README without markers has no version
+          # information to maintain, so it is skipped — by design, not an
+          # error.
+          for f in README.md README_zh.md; do
+            if [ ! -f "${f}" ]; then
+              echo "::notice::${f} not found, skipping"
+              continue
+            fi
+            if ! grep -q 'AGENTSCOPE_QUICKSTART_VERSION:start' "${f}"; then
+              echo "::notice::${f} has no quick-start version markers, skipping"
+              continue
+            fi
+            # awk range pattern: within the marker block, replace the
+            # <version> that follows each agentscope-* <artifactId>. VERSION
+            # is passed via -v (never interpolated into the program text)
+            # and was validated as strict semver by the gate job.
+            awk -v v="${VERSION}" '
+              /AGENTSCOPE_QUICKSTART_VERSION:start/, /AGENTSCOPE_QUICKSTART_VERSION:end/ {
+                if (/<artifactId>agentscope-/) d = 1
+                else if (d && /<version>[^<]*<\/version>/) {
+                  sub(/<version>[^<]*<\/version>/, "<version>" v "</version>")
+                  d = 0
+                }
+              }
+              { print }
+            ' "${f}" > "${f}.tmp" && mv "${f}.tmp" "${f}"
+            # Verify inside the markers only: count the agentscope-*
+            # dependencies and the <version>${VERSION}</version> lines and
+            # fail when they differ — a partial rewrite (e.g. an example
+            # layout change left one dependency on an older version) must
+            # fail loudly instead of shipping as a silent success.
+            BLOCK="$(awk '/AGENTSCOPE_QUICKSTART_VERSION:start/, /AGENTSCOPE_QUICKSTART_VERSION:end/' "${f}")"
+            DEPS="$(printf '%s\n' "${BLOCK}" | grep -c '<artifactId>agentscope-' || true)"
+            DONE="$(printf '%s\n' "${BLOCK}" | grep -c -- "<version>${VERSION}</version>" || true)"
+            if [ "${DEPS}" -eq 0 ]; then
+              echo "::error::${f} quick-start block contains no agentscope-* dependencies; marker layout changed?"
+              exit 1
+            fi
+            if [ "${DONE}" -ne "${DEPS}" ]; then
+              echo "::error::${f}: only ${DONE}/${DEPS} quick-start dependencies point at ${VERSION}; refusing to commit a partial rewrite"
+              exit 1
+            fi
+            echo "${f}: all ${DEPS} quick-start dependencies point at ${VERSION}"
+          done
+
+      - name: "Commit and push"
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "::notice::No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "docs: point README quick-start examples at ${VERSION}"
+          git push origin main
