@@ -293,18 +293,15 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             tmp_out = real + ".agentscope-edit-tmp-" + uuid.uuid4().hex
             try:
                 # Failure here (including a read-only directory that forbids creating
-                # the temp file) leaves the target untouched: nothing is written to
-                # `real` until os.replace succeeds. Java then retries via the transfer
-                # path, whose shell redirection needs only file write permission.
+                # the temp file, or os.replace failing) leaves the target untouched:
+                # nothing is written to `real` until the atomic rename succeeds, and a
+                # non-atomic copy fallback would reintroduce the truncate-on-failure
+                # risk. Java then retries via the transfer path, whose shell
+                # redirection needs only file write permission.
                 with open(tmp_out, "wb") as f:
                     f.write(out_bytes)
                 os.chmod(tmp_out, st.st_mode)
-                try:
-                    os.replace(tmp_out, real)
-                except OSError:
-                    import shutil
-                    shutil.copyfile(tmp_out, real)
-                    os.remove(tmp_out)
+                os.replace(tmp_out, real)
             except Exception as e:
                 try:
                     if os.path.exists(tmp_out):
@@ -320,6 +317,27 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static final String EDIT_RESULT_MARKER = "__RESULT__";
 
+    /**
+     * Edits the file by replacing {@code oldString} with {@code newString} in the sandbox.
+     *
+     * <p>Runs a static inline Python script in the sandbox ({@code old}/{@code new} cross the
+     * boundary as files, the command line carries paths only) and falls back to download →
+     * Java replacement → re-upload when {@code python3} is missing or the native write fails.
+     *
+     * <p>Contract: the edit is performed through the resolved target ({@code realpath}), so
+     * editing a symlink writes through to the file it points at and the symlink itself is
+     * preserved. The native path writes only via a same-directory temp file + atomic rename,
+     * so a {@code write_failed} result means the file is unchanged; {@code edit()} then
+     * retries through the transfer path, whose shell redirection needs only file write
+     * permission.
+     *
+     * @param runtimeContext per-call agent context; may be {@code null}
+     * @param filePath path of the file to edit
+     * @param oldString literal string to find (must be non-empty)
+     * @param newString replacement string; {@code null} is treated as the empty string
+     * @param replaceAll replace every occurrence instead of only the first
+     * @return {@link EditResult#ok} with the occurrence count, or {@link EditResult#fail}
+     */
     @Override
     public EditResult edit(
             RuntimeContext runtimeContext,
