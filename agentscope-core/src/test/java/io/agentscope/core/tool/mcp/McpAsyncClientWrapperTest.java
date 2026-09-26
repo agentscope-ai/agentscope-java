@@ -204,6 +204,23 @@ class McpAsyncClientWrapperTest {
         verify(mockClient, times(1)).closeGracefully();
     }
 
+    @Test
+    void testClose_TimesOutAndFallsBackToForceClose() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        // Graceful close never completes -> block(CLOSE_TIMEOUT) must time out,
+        // then fall back to forceful close instead of blocking forever.
+        when(mockClient.closeGracefully()).thenReturn(Mono.never());
+
+        wrapper.close();
+
+        assertFalse(wrapper.isInitialized());
+        assertTrue(wrapper.cachedTools.isEmpty());
+        verify(mockClient, times(1)).closeGracefully();
+        verify(mockClient, times(1)).close();
+    }
+
     private void setupSuccessfulInitialization() {
         McpSchema.Implementation serverInfo =
                 new McpSchema.Implementation("TestServer", "Test Server", Version.VERSION);
