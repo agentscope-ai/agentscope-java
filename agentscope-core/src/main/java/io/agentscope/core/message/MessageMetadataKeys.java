@@ -153,4 +153,7 @@ public final class MessageMetadataKeys {
      * <p><b>Type:</b> Boolean
      */
     public static final String TOOL_RETURN_DIRECT = "_tool_return_direct";
+
+    /** Internal marker that a tool call's final streamed arguments failed JSON parsing. */
+    public static final String TOOL_CALL_PARSE_FAILED = "_tool_call_parse_failed";
 }

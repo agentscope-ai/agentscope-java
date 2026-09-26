@@ -16,13 +16,20 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tool calls accumulator for accumulating streaming tool call chunks.
@@ -38,6 +45,8 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolCallsAccumulator.class);
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -90,8 +99,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             }
         }
 
-        ToolUseBlock build() {
+        ToolUseBlock build(boolean finalBuild) {
             Map<String, Object> finalArgs = new HashMap<>(args);
+            ToolCallState state = ToolCallState.PENDING;
+            Map<String, Object> finalMetadata = new HashMap<>(metadata);
             String rawContentStr = this.rawContent.toString();
 
             // Always attempt to parse the fully accumulated raw JSON. Early stream chunks may
@@ -113,8 +124,25 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             }
                         }
                     }
-                } catch (Exception ignored) {
-                    // Parsing failed, keep previously merged args
+                } catch (Exception e) {
+                    // Intermediate snapshots must not expose stale or partial arguments to hooks.
+                    finalArgs.clear();
+                    if (finalBuild) {
+                        finalMetadata.put(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true);
+                        Throwable rootCause = e;
+                        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                            rootCause = rootCause.getCause();
+                        }
+                        log.warn(
+                                "Failed to parse accumulated tool call arguments: "
+                                        + "toolId={}, toolName={}, byteLength={}, sha256={}, "
+                                        + "causeType={}",
+                                toolId,
+                                name,
+                                rawContentStr.getBytes(StandardCharsets.UTF_8).length,
+                                sha256(rawContentStr),
+                                rootCause.getClass().getName());
+                    }
                 }
             }
 
@@ -135,7 +163,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
-                    .metadata(metadata.isEmpty() ? null : metadata)
+                    .state(state)
+                    .metadata(finalMetadata.isEmpty() ? null : finalMetadata)
                     .build();
         }
 
@@ -144,6 +173,21 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             return "__fragment__".equals(name)
                     || "__pending__".equals(name)
                     || (name != null && name.startsWith("__"));
+        }
+
+        private String sha256(String value) {
+            try {
+                byte[] digest =
+                        MessageDigest.getInstance("SHA-256")
+                                .digest(value.getBytes(StandardCharsets.UTF_8));
+                StringBuilder hex = new StringBuilder(digest.length * 2);
+                for (byte b : digest) {
+                    hex.append(String.format("%02x", b));
+                }
+                return hex.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 is not available", e);
+            }
         }
 
         private String generateId() {
@@ -246,7 +290,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
-        return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+        return builders.values().stream()
+                .map(builder -> builder.build(true))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -263,7 +309,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // First try to find by ID directly
             ToolCallBuilder builder = builders.get(id);
             if (builder != null) {
-                return builder.build();
+                return builder.build(false);
             }
         }
 
@@ -271,7 +317,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         if (lastToolCallKey != null) {
             ToolCallBuilder builder = builders.get(lastToolCallKey);
             if (builder != null) {
-                return builder.build();
+                return builder.build(false);
             }
         }
 

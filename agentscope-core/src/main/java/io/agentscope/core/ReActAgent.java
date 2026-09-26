@@ -153,7 +153,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -2035,7 +2034,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             publishEvent(new UserConfirmResultEvent(replyId, normalized));
             clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
 
-            applyConfirmResults(normalized, replyId);
+            applyConfirmResults(normalized, replyId, asking);
         }
 
         /** Resolve the reply id for the pending HITL request stored on the last assistant message. */
@@ -2098,18 +2097,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *       tool-result event lifecycle.</li>
          * </ul>
          */
-        private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
+        private void applyConfirmResults(
+                List<ConfirmResult> results, String replyId, List<ToolUseBlock> asking) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
             // promote them to ALLOWED. Collect denied ones for separate handling.
             List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
+            Map<String, ToolUseBlock> askingById = new HashMap<>();
+            for (ToolUseBlock toolCall : asking) {
+                askingById.put(toolCall.getId(), toolCall);
+            }
             for (ConfirmResult r : results) {
                 ToolUseBlock target = r.getToolCall();
                 if (target == null) {
                     continue;
                 }
                 if (r.isConfirmed()) {
-                    replacements.put(target.getId(), target.withState(ToolCallState.ALLOWED));
+                    ToolUseBlock replacement = target.withState(ToolCallState.ALLOWED);
+                    ToolUseBlock original = askingById.get(target.getId());
+                    if (original != null && hasParseFailure(original)) {
+                        Map<String, Object> metadata = new HashMap<>();
+                        if (replacement.getMetadata() != null) {
+                            metadata.putAll(replacement.getMetadata());
+                        }
+                        metadata.put(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true);
+                        replacement =
+                                ToolUseBlock.builder()
+                                        .id(replacement.getId())
+                                        .name(replacement.getName())
+                                        .input(replacement.getInput())
+                                        .content(replacement.getContent())
+                                        .metadata(metadata)
+                                        .state(replacement.getState())
+                                        .build();
+                    }
+                    replacements.put(target.getId(), replacement);
                     if (r.getRules() != null) {
                         for (PermissionRule rule : r.getRules()) {
                             if (rule != null) {
@@ -3158,7 +3180,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
          * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
-         * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
+         * {@link #executeToolCalls(List, BiConsumer)}. The combined results are written to {@code resultHolder}
          * and emitted as a stream of fine-grained {@link AgentEvent}s.
          */
         private Flux<AgentEvent> runToolBatch(
@@ -3568,21 +3590,44 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * continue processing and the model receives proper error feedback.
          *
          * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
+         * @param internalChunkCallback Callback for streaming tool result chunks
          * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
          */
         private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
                 List<ToolUseBlock> toolCalls,
                 BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
-            return dispatchToolCalls(toolCalls, internalChunkCallback)
+            List<ToolUseBlock> executableCalls =
+                    toolCalls.stream().filter(t -> !hasParseFailure(t)).toList();
+            Mono<List<ToolResultBlock>> executedResults =
+                    executableCalls.isEmpty()
+                            ? Mono.just(List.of())
+                            : dispatchToolCalls(executableCalls, internalChunkCallback);
+            return executedResults
                     .map(
-                            results ->
-                                    IntStream.range(0, toolCalls.size())
-                                            .mapToObj(
-                                                    i ->
-                                                            Map.entry(
-                                                                    toolCalls.get(i),
-                                                                    results.get(i)))
-                                            .toList())
+                            results -> {
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> paired =
+                                        new ArrayList<>(toolCalls.size());
+                                int resultIndex = 0;
+                                for (ToolUseBlock toolCall : toolCalls) {
+                                    if (hasParseFailure(toolCall)) {
+                                        paired.add(
+                                                Map.entry(
+                                                        toolCall,
+                                                        ToolResultBlock.error(
+                                                                toolCall.getId(),
+                                                                "Tool execution rejected:"
+                                                                        + " malformed arguments"
+                                                                        + " for '"
+                                                                        + toolCall.getName()
+                                                                        + "' ("
+                                                                        + toolCall.getId()
+                                                                        + ")")));
+                                    } else {
+                                        paired.add(Map.entry(toolCall, results.get(resultIndex++)));
+                                    }
+                                }
+                                return paired;
+                            })
                     .onErrorResume(
                             Exception.class,
                             error -> {
@@ -3614,6 +3659,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 .toList();
                                 return Mono.just(errorResults);
                             });
+        }
+
+        private boolean hasParseFailure(ToolUseBlock toolCall) {
+            return toolCall.getMetadata() != null
+                    && Boolean.TRUE.equals(
+                            toolCall.getMetadata().get(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED));
         }
 
         /**
