@@ -39,7 +39,9 @@ final class ActiveRequestContext {
     private final RunControl control;
     private final AtomicBoolean shutdownInterruptIssued = new AtomicBoolean(false);
 
-    private final ShutdownStateSaver saver;
+    private record SaverBinding(ShutdownStateSaver saver, boolean requestScoped) {}
+
+    private volatile SaverBinding saverBinding;
 
     /**
      * The per-call session state this request is running against, bound once {@code call()} has
@@ -49,8 +51,8 @@ final class ActiveRequestContext {
 
     ActiveRequestContext(String requestId, ShutdownStateSaver saver, RunControl control) {
         this.requestId = requestId;
+        this.saverBinding = new SaverBinding(saver, false);
         this.control = control;
-        this.saver = saver;
     }
 
     String getRequestId() {
@@ -68,18 +70,29 @@ final class ActiveRequestContext {
         }
     }
 
+    void bindSaver(ShutdownStateSaver saver) {
+        if (saver != null) {
+            this.saverBinding = new SaverBinding(saver, true);
+        }
+    }
+
     private AgentState resolveState() {
         return boundState;
     }
 
     void saveState() {
         AgentState state = resolveState();
-        if (saver == null || state == null) {
+        SaverBinding binding = saverBinding;
+        if (binding.saver() == null || state == null) {
             return;
         }
         try {
-            state.setShutdownInterrupted(true);
-            saver.save(state);
+            // A request-scoped saver decides whether this is a new checkpoint or defers to an
+            // existing terminal write. Do not mutate live state for the latter case.
+            if (!binding.requestScoped()) {
+                state.setShutdownInterrupted(true);
+            }
+            binding.saver().save(state);
         } catch (Exception e) {
             log.warn("Failed to save agent state for request {}", requestId, e);
         }
