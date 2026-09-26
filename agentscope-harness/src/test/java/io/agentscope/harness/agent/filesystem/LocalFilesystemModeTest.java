@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -483,6 +484,30 @@ class LocalFilesystemModeTest {
         } catch (IOException | UnsupportedOperationException | SecurityException e) {
             return false;
         }
+    }
+
+    @Test
+    void rooted_relativeAccessIntoNotYetCreatedWorkspaceRootFailsGracefully(@TempDir Path temp) {
+        // The workspace root and namespace dir may not exist yet when shared-content lookups
+        // run before first use. Resolution must degrade to "not found", not trip the namespace
+        // check: the nearest existing ancestor then lies above the workspace root, and path
+        // aliases (Windows 8.3 short names, macOS /var -> /private/var) would otherwise make
+        // the two sides of the comparison disagree.
+        Path workspace = temp.resolve("agents/main/workspace");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        ReadResult r = fs.read(rc, "notes.md", 0, 0);
+        assertFalse(r.isSuccess(), () -> "expected a graceful failure, got: " + r);
+        assertTrue(
+                r.error().toLowerCase().contains("not found"),
+                () -> "expected not-found, got: " + r.error());
+
+        GlobResult g = fs.glob(rc, "*.md", "knowledge");
+        assertTrue(g.isSuccess(), () -> "glob should degrade to an empty result: " + g.error());
+        assertTrue(g.matches().isEmpty(), () -> "expected no matches, got: " + g.matches());
     }
 
     @Test

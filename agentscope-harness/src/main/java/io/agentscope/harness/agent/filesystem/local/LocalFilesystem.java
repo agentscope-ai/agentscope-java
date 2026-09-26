@@ -263,11 +263,14 @@ public class LocalFilesystem implements AbstractFilesystem {
      * <p>The check runs on the physical location of the path, with symbolic links resolved: a
      * link planted inside the own namespace that leads to a sibling namespace or a shared
      * directory is rejected like a direct path, and casing is normalized on case-insensitive
-     * hosts. This adds a small amount of filesystem I/O per resolved path while the boundary is
-     * active. Two limitations remain: the check runs before the file operation, so a component
-     * swapped in between (TOCTOU) is not covered; and the namespace directories themselves are
-     * assumed to be framework-managed — a link swapped in for one of them fails closed (all
-     * access through it is rejected) rather than re-anchoring the boundary.
+     * hosts. The namespace root is resolved the same way, so the comparison stays consistent
+     * when the workspace root does not exist yet or is reached through a path alias (Windows
+     * 8.3 short names, macOS {@code /var} vs {@code /private/var}). This adds a small amount
+     * of filesystem I/O per resolved path while the boundary is active. Two limitations
+     * remain: the check runs before the file operation, so a component swapped in between
+     * (TOCTOU) is not covered; and the namespace directories themselves are assumed to be
+     * framework-managed — a link swapped in for one of them re-anchors the boundary to its
+     * target rather than being detectable from here.
      *
      * <p>Must be configured before the filesystem is exposed to agent calls.
      *
@@ -734,15 +737,17 @@ public class LocalFilesystem implements AbstractFilesystem {
      * Rejects paths that resolve under {@link #cwd} but outside the caller's own namespace
      * directory when {@link #namespaceBoundary} is enabled and a namespace is active.
      *
-     * <p>The comparison runs on physical paths: the candidate is resolved through
-     * {@link #physicalPath}, which follows symbolic links (broken ones included, via their link
-     * target) and normalizes casing to the on-disk form, so a link planted inside the own
-     * namespace cannot lead the check past the boundary and case-insensitive hosts compare
-     * consistently. The namespace root is anchored at the physical cwd with the namespace
-     * components kept lexical: those directories are framework-managed, and a link swapped in
-     * for one of them must fail closed instead of re-anchoring the boundary. Relative keys do
-     * reach this check — they arrive namespace-prefixed from {@link #applyNamespacePrefix}, but
-     * a link inside the own namespace could still lead out of it, which the physical resolution
+     * <p>Both sides of the comparison are resolved through {@link #physicalPath}: the candidate
+     * to its on-disk location, and the namespace root to the on-disk location of
+     * {@code cwd/<namespace>}. Sharing one resolution path keeps the two sides comparable even
+     * when {@link #cwd} itself does not exist yet or is reached through an alias — Windows 8.3
+     * short names ({@code RUNNER~1}), macOS {@code /var} vs {@code /private/var} — because both
+     * then walk up to the same nearest existing ancestor and real-path it. Symbolic links are
+     * followed (broken ones included, via their link target) and casing is normalized to the
+     * on-disk form, so a link planted inside the own namespace cannot lead the check past the
+     * boundary and case-insensitive hosts compare consistently. Relative keys do reach this
+     * check — they arrive namespace-prefixed from {@link #applyNamespacePrefix}, but a link
+     * inside the own namespace could still lead out of it, which the physical resolution
      * catches. The check runs before the actual file operation, so a component swapped in
      * between (TOCTOU) is out of scope.
      */
@@ -754,7 +759,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (ns == null || ns.isEmpty()) {
             return;
         }
-        Path nsRoot = physicalCwd().resolve(String.join("/", ns)).normalize();
+        Path nsRoot = physicalPath(cwd.resolve(String.join("/", ns)));
         if (physicalPath(resolved).startsWith(nsRoot)) {
             return;
         }
@@ -821,19 +826,6 @@ public class LocalFilesystem implements AbstractFilesystem {
             return (parent == null ? target : parent.resolve(target)).normalize();
         } catch (IOException e) {
             return null;
-        }
-    }
-
-    /**
-     * Returns {@link #cwd} in its on-disk form so that both sides of the namespace comparison
-     * share the same casing and link resolution (e.g. {@code /tmp} vs {@code /private/tmp} on
-     * macOS). Falls back to the lexical form when the workspace directory is unreachable.
-     */
-    private Path physicalCwd() {
-        try {
-            return cwd.toRealPath();
-        } catch (IOException e) {
-            return cwd;
         }
     }
 
