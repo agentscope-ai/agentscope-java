@@ -125,9 +125,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                         }
                     }
                 } catch (Exception e) {
+                    // Intermediate snapshots must not expose stale or partial arguments to hooks.
+                    finalArgs.clear();
                     if (finalBuild) {
                         finalMetadata.put(MessageMetadataKeys.TOOL_CALL_PARSE_FAILED, true);
-                        finalArgs.clear();
                         Throwable rootCause = e;
                         while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
                             rootCause = rootCause.getCause();

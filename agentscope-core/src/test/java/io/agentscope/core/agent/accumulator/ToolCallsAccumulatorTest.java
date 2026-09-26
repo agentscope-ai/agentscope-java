@@ -132,11 +132,13 @@ class ToolCallsAccumulatorTest {
                 ToolUseBlock.builder()
                         .id("call_streaming")
                         .name("search")
+                        .input(Map.of("partial", "must-not-leak"))
                         .content("{\"query\":")
                         .build());
 
         ToolUseBlock snapshot = accumulator.getAccumulatedToolCall("call_streaming");
         assertEquals(ToolCallState.PENDING, snapshot.getState());
+        assertTrue(snapshot.getInput().isEmpty());
         assertTrue(
                 snapshot.getMetadata() == null
                         || !snapshot.getMetadata()

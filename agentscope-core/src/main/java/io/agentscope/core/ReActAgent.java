@@ -3525,20 +3525,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
             List<ToolUseBlock> executableCalls =
                     toolCalls.stream().filter(t -> !hasParseFailure(t)).toList();
-            Map<String, ToolResultBlock> resultsById = new HashMap<>();
-            for (ToolUseBlock toolCall : toolCalls) {
-                if (hasParseFailure(toolCall)) {
-                    resultsById.put(
-                            toolCall.getId(),
-                            ToolResultBlock.error(
-                                    toolCall.getId(),
-                                    "Tool execution rejected: malformed arguments for '"
-                                            + toolCall.getName()
-                                            + "' ("
-                                            + toolCall.getId()
-                                            + ")"));
-                }
-            }
             Mono<List<ToolResultBlock>> executedResults =
                     executableCalls.isEmpty()
                             ? Mono.just(List.of())
@@ -3546,16 +3532,28 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return executedResults
                     .map(
                             results -> {
-                                for (int i = 0; i < executableCalls.size(); i++) {
-                                    resultsById.put(executableCalls.get(i).getId(), results.get(i));
+                                List<Map.Entry<ToolUseBlock, ToolResultBlock>> paired =
+                                        new ArrayList<>(toolCalls.size());
+                                int resultIndex = 0;
+                                for (ToolUseBlock toolCall : toolCalls) {
+                                    if (hasParseFailure(toolCall)) {
+                                        paired.add(
+                                                Map.entry(
+                                                        toolCall,
+                                                        ToolResultBlock.error(
+                                                                toolCall.getId(),
+                                                                "Tool execution rejected:"
+                                                                        + " malformed arguments"
+                                                                        + " for '"
+                                                                        + toolCall.getName()
+                                                                        + "' ("
+                                                                        + toolCall.getId()
+                                                                        + ")")));
+                                    } else {
+                                        paired.add(Map.entry(toolCall, results.get(resultIndex++)));
+                                    }
                                 }
-                                return toolCalls.stream()
-                                        .map(
-                                                toolCall ->
-                                                        Map.entry(
-                                                                toolCall,
-                                                                resultsById.get(toolCall.getId())))
-                                        .toList();
+                                return paired;
                             })
                     .onErrorResume(
                             Exception.class,
