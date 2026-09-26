@@ -29,6 +29,9 @@ import java.util.List;
  */
 public class DockerSandboxState extends SandboxState {
 
+    /** Default workspace root inside Docker-backed sandboxes. */
+    public static final String DEFAULT_WORKSPACE_ROOT = "/workspace";
+
     /** Docker container ID of the backing container. */
     private String containerId;
 

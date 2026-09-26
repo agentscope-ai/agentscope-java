@@ -96,6 +96,38 @@ class HarnessSandboxJacksonModuleTest {
     }
 
     @Test
+    void legacyWorkspaceRootSurvivesBlankManifestRegardlessOfFieldOrder() throws Exception {
+        ObjectMapper mapper =
+                new ObjectMapper()
+                        .findAndRegisterModules()
+                        .registerModule(new HarnessSandboxJacksonModule());
+
+        // workspaceRoot first, blank manifest second.
+        String legacyFirst =
+                """
+                {"type":"docker","sessionId":"sess-legacy","workspaceRoot":"/old/root",\
+                "manifest":{"root":""}}
+                """;
+        assertEquals(
+                "/old/root",
+                ((SandboxState) mapper.readValue(legacyFirst, SandboxState.class))
+                        .getWorkspaceSpec()
+                        .getRoot());
+
+        // Blank manifest first, workspaceRoot second.
+        String manifestFirst =
+                """
+                {"type":"docker","sessionId":"sess-legacy",\
+                "manifest":{"root":""},"workspaceRoot":"/old/root"}
+                """;
+        assertEquals(
+                "/old/root",
+                ((SandboxState) mapper.readValue(manifestFirst, SandboxState.class))
+                        .getWorkspaceSpec()
+                        .getRoot());
+    }
+
+    @Test
     void roundTripsDockerSandboxStateWithLocalSnapshot(@TempDir Path tmp) throws Exception {
         ObjectMapper mapper =
                 new ObjectMapper()

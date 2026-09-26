@@ -59,6 +59,17 @@ public abstract class SandboxState {
     }
 
     public void setWorkspaceSpec(WorkspaceSpec workspaceSpec) {
+        // Preserve a legacy root adopted earlier when the incoming manifest arrives later
+        // with a blank root (JSON field order is not significant). Copy-on-write so a
+        // caller-supplied object is never mutated.
+        if (workspaceSpec != null
+                && (workspaceSpec.getRoot() == null || workspaceSpec.getRoot().isBlank())
+                && this.workspaceSpec != null
+                && this.workspaceSpec.getRoot() != null
+                && !this.workspaceSpec.getRoot().isBlank()) {
+            workspaceSpec = workspaceSpec.copy();
+            workspaceSpec.setRoot(this.workspaceSpec.getRoot());
+        }
         this.workspaceSpec = workspaceSpec;
     }
 

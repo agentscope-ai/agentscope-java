@@ -20,6 +20,9 @@ import io.agentscope.harness.agent.sandbox.SandboxState;
 /** Serializable state for an agent-sandbox-backed Kubernetes sandbox. */
 public class KubernetesSandboxState extends SandboxState {
 
+    /** Default workspace root inside Kubernetes sandboxes. */
+    public static final String DEFAULT_WORKSPACE_ROOT = "/workspace";
+
     private String namespace;
     private String claimName;
     private String sandboxName;

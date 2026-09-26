@@ -90,7 +90,9 @@ public class KubernetesSandboxClient
 
         KubernetesSandboxState state = new KubernetesSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(WorkspaceSpec.withDefaultRoot(workspaceSpec, "/workspace"));
+        state.setWorkspaceSpec(
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, KubernetesSandboxState.DEFAULT_WORKSPACE_ROOT));
         state.setNamespace(merged.getNamespace());
         state.setFileApiBaseDir(merged.getFileApiBaseDir());
         state.setWarmPoolName(merged.getWarmPoolName());

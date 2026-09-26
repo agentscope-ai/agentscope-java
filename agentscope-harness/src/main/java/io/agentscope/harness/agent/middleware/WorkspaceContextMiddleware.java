@@ -31,9 +31,11 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -145,11 +147,19 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Cache for sandbox OS/TMPDIR probe results, keyed by {@code sandbox id + command}. The
-     * sandbox platform does not change across restarts, so one successful probe per middleware
-     * lifetime is enough — this keeps the per-call prompt build down to zero extra execs
-     * after the first one.
+     * sandbox platform does not change across restarts, so one successful probe per sandbox is
+     * enough — this keeps the per-call prompt build down to zero extra execs after the first
+     * one. Bounded LRU (1024 entries) so a long-lived multi-tenant process cannot grow it
+     * without limit.
      */
-    private final ConcurrentHashMap<String, String> sandboxProbeCache = new ConcurrentHashMap<>();
+    private final Map<String, String> sandboxProbeCache =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                            return size() > 1024;
+                        }
+                    });
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
