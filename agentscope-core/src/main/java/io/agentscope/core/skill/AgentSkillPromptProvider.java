@@ -194,11 +194,8 @@ public class AgentSkillPromptProvider {
         int withOriginDir = 0;
 
         for (String skillId : skillIds) {
-            if (!effectiveFilter.isAllowed(skillId)) {
-                continue;
-            }
             AgentSkill skill = skillRegistry.getSkill(skillId);
-            if (skill == null) {
+            if (skill == null || !effectiveFilter.isAllowed(skill.getName())) {
                 continue;
             }
             if (!hasSkills) {

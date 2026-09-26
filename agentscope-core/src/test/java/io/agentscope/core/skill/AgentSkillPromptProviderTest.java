@@ -343,4 +343,46 @@ class AgentSkillPromptProviderTest {
         // Only the skill with originDir still gets a per-skill <files-root>
         assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
     }
+
+    @Test
+    @DisplayName("Should match SkillFilter against skill name instead of composite skill id")
+    void testFilterWithBareNameMatchesCompositeId() {
+        AgentSkill visible =
+                new AgentSkill(
+                        "host-forensics-client",
+                        "visible",
+                        "# Content",
+                        null,
+                        "filesystem-agentscope_skills");
+        AgentSkill hidden =
+                new AgentSkill(
+                        "other-skill", "hidden", "# Content", null, "filesystem-agentscope_skills");
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        // User passes bare skill name (the natural API usage)
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("host-forensics-client"));
+
+        assertTrue(
+                prompt.contains(
+                        "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+        assertFalse(
+                prompt.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
+    }
+
+    @Test
+    @DisplayName("Should hide skill disabled by name")
+    void testFilterDisableByNameHidesSkill() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        AgentSkill hidden = new AgentSkill("hidden", "hidden", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        String prompt =
+                provider.getSkillSystemPrompt(
+                        SkillFilter.all().overlay(SkillFilter.disable("hidden")));
+
+        assertTrue(prompt.contains("<skill-id>visible_custom</skill-id>"));
+        assertFalse(prompt.contains("<skill-id>hidden_custom</skill-id>"));
+    }
 }
