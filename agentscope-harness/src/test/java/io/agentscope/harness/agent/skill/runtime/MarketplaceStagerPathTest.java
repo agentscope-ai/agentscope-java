@@ -127,7 +127,7 @@ class MarketplaceStagerPathTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void unsafeNamespaceCannotWriteOrCleanOutsideCache(boolean fallback) throws IOException {
+    void unsafeNamespaceIsMappedWithoutTouchingOutsideFiles(boolean fallback) throws IOException {
         Path workspace = temp.resolve("workspace");
         Path outside = Files.createDirectories(temp.resolve("outside/valid"));
         Files.writeString(outside.resolve("keep.txt"), "keep");
@@ -144,13 +144,19 @@ class MarketplaceStagerPathTest {
 
         assertEquals("keep", Files.readString(outside.resolve("keep.txt")));
         assertFalse(Files.exists(outside.resolve("marker.txt")));
-        assertEquals(StageResult.NONE, result.get("valid"));
-        assertFalse(Files.exists(workspace.resolve(MarketplaceStager.CACHE_DIR)));
+        StageResult.Cached cached = assertInstanceOf(StageResult.Cached.class, result.get("valid"));
+        assertFalse(cached.sourceNamespace().contains("/"));
+        assertTrue(
+                Files.exists(
+                        workspace
+                                .resolve(".skills-cache/_shared")
+                                .resolve(cached.sourceNamespace())
+                                .resolve("valid/marker.txt")));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {".", "..", "../other", "..\\other", "nested/source", "C:relative"})
-    void invalidNamespacesAreRejected(String namespace) {
+    void sourceNamespacesAreMappedToSingleDirectory(String namespace) throws IOException {
         Path workspace = temp.resolve("workspace");
         AgentSkillRepository repo = repository("market");
 
@@ -160,8 +166,49 @@ class MarketplaceStagerPathTest {
                                 List.of(new RepoBound(skill("valid"), repo)),
                                 Map.of(repo, namespace));
 
-        assertEquals(StageResult.NONE, result.get("valid"));
-        assertFalse(Files.exists(workspace.resolve(MarketplaceStager.CACHE_DIR)));
+        StageResult.Cached cached = assertInstanceOf(StageResult.Cached.class, result.get("valid"));
+        assertFalse(cached.sourceNamespace().contains("/"));
+        assertFalse(cached.sourceNamespace().contains("\\"));
+        assertTrue(
+                Files.exists(
+                        workspace
+                                .resolve(".skills-cache/_shared")
+                                .resolve(cached.sourceNamespace())
+                                .resolve("valid/marker.txt")));
+    }
+
+    @Test
+    void shippedSlashSourceIsStagedUnderOneNamespaceDirectory() throws IOException {
+        Path workspace = temp.resolve("workspace");
+        AgentSkillRepository repo = repository("git-owner/repo");
+
+        Map<String, StageResult> result =
+                new MarketplaceStager(workspace)
+                        .stage(
+                                List.of(new RepoBound(skill("valid"), repo)),
+                                MarketplaceStager.resolveSourceNamespaces(List.of(repo)));
+
+        StageResult.Cached cached = assertInstanceOf(StageResult.Cached.class, result.get("valid"));
+        assertFalse(cached.sourceNamespace().contains("/"));
+        assertTrue(
+                Files.exists(
+                        workspace
+                                .resolve(".skills-cache/_shared")
+                                .resolve(cached.sourceNamespace())
+                                .resolve("valid/marker.txt")));
+    }
+
+    @Test
+    void lossySourceNamespacesRemainInjective() {
+        AgentSkillRepository first = repository("a@b");
+        AgentSkillRepository second = repository("a#b");
+
+        Map<AgentSkillRepository, String> namespaces =
+                MarketplaceStager.resolveSourceNamespaces(List.of(first, second));
+
+        assertTrue(namespaces.get(first).matches("a_b-[0-9a-f]{12}"));
+        assertTrue(namespaces.get(second).matches("a_b-[0-9a-f]{12}"));
+        assertFalse(namespaces.get(first).equals(namespaces.get(second)));
     }
 
     @Test
@@ -207,8 +254,13 @@ class MarketplaceStagerPathTest {
         Map<String, StageResult> result =
                 stager.stage(List.of(new RepoBound(replacement, repo)), namespaces);
 
-        Path staged = temp.resolve("workspace/.skills-cache/_shared/nacos@public").resolve(name);
-        assertEquals(new StageResult.Cached("_shared", "nacos@public", name), result.get(name));
+        StageResult.Cached cached = assertInstanceOf(StageResult.Cached.class, result.get(name));
+        Path staged =
+                temp.resolve("workspace/.skills-cache/_shared")
+                        .resolve(cached.sourceNamespace())
+                        .resolve(name);
+        assertEquals("_shared", cached.scopeSegment());
+        assertEquals(name, cached.skillName());
         assertEquals("guide", Files.readString(staged.resolve("references/guide.txt")));
         assertArrayEquals(
                 new byte[] {0, 1, 2}, Files.readAllBytes(staged.resolve("assets/data.bin")));

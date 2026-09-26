@@ -116,9 +116,11 @@ public final class MarketplaceStager {
      * {@link WorkspaceSkillRepository} are returned as {@link StageResult.WorkspaceNative}
      * — they need no staging because the workspace tree already contains them.
      *
-     * <p>Staged skill names and source namespaces must each identify a single directory.
-     * Unsafe path components are rejected before any files are created or cleaned up; the
-     * affected skill receives {@link StageResult#NONE} and other skills are still staged.
+     * <p>Staged skill names must identify a single directory and unsafe names are rejected before
+     * any files are created or cleaned up. Source namespaces may contain repository-specific
+     * identifiers such as {@code owner/repository}; they are mapped to one safe, injective
+     * directory segment before materialisation. An invalid skill receives
+     * {@link StageResult#NONE} and other skills are still staged.
      *
      * <p>The white-list of staged directories is rebuilt every call; any pre-existing
      * directory under {@code .skills-cache/<source-ns>/} not in the white-list is removed
@@ -214,6 +216,32 @@ public final class MarketplaceStager {
         return safe.substring(0, Math.max(keep, 0)) + "-" + digest;
     }
 
+    /**
+     * Maps a repository source identifier to one safe directory segment. Source identifiers are
+     * metadata rather than user-controlled skill names, and shipped repositories use values such
+     * as {@code owner/repository}; rejecting those values would silently disable staging. A digest
+     * suffix preserves injectivity whenever sanitisation changes the identifier.
+     */
+    private static String sourceNamespaceSegment(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return GLOBAL_NAMESPACE;
+        }
+        String safe = namespace.replaceAll("[^A-Za-z0-9._-]", "_");
+        boolean lossless =
+                safe.equals(namespace)
+                        && !safe.equals(".")
+                        && !safe.equals("..")
+                        && safe.length() <= MAX_SCOPE_SEGMENT
+                        && !safe.endsWith(".")
+                        && !safe.endsWith(" ");
+        if (lossless) {
+            return safe;
+        }
+        String digest = sha256(namespace.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
+        int keep = Math.min(safe.length(), MAX_SCOPE_SEGMENT - digest.length() - 1);
+        return safe.substring(0, Math.max(keep, 0)) + "-" + digest;
+    }
+
     /** Materialises every eligible input under this call's scope subtree. */
     private void stageAll(
             List<RepoBound> visible,
@@ -243,8 +271,11 @@ public final class MarketplaceStager {
             }
 
             try {
-                // Validate both components before materialisation: cleanup also trusts this root.
-                Path namespaceDir = resolveStagingDirectory(scopeRoot, ns);
+                // Skill names are rejected below; source identifiers are normalised because
+                // shipped repositories legitimately use owner/repository and nested classpath
+                // resource names. The result is still one safe segment for GC to traverse.
+                String namespaceSegment = sourceNamespaceSegment(ns);
+                Path namespaceDir = resolveStagingDirectory(scopeRoot, namespaceSegment);
                 Path stagedDir = resolveStagingDirectory(namespaceDir, name);
                 materializeIfChanged(stagedDir, skill.getResources());
                 // Mark as live before GC runs: this is what stops a concurrent call — or
@@ -252,7 +283,9 @@ public final class MarketplaceStager {
                 touch(stagedDir);
                 retained.add(stagedDir);
                 roots.put(
-                        name, new StageResult.Cached(scopeRoot.getFileName().toString(), ns, name));
+                        name,
+                        new StageResult.Cached(
+                                scopeRoot.getFileName().toString(), namespaceSegment, name));
             } catch (Exception e) {
                 log.warn("Failed to stage skill '{}' (source-ns={}): {}", name, ns, e.getMessage());
                 roots.put(name, StageResult.NONE);
@@ -550,8 +583,8 @@ public final class MarketplaceStager {
     /**
      * Resolves per-repository {@code source} namespaces. When two repositories report the same
      * {@code getSource()}, the second and subsequent ones receive an {@code _<idx>} suffix
-     * (with a warning log). Layer-1 host repositories whose source string is empty get
-     * {@link #GLOBAL_NAMESPACE}.
+     * (with a warning log). Each result is then mapped to one safe directory segment. Layer-1
+     * host repositories whose source string is empty get {@link #GLOBAL_NAMESPACE}.
      */
     public static Map<AgentSkillRepository, String> resolveSourceNamespaces(
             List<AgentSkillRepository> repos) {
@@ -570,11 +603,11 @@ public final class MarketplaceStager {
             String src = effectiveSource(repo);
             int total = count.getOrDefault(src, 1);
             if (total == 1) {
-                ns.put(repo, src);
+                ns.put(repo, sourceNamespaceSegment(src));
             } else {
                 int idx = seen.merge(src, 1, Integer::sum);
                 String resolved = src + "_" + idx;
-                ns.put(repo, resolved);
+                ns.put(repo, sourceNamespaceSegment(resolved));
                 if (idx > 1 || total > 1) {
                     log.warn(
                             "Skill repository source '{}' is used by {} repositories;"
