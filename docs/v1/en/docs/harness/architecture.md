@@ -1,5 +1,6 @@
 ---
 title: Architecture
+zh_link: /v1/zh/docs/harness/architecture
 ---
 
 [Overview](/v1/en/docs/harness/overview) introduces Harness capabilities through the lens of "what problem they solve". This page takes a different angle: **explaining the architecture itself** — why it is designed this way, what each layer is responsible for, what happens during a `call()`, and how state flows through the system.

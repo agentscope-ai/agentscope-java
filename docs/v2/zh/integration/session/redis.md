@@ -1,5 +1,6 @@
 ---
 title: Redis 状态存储
+en_link: /v2/en/integration/session/redis
 ---
 
 <Note>

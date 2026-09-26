@@ -1,5 +1,6 @@
 ---
 title: Managed Agents on the AgentScope 2.0 Runtime
+zh_link: /v2/zh/blogs/managed-agents-agentscope-rumtime
 ---
 
 Managed Agents let agents run in a cloud environment: on the one hand, core stages such as inference, orchestration, and Harness management are uniformly hosted by the cloud, so architecture stability and runtime quality are guaranteed by the platform; on the other hand, long-running tasks no longer depend on the local device staying online—even if a personal computer is shut down, tasks can keep running in the cloud.

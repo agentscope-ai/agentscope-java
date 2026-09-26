@@ -1,5 +1,6 @@
 ---
 title: AgentScope Service Release
+zh_link: /v2/zh/blogs/agentscope-service-release
 ---
 
 **AgentScope Service** — an Agent control plane built on AgentScope Harness.

@@ -1,5 +1,6 @@
 ---
 title: RAGFlow
+zh_link: /v2/zh/integration/rag/ragflow
 ---
 
 `agentscope-extensions-rag-ragflow` integrates with [RAGFlow](https://ragflow.io/). RAGFlow is strong on document parsing (OCR, table extraction, knowledge graph augmentation) and shines for unstructured-heavy KBs.

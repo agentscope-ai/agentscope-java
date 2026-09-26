@@ -2,6 +2,7 @@
 title: Memory
 description: Two-layer long-term memory, conversation compaction, large tool-result
   offloading; prompts and trigger policy are customizable
+zh_link: /v2/zh/docs/harness/memory
 ---
 
 ## Role
@@ -231,12 +232,14 @@ Customize threshold or destination via `ToolResultEvictionConfig.builder()...bui
 
 ## Tools the agent can use itself
 
-When memory is enabled, the agent gets two tools:
+When memory is enabled, the agent gets four tools:
 
 - `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`, up to 30 hits
   (override with `maxResults`; matched lines longer than 500 chars are truncated — use
   `memory_get` to read the full context around a hit)
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` — read a specific line range
+- `memory_save content="..."` — persist a memory via `MEMORY.md` and the daily ledger
+- `session_search query="..."` — search past session transcripts
 
 When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.
 

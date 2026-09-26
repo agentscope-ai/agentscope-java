@@ -1,6 +1,7 @@
 ---
 title: 工作区（Workspace）
 description: 智能体定义与进化的 source of truth：目录布局、工作区与 API 的等价关系、原生多租户隔离、filesystem 模式、重点内容深入
+en_link: /v2/en/docs/harness/workspace
 ---
 
 ## 设计理念
@@ -383,7 +384,7 @@ workspace/
 skills/code-reviewer/
 ├── SKILL.md               ← YAML frontmatter (name + description) + 指令
 ├── references/style-guide.md   ← 可选，agent 按需 read_file
-└── scripts/run-checks.sh       ← 可选，agent 通过 execute_shell_command 调
+└── scripts/run-checks.sh       ← 可选，agent 通过 execute 调
 ```
 
 注册路径有四层（低 → 高优先级）：

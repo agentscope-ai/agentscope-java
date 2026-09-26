@@ -1,5 +1,6 @@
 ---
 title: "Environments：配置执行位置"
+en_link: /v2/en/service/environments
 ---
 
 <Note>
