@@ -196,7 +196,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return LsResult.success(remapped);
         }
 
-        if ("/".equals(path) || ".".equals(path)) {
+        // Guard aligned with grep (and rootAnchor): a null path must reach the same
+        // namespaced anchor, not the backend's raw cwd via the blank-key shortcut (#3253).
+        if (path == null || "/".equals(path) || ".".equals(path)) {
             List<FileInfo> results = new ArrayList<>();
             LsResult defaultResult = defaultBackend.ls(runtimeContext, rootAnchor(path));
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {

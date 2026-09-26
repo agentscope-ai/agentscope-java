@@ -206,6 +206,17 @@ class RemoteFilesystemSpecTest {
                     grep.matches().size(),
                     "root grep '" + root + "' must see only the caller's tree");
         }
+
+        // Anchor equivalence: ls("/") and ls(".") return identical entry sets, and ls(null)
+        // matches too — all root spellings share rootAnchor's namespaced "." anchor.
+        List<String> dotPaths =
+                fs.ls(RT, ".").entries().stream().map(FileInfo::path).sorted().toList();
+        for (String root : new String[] {"/", null}) {
+            List<String> rootPaths =
+                    fs.ls(RT, root).entries().stream().map(FileInfo::path).sorted().toList();
+            assertEquals(
+                    dotPaths, rootPaths, "ls('" + root + "') must match ls('.') entry-for-entry");
+        }
     }
 
     @Test
