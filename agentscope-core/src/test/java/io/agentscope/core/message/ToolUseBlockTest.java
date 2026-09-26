@@ -284,6 +284,135 @@ class ToolUseBlockTest {
     }
 
     @Test
+    void testConstructorWithServerFlag() {
+        ToolUseBlock serverTool =
+                ToolUseBlock.builder()
+                        .id("tool-1001")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        assertEquals("tool-1001", serverTool.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverTool.getName());
+        assertEquals("test query", serverTool.getInput().get("queries"));
+        assertTrue(serverTool.isServerTool());
+
+        ToolUseBlock localTool =
+                ToolUseBlock.builder()
+                        .id("tool-1002")
+                        .name("local-tool")
+                        .input(Map.of("key", "value"))
+                        .build();
+        assertFalse(localTool.isServerTool());
+    }
+
+    @Test
+    void testBuilderServer() {
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("tool-1003")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        assertTrue(serverToolUse.isServerTool());
+
+        ToolUseBlock localTool =
+                ToolUseBlock.builder().id("tool-1004").name("local-tool").input(Map.of()).build();
+        assertFalse(localTool.isServerTool());
+    }
+
+    @Test
+    void testJsonSerializationWithServerFlag() throws JsonProcessingException {
+        ToolUseBlock serverTool =
+                ToolUseBlock.builder()
+                        .id("tool-1005")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(serverTool);
+        assertNotNull(json);
+        assertTrue(
+                json.contains("\"serverTool\":true"), "Expected server metadata in JSON: " + json);
+
+        ToolUseBlock localTool =
+                ToolUseBlock.builder().id("tool-1006").name("local-tool").input(Map.of()).build();
+        String localJson = objectMapper.writeValueAsString(localTool);
+        assertFalse(localJson.contains("\"serverTool\":true"));
+    }
+
+    @Test
+    void testJsonDeserializationWithServerFlag() throws JsonProcessingException {
+        String json =
+                """
+                {
+                    "type": "tool_use",
+                    "id": "tool-1007",
+                    "name": "GOOGLE_SEARCH_WEB",
+                    "input": {"queries": "test query"},
+                    "metadata": {"serverTool": true}
+                }
+                """;
+
+        ToolUseBlock serverTool = objectMapper.readValue(json, ToolUseBlock.class);
+        assertEquals("tool-1007", serverTool.getId());
+        assertEquals("GOOGLE_SEARCH_WEB", serverTool.getName());
+        assertTrue(serverTool.isServerTool());
+    }
+
+    @Test
+    void testServerFlagDefaultsToFalseOnDeserialization() throws JsonProcessingException {
+        String json =
+                """
+                {
+                    "type": "tool_use",
+                    "id": "tool-1008",
+                    "name": "local-tool",
+                    "input": {}
+                }
+                """;
+
+        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        assertFalse(toolUseBlock.isServerTool());
+    }
+
+    @Test
+    void testRoundTripPreservesServerFlag() throws JsonProcessingException {
+        ToolUseBlock original =
+                ToolUseBlock.builder()
+                        .id("tool-1009")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", "test query"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        String json = objectMapper.writeValueAsString(original);
+        ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
+
+        assertEquals(original.isServerTool(), deserialized.isServerTool());
+        assertTrue(deserialized.isServerTool());
+    }
+
+    @Test
+    void testWithStatePreservesServerFlag() {
+        ToolUseBlock serverTool =
+                ToolUseBlock.builder()
+                        .id("tool-1010")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of())
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        ToolUseBlock updated = serverTool.withState(ToolCallState.ALLOWED);
+
+        assertTrue(updated.isServerTool());
+        assertEquals(ToolCallState.ALLOWED, updated.getState());
+    }
+
+    @Test
     void testEmptyMapsForNullInputAndMetadata() {
         ToolUseBlock toolUseBlock = new ToolUseBlock("tool-999", "null-test", null, null, null);
 

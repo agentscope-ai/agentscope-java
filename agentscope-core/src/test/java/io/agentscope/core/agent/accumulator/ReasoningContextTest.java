@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -486,6 +487,58 @@ class ReasoningContextTest {
 
         // Verify text is accumulated correctly
         assertEquals("Let me check the weather for you.", context.getAccumulatedText());
+    }
+
+    @Test
+    @DisplayName("Should preserve inline server tool sequence without duplicating tool calls")
+    void testBuildFinalMessagePreservesInlineServerToolSequence() {
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("search-call")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(java.util.Map.of("queries", List.of("southernmost city in China")))
+                        .state(ToolCallState.FINISHED)
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("search-call")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .output(
+                                TextBlock.builder()
+                                        .text("{\"search_suggestions\":\"...\"}")
+                                        .build())
+                        .build();
+        ToolUseBlock localToolUse =
+                ToolUseBlock.builder()
+                        .id("weather-call")
+                        .name("getWeather")
+                        .input(java.util.Map.of("location", "Sansha, China"))
+                        .build();
+
+        context.processChunk(
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(List.of(serverToolUse, serverToolResult, localToolUse))
+                        .build());
+
+        Msg finalMessage = context.buildFinalMessage();
+        assertNotNull(finalMessage);
+        assertEquals(3, finalMessage.getContent().size());
+
+        ToolUseBlock accumulatedServerCall = (ToolUseBlock) finalMessage.getContent().get(0);
+        assertEquals("search-call", accumulatedServerCall.getId());
+        assertTrue(accumulatedServerCall.isServerTool());
+        assertEquals(ToolCallState.FINISHED, accumulatedServerCall.getState());
+
+        ToolResultBlock accumulatedServerResult =
+                (ToolResultBlock) finalMessage.getContent().get(1);
+        assertEquals("search-call", accumulatedServerResult.getId());
+        assertTrue(accumulatedServerResult.isServerTool());
+
+        ToolUseBlock accumulatedLocalCall = (ToolUseBlock) finalMessage.getContent().get(2);
+        assertEquals("weather-call", accumulatedLocalCall.getId());
     }
 
     @Test

@@ -249,6 +249,7 @@ public class ReasoningContext {
                 .input(block.getInput())
                 .content(block.getContent())
                 .metadata(block.getMetadata())
+                .state(block.getState())
                 .build();
     }
 

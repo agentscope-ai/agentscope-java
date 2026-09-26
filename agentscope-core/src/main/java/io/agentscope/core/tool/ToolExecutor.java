@@ -190,6 +190,7 @@ class ToolExecutor {
      *
      * <p>This method handles:
      * <ul>
+     *   <li>Server-side tool calls short-circuit (never executed locally)</li>
      *   <li>Tool lookup and validation</li>
      *   <li>Group activation check</li>
      *   <li>Parameter merging (preset + input)</li>
