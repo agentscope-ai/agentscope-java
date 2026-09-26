@@ -551,7 +551,9 @@ public class CompositeFilesystem implements AbstractFilesystem {
      * {workspace}/{userId}} via {@code LocalFilesystem#isRootPath}.
      */
     private static boolean isRootSpelling(String path) {
-        return path == null || path.isBlank() || "/".equals(path) || ".".equals(path);
+        // Delegates to the shared canonical check so root-equivalent forms ("/.", "//",
+        // "/tmp/..") cannot bypass the root branch and resolve to the OS root (#3253).
+        return AbstractFilesystem.denotesRootPath(path);
     }
 
     /** Returns the default store. */

@@ -599,7 +599,7 @@ public class LocalFilesystem implements AbstractFilesystem {
      * resolves to the same anchor through {@link #resolvePath} directly.
      */
     private static boolean isRootPath(String path) {
-        return path == null || path.isBlank() || "/".equals(path);
+        return AbstractFilesystem.denotesRootPath(path);
     }
 
     protected Path resolvePath(RuntimeContext rc, String key) {

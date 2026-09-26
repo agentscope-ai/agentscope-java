@@ -44,6 +44,42 @@ import java.util.Map;
 public interface AbstractFilesystem {
 
     /**
+     * Returns whether {@code path} is a root spelling for the enumeration surfaces ({@link
+     * #ls}, {@link #grep}, {@link #glob}): {@code null}, blank, and any path that canonically
+     * denotes the root — {@code "/"}, {@code "."}, {@code "/."}, {@code "//"}, {@code
+     * "/tmp/.."} — after collapsing duplicate separators and resolving {@code .}/{@code ..}
+     * segments textually. Shared by {@link CompositeFilesystem} and the concrete backends so
+     * root-equivalent forms cannot slip past textual four-string checks and reach the OS root
+     * (#3253).
+     */
+    static boolean denotesRootPath(String path) {
+        if (path == null || path.isBlank()) {
+            return true;
+        }
+        String p = path.replace('\\', '/');
+        if (p.equals(".")) {
+            return true;
+        }
+        if (!p.startsWith("/")) {
+            return false;
+        }
+        java.util.Deque<String> segments = new java.util.ArrayDeque<>();
+        for (String segment : p.substring(1).split("/")) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (!segments.isEmpty()) {
+                    segments.pop();
+                }
+                continue;
+            }
+            segments.push(segment);
+        }
+        return segments.isEmpty();
+    }
+
+    /**
      * List all files in a directory with metadata.
      *
      * <p>Root-spelling contract: {@code null}, blank, {@code "/"} and {@code "."} all mean

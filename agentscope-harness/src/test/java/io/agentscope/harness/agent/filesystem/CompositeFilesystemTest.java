@@ -249,17 +249,25 @@ class CompositeFilesystemTest {
         composite.ls(CTX, null);
         composite.ls(CTX, "");
         composite.ls(CTX, "   ");
-        verify(defaultBackend, times(5)).ls(any(), eq("/"));
+        // Root-equivalent forms must be caught by the canonical check, not just the four
+        // raw strings — an UNRESTRICTED namespaced backend would resolve them to the OS root.
+        composite.ls(CTX, "/.");
+        composite.ls(CTX, "//");
+        composite.ls(CTX, "/./");
+        composite.ls(CTX, "/tmp/..");
+        verify(defaultBackend, times(9)).ls(any(), eq("/"));
 
         // Root spellings bypass routing entirely, so a configured "/" route cannot capture
         // them: all four spellings aggregate over the default backend (review follow-up).
+        AbstractFilesystem routedDefault = mock(AbstractFilesystem.class);
+        when(routedDefault.ls(any(), any())).thenReturn(LsResult.success(List.of()));
         AbstractFilesystem routedBackend = mock(AbstractFilesystem.class);
         CompositeFilesystem withRootRoute =
-                new CompositeFilesystem(defaultBackend, Map.of("/", routedBackend));
+                new CompositeFilesystem(routedDefault, Map.of("/", routedBackend));
         for (String root : new String[] {"/", ".", "", "  "}) {
             withRootRoute.ls(CTX, root);
         }
-        verify(defaultBackend, times(9)).ls(any(), eq("/"));
+        verify(routedDefault, times(4)).ls(any(), eq("/"));
         verify(routedBackend, never()).ls(any(), any());
 
         // "/" and "." canonicalize to the contract spelling; null is grep's documented

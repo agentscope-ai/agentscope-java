@@ -155,11 +155,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        // Contract spelling: the composite forwards "/" for a root scan; blank/null normalize
-        // to "/" like normalizePath does for grep/glob, so a blank path lists the store root
-        // rather than hitting a NPE on the endsWith check below.
-        String normalizedPath =
-                (path == null || path.isEmpty()) ? "/" : (path.endsWith("/") ? path : path + "/");
+        // Root spellings ("." and blank included) normalize to the store root, matching
+        // grep/glob; this also null-proofs the downstream prefix handling (#3253 review).
+        String normalizedPath = normalizePath(path);
 
         // Fast path: index has entries for this prefix
         if (index != null && index.hasPrefix(normalizedPath)) {
@@ -722,7 +720,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     private static String normalizePath(String path) {
-        if (path == null || path.isBlank()) {
+        // Enumeration root spellings per the AbstractFilesystem contract: null, blank, "/"
+        // and "." all mean the store root (#3253 review).
+        if (path == null || path.isBlank() || "/".equals(path) || ".".equals(path)) {
             return "/";
         }
         String normalized = path.startsWith("/") ? path : "/" + path;

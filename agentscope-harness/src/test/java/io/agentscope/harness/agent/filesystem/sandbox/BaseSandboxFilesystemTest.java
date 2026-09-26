@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -263,6 +264,72 @@ class BaseSandboxFilesystemTest {
 
             assertFalse(result.isSuccess(), "glob should fail when the command never ran");
             assertTrue(result.error().contains("status=504"), "error should carry the cause");
+        }
+
+        // ============== Root spellings anchor at the sandbox working dir (#3253 review)
+        // ==============
+
+        @Test
+        void sandbox_rootSpellings_anchorAtWorkingDirectory() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+
+            for (String root : new String[] {"/", ".", null, "", "/.", "//", "/tmp/.."}) {
+                fs.ls(RT, root);
+                assertTrue(
+                        fs.lastCommand.contains("'.'"),
+                        () ->
+                                "ls('"
+                                        + root
+                                        + "') must anchor at the sandbox cwd: "
+                                        + fs.lastCommand);
+                assertFalse(
+                        fs.lastCommand.contains("'/'"),
+                        () ->
+                                "ls('"
+                                        + root
+                                        + "') must not scan the container root: "
+                                        + fs.lastCommand);
+
+                fs.glob(RT, "*.md", root);
+                assertTrue(
+                        fs.lastCommand.startsWith("find '.'"),
+                        () ->
+                                "glob('"
+                                        + root
+                                        + "') must anchor at the sandbox cwd: "
+                                        + fs.lastCommand);
+            }
+
+            fs.grep(RT, "needle", "/", null);
+            assertTrue(
+                    fs.lastCommand.contains("-e 'needle' '.'"),
+                    () -> "grep('/') must anchor at the sandbox cwd: " + fs.lastCommand);
+        }
+
+        @Test
+        void routedSandbox_grepRootSpelling_anchorsInsideContainer() {
+            FakeSandboxFilesystem primary = new FakeSandboxFilesystem();
+            RoutedSandboxFilesystem routed =
+                    new RoutedSandboxFilesystem(primary, java.util.Map.of());
+
+            // grep(".") through the routed wrapper must stay the sandbox working directory —
+            // forwarding the contract spelling "/" verbatim would recurse the container root.
+            for (String root : new String[] {"/", "."}) {
+                routed.grep(RT, "needle", root, null);
+                assertTrue(
+                        primary.lastCommand.contains("-e 'needle' '.'"),
+                        () ->
+                                "routed grep('"
+                                        + root
+                                        + "') must anchor inside the container: "
+                                        + primary.lastCommand);
+            }
+            routed.ls(RT, "/");
+            assertTrue(
+                    primary.lastCommand.contains("'.'"),
+                    () ->
+                            "routed ls('/') must anchor inside the container: "
+                                    + primary.lastCommand);
         }
     }
 
