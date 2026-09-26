@@ -43,6 +43,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -86,6 +87,19 @@ class AguiMessageConverterTest {
         assertEquals("msg-2", msg.getId());
         assertEquals(MsgRole.ASSISTANT, msg.getRole());
         assertEquals("Hello! How can I help?", msg.getTextContent());
+    }
+
+    @Test
+    void testConvertReasoningMessageToThinkingBlock() {
+        AguiMessage aguiMsg = AguiMessage.reasoningMessage("msg-r1", "Inspect the tool result");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        assertEquals(MsgRole.ASSISTANT, msg.getRole());
+        assertTrue(msg.hasContentBlocks(ThinkingBlock.class));
+        assertEquals(
+                "Inspect the tool result",
+                msg.getFirstContentBlock(ThinkingBlock.class).getThinking());
     }
 
     @Test
@@ -312,6 +326,73 @@ class AguiMessageConverterTest {
         AguiMessage aguiMsg = converter.toAguiMessage(msg);
 
         assertEquals("First part\nSecond part", aguiMsg.getTextContent());
+    }
+
+    @Test
+    void testConvertThinkingBlockToReasoningMessage() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Need to inspect the weather")
+                                        .build())
+                        .build();
+
+        AguiMessage result = converter.toAguiMessage(msg);
+
+        assertEquals("msg-thinking", result.getId());
+        assertEquals("reasoning", result.getRole());
+        assertEquals("Need to inspect the weather", result.getTextContent());
+    }
+
+    @Test
+    void testConvertMixedAssistantTurnToReasoningAndAssistantMessages() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Need a tool").build(),
+                                        TextBlock.builder().text("Let me check").build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-weather")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessages(msg);
+
+        assertEquals(2, results.size());
+        assertEquals("msg-mixed-reasoning", results.get(0).getId());
+        assertTrue(results.get(0).isReasoningMessage());
+        assertEquals("Need a tool", results.get(0).getTextContent());
+        assertEquals("msg-mixed", results.get(1).getId());
+        assertTrue(results.get(1).isAssistantMessage());
+        assertEquals("Let me check", results.get(1).getTextContent());
+        assertEquals("tc-weather", results.get(1).getToolCalls().get(0).getId());
+    }
+
+    @Test
+    void testToAguiMessageListFlattensReasoningMessages() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("Thinking").build(),
+                                        TextBlock.builder().text("Answer").build()))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessageList(List.of(msg));
+
+        assertEquals(2, results.size());
+        assertEquals("reasoning", results.get(0).getRole());
+        assertEquals("assistant", results.get(1).getRole());
     }
 
     @Test
