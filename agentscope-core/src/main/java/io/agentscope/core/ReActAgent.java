@@ -2788,10 +2788,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             events.add(
                     new ToolResultEndEvent(
-                            replyId,
-                            toolId,
-                            toolName,
-                            determineToolResultState(result))
+                                    replyId, toolId, toolName, determineToolResultState(result))
                             .withMetadata(eventMetadata));
 
             return events;
