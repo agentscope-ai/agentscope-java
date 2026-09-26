@@ -18,7 +18,7 @@ package io.agentscope.core.agui.adapter;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.BaseEventPropertiesEnricher;
-import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.tool.ToolMergeMode;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +34,7 @@ public class AguiAdapterConfig {
 
     private final ToolMergeMode toolMergeMode;
     private final boolean emitStateEvents;
+    // frontend/external tools always emit args
     private final boolean emitToolCallArgs;
     private final boolean emitTokenUsage;
     private final boolean enableReasoning;
@@ -214,7 +215,7 @@ public class AguiAdapterConfig {
      */
     public static class Builder {
 
-        private ToolMergeMode toolMergeMode = ToolMergeMode.MERGE_FRONTEND_PRIORITY;
+        private ToolMergeMode toolMergeMode = ToolMergeMode.MERGE_EXTERNAL_PRIORITY;
         private boolean emitStateEvents = true;
         private boolean emitToolCallArgs = true;
         private boolean emitTokenUsage = false;

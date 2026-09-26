@@ -1,0 +1,27 @@
+# Build from the monorepo root; no generated console files are required in Git.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS console
+WORKDIR /src/frontend
+COPY agentscope-service/frontend/package*.json ./
+RUN npm ci
+COPY agentscope-service/frontend/ ./
+RUN npm run build
+
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+ARG VERSION=dev
+ARG TARGETOS=linux
+ARG TARGETARCH
+WORKDIR /src
+COPY agentscope-service/aistio/go.mod agentscope-service/aistio/go.sum ./
+RUN go mod download
+COPY agentscope-service/aistio/ ./
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/spring-ai-alibaba/aistio/internal/version.Version=$VERSION" -o /out/aistiod ./cmd/aistiod
+RUN mkdir -p /out/data/workspaces /out/data/artifacts
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /out/aistiod /aistiod
+COPY --from=console /src/aistio/ui /ui
+COPY --from=build --chown=65532:65532 /out/data /data
+ENV AISTIO_STATIC_DIR=/ui AISTIO_WORKSPACE_ROOT=/data/workspaces
+USER 65532:65532
+EXPOSE 8081
+ENTRYPOINT ["/aistiod"]

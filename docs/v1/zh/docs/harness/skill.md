@@ -1,4 +1,6 @@
-# 技能（Skill）
+---
+title: 技能
+---
 
 一个 skill 就是一份写好的能力包：一个目录里放一份 `SKILL.md`（说明用途、给 agent 看的指令），可以再带一些参考文档、脚本或样例。写好后丢给 agent，它会在合适的时候自己用。
 
@@ -9,7 +11,7 @@ harness 让你从两个地方装 skill：
 
 两类来源同时生效，不需要二选一。
 
-> 关于 skill 自身的结构、`SKILL.md` 写法、资源加载、tool 绑定、代码执行这些通用概念，见 [Agent Skill](../task/agent-skill.md)。本文只讲 harness 这一层的用法。
+> 关于 skill 自身的结构、`SKILL.md` 写法、资源加载、tool 绑定、代码执行这些通用概念，见 [Agent Skill](/v1/zh/docs/task/agent-skill)。本文只讲 harness 这一层的用法。
 
 ---
 
@@ -160,7 +162,7 @@ workspace/
 - Bob 调用时：还是用共用版，看不到 Alice 那份
 - Alice 在自己目录下放了一个 `notes-taker`：只有她能用
 
-> 这一层的目录前缀是 `RuntimeContext.userId` 决定的，所以前提是调用方把 `userId` 传进了 `RuntimeContext`。具体怎么按用户切目录见 [文件系统 · NamespaceFactory](./filesystem.md#namespacefactory-与多租户)。
+> 这一层的目录前缀是 `RuntimeContext.userId` 决定的，所以前提是调用方把 `userId` 传进了 `RuntimeContext`。具体怎么按用户切目录见 [文件系统 · NamespaceFactory](/v1/zh/docs/harness/filesystem#namespacefactory-与多租户)。
 
 ---
 
@@ -217,7 +219,7 @@ workspace/
 
 ## 相关文档
 
-- [Agent Skill](../task/agent-skill.md) — `SKILL.md` 字段、资源结构、tool 绑定、代码执行
-- [工作区](./workspace.md) — 工作区目录的整体布局
-- [文件系统](./filesystem.md) — 多租户与按用户隔离怎么配
-- [工具](./tool.md) — `load_skill_through_path` 等内置工具
+- [Agent Skill](/v1/zh/docs/task/agent-skill) — `SKILL.md` 字段、资源结构、tool 绑定、代码执行
+- [工作区](/v1/zh/docs/harness/workspace) — 工作区目录的整体布局
+- [文件系统](/v1/zh/docs/harness/filesystem) — 多租户与按用户隔离怎么配
+- [工具](/v1/zh/docs/harness/tool) — `load_skill_through_path` 等内置工具
