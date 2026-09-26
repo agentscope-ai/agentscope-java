@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.MessageCreateParams;
@@ -435,6 +436,63 @@ class AnthropicToolsHelperTest {
 
         MessageCreateParams params = builder.build();
         assertEquals(2048, params.maxTokens());
+    }
+
+    @Test
+    void testApplyOptionsWithThinkingBudget() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(2048).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.thinking().isPresent());
+        assertTrue(params.thinking().get().isEnabled());
+        assertEquals(2048L, params.thinking().get().asEnabled().budgetTokens());
+    }
+
+    @Test
+    void testApplyOptionsThinkingBudgetOverridesDefault() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(2048).build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(1024).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertEquals(2048L, params.thinking().orElseThrow().asEnabled().budgetTokens());
+    }
+
+    @Test
+    void testExplicitThinkingOverridesDefaultBudget() {
+        MessageCreateParams.Builder builder = createBuilder();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+                        .build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().thinkingBudget(1024).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.thinking().isEmpty());
+        assertTrue(params._additionalBodyProperties().containsKey("thinking"));
+    }
+
+    @Test
+    void testRejectsConflictingThinkingConfiguration() {
+        MessageCreateParams.Builder builder = createBuilder();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .thinkingBudget(2048)
+                        .additionalBodyParam("thinking", Map.of("type", "adaptive"))
+                        .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AnthropicToolsHelper.applyOptions(builder, options, null));
     }
 
     @Test

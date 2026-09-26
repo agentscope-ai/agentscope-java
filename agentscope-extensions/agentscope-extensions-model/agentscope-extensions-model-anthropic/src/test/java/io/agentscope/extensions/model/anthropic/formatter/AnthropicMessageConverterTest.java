@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.ContentBlockParam;
@@ -33,6 +34,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -191,6 +193,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                 List.of(
                                         ThinkingBlock.builder()
                                                 .thinking("Let me think...")
+                                                .metadata(Map.of("provider", "other"))
                                                 .build()))
                         .build();
 
@@ -201,6 +204,110 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).isText());
         assertEquals("Let me think...", blocks.get(0).asText().text());
+    }
+
+    @Test
+    void testConvertAnthropicThinkingBlocksAfterJsonRoundTrip() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.putAll(AnthropicThinkingMetadata.thinking(0, "Reasoning", "signature-123"));
+        metadata.putAll(AnthropicThinkingMetadata.redactedThinking(1, "encrypted-data"));
+        Msg original =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Reasoning")
+                                                .metadata(metadata)
+                                                .build()))
+                        .build();
+        Msg restored = jsonCodec.fromJson(jsonCodec.toJson(original), Msg.class);
+
+        List<ContentBlockParam> blocks =
+                converter.convert(List.of(restored)).get(0).content().asBlockParams();
+
+        assertEquals(2, blocks.size());
+        assertTrue(blocks.get(0).isThinking());
+        assertEquals("Reasoning", blocks.get(0).asThinking().thinking());
+        assertEquals("signature-123", blocks.get(0).asThinking().signature());
+        assertTrue(blocks.get(1).isRedactedThinking());
+        assertEquals("encrypted-data", blocks.get(1).asRedactedThinking().data());
+    }
+
+    @Test
+    void testRejectsMalformedAnthropicThinkingMetadata() {
+        List<Map<String, Object>> malformedMetadata =
+                List.of(
+                        Map.of(
+                                "anthropicThinkingBlock:invalid",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        "Reasoning",
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:-1",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        "Reasoning",
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:01",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        "Reasoning",
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        42,
+                                        "signature",
+                                        "signature-123")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of("type", "thinking", "thinking", "Reasoning")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of(
+                                        "type",
+                                        "thinking",
+                                        "thinking",
+                                        "Reasoning",
+                                        "signature",
+                                        "")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of("type", "redacted_thinking", "data", "")),
+                        Map.of(
+                                "anthropicThinkingBlock:0",
+                                Map.of("type", "redacted_thinking", "data", 42)));
+
+        for (Map<String, Object> metadata : malformedMetadata) {
+            Msg msg =
+                    Msg.builder()
+                            .name("Assistant")
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    ThinkingBlock.builder()
+                                            .thinking("Fallback reasoning")
+                                            .metadata(metadata)
+                                            .build())
+                            .build();
+
+            assertThrows(IllegalArgumentException.class, () -> converter.convert(List.of(msg)));
+        }
     }
 
     @Test
@@ -414,6 +521,80 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(
                 "call_2",
                 result.get(4).content().asBlockParams().get(0).asToolResult().toolUseId());
+    }
+
+    @Test
+    void testPreserveSignedThinkingWithParallelToolCalls() {
+        Msg userMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Check two cities.").build())
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I should check both cities.")
+                                                .metadata(
+                                                        AnthropicThinkingMetadata.thinking(
+                                                                0,
+                                                                "I should check both cities.",
+                                                                "signature-123"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Hangzhou"))
+                                                .build()))
+                        .build();
+        Msg firstResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_1")
+                                        .name("get_weather")
+                                        .output(TextBlock.builder().text("Sunny").build())
+                                        .build())
+                        .build();
+        Msg secondResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_2")
+                                        .name("get_weather")
+                                        .output(TextBlock.builder().text("Cloudy").build())
+                                        .build())
+                        .build();
+
+        List<MessageParam> result =
+                converter.convert(List.of(userMsg, assistantMsg, firstResult, secondResult));
+
+        assertEquals(3, result.size());
+        List<ContentBlockParam> assistantBlocks = result.get(1).content().asBlockParams();
+        assertEquals(3, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isThinking());
+        assertEquals("signature-123", assistantBlocks.get(0).asThinking().signature());
+        assertEquals("call_1", assistantBlocks.get(1).asToolUse().id());
+        assertEquals("call_2", assistantBlocks.get(2).asToolUse().id());
+
+        assertEquals(MessageParam.Role.USER, result.get(2).role());
+        List<ContentBlockParam> resultBlocks = result.get(2).content().asBlockParams();
+        assertEquals(2, resultBlocks.size());
+        assertEquals("call_1", resultBlocks.get(0).asToolResult().toolUseId());
+        assertEquals("call_2", resultBlocks.get(1).asToolResult().toolUseId());
     }
 
     @Test
