@@ -122,6 +122,28 @@ public final class MessageUtils {
     }
 
     /**
+     * Returns the IDs of server tool results contained in the supplied message.
+     *
+     * <p>Only provider-produced results are included. Local tool results normally live in
+     * TOOL-role messages, so a local result that unexpectedly appears in an assistant message
+     * must not mark a matching server tool call as complete.
+     *
+     * @param message the message to inspect
+     * @return the inline server tool result IDs
+     */
+    public static Set<String> inlineServerToolResultIds(Msg message) {
+        if (message == null) {
+            return Set.of();
+        }
+
+        return message.getContentBlocks(ToolResultBlock.class).stream()
+                .filter(ToolResultBlock::isServerTool)
+                .map(ToolResultBlock::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * Replaces the most recent message with the requested role.
      *
      * @param messages the mutable message list to update

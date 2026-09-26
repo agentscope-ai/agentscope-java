@@ -16,150 +16,65 @@
 package io.agentscope.extensions.model.anthropic.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
+import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolUnion;
-import com.anthropic.models.messages.UserLocation;
-import com.anthropic.models.messages.WebSearchTool20250305;
-import java.util.List;
-import java.util.Map;
+import com.anthropic.models.messages.WebFetchTool20250910;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for AnthropicServerTool. */
 class AnthropicServerToolTest {
 
     @Test
-    void testWebSearchWithAllSupportedParams() {
-        AnthropicServerTool tool =
-                AnthropicServerTool.webSearch()
-                        .param("max_uses", 5)
-                        .param("allowed_domains", List.of("example.com", "docs.example.com"))
-                        .param(
-                                "user_location",
-                                Map.of(
-                                        "type", "approximate",
-                                        "city", "Hangzhou",
-                                        "region", "Zhejiang",
-                                        "country", "CN",
-                                        "timezone", "Asia/Shanghai"))
+    void testSdkToolUnionEntry() {
+        ToolUnion toolUnion =
+                ToolUnion.ofWebFetchTool20250910(WebFetchTool20250910.builder().maxUses(7).build());
+
+        AnthropicServerTool tool = AnthropicServerTool.of(toolUnion);
+
+        assertEquals("web_fetch", tool.getName());
+        assertSame(toolUnion, tool.toToolUnion());
+        assertSame(tool.toToolUnion(), tool.toToolUnion());
+    }
+
+    @Test
+    void testSdkToolUnionRejectsNull() {
+        assertThrows(IllegalArgumentException.class, () -> AnthropicServerTool.of(null));
+    }
+
+    @Test
+    void testSdkToolUnionRejectsCustomClientTool() {
+        Tool customTool =
+                Tool.builder()
+                        .name("local_tool")
+                        .inputSchema(Tool.InputSchema.builder().build())
                         .build();
 
-        assertEquals("web_search_20250305", tool.getType());
-
-        ToolUnion union = tool.toToolUnion();
-        assertTrue(union.isWebSearchTool20250305());
-        WebSearchTool20250305 sdkTool = union.asWebSearchTool20250305();
-        assertEquals(5L, sdkTool.maxUses().orElseThrow());
-        assertEquals(
-                List.of("example.com", "docs.example.com"), sdkTool.allowedDomains().orElseThrow());
-        UserLocation location = sdkTool.userLocation().orElseThrow();
-        assertEquals("Hangzhou", location.city().orElseThrow());
-        assertEquals("Zhejiang", location.region().orElseThrow());
-        assertEquals("CN", location.country().orElseThrow());
-        assertEquals("Asia/Shanghai", location.timezone().orElseThrow());
-    }
-
-    @Test
-    void testWebSearchWithBlockedDomains() {
-        AnthropicServerTool tool =
-                AnthropicServerTool.webSearch()
-                        .param("blocked_domains", List.of("spam.example"))
-                        .build();
-
-        WebSearchTool20250305 sdkTool = tool.toToolUnion().asWebSearchTool20250305();
-        assertEquals(List.of("spam.example"), sdkTool.blockedDomains().orElseThrow());
-        assertTrue(sdkTool.maxUses().isEmpty());
-    }
-
-    @Test
-    void testExplicitTypeEqualsWebSearchFactory() {
-        AnthropicServerTool tool =
-                AnthropicServerTool.builder().type("web_search_20250305").build();
-
-        assertEquals(AnthropicServerTool.TYPE_WEB_SEARCH_20250305, tool.getType());
-        assertTrue(tool.toToolUnion().isWebSearchTool20250305());
-    }
-
-    @Test
-    void testWebFetchTool() throws Exception {
-        AnthropicServerTool tool =
-                AnthropicServerTool.webFetch()
-                        .param("max_uses", 3)
-                        .param("allowed_domains", List.of("example.com"))
-                        .build();
-
-        ToolUnion union = tool.toToolUnion();
-        assertTrue(union.isWebFetchTool20250910());
-
-        // The serialized request JSON carries the versioned type and the tool name
-        String json = ObjectMappers.jsonMapper().writeValueAsString(union);
-        assertTrue(json.contains("\"type\":\"web_fetch_20250910\""));
-        assertTrue(json.contains("\"name\":\"web_fetch\""));
-        assertTrue(json.contains("\"max_uses\":3"));
-    }
-
-    @Test
-    void testCodeExecutionTool() throws Exception {
-        AnthropicServerTool tool = AnthropicServerTool.codeExecution().build();
-
-        ToolUnion union = tool.toToolUnion();
-        assertTrue(union.isCodeExecutionTool20250825());
-
-        String json = ObjectMappers.jsonMapper().writeValueAsString(union);
-        assertTrue(json.contains("\"type\":\"code_execution_20250825\""));
-        assertTrue(json.contains("\"name\":\"code_execution\""));
-    }
-
-    @Test
-    void testToolSearchTool() {
-        AnthropicServerTool tool =
-                AnthropicServerTool.builder().type("tool_search_tool_bm25_20251119").build();
-
-        assertTrue(tool.toToolUnion().isSearchToolBm25_20251119());
-    }
-
-    @Test
-    void testUnknownTypeThrowsAtBuild() {
-        IllegalArgumentException ex =
+        IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () ->
-                                AnthropicServerTool.builder()
-                                        .type("quantum_search_20990101")
-                                        .build());
-        assertTrue(ex.getMessage().contains("quantum_search_20990101"));
+                        () -> AnthropicServerTool.of(ToolUnion.ofTool(customTool)));
+
+        assertTrue(exception.getMessage().contains("custom client tools"));
     }
 
     @Test
-    void testMissingTypeThrows() {
-        assertThrows(IllegalArgumentException.class, () -> AnthropicServerTool.builder().build());
-    }
+    void testSdkBuilderAdditionalPropertyPassesThrough() throws Exception {
+        ToolUnion toolUnion =
+                ToolUnion.ofWebFetchTool20250910(
+                        WebFetchTool20250910.builder()
+                                .maxUses(7)
+                                .putAdditionalProperty("future_param", JsonValue.from(1))
+                                .build());
 
-    @Test
-    void testUnknownParamPassesThrough() throws Exception {
-        // Unknown parameters are forwarded verbatim and validated server-side, so newly added
-        // API fields work without an SDK upgrade
-        AnthropicServerTool tool = AnthropicServerTool.webSearch().param("future_param", 1).build();
+        AnthropicServerTool tool = AnthropicServerTool.of(toolUnion);
 
         String json = ObjectMappers.jsonMapper().writeValueAsString(tool.toToolUnion());
         assertTrue(json.contains("\"future_param\":1"));
-    }
-
-    @Test
-    void testInvalidParamValueTypeThrows() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AnthropicServerTool.webSearch().param("max_uses", "five").build());
-        assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        AnthropicServerTool.webSearch()
-                                .param("allowed_domains", "example.com")
-                                .build());
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AnthropicServerTool.webSearch().param("user_location", "Hangzhou").build());
     }
 }

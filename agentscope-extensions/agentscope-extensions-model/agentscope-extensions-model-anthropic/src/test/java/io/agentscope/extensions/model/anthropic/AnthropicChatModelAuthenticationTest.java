@@ -19,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.anthropic.models.messages.ToolUnion;
+import com.anthropic.models.messages.WebSearchTool20250305;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
@@ -129,13 +132,40 @@ class AnthropicChatModelAuthenticationTest {
                         .authToken(authToken)
                         .modelName("claude-sonnet-4.5")
                         .stream(streaming)
-                        .addServerTool(AnthropicServerTool.webSearch().param("max_uses", 3).build())
+                        .addServerTool(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder()
+                                                        .maxUses(3)
+                                                        .build())))
                         .cacheTtl("1h")
                         .defaultOptions(GenerateOptions.builder().cacheControl(true).build())
                         .build();
 
         RecordedRequest request = assertExchange(model, streaming, apiKey, authToken);
         assertServerToolAndCacheTtl(request);
+    }
+
+    @Test
+    void shouldApplyParallelToolUseOptionsToServerOnlyTools() throws Exception {
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .baseUrl(server.url("/anthropic/").toString())
+                        .apiKey("test-api-key")
+                        .modelName("claude-sonnet-4.5")
+                        .stream(false)
+                        .addServerTool(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder().build())))
+                        .defaultOptions(GenerateOptions.builder().parallelToolCalls(false).build())
+                        .build();
+
+        RecordedRequest request = assertExchange(model, false, "test-api-key", null);
+        JsonNode body = new ObjectMapper().readTree(request.getBody().readUtf8());
+        assertEquals(1, body.path("tools").size());
+        assertEquals("auto", body.at("/tool_choice/type").asText());
+        assertTrue(body.at("/tool_choice/disable_parallel_tool_use").asBoolean());
     }
 
     @Test
@@ -149,7 +179,12 @@ class AnthropicChatModelAuthenticationTest {
                         GenerateOptions.builder().cacheControl(true).build(),
                         null,
                         null,
-                        List.of(AnthropicServerTool.webSearch().param("max_uses", 3).build()),
+                        List.of(
+                                AnthropicServerTool.of(
+                                        ToolUnion.ofWebSearchTool20250305(
+                                                WebSearchTool20250305.builder()
+                                                        .maxUses(3)
+                                                        .build()))),
                         "1h");
 
         assertServerToolAndCacheTtl(assertExchange(model, false, "test-api-key", null));

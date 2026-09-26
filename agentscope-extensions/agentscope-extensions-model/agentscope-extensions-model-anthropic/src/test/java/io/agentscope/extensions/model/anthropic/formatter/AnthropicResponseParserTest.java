@@ -538,9 +538,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         String rawJson =
                 assertInstanceOf(
                         String.class,
-                        toolResult
-                                .getMetadata()
-                                .get(AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT));
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
         assertTrue(rawJson.contains("\"web_search_tool_result\""));
         assertTrue(rawJson.contains("\"srvtoolu_01\""));
         assertTrue(rawJson.contains("\"enc_abc123\""));
@@ -583,9 +581,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         String rawJson =
                 assertInstanceOf(
                         String.class,
-                        toolResult
-                                .getMetadata()
-                                .get(AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT));
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
         assertTrue(rawJson.contains("\"max_uses_exceeded\""));
         TextBlock errorText = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
         assertTrue(errorText.getText().contains("max_uses_exceeded"));
@@ -628,9 +624,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         String rawJson =
                 assertInstanceOf(
                         String.class,
-                        toolResult
-                                .getMetadata()
-                                .get(AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT));
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
         assertTrue(rawJson.contains("\"code_execution_tool_result\""));
         assertTrue(rawJson.contains("\"42\\n\""));
     }

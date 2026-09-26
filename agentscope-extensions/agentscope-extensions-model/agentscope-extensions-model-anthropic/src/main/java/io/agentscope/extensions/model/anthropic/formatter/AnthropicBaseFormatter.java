@@ -24,6 +24,7 @@ import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.anthropic.tool.AnthropicServerTool;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -78,17 +79,28 @@ public abstract class AnthropicBaseFormatter
      */
     @Override
     public void applyTools(MessageCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            currentOptions.remove();
-            return;
-        }
+        applyTools(paramsBuilder, tools, List.of());
+    }
 
-        // Use saved options to apply tools with tool choice
+    /**
+     * Apply client tools and Anthropic built-in server tools as one tool set.
+     *
+     * @param paramsBuilder Anthropic request parameters
+     * @param tools client tool schemas
+     * @param serverTools Anthropic server tools
+     */
+    public void applyTools(
+            MessageCreateParams.Builder paramsBuilder,
+            List<ToolSchema> tools,
+            List<AnthropicServerTool> serverTools) {
         GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options, this.cacheTtl);
 
-        // Clean up thread-local storage
-        currentOptions.remove();
+        try {
+            AnthropicToolsHelper.applyTools(paramsBuilder, tools, serverTools, options, cacheTtl);
+        } finally {
+            // Clean up thread-local storage even when tool validation fails.
+            currentOptions.remove();
+        }
     }
 
     /**

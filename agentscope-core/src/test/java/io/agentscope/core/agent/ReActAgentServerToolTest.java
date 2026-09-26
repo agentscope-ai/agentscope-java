@@ -24,6 +24,11 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -126,6 +131,69 @@ class ReActAgentServerToolTest {
                 agent.getAgentState().getContext().stream()
                         .anyMatch(m -> m.getRole() == MsgRole.TOOL);
         assertTrue(!hasToolRoleMsg, "Server tools must not produce local tool execution messages");
+    }
+
+    @Test
+    @DisplayName("Should emit tool result events for inline server tool results")
+    void testServerToolResultEmitsToolResultEvents() {
+        MockModel mockModel =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_server_tool_events")
+                                                .content(
+                                                        List.of(
+                                                                serverToolUse("srvtoolu_event"),
+                                                                serverToolResult("srvtoolu_event"),
+                                                                TextBlock.builder()
+                                                                        .text("Search complete")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build()));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(mockModel)
+                        .toolkit(new MockToolkit())
+                        .maxIters(2)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        TestUtils.createUserMessage(
+                                                "User", "Search for AgentScope")))
+                        .collectList()
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(events);
+        List<AgentEvent> toolLifecycle =
+                events.stream()
+                        .filter(
+                                event ->
+                                        event instanceof ToolCallEndEvent
+                                                || event instanceof ToolResultStartEvent
+                                                || event instanceof ToolResultTextDeltaEvent
+                                                || event instanceof ToolResultEndEvent)
+                        .toList();
+
+        assertEquals(4, toolLifecycle.size());
+        assertTrue(toolLifecycle.get(0) instanceof ToolCallEndEvent);
+        assertTrue(toolLifecycle.get(1) instanceof ToolResultStartEvent);
+        assertTrue(toolLifecycle.get(2) instanceof ToolResultTextDeltaEvent);
+        assertTrue(toolLifecycle.get(3) instanceof ToolResultEndEvent);
+
+        ToolResultTextDeltaEvent delta = (ToolResultTextDeltaEvent) toolLifecycle.get(2);
+        assertEquals("srvtoolu_event", delta.getToolCallId());
+        assertEquals("web_search", delta.getToolCallName());
+        assertEquals("AgentScope docs (https://example.com)", delta.getDelta());
+        assertEquals(Boolean.TRUE, delta.getMetadata().get(ToolResultBlock.METADATA_SERVER_TOOL));
+
+        ToolResultEndEvent end = (ToolResultEndEvent) toolLifecycle.get(3);
+        assertEquals(ToolResultState.SUCCESS, end.getState());
+        assertEquals(Boolean.TRUE, end.getMetadata().get(ToolResultBlock.METADATA_SERVER_TOOL));
     }
 
     @Test

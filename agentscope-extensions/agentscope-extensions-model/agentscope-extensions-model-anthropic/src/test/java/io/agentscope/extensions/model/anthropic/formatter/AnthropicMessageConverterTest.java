@@ -677,7 +677,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                         Map.of(
                                 ToolResultBlock.METADATA_SERVER_TOOL,
                                 true,
-                                AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT,
+                                AnthropicServerToolHelper.RESULT_METADATA,
                                 rawJson))
                 .build();
     }
@@ -738,7 +738,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                 Map.of(
                                         ToolResultBlock.METADATA_SERVER_TOOL,
                                         true,
-                                        AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
                                         errorJson))
                         .build();
         Msg assistantMsg =
@@ -776,7 +776,7 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                 Map.of(
                                         ToolResultBlock.METADATA_SERVER_TOOL,
                                         true,
-                                        AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
                                         rawJson))
                         .build();
         Msg assistantMsg =

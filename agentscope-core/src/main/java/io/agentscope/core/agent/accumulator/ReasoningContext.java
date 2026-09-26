@@ -27,7 +27,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,12 +50,7 @@ public class ReasoningContext {
     private final TextAccumulator textAcc = new TextAccumulator();
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
-
-    // Server tool results returned by the provider inside the assistant response
-    // (e.g. Anthropic web_search_tool_result). Collected in arrival order.
-    private final List<ToolResultBlock> serverToolResults = new ArrayList<>();
-
-    private final List<Msg> allStreamedChunks = new ArrayList<>();
+    private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
     // ChatUsage
     private int inputTokens = 0;
@@ -118,7 +112,6 @@ public class ReasoningContext {
                 // Emit text block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ThinkingBlock tb) {
                 thinkingAcc.add(tb);
@@ -126,7 +119,6 @@ public class ReasoningContext {
                 // Emit thinking block immediately
                 Msg msg = buildChunkMsg(tb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolUseBlock tub) {
                 // Accumulate tool calls and emit immediately for real-time streaming
@@ -140,7 +132,6 @@ public class ReasoningContext {
                 ToolUseBlock outputBlock = enrichToolUseBlockWithId(tub);
                 Msg msg = buildChunkMsg(outputBlock);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
                 // Server tool results arrive as part of the assistant response; keep them so
@@ -149,7 +140,6 @@ public class ReasoningContext {
 
                 Msg msg = buildChunkMsg(trb);
                 streamingMsgs.add(msg);
-                allStreamedChunks.add(msg);
             }
         }
 
@@ -189,17 +179,7 @@ public class ReasoningContext {
 
         // Add all tool calls, placing server tool results right after their calls
         List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-        Map<String, ToolResultBlock> serverResultsById = new LinkedHashMap<>();
-        serverToolResults.forEach(r -> serverResultsById.putIfAbsent(r.getId(), r));
-        for (ToolUseBlock toolCall : toolCalls) {
-            blocks.add(toolCall);
-            ToolResultBlock result = serverResultsById.remove(toolCall.getId());
-            if (result != null) {
-                blocks.add(result);
-            }
-        }
-        // Keep any results whose call id did not match (defensive, preserves data)
-        blocks.addAll(serverResultsById.values());
+        blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
         if (blocks.isEmpty()) {

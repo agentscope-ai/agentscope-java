@@ -16,12 +16,10 @@
 package io.agentscope.extensions.model.anthropic.formatter;
 
 import com.anthropic.core.JsonValue;
-import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.MessageParam.Role;
-import com.anthropic.models.messages.ServerToolUseBlockParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
@@ -55,6 +53,8 @@ import org.slf4j.LoggerFactory;
 public class AnthropicMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicMessageConverter.class);
+    private static final AnthropicServerToolHelper SERVER_TOOL_HELPER =
+            AnthropicServerToolHelper.instance();
 
     private final AnthropicMediaConverter mediaConverter;
     private final Function<List<ContentBlock>, String> toolResultConverter;
@@ -312,7 +312,7 @@ public class AnthropicMessageConverter {
                 if (tub.isServerTool()) {
                     // Server tool calls are echoed back as server_tool_use blocks
                     contentBlocks.add(
-                            ContentBlockParam.ofServerToolUse(convertServerToolUseParam(tub)));
+                            ContentBlockParam.ofServerToolUse(SERVER_TOOL_HELPER.encodeUse(tub)));
                 } else {
                     contentBlocks.add(
                             ContentBlockParam.ofToolUse(
@@ -328,7 +328,7 @@ public class AnthropicMessageConverter {
                 }
             } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
                 // Server tool results stay inline in the assistant message, echoed verbatim
-                ContentBlockParam param = serverToolResultParam(trb);
+                ContentBlockParam param = SERVER_TOOL_HELPER.encodeResult(trb);
                 if (param != null) {
                     contentBlocks.add(param);
                 }
@@ -344,49 +344,6 @@ public class AnthropicMessageConverter {
                 .role(role)
                 .content(MessageParam.Content.ofBlockParams(contentBlocks))
                 .build();
-    }
-
-    /**
-     * Convert a server-marked ToolUseBlock back to an Anthropic server_tool_use param.
-     */
-    private ServerToolUseBlockParam convertServerToolUseParam(ToolUseBlock toolUse) {
-        ServerToolUseBlockParam.Input.Builder inputBuilder =
-                ServerToolUseBlockParam.Input.builder();
-        if (toolUse.getInput() != null) {
-            toolUse.getInput()
-                    .forEach(
-                            (key, value) ->
-                                    inputBuilder.putAdditionalProperty(key, JsonValue.from(value)));
-        }
-        return ServerToolUseBlockParam.builder()
-                .id(toolUse.getId())
-                .name(JsonValue.from(toolUse.getName()))
-                .input(inputBuilder.build())
-                .build();
-    }
-
-    /**
-     * Restore a server-marked ToolResultBlock to its original Anthropic result block param from
-     * the raw JSON captured by {@link AnthropicResponseParser}, or {@code null} if unavailable.
-     */
-    private ContentBlockParam serverToolResultParam(ToolResultBlock toolResult) {
-        Object raw =
-                toolResult.getMetadata().get(AnthropicResponseParser.METADATA_SERVER_TOOL_RESULT);
-        if (raw instanceof String json && !json.isBlank()) {
-            try {
-                return ObjectMappers.jsonMapper().readValue(json, ContentBlockParam.class);
-            } catch (Exception e) {
-                log.warn(
-                        "Failed to restore server tool result {}: {}",
-                        toolResult.getId(),
-                        e.getMessage());
-            }
-        } else {
-            log.warn(
-                    "Server tool result {} has no raw block JSON in metadata; skipping echo",
-                    toolResult.getId());
-        }
-        return null;
     }
 
     /**

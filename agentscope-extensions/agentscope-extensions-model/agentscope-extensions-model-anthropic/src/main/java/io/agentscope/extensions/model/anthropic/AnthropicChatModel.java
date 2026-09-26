@@ -318,16 +318,9 @@ public class AnthropicChatModel extends ChatModelBase {
                                 // Apply generation options via formatter
                                 formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
-
-                                // Add Anthropic built-in server tools (executed on
-                                // Anthropic's infrastructure, independent of client tools)
-                                for (AnthropicServerTool serverTool : serverTools) {
-                                    paramsBuilder.addTool(serverTool.toToolUnion());
-                                }
+                                // Add client and server tools through one path so name
+                                // validation, tool choice, and parallel tool use cover both.
+                                formatter.applyTools(paramsBuilder, tools, serverTools);
 
                                 // Create the request
                                 MessageCreateParams params = paramsBuilder.build();
