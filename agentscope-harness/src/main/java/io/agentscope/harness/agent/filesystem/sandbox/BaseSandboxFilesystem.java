@@ -54,6 +54,12 @@ import java.util.Map;
  */
 public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem {
 
+    /**
+     * Maximum length of raw command output embedded in a failure message the model sees (see
+     * {@link #clampDetail(String)}).
+     */
+    private static final int MAX_DETAIL_CHARS = 500;
+
     @Override
     public abstract String id();
 
@@ -194,13 +200,17 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         String escapedPath = FilesystemUtils.shellQuote(filePath);
+        // No double-quoted span may contain a space: on a Windows host the argv →
+        // command-line → docker.exe re-parse round-trip drops the inner double quotes, and the
+        // space stops protecting the argument (issue #3262). `d=$(dirname ...)` keeps the quoted
+        // value in a variable; "$d" is then a single token with no space inside the quotes.
         String checkCmd =
                 "if [ -e "
                         + escapedPath
                         + " ]; then echo 'EXISTS'; exit 1; fi; "
-                        + "mkdir -p \"$(dirname "
+                        + "d=$(dirname "
                         + escapedPath
-                        + ")\" 2>&1";
+                        + "); mkdir -p \"$d\" 2>&1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
         if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
@@ -211,7 +221,11 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                                 + " because it already exists. Read and then make an"
                                 + " edit, or write to a new path.");
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            String detail =
+                    checkResult.output() != null && !checkResult.output().isBlank()
+                            ? clampDetail(checkResult.output())
+                            : "exit code " + checkResult.exitCode();
+            return WriteResult.fail("Failed to write file '" + filePath + "': " + detail);
         }
 
         List<FileUploadResponse> responses =
@@ -430,11 +444,25 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         AbstractFilesystem.validatePath(toPath);
         String escapedFrom = FilesystemUtils.shellQuote(fromPath);
         String escapedTo = FilesystemUtils.shellQuote(toPath);
-        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        // Unquoted $(dirname ...) word-splits when the parent path contains a space
+        // (mkdir -p a b creates junk dirs); d=$(dirname ...) then "$d" keeps it one token —
+        // the same quote-free-spread idiom write() uses (#3262).
+        String cmd =
+                "d=$(dirname "
+                        + escapedTo
+                        + "); mkdir -p \"$d\" && mv "
+                        + escapedFrom
+                        + " "
+                        + escapedTo;
         ExecuteResponse result = execute(runtimeContext, cmd, null);
         if (result.exitCode() != 0) {
             return WriteResult.fail(
-                    "Error moving '" + fromPath + "' to '" + toPath + "': " + result.output());
+                    "Error moving '"
+                            + fromPath
+                            + "' to '"
+                            + toPath
+                            + "': "
+                            + clampDetail(result.output()));
         }
         return WriteResult.ok(toPath);
     }
@@ -501,5 +529,23 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    /**
+     * Caps raw command output embedded in a tool result the model sees. Keeps the failure
+     * message safe regardless of what {@code execute} returns — the project treats ~80K chars
+     * as context-overflow territory for tool results, so error details get a tight local bound.
+     */
+    private static String clampDetail(String output) {
+        // Null-safe by design: move() passes result.output() unguarded, and the execution
+        // layer can produce a null output (e.g. ExecTimeoutException via a null
+        // Throwable.getMessage()).
+        if (output == null) {
+            return "no output";
+        }
+        String stripped = output.strip();
+        return stripped.length() <= MAX_DETAIL_CHARS
+                ? stripped
+                : stripped.substring(0, MAX_DETAIL_CHARS) + "... [output truncated]";
     }
 }
