@@ -16,9 +16,11 @@ _Avoid_: Channel resource, managed connection
 The product-owned configuration and lifecycle record for one configured Channel instance, including routing and enabled state.
 _Avoid_: Channel extension, external account
 
+
 **Personal Weixin**:
 An individual Weixin account that a platform user authorizes for Agent conversations through Tencent's official ClawBot service.
 _Avoid_: WeCom, enterprise WeChat, unofficial WeChat protocol
+
 
 **iLink**:
 The official Weixin ClawBot service through which an authorized Personal Weixin account exchanges bot messages.
