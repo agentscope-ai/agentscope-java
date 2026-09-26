@@ -31,6 +31,8 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -177,10 +179,11 @@ class MarketplaceStagerPathTest {
                                 .resolve("valid/marker.txt")));
     }
 
-    @Test
-    void shippedSlashSourceIsStagedUnderOneNamespaceDirectory() throws IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"git-owner/repo", "classpath-agentscope/skills"})
+    void shippedSlashSourceIsStagedUnderOneNamespaceDirectory(String source) throws IOException {
         Path workspace = temp.resolve("workspace");
-        AgentSkillRepository repo = repository("git-owner/repo");
+        AgentSkillRepository repo = repository(source);
 
         Map<String, StageResult> result =
                 new MarketplaceStager(workspace)
@@ -211,6 +214,139 @@ class MarketplaceStagerPathTest {
         assertFalse(namespaces.get(first).equals(namespaces.get(second)));
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "CON",
+                "con",
+                "PRN",
+                "AUX",
+                "NUL",
+                "COM1",
+                "COM9",
+                "LPT1",
+                "LPT9",
+                "con.txt",
+                "NUL.tar.gz",
+                "lPt1.ext",
+                "COM\u00b9",
+                "LPT\u00b2"
+            })
+    void windowsDeviceSkillNamesAreRejected(String name) {
+        Path workspace = temp.resolve("workspace");
+        AgentSkillRepository repo = repository("market");
+
+        Map<String, StageResult> result =
+                new MarketplaceStager(workspace)
+                        .stage(List.of(new RepoBound(skill(name), repo)), Map.of(repo, "market"));
+
+        assertEquals(StageResult.NONE, result.get(name));
+        assertFalse(Files.exists(workspace.resolve(MarketplaceStager.CACHE_DIR)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "safe-source",
+                ".",
+                "..",
+                "trailing.",
+                "trailing ",
+                "CON",
+                "NUL.tar.gz",
+                "com1",
+                "LPT9",
+                "COM\u00b9",
+                "LPT\u00b2"
+            })
+    void scopeAndNamespaceUseTheSameSafeMapping(String raw) throws IOException {
+        Path workspace = temp.resolve("workspace");
+        AgentSkillRepository repo = repository(raw);
+        Map<AgentSkillRepository, String> namespaces =
+                MarketplaceStager.resolveSourceNamespaces(List.of(repo));
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+        List<RepoBound> visible = List.of(new RepoBound(skill("valid"), repo));
+
+        StageResult.Cached cached =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        stager.stage(visible, namespaces, raw).get("valid"));
+
+        assertEquals(cached.scopeSegment(), cached.sourceNamespace());
+        assertEquals(namespaces.get(repo), cached.sourceNamespace());
+        if (!raw.equals("safe-source")) {
+            assertFalse(raw.equals(cached.sourceNamespace()));
+        }
+        assertTrue(cached.sourceNamespace().matches("[A-Za-z0-9._-]{1,64}"));
+        assertEquals(
+                "marker",
+                Files.readString(
+                        workspace
+                                .resolve(".skills-cache")
+                                .resolve(cached.scopeSegment())
+                                .resolve(cached.sourceNamespace())
+                                .resolve("valid/marker.txt")));
+        assertEquals(cached, stager.stage(visible, namespaces, raw).get("valid"));
+    }
+
+    @Test
+    void longSegmentsRemainBoundedAndLiteralSharedScopeStaysDistinct() {
+        Path workspace = temp.resolve("workspace");
+        String raw = "a".repeat(65);
+        AgentSkillRepository repo = repository(raw);
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+        List<RepoBound> visible = List.of(new RepoBound(skill("valid"), repo));
+
+        StageResult.Cached longSegments =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        stager.stage(visible, Map.of(), raw).get("valid"));
+        assertEquals(64, longSegments.scopeSegment().length());
+        assertEquals(longSegments.scopeSegment(), longSegments.sourceNamespace());
+
+        StageResult.Cached shared =
+                assertInstanceOf(
+                        StageResult.Cached.class, stager.stage(visible, Map.of()).get("valid"));
+        StageResult.Cached literal =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        stager.stage(visible, Map.of(), MarketplaceStager.SHARED_SCOPE)
+                                .get("valid"));
+        assertEquals(MarketplaceStager.SHARED_SCOPE, shared.scopeSegment());
+        assertFalse(shared.scopeSegment().equals(literal.scopeSegment()));
+    }
+
+    @Test
+    void legacyNestedCacheIsRebuiltAndCollectedAfterGrace() throws IOException {
+        Path workspace = temp.resolve("workspace");
+        Path legacyNamespace = workspace.resolve(".skills-cache/_shared/git-owner/repo");
+        Files.createDirectories(legacyNamespace.resolve("valid"));
+        Files.writeString(legacyNamespace.resolve("valid/marker.txt"), "legacy");
+        Files.setLastModifiedTime(
+                legacyNamespace,
+                FileTime.from(
+                        Instant.now()
+                                .minus(MarketplaceStager.DEFAULT_ORPHAN_GRACE)
+                                .minusSeconds(1)));
+        AgentSkillRepository repo = repository("git-owner/repo");
+
+        StageResult.Cached cached =
+                assertInstanceOf(
+                        StageResult.Cached.class,
+                        new MarketplaceStager(workspace)
+                                .stage(List.of(new RepoBound(skill("valid"), repo)), Map.of())
+                                .get("valid"));
+
+        assertFalse(Files.exists(legacyNamespace.getParent()));
+        assertEquals(
+                "marker",
+                Files.readString(
+                        workspace
+                                .resolve(".skills-cache/_shared")
+                                .resolve(cached.sourceNamespace())
+                                .resolve("valid/marker.txt")));
+    }
+
     @Test
     void frontmatterNameIsValidatedIndependentlyOfSourceDirectory() throws IOException {
         Path workspace = temp.resolve("workspace");
@@ -235,7 +371,16 @@ class MarketplaceStagerPathTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Mixed Case", "my_skill-1.2", "name..with.dots"})
+    @ValueSource(
+            strings = {
+                "Mixed Case",
+                "my_skill-1.2",
+                "name..with.dots",
+                "CONSOLE",
+                "COM10",
+                "LPT0",
+                "x.NUL"
+            })
     void safeNamesPreserveResourcesAndCleanup(String name) throws IOException {
         // Normalizing the workspace must not make resource containment checks reject valid files.
         Path workspace = temp.resolve("unused/../workspace");

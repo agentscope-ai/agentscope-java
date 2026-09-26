@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Materialises non-workspace skill resources (Layer 1 / Layer 2 / marketplace) to
- * {@code <wsRoot>/.skills-cache/<source-ns>/<skill-name>/} so that:
+ * {@code <wsRoot>/.skills-cache/<scope>/<source-ns>/<skill-name>/} so that:
  *
  * <ul>
  *   <li>shell-mode HarnessAgents (sandbox or Local-with-shell) can execute the staged scripts
@@ -117,15 +117,15 @@ public final class MarketplaceStager {
      * — they need no staging because the workspace tree already contains them.
      *
      * <p>Staged skill names must identify a single directory and unsafe names are rejected before
-     * any files are created or cleaned up. Source namespaces may contain repository-specific
-     * identifiers such as {@code owner/repository}; they are mapped to one safe, injective
-     * directory segment before materialisation. An invalid skill receives
+     * staging writes or resource cleanup. Source namespaces may contain repository-specific
+     * identifiers such as {@code owner/repository}; they are mapped to one safe directory
+     * segment, with a digest to disambiguate changed identifiers. Windows device names are
+     * rejected as skill names and mapped as source or scope identifiers. An invalid skill receives
      * {@link StageResult#NONE} and other skills are still staged.
      *
      * <p>The white-list of staged directories is rebuilt every call; any pre-existing
-     * directory under {@code .skills-cache/<source-ns>/} not in the white-list is removed
-     * (cheap orphan GC: marketplace repos that no longer publish a given skill leave no
-     * residue).
+     * directory under {@code .skills-cache/<scope>/<source-ns>/} not in the white-list is
+     * eligible for removal after {@link #DEFAULT_ORPHAN_GRACE}.
      *
      * @param visible       skill+repository pairs in compose order (winner per name already
      *                      deduped upstream)
@@ -187,11 +187,11 @@ public final class MarketplaceStager {
         return roots;
     }
 
-    /** Blank scopes collapse to one shared segment so GC always has exactly one subtree. */
-    private static final int MAX_SCOPE_SEGMENT = 64;
+    /** Bound mapped identities while leaving room for a disambiguating digest. */
+    private static final int MAX_CACHE_SEGMENT = 64;
 
     /**
-     * Maps a caller-supplied identity to one path segment, injectively. Sanitising alone would
+     * Maps a caller-supplied identity to one path segment. Sanitising alone would
      * not do: {@code alice@corp.com} and {@code alice#corp.com} both flatten to
      * {@code alice_corp.com}, and two identities sharing a subtree is exactly what the scope
      * exists to prevent. Anything that is not already a distinct, filesystem-safe segment keeps
@@ -201,45 +201,41 @@ public final class MarketplaceStager {
         if (scope == null || scope.isBlank()) {
             return SHARED_SCOPE;
         }
-        String safe = scope.replaceAll("[^A-Za-z0-9._-]", "_");
-        boolean lossless =
-                safe.equals(scope)
-                        && !safe.equals(SHARED_SCOPE)
-                        && safe.length() <= MAX_SCOPE_SEGMENT
-                        // Windows rejects a trailing dot or space in a path component.
-                        && !safe.endsWith(".");
-        if (lossless) {
-            return safe;
-        }
-        String digest = sha256(scope.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
-        int keep = Math.min(safe.length(), MAX_SCOPE_SEGMENT - digest.length() - 1);
-        return safe.substring(0, Math.max(keep, 0)) + "-" + digest;
+        return safeSegment(scope, SHARED_SCOPE);
     }
 
     /**
      * Maps a repository source identifier to one safe directory segment. Source identifiers are
      * metadata rather than user-controlled skill names, and shipped repositories use values such
      * as {@code owner/repository}; rejecting those values would silently disable staging. A digest
-     * suffix preserves injectivity whenever sanitisation changes the identifier.
+     * suffix disambiguates identifiers whenever sanitisation changes them.
      */
     private static String sourceNamespaceSegment(String namespace) {
         if (namespace == null || namespace.isBlank()) {
             return GLOBAL_NAMESPACE;
         }
-        String safe = namespace.replaceAll("[^A-Za-z0-9._-]", "_");
+        return safeSegment(namespace, null);
+    }
+
+    /** Shared mapping for identities; skill names are validated without rewriting them. */
+    private static String safeSegment(String raw, String reservedAlias) {
+        String safe = raw.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (isWindowsDeviceName(safe)) {
+            // A suffix alone would leave names such as NUL.txt-<digest> reserved on Windows.
+            safe = "_" + safe;
+        }
         boolean lossless =
-                safe.equals(namespace)
-                        && !safe.equals(".")
-                        && !safe.equals("..")
-                        && safe.length() <= MAX_SCOPE_SEGMENT
-                        && !safe.endsWith(".")
-                        && !safe.endsWith(" ");
+                safe.equals(raw)
+                        && !safe.equals(reservedAlias)
+                        && safe.length() <= MAX_CACHE_SEGMENT
+                        // Spaces are already replaced above; this also excludes "." and "..".
+                        && !safe.endsWith(".");
         if (lossless) {
             return safe;
         }
-        String digest = sha256(namespace.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
-        int keep = Math.min(safe.length(), MAX_SCOPE_SEGMENT - digest.length() - 1);
-        return safe.substring(0, Math.max(keep, 0)) + "-" + digest;
+        String digest = sha256(raw.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
+        int keep = Math.min(safe.length(), MAX_CACHE_SEGMENT - digest.length() - 1);
+        return safe.substring(0, keep) + "-" + digest;
     }
 
     /** Materialises every eligible input under this call's scope subtree. */
@@ -297,17 +293,27 @@ public final class MarketplaceStager {
     private static Path resolveStagingDirectory(Path parent, String name) {
         Path resolved = parent.resolve(name).normalize();
         // Check both separator styles and drive syntax even on Unix, since the cache may be
-        // projected onto another filesystem. Windows also aliases trailing dots and spaces.
+        // projected onto another filesystem. Windows also aliases trailing dots and spaces
+        // and reserves device names, including those with an extension.
         if (!parent.equals(resolved.getParent())
                 || name.indexOf('/') >= 0
                 || name.indexOf('\\') >= 0
                 || name.indexOf(':') >= 0
                 || name.endsWith(".")
-                || name.endsWith(" ")) {
+                || name.endsWith(" ")
+                || isWindowsDeviceName(name)) {
             throw new IllegalArgumentException(
                     "Staging path component must be a single directory name");
         }
         return resolved;
+    }
+
+    private static boolean isWindowsDeviceName(String name) {
+        int dot = name.indexOf('.');
+        String stem = dot < 0 ? name : name.substring(0, dot);
+        // Win32 also recognises superscript 1, 2 and 3 in COM/LPT device names.
+        return stem.toUpperCase(Locale.ROOT)
+                .matches("CON|PRN|AUX|NUL|(?:COM|LPT)[1-9\u00b9\u00b2\u00b3]");
     }
 
     /** Convenience for callers that don't care about return values. */
@@ -582,7 +588,7 @@ public final class MarketplaceStager {
 
     /**
      * Resolves per-repository {@code source} namespaces. When two repositories report the same
-     * {@code getSource()}, the second and subsequent ones receive an {@code _<idx>} suffix
+     * {@code getSource()}, each receives an {@code _<idx>} suffix
      * (with a warning log). Each result is then mapped to one safe directory segment. Layer-1
      * host repositories whose source string is empty get {@link #GLOBAL_NAMESPACE}.
      */
@@ -646,7 +652,7 @@ public final class MarketplaceStager {
         /** Skill comes from {@link WorkspaceSkillRepository} (already in workspace/skills/). */
         record WorkspaceNative() implements StageResult {}
 
-        /** Skill staged under {@code .skills-cache/<sourceNs>/<skillName>/}. */
+        /** Skill staged under {@code .skills-cache/<scope>/<sourceNs>/<skillName>/}. */
         record Cached(String scopeSegment, String sourceNamespace, String skillName)
                 implements StageResult {}
     }

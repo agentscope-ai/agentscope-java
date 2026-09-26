@@ -312,25 +312,29 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
-| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<source>/<name>` |
-| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
+| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<scope>/<source>/<name>` |
+| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<scope>/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
 So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
 
 ### Where marketplace files actually live
 
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each reasoning step:
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` before each reasoning step:
 
 - Per-file SHA-256 dedup — only changed files are rewritten
-- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
+- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass once untouched for the grace period (30 minutes by default)
 - In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
 
-For staging, the skill name and source namespace must each be a single directory name. Absolute paths, `/` or `\` separators, drive/stream syntax (`:`), `.`/`..`, and names ending in a dot or space are rejected before files are created or cleaned up. The affected skill has no staged `<files-root>`; other skills continue staging normally. This check does not impose a lowercase-only naming convention or a 64-character limit.
+For staging, the skill name must be a single directory name. Absolute paths, `/` or `\` separators, drive/stream syntax (`:`), `.`/`..`, names ending in a dot or space, and Windows device names (such as `CON`, `NUL.txt`, or `COM1`) are rejected before staging writes or resource cleanup. The affected skill has no staged `<files-root>`; other skills continue staging normally. Skill names are not rewritten, and this check imposes neither a lowercase-only convention nor a 64-character limit on them.
+
+Source identifiers and isolation scopes use a shared mapping to one safe segment of at most 64 characters. Identifiers such as `git-owner/repo` and `classpath-agentscope/skills` remain usable: when mapping changes an identifier, a digest suffix disambiguates it. Windows device names are mapped safely too. Blank scopes use `_shared`; a literal `_shared` identity is mapped separately.
+
+**Upgrade note:** source mapping changes existing nested cache paths (for example, `git-owner/repo/<name>` becomes `git-owner_repo-<digest>/<name>` within the same scope). The cache is rebuilt at the new path on the next staging pass. Old nested directories can be reclaimed by orphan GC after the grace period; GC recursively removes stale second-level directories. Cached `<files-root>` paths are not stable across upgrades: persisted prompts and transcripts are not rewritten, so use the path from the newly rendered skill context.
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
-If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
+If repositories report the same `getSource()`, each receives an index suffix (`<source>_1`, `<source>_2`, …) before segment mapping, with a warning log.
 
 ## Running skills in a sandbox
 
@@ -343,14 +347,14 @@ Two classes of skills can run in the container, with different staging points:
 | Source | Where it lives before the sandbox | Path inside the sandbox |
 |--------|-----------------------------------|-------------------------|
 | Workspace skills (Layer 3 `workspace/skills/`, Layer 4 `<userId>/skills/`) | already in the workspace tree | `/workspace/skills/<name>` |
-| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<source>/<name>` |
+| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
-- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
+- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass once untouched for the grace period.
 - **Exec-bit recovery** — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives `+x` heuristically: a shebang (`#!`) at byte 0, or a known script suffix (`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`), adds the execute bit (following `chmod +x` semantics — only bits that already have read get execute). Pure static assets (`.json`/`.md`/`.txt`) stay 644.
 
 Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.
@@ -379,7 +383,7 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 | Skill type | `<files-root>` |
 |------------|----------------|
 | Workspace skill | `/workspace/skills/<name>` |
-| Marketplace skill | `/workspace/.skills-cache/<source>/<name>` |
+| Marketplace skill | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 So the agent simply issues:
 
