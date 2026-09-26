@@ -20,7 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -28,6 +32,8 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
+import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -213,5 +219,93 @@ class CompositeFilesystemTest {
         assertTrue(jsonPaths.contains("tools.json"));
         assertFalse(
                 jsonPaths.contains("AGENTS.md"), "AGENTS.md must not match *.json: " + jsonPaths);
+    }
+
+    /**
+     * Root scans must forward the {@link AbstractFilesystem} contract spelling — {@code "/"} —
+     * to the default backend, whatever that backend is. {@code "."} and {@code ""} are
+     * LocalFilesystem-relative conventions: a sandbox default backend (RoutedSandboxFilesystem
+     * installs its primary as the default) shell-expands them against the command cwd, so
+     * entries come back as {@code ./name} instead of {@code /name}, and {@code ""} additionally
+     * strips the per-user namespace on namespaced local backends. The composite is
+     * backend-agnostic and may only send documented spellings across the seam; each backend
+     * owns the meaning of its own root (#3253).
+     */
+    @Test
+    void rootScans_forwardContractSpellingToNonLocalDefaultBackend() {
+        AbstractFilesystem defaultBackend = mock(AbstractFilesystem.class);
+        when(defaultBackend.ls(any(), any())).thenReturn(LsResult.success(List.of()));
+        when(defaultBackend.grep(any(), any(), any(), any()))
+                .thenReturn(GrepResult.success(List.of()));
+        when(defaultBackend.glob(any(), any(), any())).thenReturn(GlobResult.success(List.of()));
+
+        CompositeFilesystem composite = new CompositeFilesystem(defaultBackend, Map.of());
+
+        // Every root spelling — "/", ".", null, "", whitespace — canonicalizes to the
+        // contract spelling; blank must not slip through to the backend's raw cwd (#3253).
+        composite.ls(CTX, "/");
+        composite.ls(CTX, ".");
+        composite.ls(CTX, null);
+        composite.ls(CTX, "");
+        composite.ls(CTX, "   ");
+        verify(defaultBackend, times(5)).ls(any(), eq("/"));
+
+        // "/" and "." canonicalize to the contract spelling; null is grep's documented
+        // working-directory form and is forwarded as-is for the backend to interpret.
+        composite.grep(CTX, "needle", "/", null);
+        composite.grep(CTX, "needle", ".", null);
+        composite.grep(CTX, "needle", "", null);
+        composite.grep(CTX, "needle", "   ", null);
+        verify(defaultBackend, times(4)).grep(any(), eq("needle"), eq("/"), isNull());
+        composite.grep(CTX, "needle", null, null);
+        verify(defaultBackend).grep(any(), eq("needle"), isNull(), isNull());
+
+        composite.glob(CTX, "**/*.md", "/");
+        composite.glob(CTX, "**/*.md", ".");
+        composite.glob(CTX, "**/*.md", null);
+        composite.glob(CTX, "**/*.md", "");
+        verify(defaultBackend, times(4)).glob(any(), eq("**/*.md"), eq("/"));
+    }
+
+    /**
+     * Review follow-up (Info): with a configured {@code "/"} route, {@code ls(null)} and
+     * {@code grep(null)} must both take root aggregation — the default backend plus the
+     * route's entries — instead of ls letting {@code routeForPath(null)} capture the route
+     * while grep skips routing. The two enumeration surfaces must stay symmetric for every
+     * root spelling that does not explicitly name the route.
+     */
+    @Test
+    void nullRootScan_aggregatesDefaultAndRootRoute_symmetricWithGrep() {
+        AbstractFilesystem defaultBackend = mock(AbstractFilesystem.class);
+        when(defaultBackend.ls(any(), any()))
+                .thenReturn(LsResult.success(List.of(FileInfo.ofFile("default-file.md", 1L, ""))));
+        when(defaultBackend.grep(any(), any(), any(), any()))
+                .thenReturn(GrepResult.success(List.of()));
+
+        AbstractFilesystem rootRouteBackend = mock(AbstractFilesystem.class);
+        when(rootRouteBackend.ls(any(), any()))
+                .thenReturn(LsResult.success(List.of(FileInfo.ofFile("routed-file.md", 1L, ""))));
+        when(rootRouteBackend.grep(any(), any(), any(), any()))
+                .thenReturn(GrepResult.success(List.of()));
+
+        CompositeFilesystem composite =
+                new CompositeFilesystem(defaultBackend, Map.of("/", rootRouteBackend));
+
+        // ls(null): default entry + the "/" route entry, never the route alone.
+        LsResult ls = composite.ls(CTX, null);
+        assertTrue(ls.isSuccess(), () -> "ls(null) failed: " + ls.error());
+        List<String> paths = ls.entries().stream().map(FileInfo::path).sorted().toList();
+        assertTrue(
+                paths.contains("default-file.md"),
+                "ls(null) must aggregate the default backend: " + paths);
+        assertTrue(paths.contains("/"), "ls(null) must surface the '/' route entry: " + paths);
+        verify(defaultBackend).ls(any(), eq("/"));
+        verify(rootRouteBackend, org.mockito.Mockito.never()).ls(any(), any());
+
+        // grep(null): same aggregation shape — default backend root scan plus the route.
+        GrepResult grep = composite.grep(CTX, "needle", null, null);
+        assertTrue(grep.isSuccess(), () -> "grep(null) failed: " + grep.error());
+        verify(defaultBackend).grep(any(), eq("needle"), isNull(), isNull());
+        verify(rootRouteBackend).grep(any(), eq("needle"), eq("/"), isNull());
     }
 }

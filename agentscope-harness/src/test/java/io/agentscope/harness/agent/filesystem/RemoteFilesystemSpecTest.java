@@ -180,7 +180,9 @@ class RemoteFilesystemSpecTest {
                 new RemoteFilesystemSpec(store).toFilesystem(workspace, "agent-a", localNs);
         assertTrue(fs.write(RT, "notes/needle.md", "haystack needle").isSuccess());
 
-        for (String root : new String[] {".", "/"}) {
+        // Blank and whitespace join the root spellings: they must never slip past the
+        // anchor and expose the bare workspace/sibling tenants (#3253 review follow-up).
+        for (String root : new String[] {".", "/", null, "", "   "}) {
             LsResult ls = fs.ls(RT, root);
             assertTrue(ls.isSuccess(), () -> "root listing '" + root + "': " + ls.error());
             for (FileInfo fi : ls.entries()) {
@@ -198,7 +200,7 @@ class RemoteFilesystemSpecTest {
                 "the caller's own tree must remain visible in the root listing");
 
         // All root spellings walk the same tree: the caller's namespaced root.
-        for (String root : new String[] {".", "/", null}) {
+        for (String root : new String[] {".", "/", null, "", "   "}) {
             GrepResult grep = fs.grep(RT, "needle", root, null);
             assertTrue(grep.isSuccess(), () -> "root grep '" + root + "' failed: " + grep.error());
             assertEquals(
@@ -207,11 +209,12 @@ class RemoteFilesystemSpecTest {
                     "root grep '" + root + "' must see only the caller's tree");
         }
 
-        // Anchor equivalence: ls("/") and ls(".") return identical entry sets, and ls(null)
-        // matches too — all root spellings share rootAnchor's namespaced "." anchor.
+        // Anchor equivalence: ls("/"), ls(null), ls(""), and ls("  ") all return the
+        // identical entry set as ls(".") — every root spelling shares the namespaced
+        // aggregate anchor (#3253 review follow-up).
         List<String> dotPaths =
                 fs.ls(RT, ".").entries().stream().map(FileInfo::path).sorted().toList();
-        for (String root : new String[] {"/", null}) {
+        for (String root : new String[] {"/", null, "", "   "}) {
             List<String> rootPaths =
                     fs.ls(RT, root).entries().stream().map(FileInfo::path).sorted().toList();
             assertEquals(

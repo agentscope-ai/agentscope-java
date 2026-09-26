@@ -23,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -381,5 +384,72 @@ class LocalFilesystemModeTest {
 
         assertTrue(result.isSuccess());
         assertEquals("literal name", result.fileData().content());
+    }
+
+    // ==================== Root spellings anchor at the backend's own root (#3253)
+    // ====================
+
+    /**
+     * UNRESTRICTED + per-user namespace is the RemoteFilesystemSpec default-backend
+     * configuration. {@code "/"} is an absolute path there, so without root anchoring every
+     * root-spelled scan resolves to the OS root and enumerates all tenants' namespace
+     * directories; a blank path instead strips the namespace and lands on the bare workspace
+     * root. All root spellings must anchor at {@code {workspace}/{userId}} — the backend's own
+     * root — and produce identical results.
+     */
+    @Test
+    void unrestricted_rootSpellingsAnchorAtNamespacedRootNotOsRoot(@TempDir Path workspace)
+            throws IOException {
+        Files.createDirectories(workspace.resolve("user-1/notes"));
+        Files.writeString(
+                workspace.resolve("user-1/notes/needle.md"),
+                "haystack needle",
+                StandardCharsets.UTF_8);
+        // A sibling tenant's tree must never leak into the caller's root scan.
+        Files.createDirectories(workspace.resolve("user-2"));
+        Files.writeString(
+                workspace.resolve("user-2/secret.md"), "tenant secret", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.UNRESTRICTED, null, 10, USER_NS);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+
+        List<String> referenceEntries = null;
+        for (String root : new String[] {"/", ".", null, ""}) {
+            LsResult ls = fs.ls(rc, root);
+            assertTrue(ls.isSuccess(), () -> "ls('" + root + "') failed: " + ls.error());
+            List<String> entries = ls.entries().stream().map(FileInfo::path).sorted().toList();
+            assertTrue(
+                    entries.stream().anyMatch(p -> p.replaceFirst("^/", "").startsWith("notes")),
+                    "ls('" + root + "') must see the caller's own tree: " + entries);
+            for (String p : entries) {
+                assertFalse(
+                        p.replaceFirst("^/", "").startsWith("user-2"),
+                        "sibling tenant leaked via ls('" + root + "'): " + p);
+                assertFalse(p.contains(".."), "ls('" + root + "') escaped the workspace: " + p);
+            }
+            if (referenceEntries == null) {
+                referenceEntries = entries;
+            } else {
+                assertEquals(referenceEntries, entries, "ls('" + root + "') differs from ls('/')");
+            }
+
+            GrepResult grep = fs.grep(rc, "needle", root, null);
+            assertTrue(grep.isSuccess(), () -> "grep('" + root + "') failed: " + grep.error());
+            assertEquals(
+                    1,
+                    grep.matches().size(),
+                    "grep('" + root + "') must stay inside the caller's tree");
+
+            GlobResult glob = fs.glob(rc, "**/*.md", root);
+            assertTrue(glob.isSuccess(), () -> "glob('" + root + "') failed: " + glob.error());
+            assertEquals(
+                    1,
+                    glob.matches().size(),
+                    "glob('"
+                            + root
+                            + "') must stay inside the caller's tree: "
+                            + glob.matches().stream().map(FileInfo::path).toList());
+        }
     }
 }
