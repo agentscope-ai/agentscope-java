@@ -22,6 +22,9 @@ import java.util.List;
 /** Serializable state for an E2B-backed sandbox. */
 public class E2bSandboxState extends SandboxState {
 
+    /** Default workspace root inside E2B sandboxes. */
+    public static final String DEFAULT_WORKSPACE_ROOT = "/home/user/workspace";
+
     private String sandboxId;
     private String templateId = "base";
     private String sandboxDomain;

@@ -118,7 +118,7 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     private static WorkspaceSpec createDefaultWorkspaceSpec() {
         WorkspaceSpec spec = new WorkspaceSpec();
-        spec.setRoot("/home/user/workspace");
+        spec.setRoot(E2bSandboxState.DEFAULT_WORKSPACE_ROOT);
         return spec;
     }
 

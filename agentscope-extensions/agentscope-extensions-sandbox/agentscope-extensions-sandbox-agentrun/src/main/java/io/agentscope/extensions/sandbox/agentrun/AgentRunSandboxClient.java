@@ -73,7 +73,9 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
 
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT));
         state.setTemplateName(merged.getTemplateName());
         state.setAccountId(merged.getAccountId());
         state.setRegion(merged.getRegion());

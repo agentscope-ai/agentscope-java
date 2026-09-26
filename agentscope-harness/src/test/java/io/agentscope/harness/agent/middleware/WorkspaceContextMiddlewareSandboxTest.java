@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -128,6 +129,36 @@ class WorkspaceContextMiddlewareSandboxTest {
     }
 
     @Test
+    void querySandbox_resultsAreCachedAcrossPromptBuilds(@TempDir Path workspace) {
+        FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-cache", "/workspace");
+        fs.osReleaseResponse = new ExecuteResponse("Ubuntu 22.04", 0, false);
+        fs.tempdirResponse = new ExecuteResponse("/tmp", 0, false);
+        WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+
+        String first = mw.onSystemPrompt(null, RC, "BASE\n").block();
+        assertNotNull(first);
+        assertTrue(first.contains("Ubuntu 22.04"));
+        long probesAfterFirst = countProbeCommands(fs);
+        assertTrue(probesAfterFirst > 0);
+
+        String second = mw.onSystemPrompt(null, RC, "BASE\n").block();
+        assertNotNull(second);
+        assertTrue(second.contains("Ubuntu 22.04"));
+        assertEquals(probesAfterFirst, countProbeCommands(fs));
+    }
+
+    private static long countProbeCommands(FakeSandboxFilesystem fs) {
+        return fs.commands.stream()
+                .filter(
+                        command ->
+                                command.contains("/etc/os-release")
+                                        || command.contains("uname")
+                                        || command.contains("TMPDIR"))
+                .count();
+    }
+
+    @Test
     void sessionContext_includesSessionInfo(@TempDir Path workspace) {
         FakeSandboxFilesystem fs = new FakeSandboxFilesystem("sbox-7", "/workspace");
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
@@ -148,6 +179,8 @@ class WorkspaceContextMiddlewareSandboxTest {
         ExecuteResponse unameResponse;
         ExecuteResponse tempdirResponse;
         RuntimeException osException;
+        int executeCalls;
+        final List<String> commands = new ArrayList<>();
 
         FakeSandboxFilesystem(String id, String workspaceRoot) {
             this.id = id;
@@ -167,6 +200,8 @@ class WorkspaceContextMiddlewareSandboxTest {
         @Override
         public ExecuteResponse execute(
                 RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            executeCalls++;
+            commands.add(command);
             if (command.contains("/etc/os-release")) {
                 if (osException != null) {
                     throw osException;

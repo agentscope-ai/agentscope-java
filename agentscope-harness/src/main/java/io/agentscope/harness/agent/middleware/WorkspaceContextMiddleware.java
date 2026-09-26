@@ -32,7 +32,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -128,6 +132,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
 
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceContextMiddleware.class);
+
     private final WorkspaceManager workspaceManager;
     private final String agentName;
     private final String environmentMemory;
@@ -136,6 +142,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
+
+    /**
+     * Cache for sandbox OS/TMPDIR probe results, keyed by {@code sandbox id + command}. The
+     * sandbox platform does not change across restarts, so one successful probe per middleware
+     * lifetime is enough — this keeps the per-call prompt build down to zero extra execs
+     * after the first one.
+     */
+    private final ConcurrentHashMap<String, String> sandboxProbeCache = new ConcurrentHashMap<>();
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -321,7 +335,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      *       don't recognize.
      * </ul>
      */
-    private static String buildWorkspaceParagraph(
+    private String buildWorkspaceParagraph(
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
@@ -440,22 +454,45 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Executes a shell command in the sandbox and returns the stripped output, or the given
-     * fallback string if execution fails.
+     * fallback string if execution fails. Successful results are cached per sandbox so the
+     * per-call prompt build issues no repeated execs; failures are logged at debug level and
+     * fall back every time (a transient failure must not poison later prompts).
      */
-    private static String querySandbox(
+    private String querySandbox(
             AbstractSandboxFilesystem sandbox, RuntimeContext rc, String command, String fallback) {
+        String cacheKey = sandbox.id() + "\0" + command;
+        String cached = sandboxProbeCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        Optional<String> probed = probeSandbox(sandbox, rc, command);
+        probed.ifPresent(value -> sandboxProbeCache.put(cacheKey, value));
+        return probed.orElse(fallback);
+    }
+
+    private static Optional<String> probeSandbox(
+            AbstractSandboxFilesystem sandbox, RuntimeContext rc, String command) {
         try {
             ExecuteResponse result = sandbox.execute(rc, command, null);
             if (result.exitCode() != null && result.exitCode() == 0 && result.output() != null) {
                 String out = result.output().strip();
                 if (!out.isEmpty()) {
-                    return out;
+                    return Optional.of(out);
                 }
             }
+            log.debug(
+                    "[workspace-context] sandbox probe returned non-zero/empty output"
+                            + " (container id: {}, command: {})",
+                    sandbox.id(),
+                    command);
         } catch (Exception e) {
-            // fall through
+            log.debug(
+                    "[workspace-context] sandbox probe failed (container id: {}, command: {}): {}",
+                    sandbox.id(),
+                    command,
+                    e.getMessage());
         }
-        return fallback;
+        return Optional.empty();
     }
 
     private static void appendHostPlatformInfo(StringBuilder sb, String osInfo, String tmpdir) {

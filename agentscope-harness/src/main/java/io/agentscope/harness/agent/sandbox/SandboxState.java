@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.sandbox;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 
@@ -59,6 +60,28 @@ public abstract class SandboxState {
 
     public void setWorkspaceSpec(WorkspaceSpec workspaceSpec) {
         this.workspaceSpec = workspaceSpec;
+    }
+
+    /**
+     * Migration hook for state persisted before the workspace-root unification: old payloads
+     * carry a standalone {@code workspaceRoot} property alongside (or without) the {@code
+     * manifest}. When the manifest is missing or has a blank root, the legacy value is adopted
+     * so resumed sandboxes keep pointing at their real workspace.
+     *
+     * @param workspaceRoot legacy standalone workspace root; ignored when blank or when the
+     *     manifest already defines a root
+     */
+    @JsonSetter("workspaceRoot")
+    public void setLegacyWorkspaceRoot(String workspaceRoot) {
+        if (workspaceRoot == null || workspaceRoot.isBlank()) {
+            return;
+        }
+        if (workspaceSpec == null) {
+            workspaceSpec = new WorkspaceSpec();
+            workspaceSpec.setRoot(workspaceRoot);
+        } else if (workspaceSpec.getRoot() == null || workspaceSpec.getRoot().isBlank()) {
+            workspaceSpec.setRoot(workspaceRoot);
+        }
     }
 
     public SandboxSnapshot getSnapshot() {

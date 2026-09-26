@@ -70,7 +70,7 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
 
         DockerSandboxState state = new DockerSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(WorkspaceSpec.withDefaultRoot(workspaceSpec, "/workspace"));
         state.setImage(image);
         state.setContainerOwned(true);
         state.setWorkspaceRootReady(false);

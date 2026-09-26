@@ -62,7 +62,9 @@ public class DaytonaSandboxClient implements SandboxClient<DaytonaSandboxClientO
 
         DaytonaSandboxState state = new DaytonaSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, DaytonaSandboxState.DEFAULT_WORKSPACE_ROOT));
         state.setImage(merged.getImage());
         state.setSnapshotId(merged.getSnapshotId());
         state.setSandboxOwned(true);

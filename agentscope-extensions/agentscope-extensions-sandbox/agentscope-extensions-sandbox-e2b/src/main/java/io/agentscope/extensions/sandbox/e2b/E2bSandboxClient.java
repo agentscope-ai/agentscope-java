@@ -61,7 +61,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
 
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(
+                WorkspaceSpec.withDefaultRoot(
+                        workspaceSpec, E2bSandboxState.DEFAULT_WORKSPACE_ROOT));
         state.setTemplateId(merged.getTemplateId());
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
