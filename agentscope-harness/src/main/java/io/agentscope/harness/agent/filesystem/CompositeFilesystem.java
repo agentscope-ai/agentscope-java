@@ -198,7 +198,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         if ("/".equals(path) || ".".equals(path)) {
             List<FileInfo> results = new ArrayList<>();
-            LsResult defaultResult = defaultBackend.ls(runtimeContext, "/");
+            LsResult defaultResult = defaultBackend.ls(runtimeContext, rootAnchor(path));
             if (defaultResult.isSuccess() && defaultResult.entries() != null) {
                 results.addAll(defaultResult.entries());
             }
@@ -279,7 +279,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
         if (path == null || "/".equals(path) || ".".equals(path)) {
             List<GrepMatch> allMatches = new ArrayList<>();
-            GrepResult defaultResult = defaultBackend.grep(runtimeContext, pattern, path, glob);
+            GrepResult defaultResult =
+                    defaultBackend.grep(runtimeContext, pattern, rootAnchor(path), glob);
             if (!defaultResult.isSuccess()) {
                 return defaultResult;
             }
@@ -514,6 +515,18 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
         RouteResult route = routeForPath(path);
         return route.backend().exists(runtimeContext, route.backendPath());
+    }
+
+    /**
+     * Root anchor for the default backend: {@code "/"} would pass through the UNRESTRICTED
+     * resolver unchanged and enumerate the OS root, and {@code ""} would bypass the per-user
+     * namespace ({@code applyNamespacePrefix} early-returns on blank keys). {@code "."} is
+     * namespace-aware — a namespaced backend anchors at {@code {workspace}/{userId}}, a
+     * namespace-free one (shared mode) at its own root — mirroring the normalization {@code
+     * LocalFilesystem.glob} already applies (#3253).
+     */
+    private static String rootAnchor(String path) {
+        return (path == null || "/".equals(path) || ".".equals(path)) ? "." : path;
     }
 
     /** Returns the default store. */
