@@ -82,6 +82,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
@@ -473,13 +474,13 @@ class AgentScopeAgentExecutorTest {
         }
 
         @ParameterizedTest
-        @ValueSource(booleans = {false, true})
+        @CsvSource({"false, false", "true, false", "false, true", "true, true"})
         @DisplayName("Should convert a confirmation response into validated AgentScope metadata")
-        void testStreamingRequestConvertsConfirmationResponse(boolean clearInput)
+        void testStreamingRequestConvertsConfirmationResponse(boolean clearInput, boolean streaming)
                 throws JSONRPCError {
             Map<String, Object> approvedInput =
                     clearInput ? Map.of() : Map.of("path", "approved.txt");
-            String taskId = doMockForContext(false, false, true);
+            String taskId = doMockForContext(streaming, false, true);
             String contextId = mockContext.getContextId();
             String replyId = "reply-1";
             Map<String, Object> requestedToolCall =
@@ -589,14 +590,22 @@ class AgentScopeAgentExecutorTest {
                                                 invocation
                                                         .<AgentRequestOptions>getArgument(1)
                                                         .isResume());
-                                        return Flux.empty();
+                                        return mockFlux(false, true, false);
                                     })
                     .when(mockAgentRunner)
                     .streamEvents(anyList(), any(AgentRequestOptions.class));
-            mockStreamingEventQueueRef();
+            AtomicReference<List<StreamingEventKind>> output = mockStreamingEventQueueRef();
 
             executor.execute(mockContext, mockEventQueue);
 
+            if (streaming) {
+                assertTrue(output.get().stream().anyMatch(TaskStatusUpdateEvent.class::isInstance));
+            } else {
+                assertEquals(1, output.get().size());
+                Message response = assertInstanceOf(Message.class, output.get().get(0));
+                assertEquals(taskId, response.getTaskId());
+                assertEquals(contextId, response.getContextId());
+            }
             assertEquals(1, agentInput.get().size());
             Msg confirmationMessage = agentInput.get().get(0);
             assertEquals(MsgRole.USER, confirmationMessage.getRole());

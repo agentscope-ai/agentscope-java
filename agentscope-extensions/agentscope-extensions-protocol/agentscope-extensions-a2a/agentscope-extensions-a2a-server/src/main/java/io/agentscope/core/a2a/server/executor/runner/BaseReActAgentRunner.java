@@ -182,9 +182,7 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             try {
                 cachedAgent.agent.interrupt();
             } finally {
-                if (cachedAgent.paused) {
-                    cachedAgent.agent.close();
-                }
+                cachedAgent.agent.close();
             }
         }
     }

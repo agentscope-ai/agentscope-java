@@ -138,7 +138,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             } else {
                 log.info("[{}] Using existing task.", task.getId());
             }
-            if (isBlockRequest(context) && context.getTask() == null) {
+            if (isBlockRequest(context)) {
                 processTaskBlocking(context, eventQueue, task, resultFlux);
             } else {
                 processTaskNonBlocking(context, eventQueue, task, resultFlux);
