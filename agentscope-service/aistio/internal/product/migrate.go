@@ -178,6 +178,8 @@ CREATE TABLE IF NOT EXISTS deployments (
 );
 CREATE INDEX IF NOT EXISTS idx_deployments_webhook ON deployments (webhook_token);
 
+-- 遗留表：早期"通用资源分享"设计的残留，当前代码无任何读写（Agent 分享实际
+-- 使用下方 agent_shares）。保留建表语句仅为兼容已存在的旧库，勿向此表写数据。
 CREATE TABLE IF NOT EXISTS resource_shares (
     row_id          BIGSERIAL PRIMARY KEY,
     resource_type   TEXT NOT NULL,
@@ -188,6 +190,23 @@ CREATE TABLE IF NOT EXISTS resource_shares (
     created_by      TEXT,
     UNIQUE (resource_type, resource_id, grantee_user_id)
 );
+
+-- Agent 分享授权（控制台 ShareTier：CLONE/RUN/EDIT）。
+-- grantee_type='USER' 时 grantee_id 为被授权用户；'WORKSPACE' 时 grantee_id='*'
+-- 表示全员共享。handlers_agent_extras.go 的 shares 接口与 handlers_agents.go
+-- 的可见性/tier 解析均依赖此表。
+CREATE TABLE IF NOT EXISTS agent_shares (
+    row_id       BIGSERIAL PRIMARY KEY,
+    owner_id     TEXT NOT NULL,
+    agent_id     TEXT NOT NULL,
+    grantee_type TEXT NOT NULL,
+    grantee_id   TEXT NOT NULL DEFAULT '',
+    tier         TEXT NOT NULL DEFAULT 'RUN',
+    created_at   BIGINT NOT NULL,
+    UNIQUE (owner_id, agent_id, grantee_type, grantee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_shares_agent ON agent_shares (owner_id, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_shares_grantee ON agent_shares (grantee_type, grantee_id);
 
 CREATE TABLE IF NOT EXISTS channels (
     channel_id       TEXT PRIMARY KEY,
