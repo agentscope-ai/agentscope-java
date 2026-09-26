@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -254,5 +255,43 @@ class JsonSchemaUtilsTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void testGenerateSchemaFromClassEnumWithJsonProperty() {
+        // GH #3301: enum constants renamed via @JsonProperty must appear in the
+        // schema under their serialized names, matching what the Jackson-based
+        // argument conversion accepts when the tool is invoked.
+        Map<String, Object> schema =
+                JsonSchemaUtils.generateSchemaFromClass(EnumJsonPropertyModel.class);
+
+        assertNotNull(schema);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertNotNull(properties);
+        assertTrue(properties.containsKey("level"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> levelProperty = (Map<String, Object>) properties.get("level");
+        assertEquals("string", levelProperty.get("type"));
+
+        @SuppressWarnings("unchecked")
+        List<String> values = (List<String>) levelProperty.get("enum");
+        assertNotNull(values);
+        assertEquals(List.of("低", "中", "高"), values);
+    }
+
+    static class EnumJsonPropertyModel {
+        public Level level;
+    }
+
+    enum Level {
+        @JsonProperty("低")
+        LOW,
+        @JsonProperty("中")
+        MEDIUM,
+        @JsonProperty("高")
+        HIGH,
     }
 }
