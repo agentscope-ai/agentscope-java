@@ -922,4 +922,12 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         return matches;
     }
+
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        // The exact path this backend's IO resolves to — namespace prefix (when a
+        // NamespaceFactory is configured) and mode included — so contexts that store in
+        // different namespace directories never share a batch.
+        return resolvePath(runtimeContext, path).normalize();
+    }
 }
