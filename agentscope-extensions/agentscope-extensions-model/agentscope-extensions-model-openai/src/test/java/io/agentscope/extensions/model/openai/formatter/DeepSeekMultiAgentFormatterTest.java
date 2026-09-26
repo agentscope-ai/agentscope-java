@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
@@ -462,5 +463,101 @@ class DeepSeekMultiAgentFormatterTest {
             // Strict should not be applied for DeepSeek
             assertNull(request.getTools().get(0).getFunction().getStrict());
         }
+    }
+
+    @Nested
+    @DisplayName("Two-Arg Format Path Tests")
+    class TwoArgFormatTests {
+
+        @Test
+        @DisplayName("Should preserve and backfill reasoning_content via format(msgs, options)")
+        void testTwoArgFormatPreservesAndBackfillsReasoning() {
+            // Production requests flow through format(msgs, options) → doFormat(msgs,
+            // options). The DeepSeek fixes must apply on this path too (code review finding).
+            List<OpenAIMessage> result = formatter.format(thinkingToolSequenceMessages(), null);
+
+            assertEquals(
+                    "tool thinking",
+                    result.get(0).getReasoningContent(),
+                    "reasoning_content of thinking assistant must be preserved");
+            assertEquals(
+                    "",
+                    result.get(2).getReasoningContent(),
+                    "assistant without ThinkingBlock must be backfilled (issue #3246)");
+        }
+
+        @Test
+        @DisplayName("Should append empty user via format(msgs, options) when enabled")
+        void testTwoArgFormatAppendsEmptyUser() {
+            DeepSeekMultiAgentFormatter appendFormatter = new DeepSeekMultiAgentFormatter(true);
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.ASSISTANT)
+                                    .content(
+                                            List.of(
+                                                    ToolUseBlock.builder()
+                                                            .id("call_1")
+                                                            .name("get_weather")
+                                                            .input(Map.of("city", "Beijing"))
+                                                            .build()))
+                                    .build());
+
+            List<OpenAIMessage> result = appendFormatter.format(messages, null);
+
+            assertTrue(result.size() >= 2);
+            assertEquals("user", result.get(result.size() - 1).getRole());
+            assertEquals("", result.get(result.size() - 1).getContentAsString());
+        }
+    }
+
+    private static List<Msg> thinkingToolSequenceMessages() {
+        List<Msg> messages = new ArrayList<>();
+        messages.add(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("tool thinking").build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build());
+        messages.add(
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        new ToolResultBlock(
+                                                "call_1",
+                                                "get_weather",
+                                                List.of(TextBlock.builder().text("Sunny").build()),
+                                                null)))
+                        .build());
+        messages.add(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Shanghai"))
+                                                .build()))
+                        .build());
+        messages.add(
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        new ToolResultBlock(
+                                                "call_2",
+                                                "get_weather",
+                                                List.of(TextBlock.builder().text("Rainy").build()),
+                                                null)))
+                        .build());
+        return messages;
     }
 }

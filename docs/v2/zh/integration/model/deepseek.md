@@ -48,7 +48,7 @@ Model model = ModelRegistry.resolve(
 
 ## 兼容性说明
 
-DeepSeek formatter 会保留 DeepSeek 兼容的消息字段，包括 `system` 角色和支持的 `name` 字段；同时会移除历史轮次中过期的 reasoning 内容，并保留当前工具调用上下文需要的 reasoning 内容。
+DeepSeek formatter 会保留 DeepSeek 兼容的消息字段，包括 `system` 角色和支持的 `name` 字段。在思考模式下，它会对所有 assistant 轮次完整回传 `reasoning_content`——包括框架合成的、不含思考内容的消息，这类消息会被补齐空字符串，避免携带 `tools` 的请求被 HTTP 400 拒绝（issue #3246）。思考模式由请求的 `thinking` 选项决定；未设置该选项时，formatter 按「已开启思考」处理（DeepSeek 服务端默认开启思考），缺失的思考轨迹一律补齐。如需退出，请显式传 `thinking: {"type": "disabled"}`。
 
 DeepSeek 稳定端点默认不使用工具 schema 的 `strict` 字段，因此默认 formatter 会省略 `strict`，即使工具注册时开启了严格 schema 校验。结构化输出默认使用 AgentScope 的 fallback 行为；只有在你明确确认兼容端点支持 native structured output 时才需要手动开启。
 

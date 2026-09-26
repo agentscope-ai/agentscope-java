@@ -48,7 +48,7 @@ Streaming callers can render `ThinkingBlockDeltaEvent` separately from `TextBloc
 
 ## Compatibility notes
 
-The DeepSeek formatter preserves DeepSeek-compatible message fields, including `system` roles and supported `name` fields. It also removes stale reasoning content from previous turns while preserving reasoning content needed by current tool-call context.
+The DeepSeek formatter preserves DeepSeek-compatible message fields, including `system` roles and supported `name` fields. In thinking mode it fully passes back `reasoning_content` for every assistant turn — including framework-synthesized messages without thinking content, which are backfilled with an empty string so tool-carrying requests are not rejected with HTTP 400 (issue #3246). Thinking mode follows the request's `thinking` option; when the option is absent the formatter assumes thinking is enabled (DeepSeek's server-side default), so missing traces are backfilled anyway. Pass `thinking: {"type": "disabled"}` to opt out.
 
 DeepSeek's stable endpoint does not use the tool schema `strict` field by default, so the default formatter omits `strict` even when a tool is registered with strict schema validation. Structured output uses the normal AgentScope fallback behavior unless you explicitly configure native structured output for a compatible endpoint.
 
