@@ -204,6 +204,13 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         return String.join("\n", java.util.Arrays.asList(lines).subList(start, end));
     }
 
+    /**
+     * Writes a memory document when its path appears absent.
+     *
+     * <p>This implementation checks for existence and then performs an upsert; the operation is
+     * not atomic. It must not be used as the backing filesystem for {@code WorkspaceMessageBus}
+     * claims or other operations that require atomic create-if-absent behavior.
+     */
     @Override
     public WriteResult write(RuntimeContext runtimeContext, String filePath, String content) {
         if (isReadOnly()) {
@@ -215,11 +222,7 @@ public final class MemoryStoreFilesystem implements AbstractFilesystem {
         }
         boolean exists = memoryExists(key);
         if (exists) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit, or write"
-                            + " to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
         try {
             documents.put(key, content, 0);
