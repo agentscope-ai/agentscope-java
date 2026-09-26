@@ -66,6 +66,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
     private static final String LIST_SUFFIX = ":list";
 
     private final RedissonClient redissonClient;
+    private final RScript.ReturnType scriptReturnType;
     private final String keyPrefix;
 
     private RedissonAgentStateStore(Builder builder) {
@@ -74,6 +75,12 @@ public class RedissonAgentStateStore implements AgentStateStore {
         }
         if (builder.redissonClient == null) {
             throw new IllegalArgumentException("RedissonClient cannot be null");
+        }
+        try {
+            this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(
+                    RedissonClientAdapter.incompatibleRedissonApiMessage(), e);
         }
         this.keyPrefix = builder.keyPrefix;
         this.redissonClient = builder.redissonClient;
@@ -150,7 +157,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
                             .eval(
                                     RScript.Mode.READ_WRITE,
                                     RedisStateVersionSupport.SAVE_SCRIPT,
-                                    RScript.ReturnType.LONG,
+                                    scriptReturnType,
                                     new ArrayList<>(scriptKeys),
                                     scriptArgs.toArray());
             long newVersion = ((Number) result).longValue();
