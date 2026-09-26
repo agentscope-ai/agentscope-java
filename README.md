@@ -97,7 +97,7 @@ Welcome to join our community on
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-harness</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
@@ -107,7 +107,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-model-dashscope</artifactId>
-    <version>2.0.1</version>
+    <version>2.0.3</version>
 </dependency>
 ```
 
