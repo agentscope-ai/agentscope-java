@@ -1,5 +1,6 @@
 ---
 title: Anthropic
+zh_link: /v2/zh/integration/model/anthropic
 ---
 
 `agentscope-extensions-model-anthropic` integrates Anthropic Claude models, including Anthropic-specific formatter and request DTO support.

@@ -1,5 +1,6 @@
 ---
 title: 组件发布指南
+en_link: /v2/en/service/releasing
 ---
 
 <Note>

@@ -427,6 +427,21 @@ class JdbcAgentStateStoreH2Test {
     }
 
     @Test
+    @DisplayName("negative expectedVersion other than the sentinel is rejected without writing")
+    void negativeExpectedVersionIsRejected() {
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> store.saveIfVersion("user1", "s1", "k", new TestState("v"), -2L));
+
+        assertTrue(
+                exception.getMessage().contains("-2"),
+                "message must name the offending value: " + exception.getMessage());
+        // The rejection must not have been re-classified into an unconditional write.
+        assertTrue(store.get("user1", "s1", "k", TestState.class).isEmpty());
+    }
+
+    @Test
     @DisplayName("concurrent writers with the same expected version: only one succeeds")
     void concurrentWritersOnlyOneSucceeds() throws InterruptedException {
         store.saveIfVersion("user1", "s1", "agent_state", new TestState("baseline"), 0L);

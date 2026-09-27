@@ -117,7 +117,33 @@ class HookToolsRegistrationTest {
                         .build();
 
         assertNotNull(agent.getToolkit().getTool("hook_ping"));
-        assertFalse(builderToolkit.getToolNames().contains("hook_ping"));
+        // Agent-specific registrations must not mutate the caller's registry.
+        org.junit.jupiter.api.Assertions.assertNull(builderToolkit.getTool("hook_ping"));
+        AgentTool other = org.mockito.Mockito.mock(AgentTool.class);
+        org.mockito.Mockito.when(other.getName()).thenReturn("hook_ping");
+        Hook otherHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        return Mono.just(event);
+                    }
+
+                    @Override
+                    public List<Object> tools() {
+                        return List.of(other);
+                    }
+                };
+        ReActAgent second =
+                ReActAgent.builder()
+                        .name("b")
+                        .model(model)
+                        .toolkit(builderToolkit)
+                        .hook(otherHook)
+                        .build();
+        org.junit.jupiter.api.Assertions.assertSame(ping, agent.getToolkit().getTool("hook_ping"));
+        org.junit.jupiter.api.Assertions.assertSame(
+                other, second.getToolkit().getTool("hook_ping"));
+        org.junit.jupiter.api.Assertions.assertNull(builderToolkit.getTool("hook_ping"));
     }
 
     @Test

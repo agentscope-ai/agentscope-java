@@ -1,5 +1,6 @@
 ---
 title: A2A
+en_link: /v2/en/integration/protocol/a2a
 ---
 
 `agentscope-extensions-a2a` 实现了 [A2A 协议](https://a2aproject.github.io/A2A/)，包含两个子模块：

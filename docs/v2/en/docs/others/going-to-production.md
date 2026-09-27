@@ -3,6 +3,7 @@ title: Going to Production
 description: 'From single-node prototype to multi-replica deployment: component selection
   and configuration for the Agent State Store, Filesystem, Skill, Sandbox, Snapshot,
   and Observability'
+zh_link: /v2/zh/docs/others/going-to-production
 ---
 
 > Running a `HarnessAgent` on your laptop is easy. Shipping it to production is another story — replicas must share sessions, users must stay isolated, untrusted code must be sandboxed, and pods must be able to resume mid-conversation after a restart. This page only covers what **changes between single-node and distributed production**: which components must be swapped, what to swap them with, and why the builder throws `IllegalStateException` when you miss something.
