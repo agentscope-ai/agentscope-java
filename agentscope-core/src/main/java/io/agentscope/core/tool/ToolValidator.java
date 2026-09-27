@@ -58,6 +58,29 @@ public final class ToolValidator {
         // Utility class
     }
 
+    /**
+     * Arguments string both the permission pre-gate and {@link ToolExecutor} validate.
+     *
+     * <p>This is the raw {@link ToolUseBlock#getContent()}, not the input-map fallback. The two
+     * checks must read the same string so a call the executor would reject is not sent to ASK.
+     *
+     * @param toolUse the proposed tool call
+     * @return the content string to validate, or null when the block is null
+     */
+    public static String resolveArgsForValidation(ToolUseBlock toolUse) {
+        return toolUse == null ? null : toolUse.getContent();
+    }
+
+    /**
+     * Message {@link ToolExecutor} returns when a registered backend tool is in an inactive group.
+     *
+     * @param toolName tool name
+     * @return the unauthorized-tool error text
+     */
+    public static String unavailableToolMessage(String toolName) {
+        return String.format("Unauthorized tool call: '%s' is not available", toolName);
+    }
+
     // ==================== Schema Validation ====================
 
     /**

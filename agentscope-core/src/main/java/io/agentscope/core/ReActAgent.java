@@ -160,6 +160,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 
@@ -3069,6 +3070,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Map.Entry<ToolUseBlock, ToolResultBlock>> schemaErrors = new ArrayList<>();
             List<ToolUseBlock> gateCalls = new ArrayList<>();
             for (ToolUseBlock toolCall : toolCalls) {
+                // Unavailable tools and schema failures both skip the permission gate.
+                // Availability is checked first so an inactive tool keeps the executor's
+                // unauthorized result instead of a parameter error.
                 ToolResultBlock schemaError = schemaValidationFailure(toolCall);
                 if (schemaError != null) {
                     schemaErrors.add(Map.entry(toolCall, schemaError));
@@ -3113,7 +3117,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             schemaErrorEventFlux(schemaErrors, replyId);
                                     if (gateCalls.isEmpty()) {
                                         resultHolder.set(schemaErrors);
-                                        return schemaEvents;
+                                        return schemaEvents.doFinally(
+                                                signal -> {
+                                                    if (signal != SignalType.ON_COMPLETE) {
+                                                        writeSchemaErrorResults(schemaErrors);
+                                                    }
+                                                });
                                     }
                                     return schemaEvents.concatWith(
                                             runToolBatch(
@@ -3125,7 +3134,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             () ->
                                                                     prependSchemaErrors(
                                                                             resultHolder,
-                                                                            schemaErrors)));
+                                                                            schemaErrors))
+                                                    .doFinally(
+                                                            signal -> {
+                                                                if (signal
+                                                                        != SignalType.ON_COMPLETE) {
+                                                                    // Error or cancel: acting()
+                                                                    // never reaches
+                                                                    // notifyPostActingHook.
+                                                                    writeSchemaErrorResults(
+                                                                            schemaErrors);
+                                                                }
+                                                            }));
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -3133,6 +3153,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // still need confirmation, then signal stop via RequestStopEvent.
                                 // The agent's acting() will see the RequestStopEvent, set the
                                 // GenerateReason to PERMISSION_ASKING, and return.
+                                // Schema errors are written straight to context, same as
+                                // writeAutoDeniedResults. PostActing hooks run only for calls that
+                                // actually execute. Firing them during PERMISSION_ASKING would
+                                // observe a validation failure before resume.
                                 if (!schemaErrors.isEmpty()) {
                                     writeSchemaErrorResults(schemaErrors);
                                 }
@@ -3170,22 +3194,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Validate a tool call against its schema before the permission gate. A call that cannot
-         * execute must not ask the user to confirm it.
+         * Reject a tool call before the permission gate when it cannot execute.
+         *
+         * <p>Inactive backend tools return the same unauthorized result as {@link
+         * io.agentscope.core.tool.ToolExecutor}. Schema checks use {@link
+         * io.agentscope.core.tool.ToolValidator#resolveArgsForValidation} so this gate cannot
+         * disagree with the executor. Unknown tools return null and are left to the executor.
          *
          * @param toolCall the proposed tool call
-         * @return the same error the executor would return, or null when the input is acceptable
+         * @return the error the executor would return, or null when the call may proceed
          */
         private ToolResultBlock schemaValidationFailure(ToolUseBlock toolCall) {
+            if (activeToolkit.isBackendToolUnavailable(
+                    toolCall.getName(),
+                    toolRequestConfig,
+                    state.getToolContext().getActivatedGroups())) {
+                return ToolResultBlock.error(
+                                ToolValidator.unavailableToolMessage(toolCall.getName()))
+                        .withIdAndName(toolCall.getId(), toolCall.getName());
+            }
             AgentTool tool = activeToolkit.getTool(toolCall.getName(), toolRequestConfig);
             if (tool == null) {
                 return null;
             }
-            String args = toolCall.getContent();
-            if (args == null || args.isBlank()) {
-                args = JsonUtils.resolveToolCallArgsJson(toolCall);
-            }
-            String validationError = ToolValidator.validateInput(args, tool.getParameters());
+            String validationError =
+                    ToolValidator.validateInput(
+                            ToolValidator.resolveArgsForValidation(toolCall), tool.getParameters());
             if (validationError == null) {
                 return null;
             }
